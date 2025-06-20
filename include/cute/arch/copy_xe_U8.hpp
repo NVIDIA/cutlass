@@ -35,6 +35,36 @@
 
 namespace cute
 {
+struct XE_2D_U8x1x16_LD_N {
+  using BlockShape = Shape<_1, _16>;
+  using inst_dtype = int8_t;
+
+  template <class T>
+  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                    int height, int pitch, intel::coord_t coord,
+                                    T *dst) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    static_assert(sizeof(T) == 1, "Expected T to have size 1");
+    detail::XeSubgroup2DBlockLoad<1, 16, 1, 1>{}(baseoffset, width, height, pitch, coord, dst);
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
+#endif
+  }
+
+  struct PREFETCH {
+    CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                      int height, int pitch,
+                                      intel::coord_t coord) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    detail::XeSubgroup2DBlockPrefetch<1, 16, 1, 1>{}(baseoffset, width, height, pitch, coord);
+#else
+      CUTE_INVALID_CONTROL_PATH(
+          "Trying to use block prefetch on non-Xe hardware");
+#endif
+    }
+  };
+};
+
 struct XE_2D_Packed_U8x1x32_LD_N {
   using BlockShape = Shape<_1, _32>;
   using inst_dtype = int8_t;
@@ -231,6 +261,19 @@ struct XE_2D_U8x32x32_LD_N {
     CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
+
+   struct PREFETCH {
+    CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                      int height, int pitch,
+                                      intel::coord_t coord) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    detail::XeSubgroup2DBlockPrefetch<1, 32, 32, 1>{}(baseoffset, width, height, pitch, coord);
+#else
+      CUTE_INVALID_CONTROL_PATH(
+          "Trying to use block prefetch on non-Xe hardware");
+#endif
+    }
+  };
 };
 
 struct XE_2D_Packed_U8x1x64_LD_N {

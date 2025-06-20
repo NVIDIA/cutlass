@@ -37,6 +37,7 @@ namespace cute
 {
 struct XE_2D_U16x1x16_LD_N {
   using BlockShape = Shape<_1, _16>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -172,6 +173,7 @@ struct XE_2D_U16x32x16_LD_N {
 
 struct XE_2D_U16x1x32_LD_N {
   using BlockShape = Shape<_1, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -201,6 +203,7 @@ struct XE_2D_U16x1x32_LD_N {
 
 struct XE_2D_U16x2x32_LD_N {
   using BlockShape = Shape<_2, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -230,6 +233,7 @@ struct XE_2D_U16x2x32_LD_N {
 
 struct XE_2D_U16x4x32_LD_N {
   using BlockShape = Shape<_4, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -259,6 +263,7 @@ struct XE_2D_U16x4x32_LD_N {
 
 struct XE_2D_U16x8x32_LD_N {
   using BlockShape = Shape<_8, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -288,6 +293,7 @@ struct XE_2D_U16x8x32_LD_N {
 
 struct XE_2D_U16x16x32_LD_N {
   using BlockShape = Shape<_16, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -317,6 +323,7 @@ struct XE_2D_U16x16x32_LD_N {
 
 struct XE_2D_U16x32x32_LD_N {
   using BlockShape = Shape<_32, _32>;
+  using inst_dtype = uint16_t;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,

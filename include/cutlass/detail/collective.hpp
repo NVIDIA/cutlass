@@ -43,7 +43,8 @@ namespace detail {
 
 template <size_t I, class Tuple>
 struct deduce_mixed_width_dtype {
-static_assert(I >= 0u && I <= 2u, "Valid indices are 0, 1, and 2, which represent Operand, Scale, and Bias, respectively.");
+static_assert(I >= 0u && I <= 4u, "Valid indices are 0, 1, 2, 3 and 4, which represent "
+                                  "Operand, Scale data type, Scale stride, Zero data type, and Zero Stride.");
 
 private:
   using underlying_tuple = cute::conditional_t<cute::is_tuple<Tuple>::value, Tuple, cute::tuple<Tuple>>;

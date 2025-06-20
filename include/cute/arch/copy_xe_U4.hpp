@@ -37,6 +37,39 @@
 namespace cute
 {
 
+  struct XE_2D_Packed_U4x1x128_LD_N {
+  using BlockShape = Shape<_1, _128>;
+  using inst_dtype = uint32_t;
+
+  template <class T>
+  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                    int height, int pitch, intel::coord_t coord,
+                                    T *dst) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    detail::XeSubgroup2DBlockLoad<4, 16, 1, 1>{}(baseoffset, width, height, pitch, coord, dst);
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
+#endif
+  }
+};
+
+struct XE_2D_U4x16x8_LD_T {
+  using BlockShape = Shape<_8, _16>;
+  using inst_dtype = uint32_t;
+  static constexpr bool is_transpose = true;
+
+  template <class T>
+  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                    int height, int pitch, intel::coord_t coord,
+                                    T *dst) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    detail::XeSubgroup2DBlockLoadTranspose<4, 1, 16, 1>{}(baseoffset, width, height, pitch, coord, dst);
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
+#endif
+  }
+};
+
 struct XE_2D_U4x16x16_LD_T {
   using BlockShape = Shape<_16, _16>;
   using inst_dtype = uint32_t;

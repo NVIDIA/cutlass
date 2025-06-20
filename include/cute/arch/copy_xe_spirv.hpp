@@ -35,6 +35,11 @@
 
 // TODO(Codeplay): These builtins are not available on SPIRV
 SYCL_EXTERNAL extern "C"
+cute::intel::uchar __builtin_IB_subgroup_block_read_flat_u8_m1k16v1(
+  long baseoffset, int width_minus_one, int height_minus_one,
+  int pitch_minus_one, cute::intel::coord_t coord);
+
+SYCL_EXTERNAL extern "C"
 cute::intel::uchar64 __builtin_IB_subgroup_block_read_flat_u8_m32k16v2(
   long baseoffset, int width_minus_one, int height_minus_one,
   int pitch_minus_one, cute::intel::coord_t coord);
@@ -102,6 +107,11 @@ void __builtin_IB_subgroup_block_read_prefetch_u16_m32k16v2(
   int pitch_minus_one, cute::intel::coord_t coord, enum CacheControl cache_control);
 
 SYCL_EXTERNAL extern "C"
+void __builtin_IB_subgroup_block_read_prefetch_u8_m1k16v1(
+  long baseoffset, int width_minus_one, int height_minus_one,
+  int pitch_minus_one, cute::intel::coord_t coord, enum CacheControl cache_control);
+
+SYCL_EXTERNAL extern "C"
 void __builtin_IB_subgroup_block_read_prefetch_u8_m1k32v1(
   long baseoffset, int width_minus_one, int height_minus_one,
   int pitch_minus_one, cute::intel::coord_t coord, enum CacheControl cache_control);
@@ -118,6 +128,11 @@ void __builtin_IB_subgroup_block_read_prefetch_u8_m4k32v1(
 
 SYCL_EXTERNAL extern "C"
 void __builtin_IB_subgroup_block_read_prefetch_u8_m8k32v1(
+  long baseoffset, int width_minus_one, int height_minus_one,
+  int pitch_minus_one, cute::intel::coord_t coord, enum CacheControl cache_control);
+
+SYCL_EXTERNAL extern "C"
+void __builtin_IB_subgroup_block_read_prefetch_u8_m32k32v1(
   long baseoffset, int width_minus_one, int height_minus_one,
   int pitch_minus_one, cute::intel::coord_t coord, enum CacheControl cache_control);
 
@@ -287,6 +302,17 @@ struct XeSubgroup2DBlockStore {
 };
 
 template<>
+struct XeSubgroup2DBlockLoad<1, 16, 1, 1> {
+  template<typename T>
+  CUTE_HOST_DEVICE void
+  operator()(const void* srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
+          cute::intel::coord_t coordinate, T* dstPointer) {
+    *reinterpret_cast<intel::uchar *>(dstPointer) =  __builtin_IB_subgroup_block_read_flat_u8_m1k16v1(
+       (intptr_t)(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate);
+  }
+};
+
+template<>
 struct XeSubgroup2DBlockLoad<1, 16, 32, 2> {
   template<typename T>
   CUTE_HOST_DEVICE void
@@ -343,6 +369,17 @@ struct XeSubgroup2DBlockLoadTranspose<1, 8, 32, 1> {
 };
 
 // TODO(Codeplay): Remove these Prefetch specializations once spirv prefetch performance bug is fixed.
+template<>
+struct XeSubgroup2DBlockPrefetch<1, 16, 1, 1> {
+  CUTE_HOST_DEVICE void
+  operator()(const void *srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
+             cute::intel::coord_t coordinate) {
+    __builtin_IB_subgroup_block_read_prefetch_u8_m1k16v1(
+      reinterpret_cast<intptr_t>(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate,
+      CacheControl::kL1C_L3C);
+  }
+};
+
 template<>
 struct XeSubgroup2DBlockPrefetch<1, 32, 1, 1> {
   CUTE_HOST_DEVICE void
@@ -439,6 +476,17 @@ struct XeSubgroup2DBlockPrefetch<1, 16, 32, 1> {
     intel_sub_group_2d_block_prefetch_8b_32r16x1c(
       (__attribute__((opencl_global)) void *)(srcBasePointer), memoryWidth, memoryHeight, memoryPitch,
       coordinate);
+  }
+};
+
+template<>
+struct XeSubgroup2DBlockPrefetch<1, 32, 32, 1> {
+  CUTE_HOST_DEVICE void
+  operator()(const void *srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
+             cute::intel::coord_t coordinate) {
+    __builtin_IB_subgroup_block_read_prefetch_u8_m32k32v1(
+      reinterpret_cast<intptr_t>(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate,
+      CacheControl::kL1C_L3C);
   }
 };
 

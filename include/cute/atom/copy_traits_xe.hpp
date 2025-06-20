@@ -94,27 +94,32 @@ struct choose_prefetch_for_type {
 // U4
 template <>
 struct choose_prefetch_for_type<4, 1> {
-  using Prefetch = XE_2D_Packed_U8x1x32_LD_N;
+  using Prefetch = XE_2D_U16x1x32_LD_N;
 };
 
 template <>
 struct choose_prefetch_for_type<4, 2> {
-  using Prefetch = XE_2D_Packed_U8x2x32_LD_N;
+  using Prefetch = XE_2D_U16x2x32_LD_N;
+};
+
+template <>
+struct choose_prefetch_for_type<4, 4> {
+  using Prefetch = XE_2D_U16x4x32_LD_N;
 };
 
 template <>
 struct choose_prefetch_for_type<4, 8> {
-  using Prefetch = XE_2D_Packed_U8x8x32_LD_N;
+  using Prefetch = XE_2D_U16x8x32_LD_N;
 };
 
 template <>
 struct choose_prefetch_for_type<4, 16> {
-  using Prefetch = XE_2D_Packed_U8x16x32_LD_N;
+  using Prefetch = XE_2D_U16x16x32_LD_N;
 };
 
 template <>
 struct choose_prefetch_for_type<4, 32> {
-  using Prefetch = XE_2D_Packed_U8x32x32_LD_N;
+  using Prefetch = XE_2D_U16x32x32_LD_N;
 };
 
 // U8
@@ -225,7 +230,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
 
   // block here is what is prefetched in one atom execution
   // min(32,32)-> 32 (256, 32) -> 32
-  static constexpr auto block_contig_size = cute::min(tile_contig_size, cacheline_bytes / sizeof(dtype));
+  static constexpr auto block_contig_size = cute::min(tile_contig_size, cacheline_bytes * sizeof_bits_v<int8_t> / sizeof_bits_v<dtype>);
   // A: 1 -> trans or B 256/32 = 8
   static constexpr auto nums_blocks_contig = ceil_div(tile_contig_size, block_contig_size);
   
@@ -246,7 +251,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
   using PrefetchOp = typename choose_prefetch_for_type<dtype_size_bits, block_non_contig_size>::Prefetch;
   using PrefetchTraits = Copy_Traits<PrefetchOp, decltype(tensor.stride())>;
   using PrefetchAtom = Copy_Atom<PrefetchTraits, dtype>;
-  using Scalar = Int<cute::max(1, 8 / dtype_size_bits)>;
+  using Scalar = Int<cute::max(1, detail::size_of_inst_bits<PrefetchOp, int8_t> / dtype_size_bits)>;
   using ScalarLayout = std::conditional_t<is_tensor_M_major, Layout<Shape<Scalar, _1>>,
     Layout<Shape<_1, Scalar>>>;
   using ScalarPrefetchShape =  decltype(product_each(raked_product(ScalarLayout{},
@@ -328,7 +333,7 @@ struct XE_2D_LD_Unpack {
 
   template <class... TensorArgs>
   XE_2D_LD_Unpack(Tensor<TensorArgs...> const &tensor) {
-    base_ptr = tensor.data().get();
+    base_ptr = raw_pointer_cast(tensor.data());
 
     if constexpr (is_tensor_M_major)
     {
@@ -368,14 +373,14 @@ struct XE_2D_LD_Unpack {
                   "Dst tensor size does not match copy atom size.");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
-  
+
     auto [m, n, l] = src.data().coord_;
     int x = is_tensor_M_major ? m : n;
     int y = is_tensor_M_major ? n : m;
 
     constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
 
-    CopyOp::copy(base_addr + static_cast<size_t>(l) * traits.stride_l,
+    CopyOp::copy(((uint8_t*)base_addr) + static_cast<size_t>(l) * traits.stride_l * sizeof_bits_v<dtype> / 8,
                  (traits.width * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>, traits.height,
                  (traits.pitch * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>,
                  intel::coord_t{(int)(x * sizeof_bits_v<dtype> / inst_size_bits), y},
@@ -401,7 +406,7 @@ struct XE_2D_LD_Unpack {
 
     constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
 
-    CopyOp::PREFETCH::copy(base_addr + l * atom.stride_l,
+    CopyOp::PREFETCH::copy(((uint8_t*)(base_addr)) + static_cast<size_t>(l) * atom.stride_l * sizeof_bits_v<dtype> / 8,
                            (atom.width * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>, atom.height,
                            (atom.pitch * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>,
                            intel::coord_t{(int)(x * sizeof_bits_v<dtype> / inst_size_bits), y});
@@ -477,7 +482,7 @@ template <class CopyOp, class StrideOrTensor = cute::Stride<int64_t, cute::Int<1
     
     auto [m, n, l] = dst.data().coord_;
 
-    CopyOp::copy(base_addr + static_cast<size_t>(l) * traits.stride_l,
+    CopyOp::copy(((uint8_t*)(base_addr)) + static_cast<size_t>(l) * traits.stride_l * sizeof_bits_v<dtype> / 8,
                  traits.width * sizeof(dtype), traits.height,
                  traits.pitch * sizeof(dtype),
                  intel::coord_t{(int)n, (int)m}, &*src.data());
@@ -546,7 +551,7 @@ struct Copy_Traits_<XE_2D_Packed_U8x1x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_Packed_U8x1x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
+  using SrcLayout = Layout<Shape <_16,_16>,
                            Stride< _0,_1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,_16>,
@@ -668,6 +673,24 @@ struct Copy_Traits_<XE_2D_U8x32x32_LD_N, args_t...>
 };
 
 template <class... args_t>
+struct Copy_Traits_<XE_2D_Packed_U4x1x128_LD_N, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_Packed_U4x1x128_LD_N, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_4,  _8>>,
+                           Stride< _0,Stride< _1, _4>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_4,  _8>>,
+                           Stride<_32,Stride< _1, _4>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_Packed_U4x1x128_LD_N, args_t...>(args...) {}
+};
+
+template <class... args_t>
 struct Copy_Traits_<XE_2D_U4x32x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U4x32x64_LD_N, args_t...> {
   using ThrID = Layout<_16>;
@@ -704,6 +727,24 @@ struct Copy_Traits_<XE_2D_U4x16x64_LD_N, args_t...>
 };
 
 template <class... args_t>
+struct Copy_Traits_<XE_2D_U4x16x8_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U4x16x8_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_4, _8>>,
+                           Stride<_0,Stride< _1, _4>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_4, _8>>,
+                           Stride<_32,Stride<_1, _4>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U4x16x8_LD_T, args_t...>(args...) {}
+};
+
+template <class... args_t>
 struct Copy_Traits_<XE_2D_U4x16x16_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U4x16x16_LD_T, args_t...> {
   using ThrID = Layout<_16>;
@@ -736,6 +777,24 @@ struct Copy_Traits_<XE_2D_U4x32x16_LD_T, args_t...>
   template <class... ArgT>
   Copy_Traits_(ArgT... args)
       : XE_2D_LD_Unpack<XE_2D_U4x32x16_LD_T, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits_<XE_2D_U8x1x16_LD_N, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U8x1x16_LD_N, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,_8>,
+                           Stride< _0,_1>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,_8>,
+                           Stride<_8, _1>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U8x1x16_LD_N, args_t...>(args...) {}
 };
 
 template <class... args_t>
@@ -2430,6 +2489,8 @@ struct Copy_Traits<COPY_OP, args_t...> : Copy_Traits_<COPY_OP, args_t...>{ \
       : Copy_Traits_<CopyOp, args_t...>(args...) {} \
 };
 
+COPY_TRAIT_LD_DEF(XE_2D_Packed_U4x1x128_LD_N)
+COPY_TRAIT_LD_DEF(XE_2D_U8x1x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x1x32_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x2x32_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x4x32_LD_N)
@@ -2497,6 +2558,7 @@ COPY_TRAIT_LD_DEF(XE_2D_TF32x32x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U4x32x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U4x16x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U4x32x16_LD_T)
+COPY_TRAIT_LD_DEF(XE_2D_U4x16x8_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U4x16x16_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x1x64_LD_N::PREFETCH)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x2x64_LD_N::PREFETCH)

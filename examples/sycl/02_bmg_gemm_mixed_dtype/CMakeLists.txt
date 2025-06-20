@@ -32,15 +32,27 @@ set(TEST_MODE_0 --l=2 --mode=0)
 set(TEST_A_NARROW --l=2 --a_narrower)
 
 cutlass_example_add_executable(
-  02_bmg_gemm_mixed_dtype
-  02_bmg_gemm_mixed_dtype.cpp
+  02_bmg_gemm_bf16_s8
+  02_bmg_gemm_bf16_s8.cpp
   TEST_COMMAND_OPTIONS
   TEST_BATCHES
   TEST_MODE_1
   TEST_MODE_0
   TEST_A_NARROW
 )
+
+cutlass_example_add_executable(
+  02_bmg_gemm_f16_u4
+  02_bmg_gemm_f16_u4.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+  TEST_MODE_1
+  TEST_MODE_0
+  #TEST_A_NARROW
+)
+
 if(NOT DPCPP_SYCL_TARGET STREQUAL "spir64")
   # TODO(codeplay): Remove these once IGC block load loop hoisting bug is fixed
-  target_link_options( 02_bmg_gemm_mixed_dtype PRIVATE -Xs "-options \"-igc_opts 'allowDecompose2DBlockFuncs=0'\"" )
+  target_link_options( 02_bmg_gemm_bf16_s8 PRIVATE -Xs "-options \"-igc_opts 'allowDecompose2DBlockFuncs=0'\"" )
+  target_link_options( 02_bmg_gemm_f16_u4 PRIVATE -Xs "-options \"-igc_opts 'allowDecompose2DBlockFuncs=0'\"" )
 endif()
