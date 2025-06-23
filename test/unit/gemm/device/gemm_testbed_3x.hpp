@@ -307,7 +307,7 @@ bool initialize_tensor(
       }
     
     }
-    else if (std::is_same_v<Element, cutlass::bfloat16_t>) {
+    else if (cute::is_any_of_v<Element, cutlass::bfloat16_t, cutlass::half_t>) {
       scope_max = 1;
       scope_min = -1;
     }

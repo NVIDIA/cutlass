@@ -59,6 +59,11 @@ using float2 = vector_t<float, 2>;
 using float4 = vector_t<float, 4>;
 using float8 = vector_t<float, 8>;
 
+using half = _Float16;
+using half2 = vector_t<_Float16, 2>;
+using half4 = vector_t<_Float16, 4>;
+using half8 = vector_t<_Float16, 8>;
+
 using short2 = vector_t<short, 2>;
 using short4 = vector_t<short, 4>;
 using short8 = vector_t<short, 8>;

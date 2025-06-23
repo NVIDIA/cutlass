@@ -62,6 +62,17 @@ SYCL_EXTERNAL cute::intel::short4 intel_sub_group_bf16_bf16_matrix_mad_k16(cute:
 SYCL_EXTERNAL cute::intel::short2 intel_sub_group_bf16_bf16_matrix_mad_k16(cute::intel::short2 a, cute::intel::int8 b, cute::intel::short2 acc);
 SYCL_EXTERNAL               short intel_sub_group_bf16_bf16_matrix_mad_k16(              short a, cute::intel::int8 b,               short acc);
 
+// Use the spirv functions as the builtins do not work
+SYCL_EXTERNAL cute::intel::half8 __spirv_SubgroupMatrixMultiplyAccumulateINTEL(int32_t, cute::intel::short8, cute::intel::int8, cute::intel::half8, int32_t);
+SYCL_EXTERNAL cute::intel::half4 __spirv_SubgroupMatrixMultiplyAccumulateINTEL(int32_t, cute::intel::short4, cute::intel::int8, cute::intel::half4, int32_t);
+SYCL_EXTERNAL cute::intel::half2 __spirv_SubgroupMatrixMultiplyAccumulateINTEL(int32_t, cute::intel::short2, cute::intel::int8, cute::intel::half2, int32_t);
+SYCL_EXTERNAL cute::intel::half  __spirv_SubgroupMatrixMultiplyAccumulateINTEL(int32_t,               short, cute::intel::int8,  cute::intel::half, int32_t);
+
+struct SPIRV_MMAOperands {
+  static constexpr int SPIRV_MatrixAFp16 = 0x400;
+  static constexpr int SPIRV_MatrixBFp16 = 0x800;
+};
+
 namespace cute::detail
 {
 
@@ -95,6 +106,16 @@ struct XeSubgroupMatrixMultiplyAccumulate<bfloat16_t, bfloat16_t, bfloat16_t, bf
     auto operator()(ARegisters a, BRegisters b, CRegisters c) {
       return intel_sub_group_bf16_bf16_matrix_mad_k16(a, b, c);
     }
+};
+
+template<>
+struct XeSubgroupMatrixMultiplyAccumulate<half_t, half_t, half_t, half_t> {
+  template<typename ARegisters, typename BRegisters, typename CRegisters>
+  CUTE_HOST_DEVICE
+  auto operator()(ARegisters a, BRegisters b, CRegisters c) {
+    return __spirv_SubgroupMatrixMultiplyAccumulateINTEL(16, a, b, c,
+             SPIRV_MMAOperands::SPIRV_MatrixAFp16 | SPIRV_MMAOperands::SPIRV_MatrixBFp16);
+  }
 };
 
 template<>

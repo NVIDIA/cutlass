@@ -163,8 +163,10 @@ template <
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, void>, "ElementC needs to be float or bfloat for the Intel pipeline");
-      using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>,
+      static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, half_t, void>,
+        "ElementC needs to be one of: float, bfloat, half for the Intel pipeline");
+      
+      using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>, 
                                                   IntelXeXMX16,
                                                   EpilogueScheduleType>;
       static constexpr bool IsGroup = cute::is_same_v<EpilogueSchedule, IntelXeXMX16Group>;

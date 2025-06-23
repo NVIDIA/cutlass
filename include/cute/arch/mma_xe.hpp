@@ -286,10 +286,10 @@ struct XE_1x16x16_F32F16F16F32_TT
   using CRegisters = float[1];
 
   CUTE_HOST_DEVICE static void
-  fma(float      & d,
-      short const& a,
-      intel::int8  const& b,
-      float const& c)
+  fma(float            & d,
+      short       const& a,
+      intel::int8 const& b,
+      float       const& c)
   {
 #if defined(CUTE_ARCH_MMA_XE_ENABLED)
     d = detail::XeSubgroupMatrixMultiplyAccumulate<float, half_t, half_t, float>{}(a, b, c);
@@ -299,6 +299,89 @@ struct XE_1x16x16_F32F16F16F32_TT
   }
 };
 
+struct XE_8x16x16_F16F16F16F16_TT
+{
+  using DRegisters = intel::half8[1];
+  using ARegisters = intel::short8[1];
+  using BRegisters = intel::int8[1];
+  using CRegisters = intel::half8[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(intel::half8       & d,
+      intel::short8 const& a,
+      intel::int8   const& b,
+      intel::half8  const& c)
+  {
+#if defined(CUTE_ARCH_MMA_XE_ENABLED)
+    d = detail::XeSubgroupMatrixMultiplyAccumulate<half_t, half_t, half_t, half_t>{}(a, b, c);
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use XE_8x16x16_F16F16F16F16_TT on non-PVC hardware");
+#endif
+  }
+};
+
+struct XE_4x16x16_F16F16F16F16_TT
+{
+  using DRegisters = intel::half4[1];
+  using ARegisters = intel::short4[1];
+  using BRegisters = intel::int8[1];
+  using CRegisters = intel::half4[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(intel::half4       & d,
+      intel::short4 const& a,
+      intel::int8   const& b,
+      intel::half4  const& c)
+  {
+#if defined(CUTE_ARCH_MMA_XE_ENABLED)
+    d = detail::XeSubgroupMatrixMultiplyAccumulate<half_t, half_t, half_t, half_t>{}(a, b, c);
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use XE_4x16x16_F16F16F16F16_TT on non-PVC hardware");
+#endif
+  }
+};
+
+struct XE_2x16x16_F16F16F16F16_TT
+{
+  using DRegisters = intel::half2[1];
+  using ARegisters = intel::short2[1];
+  using BRegisters = intel::int8[1];
+  using CRegisters = intel::half2[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(intel::half2       & d,
+      intel::short2 const& a,
+      intel::int8   const& b,
+      intel::half2  const& c)
+  {
+#if defined(CUTE_ARCH_MMA_XE_ENABLED)
+  d = detail::XeSubgroupMatrixMultiplyAccumulate<half_t, half_t, half_t, half_t>{}(a, b, c);
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use XE_2x16x16_F16F16F16F16_TT on non-PVC hardware");
+#endif
+  }
+};
+
+struct XE_1x16x16_F16F16F16F16_TT
+{
+  using DRegisters = intel::half[1];
+  using ARegisters = short[1];
+  using BRegisters = intel::int8[1];
+  using CRegisters = intel::half[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(intel::half      & d,
+      short       const& a,
+      intel::int8 const& b,
+      intel::half const& c)
+  {
+#if defined(CUTE_ARCH_MMA_XE_ENABLED)
+    d = detail::XeSubgroupMatrixMultiplyAccumulate<half_t, half_t, half_t, half_t>{}(a, b, c);
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use XE_1x16x16_F16F16F16F16_TT on non-PVC hardware");
+#endif
+  }
+};
 //MxNxK_A,B,C,D
 //# of vector component of a x subgroup-size x function name
 //float8 intel_sub_group_i8_i8_matrix_mad_k16(short8 a, int8 b, float8 acc);

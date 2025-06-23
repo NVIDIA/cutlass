@@ -129,6 +129,7 @@ template <> struct pick_mma_atom<ElementAB, ElementCD> { \
 PICK_MMA(bfloat16_t, float, XE_8x16x16_F32BF16BF16F32_TT);
 PICK_MMA(bfloat16_t, bfloat16_t, XE_8x16x16_BF16BF16BF16BF16_TT);
 PICK_MMA(half_t, float, XE_8x16x16_F32F16F16F32_TT);
+PICK_MMA(half_t, half_t, XE_8x16x16_F16F16F16F16_TT);
 
 #undef PICK_MMA
 }
@@ -171,7 +172,8 @@ struct CollectiveBuilder<
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_any_of_v<ElementAccumulator, float, bfloat16_t>, "Intel multi-stage pipeline requires ElementC to be of type float or bfloat");
+      static_assert(cute::is_any_of_v<ElementAccumulator, float, bfloat16_t, half_t>,
+        "Intel multi-stage pipeline requires ElementC to be of type float, bfloat or half");
 
       using MMAAtom = typename pick_mma_atom<ElementA, ElementAccumulator>::atom;
 
