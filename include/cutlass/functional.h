@@ -103,6 +103,14 @@ namespace detail {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
+struct identity_value_op {
+  CUTLASS_HOST_DEVICE
+  T operator()(T lhs) const {
+    return lhs;
+  }
+};
+
+template <typename T>
 struct absolute_value_op {
   CUTLASS_HOST_DEVICE
   T operator()(T lhs) const {

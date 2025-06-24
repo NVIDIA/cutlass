@@ -257,7 +257,9 @@ template <
   // Type of tile scheduler to use
   class TileSchedulerType = cutlass::gemm::PersistentScheduler,
   // Do we use custom epilogue visitor tree (EVT) fusion
-  bool UseCustomEVT = false
+  bool UseCustomEVT = false,
+  // Do we use custom epilogue visitor tree (EVT) fusion with identity op
+  bool UseCustomEVTIdentity = false
 >
 struct ExampleRunner {
 
@@ -288,7 +290,7 @@ struct ExampleRunner {
 
   // EVTs can be constructed by composing the fundamental load/store/compute visitor operations defined in include/cutlass/epilogue/fusion
   // For more complex examples of EVT construction please refer to include/cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp
-  using CustomEVT =  // alpha * acc + beta * C
+  using CustomEVTLinearCombation =  // alpha * acc + beta * C
     cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::homogeneous_multiply_add, ElementD, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
       cutlass::epilogue::fusion::Sm90ScalarBroadcast<ElementScalar>, // beta
       cutlass::epilogue::fusion::Sm90SrcFetch<ElementC>, // C
@@ -297,6 +299,14 @@ struct ExampleRunner {
         cutlass::epilogue::fusion::Sm90AccFetch // acc
       >
     >;
+  
+  using CustomEVTIdentity =  // acc
+    cutlass::epilogue::fusion::Sm90EVT<
+      cutlass::epilogue::fusion::Sm90Compute<cutlass::identity_value_op, ElementD, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
+      cutlass::epilogue::fusion::Sm90AccFetch
+    >;
+  
+  using CustomEVT = std::conditional_t<UseCustomEVTIdentity, CustomEVTIdentity, CustomEVTLinearCombation>;
 
   // A predefined set of fusion operations (implemented with EVT) are supported by the TMA warp-specialized epilogue.
   // Users can select one of these operations by passing one of the tags defined in include/cutlass/epilogue/fusion/operations.hpp
@@ -450,17 +460,25 @@ struct ExampleRunner {
     // For more complex examples of EVT initialization please refer to
     // include/cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp
     if constexpr (UseCustomEVT) {
-      arguments.epilogue.thread =
-        {    // ternary op : beta * C + (alpha * acc)
-          {{options.beta}}, // leaf op+args : beta
-          {},               // leaf op+args : C
-          {                 // binary op : alpha * acc
-            {{options.alpha}}, // leaf op+args : alpha
-            {},                // leaf op+args : acc
-            {}              // binary args : multiplies
-          },                // end binary op
-          {} // ternary args : multiply_add
-        };   // end ternary op
+      if constexpr (UseCustomEVTIdentity) {
+        arguments.epilogue.thread =
+          {    // unitary op : acc
+            {}, // leaf op+args : acc
+            {}  // identify
+          };   // end unitary op
+      } else {
+        arguments.epilogue.thread =
+          {    // ternary op : beta * C + (alpha * acc)
+            {{options.beta}}, // leaf op+args : beta
+            {},               // leaf op+args : C
+            {                 // binary op : alpha * acc
+              {{options.alpha}}, // leaf op+args : alpha
+              {},                // leaf op+args : acc
+              {}              // binary args : multiplies
+            },                // end binary op
+            {} // ternary args : multiply_add
+          };   // end ternary op
+      }
     }
     // Pre-defined fusions will have flat, named args for user-friendlyness
     else {
@@ -652,7 +670,18 @@ int main(int argc, char const **args) {
     true> ws_cooperative_schedule_auto_stage_custom_evt_runner;
   passed = ws_cooperative_schedule_auto_stage_custom_evt_runner.run(options, hw_info);
   print_result("Cooperative warp-specialized TMA schedule using custom epilogue visitor tree with automatically-selected stage count", passed);
-
+  
+  options.alpha = 1.f;
+  options.beta = 0.f;
+  ExampleRunner<
+    cutlass::gemm::KernelTmaWarpSpecializedCooperative,
+    cutlass::epilogue::TmaWarpSpecializedCooperative,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::PersistentScheduler,
+    true, true> ws_cooperative_schedule_auto_stage_custom_evt_identity_runner;
+  passed = ws_cooperative_schedule_auto_stage_custom_evt_identity_runner.run(options, hw_info);
+  print_result("Cooperative warp-specialized TMA schedule using custom epilogue visitor tree(Identity Op) with automatically-selected stage count", passed);
+  
 #endif
 
   return 0;
