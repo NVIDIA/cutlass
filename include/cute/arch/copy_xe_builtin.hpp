@@ -494,6 +494,7 @@ SYCL_DEVICE_BUILTIN(
 
 namespace cute::detail
 {
+ 
 template<>
 struct XeSubgroup2DBlockLoad<1, 16, 1, 1> {
     template<typename T>

@@ -199,10 +199,29 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
   };
   PagedKVParams paged_kv_cache;
 
+  template <typename SrcT, typename DstT>
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+    syclcompat::get_default_queue().parallel_for(size, [=](auto indx) {
+      d_dst[indx] = static_cast<DstT>(d_src[indx]);
+    }).wait();
+  }
+
+  template <typename T>
+  static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
+
+  template <typename Tin> inline auto in_memory(cutlass::DeviceAllocation<Tin>& in) {
+    using outType = cutlass::DeviceAllocation<cute::conditional_t<is_fp8_v<Tin>, half_t, Tin>>;
+    if constexpr(is_fp8_v<Tin>) {
+      cutlass::DeviceAllocation<half_t> out(in.size());
+      convert_fp8_to_fp16<Tin, half_t>(in.get(), out.get(), in.size());
+      return out;
+    } else { 
+      return in;
+    };
+  }
   //
   // Methods
   //
-
   bool verify(ProblemShapeType problem_size, bool is_causal, bool use_kv_cache) {
 
     if constexpr (isVarLen) {
@@ -216,7 +235,11 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
 
     auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,6,7>(problem_size);
     int seq_len_qo, seq_len_kv, seq_len_kv_cache;
-
+    auto block_Q_ = in_memory(block_Q);
+    auto block_K_ = in_memory(block_K);
+    auto block_V_ = in_memory(block_V);
+    using ElementK_ = cute::conditional_t<is_fp8_v<ElementK>, half_t, ElementK>;
+    using ElementV_ = cute::conditional_t<is_fp8_v<ElementV>, half_t, ElementV>;
     int offset_q = 0;
     int offset_k = 0;
     int offset_v = 0;
@@ -245,34 +268,36 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
         cutlass::DeviceAllocation<ElementAccumulator> block_S;
         block_S.reset(seq_len_qo * seq_len_kv_total);
 
-        ElementK* k_ptr;
-        ElementV* v_ptr;
+        ElementK_* k_ptr;
+        ElementV_* v_ptr;
 
         if (use_kv_cache) {
-            cutlass::DeviceAllocation<ElementK> block_K_concat(head_size_qk * seq_len_kv_total);
-            cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
+            auto block_K_cache_ =in_memory(block_K_cache);
+            auto block_V_cache_ =in_memory(block_V_cache);
+            cutlass::DeviceAllocation<ElementK_> block_K_concat(head_size_qk * seq_len_kv_total);
+            cutlass::DeviceAllocation<ElementV_> block_V_concat(seq_len_kv_total * head_size_vo);
 
             // Concatenate K_cache and K
-            syclcompat::memcpy<ElementK>(
+            syclcompat::memcpy<ElementK_>(
                 block_K_concat.get(),
-                block_K_cache.get() + offset_k_cache,
+                block_K_cache_.get() + offset_k_cache,
                 seq_len_kv_cache * head_size_qk
             );
-            syclcompat::memcpy<ElementK>(
+            syclcompat::memcpy<ElementK_>(
                 block_K_concat.get() + seq_len_kv_cache * head_size_qk,
-                block_K.get() + offset_k,
+                block_K_.get() + offset_k,
                 seq_len_kv * head_size_qk
             );
 
             // Concatenate V_cache and V
-            syclcompat::memcpy<ElementV>(
+            syclcompat::memcpy<ElementV_>(
                 block_V_concat.get(),
-                block_V_cache.get() + offset_v_cache,
+                block_V_cache_.get() + offset_v_cache,
                 seq_len_kv_cache * head_size_vo
             );
-            syclcompat::memcpy<ElementV>(
+            syclcompat::memcpy<ElementV_>(
                 block_V_concat.get() + seq_len_kv_cache * head_size_vo,
-                block_V.get() + offset_v,
+                block_V_.get() + offset_v,
                 seq_len_kv * head_size_vo
             );
             syclcompat::wait();
@@ -281,11 +306,11 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
             v_ptr = block_V_concat.get();
         }
         else {
-            k_ptr = block_K.get() + offset_k;
-            v_ptr = block_V.get() + offset_v;
+            k_ptr = block_K_.get() + offset_k;
+            v_ptr = block_V_.get() + offset_v;
         }
 
-        cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
+        cutlass::TensorRef ref_Q(block_Q_.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
         cutlass::TensorRef ref_K(k_ptr, LayoutK::packed({head_size_qk, seq_len_kv_total}));
         cutlass::TensorRef ref_V(v_ptr, LayoutV::packed({seq_len_kv_total, head_size_vo}));
         cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
@@ -365,14 +390,14 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
           }
         }
 
-        std::vector<ElementV> host_P(host_S.size());
+        std::vector<ElementV_> host_P(host_S.size());
         for (int p = 0; p < host_P.size(); p++)
-          host_P[p] = static_cast<ElementV>(host_S[p]);
+          host_P[p] = static_cast<ElementV_>(host_S[p]);
 
-        cutlass::DeviceAllocation<ElementV> block_P;
+        cutlass::DeviceAllocation<ElementV_> block_P;
         block_P.reset(host_P.size());
 
-        syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+        syclcompat::memcpy<ElementV_>(block_P.get(), host_P.data(), host_P.size());
         syclcompat::wait();
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
@@ -569,10 +594,10 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
       syclcompat::memcpy(paged_kv_cache.num_pages_per_seq.get(), num_pages_per_seq.data(), num_pages_per_seq.size() * sizeof(int));
       syclcompat::wait();
     }
-
-    initialize_block(block_Q, seed + 2023);
+    
+    initialize_block(block_Q, seed + 2021);
     initialize_block(block_K, seed + 2022);
-    initialize_block(block_V, seed + 2021);
+    initialize_block(block_V, seed + 2023);
     initialize_block(block_K_cache, seed + 2024);
     initialize_block(block_V_cache, seed + 2025);
 
@@ -716,9 +741,24 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
   }
 };
 
-template <bool Causal, bool PagedKV, typename TileShapeQK, typename TileShapePV, typename TileShapeOutput,
-          typename SubgroupLayout, bool isVarLen>
-struct FMHAConfig {
+template <bool Causal, 
+          bool PagedKV,
+          typename TileShapeQK, 
+          typename TileShapePV, 
+          typename TileShapeOutput, 
+          typename SubgroupLayout, 
+          bool isVarLen,
+          int PipelineStages = 2,
+          typename ElementInputQ = bfloat16_t, 
+          typename ElementInputKV = bfloat16_t, 
+          typename MMAOperation = XE_1x16x16_F32BF16BF16F32_TT,
+          typename GmemTiledCopyQ = XE_2D_U16x1x16_LD_N,
+          typename GmemTiledCopyK = XE_2D_U16x16x16_LD_T, // _T designates a transposed block load operation
+          typename GmemTiledCopyV = XE_2D_U16x32x32_LD_V,
+          typename ElementAccumulator = float,
+          typename ElementComputeEpilogue = float,
+          typename ElementOutput = float,
+          typename GmemTiledCopyStore = XE_2D_U32x1x16_ST_N> struct FMHAConfig {
 
   template <class Scheduler = cutlass::flash_attention::FlashDecodeIndividualScheduler>
   static int run(const Options &options) {
@@ -729,24 +769,8 @@ struct FMHAConfig {
     // The KernelHardwareInfo struct holds the number of EUs on the GPU with a given device ID. This
     // information is used by the underlying kernel.
     cutlass::KernelHardwareInfo hw_info;
-
-    // The code section below describes datatype for input, output matrices and computation between
-    // elements in input matrices.
-    using ElementAccumulator = float;     // <- data type of accumulator
-    using ElementComputeEpilogue = float; // <- data type of epilogue operations
-    using ElementInputQ = bfloat16_t;     // <- data type of elements in input matrix A
-    using ElementInputKV = bfloat16_t;    // <- data type of elements in input matrix B
-    using ElementOutput = float;          // <- data type of elements in output matrix D
-
-    constexpr int PipelineStages = 2;
     using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
-
-    using MMAOperation = XE_1x16x16_F32BF16BF16F32_TT;
-    using GmemTiledCopyQ = XE_2D_U16x1x16_LD_N;
-    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
-    using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
-    using GmemTiledCopyStore = XE_2D_U32x1x16_ST_N;
     using CollectiveEpilogue = cutlass::flash_attention::collective::FlashDecodeEpilogue<
         EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementComputeEpilogue, ElementOutput, cutlass::gemm::TagToStrideC_t<LayoutO>,
         ElementOutput, GmemTiledCopyStore>;

@@ -37,6 +37,7 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
+#include "cutlass/fp8_to_fp16.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -150,6 +151,8 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
   using val_layout_load_K = decltype(make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{})));
   using XE_Copy_K = decltype(make_tiled_copy(atom_load_K{}, Layout<CopyThreadShape>{}, val_layout_load_K{}));
 
+  template <typename T>
+  static constexpr bool is_fp8_v = cute::is_any_of_v<T, float_e4m3_t, float_e5m2_t>;
   using traits_load_V = Copy_Traits<GmemTiledCopyV, StrideV>;
   using atom_load_V = Copy_Atom<traits_load_V, ElementV>;
   using val_layout_load_V = decltype(make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{})));
@@ -238,9 +241,11 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     Tensor tCgK = thread_mma_k.partition_B(gK);
 
     // Create fragments
-    Tensor tCrQ = make_tensor<ElementQ>(make_fragment_layout(params.gmem_tiled_copy_q, take<0,3>(tCgQ.shape())));
-    Tensor tCrK = make_tensor<ElementK>(make_fragment_layout(gmem_tiled_copy_k, take<0,3>(tCgK.shape())));
-    
+    using TCrQ_Type = cute::conditional_t<is_fp8_v<ElementQ>, uint8_t, ElementQ>;
+    using TCrK_Type = cute::conditional_t<is_fp8_v<ElementQ>, uint8_t, ElementK>;
+    Tensor tCrQ = make_tensor<TCrQ_Type>(make_fragment_layout(params.gmem_tiled_copy_q, take<0,3>(tCgQ.shape())));
+    Tensor tCrK = make_tensor<TCrK_Type>(make_fragment_layout(gmem_tiled_copy_k, take<0,3>(tCgK.shape())));
+
     // Retile registers for copies
     Tensor tQrQ = thr_copy_Q.retile_D(tCrQ);
     Tensor tKrK = thr_copy_K.retile_D(tCrK);
@@ -281,7 +286,23 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       copy(params.gmem_tiled_copy_q, tQgQ(_,_,_,k_tile), tQrQ);
       copy(gmem_tiled_copy_k, tKgK(_,_,_,k_tile), tKrK);
-      cute::gemm(tiled_mma, accum, tCrQ, tCrK, frag_src);
+      if constexpr (is_fp8_v<ElementQ> && is_fp8_v<ElementK>) {
+        auto tCrQ_ = make_fragment_like<half_t>(tCrQ);
+        convert_FP8_to_FP16<ElementQ>(tCrQ, tCrQ_);
+        auto tCrK_ = make_fragment_like<half_t>(tCrK);
+        convert_FP8_to_FP16<ElementK>(tCrK, tCrK_);
+        cute::gemm(tiled_mma, accum, tCrQ_, tCrK_, frag_src);
+      } else if constexpr (is_fp8_v<ElementQ> && !is_fp8_v<ElementK>) {
+        auto tCrQ_ = make_fragment_like<half_t>(tCrQ);
+        convert_FP8_to_FP16<ElementQ>(tCrQ, tCrQ_);
+        cute::gemm(tiled_mma, accum, tCrQ_ , tCrK, frag_src);
+      } else if constexpr (!is_fp8_v<ElementQ> && is_fp8_v<ElementK>) {
+        auto tCrK_ = make_fragment_like<half_t>(tCrK);
+        convert_FP8_to_FP16<ElementK>(tCrK, tCrK_);
+        cute::gemm(tiled_mma, accum, tCrQ , tCrK_, frag_src);
+      } else {
+        cute::gemm(tiled_mma, accum, tCrQ , tCrK, frag_src);
+      }
     }
   }
 
@@ -300,8 +321,8 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     // convert X*512|1024 to 32*64*x*8|16 and use (_, sg.get_group_id()[0] / ATOM_N) to index in the (x,8|16) coordinate
     Tensor gV_ = take<0,3>(local_tile(gV, select<1,2>(SubgroupTileShapePV{}), make_coord(_, kv_tile_idx)));
     Tensor tCgV = thread_mma.partition_B(gV_);
-    Tensor tCrV = make_tensor<ElementV>(make_fragment_layout(gmem_tiled_copy_v, take<0, 3>(tCgV.shape())));
-
+    using TCrV_Type = cute::conditional_t<is_fp8_v<ElementV>, uint8_t, ElementV>;
+    Tensor tCrV = make_tensor<TCrV_Type>(make_fragment_layout(gmem_tiled_copy_v, take<0, 3>(tCgV.shape())));
     auto gmem_thr_copy_V = gmem_tiled_copy_v.get_slice(thread_idx);
     Tensor tVrV = gmem_thr_copy_V.retile_D(tCrV);
     Tensor tVgV = gmem_thr_copy_V.retile_S(tCgV);
@@ -335,7 +356,13 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     for(int v = 0; v < tile_count; v++) {
       int v_coord = v + (sg.get_group_id()[0] % ATOM_N) * ATOM_N;
       copy(gmem_tiled_copy_v, tVgV(_,_,_,v_coord), tVrV);
-      cute::gemm(tiled_mma, accum(_,_,_,v), tPr, tCrV, frag_src(_,_,_,v));
+      if constexpr (is_fp8_v<ElementV>) {
+        auto tCrV_ = make_fragment_like<half_t>(tCrV);
+        convert_FP8_to_FP16<ElementV>(tCrV, tCrV_);
+        cute::gemm(tiled_mma, accum(_,_,_,v), tPr, tCrV_, frag_src(_,_,_,v));
+      } else {
+        cute::gemm(tiled_mma, accum(_,_,_,v), tPr, tCrV, frag_src(_,_,_,v));
+      }    
     }
   }
 
