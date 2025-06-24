@@ -40,7 +40,6 @@
 #include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
-
 #include <cute/tensor.hpp>
 #include <random>
 
@@ -171,7 +170,28 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
 
-  //
+
+  template <typename SrcT, typename DstT>
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+    syclcompat::get_default_queue().parallel_for(size, [=](auto indx) {
+      d_dst[indx] = static_cast<DstT>(d_src[indx]);
+    }).wait();
+  }
+
+  template <typename T>
+  static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
+
+  template <typename Tin> inline auto in_memory(cutlass::DeviceAllocation<Tin>& in) {
+    using outType = cute::conditional_t<is_fp8_v<Tin>, half_t, Tin>;
+    if constexpr(is_fp8_v<Tin>) {
+      cutlass::DeviceAllocation<outType> out(in.size());
+      convert_fp8_to_fp16<Tin, outType>(in.get(), out.get(), in.size());
+      return out;
+    } else { 
+      return in;
+    };
+  }
+   //
   // Methods
   //
 
@@ -187,6 +207,11 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
     auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,5,6>(problem_size);
     int seq_len_qo, seq_len_kv;
 
+    auto block_Q_ = in_memory(block_Q);
+    auto block_K_ = in_memory(block_K);
+    auto block_V_ = in_memory(block_V);
+    using ElementV_ = cute::conditional_t<is_fp8_v<ElementV>, half_t, ElementV>;
+    
     int offset_q = 0;
     int offset_k = 0;
     int offset_v = 0;
@@ -208,9 +233,9 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
         cutlass::DeviceAllocation<ElementOutput> block_S;
         block_S.reset(seq_len_qo * seq_len_kv);
 
-        cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
-        cutlass::TensorRef ref_K(block_K.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
-        cutlass::TensorRef ref_V(block_V.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
+        cutlass::TensorRef ref_Q(block_Q_.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
+        cutlass::TensorRef ref_K(block_K_.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
+        cutlass::TensorRef ref_V(block_V_.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
         cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
         cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
@@ -287,14 +312,14 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
           }
         }
 
-        std::vector<ElementV> host_P(host_S.size());
+        std::vector<ElementV_> host_P(host_S.size());
         for (int p = 0; p < host_P.size(); p++)
-          host_P[p] = static_cast<ElementV>(host_S[p]);
+          host_P[p] = static_cast<ElementV_>(host_S[p]);
 
-        cutlass::DeviceAllocation<ElementV> block_P;
+        cutlass::DeviceAllocation<ElementV_> block_P;
         block_P.reset(host_P.size());
 
-        syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+        syclcompat::memcpy<ElementV_>(block_P.get(), host_P.data(), host_P.size());
         syclcompat::wait();
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
@@ -560,8 +585,23 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
     return cutlass::Status::kSuccess;
   }
 };
-
-template <bool Causal, typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, int PipelineStages> struct FMHAConfig {
+// the default  value used for the case BF16
+template <bool Causal, 
+          typename TileShapeQK, 
+          typename TileShapePV, 
+          typename TileShapeOutput, 
+          typename SubgroupLayout, 
+          int PipelineStages,
+          typename ElementInputQ = bfloat16_t, 
+          typename ElementInputKV = bfloat16_t, 
+          typename MMAOperation = XE_8x16x16_F32BF16BF16F32_TT,
+          typename GmemTiledCopyQ = XE_2D_U16x8x32_LD_N,
+          typename GmemTiledCopyK = XE_2D_U16x16x16_LD_T, // _T designates a transposed block load operation
+          typename GmemTiledCopyV = XE_2D_U16x16x32_LD_V,
+          typename ElementAccumulator = float,
+          typename ElementComputeEpilogue = float,
+          typename ElementOutput = float,
+          typename GmemTiledCopyStore = XE_2D_U32x8x16_ST_N> struct FMHAConfig {
 
   template <bool isVarLen, class Scheduler>
   static int run(const Options &options) {
@@ -575,18 +615,9 @@ template <bool Causal, typename TileShapeQK, typename TileShapePV, typename Tile
 
     // The code section below describes datatype for input, output matrices and computation between
     // elements in input matrices.
-    using ElementAccumulator = float;     // <- data type of accumulator
-    using ElementComputeEpilogue = float; // <- data type of epilogue operations
-    using ElementInputQ = bfloat16_t;     // <- data type of elements in input matrix A
-    using ElementInputKV = bfloat16_t;    // <- data type of elements in input matrix B
-    using ElementOutput = float;          // <- data type of elements in output matrix D
-    using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
-    using MMAOperation = XE_8x16x16_F32BF16BF16F32_TT;
-    using GmemTiledCopyQ = XE_2D_U16x8x32_LD_N;
-    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
-    using GmemTiledCopyV = XE_2D_U16x16x32_LD_V;
-    using GmemTiledCopyStore = XE_2D_U32x8x16_ST_N;
+    using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
     using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
         EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
         GmemTiledCopyStore>;
