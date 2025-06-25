@@ -61,24 +61,24 @@ struct scale_zero_copy_traits<datatype, N, stride,
 // 8 bits
 template<class datatype, class stride>
 struct scale_zero_copy_traits<datatype, 16, stride,
-          std::enable_if_t<sizeof_bits_v<datatype> == 8 && cute::detail::is_stride_leftmost<stride>>> {
+          std::enable_if_t<sizeof_bits_v<datatype> == 8>> {
   using type = XE_2D_U8x1x16_LD_N;
 };
 template<class datatype, size_t N, class stride>
 struct scale_zero_copy_traits<datatype, N, stride,
-          std::enable_if_t<sizeof_bits_v<datatype> == 8 && N >= 32 && cute::detail::is_stride_leftmost<stride>>> {
+          std::enable_if_t<sizeof_bits_v<datatype> == 8 && N >= 32>> {
   using type = XE_2D_U8x1x16_LD_N;  // XE_2D_U8x1x32_LD_N not work, use this instead
 };
 
 // 16 bits
 template<class datatype, class stride>
 struct scale_zero_copy_traits<datatype, 16, stride,
-          std::enable_if_t<sizeof_bits_v<datatype> == 16 && cute::detail::is_stride_leftmost<stride>>> {
+          std::enable_if_t<sizeof_bits_v<datatype> == 16>> {
   using type = XE_2D_U16x1x16_LD_N;
 };
 template<class datatype, size_t N, class stride>
 struct scale_zero_copy_traits<datatype, N, stride,
-          std::enable_if_t<sizeof_bits_v<datatype> == 16 && N >= 32 && cute::detail::is_stride_leftmost<stride>>> {
+          std::enable_if_t<sizeof_bits_v<datatype> == 16 && N >= 32>> {
   using type = XE_2D_U16x1x32_LD_N;
 };
 
@@ -218,7 +218,7 @@ public:
   static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
   
-  using GmemTiledCopyScale = typename scale_zero_copy_traits<NonVoidElementScale, SG_N, NonVoidStrideScale>::type;
+  using GmemTiledCopyScale = typename scale_zero_copy_traits<NonVoidElementScale, SG_N>::type;
   using GmemTiledCopyZero = typename scale_zero_copy_traits<NonVoidElementZero, SG_N, NonVoidStrideZero>::type;
 
   static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
@@ -242,7 +242,7 @@ public:
   using val_layout_load_scale = decltype(make_layout(shape_div(typename traits_load_scale::BlockShape{}, CopyThreadShapeRev{}))); 
   using Copy_Scale = decltype(make_tiled_copy(atom_load_scale{}, Layout<CopyThreadShapeRev>{}, val_layout_load_scale{}));
   
-  using traits_load_zero = Copy_Traits<GmemTiledCopyZero, NonVoidStrideZero>;
+  using traits_load_zero = Copy_Traits<GmemTiledCopyZero, NonVoidStrideScale>;
   using atom_load_zero = Copy_Atom<traits_load_zero, NonVoidElementZero>;
   using val_layout_load_zero = decltype(make_layout(shape_div(typename traits_load_zero::BlockShape{}, CopyThreadShapeRev{}))); 
   using Copy_Zero = decltype(make_tiled_copy(atom_load_zero{}, Layout<CopyThreadShapeRev>{}, val_layout_load_zero{}));
@@ -255,9 +255,9 @@ public:
     StrideB dB;
     NonVoidElementScale const* ptr_S = nullptr;
     NonVoidStrideScale dS{};
+    NonVoidElementZero const* ptr_Z = nullptr;
     NonVoidStrideZero dZ{};
     int group_size = 1;
-    NonVoidElementZero const* ptr_Z = nullptr;
   };
 
   struct Params {
@@ -676,7 +676,7 @@ public:
                            make_layout(make_shape(_2{}, _1{}, _1{}, k_tile_count),
                                        make_stride(E<0>{} * _16{}, E<0>{} * _32{}, _0{}, E<1>{} * _1{})));
       }else{
-        return make_tensor(make_inttuple_iter(make_coord(n_coord, 0, l_coord)),
+        return make_tensor(make_inttuple_iter(make_coord(n_coord * zero_elements_packed_along_k, 0, l_coord)),
                            make_layout(make_shape(Int<zero_traits_size>{}, Int<zero_traits_num>{}, _1{}, k_tile_count),
                                        make_stride(E<0>{} * _16{}, E<0>{} * size<1>(typename GmemTiledCopyZero::BlockShape{}), _0{}, E<1>{} * _1{})));
       }

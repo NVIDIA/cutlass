@@ -436,7 +436,7 @@ struct ExampleRunner {
         cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
         {block_A.get(), stride_A, block_B.get(), stride_B, block_scale.get(),
-         stride_S, stride_Z, options.g, block_zero.get()},
+         stride_S, block_zero.get(), stride_Z, options.g},
         {{options.alpha, options.beta},
          block_C.get(),
          stride_C,
