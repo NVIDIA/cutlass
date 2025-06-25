@@ -43,6 +43,8 @@
 
 #include "collective/fmha_common.hpp"
 
+#include <cmath>
+
 namespace cutlass::fmha::kernel {
 
 using namespace cutlass::fmha::collective;
@@ -50,6 +52,7 @@ using namespace cutlass::fmha::collective;
 using namespace cute;
 
 template<
+    class ProblemShape,
     class Element,
     class ElementAcc,
     class TileShape,
@@ -274,7 +277,6 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static constexpr int SharedStorageSize = offsetof(SharedStorage, tmem_base_ptr) + sizeof(uint32_t);
   static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "using too much smem");
 
-  using ProblemShape = Shape<int, int, int, Shape<int, int>>;  // Q K D (H B), eventuall D = (D_QK, D_VO)
   using TensorStride = TensorStrideContiguousK;  // S D (H B)
   using RowTensorStride = Stride<_1, Stride<int, int>>;    // S (H B)
 
@@ -360,7 +362,16 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
 
   static Params to_underlying_arguments(Arguments const& args, void*) {
-    auto [Q, K, D, HB] = args.problem_shape;
+    auto [Q_, K_, D, HB] = args.problem_shape;
+    int Q = Q_;
+    int K = K_;
+
+    if constexpr (is_variable_length_v<decltype(Q_)>) {
+      Q = Q_.total_length;
+    }
+    if constexpr (is_variable_length_v<decltype(K_)>) {
+      K = K_.total_length;
+    }
 
     auto params_kq = CollectiveMmaKQ::to_underlying_arguments(
       make_shape(K, Q, D, HB),
@@ -378,7 +389,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     TMA_DQ tma_red_dq = make_tma_copy(
         SM90_TMA_REDUCE_ADD{},
-        make_tensor(args.mainloop.ptr_dq_acc, make_shape(Q, D, HB), args.mainloop.stride_dq_acc),
+        make_tensor(args.mainloop.ptr_dq_acc, make_shape(Q_, D, HB), args.mainloop.stride_dq_acc),
         SmemLayoutDQ{}(_, _, _0{})
     );
 
@@ -416,10 +427,11 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   }
 
 
-  template<class BlkCoord>
+  template<class BlkCoord, class BlkOffset, class ProblemShape_>
   CUTLASS_DEVICE void load(
       BlkCoord const& blk_coord,
-      ProblemShape const& problem_shape,
+      BlkOffset const& blk_offset,
+      ProblemShape_ const& problem_shape,
       int iter_index,
       int iter_count,
       MainloopArguments const& mainloop_args,
@@ -440,10 +452,15 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     uint16_t mcast_mask = 0;
 
-    auto mK = mainloop_params.tma_load_k.get_tma_tensor(make_shape(K, D, HB));
-    auto mQ = mainloop_params.tma_load_q.get_tma_tensor(make_shape(Q, D, HB));
-    auto mV = mainloop_params.tma_load_v.get_tma_tensor(make_shape(K, D, HB));
-    auto mDO = mainloop_params.tma_load_do.get_tma_tensor(make_shape(Q, D, HB));
+    auto mK_in = mainloop_params.tma_load_k.get_tma_tensor(make_shape(K, D, HB));
+    auto mV_in = mainloop_params.tma_load_v.get_tma_tensor(make_shape(K, D, HB));
+    auto mQ_in = mainloop_params.tma_load_q.get_tma_tensor(make_shape(Q, D, HB));
+    auto mDO_in = mainloop_params.tma_load_do.get_tma_tensor(make_shape(Q, D, HB));
+
+    auto mK = domain_offset(select<1,2,3>(blk_offset), mK_in);
+    auto mV = domain_offset(select<1,2,3>(blk_offset), mV_in);
+    auto mQ = domain_offset(select<0,2,3>(blk_offset), mQ_in);
+    auto mDO = domain_offset(select<0,2,3>(blk_offset), mDO_in);
 
     auto gK = local_tile(mK, TileShapeKQ{}, make_coord(_,_,_), Step<_1, X, _1>{});
     auto gQ = local_tile(mQ, TileShapeKQ{}, make_coord(_,_,_), Step<X, _1, _1>{});
@@ -478,7 +495,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     // set up lse and sum_odo
 
-    auto [blk_coord_q, blk_coord_k, blk_coord_batch] = blk_coord;
+    auto [blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch] = blk_coord;
 
     pipeline_load_mma_q.producer_acquire(pipeline_load_mma_q_producer_state);
     auto tma_barrier = pipeline_load_mma_q.producer_get_barrier(pipeline_load_mma_q_producer_state);
@@ -515,11 +532,13 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     int smem_idx = TileShapeQ{} * pipeline_load_compute_lse_producer_state.index() + thread_idx * 4;
     int gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
     auto mLSE = make_tensor(mainloop_args.ptr_lse, make_shape(Q, HB), mainloop_args.stride_lse);
-    cutlass::arch::cp_async_zfill<16>(
-        shared_tensors.smem_lse.begin() + smem_idx,
-        &mLSE(gmem_idx, blk_coord_batch),
-         gmem_idx < Q
-    );
+    for (int i = 0; i < 4; i++) {
+      cutlass::arch::cp_async_zfill<4>(
+          shared_tensors.smem_lse.begin() + smem_idx + i,
+          &mLSE(gmem_idx + i, blk_coord_batch),
+          gmem_idx + i < Q
+      );
+    }
 
     pipeline_load_compute_lse.producer_commit(pipeline_load_compute_lse_producer_state, cutlass::arch::cpasync_barrier_arrive);
     ++pipeline_load_compute_lse_producer_state;
@@ -556,11 +575,13 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     smem_idx = TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index() + thread_idx * 4;
     gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
     auto mSumOdO = make_tensor(mainloop_args.ptr_sum_odo, make_shape(Q, HB), mainloop_args.stride_sum_odo);
-    cutlass::arch::cp_async<16>(
-        shared_tensors.smem_sum_odo.begin() + smem_idx,
-        &mSumOdO(gmem_idx, blk_coord_batch),
-        gmem_idx < Q
-    );
+    for (int i = 0; i < 4; i++) {
+      cutlass::arch::cp_async_zfill<4>(
+          shared_tensors.smem_sum_odo.begin() + smem_idx + i,
+          &mSumOdO(gmem_idx + i, blk_coord_batch),
+          gmem_idx + i < Q
+      );
+    }
 
     pipeline_load_compute_sum_odo.producer_commit(pipeline_load_compute_sum_odo_producer_state, cutlass::arch::cpasync_barrier_arrive);
     ++pipeline_load_compute_sum_odo_producer_state;
@@ -588,11 +609,13 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       // load LSE
       smem_idx = TileShapeQ{} * pipeline_load_compute_lse_producer_state.index() + thread_idx * 4;
       gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
-      cutlass::arch::cp_async<16>(
-          shared_tensors.smem_lse.begin() + smem_idx,
-          &mLSE(gmem_idx, blk_coord_batch),
-          gmem_idx < Q
-      );
+      for (int i = 0; i < 4; i++) {
+        cutlass::arch::cp_async_zfill<4>(
+            shared_tensors.smem_lse.begin() + smem_idx + i,
+            &mLSE(gmem_idx + i, blk_coord_batch),
+            gmem_idx + i < Q
+        );
+      }
 
       pipeline_load_compute_lse.producer_commit(pipeline_load_compute_lse_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_load_compute_lse_producer_state;
@@ -616,11 +639,13 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       // load sum_OdO
       smem_idx = TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index() + thread_idx * 4;
       gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
-      cutlass::arch::cp_async_zfill<16>(
-          shared_tensors.smem_sum_odo.begin() + smem_idx,
-          &mSumOdO(gmem_idx, blk_coord_batch),
-          gmem_idx < Q
-      );
+      for (int i = 0; i < 4; i++) {
+        cutlass::arch::cp_async_zfill<4>(
+            shared_tensors.smem_sum_odo.begin() + smem_idx + i,
+            &mSumOdO(gmem_idx + i, blk_coord_batch),
+            gmem_idx + i < Q
+        );
+      }
 
       pipeline_load_compute_sum_odo.producer_commit(pipeline_load_compute_sum_odo_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_load_compute_sum_odo_producer_state;
@@ -631,10 +656,10 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   }
 
 
-  template<class BlkCoord>
+  template<class BlkCoord, class ProblemShape_>
   CUTLASS_DEVICE void mma(
       BlkCoord const& blk_coord,
-      ProblemShape const& problem_shape,
+      ProblemShape_ const& problem_shape,
       int iter_index,
       int iter_count,
       MainloopArguments const& mainloop_args,
@@ -940,24 +965,83 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   }
 
 
-  template<class BlkCoord>
+  template<class BlkCoord, class BlkOffset, class ProblemShape_>
+  CUTLASS_DEVICE void epilogue_clear(
+      BlkCoord const& blk_coord,
+      BlkOffset const& blk_offset,
+      ProblemShape_ const& problem_shape,
+      MainloopArguments const& mainloop_args,
+      EpilogueArguments const& epilogue_args) {
+
+    auto [Q, K, D, HB] = problem_shape;
+    auto [blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch] = blk_coord;
+
+    auto mDK_in = make_tensor(make_gmem_ptr(epilogue_args.ptr_dk), make_shape(K, TileShapeDQK{}, HB), epilogue_args.stride_dk);
+    auto mDK = domain_offset(select<1,2,3>(blk_offset), mDK_in);
+    auto gDK = local_tile(mDK, TileShapeDSQ{}, make_coord(_,_,_), Step<_1, _1, X>{})
+        (_, _, blk_coord_k, _0{}, blk_coord_batch);
+
+    Tensor cDK = domain_offset(
+        make_coord(get<1>(blk_coord) * TileShapeK{}, _0{}),
+        make_identity_tensor(take<0,2>(TileShapeDSQ{}))
+    );
+
+    auto mDV_in = make_tensor(make_gmem_ptr(epilogue_args.ptr_dv), make_shape(K, TileShapeDVO{}, HB), epilogue_args.stride_dv);
+    auto mDV = domain_offset(select<1,2,3>(blk_offset), mDV_in);
+    auto gDV = local_tile(mDV, TileShapePDO{}, make_coord(_,_,_), Step<_1, _1, X>{})
+        (_, _, blk_coord_k, _0{}, blk_coord_batch);
+
+    Tensor cDV = domain_offset(
+        make_coord(blk_coord_k * TileShapeK{}, _0{}),
+        make_identity_tensor(take<0,2>(TileShapePDO{}))
+    );
+    
+    if (threadIdx.x >= 256) {
+      return;
+    }
+
+    auto tiled_copy = make_cotiled_copy(
+        Copy_Atom<UniversalCopy<uint128_t>, Element>{},
+        make_ordered_layout(make_shape(_256{}, Int<sizeof(uint128_t) / sizeof(Element)>{}), Step<_1, _0>{}),
+        make_ordered_layout(make_shape(TileShapeK{}, TileShapeDQK{}), Step<_1, _0>{}));
+
+    auto thr_copy = tiled_copy.get_slice(threadIdx.x);
+    auto tCgDK = thr_copy.partition_D(gDK);
+    auto tCcDK = thr_copy.partition_S(cDK);
+    auto tCrDK = make_tensor<Element>(shape(tCcDK));
+
+    clear(tCrDK);
+    store(tCgDK, tCrDK, tCcDK, select<1,2>(problem_shape));
+
+    auto tCgDV = thr_copy.partition_D(gDV);
+    auto tCcDV = thr_copy.partition_S(cDV);
+    auto tCrDV = make_tensor<Element>(shape(tCcDV));
+
+    clear(tCrDV);
+    store(tCgDV, tCrDV, tCcDV, select<1,2>(problem_shape));
+  }
+
+
+  template<class BlkCoord, class BlkOffset, class ProblemShape_>
   CUTLASS_DEVICE void epilogue(
       BlkCoord const& blk_coord,
-      ProblemShape const& problem_shape,
+      BlkOffset const& blk_offset,
+      ProblemShape_ const& problem_shape,
       MainloopArguments const& mainloop_args,
       EpilogueArguments const& epilogue_args,
       PipelineMmaComputeDKDV& pipeline_mma_compute_dkdv,
       typename PipelineMmaComputeDKDV::PipelineState& pipeline_mma_compute_dkdv_consumer_state) {
 
     auto [Q, K, D, HB] = problem_shape;
-    auto [blk_coord_q, blk_coord_k, blk_coord_batch] = blk_coord;
+    auto [blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch] = blk_coord;
 
     auto load_op = SM100_TMEM_LOAD_32dp32b16x{};
 
     auto tDKtDK = partition_fragment_C(TiledMmaDSQ{}, select<0,1>(TileShapeDSQ{}))(make_coord(_,_),_0{},_0{});
     tDKtDK.data() = TmemAllocation::kDK;
 
-    auto mDK = make_tensor(make_gmem_ptr(epilogue_args.ptr_dk), make_shape(K, TileShapeDQK{}, HB), epilogue_args.stride_dk);
+    auto mDK_in = make_tensor(make_gmem_ptr(epilogue_args.ptr_dk), make_shape(K, TileShapeDQK{}, HB), epilogue_args.stride_dk);
+    auto mDK = domain_offset(select<1,2,3>(blk_offset), mDK_in);
     auto gDK = local_tile(mDK, TileShapeDSQ{}, make_coord(_,_,_), Step<_1, _1, X>{})
         (_, _, blk_coord_k, _0{}, blk_coord_batch);
 
@@ -992,12 +1076,13 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     auto tDVtDV = partition_fragment_C(TiledMmaDSQ{}, select<0,1>(TileShapeDSQ{}))(make_coord(_,_),_0{},_0{});
     tDVtDV.data() = TmemAllocation::kDV;
 
-    auto mDV = make_tensor(make_gmem_ptr(epilogue_args.ptr_dv), make_shape(K, TileShapeDVO{}, HB), epilogue_args.stride_dv);
+    auto mDV_in = make_tensor(make_gmem_ptr(epilogue_args.ptr_dv), make_shape(K, TileShapeDVO{}, HB), epilogue_args.stride_dv);
+    auto mDV = domain_offset(select<1,2,3>(blk_offset), mDV_in);
     auto gDV = local_tile(mDV, TileShapePDO{}, make_coord(_,_,_), Step<_1, _1, X>{})
         (_, _, blk_coord_k, _0{}, blk_coord_batch);
 
     Tensor cDV = domain_offset(
-        make_coord(get<1>(blk_coord) * TileShapeK{}, _0{}),
+        make_coord(blk_coord_k * TileShapeK{}, _0{}),
         make_identity_tensor(take<0,2>(TileShapePDO{}))
     );
 
@@ -1041,10 +1126,11 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   }
 
 
-  template<class BlkCoord>
+  template<class BlkCoord, class BlkOffset, class ProblemShape_>
   CUTLASS_DEVICE void compute(
       BlkCoord const& blk_coord,
-      ProblemShape const& problem_shape,
+      BlkOffset const& blk_offset,
+      ProblemShape_ const& problem_shape,
       int iter_index,
       int iter_count,
       MainloopArguments const& mainloop_args,
@@ -1075,7 +1161,14 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     // they are striped by this tmem atom, i.e. wg0 has 16 elems, then wg1 etc
 
     auto load_op = SM100_TMEM_LOAD_32dp32b16x{};
-    auto store_op = SM100_TMEM_STORE_32dp32b8x{};
+    auto store_op = []() {
+      if constexpr (sizeof(Element) == 1) {
+        return SM100_TMEM_STORE_32dp32b4x{};
+      }
+      else {
+        return SM100_TMEM_STORE_32dp32b8x{};
+      }
+    }();
 
     Tensor tSTtST =  partition_fragment_C(TiledMmaKQ{}, select<0,1>(TileShapeKQ{}))(make_coord(_,_),_0{},_0{});
     tSTtST.data() = TmemAllocation::kS;
@@ -1092,18 +1185,33 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     auto tiled_t2r = make_tmem_copy(load_op, tSTtST);
     auto thread_t2r = tiled_t2r.get_slice(dp_idx);
 
-    auto split_wg = [&](auto const& t) {
-      if constexpr (decltype(rank(t))::value == 3) {
-        auto p = t.compose(make_layout(make_shape(size<0>(t), size<1>(t), make_shape(Int<kNumWarpgroups>{}, size<2>(t) / Int<kNumWarpgroups>{}))));
-        return p(_, _, make_coord(wg_idx, _));
+    auto split_wg = [&](auto const& t) { //return local_tile(t, size(t) / Int<kNumWarpgroups>{}, wg_idx); };
+      if constexpr (decltype(size<1>(t))::value > 1) {
+        if constexpr (decltype(rank(t))::value == 3) {
+          auto p = t.compose(make_layout(make_shape(size<0>(t), make_shape(Int<kNumWarpgroups>{}, size<1>(t) / Int<kNumWarpgroups>{}), size<2>(t))));
+          return p(_, make_coord(wg_idx, _), _);
+        }
+        else {
+          auto p = t.compose(make_layout(make_shape(size<0>(t), make_shape(Int<kNumWarpgroups>{}, size<1>(t) / Int<kNumWarpgroups>{}), size<2>(t), size<3>(t))));
+          return p(_, make_coord(wg_idx, _), _, _);
+        }
       }
       else {
-        auto p = t.compose(make_layout(make_shape(size<0>(t), size<1>(t), size<2>(t), make_shape(Int<kNumWarpgroups>{}, size<3>(t) / Int<kNumWarpgroups>{}))));
-        return p(_, _, _, make_coord(wg_idx, _));
+        if constexpr (decltype(rank(t))::value == 3) {
+          auto p = t.compose(make_layout(make_shape(size<0>(t), size<1>(t), make_shape(Int<kNumWarpgroups>{}, size<2>(t) / Int<kNumWarpgroups>{}))));
+          return p(_, _, make_coord(wg_idx, _));
+        }
+        else {
+          auto p = t.compose(make_layout(make_shape(size<0>(t), size<1>(t), size<2>(t), make_shape(Int<kNumWarpgroups>{}, size<3>(t) / Int<kNumWarpgroups>{}))));
+          return p(_, _, _, make_coord(wg_idx, _));
+        }
+
       }
     };
 
-    Tensor tTR_cST   = split_wg(thread_t2r.partition_D(cST));
+
+    Tensor tTR_cST_p = thread_t2r.partition_D(cST);
+    Tensor tTR_cST   = split_wg(tTR_cST_p);
     Tensor tTR_rST = make_tensor<ElementAcc>(shape(tTR_cST));
     Tensor tTR_tST = split_wg(thread_t2r.partition_S(tSTtST));
 
@@ -1117,7 +1225,6 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     auto sP = make_tensor(make_smem_ptr((Element*) nullptr), typename CollectiveMmaPDO::SmemLayoutA{});
 
-
     auto tDVrP = TiledMmaPDO::make_fragment_A(sP)(_, _, _, _0{});
     auto tDVcST = TiledMmaPDO{}.get_slice(_0{}).partition_A(cST);
     tDVrP.data() = TmemAllocation::kP;
@@ -1126,7 +1233,11 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     auto thread_r2t = tiled_r2t.get_slice(dp_idx);
 
     auto tRT_tP = split_wg(thread_r2t.partition_D(tDVrP));
-    auto tRT_cST = split_wg(thread_r2t.partition_S(tDVcST));
+    auto tRT_cST_p = thread_r2t.partition_S(tDVcST);
+    auto tRT_cST = split_wg(tRT_cST_p);
+
+    bool is_residual_k = get<1>(blk_coord) * TileShapeK{} + TileShapeK{} >= get<1>(problem_shape);
+    int last_iter = iter_count - 1 + iter_index;
 
     CUTLASS_PRAGMA_NO_UNROLL
     while (iter_count > 0) {
@@ -1145,13 +1256,21 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
         }
       };
 
-      dispatch_bool(std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask> &&
-          warp_uniform(iter_index == get<1>(blk_coord)), [&](auto is_causal_masked_tile) {
+      bool leading_causal_masking = false;
+      if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask>) {
+        leading_causal_masking = warp_uniform(iter_index == get<1>(blk_coord));
+      }
+      bool trailing_residual_masking = false;
+      if constexpr (std::is_base_of_v<cutlass::fmha::collective::ResidualMaskForBackward, Mask>) {
+        trailing_residual_masking = warp_uniform((iter_index == last_iter) || is_residual_k);
+      }
+
+      dispatch_bool(leading_causal_masking || trailing_residual_masking, [&](auto is_masked_tile) {
 
         // compute P = softmax(S, LSE)
         cute::copy(tiled_t2r, tTR_tST, tTR_rST);
 
-        if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask> && decltype(is_causal_masked_tile)::value) {
+        if constexpr (decltype(is_masked_tile)::value) {
           Mask{}.apply_mask(tTR_rST, [&](int i) {
             auto c_transpose = tTR_cST(i);
             return make_coord(get<1>(c_transpose) + iter_index * TileShapeQ{}, get<0>(c_transpose) + get<1>(blk_coord) * TileShapeK{});
@@ -1267,15 +1386,15 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     }
 
     epilogue(
-        blk_coord, problem_shape, mainloop_args, epilogue_args,
+        blk_coord, blk_offset, problem_shape, mainloop_args, epilogue_args,
         pipeline_mma_compute_dkdv, pipeline_mma_compute_dkdv_consumer_state
     );
   }
 
-  template<class BlkCoord>
+  template<class BlkCoord, class ProblemShape_>
   CUTLASS_DEVICE void reduce(
       BlkCoord const& blk_coord,
-      ProblemShape const& problem_shape,
+      ProblemShape_ const& problem_shape,
       int iter_index,
       int iter_count,
       MainloopArguments const& mainloop_args,
@@ -1290,7 +1409,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     auto [Q, K, D, HB] = problem_shape;
 
-    auto [blk_coord_q, blk_coord_k, blk_coord_batch] = blk_coord;
+    auto [blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch] = blk_coord;
 
     // must match TileShapeDQ
     auto load_op = SM100_TMEM_LOAD_32dp32b32x{};
@@ -1568,20 +1687,38 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     pipeline_init_wait(size(ClusterShape{}));
 
-    auto blk_coord = make_coord(_0{}, blockIdx.x, make_coord(blockIdx.y, blockIdx.z));
-    auto problem_shape = params.problem_shape;
+    auto blk_coord = make_coord(_0{}, blockIdx.x, _0{}, make_coord(blockIdx.y, blockIdx.z));
+    auto [problem_shape, blk_offset] = apply_variable_length_offset(
+        params.problem_shape,
+        blk_coord
+    );
     int iter_count = ceil_div(get<0>(problem_shape), TileShapeQ{});
     int iter_start = 0;
     if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask>) {
       iter_start = (get<1>(blk_coord) * TileShapeK{}) / TileShapeQ{};
     }
+    if (get<1>(blk_coord) * TileShapeK{} >= get<1>(problem_shape)) {
+      return;
+    }
     iter_count -= iter_start;
+
+    if (iter_count <= 0) {
+      epilogue_clear(
+          blk_coord,
+          blk_offset,
+          problem_shape,
+          params.mainloop,
+          params.epilogue
+      );
+      return;
+    }
 
     if (role == WarpRole::Load) {
       warpgroup_reg_set<RegisterAllocation::kLoad>();
 
       load(
           blk_coord,
+          blk_offset,
           problem_shape,
           iter_start,
           iter_count,
@@ -1624,6 +1761,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
       compute(
           blk_coord,
+          blk_offset,
           problem_shape,
           iter_start,
           iter_count,
