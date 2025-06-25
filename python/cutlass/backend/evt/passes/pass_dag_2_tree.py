@@ -77,11 +77,13 @@ class PassDAG2Tree(EVTPassBase):
                 reachable_nodes.append(set(self.dag_ir.all_reachable_nodes(parent)))
             # get the common reachable objects
             common_items = set.intersection(*reachable_nodes)
+            node_to_fuse = set.union(*reachable_nodes).difference(common_items)
+
+            lca = None
 
             # If common ancestor exists, find the lowest one
             if len(common_items) > 0:
                 topo_order = self.dag_ir.nodes_topological_order()
-                lca = None
                 topo_idx = -1
                 for item in common_items:
                     if lca is None:
@@ -91,53 +93,74 @@ class PassDAG2Tree(EVTPassBase):
                         if topo_idx > topo_order.index(item):
                             lca = item
                             topo_idx = topo_order.index(item)
-                # The lca is the output node of the DAG node
-                # Get the nodes to be fused
-                node_to_fuse = set.union(*reachable_nodes).difference(common_items)
-                node_to_fuse.add(lca)
-                # Get all the input nodes
-                all_input_nodes = []
-                all_output_nodes = []
-                for node in node_to_fuse:
-                    all_input_nodes.append(set(self.dag_ir.get_all_inputs(node)))
-                    all_output_nodes.append(set(self.dag_ir.get_users(node)))
-                all_input_nodes = set.union(*all_input_nodes)
-                all_output_nodes = set.union(*all_output_nodes)
-
-                new_subgraph_nodes = set.union(node_to_fuse, all_input_nodes, all_output_nodes)
-
-                # Create the subgraph
-                subgraph_ = self.dag_ir._graph.subgraph(new_subgraph_nodes)
-                subgraph = DAGIR(self.dag_ir.cc)
-                for node in subgraph_.nodes:
-                    meta = deepcopy(self.dag_ir.get_node_meta(node))
-                    if node not in node_to_fuse:
-                        meta.disabled = True
-                    subgraph.add_node(meta)
-                for edge in subgraph_.edges:
-                    subgraph.add_edge(edge[0], edge[1], self.dag_ir.get_edge_weight(edge[0], edge[1]))
-
-
-                # Create the fused node
-                dag_node = TopoVisitorNode(
-                    name=f"dag_{lca}", subgraph=subgraph,
-                    output_node=self.dag_ir.get_node_meta(lca))
-                self.dag_ir.add_node(dag_node)
-
-                # Add input edges
-                for idx, node in enumerate(all_input_nodes):
-                    self.dag_ir.add_edge(node, dag_node.name, weight=idx)
-
-                # Replace all uses with DAG node (only 1 output node)
-                self.dag_ir.replace_all_uses_with(lca, dag_node.name)
-
-                # Remove all fused nodes
-                node_to_fuse.remove(lca)
-                for node in node_to_fuse:
-                    self.dag_ir.remove_node(node)
-
             else:
-                raise NotImplementedError("No LCA found. Consider SplitTreeVisitor.")
+                # there is no common ancestor for all the parents, we pack all the reachable
+                # nodes into a single DAG node as a fallback. The lca should be the input node of
+                # one of the output nodes with out_degree = 0
+                potential_output_nodes = []
+                for node in node_to_fuse:
+                    if self.dag_ir.out_degree(node) == 0:
+                        potential_output_nodes.append(node)
+                if len(potential_output_nodes) == 0:
+                    raise RuntimeError(f"No output node with out degree = 0 found.")
+                
+                output_node = None
+                if (self.dag_ir.cc >= 90):
+                    # For SM90, the lca should be the input node of D
+                    if (not self.dag_ir.has_node("D")):
+                        raise RuntimeError(f"D is not a node in the DAG IR.")
+                    output_node = "D"
+                else:
+                    output_node = potential_output_nodes[0]
+                
+                if (output_node is None):
+                    raise RuntimeError(f"No output node found.")
+                lca = self.dag_ir.get_all_inputs(output_node)[0]
+                node_to_fuse.remove(output_node)
+
+            # The lca is the output node of the DAG node
+            # Get the nodes to be fused
+            node_to_fuse.add(lca)
+            # Get all the input nodes
+            all_input_nodes = []
+            all_output_nodes = []
+            for node in node_to_fuse:
+                all_input_nodes.append(set(self.dag_ir.get_all_inputs(node)))
+                all_output_nodes.append(set(self.dag_ir.get_users(node)))
+            all_input_nodes = set.union(*all_input_nodes)
+            all_output_nodes = set.union(*all_output_nodes)
+
+            new_subgraph_nodes = set.union(node_to_fuse, all_input_nodes, all_output_nodes)
+
+            # Create the subgraph
+            subgraph_ = self.dag_ir._graph.subgraph(new_subgraph_nodes)
+            subgraph = DAGIR(self.dag_ir.cc)
+            for node in subgraph_.nodes:
+                meta = deepcopy(self.dag_ir.get_node_meta(node))
+                if node not in node_to_fuse:
+                    meta.disabled = True
+                subgraph.add_node(meta)
+            for edge in subgraph_.edges:
+                subgraph.add_edge(edge[0], edge[1], self.dag_ir.get_edge_weight(edge[0], edge[1]))
+
+
+            # Create the fused node
+            dag_node = TopoVisitorNode(
+                name=f"dag_{lca}", subgraph=subgraph,
+                output_node=self.dag_ir.get_node_meta(lca))
+            self.dag_ir.add_node(dag_node)
+
+            # Add input edges
+            for idx, node in enumerate(all_input_nodes):
+                self.dag_ir.add_edge(node, dag_node.name, weight=idx)
+
+            # Replace all uses with DAG node (only 1 output node)
+            self.dag_ir.replace_all_uses_with(lca, dag_node.name)
+
+            # Remove all fused nodes
+            node_to_fuse.remove(lca)
+            for node in node_to_fuse:
+                self.dag_ir.remove_node(node)
 
     def ensures(self) -> None:
         # Ensure that after the pass, the resulting DAG becomes a tree
