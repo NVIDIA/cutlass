@@ -888,11 +888,18 @@ struct FwdRunner {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+int main_result = 0;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Helper to print a description of the example run and its result
 void print_result(const std::string& description, ExampleResult result, bool verbose) {
   std::ios fmt(nullptr);
   fmt.copyfmt(std::cout);
   std::cout << (result.passed ? (result.verified ? " [OK]  " : " [--] ") : "[FAIL] ");
+  if (! result.passed) {
+    main_result = -1;
+  }
   std::cout << std::setw(32) << std::left << description;
   std::cout.copyfmt(fmt);
   std::cout << " : " << result.tflops_tc_s << " TFLOPS/s" << std::endl;
@@ -1093,15 +1100,13 @@ int main_single(int argc, char const **args) {
   });
 #endif
 
-  return 0;
+  return main_result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
   std::vector<std::string> full_arguments(args, args + argc);
-
-  int result = 0;
 
   bool recursed = false;
   for (size_t i = 1; i < full_arguments.size(); i++) {
@@ -1129,7 +1134,7 @@ int main(int argc, char const **args) {
     main_single(argc, args);
   }
 
-  return result;
+  return main_result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

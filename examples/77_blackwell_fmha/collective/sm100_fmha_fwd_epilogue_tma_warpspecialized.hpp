@@ -55,6 +55,7 @@ struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
   using SmemLayoutO = decltype(tile_to_shape(SmemLayoutAtomO{}, replace<2>(TileShape{}, _2{}), Step<_2, _1, _3>{}));
   using SmemLayoutO_ = SmemLayoutO;
   using StrideLSE = StrideLSE_;
+  using ElementOut = Element;
   
   struct TensorStorage {
 

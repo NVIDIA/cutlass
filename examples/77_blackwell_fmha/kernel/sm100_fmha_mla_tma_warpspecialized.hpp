@@ -784,7 +784,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto pages_per_tile = Pow2{TileShapeS{} / page_size};
     int thread_idx = threadIdx.x % cutlass::NumThreadsPerWarp;
 
-#if 1
     for (; k_tile_count > 0; ++k_index, --k_tile_count) {
       pipeline_page_table.producer_acquire(pipeline_pt_producer_state);
     
@@ -805,7 +804,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       pipeline_page_table.producer_commit(pipeline_pt_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_pt_producer_state;
     }
-#endif
   }
 
 
@@ -1639,7 +1637,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       row_max_new = cutlass::max(row_max_new, shared_tensors.smem_exchange[peer_index]);
     }
 
-#ifndef B2B
     // find correction factor
     ElementAcc softmax_scale_log2 = mainloop_args.softmax_scale * static_cast<ElementAcc>(M_LOG2E);
     correction_factor = ::exp2f(softmax_scale_log2 * (row_max - row_max_new));
@@ -1651,7 +1648,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     for (int i = 0; i < size(tTR_rAcc); i++) {
       tTR_rAcc(i) = ::exp2f(softmax_scale_log2 * tTR_rAcc(i) - row_max_scale_log2);
     }
-#endif
 
     // quantize
     cutlass::NumericArrayConverter<Element, ElementAcc, AlignmentS> epilogue_op;
@@ -1705,7 +1701,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       uint32_t tmem_o) {
 
     // for b2b gemm, do nothing
-#ifndef B2B
     auto load_op = cute::SM100_TMEM_LOAD_32dp32b32x{};
     auto store_op = TMEM::tmem_load_to_store(load_op);
 
@@ -1748,7 +1743,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     // store o
     copy(tiled_r2t, tTR_rAcc, tTR_tAcc);
-#endif
  }
 
 
@@ -1806,8 +1800,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
       copy(tTR_rO_src, tR2G_rO_dst);
 
-#ifndef B2B
-
       // compute LSE
       ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
 
@@ -1819,7 +1811,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       {
           gLSE(threadIdx.x) = lse;
       }
- #endif
     }
     else {
       Tensor mO = make_tensor(make_gmem_ptr(epilogue_args.ptr_o), make_shape(H, D_latent, B), epilogue_args.stride_o);
@@ -1848,7 +1839,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
       copy(tTR_rO_src, tR2G_rO_dst);
 
-#ifndef B2B
+
       if (epilogue_args.ptr_lse != nullptr) {
         // compute LSE
         ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
@@ -1863,7 +1854,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
           gLSE(threadIdx.x) = lse;
         }
       }
-#endif
     }
   }
 
@@ -1980,9 +1970,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     pipeline_mma_o.consumer_wait(pipeline_mma_o_consumer_state);
 
-#ifdef B2B
-    row_sum = 1;
-#else
     if constexpr (kWarpsInN > 1) {
       // reduce row_sum if needed (for 2x2 dp)
       shared_tensors.smem_exchange[threadIdx.x] = row_sum;
@@ -1991,7 +1978,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       int peer_index = (threadIdx.x + 64) % 128;
       row_sum += shared_tensors.smem_exchange[peer_index];
     }
-#endif
 
     cutlass::arch::NamedBarrier((kNumComputeWarps + kNumLoadWarps) * NumThreadsPerWarp, kNamedBarrierEpilogue).arrive();
 
