@@ -295,9 +295,12 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess){
-      std::cout << "Invalid Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
-      std::exit(1);
+    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess) {
+      std::cout << "Warning: Invalid problem size: "
+                << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l
+                << ".\nThis size is not directly supported by the selected kernel.\n"
+                << "However, this example applies padding as needed, so it will still run correctly."
+                << std::endl;
     }
 
     CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));

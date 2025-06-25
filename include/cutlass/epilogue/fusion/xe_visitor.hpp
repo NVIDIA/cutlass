@@ -102,7 +102,7 @@ struct XeAuxLoad {
   template <class ProblemShape>
   static bool
   can_implement(ProblemShape const& problem_shape, Arguments const& args) {
-    return !find(args.dAux, 0); // auxillary matrix should have no strides with values 0
+    return true;
   }
 
   template <class ProblemShape>

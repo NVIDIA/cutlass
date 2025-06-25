@@ -139,11 +139,6 @@ struct CollectiveMma<MainloopIntelXeXMX16Group<Stages, Schedule>, TileShape_, El
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
 
-    // Batches/Groups are managed by using appropriate pointers to input matrices
-    const int32_t mock_L = 1;
-    ElementA const* ptr_A_first_batch = reinterpret_cast<ElementA const*>(args.ptr_A);
-    ElementB const* ptr_B_first_batch = reinterpret_cast<ElementB const*>(args.ptr_B);
-
     auto problem_shape_MNK = repeat_like(typename ProblemShape::UnderlyingProblemShape{}, int32_t(1));;
     auto init_M = get<0>(problem_shape_MNK);
     auto init_N = get<1>(problem_shape_MNK);
@@ -155,6 +150,42 @@ struct CollectiveMma<MainloopIntelXeXMX16Group<Stages, Schedule>, TileShape_, El
       args.ptr_B,
       args.dB
     };
+  }
+
+  template<class ProblemShape>
+  static bool
+  can_implement(
+      ProblemShape problem_shapes,
+      Arguments const& args) {
+    constexpr int copy_alignment_bits = 128;
+    constexpr int batch_alignment_bits = 512;
+    auto problem_shape_MNKL = append<4>(problem_shapes, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+
+    bool implementable = true;
+
+    constexpr int min_aligned_elements_A = copy_alignment_bits / sizeof_bits<ElementA>::value;
+    constexpr int min_aligned_elements_B = copy_alignment_bits / sizeof_bits<ElementB>::value;
+    constexpr int min_batch_aligned_elements_A = batch_alignment_bits / sizeof_bits<ElementA>::value;
+    constexpr int min_batch_aligned_elements_B = batch_alignment_bits / sizeof_bits<ElementB>::value;
+    for (int i = 0; i < problem_shapes.groups(); i++) {
+      auto problem_shape_MNKL = append<4>(problem_shapes.get_host_problem_shape(i), 1);
+      auto [M,N,K,L] = problem_shape_MNKL;
+
+      implementable &= cutlass::detail::check_alignment<min_aligned_elements_A>(cute::make_shape(M,K,L), InternalStrideA{});
+      implementable &= cutlass::detail::check_alignment<min_aligned_elements_B>(cute::make_shape(N,K,L), InternalStrideB{});
+
+      if (L > 1) {
+        implementable &= get<2>(InternalStrideA{}) % min_batch_aligned_elements_A == 0;
+        implementable &= get<2>(InternalStrideB{}) % min_batch_aligned_elements_B == 0;
+      }
+    }
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for XE 2D copy.\n");
+    }
+
+    return implementable;
   }
 
   /// Perform a subgroup-scoped matrix multiply-accumulate

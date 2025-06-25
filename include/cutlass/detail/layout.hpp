@@ -317,6 +317,18 @@ constexpr bool is_tma_copy_engine() {
   return false;
 }
 
+template<class GmemTiledCopy>
+constexpr bool is_xe_2d_copy_engine() {
+  if constexpr (cute::is_void_v<GmemTiledCopy>) {
+    return false;
+  }
+  // TODO(Codeplay): Add a marker base class to identify all xe_2d copy operations
+#if defined(SYCL_INTEL_TARGET)
+  return true;
+#endif
+  return false;
+}
+
 template <class X, class = void>
 struct RawDtype { using type = X; };
 
@@ -354,6 +366,10 @@ get_alignment_count_from_gmem_tiled_copy() {
       if constexpr (cute::is_sparse_v<ElementMma>) {
         return 128 / sizeof_bits<Element>::value * ElementMma::sparsity;
       }
+      return 128 / sizeof_bits<Element>::value;
+    }
+    // Intel 2D copy
+    else if constexpr (is_xe_2d_copy_engine<GmemTiledCopy>()) {
       return 128 / sizeof_bits<Element>::value;
     }
     else {

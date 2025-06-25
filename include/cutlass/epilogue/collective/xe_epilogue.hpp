@@ -219,9 +219,45 @@ public:
   template <class ProblemShape>
   CUTLASS_HOST_DEVICE static bool
   can_implement(
-      ProblemShape const& problem_shape,
-      [[maybe_unused]] Arguments const& args) {
-    return true;
+      ProblemShape const& problem_shapes,
+      Arguments const& args) {
+    constexpr int copy_alignment_bits = 128;
+    constexpr int batch_alignment_bits = 512;
+    auto problem_shape_MNKL = append<4>(problem_shapes, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+
+    bool implementable = true;
+    bool fusion_implementable = true;
+
+    if constexpr (is_destination_supported) {
+      constexpr int min_aligned_elements_D = copy_alignment_bits / sizeof_bits<ElementD>::value;
+      implementable &= cutlass::detail::check_alignment<min_aligned_elements_D>(cute::make_shape(M,N,L), args.dD);
+      if (L > 1) {
+        constexpr int min_batch_aligned_elements_D = batch_alignment_bits / sizeof_bits<ElementD>::value;
+        implementable &= get<2>(args.dD) % min_batch_aligned_elements_D == 0;
+      }
+    }
+
+    if constexpr (is_source_supported) {
+      constexpr int min_aligned_elements_C = copy_alignment_bits / sizeof_bits<ElementC>::value;
+      implementable &= cutlass::detail::check_alignment<min_aligned_elements_C>(cute::make_shape(M,N,L), args.dC);
+      if (L > 1) {
+        constexpr int min_batch_aligned_elements_C = batch_alignment_bits / sizeof_bits<ElementC>::value;
+        implementable &= get<2>(args.dC) % min_batch_aligned_elements_C == 0;
+      }
+    }
+
+    fusion_implementable = fusion_implementable && FusionCallbacks::can_implement(problem_shape_MNKL, args.thread);
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for XE 2D copy.\n");
+    }
+
+    if (!fusion_implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum requirements for FusionCallbacks.\n");
+    }
+
+    return implementable && fusion_implementable;
   }
 
   CUTLASS_HOST_DEVICE

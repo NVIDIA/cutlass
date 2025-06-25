@@ -178,9 +178,17 @@ public:
 
   static bool
   can_implement(Arguments const& args) {
-    bool mode_implementable = args.mode == GemmUniversalMode::kGemm or
-          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
-    return mode_implementable && TileScheduler::can_implement(args.scheduler);
+    bool implementable = true;
+
+    implementable = implementable && (args.mode == GemmUniversalMode::kGemm ||
+          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4));
+
+    implementable &= TileScheduler::can_implement(args.scheduler);
+
+    implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
+    implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
+
+    return implementable;
   }
 
   static size_t

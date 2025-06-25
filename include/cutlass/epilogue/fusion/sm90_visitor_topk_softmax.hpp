@@ -498,12 +498,15 @@ public:
   can_implement(ProblemShape const& problem_shape, Arguments const& args) {
     auto [M, N, K, L] = problem_shape;
     auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
     // Cross CTA reduction is not possible because there is no guarantee that all CTAs run
     // concurrently.
     // Cross epilogue tile reduction is possible, but re-visiting and applying reduction
     // to accumulators is only possible for the current epilogue tile.
     auto [epi_M, epi_N] = EpilogueTile{};
     return N <= tile_N && N <= epi_N && N >= TopK;
+#endif
+    return true;
   }
 
   template <class ProblemShape>

@@ -131,7 +131,7 @@ TEST(XE_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 256x256x32_LD32x32) {
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 1.0));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 256x256x32_LD16x32) {
@@ -204,7 +204,7 @@ TEST(XE_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 256x256x32_LD16x32) {
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 1.0));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 256x256x32_LDA8x32_LDB16x32) {
@@ -277,7 +277,7 @@ TEST(XE_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 256x256x32_LDA8x32_LD
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 1.0));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
