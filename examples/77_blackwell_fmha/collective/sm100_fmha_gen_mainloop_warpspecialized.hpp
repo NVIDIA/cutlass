@@ -831,7 +831,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // loop:
     //   TMEM_LOAD, TMEM_LOAD, FMUL2, FFMA2, STG
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 128 / kCorrectionTileSize; i++) {
+    for (int i = 0; i < get<2>(TileShape{}) / kCorrectionTileSize; i++) {
       Tensor tTMEM_LOADtO0_i = tTMEM_LOADtO0;
       tTMEM_LOADtO0_i.data() = tTMEM_LOADtO0_i.data().get() + uint32_t(i * kCorrectionTileSize);
       Tensor tTMEM_LOADtO1_i = tTMEM_LOADtO1;
@@ -917,7 +917,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     float2 scale_f32x2 = make_float2(scale, scale);
 
-    Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<128 / kCorrectionTileSize>{}));
+    Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<get<2>(TileShape{}) / kCorrectionTileSize>{}));
     
     auto copy_in = [&](int i) {
       Tensor tTMEM_LOADtO_i = tTMEM_LOADtO;

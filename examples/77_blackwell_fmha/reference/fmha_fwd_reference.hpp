@@ -80,6 +80,17 @@ void __global__ fmha_reference_kernel(
       if constexpr (rank<1>(decltype(coord){}) == 2) {
         offset_K = get<1,1>(coord);
       }
+
+      if (get<1>(problem_shape) == 0) {
+        for (int idx_D = threadIdx.x; idx_D < size<2>(problem_shape); idx_D += blockDim.x) {
+          mO(idx_Q + offset_Q, idx_D, idx_L) = Element(0);
+        }
+
+        if (threadIdx.x == 0 && mLSE.data() != nullptr) {
+          mLSE(idx_Q + offset_Q, idx_L) = -INFINITY;
+        }
+        continue;
+      }
   
       for (int idx_K = threadIdx.x; idx_K < size<1>(problem_shape); idx_K += blockDim.x) {
         ElementAccumulator acc = 0;
