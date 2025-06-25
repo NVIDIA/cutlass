@@ -957,8 +957,9 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     );
     auto thr_copy = copy_op.get_slice(_0{});
 
+    Tensor quantized_regs = quantize(regs);
+    Tensor tCr = thr_copy.partition_S(quantized_regs);
     Tensor tCg = thr_copy.partition_D(gmem);
-    Tensor tCr = thr_copy.partition_S(quantize(regs));
     Tensor tPc = thr_copy.partition_D(preds);
 
     copy_if(copy_op, tPc, tCr, tCg);
@@ -996,29 +997,16 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
         make_identity_tensor(take<0,2>(TileShapePDO{}))
     );
     
-    if (threadIdx.x >= 256) {
-      return;
+    for (int i = threadIdx.x; i < size(gDK); i += blockDim.x) {
+      if (elem_less(cDK(i), select<1,2>(problem_shape))) {
+        gDK(i) = Element(0);
+      }
     }
-
-    auto tiled_copy = make_cotiled_copy(
-        Copy_Atom<UniversalCopy<uint128_t>, Element>{},
-        make_ordered_layout(make_shape(_256{}, Int<sizeof(uint128_t) / sizeof(Element)>{}), Step<_1, _0>{}),
-        make_ordered_layout(make_shape(TileShapeK{}, TileShapeDQK{}), Step<_1, _0>{}));
-
-    auto thr_copy = tiled_copy.get_slice(threadIdx.x);
-    auto tCgDK = thr_copy.partition_D(gDK);
-    auto tCcDK = thr_copy.partition_S(cDK);
-    auto tCrDK = make_tensor<Element>(shape(tCcDK));
-
-    clear(tCrDK);
-    store(tCgDK, tCrDK, tCcDK, select<1,2>(problem_shape));
-
-    auto tCgDV = thr_copy.partition_D(gDV);
-    auto tCcDV = thr_copy.partition_S(cDV);
-    auto tCrDV = make_tensor<Element>(shape(tCcDV));
-
-    clear(tCrDV);
-    store(tCgDV, tCrDV, tCcDV, select<1,2>(problem_shape));
+    for (int i = threadIdx.x; i < size(gDV); i += blockDim.x) {
+      if (elem_less(cDV(i), select<1,2>(problem_shape))) {
+        gDV(i) = Element(0);
+      }
+    }
   }
 
 
