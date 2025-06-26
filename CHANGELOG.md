@@ -35,7 +35,13 @@
   - Added non-power-of-two tile sizes.
   - Improved performance for K-major scale factors.
   - The argument `mma_promotion_interval` has been removed from non-grouped GEMM to align with the grouped and Blackwell SM100 versions.
-* Support LSE output in Blackwell SM100 FMHA Forward kernel in example 77.
+* Enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+  - Support LSE output in FMHA Forward kernel.
+  - Enhance performance measurement: support of different warmup iterations; buffer rotation to keep L2 cold; separate testing of persistent and non-persistent.
+  - Enhance testing of variable sequence length.
+  - Disable B2B mode in MLA to simplify the sample.
+  - Clarify that `fmha_gen`  sample only supports head dim 128.
+  - Fixes for split-kv output in MLA.
 * Improve Blackwell and Hopper grouped GEMM performance, functionality, and profiler support.
   - Enable runtime datatype for Blackwell SM100 grouped GEMM. Profiler support is also added.
   - Enable kernel parameter exploration for Blackwell SM100 grouped GEMM - raster_order, swizzle.
