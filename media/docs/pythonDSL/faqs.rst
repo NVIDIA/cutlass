@@ -39,7 +39,7 @@ General
     the GitHub code only exists as a way for users to file issues and pull requests against.
     While it can be used with the pip wheel, we do not recommend most users do so unless they are
     hacking on the DSL itself. For all other users, we recommend they
-    simply ``pip install nvidia-cutlas-dsl`` and use the pip wheel as the single source
+    simply ``pip install nvidia-cutlass-dsl`` and use the pip wheel as the single source
     of truth for the dialect compiler and DSL implementation. CUTLASS GitHub repository will
     contain a ``requirements.txt`` file pinning the version of the wheel consistent with the state
     of the OSS repository (please see :doc:`quick_start`). This means getting started with
