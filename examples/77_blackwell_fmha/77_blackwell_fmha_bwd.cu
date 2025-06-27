@@ -114,12 +114,16 @@ struct Options {
   int h_k = 1;
   int q = 1024;
   int k = 1024;
+  std::vector<int> varlen_q;
+  std::vector<int> varlen_k;
   int d = 128;
   int iterations = 3;
   bool verify = false;
   bool verbose = false;
 
   bool causal = false;
+  bool residual = false;
+  bool varlen = false;
   int sm_count = 0;
 
   std::string kernel_filter;
@@ -177,13 +181,75 @@ struct Options {
     cmd.get_cmd_line_argument("h", h, -1);
     if (h == -1) h = 2048 / d;
 
+    varlen = cmd.check_cmd_line_flag("varlen");
+
     cmd.get_cmd_line_argument("q", q, -1);
     cmd.get_cmd_line_argument("k", k, -1);
+    cmd.get_cmd_line_argument("b", b, -1);
+    std::string varlen_q_str;
+    cmd.get_cmd_line_argument("varlen-q", varlen_q_str);
+    std::string varlen_k_str;
+    cmd.get_cmd_line_argument("varlen-k", varlen_k_str);
+
+    if (varlen && ! varlen_q_str.empty()) {
+      varlen_q.clear();
+      while (! varlen_q_str.empty()) {
+        size_t pos = varlen_q_str.find(':');
+        varlen_q.push_back(std::stoi(varlen_q_str.substr(0, pos)));
+        if (pos == std::string::npos) {
+          break;
+        }
+        varlen_q_str = varlen_q_str.substr(pos + 1);
+      }
+      if (b == -1) {
+        b = static_cast<int>(varlen_q.size());
+      }
+      if (b != static_cast<int>(varlen_q.size())) {
+        std::cout << "Error: Invalid --varlen-q length\n";
+        std::exit(-1);
+      }
+      int new_q = 0;
+      for (auto elem : varlen_q) {
+        new_q += elem;
+      }
+      if (q != -1) {
+        std::cout << "Error: Can't provide --q and --varlen-q\n";
+        std::exit(-1);
+      }
+      q = new_q;
+    }
+
+    if (varlen && ! varlen_k_str.empty()) {
+      varlen_k.clear();
+      while (! varlen_k_str.empty()) {
+        size_t pos = varlen_k_str.find(':');
+        varlen_k.push_back(std::stoi(varlen_k_str.substr(0, pos)));
+        if (pos == std::string::npos) {
+          break;
+        }
+        varlen_k_str = varlen_k_str.substr(pos + 1);
+      }
+      if (b == -1) {
+        b = static_cast<int>(varlen_k.size());
+      }
+      if (b != static_cast<int>(varlen_k.size())) {
+        std::cout << " Error: Invalid --varlen-k length\n";
+        std::exit(-1);
+      }
+      int new_k = 0;
+      for (auto elem : varlen_k) {
+        new_k += elem;
+      }
+      if (k != -1) {
+        std::cout << "Error: Can't provide --k and --varlen-k\n";
+        std::exit(-1);
+      }
+      k = new_k;
+    }
+
     if (q == -1) q = k;
     if (k == -1) k = q;
     if (q == -1 && k == -1) q = k = defaults.q;
-
-    cmd.get_cmd_line_argument("b", b, -1);
     if (b == -1) b = 16384 / k;
     if (b == 0) b = 1;
 
@@ -195,8 +261,14 @@ struct Options {
     if (mask == "causal") {
       causal = true;
     }
+    else if (mask == "residual") {
+      residual = true;
+    }
     else {
       causal = defaults.causal;
+    }
+    if (varlen) {
+      residual = true;
     }
 
     skip_reference = cmd.check_cmd_line_flag("skip-reference");
@@ -226,11 +298,18 @@ struct Options {
       << "  --h=<int>                   Sets the H extent\n"
       << "  --q=<int>                   Sets the Q extent\n"
       << "  --k=<int>                   Sets the K extent\n"
-      << "  --d=<int>                   Sets the D extentn"
+      << "  --varlen-q=<int>:<int...>   Sets the variable Q extent per batch (colon separated)\n"
+      << "  --varlen-k=<int>:<int...>   Sets the variable K extent per batch (colon separated)\n"
+      << "  --d=<int>                   Sets the D extent\n"
       << "  --iterations=<int>          Benchmarking iterations\n"
       << "  --verify                    Verify results\n"
       << "  --verbose                   Print smem and execution time per kernel\n"
-      << "  --mask=<no|causal>          Enables masking\n"
+      << "  --mask=<no|residual|causal> Enables masking\n"
+      << "  --varlen                    Enables variable sequence length\n"
+      << "                              B*Q and B*K become the total sequence length\n"
+      << "                              and are split B-ways, alternatingly +10% and -10%\n"
+      << "                              with the last batch sized to make it fit\n"
+      << "                              implies at least residual masking for correctness\n"
       << "  --sm-count                  Sets SM count rather than querying it\n"
       << "  --kernel-filter=<filter>    Sets regexp to match kernel against\n"
       << "\n";
@@ -307,6 +386,7 @@ struct ExampleResult {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
+  bool kIsVarlen,
   class TileShape,
   class DispatchPolicy,
   class ActiveMask,
@@ -322,9 +402,11 @@ struct BwdRunner {
   using ElementAccumulator = float;
 
   // Q K D (H B)
-  using ProblemShapeType = cute::tuple<int, int, int, cute::tuple<int, int>>;
-
-  using Operation = cutlass::fmha::device::Sm100FmhaBwd<Element, ElementAccumulator, TileShape, ActiveMask>;
+  using ProblemShape = std::conditional_t<
+      kIsVarlen,
+      cute::tuple<VariableLength, VariableLength, int, cute::tuple<int, int>>,
+      cute::tuple<int, int, int, cute::tuple<int, int>>
+  >;
   
   using TensorStride = Stride<int, _1, Stride<int, int>>; // Seq D (H B)
   using StrideQ = TensorStride;
@@ -363,6 +445,9 @@ struct BwdRunner {
   DeviceAllocation<Element> block_O;
   DeviceAllocation<ElementAccumulator> block_LSE;
 
+  DeviceAllocation<int> block_cumulative_seqlen_q;
+  DeviceAllocation<int> block_cumulative_seqlen_kv;
+
   DeviceAllocation<Element> block_dQ;
   DeviceAllocation<Element> block_dK;
   DeviceAllocation<Element> block_dV;
@@ -375,7 +460,7 @@ struct BwdRunner {
   //
   // Methods
   //
-  bool verify(const ProblemShapeType& problem_shape) {
+  bool verify(const ProblemShape& problem_shape) {
     auto [Q, K, D, HB] = problem_shape;
     auto [H, B] = HB;
 
@@ -459,22 +544,89 @@ struct BwdRunner {
     return passed_dQ && passed_dK && passed_dV;
   }
 
+  auto initialize_problem_shape(Options const& options) {
+    if constexpr (kIsVarlen) {
+      int num_batches = options.b;
+
+      // generate Q as --b times
+      //    gaussian (--Q, --Q / 2) sampled positive
+      //    track cumulative 
+      std::mt19937 rng(0x202305151552ull);
+      std::normal_distribution<double> dist_q(options.q, options.q / 2);
+      std::normal_distribution<double> dist_kv(options.k, options.k / 2);
+
+      auto generate_positive_int = [](auto& dist, auto& gen) {
+        // "0" is a valid value we test here
+        return std::max(0, static_cast<int>(dist(gen)));
+      };
+
+      std::vector<int> cumulative_seqlen_q = {0};
+      std::vector<int> cumulative_seqlen_kv = {0};
+
+      int total_seqlen_q = 0;
+      int total_seqlen_kv = 0;
+      int max_seqlen_q = 0;
+      int max_seqlen_kv = 0;
+
+      const bool kVarlenSame = false;
+      for (int i = 0; i < num_batches; i++) {
+        int seqlen_q = (! options.varlen_q.empty()) ? options.varlen_q.at(i) : 
+                kVarlenSame ? options.q :
+                generate_positive_int(dist_q, rng);
+        int seqlen_kv = (! options.varlen_k.empty()) ? options.varlen_k.at(i) :
+                kVarlenSame ? options.k :
+                generate_positive_int(dist_kv, rng);
+
+        total_seqlen_q += seqlen_q;
+        total_seqlen_kv += seqlen_kv;
+
+        max_seqlen_q = std::max(max_seqlen_q, seqlen_q);
+        max_seqlen_kv = std::max(max_seqlen_kv, seqlen_kv);
+
+        cumulative_seqlen_q.push_back(cumulative_seqlen_q.back() + seqlen_q);
+        cumulative_seqlen_kv.push_back(cumulative_seqlen_kv.back() + seqlen_kv);
+      }
+
+      block_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
+      block_cumulative_seqlen_q.copy_from_host(cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
+      block_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
+      block_cumulative_seqlen_kv.copy_from_host(cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
+
+      ProblemShape problem_shape{
+          {max_seqlen_q, block_cumulative_seqlen_q.get(), total_seqlen_q},
+          {max_seqlen_kv, block_cumulative_seqlen_kv.get(), total_seqlen_kv},
+          options.d, {options.h, options.b}
+      };
+      auto tensor_shape = make_shape(total_seqlen_q, total_seqlen_kv, options.d, make_shape(options.h, 1));
+
+      return cute::make_tuple(problem_shape, tensor_shape);
+    }
+    else {
+      ProblemShape problem_shape{options.q, options.k, options.d, {options.h, options.b}};
+      return cute::make_tuple(problem_shape, problem_shape);
+    }
+  }
+
   /// Initialize operands to be used in the GEMM and reference GEMM
-  void initialize(const ProblemShapeType& problem_shape, Options const& options) {
-    auto [Q, K, D, HB] = problem_shape;
+  ProblemShape initialize(Options const& options) {
+    auto [problem_shape, tensor_shape] = initialize_problem_shape(options);
+    auto [Q, K, D, HB] = tensor_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
-    Q = cutlass::round_up(Q, 8);  // Alignment
 
-    auto shape_QO = select<0,2,3>(problem_shape);
-    auto shape_KV = select<1,2,3>(problem_shape);
-    auto shape_LSE = select<0,3>(problem_shape);
+    // for varlen, Q == total_Q, K == total_K, B = 1
+    // but in problem_shape, they've got to be max_Q/max_K, and B = B
 
-    stride_Q = make_stride(D, _1{}, make_stride(D*Q, D*Q*H));
-    stride_K = make_stride(D, _1{}, make_stride(D*K, D*K*H));
+    auto shape_QO = make_shape(Q, D, make_shape(H, B));
+    auto shape_KV = make_shape(K, D, make_shape(H, B));
+    auto shape_LSE = make_shape(Q, make_shape(H, B));
+
+    stride_Q = make_stride(D, _1{}, make_stride(D*Q, B == 1 ? 0 : D*Q*H));
+    stride_K = make_stride(D, _1{}, make_stride(D*K, B == 1 ? 0 : D*K*H));
+    stride_LSE = make_stride(_1{}, make_stride(Q, B == 1 ? 0 : Q*H));
+
     stride_V = stride_K;
     stride_O = stride_Q;
-    stride_LSE = make_stride(_1{}, make_stride(Q, Q*H));
 
     stride_dQ = stride_Q;
     stride_dK = stride_K;
@@ -505,6 +657,13 @@ struct BwdRunner {
     initialize_block(block_V, seed + 2021, options.init_style_v);
     initialize_block(block_dO, seed + 2020, options.init_style_do);
 
+    initialize_block(block_dQ, seed + 2030, InitStyle::kOne);
+    initialize_block(block_dK, seed + 2031, InitStyle::kOne);
+    initialize_block(block_dV, seed + 2032, InitStyle::kOne);
+    initialize_block(block_ref_dQ, seed + 2033);
+    initialize_block(block_ref_dK, seed + 2034);
+    initialize_block(block_ref_dV, seed + 2035);
+
     Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
       select<0,2,3>(problem_shape),
       stride_Q);
@@ -528,14 +687,18 @@ struct BwdRunner {
     if (! options.skip_reference) {
       fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
     }
+
+    return problem_shape;
   }
 
   ExampleResult run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
-    auto problem_shape = make_shape(options.q, options.k, options.d, make_shape(options.h, options.b));
-
-    initialize(problem_shape, options);
+    auto problem_shape = initialize(options);
 
     ElementAccumulator softmax_scale = 1.0f / sqrtf(options.d);
+
+    ExampleResult example_result;
+
+    using Operation = cutlass::fmha::device::Sm100FmhaBwd<ProblemShape, Element, ElementAccumulator, TileShape, ActiveMask>;
 
     typename Operation::Arguments arguments{
       problem_shape,
@@ -553,8 +716,6 @@ struct BwdRunner {
     };
 
     Operation op;
-
-    ExampleResult example_result;
 
     example_result.smem_size = Operation::Kernel::SharedStorageSize;
 
@@ -650,7 +811,7 @@ struct BwdRunner {
 
     runtime_ms /= static_cast<float>(options.iterations);
 
-    double flops = 10.0 * (std::is_same_v<ActiveMask, CausalMask> ? 0.5 : 1.0);
+    double flops = 10.0 * (std::is_same_v<ActiveMask, CausalForBackwardMask> ? 0.5 : 1.0);
     flops *= static_cast<double>(get<0>(problem_shape));
     flops *= static_cast<double>(get<1>(problem_shape));
     flops *= static_cast<double>(get<2>(problem_shape));
@@ -688,11 +849,18 @@ struct BwdRunner {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+int main_result = 0;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Helper to print a description of the example run and its result
 void print_result(const std::string& description, ExampleResult result, bool verbose) {
   std::ios fmt(nullptr);
   fmt.copyfmt(std::cout);
   std::cout << (result.passed ? (result.verified ? " [OK]  " : " [--] ") : "[FAIL] ");
+  if (! result.passed) {
+    main_result = -1;
+  }
   std::cout << std::setw(32) << std::left << description;
   std::cout.copyfmt(fmt);
   std::cout << " : " << result.tflops_tc_s << " TFLOPS/s" << std::endl;
@@ -706,14 +874,28 @@ void print_result(const std::string& description, ExampleResult result, bool ver
 
 struct KernelCoop {};
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<class Fn>
+auto dispatch_bool(bool value, Fn fn) {
+  if (value) {
+    return fn(std::true_type{});
+  }
+  else {
+    return fn(std::false_type{});
+  }
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<class Mask>
 void run_bwd_64(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
   auto run = [&](auto shape, auto kernel, const char* name, auto... kernel_options) {
-    BwdRunner<decltype(shape), decltype(kernel), Mask, decltype(kernel_options)...> runner;
-    auto result = runner.run(options, hw_info);
-    print_result(name, result, options.verbose);
+    dispatch_bool(options.varlen, [&](auto is_varlen) {
+      BwdRunner<decltype(is_varlen)::value, decltype(shape), decltype(kernel), Mask, decltype(kernel_options)...> runner;
+      auto result = runner.run(options, hw_info);
+      print_result(name, result, options.verbose);
+    });
   };
 
   using HeadDim = _64;
@@ -726,9 +908,11 @@ void run_bwd_64(Mask fusion, Options const & options, cutlass::KernelHardwareInf
 template<class Mask>
 void run_bwd_128(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
   auto run = [&](auto shape, auto kernel, const char* name, auto... kernel_options) {
-    BwdRunner<decltype(shape), decltype(kernel), Mask, decltype(kernel_options)...> runner;
-    auto result = runner.run(options, hw_info);
-    print_result(name, result, options.verbose);
+    dispatch_bool(options.varlen, [&](auto is_varlen) {
+      BwdRunner<decltype(is_varlen)::value, decltype(shape), decltype(kernel), Mask, decltype(kernel_options)...> runner;
+      auto result = runner.run(options, hw_info);
+      print_result(name, result, options.verbose);
+    });
   };
 
   using HeadDim = _128;
@@ -803,7 +987,10 @@ int main_single(int argc, char const **args) {
 
   auto with_causal = [&](auto fn) {
     if (options.causal) {
-      fn(CausalMask{});
+      fn(CausalForBackwardMask{});
+    }
+    else if (options.residual) {
+      fn(ResidualMaskForBackward{});
     }
     else {
       fn(NoMask{});
@@ -823,15 +1010,13 @@ int main_single(int argc, char const **args) {
   });
 #endif
 
-  return 0;
+  return main_result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
   std::vector<std::string> full_arguments(args, args + argc);
-
-  int result = 0;
 
   bool recursed = false;
   for (size_t i = 1; i < full_arguments.size(); i++) {
@@ -859,7 +1044,7 @@ int main(int argc, char const **args) {
     main_single(argc, args);
   }
 
-  return result;
+  return main_result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

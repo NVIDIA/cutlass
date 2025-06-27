@@ -141,25 +141,26 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_COMMAND_OPTIONS
         TEST_BASIC
         TEST_VARLEN
+        # NOTE: bwd doesn't support GQA yet, --h_k will just get ignored in these tests
+        TEST_VARLEN_00
+        TEST_VARLEN_01
+        TEST_VARLEN_02
+        TEST_VARLEN_03
+        TEST_VARLEN_04
+        TEST_VARLEN_05
+        TEST_VARLEN_06
+        TEST_VARLEN_07
+        TEST_VARLEN_08
+        TEST_VARLEN_09
+        TEST_VARLEN_10
+        TEST_VARLEN_11
+        TEST_VARLEN_12
+        TEST_VARLEN_13
+        TEST_VARLEN_14
         )
     target_include_directories(77_blackwell_fmha_bwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_fmha_bwd_${PREC} PRIVATE ${PREC_MACRO})
     target_compile_options(77_blackwell_fmha_bwd_${PREC} PRIVATE -Xptxas -v)
-
-    cutlass_example_add_executable(
-        77_blackwell_fmha_bwd_sat_${PREC}
-        77_blackwell_fmha_bwd.cu
-        TEST_COMMAND_OPTIONS
-        TEST_BASIC
-        # TEST_GEN_VARLEN
-        TEST_GEN_HDIM64
-        # TEST_GEN_GQA
-        # TEST_GEN_REMAP
-        # TEST_GEN_CACHEONLY)
-        )
-    target_include_directories(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_compile_definitions(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE ${PREC_MACRO} SKIP_ATOMIC)
-    target_compile_options(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE -Xptxas -v)
   endforeach()
 
   # Add a target that builds all examples
