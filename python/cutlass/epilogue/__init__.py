@@ -52,4 +52,5 @@ from cutlass.epilogue.evt_ops import (
     reshape,
     maximum,
     minimum,
+    exp
 )

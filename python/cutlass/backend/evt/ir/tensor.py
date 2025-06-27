@@ -51,15 +51,19 @@ class Tensor:
     """
     The tensor abstracts the data type
     """
-    def __init__(self, tensor=None, element=None, shape=None, layout_tag=None, is_constant=False) -> None:
+    def __init__(self, tensor=None, element=None, shape=None, stride=None, layout_tag=None, is_constant=False) -> None:
         if element is not None and tensor is not None:
             raise Exception(f"Must not specify both element and tensor")
         elif shape is not None and tensor is not None:
             raise Exception(f"Must not specify both shape and tensor")
         elif layout_tag is not None and tensor is not None:
             raise Exception(f"Must not specify both layout_tag and tensor")
-        elif (element is None or layout_tag is None or shape is None) and (tensor is None) :
-            raise Exception(f"Must specify one of (element, shape, layout) or (tensor)")
+        elif (element is None or (layout_tag is None and stride is None) or shape is None) and (tensor is None) :
+            raise Exception(f"Must specify one of (element, shape, layout/stride) or (tensor)")
+        elif stride is not None and tensor is not None:
+            raise Exception(f"Must not specify both stride and tensor")
+        elif stride is not None and layout_tag is not None:
+            raise Exception(f"Must not specify layout_tag when stride is provided")
 
         if isinstance(tensor, Tensor):
             # Directly copy all the attributes
@@ -70,10 +74,13 @@ class Tensor:
             else:
                 self.element, layout_tag = get_datatype_and_layout(tensor)
                 shape = get_tensor_shape(tensor)
-            if layout_tag == LayoutType.RowMajor:
-                self.layout = Layout(shape[::-1])
-            elif layout_tag == LayoutType.ColumnMajor:
-                self.layout = permutation(Layout(shape), [idx for idx in reversed(range(len(shape)))])
+            if stride is not None:
+                self.layout = Layout(shape[::-1], stride[::-1])
+            else:
+                if layout_tag == LayoutType.RowMajor:
+                    self.layout = Layout(shape[::-1])
+                elif layout_tag == LayoutType.ColumnMajor:
+                    self.layout = permutation(Layout(shape), [idx for idx in reversed(range(len(shape)))])
             self.layout = canonicalization(self.layout)
 
             self.is_constant = is_constant

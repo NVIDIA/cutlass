@@ -73,6 +73,12 @@ def minimum(x, y):
     elif is_torch_tensor(x):
         return torch.minimum(x, torch.tensor(y))
 
+def exp(x):
+    if is_numpy_tensor(x):
+        return np.exp(x)
+    elif is_torch_tensor(x):
+        return torch.exp(x)
+
 
 ##############################################################################
 # Layout manipulate nodes

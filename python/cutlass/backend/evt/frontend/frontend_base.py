@@ -73,6 +73,7 @@ class EVTFrontendBase:
         self.dag_ir = DAGIR(self.cc, self.element_compute)
         self.compute_cnt = 0
         self.layout_cnt = 0
+        self.imm_cnt = 0
 
         self.pass_manager = EVTPassManager(
             self.dag_ir,
@@ -106,6 +107,13 @@ class EVTFrontendBase:
     def trace(self, *args, **kwargs):
         # Parse the input
         self.parse(*args, **kwargs)
+
+        # Verify the DAG IR to ensure that "D" is the output node with out_degree = 0
+        if (self.cc >= 90):
+            if (self.dag_ir.out_degree("D") != 0):
+                raise RuntimeError(
+                    f"On SM90 or higher, D is expected to be a output node with 0 users to "
+                    f"enable smem reuse between C and D, but got {self.dag_ir.out_degree('D')}")
 
         # Run the passes
         self.pass_manager()
@@ -187,7 +195,8 @@ class EVTFrontendBase:
         except:
             raise ValueError(f"{type(value).__name__} cannot be converted to float.")
 
-        name = f"imm_{value}".replace('.', '_')
+        name = f"imm_{value}_k{self.imm_cnt}".replace('.', '_')
+        self.imm_cnt += 1
         load_node = LoadNode(name)
         load_node.tensor = {"tensor": value, "is_constant": True}
         self.add_node(load_node)

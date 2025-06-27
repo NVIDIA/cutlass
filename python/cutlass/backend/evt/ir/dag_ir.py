@@ -38,7 +38,9 @@ import networkx as nx
 
 from cutlass_library import DataType
 
+from cutlass.backend.evt.ir.compute_nodes import ComputeNode
 from cutlass.backend.evt.ir.node import NodeBase
+from cutlass.backend.library import ActivationOp
 from cutlass.backend.utils import device_cc
 
 
@@ -58,6 +60,8 @@ class DAGIR:
         self.reduction_names = []
 
         self.cc = cc
+
+        self.identity_counter = 0
 
     #
     # IR manipulator
@@ -79,7 +83,21 @@ class DAGIR:
             raise SyntaxError(f"Variable '{src}' is undefined.")
         if not self.has_node(dst):
             raise SyntaxError(f"Variable '{dst}' is undefined.")
-        self._graph.add_edge(src, dst, weight=weight)
+
+        if self._graph.has_edge(src, dst):
+            # The DiGraph doesn't support multiple edges between two nodes
+            # We insert an identity node in such case as a workaround
+            identity_name = f"autogen_identity_{self.identity_counter}"
+            self.identity_counter += 1
+            compute_node = ComputeNode(
+                name=identity_name, fn=ActivationOp.Identity,
+                element_output=self.element_compute,
+                element_compute=self.element_compute)
+            self.add_node(compute_node)
+            self.add_edge(src, identity_name, 0)
+            self.add_edge(identity_name, dst, weight)
+        else:
+            self._graph.add_edge(src, dst, weight=weight)
 
     def remove_node(self, node: str):
         """
