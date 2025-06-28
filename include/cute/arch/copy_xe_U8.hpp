@@ -682,6 +682,7 @@ struct XE_2D_U8x4x16_ST_N {
 };
 
 struct XE_2D_U8x8x16_ST_N {
+  using BlockShape = Shape<_8, _16>;
   template <class T>
   CUTE_HOST_DEVICE static void copy(void *baseoffset, int width, int height,
                                     int pitch, intel::coord_t coord,

@@ -67,7 +67,7 @@ struct FMHAPrefillConfig {
   using MMAOperation = typename MMAOP<GEMMDispatchPolicy, ElementInputType,ElementAccumulator>::Type;
   using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
                                     EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, 
-                                    SubgroupLayout, ElementAccumulator, 
+                                    SubgroupLayout, ElementAccumulator, ElementOutputType,
                                     cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
                                     GmemTiledCopyO>;
 

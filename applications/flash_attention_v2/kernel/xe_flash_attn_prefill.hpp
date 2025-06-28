@@ -370,7 +370,7 @@ public:
             CUTLASS_PRAGMA_UNROLL
             for (int row = 0; row < Vec; row++, row_idx++) { // 8
               if (col_idx - full_tile_offset > row_idx - discard_seq_coord) {
-                tSr(row, m, n) = -INFINITY;
+                tSr(row, m, n) = ElementAccumulator{-INFINITY};
               }
             }
           }
