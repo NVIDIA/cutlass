@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2025 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,20 +26,14 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(TEST_GROUPS --groups=2)
 
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(00_bmg_gemm)
-  add_subdirectory(01_bmg_gemm_with_collective_builder)
-  add_subdirectory(02_bmg_gemm_mixed_dtype)
-  add_subdirectory(03_bmg_gemm_streamk)
-  add_subdirectory(04_bmg_grouped_gemm)
-  add_subdirectory(05_bmg_gemm_with_epilogues)
-  add_subdirectory(06_bmg_flash_attention)
-  add_subdirectory(07_bmg_dual_gemm)
-  add_subdirectory(08_bmg_gemm_f8)
-  add_subdirectory(09_bmg_grouped_gemm_f8)
-endif()
-
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(generics)
-endif()
+cutlass_example_add_executable(
+  09_bmg_grouped_gemm_f8
+  09_bmg_grouped_gemm_f8.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_GROUPS
+)
+# TODO(codeplay): Remove these once IGC VectorAliasThreshold issue is fixed
+set_target_properties( 09_bmg_grouped_gemm_f8 PROPERTIES CXX_COMPILER_LAUNCHER "IGC_VectorAliasBBThreshold=10000" )
+set_target_properties( 09_bmg_grouped_gemm_f8 PROPERTIES CXX_LINKER_LAUNCHER "IGC_VectorAliasBBThreshold=10000" )

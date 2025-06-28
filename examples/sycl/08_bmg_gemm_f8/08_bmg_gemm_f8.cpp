@@ -173,21 +173,6 @@ struct ExampleRunner {
   //
   // Methods
   //
-  template <typename SrcT, typename DstT>
-  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
-      SrcT* h_src = new SrcT[size];
-      syclcompat::memcpy(h_src, d_src, size * sizeof(SrcT));
-      syclcompat::wait();
-      
-      DstT* h_dst = new DstT[size];
-      for (size_t i = 0; i < size; ++i) {
-          h_dst[i] = static_cast<DstT>(h_src[i]);
-      }
-
-      syclcompat::memcpy(d_dst, h_dst, size * sizeof(DstT));
-      syclcompat::wait();
-  }
-
   bool verify(const ProblemShapeType& problem_size, ElementCompute alpha, ElementCompute beta) {
       auto [M, N, K, L] = problem_size;
 
@@ -195,12 +180,12 @@ struct ExampleRunner {
       cutlass::DeviceAllocation<half_t> block_B_fp16(block_B.size());
 
       // fp8 -> fp16
-      convert_fp8_to_fp16<ElementA, half_t>(
+      convert_dtype<ElementA, half_t>(
           block_A.get(),
           block_A_fp16.get(),
           block_A.size()
       );
-      convert_fp8_to_fp16<ElementB, half_t>(
+      convert_dtype<ElementB, half_t>(
           block_B.get(),
           block_B_fp16.get(),
           block_B.size()
@@ -313,6 +298,8 @@ struct ExampleRunner {
         std::cout << "Datatype: float_e4m3_t"<< std::endl;
       } else if constexpr (std::is_same_v<ElementA, float_e5m2_t>) {
         std::cout << "Datatype: float_e5m2_t"<< std::endl;
+      } else {
+        static_assert(cutlass::detail::dependent_false<ElementA>, "Not a valid fp8 datatype.");
       }
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }

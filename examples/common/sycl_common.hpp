@@ -140,3 +140,10 @@ void random_fill(T *src, int seed, size_t N, float max, float min) {
     assert(0 & "Not supported dtype");
   }
 }
+
+template <typename SrcT, typename DstT>
+void convert_dtype(const SrcT* d_src, DstT* d_dst, size_t size) {
+  syclcompat::get_default_queue().parallel_for(size, [=](auto indx) {
+    d_dst[indx] = static_cast<DstT>(d_src[indx]);
+  }).wait();
+}
