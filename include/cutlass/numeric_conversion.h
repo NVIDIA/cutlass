@@ -6170,6 +6170,16 @@ private:
     }
     #endif
 
+    #if defined(CUTLASS_ENABLE_SYCL)
+    // TODO:element-wise data conversion works but not efficient
+    auto result = reinterpret_cast<PackedResultType&>(r);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < PackedResultType::kElements; ++i) {
+      result[i] = static_cast<half_t>(source[i]);
+    }
+    return result;
+    #else
+
     // View the input as reg
     uint32_t src_reg = to_reg(source);
     uint32_t const prmt_indices[2] = {0x9180, 0xB3A2};
@@ -6206,15 +6216,11 @@ private:
     const half2& bias = reinterpret_cast<const half2&>(bias_rep);
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
-      fp16x2_val = fp16x2_val - bias;
-#else
       half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
       fp16x2_val = __hsub2(fp16x2_val, bias);
-#endif
     }
     return reinterpret_cast<PackedResultType&>(r);
+    #endif
   }
 
   friend class detail::VectorizedConverter;

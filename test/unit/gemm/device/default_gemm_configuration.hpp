@@ -2071,6 +2071,66 @@ struct DefaultGemmConfigurationToCutlass3Types<
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// Intel XE MMA f16s8f32
+template <typename LayoutA, typename LayoutB, typename LayoutC>
+struct DefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelXe,
+    cute::half_t, LayoutA,
+    int8_t, LayoutB,
+    float, LayoutC,
+    float>
+{
+  using TileShape = Shape<_256, _256, _32>;
+
+  using DispatchPolicy = MainloopIntelXeXMX16MixedPrecision<3>;
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+
+  // A
+  static constexpr int kAlignmentA = 32;
+  using DefaultOperandA = detail::DefaultGemm_TensorOpXe_OperandA<
+    half_t, LayoutA, kAlignmentA, 32>;
+  using GmemTiledCopyA = typename DefaultOperandA::GmemTiledCopy;
+  
+  // B
+  static constexpr int kAlignmentB = 32;
+  using DefaultOperandB = detail::DefaultGemm_TensorOpXe_OperandB<
+    int8_t, LayoutB, kAlignmentB, 32>;
+  using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
+
+  // Mainloop
+  using CollectiveMainloop = collective::CollectiveMma<
+    DispatchPolicy, TileShape,
+    cute::half_t, TagToStrideA_t<LayoutA>,
+    cute::tuple<int8_t>, TagToStrideB_t<LayoutB>,
+    TiledMma,
+    GmemTiledCopyA, void, void, cute::identity,  // A
+    GmemTiledCopyB, void, void, cute::identity   // B
+  >;
+
+  using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    EpilogueOp,
+    TileShape,
+    decltype(tile_shape(TiledMma()))
+  >;
+
+  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
+    epilogue::IntelXeXMX16,
+    TileShape,
+    float, TagToStrideC_t<LayoutC>,
+    float, TagToStrideC_t<LayoutC>,
+    FusionCallBacks,
+    XE_2D_U32x8x16_LD_N, void, void,
+    XE_2D_U32x8x16_ST_N, void, void>;
+};
+
+///////////////////////////////////////////////////////////////////////////////
 #endif // SYCL INTEL TARGET
 
 } // namespace device
