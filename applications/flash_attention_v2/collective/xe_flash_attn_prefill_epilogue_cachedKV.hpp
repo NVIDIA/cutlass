@@ -53,15 +53,14 @@ template <class DispatchPolicy, class MMAOperation_, class TileShapeOutput_, cla
   static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
 };
 
-template <class MMAOperation_, class TileShapeOutput_, class SubgroupLayout_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
-class FlashPrefillCachedEpilogue<epilogue::IntelXeXMX16,  MMAOperation_, TileShapeOutput_, SubgroupLayout_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
+template <class MMAOperation_, class TileShapeOutput_, class SubgroupLayout_, class ElementCompute_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
+class FlashPrefillCachedEpilogue<epilogue::IntelXeXMX16,  MMAOperation_, TileShapeOutput_, SubgroupLayout_, ElementCompute_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
 public:
   //
   // Type Aliases
   //
   using DispatchPolicy = epilogue::IntelXeXMX16;
   using ElementO = ElementO_;
-  using ElementAccumulator = ElementO_;
   using StrideO = StrideO_;
   using ElementLSE = ElementLSE_;
   using CopyOpO = CopyOpO_;
@@ -70,7 +69,8 @@ public:
   using TiledMmaOutput = typename TiledMMAHelper<MMA_Atom<MMAOperation_>, Layout<TileShapeOutput>, SubgroupLayout>::TiledMMA;
   using GmemTiledCopyO = CopyOpO;
   using ElementOutput = ElementO_;
-  using ElementCompute = ElementO_;
+  using ElementCompute = ElementCompute_;
+  using ElementAccumulator = ElementCompute_;
   using SubgroupTileShape = decltype(cute::shape_div(TileShapeOutput{}, (SubgroupLayout{}.shape())));
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
@@ -197,7 +197,17 @@ public:
     auto thread_xe_store_o = params.xe_store_o.get_thread_slice(ThreadIdxX());
     Tensor tOgO = thread_xe_store_o.partition_D(gO);
 
-    copy(params.xe_store_o, out_reg, tOgO);
+    Tensor final_out_reg = make_fragment_like<ElementOutput>(out_reg);
+    // iff ElementOutput == ElementAccumulator, then convert_type doesn't do the right conversion
+    // so we call copy() which internally performs a static_cast op on the data.
+    // for ElementOutput == bf16 | fp16, convert_type calls relevant NumericConverter specialization.    
+    if constexpr (cute::is_same_v<ElementOutput, ElementCompute>) {
+      copy(out_reg, final_out_reg);
+    } else {
+      Tensor temp = convert_type<ElementOutput>(out_reg);
+      copy(temp, final_out_reg);
+    }
+    copy(params.xe_store_o, final_out_reg, tOgO);
   }
 
   // SequenceLengthShapeType = Shape<int, int, int>

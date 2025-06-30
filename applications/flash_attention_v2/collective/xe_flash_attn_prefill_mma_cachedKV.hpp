@@ -164,7 +164,7 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     // Paged KV Cache
     int const* ptr_page_table;
     int page_size;
-    int num_pages_per_seq;
+    int const* num_pages_per_seq;
   };
 
   struct Params {
@@ -176,7 +176,7 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     // Paged KV Cache
     int const* ptr_page_table;
     int page_size;
-    int num_pages_per_seq;
+    int const* num_pages_per_seq;
   };
 
   //

@@ -91,7 +91,7 @@ struct XE_Flash_Attention_Prefill_CachedKV {
   using GmemTiledCopyV = cute::XE_2D_U16x16x32_LD_V;
   using GmemTiledCopyStore = cute::XE_2D_U32x8x16_ST_N;
   using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillCachedEpilogue<
-        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
+        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, ElementOutput, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
         GmemTiledCopyStore>;
   using FlashPrefillSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<
         HasCausalMask, EpilogueDispatchPolicy, ElementAccumulator>;
@@ -196,7 +196,7 @@ struct TestbedImpl {
   struct PagedKVParams {
       cutlass::DeviceAllocation<int> page_table;
       int page_size = 128;
-      int num_pages_per_seq = 0;
+      cutlass::DeviceAllocation<int> num_pages_per_seq;
   };
   PagedKVParams paged_kv_cache;
 
@@ -246,27 +246,33 @@ struct TestbedImpl {
     block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
     block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
 
-    if (use_kv_cache && UsePagedKV) {
-        int num_pages_per_seq = seq_len_kv_cache / paged_kv_cache.page_size;
-        paged_kv_cache.num_pages_per_seq = num_pages_per_seq;
+    if constexpr (UsePagedKV) {
+      std::vector<int> num_pages_per_seq{0};
+      int num_pages = 0;
+      for(int b = 0; b < cute::get<0>(problem_shape); b++) {
+        int seq_len_cache = isVarLen ? cumulative_seqlen_kv_cache[b + 1] - cumulative_seqlen_kv_cache[b] : seq_len_kv_cache;
+        int pages_per_seq = ceil_div(seq_len_cache, paged_kv_cache.page_size);
+        num_pages_per_seq.push_back(num_pages_per_seq.back() + pages_per_seq);
+        num_pages += pages_per_seq;
+      }
+      paged_kv_cache.page_table.reset(num_pages);
 
-        int num_pages = num_pages_per_seq * batch;
-        paged_kv_cache.page_table.reset(batch * num_pages_per_seq);
-
-        // initialize block table with random mapping for non-contiguous layout
-        std::vector<int> page_mapping(batch * num_pages_per_seq);
-        for (int b = 0; b < batch; ++b) {
-            std::vector<int> physical_pages(num_pages_per_seq);
-            std::iota(physical_pages.begin(), physical_pages.end(), 0);
-            // shuffle physical pages
-            std::shuffle(physical_pages.begin(), physical_pages.end(), std::mt19937{ std::random_device{}() });
-            for (int blk = 0; blk < num_pages_per_seq; ++blk) {
-                int logical_idx = b * num_pages_per_seq + blk;
-                page_mapping[logical_idx] = physical_pages[blk];
-            }
+      // initialize block table with random mapping for non-contiguous layout
+      std::vector<int> page_mapping(num_pages);
+      for (int b = 0; b < cute::get<0>(problem_shape); ++b) {
+        std::vector<int> physical_pages(num_pages_per_seq[b + 1] - num_pages_per_seq[b]);
+        std::iota(physical_pages.begin(), physical_pages.end(), 0);
+        // shuffle physical pages
+        std::shuffle(physical_pages.begin(), physical_pages.end(), std::mt19937{ std::random_device{}() });
+        for (int blk = 0; blk < physical_pages.size(); ++blk) {
+          int logical_idx = num_pages_per_seq[b] + blk;
+          page_mapping[logical_idx] = physical_pages[blk];
         }
-        syclcompat::memcpy(paged_kv_cache.page_table.get(), page_mapping.data(), page_mapping.size() * sizeof(int));
-        syclcompat::wait();
+      }
+      syclcompat::memcpy(paged_kv_cache.page_table.get(), page_mapping.data(), page_mapping.size() * sizeof(int));
+
+      paged_kv_cache.num_pages_per_seq.reset(num_pages_per_seq.size());
+      syclcompat::memcpy(paged_kv_cache.num_pages_per_seq.get(), num_pages_per_seq.data(), num_pages_per_seq.size() * sizeof(int));
     }
 
     initialize_block(block_Q, seed + 2023);
@@ -415,58 +421,55 @@ struct TestbedImpl {
 
       int kv_group_update = 1;
       for (int h = 0; h < num_heads_q; h++) {
-        cutlass::DeviceAllocation<ElementOutput> block_S;
+        cutlass::DeviceAllocation<ElementAccumulator> block_S;
         block_S.reset(seq_len_qo * seq_len_kv_total);
 
         ElementK* k_ptr;
         ElementV* v_ptr;
 
         if (use_kv_cache) {
-            cutlass::DeviceAllocation<ElementK> block_K_concat(head_size_qk * seq_len_kv_total);
-            cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
+          cutlass::DeviceAllocation<ElementK> block_K_concat(head_size_qk * seq_len_kv_total);
+          cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
 
-            // Concatenate K_cache and K
-            syclcompat::memcpy<ElementK>(
-                block_K_concat.get(),
-                block_K_cache.get() + offset_k_cache,
-                seq_len_kv_cache * head_size_qk
-            );
-            syclcompat::memcpy<ElementK>(
-                block_K_concat.get() + seq_len_kv_cache * head_size_qk,
-                block_K.get() + offset_k,
-                seq_len_kv * head_size_qk
-            );
+          // Concatenate K_cache and K
+          syclcompat::memcpy<ElementK>(
+              block_K_concat.get(),
+              block_K_cache.get() + offset_k_cache,
+              seq_len_kv_cache * head_size_qk
+          );
+          syclcompat::memcpy<ElementK>(
+              block_K_concat.get() + seq_len_kv_cache * head_size_qk,
+              block_K.get() + offset_k,
+              seq_len_kv * head_size_qk
+          );
 
-            // Concatenate V_cache and V
-            syclcompat::memcpy<ElementV>(
-                block_V_concat.get(),
-                block_V_cache.get() + offset_v_cache,
-                seq_len_kv_cache * head_size_vo
-            );
-            syclcompat::memcpy<ElementV>(
-                block_V_concat.get() + seq_len_kv_cache * head_size_vo,
-                block_V.get() + offset_v,
-                seq_len_kv * head_size_vo
-            );
-            syclcompat::wait();
+          // Concatenate V_cache and V
+          syclcompat::memcpy<ElementV>(
+              block_V_concat.get(),
+              block_V_cache.get() + offset_v_cache,
+              seq_len_kv_cache * head_size_vo
+          );
+          syclcompat::memcpy<ElementV>(
+              block_V_concat.get() + seq_len_kv_cache * head_size_vo,
+              block_V.get() + offset_v,
+              seq_len_kv * head_size_vo
+          );
 
-            k_ptr = block_K_concat.get();
-            v_ptr = block_V_concat.get();
-        }
-        else {
-            k_ptr = block_K.get() + offset_k;
-            v_ptr = block_V.get() + offset_v;
+          k_ptr = block_K_concat.get();
+          v_ptr = block_V_concat.get();
+        } else {
+          k_ptr = block_K.get() + offset_k;
+          v_ptr = block_V.get() + offset_v;
         }
 
         cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
         cutlass::TensorRef ref_K(k_ptr, LayoutK::packed({head_size_qk, seq_len_kv_total}));
         cutlass::TensorRef ref_V(v_ptr, LayoutV::packed({seq_len_kv_total, head_size_vo}));
         cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
-        cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv_total, head_size_qk}, 1.f, ref_Q,
+        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv_total, head_size_qk}, ElementAccumulator{1}, ref_Q,
                                                 cutlass::ComplexTransform::kNone, ref_K, cutlass::ComplexTransform::kNone,
-                                                0.f, ref_S, ref_S, ElementAccumulator(0),
+                                                ElementAccumulator{0}, ref_S, ref_S, ElementAccumulator{0},
                                                 1,                   // batch_count
                                                 seq_len_qo * head_size_qk, // batch_stride_Q
                                                 seq_len_kv_total * head_size_qk, // batch_stride_K
@@ -476,13 +479,11 @@ struct TestbedImpl {
 
         syclcompat::wait();
 
-        std::vector<ElementOutput> host_S(block_S.size());
-        syclcompat::memcpy<ElementOutput>(host_S.data(), block_S.get(), host_S.size());
-        syclcompat::wait();
+        std::vector<ElementAccumulator> host_S(block_S.size());
+        syclcompat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
 
         // delete this memory as it is no longer needed
         block_S.reset();
-
         auto offset = cute::min(seq_len_qo, seq_len_kv);
         auto discard_seq_coord = seq_len_qo - offset;
         auto full_tile_offset = seq_len_kv - offset;
@@ -492,13 +493,13 @@ struct TestbedImpl {
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = start_col; col < seq_len_kv_total; col++) {
               if (col - full_tile_offset > row + start_col - discard_seq_coord)
-                host_S[col + row * seq_len_kv_total] = -INFINITY;
+                host_S[col + row * seq_len_kv_total] = ElementAccumulator{-INFINITY};
             }
           }
         }
 
         // compute max element per row of S
-        std::vector<ElementOutput> max_vec(seq_len_qo, -INFINITY);
+        std::vector<ElementAccumulator> max_vec(seq_len_qo, ElementAccumulator{-INFINITY});
         for (int row = 0; row < seq_len_qo; row++) {
           int idx = row * seq_len_kv_total;
           int max_idx = row;
@@ -514,12 +515,12 @@ struct TestbedImpl {
           int idx = row * seq_len_kv_total;
           int max_idx = row;
           for (int col = 0; col < seq_len_kv_total; col++, idx++) {
-            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) * softmax_scale);
+            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) * static_cast<ElementAccumulator>(softmax_scale));
           }
         }
 
         // compute sum per row of S
-        std::vector<ElementOutput> sum_vec(seq_len_qo, ElementOutput{0});
+        std::vector<ElementAccumulator> sum_vec(seq_len_qo, ElementAccumulator{0});
         for (int row = 0; row < seq_len_qo; row++) {
           int idx = row * seq_len_kv_total;
           int sum_idx = row;
@@ -531,7 +532,7 @@ struct TestbedImpl {
           idx = row * seq_len_kv_total;
           sum_idx = row;
           for (int col = 0; col < seq_len_kv_total; col++, idx++) {
-            if(HasCausalMask && row < discard_seq_coord) { 
+            if(HasCausalMask && row < discard_seq_coord) {
               host_S[idx] = 0;
             } else {
               host_S[idx] /= sum_vec[sum_idx];
@@ -547,13 +548,16 @@ struct TestbedImpl {
         block_P.reset(host_P.size());
 
         syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
-        syclcompat::wait();
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv_total}, 1.f, ref_P,
+        cutlass::DeviceAllocation<ElementAccumulator> block_acc;
+        block_acc.reset(seq_len_qo * head_size_vo);
+        cutlass::TensorRef ref_acc(block_acc.get(), LayoutO::packed({seq_len_qo, head_size_vo}));
+
+        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv_total}, ElementAccumulator{1}, ref_P,
                                                 cutlass::ComplexTransform::kNone, ref_V, cutlass::ComplexTransform::kNone,
-                                                0.f, ref_O, ref_O, ElementAccumulator(0),
+                                                ElementAccumulator{0}, ref_acc, ref_acc, ElementAccumulator{0},
                                                 1,                   // batch_count
                                                 seq_len_qo * seq_len_kv_total,   // batch_stride_P
                                                 seq_len_kv_total * head_size_vo, // batch_stride_V
@@ -565,8 +569,19 @@ struct TestbedImpl {
         // delete this memory as it is no longer needed
         block_P.reset();
 
+        std::vector<ElementAccumulator> vec_acc(block_acc.size());
+        syclcompat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
+
+        // delete this memory as it is no longer needed
+        block_acc.reset();
+        std::vector<ElementOutput> vec_out(vec_acc.size());
+        for(int i = 0; i < vec_out.size(); i++) {
+          vec_out[i] = static_cast<ElementOutput>(vec_acc[i]);
+        }
+        syclcompat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
+
         offset_q += seq_len_qo * head_size_qk;
-        if(kv_group_update % q_group_size == 0) {
+        if(kv_group_update % q_group_size==0) {
           offset_k += seq_len_kv * head_size_qk;
           offset_v += seq_len_kv * head_size_vo;
           offset_k_cache += seq_len_kv_cache * head_size_qk;
@@ -581,7 +596,7 @@ struct TestbedImpl {
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_O.get(), block_O.get(),
-                                                                          block_O.size(), 0.5f, 0.5f);
+                                                                          block_O.size(), ElementOutput{0.5}, ElementOutput{0.5});
     return passed;
   }
 
@@ -629,7 +644,7 @@ struct TestbedImpl {
       block_V_cache.get(), stride_V_cache,
       UsePagedKV ? paged_kv_cache.page_table.get() : nullptr,
       UsePagedKV ? paged_kv_cache.page_size : 0,
-      UsePagedKV ? paged_kv_cache.num_pages_per_seq : 0},
+      UsePagedKV ? paged_kv_cache.num_pages_per_seq.get() : nullptr},
       {softmax_scale},
       {block_O.get(), stride_O},
       hw_info};

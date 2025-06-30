@@ -178,7 +178,8 @@ public:
   static bool can_implement(Arguments const &args) {
     bool mode_implementable = args.mode == gemm::GemmUniversalMode::kGemm or
                               (args.mode == gemm::GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
-    return mode_implementable;
+    bool valid_page_size = !PagedKV || (args.mainloop.page_size >= QK_BLK_N && args.mainloop.page_size % QK_BLK_N == 0);
+    return mode_implementable && valid_page_size;
   }
 
   static int get_workspace_size(Arguments const &args) { return 0; }
@@ -314,10 +315,22 @@ public:
       }
       auto& prefetch_K = (seq_len_kv_cache == 0) ? tiled_prefetch_k: tiled_prefetch_k_cache;
       auto& pKgK1_ = (seq_len_kv_cache == 0) ? pKgK: pKgK_cache;
+
+      int cached_nblock = 0;
+      if constexpr (PagedKV) {
+        if (seq_len_kv_cache != 0) {
+          int curr_batch_pages = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord + 1] - mainloop_params.num_pages_per_seq[batch_coord]
+                                            : ceil_div(seq_len_kv_cache, mainloop_params.page_size);
+          int batch_offset = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord] : batch_coord * curr_batch_pages;
+          cached_nblock = mainloop_params.ptr_page_table[
+                    batch_offset                     // page table for this batch
+                ] * tiles_per_page;               // base block idx of physical page
+        }
+      }
        // The headsize for both cached and non-cached version is the same
       for (int j = 0; j < size<4>(pKgK1_); j++) {
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < DispatchPolicy::Stages; i++) {
+        for (int i = cached_nblock; i < cached_nblock + DispatchPolicy::Stages; i++) {
           prefetch(prefetch_K, pKgK1_(_, _, _ , i, j));
         }
       }
@@ -345,18 +358,6 @@ public:
 
         bool is_KV_cache = nblock < nblock_cache;
 
-        int cached_nblock = nblock;
-        if constexpr (PagedKV) {
-          if (is_KV_cache) {
-            // get physical page idx from page table
-            cached_nblock = params.mainloop.ptr_page_table[
-                  batch_coord * params.mainloop.num_pages_per_seq +     // page table for this batch
-                  nblock * QK_BLK_N / params.mainloop.page_size       // nblock (tile idx) to logical page idx
-                  ] * tiles_per_page +                                  // base block idx of physical page
-                  nblock % tiles_per_page;                            // offset within page
-          }
-        }
-
         // 1) Load KV (performed inside mmaQK)
         auto gK_ = is_KV_cache ? gK_cache(_, _, cached_nblock, _) : gK(_, _, nblock - nblock_cache, _);
         auto gV_ = is_KV_cache ? gV_cache(_, _, cached_nblock) : gV(_, _, nblock - nblock_cache);
@@ -372,8 +373,32 @@ public:
         // prefetching it the same way as cutlass K matrix does not make sense
         auto& tiled_prefetch_v_ = is_KV_cache ? tiled_prefetch_v_cache : tiled_prefetch_v;
         auto& pVgV_ = is_KV_cache  ? pVgV_cache : pVgV;
-        for(int i=0; i < size<1>(pVgV); i++) {
-          prefetch(tiled_prefetch_v_, pVgV_cache(_, i, _ , nblock - (!is_KV_cache) * nblock_cache));
+        int v_prefetch_idx = is_KV_cache ? PagedKV ? cached_nblock : nblock
+                                         : nblock - nblock_cache;
+        for(int i = 0; i < size<1>(pVgV_); i++) {
+          prefetch(tiled_prefetch_v_, pVgV_(_, i, _ , v_prefetch_idx));
+        }
+
+        int next_cached_nblock = nblock + 1;
+        bool is_next_KV_cache = next_cached_nblock < nblock_cache;
+        if constexpr (PagedKV) {
+          if (is_next_KV_cache) {
+            int curr_batch_pages = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord + 1] - mainloop_params.num_pages_per_seq[batch_coord]
+                                              : ceil_div(seq_len_kv_cache, mainloop_params.page_size);
+            int next_page_logical_idx = next_cached_nblock * QK_BLK_N / params.mainloop.page_size;
+            int batch_offset = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord] : batch_coord * curr_batch_pages;
+            bool valid_page = next_page_logical_idx < curr_batch_pages;
+            // get physical page idx from page table
+            if (valid_page) {
+              next_cached_nblock = params.mainloop.ptr_page_table[
+                    batch_offset +                  // page table for this batch
+                    next_page_logical_idx           // nblock (tile idx) to logical page idx
+                    ] * tiles_per_page +            // base block idx of physical page
+                    next_cached_nblock % tiles_per_page;        // offset within page
+            } else {
+              next_cached_nblock = curr_batch_pages * tiles_per_page; // push idx out of bounds to respect the boundary between batches
+            }
+          }
         }
 
         // 4) Fused softmax
@@ -382,16 +407,26 @@ public:
 
         // 5) Perform GEMM O = S*V
         collective_mma.template mmaPV<VSlicer>(out_reg, tSr, gV_, out_reg, mainloop_params, is_KV_cache);
-        
+
+        // Prefetch the next Q tile
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size<3>(pQgQ); i++) {
+          prefetch(tiled_prefetch_q, pQgQ(_, _, _, i));
+        }
+
+        is_KV_cache = is_next_KV_cache;
+        cached_nblock = next_cached_nblock;
         // Prefetch the next K tile
         // there is no need to gaurd it with if statememt as prefetch will ignore out of bound reading
        
         bool sel_prefetch_k = (nblock + DispatchPolicy::Stages) < nblock_cache;
         auto& prefetch_k_selector = sel_prefetch_k ? tiled_prefetch_k_cache: tiled_prefetch_k;
         auto& pKgK_ = sel_prefetch_k  ? pKgK_cache : pKgK;
+        int k_prefetch_idx = sel_prefetch_k ? PagedKV ? cached_nblock : nblock + DispatchPolicy::Stages
+                                            : nblock + DispatchPolicy::Stages - nblock_cache;
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < size<4>(pKgK_); j++) {
-              prefetch(prefetch_k_selector, pKgK_(_, _, _, (nblock + DispatchPolicy::Stages) - (!sel_prefetch_k) * nblock_cache , j));         
+          prefetch(prefetch_k_selector, pKgK_(_, _, _, k_prefetch_idx , j));
         }
         barrier_wait(barrier_scope);
       }
@@ -406,8 +441,8 @@ public:
         collective_mma.mmaQK(tSr, gQ,  gK(_, _, nblock_new - 1, _), tSr, ceil_div(head_size_qk, QK_BLK_K), mainloop_params, false);
         // we only need one block ahead, there is enough gap to prefetch it while doing softmax. because the gap between the two MMA is big,
         // prefetching it the same way as cutlass K matrix does not make sense
-        for(int i=0; i< size<1>(pVgV); i++) {
-        prefetch(tiled_prefetch_v, pVgV(_, i, _ , nblock_new - 1));
+        for(int i = 0; i< size<1>(pVgV); i++) {
+          prefetch(tiled_prefetch_v, pVgV(_, i, _ , nblock_new - 1));
         }
         // mask the elements of each tile where j > i
         const int item_id = thread_idx % SubgroupSize;
@@ -420,7 +455,7 @@ public:
             CUTLASS_PRAGMA_UNROLL
             for (int row = 0; row < Vec; row++, row_idx++) { // 8
               if (col_idx - full_tile_offset > row_idx - discard_seq_coord) {
-                tSr(row, m, n) = -INFINITY;
+                tSr(row, m, n) = ElementAccumulator{-INFINITY};
               }
             }
           }
