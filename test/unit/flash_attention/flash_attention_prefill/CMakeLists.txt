@@ -26,44 +26,79 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_flash_attention_prefill_64_xe
-  xe_flash_prefill_bf16_fp32_fp32_64.cpp
-  xe_flash_prefill_fp16_fp32_fp32_64.cpp
-)
+set(TEST_EXES "")
+set(TEST_RUNS "")
 
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_flash_attention_prefill_96_xe
-  xe_flash_prefill_bf16_fp32_fp32_96.cpp
-  xe_flash_prefill_fp16_fp32_fp32_96.cpp
-)
+foreach(INPUT_TYPE bfloat16_t half_t float_e5m2_t float_e4m3_t)
+  set(input_name "cutlass_test_unit_flash_attention_prefill_bf16")
+  set(test_name_input "XE_Flash_Attention_Prefill_bf16")
+  set(is_bf16 true)
+  set(MMAOP MMAOperationBF16)
+  set(OUT_TYPE_LIST float)
+  if(${INPUT_TYPE} STREQUAL "half_t")
+    set(input_name "cutlass_test_unit_flash_attention_prefill_fp16")
+    set(is_bf16 false)
+    list(APPEND OUT_TYPE_LIST half_t)
+    set(test_name_input "XE_Flash_Attention_Prefill_fp16")
+    set(MMAOP MMAOperationFP16)
+  elseif(${INPUT_TYPE} STREQUAL "float_e5m2_t")
+    set(input_name "cutlass_test_unit_flash_attention_prefill_fp8e5m2")
+    set(is_bf16 false)
+    list(APPEND OUT_TYPE_LIST float_e5m2_t)
+    set(test_name_input "XE_Flash_Attention_Prefill_fp8e5m2")
+    set(MMAOP MMAOperationFP16)
+  elseif(${INPUT_TYPE} STREQUAL "float_e4m3_t")
+    set(input_name "cutlass_test_unit_flash_attention_prefill_fp8e4m3")
+    set(is_bf16 false)
+    list(APPEND OUT_TYPE_LIST float_e4m3_t)
+    set(test_name_input "XE_Flash_Attention_Prefill_fp8e4m3")
+    set(MMAOP MMAOperationFP16)
+  else()
+    list(APPEND OUT_TYPE_LIST bfloat16_t)
+  endif()
 
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_flash_attention_prefill_128_xe
-  xe_flash_prefill_bf16_fp32_fp32_128.cpp
-  xe_flash_prefill_fp16_fp32_fp32_128.cpp
-)
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_flash_attention_prefill_192_xe
-  xe_flash_prefill_bf16_fp32_fp32_192.cpp
-  xe_flash_prefill_fp16_fp32_fp32_192.cpp
-)
+  foreach(OUT_TYPE IN LISTS OUT_TYPE_LIST)
+    set(out_name "fp32")
+    if(${OUT_TYPE} STREQUAL "bfloat16_t")
+      set(out_name "bf16")
+    elseif(${OUT_TYPE} STREQUAL "half_t")
+      set(out_name "fp16")
+    elseif(${OUT_TYPE} STREQUAL "float_e5m2_t")
+      set(out_name "fp8e5m2")
+    elseif(${OUT_TYPE} STREQUAL "float_e4m3_t")
+      set(out_name "fp8e4m3")
+    endif()
+    set(input_name_out "${input_name}_fp32_${out_name}")
+    set(test_name_input_out "${test_name_input}_fp32_${out_name}")
+    foreach(HEAD_DIM 64 96 128 192)
+      set(out_exe "${input_name_out}_h${HEAD_DIM}_xe")
+      set(TEST_NAME "${test_name_input_out}_h${HEAD_DIM}")
+      set(SHAPE_H "Shape_h${HEAD_DIM}")
+      cutlass_test_unit_add_executable(
+        ${out_exe} xe_flash_prefill.cpp
+      )
+      target_compile_definitions(${out_exe} PRIVATE
+                                  INPUT_TYPE=${INPUT_TYPE}
+                                  OUT_TYPE=${OUT_TYPE}
+                                  TEST_NAME=${TEST_NAME}
+                                  HEAD_DIM=${HEAD_DIM}
+                                  SHAPE_H=${SHAPE_H}
+                                  MMAOP=${MMAOP})
+      list(APPEND TEST_EXES ${out_exe})
+      string(REGEX REPLACE cutlass_ "" out_exe_snipped ${out_exe})
+      list(APPEND TEST_RUNS ${out_exe_snipped})
+    endforeach()
+  endforeach()
+endforeach()
 
 add_custom_target(
   cutlass_test_unit_flash_attention_prefill
   DEPENDS
-  cutlass_test_unit_flash_attention_prefill_64_xe
-  cutlass_test_unit_flash_attention_prefill_96_xe
-  cutlass_test_unit_flash_attention_prefill_128_xe
-  cutlass_test_unit_flash_attention_prefill_192_xe
+  ${TEST_EXES}
 )
 
 add_custom_target(
   test_unit_flash_attention_prefill
   DEPENDS
-  test_unit_flash_attention_prefill_64_xe
-  test_unit_flash_attention_prefill_96_xe
-  test_unit_flash_attention_prefill_128_xe
-  test_unit_flash_attention_prefill_192_xe
+  ${TEST_RUNS}
 )

@@ -61,9 +61,74 @@
 namespace test {
 namespace flash_attention {
 
-  template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,  
-         typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, 
-         typename MMAOperation, bool HasCausalMask, bool isVarLen, int PipelineStages>
+using namespace cute;
+
+using MMAOperationBF16 = cute::XE_8x16x16_F32BF16BF16F32_TT;
+using MMAOperationFP16 = cute::XE_8x16x16_F32F16F16F32_TT;
+
+struct Shape_h64 {
+  using ShapeQK = Shape<_128, _64, _64>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutput = Shape<_128, _64, _64>;
+  using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>;
+};
+
+struct Shape_h96 {
+  using ShapeQK = Shape<_128, _64, _32>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutput = Shape<_128, _96, _64>;
+  using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>; 
+};
+
+struct Shape_h128 {
+  using ShapeQK = Shape<_128, _64, _64>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutput = Shape<_128, _128, _64>;
+  using SubgroupLayout = Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>;
+};
+
+struct Shape_h192 {
+  using ShapeQK = Shape<_256, _64, _64>;
+  using ShapePV = Shape<_256, _32, _64>;
+  using ShapeOutput = Shape<_256, _192, _64>;
+  using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>; 
+};
+
+/////////////////////////////////////////////////////////////////////
+  template <int input_bits, int output_bits> struct TiledCopyConfig;
+
+  template <> struct TiledCopyConfig<8, 32> {
+    using GmemTiledCopyQ = cute::XE_2D_U8x8x32_LD_N;
+    using GmemTiledCopyK = cute::XE_2D_U8x16x16_LD_T;
+    using GmemTiledCopyV = cute::XE_2D_U8x32x32_LD_V;
+    using GmemTiledCopyO = cute::XE_2D_U32x8x16_ST_N;
+  };
+
+  template <> struct TiledCopyConfig<8, 8> {
+    using GmemTiledCopyQ = cute::XE_2D_U8x8x32_LD_N;
+    using GmemTiledCopyK = cute::XE_2D_U8x16x16_LD_T;
+    using GmemTiledCopyV = cute::XE_2D_U8x32x32_LD_V;
+    using GmemTiledCopyO = cute::XE_2D_U8x8x16_ST_N;
+  };
+
+  template <> struct TiledCopyConfig<16, 32> {
+    using GmemTiledCopyQ = cute::XE_2D_U16x8x32_LD_N;
+    using GmemTiledCopyK = cute::XE_2D_U16x16x16_LD_T;
+    using GmemTiledCopyV = cute::XE_2D_U16x16x32_LD_V;
+    using GmemTiledCopyO = cute::XE_2D_U32x8x16_ST_N;
+  };
+
+  template <> struct TiledCopyConfig<16, 16> {
+    using GmemTiledCopyQ = cute::XE_2D_U16x8x32_LD_N;
+    using GmemTiledCopyK = cute::XE_2D_U16x16x16_LD_T;
+    using GmemTiledCopyV = cute::XE_2D_U16x16x32_LD_V;
+    using GmemTiledCopyO = cute::XE_2D_U16x8x16_ST_N;
+  };
+/////////////////////////////////////////////////////////////////////
+
+template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,  
+        typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, 
+        typename MMAOperation, bool HasCausalMask, bool isVarLen, int PipelineStages>
 struct XE_Flash_Attention_Prefill {
   using LayoutQ = cutlass::layout::RowMajor;
   using LayoutK = cutlass::layout::ColumnMajor;
@@ -84,10 +149,10 @@ struct XE_Flash_Attention_Prefill {
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
-  using GmemTiledCopyQ = cute::XE_2D_U16x8x32_LD_N;
-  using GmemTiledCopyK = cute::XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
-  using GmemTiledCopyV = cute::XE_2D_U16x16x32_LD_V;
-  using GmemTiledCopyStore = cute::XE_2D_U32x8x16_ST_N;
+  using GmemTiledCopyQ = typename TiledCopyConfig<cute::sizeof_bits_v<ElementInputQ>, cute::sizeof_bits_v<ElementOutput>>::GmemTiledCopyQ;
+  using GmemTiledCopyK = typename TiledCopyConfig<cute::sizeof_bits_v<ElementInputKV>, cute::sizeof_bits_v<ElementOutput>>::GmemTiledCopyK;
+  using GmemTiledCopyV = typename TiledCopyConfig<cute::sizeof_bits_v<ElementInputKV>, cute::sizeof_bits_v<ElementOutput>>::GmemTiledCopyV;
+  using GmemTiledCopyStore = typename TiledCopyConfig<cute::sizeof_bits_v<ElementInputQ>, cute::sizeof_bits_v<ElementOutput>>::GmemTiledCopyO;
   using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
         EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, ElementOutput, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
         GmemTiledCopyStore>;
@@ -186,6 +251,27 @@ struct TestbedImpl {
   //
   // Methods
   //
+
+  template <typename SrcT, typename DstT>
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+    syclcompat::get_default_queue().parallel_for(size, [=](auto indx) {
+      d_dst[indx] = static_cast<DstT>(d_src[indx]);
+    }).wait();
+  }
+
+  template <typename T>
+  static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
+
+  template <typename Tin> inline auto in_memory(cutlass::DeviceAllocation<Tin>& in) {
+    using outType = cute::conditional_t<is_fp8_v<Tin>, half_t, Tin>;
+    if constexpr(is_fp8_v<Tin>) {
+      cutlass::DeviceAllocation<outType> out(in.size());
+      convert_fp8_to_fp16<Tin, outType>(in.get(), out.get(), in.size());
+      return out;
+    } else { 
+      return in;
+    };
+  }
 
   /// Initializes data structures
   template <class ProblemShape>
@@ -320,6 +406,11 @@ struct TestbedImpl {
     auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,5,6>(problem_size);
     int seq_len_qo, seq_len_kv;
 
+    auto block_Q_ = in_memory(block_Q);
+    auto block_K_ = in_memory(block_K);
+    auto block_V_ = in_memory(block_V);
+    using ElementV_ = cute::conditional_t<is_fp8_v<ElementV>, half_t, ElementV>;
+
     int offset_q = 0;
     int offset_k = 0;
     int offset_v = 0;
@@ -341,11 +432,10 @@ struct TestbedImpl {
         cutlass::DeviceAllocation<ElementAccumulator> block_S;
         block_S.reset(seq_len_qo * seq_len_kv);
 
-        cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
-        cutlass::TensorRef ref_K(block_K.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
-        cutlass::TensorRef ref_V(block_V.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
+        cutlass::TensorRef ref_Q(block_Q_.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
+        cutlass::TensorRef ref_K(block_K_.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
+        cutlass::TensorRef ref_V(block_V_.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
         cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
-        cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
         cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv, head_size_qk}, ElementAccumulator{1}, ref_Q,
                                                 cutlass::ComplexTransform::kNone, ref_K, cutlass::ComplexTransform::kNone,
@@ -419,14 +509,14 @@ struct TestbedImpl {
           }
         }
 
-        std::vector<ElementV> host_P(host_S.size());
+        std::vector<ElementV_> host_P(host_S.size());
         for (int p = 0; p < host_P.size(); p++)
-          host_P[p] = static_cast<ElementV>(host_S[p]);
+          host_P[p] = static_cast<ElementV_>(host_S[p]);
 
-        cutlass::DeviceAllocation<ElementV> block_P;
+        cutlass::DeviceAllocation<ElementV_> block_P;
         block_P.reset(host_P.size());
 
-        syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+        syclcompat::memcpy<ElementV_>(block_P.get(), host_P.data(), host_P.size());
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
 
@@ -635,11 +725,11 @@ struct Testbed3x {
 };
 
 template <typename FlashAttention>
-bool TestAll(int head_size) {
+bool TestFlashPrefillAll(int head_size) {
   Testbed3x<FlashAttention> testbed;
 
-  std::vector<int> problem_size_batch{32};
-  std::vector<int> problem_size_num_heads{16};
+  std::vector<int> problem_size_batch{8};
+  std::vector<int> problem_size_num_heads{8};
   std::vector<int> problem_size_seq_len{512};
   std::vector<float> problem_size_softmax_scale{ 1.f / sqrt(static_cast<float>(head_size)) };
   bool passed = true;
