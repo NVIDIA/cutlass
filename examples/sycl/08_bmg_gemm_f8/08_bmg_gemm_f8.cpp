@@ -29,9 +29,9 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief CUTLASS Intel PVC Gemm with float8 (float_e4m3_t or float_e5m2_t) input
+    \brief CUTLASS Intel BMG Gemm with float8 (float_e4m3_t or float_e5m2_t) input
 
-    This example demonstrates GEMM on PVC with float8 input. The GEMM in this example
+    This example demonstrates GEMM on BMG with float8 input. The GEMM in this example
     performs the MMA with fp16 input, first upcasting the fp8 data for both A and B.
 
     Aside from the input datatypes, this example is identical to 00_pvc_gemm, except that

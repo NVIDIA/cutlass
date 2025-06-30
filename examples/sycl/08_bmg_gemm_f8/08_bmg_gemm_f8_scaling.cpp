@@ -29,38 +29,22 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief CUTLASS Intel BMG Gemm with mixed input types
-
-  This example demonstrates how to dispatch a mixed precision GEMM (int8 and bfloat16) on BMG, with
-  optional dequantization. The GemmMode enum describes the 3 modes of operation:
+\brief CUTLASS Intel BMG Gemm FP8 with optinal quantization.
+   The GemmMode enum describes the 3 modes of operation:
 
   - ConvertOnly:                   Narrower type is simply converted to the wider type before MMA
   - ConvertAndScale:               Narrower type is converted to wider type, then scaled
-  - ConvertAndScaleWithZeroPoint:  Narrower type is converted to wider type, scaled and offset
 
   - Requirements:
       - dequantization group size (options.g) must be multiple of k-block size
       - scales & zeros must be MN-major
 
-  The MMA operation itself takes bfloat16 input for both A and B, and so the narrower type is first
-  upcasted (inside the mainloop) prior to being passed into the MMA atom.
+    To build & run this example (from your build dir):
 
-  Verification for this example is performed against a standard reference GEMM in the wider type.
-  The narrow-type input data are upcasted (or dequantized) externally before executing the
-  reference GEMM.
+      $ ninja 08_bmg_gemm_f8_scaling
+      $ ./examples/sycl/08_bmg_gemm_f8/08_bmg_gemm_f8_scaling
 
-  Note: due to a bug in the IGC compiler, it's currently necessary to build this example with the
-  following environment variable set (CMake handles this for AOT compilation; for JIT, please set
-  this in your environment):
-
-    export IGC_allowDecompose2DBlockFuncs=0
-
-  To build & run this example (from your build dir):
-
-    $ ninja 02_bmg_gemm_bf16_s8
-    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_bf16_s8
-
-  Call with `--help` for information about available options
+    Call with `--help` for information about available options
 */
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
@@ -85,16 +69,12 @@
 
 using namespace cute;
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
 enum GemmMode {
   ConvertOnly,
-  ConvertAndScale,
-  ConvertAndScaleWithZeroPoint
+  ConvertAndScale
 };
 
-using MmaType = bfloat16_t;
-using QuantType = cutlass::int8_t;
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Command line options parsing
 struct Options {
@@ -102,7 +82,6 @@ struct Options {
   bool help;
   bool error;
 
-  bool a_narrower;
   int mode;
   int m, n, k, l, iterations;
   int g;
@@ -112,7 +91,7 @@ struct Options {
     help(false),
     error(false),
     m(5120), n(4096), k(4096), l(1), iterations(20),
-    g(128), mode(2), a_narrower(false),
+    g(128), mode(0),
     alpha(1.f), beta(0.f)
   { }
 
@@ -130,19 +109,16 @@ struct Options {
     cmd.get_cmd_line_argument("k", k, 4096);
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("g", g, 128);
-    cmd.get_cmd_line_argument("mode", mode, 2);
+    cmd.get_cmd_line_argument("mode", mode, 1);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
-    if (cmd.check_cmd_line_flag("a_narrower")) {
-      a_narrower = true;
-    }
   }
 
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "BMG GEMM Mixed Type Example\n\n"
+    out << "BMG GEMM Example\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
@@ -150,8 +126,7 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
       << "  --g=<int>                   The size of each group for the scales and zeros. To broadcast a vector of scales or zeros, set the group size to K.\n"
-      << "  --mode=<int>                The mode to run the gemm. 0 is Convert Only, 1 is Convert and Scale, 2 is Convert and Scale with Zero Point\n"
-      << "  --a_narrower                If specified, make A the narrower type (B is narrower by default).\n"
+      << "  --mode=<int>                The mode to run the gemm. 0 is Convert Only, 1 is Convert and Scale\n"
       << "  --alpha=<s32>               Epilogue scalar alpha\n"
       << "  --beta=<s32>                Epilogue scalar beta\n\n"
       << "  --iterations=<int>          Iterations\n\n";
@@ -160,29 +135,6 @@ struct Options {
   }
 };
 
-// Factory structs to factor out boilerplate code
-namespace helpers{
-using namespace cutlass::gemm;
-template <typename DispatchPolicy, typename TileShape, typename LayoutA,
-          typename LayoutB, typename TiledMMA, typename GmemTiledCopyA,
-          typename GmemTiledCopyB>
-struct MixedCollectiveMmaBuilder {
-
-  template <typename ElementA, typename ElementB>
-  using CollectiveMma = collective::CollectiveMma<
-      DispatchPolicy, TileShape, ElementA, LayoutA, ElementB, LayoutB, TiledMMA,
-      GmemTiledCopyA, void, void, cute::identity, GmemTiledCopyB, void, void,
-      cute::identity>;
-};
-
-template <typename ProblemShape, typename CollectiveEpilogue>
-struct MixedGemmUniversalAdapterBuilder {
-  template <typename CollectiveMainloop>
-  using GemmUniversalAdapter =
-      device::GemmUniversalAdapter<kernel::GemmUniversal<
-          ProblemShape, CollectiveMainloop, CollectiveEpilogue>>;
-};
-}
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -192,8 +144,6 @@ struct ExampleRunner {
 
   using CollectiveMainloop = typename Gemm::CollectiveMainloop;
   using CollectiveEpilogue = typename Gemm::CollectiveEpilogue;
-
-  static constexpr bool AIsNarrower = CollectiveMainloop::IsATransformed;
 
   using StrideA = typename Gemm::GemmKernel::StrideA;
   using StrideB = typename Gemm::GemmKernel::StrideB;
@@ -208,14 +158,20 @@ struct ExampleRunner {
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
   using ElementAcc = typename Gemm::ElementAccumulator;
-  using ElementMMA = std::conditional_t<AIsNarrower, ElementB, ElementA>;
-  using ElementQuant = std::conditional_t<AIsNarrower, ElementA, ElementB>;
+  using ElementMMA = typename CollectiveMainloop::ElementMMA;
+  using ElementQuant = ElementA;
 
-  using ElementScale = typename CollectiveMainloop::NonVoidElementScale;
-  using ElementZero = typename CollectiveMainloop::NonVoidElementZero;
-  // Scale and Zero share a stride since the layout and shapes must be the same.
-  using StrideScale = typename CollectiveMainloop::NonVoidStrideScale;
-  using StrideZero = typename CollectiveMainloop::NonVoidStrideZero;
+  using ElementScaleA = typename CollectiveMainloop::NonVoidElementScaleA;
+  using ElementScaleB = typename CollectiveMainloop::NonVoidElementScaleB;
+
+  using ElementZeroA = typename CollectiveMainloop::NonVoidElementZeroA;
+  using ElementZeroB = typename CollectiveMainloop::NonVoidElementZeroB;
+
+  using StrideScaleA = typename CollectiveMainloop::NonVoidStrideScaleA;
+  using StrideScaleB = typename CollectiveMainloop::NonVoidStrideScaleB;
+
+  using StrideZeroA = typename CollectiveMainloop::NonVoidStrideZeroA;
+  using StrideZeroB = typename CollectiveMainloop::NonVoidStrideZeroB;
 
   using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
@@ -223,7 +179,6 @@ struct ExampleRunner {
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
-
 
   //
   // Data members
@@ -234,8 +189,10 @@ struct ExampleRunner {
   StrideB stride_B;
   StrideC stride_C;
   StrideD stride_D;
-  StrideScale stride_S;
-  StrideZero stride_Z;
+  StrideScaleA stride_SA;
+  StrideScaleB stride_SB;
+  StrideZeroA stride_ZA;
+  StrideZeroB stride_ZB;
 
   uint64_t seed = 0;
 
@@ -243,30 +200,33 @@ struct ExampleRunner {
   cutlass::DeviceAllocation<ElementB> block_B;
   cutlass::DeviceAllocation<ElementMMA> block_A_dq; // Dequantized copy of A for validation
   cutlass::DeviceAllocation<ElementMMA> block_B_dq; // Dequantized copy of B for validation
-  cutlass::DeviceAllocation<ElementScale> block_scale;
-  cutlass::DeviceAllocation<ElementZero> block_zero;
   cutlass::DeviceAllocation<ElementC> block_C;
+  cutlass::DeviceAllocation<ElementScaleA> block_scaleA;
+  cutlass::DeviceAllocation<ElementScaleB> block_scaleB;
+  cutlass::DeviceAllocation<ElementZeroA> block_zeroA;
+  cutlass::DeviceAllocation<ElementZeroB> block_zeroB;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
 
   //
   // Methods
   //
+  template <typename SrcT, typename DstT>
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+    syclcompat::get_default_queue().parallel_for(size, [=](auto indx) {
+      d_dst[indx] = static_cast<DstT>(d_src[indx]);
+    }).wait();
+  }
 
   bool verify(const Options &options) {
-      
-    //
-    // Compute reference output (default gemm kernel w/ ElementA == ElementB)
-    //
-
     using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
-    using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
+    using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
 
     // Workgroup-level tile
     using TileShape = Shape<_256, _256, _32>;
 
     using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<TileShape>,
                                       Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
     constexpr int PipelineStages = 3;
@@ -337,24 +297,23 @@ struct ExampleRunner {
 
   template <class Element>
   bool initialize_scale(
-    cutlass::DeviceAllocation<Element>& block, 
+    cutlass::DeviceAllocation<Element>& block,
     Options const& options) {
 
     if (options.mode == GemmMode::ConvertOnly) {
       // No scales, so just initialize with 1 so we can use the same kernel to dequantize the data.
       std::vector<Element> stage(block.size(), Element(1.0f));
       block.copy_from_host(stage.data());
-    } 
+    }
     else {
-      float elt_max_f = float(cutlass::platform::numeric_limits<ElementQuant>::max());
-      const float max_dequant_val = 4.f;
+      const float elt_max_f = float(cutlass::platform::numeric_limits<ElementQuant>::max());
+      // Need to fix max_dequant_val and min_dequant_val?
+      const float max_dequant_val = elt_max_f * 0.25f;
       const float min_dequant_val = 0.5f;
-
-      float scope_max(max_dequant_val / elt_max_f);
-      float scope_min(min_dequant_val / elt_max_f);
-
+      const float scale_max = max_dequant_val / elt_max_f;
+      const float scale_min = min_dequant_val / elt_max_f;
       cutlass::reference::device::BlockFillRandomUniform(
-        block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
+         block.get(), block.size(), seed, Element(scale_max), Element(scale_min));
     }
     return true;
   }
@@ -363,15 +322,11 @@ struct ExampleRunner {
   bool initialize_zero(
     cutlass::DeviceAllocation<Element>& block,
     Options const& options) {
-    
-    if (options.mode == GemmMode::ConvertAndScaleWithZeroPoint) {
-      cutlass::reference::device::BlockFillRandomUniform(
-        block.get(), block.size(), seed, Element(2.0f), Element(-2.0f));
-    } else {
-      // No bias, so just initialize with 0 so we can use the same kernel to dequantize the data.
-      std::vector<Element> stage(block.size(), Element(0.0f));
-      block.copy_from_host(stage.data());
-    }
+
+    // No bias, so just initialize with 0 so we can use the same kernel to dequantize the data.
+    std::vector<Element> stage(block.size(), Element(0.0f));
+    block.copy_from_host(stage.data());
+
     return true;
   }
 
@@ -380,18 +335,20 @@ struct ExampleRunner {
     auto [M, N, K, L] = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     const int scale_k = cute::ceil_div(options.k, options.g);
-    const int dq_mn_size = AIsNarrower ? options.m : options.n;
     auto shape_A = cute::make_shape(M, K, L);
     auto shape_B = cute::make_shape(N, K, L);
     auto shape_CD = cute::make_shape(M, N, L);
-    auto shape_scale_zero = cute::make_shape(dq_mn_size, scale_k, L);
+    auto shape_scale_zeroA = cute::make_shape(options.m, scale_k, L);
+    auto shape_scale_zeroB = cute::make_shape(options.n, scale_k, L);
 
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, shape_A);
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, shape_B);
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, shape_CD);
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, shape_CD);
-    stride_S = cutlass::make_cute_packed_stride(StrideScale{}, shape_scale_zero);
-    stride_Z = cutlass::make_cute_packed_stride(StrideZero{}, shape_scale_zero);
+    stride_SA = cutlass::make_cute_packed_stride(StrideScaleA{}, shape_scale_zeroA);
+    stride_SB = cutlass::make_cute_packed_stride(StrideScaleB{}, shape_scale_zeroB);
+    stride_ZA = cutlass::make_cute_packed_stride(StrideZeroA{}, shape_scale_zeroA);
+    stride_ZB = cutlass::make_cute_packed_stride(StrideZeroB{}, shape_scale_zeroB);
 
     block_A.reset(static_cast<std::size_t>(M) * K * L);
     block_A_dq.reset(static_cast<std::size_t>(M) * K * L);
@@ -400,49 +357,61 @@ struct ExampleRunner {
     block_C.reset(static_cast<std::size_t>(M) * N * L);
     block_D.reset(static_cast<std::size_t>(M) * N * L);
     block_ref_D.reset(static_cast<std::size_t>(M) * N * L);
-    block_scale.reset(static_cast<std::size_t>(scale_k) * L * dq_mn_size);
-    block_zero.reset(static_cast<std::size_t>(scale_k) * L * dq_mn_size);
+    block_scaleA.reset(static_cast<std::size_t>(scale_k) * L * M);
+    block_scaleB.reset(static_cast<std::size_t>(scale_k) * L * N);
+    block_zeroA.reset(static_cast<std::size_t>(scale_k) * L * M);
+    block_zeroB.reset(static_cast<std::size_t>(scale_k) * L * N);
 
-    initialize_mixed_dtype_block(block_A, block_A_dq, seed + 2023);
-    initialize_mixed_dtype_block(block_B, block_B_dq, seed + 2022);
+    initialize_block(block_A, seed + 2023);
+    initialize_block(block_B, seed + 2022);
     initialize_block(block_C, seed + 2021);
 
-    initialize_scale(block_scale, options);
-    initialize_zero(block_zero, options);
+    convert_fp8_to_fp16<ElementA, half_t>(
+        block_A.get(),
+        block_A_dq.get(),
+        block_A.size()
+    );
+    convert_fp8_to_fp16<ElementB, half_t>(
+        block_B.get(),
+        block_B_dq.get(),
+        block_B.size()
+    );
+
+    initialize_scale(block_scaleA, options);
+    initialize_zero(block_zeroA, options);
+    initialize_scale(block_scaleB, options);
+    initialize_zero(block_zeroB, options);
 
     auto layout_A = make_layout(shape_A, stride_A);
     auto layout_B = make_layout(shape_B, stride_B);
-    auto layout_scale_zero = make_layout(shape_scale_zero, stride_S);
+    auto layout_scale_zeroA = make_layout(shape_scale_zeroA, stride_SA);
+    auto layout_scale_zeroB = make_layout(shape_scale_zeroB, stride_SB);
 
     // Note that we are overwriting the relevant `block_X_dq` here, both were
     // filled by initialize_mixed_dtype_block above
-    if constexpr (AIsNarrower) {
-      cutlass::dequantize(block_A_dq.get(), block_A.get(), layout_A,
-                        block_scale.get(), block_zero.get(), layout_scale_zero, layout_scale_zero,
+    cutlass::dequantize(block_A_dq.get(), block_A.get(), layout_A,
+                        block_scaleA.get(), block_zeroA.get(), layout_scale_zeroA, layout_scale_zeroA,
                         options.g);
-    } else {
-      cutlass::dequantize(block_B_dq.get(), block_B.get(), layout_B,
-                        block_scale.get(), block_zero.get(), layout_scale_zero, layout_scale_zero,
+    cutlass::dequantize(block_B_dq.get(), block_B.get(), layout_B,
+                        block_scaleB.get(), block_zeroB.get(), layout_scale_zeroB, layout_scale_zeroB,
                         options.g);
-    }
   }
-
+  
   cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(options);
 
     typename Gemm::GemmKernel::Arguments arguments{
-        cutlass::gemm::GemmUniversalMode::kGemm,
-        problem_size,
-        {block_A.get(), stride_A, block_B.get(), stride_B, block_scale.get(),
-         stride_S, block_zero.get(), stride_Z, options.g},
-        {{options.alpha, options.beta},
-         block_C.get(),
-         stride_C,
-         block_D.get(),
-         stride_D},
-        hw_info};
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      problem_size,
+      {block_A.get(), stride_A, block_B.get(), stride_B,
+      block_scaleA.get(), stride_SA, block_scaleB.get(), stride_SB,
+      nullptr, stride_SA, nullptr, stride_SB,
+      options.g},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
+      hw_info
+    };
 
     Gemm gemm_op;
 
@@ -478,6 +447,11 @@ struct ExampleRunner {
       float cute_time = timer.seconds() / options.iterations;
       double tflops = (2.0 * options.m * options.n * options.k * options.l) * 1e-12;
       std::cout << "Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+      if constexpr (std::is_same_v<ElementA, float_e4m3_t>) {
+        std::cout << "Datatype: float_e4m3_t"<< std::endl;
+      } else if constexpr (std::is_same_v<ElementA, float_e5m2_t>) {
+        std::cout << "Datatype: float_e5m2_t"<< std::endl;
+      }
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
@@ -486,75 +460,51 @@ struct ExampleRunner {
 
 };
 
-int main(int argc, const char** argv)
+template<typename ElementType>
+int launcher(Options& options)
 {
-  //
-  // Parse options
-  //
-
-  Options options;
-
-  options.parse(argc, argv);
-
-  if (options.help) {
-    options.print_usage(std::cout) << std::endl;
-    return 0;
-  }
-
-  if (options.error) {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
-  }
-
   //
   // Run examples
   //
 
-  // The KernelHardwareInfo struct holds the number of EUs on the GPU with a given device ID. This
-  // information is used by the underlying kernel.
   cutlass::KernelHardwareInfo hw_info;
 
-  // Change device_id to another value if you are running on a machine with multiple GPUs and wish
-  // to use a GPU other than that with device ID 0.
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
   bool passed;
 
-  // The code section below describes datatype for input, output matrices and computation between
-  // elements in input matrices.
-  using ElementAccumulator = float;      // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = QuantType;       // <- data type of elements in input matrix A
-  using ElementInputB = MmaType;         // <- data type of elements in input matrix B
-  using ElementOutput = float;           // <- data type of elements in output matrix D
+  using MmaType = half_t;
+  using QuantType = ElementType;
+
+  using ElementAccumulator = float;
+  using ElementComputeEpilogue = float;
+  using ElementInputA = QuantType;
+  using ElementInputB = QuantType;
+  using ElementOutput = float;
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  using ElementZero = MmaType;
   using ElementScale = MmaType;
+
   using StrideScale = cute::Stride<_1, int64_t, int64_t>;
-  using StrideZero = StrideScale;
 
-  using GmemTiledCopyA = XE_2D_U8x32x32_LD_N;  // U8  (1-byte) block copy for A (narrower type)
-  using GmemTiledCopyB = XE_2D_U16x32x32_LD_V; // U16 (2-byte) block copy for B (wider type)
-  static_assert(sizeof(ElementInputA) == 1, "ElementA width must match GmemTiledCopyA U8");
+  using GmemTiledCopyA = XE_2D_U8x32x32_LD_N;
+  using GmemTiledCopyB = XE_2D_U8x32x32_LD_V;
 
-  // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  // Although this is a mixed type example, the actual MMA accepts bf16 input for both A and B:
-  using TiledMma =                    // M=8,N=16,K=16, D=f32,A=bf16,B=bf16,C=f32
-      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
-                                    Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+  // TODO: Consider smaller tile size to reduce register pressure
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<TileShape>,
+      Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
-  constexpr int PipelineStages = 3; // prefetch 3 iters of data for A and B
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16MixedPrecision<PipelineStages>;
+  constexpr int PipelineStages = 2;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16FP8Scaling<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
-  // Default (Linear Combination) epilogue
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
@@ -573,84 +523,71 @@ int main(int argc, const char** argv)
           XE_2D_U32x8x16_ST_N,
           void, void>;
 
-  // Use the helpers to avoid template arg repetition
-  using GemmAdapterBuilder = helpers::MixedGemmUniversalAdapterBuilder<Shape<int, int, int, int>, CollectiveEpilogue>;
+  using ConvertOnlyCollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
+          GEMMDispatchPolicy,
+          TileShape,
+          cute::tuple<ElementInputA>,
+          cutlass::gemm::TagToStrideA_t<LayoutA>,
+          cute::tuple<ElementInputB>,
+          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          TiledMma,
+          GmemTiledCopyA, void, void, cute::identity,
+          GmemTiledCopyB, void, void, cute::identity
+  >;
 
-  using MixedBuilderQuantA =
-      helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
-                                cutlass::gemm::TagToStrideA_t<LayoutA>,
-                                cutlass::gemm::TagToStrideB_t<LayoutB>,
-                                TiledMma, GmemTiledCopyA, GmemTiledCopyB>;
+  using ConvertAndScaleCollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
+          GEMMDispatchPolicy,
+          TileShape,
+          cute::tuple<ElementInputA, ElementScale, StrideScale>,
+          cutlass::gemm::TagToStrideA_t<LayoutA>,
+          cute::tuple<ElementInputB, ElementScale, StrideScale>,
+          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          TiledMma,
+          GmemTiledCopyA, void, void, cute::identity,
+          GmemTiledCopyB, void, void, cute::identity
+  >;
 
-  using MixedBuilderQuantB =
-      helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
-                                cutlass::gemm::TagToStrideA_t<LayoutA>,
-                                cutlass::gemm::TagToStrideB_t<LayoutB>,
-                                TiledMma, GmemTiledCopyB, GmemTiledCopyA>;
+  if(options.mode ==  GemmMode::ConvertOnly) {
+    std::cout << "Running in ConvertOnly mode." << std::endl;
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int, int, int, int>,
+      ConvertOnlyCollectiveMainloop,
+      CollectiveEpilogue
+    >;
+    using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+    CUTLASS_CHECK(ExampleRunner<Gemm>{}.run(options, hw_info));
+  } else if(options.mode == GemmMode::ConvertAndScale){
+    std::cout << "Running in ConvertAndScale mode." << std::endl;
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int, int, int, int>,
+      ConvertAndScaleCollectiveMainloop,
+      CollectiveEpilogue
+    >;
+    using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+    CUTLASS_CHECK(ExampleRunner<Gemm>{}.run(options, hw_info));
+  }
+  return 0;
+}
 
-  // A-narrow Mainloop & GemmUniversalAdapter
-  using MainloopAConvertOnly =
-      MixedBuilderQuantA::CollectiveMma<cute::tuple<ElementInputA>,
-                                        ElementInputB>;
-  using GemmAConvertOnly =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertOnly>;
+int main(int argc, const char** argv) {
+  //
+  // Parse options
+  //
 
-  using MainloopAConvertAndScale = MixedBuilderQuantA::CollectiveMma<
-      cute::tuple<ElementInputA, ElementScale, StrideScale>, ElementInputB>;
-  using GemmAConvertAndScale =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertAndScale>;
+  Options options;
 
-  using MainloopAConvertAndScaleWithZeroPoint =
-      MixedBuilderQuantA::CollectiveMma<
-          cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>, ElementInputB>;
-  using GemmAConvertAndScaleWithZeroPoint =
-      GemmAdapterBuilder::GemmUniversalAdapter<
-          MainloopAConvertAndScaleWithZeroPoint>;
+  options.parse(argc, argv);
 
-  // B-narrow Mainloop & GemmUniversalAdapter
-  using MainloopBConvertOnly =
-      MixedBuilderQuantB::CollectiveMma<ElementInputB,
-                                        cute::tuple<ElementInputA>>;
-  using GemmBConvertOnly =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertOnly>;
-
-  using MainloopBConvertAndScale = MixedBuilderQuantB::CollectiveMma<
-      ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale>>;
-  using GemmBConvertAndScale =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertAndScale>;
-
-  using MainloopBConvertAndScaleWithZeroPoint =
-      MixedBuilderQuantB::CollectiveMma<
-          ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>>;
-  using GemmBConvertAndScaleWithZeroPoint =
-      GemmAdapterBuilder::GemmUniversalAdapter<
-          MainloopBConvertAndScaleWithZeroPoint>;
-
-  if(options.a_narrower){
-    std::cout << "Setting A as narrower type" << std::endl;
-    if(options.mode ==  GemmMode::ConvertOnly) {
-      std::cout << "Running in ConvertOnly mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmAConvertOnly>{}.run(options, hw_info));
-    }else if(options.mode == GemmMode::ConvertAndScale){
-      std::cout << "Running in ConvertAndScale mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmAConvertAndScale>{}.run(options, hw_info));
-    }else{
-      std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmAConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
-    }
-  }else{
-    std::cout << "Setting B as narrower type" << std::endl;
-    if(options.mode ==  GemmMode::ConvertOnly) {
-      std::cout << "Running in ConvertOnly mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmBConvertOnly>{}.run(options, hw_info));
-    }else if(options.mode == GemmMode::ConvertAndScale){
-      std::cout << "Running in ConvertAndScale mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmBConvertAndScale>{}.run(options, hw_info));
-    }else{
-      std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
-      CUTLASS_CHECK(ExampleRunner<GemmBConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
-    }
+  if (options.help) {
+    options.print_usage(std::cout) << std::endl;
+    return 0;
   }
 
+  if (options.error) {
+    std::cerr << "Aborting execution." << std::endl;
+    return -1;
+  }
+  launcher<cutlass::float_e5m2_t>(options);
+  launcher<cutlass::float_e4m3_t>(options);
   return 0;
 }

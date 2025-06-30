@@ -28,22 +28,29 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/***************************************
-* Mixed Precision BMG Gemm Example
-*
-* This example demonstrates how to dispatch a mixed precision GEMM on BMG, with optional dequantization.
-* The GemmMode enum describes the 3 modes of operation:
-*
-* - ConvertOnly: Narrower type is simply converted to the wider type before MMA
-* - ConvertAndScale:   Narrower type is converted to wider type, then scaled
-* - ConvertAndScaleWithZeroPoint:   Narrower type is converted to wider type, then scaled and shifted by zero point
-* - Limitations:
-*    - group must be multiple of k-block size
-*    - scales & zeros must be MN-major
-*
-* Note: due to a bug in the IGC compiler, it's currently necessary to build this example with the following
-* environment variable set:
-*   export IGC_allowDecompose2DBlockFuncs=0
+
+/*! \file
+    \brief Mixed Precision BMG Gemm Example
+
+ This example demonstrates how to dispatch a mixed precision GEMM on BMG, with optional dequantization.
+ The GemmMode enum describes the 3 modes of operation:
+
+ - ConvertOnly: Narrower type is simply converted to the wider type before MMA
+ - ConvertAndScale:   Narrower type is converted to wider type, then scaled
+ - ConvertAndScaleWithZeroPoint:   Narrower type is converted to wider type, then scaled and shifted by zero point
+ - Limitations:
+    - group must be multiple of k-block size
+    - scales & zeros must be MN-major
+
+ Note: due to a bug in the IGC compiler, it's currently necessary to build this example with the following
+ environment variable set:
+   export IGC_allowDecompose2DBlockFuncs=0
+ To build & run this example (from your build dir):
+
+    $ ninja 02_bmg_gemm_f16_u4
+    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f16_u4
+
+  Call with `--help` for information about available options
 */
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"

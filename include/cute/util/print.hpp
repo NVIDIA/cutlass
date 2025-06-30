@@ -198,59 +198,119 @@ print(char const* format) {
 
 CUTE_HOST_DEVICE void
 pretty_print(uint1b_t a) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(a));
+  printf(" ");
+#else
   printf("%*d", 3, int(a));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(int2b_t a) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(a));
+  printf(" ");
+#else
   printf("%*d", 5, int(a));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(uint2b_t a) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(a));
+  printf(" ");
+#else
   printf("%*d", 5, int(a));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(int4b_t a) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(a));
+  printf(" ");
+#else
   printf("%*d", 5, int(a));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(uint4b_t a) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(a));
+  printf(" ");
+#else
   printf("%*d", 5, int(a));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(bool v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(v));
+  printf(" ");
+#else
   printf("%*d", 3, int(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(int32_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(v));
+  printf(" ");
+#else
   printf("%*d", 5, v);
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(uint32_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%d", int(v));
+  printf(" ");
+#else
   printf("%*d", 5, v);
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(int64_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%lld", static_cast<long long>(v));
+  printf(" ");
+#else
   printf("%*lld", 5, static_cast<long long>(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(uint64_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%llu", static_cast<unsigned long long>(v));
+  printf(" ");
+#else
   printf("%*llu", 5, static_cast<unsigned long long>(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(float v) {
 //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
-#if (SYCL_INTEL_TARGET)
-  printf("%*.2f", v);
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", v);
 #else 
   printf("%*.2e", 10, v);
 #endif  // SYCL_INTEL_TARGET
@@ -258,7 +318,12 @@ pretty_print(float v) {
 
 CUTE_HOST_DEVICE void
 pretty_print(double v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.3e", v);
+#else
   printf("%*.3e", 11, v);
+#endif  // SYCL_INTEL_TARGET
 }
 
 template <class T>

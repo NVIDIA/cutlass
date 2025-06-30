@@ -37,6 +37,10 @@
 #include <cutlass/sycl_vector_types.h>
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL) && !defined(__CUDA__)
+#define printf sycl::ext::oneapi::experimental::printf
+#endif // defined(CUTLASS_ENABLE_SYCL) && !defined(__CUDA__)
+
 #include <cutlass/numeric_size.h>   // cutlass::sizeof_bits
 #include <cutlass/numeric_types.h>  // cutlass::float_e4m3_t, cutlass::float_e5m2_t, etc
 
@@ -137,27 +141,57 @@ print(float_e5m2_t a) {
 
 CUTE_HOST_DEVICE void
 pretty_print(bfloat16_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", float(v));
+  printf(" ");
+#else
   printf("%*.2f", 8, float(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(half_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", float(v));
+  printf(" ");
+#else
   printf("%*.2f", 8, float(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(tfloat32_t v) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2e", static_cast<float>(v));
+  printf(" ");
+#else
   printf("%*.2e", 10, static_cast<float>(v));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(float_e4m3_t t) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", static_cast<float>(t));
+  printf(" ");
+#else
   printf("%*.2f", 8, static_cast<float>(t));
+#endif
 }
 
 CUTE_HOST_DEVICE void
 pretty_print(float_e5m2_t t) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", static_cast<float>(t));
+  printf(" ");
+#else
   printf("%*.2f", 8, static_cast<float>(t));
+#endif
 }
 
 
@@ -178,7 +212,13 @@ template <
 CUTE_HOST_DEVICE
 void
 pretty_print_float_exmy_base(cutlass::float_exmy_base<Encoding, Derived> t) {
+  //TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if defined(SYCL_INTEL_TARGET)
+  printf("%.2f", static_cast<float>(t));
+  printf(" ");
+#else
   printf("%*.2f", 8, static_cast<float>(t));
+#endif
 }
 
 

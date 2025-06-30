@@ -1048,6 +1048,10 @@ template<int Stages_, class KernelScheduler = KernelXePtrArrayCooperative>
 struct MainloopIntelXeXMX16GroupFP8 : MainloopIntelXeXMX16<Stages_, KernelScheduler> {
 };
 
+template<int Stages_>
+struct MainloopIntelXeXMX16FP8Scaling : MainloopIntelXeXMX16<Stages_> {
+};
+
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)
