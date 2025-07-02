@@ -188,7 +188,7 @@ Running this example on an RTX 3080Ti prints the following performance numbers (
 
 ```
 $> ./examples/59_ampere_gather_scatter_conv/59_ampere_gather_scatter_conv --n=131072 --i=128 --no-check
-Ampere convolution forward propogation kernel supporting both affine and gather/scatter tensors.
+Ampere convolution forward propagation kernel supporting both affine and gather/scatter tensors.
 
 Allocating tensors ... done.
 Initializing data ... done.

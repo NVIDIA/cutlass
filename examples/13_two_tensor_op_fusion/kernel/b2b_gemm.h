@@ -248,7 +248,7 @@ struct B2bGemm {
     typename Epilogue::OutputTileIterator::TensorRef* ref_C1;
     typename Epilogue::OutputTileIterator::TensorRef* ref_D1;
 
-    // Epilogue params remain constant across all problmes in the group. Thus,
+    // Epilogue params remain constant across all problems in the group. Thus,
     // the parameter here is not a pointer.
     typename OutputOp0::Params epilogue0;
     typename OutputOp1::Params epilogue1;
@@ -402,7 +402,7 @@ struct B2bGemm {
     typename Epilogue::OutputTileIterator::TensorRef* ref_C1;
     typename Epilogue::OutputTileIterator::TensorRef* ref_D1;
 
-    // Epilogue params remain constant across all problmes in the group. Thus,
+    // Epilogue params remain constant across all problems in the group. Thus,
     // the parameter here is not a pointer.
     typename OutputOp0::Params output_op_0;
     typename OutputOp1::Params output_op_1;
@@ -434,7 +434,7 @@ struct B2bGemm {
       // Only row-major outputs are currently supported, so no transpose is performed
     }
 
-    /// Returns non-grouped paramaters to be used as input to the kernel-level
+    /// Returns non-grouped parameters to be used as input to the kernel-level
     /// operator for the problem indicated by problem_visitor.
     CUTLASS_HOST_DEVICE
     Params to_single_params(const ProblemVisitor& problem_visitor) const {
