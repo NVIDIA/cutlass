@@ -35,6 +35,8 @@ import torch
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.cute.testing as testing
+import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 from cutlass.cute.runtime import from_dlpack
 
@@ -109,6 +111,7 @@ class SGemm:
         mB: cute.Tensor,
         mC: cute.Tensor,
         epilogue_op: cutlass.Constexpr = lambda x: x,
+        stream: cuda.CUstream = cuda.CUstream(cuda.CUstream_flags.CU_STREAM_DEFAULT),
     ):
         self.a_major_mode = utils.LayoutEnum.from_tensor(mA)
         self.b_major_mode = utils.LayoutEnum.from_tensor(mB)
@@ -168,7 +171,7 @@ class SGemm:
             num_bits_per_copy=mB.element_type.width,
         )
 
-        if self.a_major_mode == utils.LayoutEnum.COL_MAJOR:
+        if cutlass.const_expr(self.a_major_mode == utils.LayoutEnum.COL_MAJOR):
             num_vectorized = 4 if (mA.layout.max_alignment % 16 == 0) else 1
             atom_async_copy_A = cute.make_copy_atom(
                 cute.nvgpu.cpasync.CopyG2SOp(),
@@ -182,7 +185,7 @@ class SGemm:
             )
             vA = cute.make_layout((num_vectorized, 1))
 
-        if self.b_major_mode == utils.LayoutEnum.COL_MAJOR:
+        if cutlass.const_expr(self.b_major_mode == utils.LayoutEnum.COL_MAJOR):
             num_vectorized = 4 if (mB.layout.max_alignment % 16 == 0) else 1
             atom_async_copy_B = cute.make_copy_atom(
                 cute.nvgpu.cpasync.CopyG2SOp(),
@@ -222,7 +225,7 @@ class SGemm:
         atoms_layout = cute.make_layout(
             (self._num_threads // 16, 16, 1), stride=(16, 1, 0)
         )
-        if self.c_major_mode == utils.LayoutEnum.COL_MAJOR:
+        if cutlass.const_expr(self.c_major_mode == utils.LayoutEnum.COL_MAJOR):
             atoms_layout = cute.make_layout(
                 (16, self._num_threads // 16, 1), stride=(1, 16, 0)
             )
@@ -256,6 +259,7 @@ class SGemm:
             grid=grid_dim,
             block=[cute.size(atoms_layout), 1, 1],
             smem=smem_size,
+            stream=stream,
         )
 
     @cute.kernel
@@ -540,8 +544,8 @@ class SGemm:
         # 3. Combining the smem and register pipelines results in the mainloop.
         # ///////////////////////////////////////////////////////////////////////////////
 
-        for _ in cutlass.range_dynamic(k_tile_count, unroll=1):
-            for k_block in range(k_block_max):
+        for _ in range(k_tile_count):
+            for k_block in range(k_block_max, unroll_full=True):
                 if k_block == k_block_max - 1:
                     tCsA_p = tCsA[None, None, None, smem_pipe_read]
                     tCsB_p = tCsB[None, None, None, smem_pipe_read]
@@ -639,7 +643,6 @@ def main(
     iterations: int = 100,
     skip_ref_check: bool = False,
 ):
-    torch.manual_seed(1024)
     M, N, K = problem_shape
 
     # Create and permute tensor A/B/C
@@ -694,51 +697,36 @@ def main(
 
     sgemm = SGemm()
 
+    # Get current CUDA stream from PyTorch
+    torch_stream = torch.cuda.current_stream()
+    # Get the raw stream pointer as a CUstream
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
+
     print("Compiling kernel with cute.compile ...")
     start_time = time.time()
-    gemm = cute.compile(sgemm, a_tensor, b_tensor, c_tensor)
+    gemm = cute.compile(sgemm, a_tensor, b_tensor, c_tensor, stream=current_stream)
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
 
     print("Executing GEMM kernel...")
 
-    # Get current CUDA stream from PyTorch
-    torch_stream = torch.cuda.current_stream()
-
-    # Get the raw stream pointer as a CUstream
-    current_stream = cuda.CUstream(torch_stream.cuda_stream)
-
-    # Create CUDA events for timing
-    start_event = cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT)[1]
-    end_event = cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT)[1]
-
-    # Warmup
-    for _ in range(warmup_iterations):
-        gemm(a_tensor, b_tensor, c_tensor)
-
-    # Use the current stream for CUDA events instead of the default stream
-    # Record start event
-    cuda.cuEventRecord(start_event, current_stream)
-
-    # Execute the kernel
-    for _ in range(iterations):
-        gemm(a_tensor, b_tensor, c_tensor)
-
-    # Record end event
-    cuda.cuEventRecord(end_event, current_stream)
-    cuda.cuEventSynchronize(end_event)
-
-    # Calculate elapsed time
-    err, elapsed_time = cuda.cuEventElapsedTime(start_event, end_event)
+    avg_time_us = testing.benchmark(
+        gemm,
+        kernel_arguments=testing.JitArguments(
+            a_tensor, b_tensor, c_tensor, current_stream
+        ),
+        warmup_iterations=warmup_iterations,
+        profiling_iterations=iterations,
+        use_cuda_graphs=False,
+        stream=current_stream,
+    )
 
     # Print execution results
-    print(f"Kernel execution time: {elapsed_time / iterations:.4f} ms")
-
-    # Destroy events
-    cuda.cuEventDestroy(start_event)
-    cuda.cuEventDestroy(end_event)
+    print(f"Kernel execution time: {avg_time_us / 1e3:.4f} ms")
 
     if not skip_ref_check:
+        gemm(a_tensor, b_tensor, c_tensor)
+        torch.cuda.synchronize()
         print("Verifying results...")
         ref = torch.einsum("mk,nk->mn", a, b)
         torch.testing.assert_close(c.cpu(), ref.cpu(), atol=1e-03, rtol=1e-05)
@@ -768,6 +756,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print("Running SIMT GEMM example:")
+
+    torch.manual_seed(1024)
+
     main(
         args.a_major,
         args.b_major,

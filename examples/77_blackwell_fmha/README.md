@@ -55,6 +55,12 @@ The approach of this implementation is to reuse the selection logic of the colle
 The example builds six binaries, showcasing TMA and `cp.async` usage, as well as a back-to-back gemm (essentially turning the softmax into a no-op) for fp8 and fp16.
 For detailed information on how to invoke them, check out either the tests in `CMakeLists.txt` or the `--help` for them.
 
+# Changes
+
+* 4.1.0: Enhanced testing of variable sequence length; disabled B2B mode in MLA
+  to simplify the sample, clarified that `fmha_gen`  sample only supports head
+  dim 128.
+
 # Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

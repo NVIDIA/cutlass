@@ -109,6 +109,7 @@ static constexpr bool HasAuxiliaryLoad_v = HasAuxiliaryLoad<T>::value;
 // Kernel schedule policies (the base class tags, one for each kernel layer file)
 //
 struct KernelMultistage { };
+struct KernelPtrArrayMultistage { };
 struct KernelCpAsyncWarpSpecialized { };
 struct KernelCpAsyncWarpSpecializedPingpong { };
 struct KernelCpAsyncWarpSpecializedCooperative { };
@@ -195,6 +196,17 @@ struct MainloopSm80CpAsync {
   constexpr static int Stages = Stages_;
   using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
   using Schedule = KernelMultistage;
+  using ClusterShape = ClusterShape_;
+};
+
+// n-buffer in smem (cp.async), pipelined with registers, with predicated gmem loads for SM100 Simt Ptr-Array
+template<int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm80ArrayCpAsync {
+  constexpr static int Stages = Stages_;
+  using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
+  using Schedule = KernelPtrArrayMultistage;
   using ClusterShape = ClusterShape_;
 };
 
@@ -475,6 +487,16 @@ template<
   int AccumulatorPipelineStageCount_
 >
 struct KernelTmaWarpSpecializedInputTransformSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
+// InputTransform GEMM
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedMixedInputTransformSm100 final {
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };

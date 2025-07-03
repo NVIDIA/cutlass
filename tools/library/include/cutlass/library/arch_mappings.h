@@ -99,7 +99,7 @@ template <typename OperatorClass> struct ArchMap<arch::Sm86, OperatorClass> {
 
 template <typename OperatorClass> struct ArchMap<arch::Sm89, OperatorClass> {
   static int const kMin = 89;
-  static int const kMax = 89;
+  static int const kMax = 100;
 };
 
 template <typename OperatorClass> struct ArchMap<arch::Sm90, OperatorClass> {

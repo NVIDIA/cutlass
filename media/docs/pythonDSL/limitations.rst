@@ -18,7 +18,6 @@ Notable unsupported features
 ----------------------------
 
 - GeForce RTX 50 Series support
-- RS WGMMA (The input matrix A comes from register and the input matrix B comes from shared memory)
 - Programmatic Dependent Launch (PDL)
 - narrow-precision data type support, including related tensor core instructions
 - convolutions
@@ -30,6 +29,10 @@ Notable unsupported features
 
 Programming Model
 ---------------------
+
+**CuTe Layout Algebra Only support 32bit**
+    Today, we only support 32bit shapes/strides in CuTe layouts. 64bit or arbitrary 
+    width support is planned for future releases.
 
 **Python Native Data Types**
     CuTe DSL supports Python data structures when used for "meta-programming,"

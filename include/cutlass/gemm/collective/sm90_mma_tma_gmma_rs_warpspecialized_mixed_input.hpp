@@ -96,15 +96,11 @@ struct CollectiveMma<
     TransformB_>
 {
 public:
-  enum class ConversionMode {
-    DirectConvert,
-    ConvertAndScale,
-    ConvertAndScaleWithZero
-  };
 
   //
   // Type Aliases
   //
+  using ConversionMode = cutlass::detail::ConversionMode;
   using DispatchPolicy = MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput<Stages, ClusterShape, KernelSchedule_>;
   using TileShape = TileShape_;
   using KernelSchedule = KernelSchedule_;

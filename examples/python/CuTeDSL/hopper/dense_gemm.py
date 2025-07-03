@@ -36,6 +36,7 @@ import torch
 import cutlass
 import cutlass.cute as cute
 import cutlass.utils as utils
+import cutlass.pipeline as pipeline
 import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
 import cutlass.utils.hopper_helpers as sm90_utils
@@ -579,20 +580,25 @@ class HopperWgmmaGemmKernel:
         mainloop_pipeline_array_ptr = storage.mainloop_pipeline_array_ptr.data_ptr()
 
         # Threads/warps participating in this pipeline
-        mainloop_pipeline_producer_group = utils.CooperativeGroup(utils.Agent.Thread)
-        # Set the consumer arrive count to the number of mcast size
-        consumer_arrive_cnt = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        mainloop_pipeline_consumer_group = utils.CooperativeGroup(
-            utils.Agent.Thread, consumer_arrive_cnt
+        mainloop_pipeline_producer_group = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread
+        )
+        # Each warp will constribute to the arrive count with the number of mcast size
+        mcast_size = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
+        num_warps = self.threads_per_cta // 32
+        consumer_arrive_cnt = mcast_size * num_warps
+        mainloop_pipeline_consumer_group = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, consumer_arrive_cnt
         )
 
-        mainloop_pipeline = utils.PipelineTmaAsync.create(
+        cta_layout_vmnk = cute.make_layout((1, *cta_layout_mnk.shape))
+        mainloop_pipeline = pipeline.PipelineTmaAsync.create(
             barrier_storage=mainloop_pipeline_array_ptr,
             num_stages=self.ab_stage,
             producer_group=mainloop_pipeline_producer_group,
             consumer_group=mainloop_pipeline_consumer_group,
             tx_count=tma_copy_bytes,
-            cta_layout_vmnk=cta_layout_mnk,
+            cta_layout_vmnk=cta_layout_vmnk,
         )
 
         #  Cluster arrive after barrier init
@@ -616,11 +622,11 @@ class HopperWgmmaGemmKernel:
         # ///////////////////////////////////////////////////////////////////////////////
         #  Local_tile partition global tensors
         # ///////////////////////////////////////////////////////////////////////////////
-        # (bM, bK, loopK)
+        # (bM, bK, RestK)
         gA_mkl = cute.local_tile(
             mA_mkl, self.tile_shape_mnk, tile_coord_mnkl, proj=(1, None, 1)
         )
-        # (bN, bK, loopK)
+        # (bN, bK, RestK)
         gB_nkl = cute.local_tile(
             mB_nkl, self.tile_shape_mnk, tile_coord_mnkl, proj=(None, 1, 1)
         )
@@ -696,14 +702,14 @@ class HopperWgmmaGemmKernel:
         k_tile_cnt = cute.size(gA_mkl, mode=[2])
         prefetch_k_tile_cnt = cutlass.max(cutlass.min(self.ab_stage, k_tile_cnt), 0)
 
-        mainloop_producer_state = utils.make_pipeline_state(
-            utils.PipelineUserType.Producer, self.ab_stage
+        mainloop_producer_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Producer, self.ab_stage
         )
         if warp_idx == 0:
             # /////////////////////////////////////////////////////////////////////////////
             # Prefetch TMA load
             # /////////////////////////////////////////////////////////////////////////////
-            for prefetch_idx in cutlass.range_dynamic(prefetch_k_tile_cnt, unroll=1):
+            for prefetch_idx in cutlass.range(prefetch_k_tile_cnt, unroll=1):
                 # /////////////////////////////////////////////////////////////////////////////
                 #  Wait for A/B buffers to be empty before loading into them
                 #  Also sets the transaction barrier for the A/B buffers
@@ -748,11 +754,11 @@ class HopperWgmmaGemmKernel:
         # /////////////////////////////////////////////////////////////////////////////
         k_pipe_mmas = 1
 
-        mainloop_consumer_read_state = utils.make_pipeline_state(
-            utils.PipelineUserType.Consumer, self.ab_stage
+        mainloop_consumer_read_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Consumer, self.ab_stage
         )
-        mainloop_consumer_release_state = utils.make_pipeline_state(
-            utils.PipelineUserType.Consumer, self.ab_stage
+        mainloop_consumer_release_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Consumer, self.ab_stage
         )
 
         peek_ab_full_status = cutlass.Boolean(1)
@@ -763,14 +769,14 @@ class HopperWgmmaGemmKernel:
 
         tiled_mma.set(cute.nvgpu.warpgroup.Field.ACCUMULATE, False)
         num_k_blocks = cute.size(tCrA, mode=[2])
-        for k_tile in cutlass.range_dynamic(k_pipe_mmas, unroll=1):
+        for k_tile in range(k_pipe_mmas):
             # Wait for A/B buffer to be ready
             mainloop_pipeline.consumer_wait(
                 mainloop_consumer_read_state, peek_ab_full_status
             )
 
             cute.nvgpu.warpgroup.fence()
-            for k_block_idx in range(num_k_blocks):
+            for k_block_idx in cutlass.range(num_k_blocks, unroll_full=True):
                 k_block_coord = (
                     None,
                     None,
@@ -800,7 +806,7 @@ class HopperWgmmaGemmKernel:
         # /////////////////////////////////////////////////////////////////////////////
         #  MAINLOOP
         # /////////////////////////////////////////////////////////////////////////////
-        for k_tile in cutlass.range_dynamic(k_pipe_mmas, k_tile_cnt, 1, unroll=1):
+        for k_tile in cutlass.range(k_pipe_mmas, k_tile_cnt, 1, unroll=1):
             # /////////////////////////////////////////////////////////////////////////////
             #  Wait for TMA copies to complete
             # /////////////////////////////////////////////////////////////////////////////
@@ -811,7 +817,7 @@ class HopperWgmmaGemmKernel:
             #  WGMMA
             # /////////////////////////////////////////////////////////////////////////////
             cute.nvgpu.warpgroup.fence()
-            for k_block_idx in range(num_k_blocks):
+            for k_block_idx in cutlass.range(num_k_blocks, unroll_full=True):
                 k_block_coord = (
                     None,
                     None,
@@ -949,7 +955,7 @@ class HopperWgmmaGemmKernel:
         epi_tile_num = cute.size(tcgc_for_tma_partition, mode=[1])
         epi_tile_shape = tcgc_for_tma_partition.shape[1]
 
-        for epi_idx in cutlass.range_dynamic(epi_tile_num, unroll=epi_tile_num):
+        for epi_idx in cutlass.range(epi_tile_num, unroll=epi_tile_num):
             # Copy from accumulators to D registers
             for epi_v in range(size_tRS_rD):
                 tRS_rD[epi_v] = tRS_rAcc[epi_idx * size_tRS_rD + epi_v]
@@ -1213,7 +1219,7 @@ class HopperWgmmaGemmKernel:
         c_cta_v_layout = cute.composition(
             cute.make_identity_layout(tensor_c.shape), epi_tile
         )
-        tma_atom_c, tma_tensor_c = cute.nvgpu.cpasync.make_tma_tile_atom(
+        tma_atom_c, tma_tensor_c = cute.nvgpu.cpasync.make_tiled_tma_atom(
             cute.nvgpu.cpasync.CopyBulkTensorTileS2GOp(),
             tensor_c,
             epi_smem_layout,
@@ -1250,7 +1256,7 @@ class HopperWgmmaGemmKernel:
         )
 
         smem_layout = cute.slice_(smem_layout_staged, (None, None, 0))
-        tma_atom, tma_tensor = cute.nvgpu.cpasync.make_tma_tile_atom(
+        tma_atom, tma_tensor = cute.nvgpu.cpasync.make_tiled_tma_atom(
             op,
             tensor,
             smem_layout,

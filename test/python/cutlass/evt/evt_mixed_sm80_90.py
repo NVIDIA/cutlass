@@ -49,6 +49,51 @@ cutlass.set_log_level(logging.WARNING)
 
 @unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
 class TestEVTMixed(EVTTestCaseBase):
+
+    def test_same_variable_used_multiple_times(self):
+        """
+        The same variable z0 is used multiple times
+        """
+        def evt_aux_store(accum):
+            z0 = relu(accum)
+            D = z0 + z0
+            return z0, D
+
+        for m, n, k, l in self.get_problem_sizes(8):
+            example_inputs = {
+                "accum": self.fake_tensor(self.element, (l, m, n)),
+                "D": self.fake_tensor(self.element, (l, m, n)),
+                "z0": self.fake_tensor(self.element, (l, m, n)),
+            }
+
+            launcher = EVTTestBed(self.element, evt_aux_store, example_inputs)
+            input_keys = ["accum"]
+            result_keys = ["z0", "D"]
+            launcher.verify((m, n, k), input_keys, result_keys, l)
+
+    def test_no_lca(self):
+        """
+        The same variable z0 is used multiple times
+        """
+        def evt_no_lca(accum, bias):
+            E = relu(accum)
+            F = E + bias
+            tmp_2 = E + 2
+            D = tmp_2 + E
+            return D
+
+        for m, n, k, l in self.get_problem_sizes(8):
+            example_inputs = {
+                "accum": self.fake_tensor(self.element, (l, m, n)),
+                "D": self.fake_tensor(self.element, (l, m, n)),
+                "bias": self.fake_tensor(self.element, (m,1), stride=(1,0)),
+            }
+
+            launcher = EVTTestBed(self.element, evt_no_lca, example_inputs)
+            input_keys = ["accum", "bias"]
+            result_keys = ["D"]
+            launcher.verify((m, n, k), input_keys, result_keys, l)
+
     def test_mixed_dag(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)

@@ -3844,4 +3844,39 @@ struct MMA_Traits<SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_
   }
 };
 
+/**
+ * Specialization for a vectorized FMA per thread.
+ */
+template <>
+struct MMA_Traits<SM100_2x1x1_F32F32F32F32>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using Shape_MNK = Shape<_2,_1,_1>;
+  using ThrID   = Layout<_1>;
+
+  using ALayout = Layout<Shape<_1,_2>>;
+  using BLayout = Layout<Shape<_1,_1>>;
+  using CLayout = Layout<Shape<_1,_2>>;
+};
+
+template <>
+struct MMA_Traits<SM100_1x2x1_F32F32F32F32>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using Shape_MNK = Shape<_1,_2,_1>;
+  using ThrID   = Layout<_1>;
+
+  using ALayout = Layout<Shape<_1,_1>>;
+  using BLayout = Layout<Shape<_1,_2>>;
+  using CLayout = Layout<Shape<_1,_2>>;
+};
+
 } // end namespace cute

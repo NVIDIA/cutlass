@@ -234,6 +234,53 @@ TEST(SM100_device_conv3d_fprop_implicitgemm_s8ndhwc_s8ndhwc_s32ndhwc_tensor_op_s
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
 }
 
+TEST(SM100_device_conv3d_fprop_implicitgemm_s8ndhwc_s8ndhwc_s32ndhwc_tensor_op_s32, 64x64x64_1x1x1_alpha_beta_scaled_bias_relu_residual) {
+  using ElementAct     = int8_t;
+  using ElementFlt     = int8_t;
+  using ElementOut     = int32_t;
+  using ElementSrc     = int8_t;
+  using ElementAcc     = int32_t;
+  using ElementCompute = float;
+  using ElementBias = float;
+  using MmaTileShape = Shape<_64, _64, Shape<_64>>;
+  using ClusterShape = Shape<_1,_1,_1>;
+
+  using FusionOperation = cutlass::epilogue::fusion::PerColResAddPerColBiasEltAct<
+      cutlass::epilogue::thread::ReLu, ElementOut, ElementCompute, ElementBias, ElementSrc>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAcc, ElementCompute,
+      ElementSrc, cutlass::layout::TensorNDHWC, 128 /  cutlass::sizeof_bits<ElementSrc>::value,
+      ElementOut, cutlass::layout::TensorNDHWC, 128 /  cutlass::sizeof_bits<ElementOut>::value,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      FusionOperation
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      cutlass::conv::Operator::kFprop,
+      ElementAct, cutlass::layout::TensorNDHWC, 16 / sizeof(ElementAct),
+      ElementFlt, cutlass::layout::TensorNDHWC, 16 / sizeof(ElementFlt),
+      ElementAcc,
+      MmaTileShape, ClusterShape,
+      cutlass::conv::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::conv::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>; 
+  using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
+
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+}
+
 // alpha != 1 && beta != 0 && bias && gelu
 TEST(SM100_device_conv3d_fprop_implicitgemm_s8ndhwc_s8ndhwc_s32ndhwc_tensor_op_s32, 64x64x64_1x1x1_alpha_beta_bias_gelu) {
   using ElementAct     = int8_t;

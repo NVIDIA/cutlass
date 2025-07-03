@@ -339,10 +339,10 @@ class MmaF8Op(MmaOp):
                 "expects the 'b_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
             )
         # Accumulator data type verification
-        if self.acc_dtype != Float32:
+        if self.acc_dtype not in [Float16, Float32]:
             raise OpError(
                 self,
-                "expects the 'acc_dtype' Op parameter to be Float32",
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Verify the instruction shape
         instruction_k = 32

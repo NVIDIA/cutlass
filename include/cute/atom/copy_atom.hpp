@@ -327,42 +327,12 @@ struct TiledCopy : Copy_Atom
 
   CUTE_HOST_DEVICE constexpr static
   auto
-  get_layoutS_MN()
-  {
-    // (thr_idx,val_idx) -> (M,N)
-    auto layoutS_TV = get_layoutS_TV();
-    // (M,K) -> (thr_idx,val_idx)
-    auto layoutS_MK = right_inverse(layoutS_TV).with_shape(shape(Tiler_MN{}));
-
-    // athrid = (v,m,k) -> thr_idx
-    auto thrID_S = make_layout(size<0>(TiledLayout_TV{}));
-
-    return cute::make_tuple(layoutS_MK, thrID_S);
-  }
-
-  CUTE_HOST_DEVICE constexpr static
-  auto
   get_layoutD_TV()
   {
     // (M,N) -> (M,N)
     auto ref_D = make_layout(make_shape(shape(Tiler_MN{}), Int<1>{}));
     // (thr_idx,val_idx) -> (M,N)
     return tile2thrfrg(ref_D, right_inverse(AtomLayoutRef{}).compose(AtomLayoutDst{}))(_,_,Int<0>{});
-  }
-
-  CUTE_HOST_DEVICE constexpr static
-  auto
-  get_layoutD_MN()
-  {
-    // (thr_idx,val_idx) -> (M,N)
-    auto layoutD_TV = get_layoutD_TV();
-    // (M,K) -> (thr_idx,val_idx)
-    auto layoutD_MK = right_inverse(layoutD_TV).with_shape(shape(Tiler_MN{}));
-
-    // athrid = (v,m,k) -> thr_idx
-    auto thrID_D = make_layout(size<0>(TiledLayout_TV{}));
-
-    return cute::make_tuple(layoutD_MK, thrID_D);
   }
 
   template <class ThrIdx,
@@ -678,101 +648,6 @@ print(ThrCopy<TiledCopy, ThrIdx> const& thr_copy)
   print("ThrCopy\n");
   print("  ThrIdx: "); print(thr_copy.thr_idx_); print("\n");
   print(TiledCopy{});
-}
-
-// TiledCopy to LaTeX TikZ
-template <class... Args, class TikzColorFn = TikzColor_TV>
-CUTE_HOST_DEVICE
-auto
-print_latex(TiledCopy<Args...> const& copy,
-            TikzColorFn color = {})              // lambda(thr_idx,val_idx) -> tikz color string
-{
-  auto [layoutS_MN, thrID_S] = copy.get_layoutS_MN();
-  auto [layoutD_MN, thrID_D] = copy.get_layoutD_MN();
-
-  print_latex_copy(layoutS_MN, thrID_S,
-                   layoutD_MN, thrID_D);
-}
-
-// MNK Copy Layout to LaTeX TikZ
-template <class LayoutS, class ThrIDS,
-          class LayoutD, class ThrIDD,
-          class TikzColorFn = TikzColor_TV>
-CUTE_HOST_DEVICE
-void
-print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and  tid -> thr_idx
-                 LayoutD const& D, ThrIDD const& TD,  // (m,n) -> (tid,vid)  and  tid -> thr_idx
-                 TikzColorFn color = {})              // lambda(thr_idx,val_idx) -> tikz color string
-{
-  CUTE_STATIC_ASSERT_V(rank(S) == Int<2>{});
-  CUTE_STATIC_ASSERT_V(rank(D) == Int<2>{});
-
-  assert(size<0>(S) == size<0>(D));
-  assert(size<1>(S) == size<1>(D));
-
-  // Commented prints
-  printf("%% LayoutS: "); print(S);  printf("\n");
-  printf("%% ThrIDS : "); print(TS); printf("\n");
-  printf("%% LayoutD: "); print(D);  printf("\n");
-  printf("%% ThrIDD : "); print(TD); printf("\n\n");
-
-  // Header
-  printf("\\documentclass[convert]{standalone}\n"
-         "\\usepackage{tikz}\n\n"
-         "\\begin{document}\n"
-         "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},every node/.style={minimum size=1cm, outer sep=0pt}]\n\n");
-
-  // S starting at 0,0
-  for (int i = 0; i < size<0>(S); ++i) {
-    for (int j = 0; j < size<1>(S); ++j) {
-      int thrid   = S(i,j) % size(TS);
-      int val_idx = S(i,j) / size(TS);
-      int thr_idx = TS(thrid);
-
-      printf("\\node[fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color(thr_idx, val_idx),
-             i, j,
-             thr_idx, val_idx);
-    }
-  }
-  // Grid
-  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (%d,%d) grid (%d,%d);\n\n",
-         0, 0, int(size<0>(S)), int(size<1>(S)));
-  // S Labels
-  for (int i =  0, j = -1; i < size<0>(S); ++i) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
-  }
-  for (int i = -1, j =  0; j < size<1>(S); ++j) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, j);
-  }
-
-  // D starting at 0,size<1>(S)+3
-  for (int i = 0; i < size<0>(D); ++i) {
-    for (int j = 0; j < size<1>(D); ++j) {
-      int thrid   = D(i,j) % size(TD);
-      int val_idx = D(i,j) / size(TD);
-      int thr_idx = TD(thrid);
-
-      printf("\\node[fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color(thr_idx, val_idx),
-             i, j + size<1>(S) + 3,
-             thr_idx, val_idx);
-    }
-  }
-  // Grid
-  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (%d,%d) grid (%d,%d);\n\n",
-         0, int(size<1>(S)+3), int(size<0>(D)), int(size<1>(D)+size<1>(S)+3));
-  // D Labels
-  for (int i = 0, j = size<1>(D); i < size<0>(D); ++i) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j + size<1>(S) + 3, i);
-  }
-  for (int i = -1, j =         0; j < size<1>(D); ++j) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j + size<1>(S) + 3, j);
-  }
-
-  // Footer
-  printf("\\end{tikzpicture}\n"
-         "\\end{document}\n");
 }
 
 } // end namespace cute

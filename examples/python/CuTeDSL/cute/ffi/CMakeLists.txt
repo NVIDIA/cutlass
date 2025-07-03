@@ -30,7 +30,7 @@ cmake_minimum_required(VERSION 3.15)
 project(tensor)
 
 # Find Python
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # Get Python site-packages directory using Python
 execute_process(

@@ -542,13 +542,13 @@ class FlashAttentionForwardAmpere:
             cutlass.Boolean,
         )
         # Set predicates for head_dim bounds, seqlen_q/k bounds is processed at the first tile.
-        for rest_v in range(tQpQ.shape[0]):
-            for rest_k in range(tQpQ.shape[2]):
+        for rest_v in cutlass.range_constexpr(tQpQ.shape[0]):
+            for rest_k in cutlass.range_constexpr(tQpQ.shape[2]):
                 tQpQ[rest_v, 0, rest_k] = cute.elem_less(
                     tQcQ[(0, rest_v), 0, rest_k][3], mQ.layout.shape[3]
                 )
-        for rest_v in range(tKVpKV.shape[0]):
-            for rest_k in range(tKVpKV.shape[2]):
+        for rest_v in cutlass.range_constexpr(tKVpKV.shape[0]):
+            for rest_k in cutlass.range_constexpr(tKVpKV.shape[2]):
                 tKVpKV[rest_v, 0, rest_k] = cute.elem_less(
                     tKVcKV[(0, rest_v), 0, rest_k][3], mK.layout.shape[3]
                 )
@@ -556,7 +556,7 @@ class FlashAttentionForwardAmpere:
         # Prefetch Prologue
         # ///////////////////////////////////////////////////////////////////////////////
         # Start async loads of the last mn-tile, where we take care of the mn residue
-        for m in range(cute.size(tQsQ.shape[1])):
+        for m in cutlass.range_constexpr(cute.size(tQsQ.shape[1])):
             if cute.elem_less(tQcQ[0, m, 0][1], mQ.layout.shape[1]):
                 cute.copy(
                     gmem_tiled_copy_QKV,
@@ -567,7 +567,7 @@ class FlashAttentionForwardAmpere:
             else:
                 # Clear the smem tiles to account for predicated off loads
                 tQsQ[None, m, None].fill(0)
-        for n in range(cute.size(tKsK.shape[1])):
+        for n in cutlass.range_constexpr(cute.size(tKsK.shape[1])):
             if cute.elem_less(tKVcKV[0, n, 0][1], mK.layout.shape[1]):
                 cute.copy(
                     gmem_tiled_copy_QKV,
@@ -644,13 +644,13 @@ class FlashAttentionForwardAmpere:
         # We also need masking on S if it's causal, for the last ceil_div(m_block_size, n_block_size) blocks.
         # We will have at least 1 "masking" iteration.
         mask_steps = 1
-        if self._is_causal:
+        if cutlass.const_expr(self._is_causal):
             mask_steps = cute.ceil_div(self._m_block_size, self._n_block_size)
 
-        for n_tile in range(mask_steps):
+        for n_tile in cutlass.range_constexpr(mask_steps):
             n_block = n_block_max - n_tile - 1
             basic_params.n_block = n_block
-            if self._is_causal:
+            if cutlass.const_expr(self._is_causal):
                 if n_block >= 0:
                     self.compute_one_n_block(
                         basic_params,
@@ -673,7 +673,7 @@ class FlashAttentionForwardAmpere:
                 )
 
         # Start async loads of rest k-tiles in reverse order, no k-residue handling needed
-        for n_tile in cutlass.range_dynamic(mask_steps, n_block_max, 1):
+        for n_tile in range(mask_steps, n_block_max, 1):
             n_block = n_block_max - n_tile - 1
             basic_params.n_block = n_block
             self.compute_one_n_block(
@@ -748,13 +748,13 @@ class FlashAttentionForwardAmpere:
             ),
             cutlass.Boolean,
         )
-        for rest_v in range(tOpO.shape[0]):
-            for rest_n in range(cute.size(tOpO.shape[2])):
+        for rest_v in cutlass.range_constexpr(tOpO.shape[0]):
+            for rest_n in cutlass.range_constexpr(cute.size(tOpO.shape[2])):
                 tOpO[rest_v, 0, rest_n] = cute.elem_less(
                     tOcO[(0, rest_v), 0, rest_n][3], mO.layout.shape[3]
                 )
         # copy acc O from rmem to gmem
-        for rest_m in range(cute.size(tOpO.shape[1])):
+        for rest_m in cutlass.range_constexpr(cute.size(tOpO.shape[1])):
             if cute.elem_less(tOcO[0, rest_m, 0][1], mO.layout.shape[1]):
                 cute.copy(
                     gmem_tiled_copy_O,
@@ -804,7 +804,7 @@ class FlashAttentionForwardAmpere:
         # load smem tile V for O, special process for the first tile to avoid loading nan.
         # The `if` here is a constexpr, won't be generated in the IR.
         if is_first_n_block:
-            for n in range(cute.size(gmem_copy_params.tVsV.shape[1])):
+            for n in cutlass.range_constexpr(cute.size(gmem_copy_params.tVsV.shape[1])):
                 if cute.elem_less(
                     gmem_copy_params.tKVcKV[0, n, 0][1],
                     basic_params.mK.layout.shape[1],
@@ -841,7 +841,7 @@ class FlashAttentionForwardAmpere:
             smem_copy_params.tSrK_copy_view[None, None, 0],
         )
         # mma for S
-        for k in range(cute.size(smem_copy_params.tSsQ.shape[2])):
+        for k in cutlass.range_constexpr(cute.size(smem_copy_params.tSsQ.shape[2])):
             # load next QK k-block from smem to rmem for mma
             k_next = (k + 1) % cute.size(smem_copy_params.tSsQ.shape[2])
             cute.copy(
@@ -916,7 +916,7 @@ class FlashAttentionForwardAmpere:
             smem_copy_params.tOrVt_copy_view[None, None, 0],
         )
         # mma for O
-        for k in range(cute.size(tOrS.shape[2])):
+        for k in cutlass.range_constexpr(cute.size(tOrS.shape[2])):
             # load next V k-block from smem to rmem for mma
             k_next = (k + 1) % cute.size(tOrS.shape[2])
             cute.copy(
@@ -965,14 +965,14 @@ class FlashAttentionForwardAmpere:
         acc_O_mn = self._make_acc_tensor_mn_view(mma_params.acc_O)
         row_max_prev = None
         # if it is not the first tile, load the row r of previous row_max and compare with row_max_cur_row.
-        if not is_first_n_block:
+        if cutlass.const_expr(not is_first_n_block):
             row_max_prev = cute.make_fragment_like(
                 softmax_params.row_max, cutlass.Float32
             )
             cute.basic_copy(softmax_params.row_max, row_max_prev)
         # if it is the first tile, create a mask for residual of S to -inf for softmax.
         tScS_mn = None
-        if in_mask_steps:
+        if cutlass.const_expr(in_mask_steps):
             mcS = cute.make_identity_tensor(
                 (
                     basic_params.mQ.shape[0],
@@ -990,12 +990,12 @@ class FlashAttentionForwardAmpere:
             tScS_mn = self._make_acc_tensor_mn_view(tScS)
 
         # Each iteration processes one row of acc_S
-        for r in range(cute.size(softmax_params.row_max)):
+        for r in cutlass.range_constexpr(cute.size(softmax_params.row_max)):
             # mask residual of S with -inf
-            if in_mask_steps:
-                if not self._is_causal:
+            if cutlass.const_expr(in_mask_steps):
+                if cutlass.const_expr(not self._is_causal):
                     # traverse column index.
-                    for c in range(cute.size(tScS_mn.shape[1])):
+                    for c in cutlass.range_constexpr(cute.size(tScS_mn.shape[1])):
                         if cute.elem_less(
                             basic_params.mK.shape[1], tScS_mn[0, c][3] + 1
                         ):
@@ -1006,7 +1006,7 @@ class FlashAttentionForwardAmpere:
                         tScS_mn[r, 0][1] + 1, basic_params.mK.shape[1]
                     )
                     # traverse column index.
-                    for c in range(cute.size(tScS_mn.shape[1])):
+                    for c in cutlass.range_constexpr(cute.size(tScS_mn.shape[1])):
                         # only consider the column index, so the row index sets to 0.
                         if cute.elem_less(col_idx_limit, tScS_mn[0, c][3] + 1):
                             acc_S_mn[r, c] = -cutlass.Float32.inf
@@ -1021,10 +1021,10 @@ class FlashAttentionForwardAmpere:
             row_max_cur_row = self._threadquad_reduce_max(row_max_cur_row)
             row_max_prev_row = None
             # if it is not the first tile, load the row r of previous row_max and compare with row_max_cur_row.
-            if not is_first_n_block:
+            if cutlass.const_expr(not is_first_n_block):
                 row_max_prev_row = row_max_prev[r]
                 row_max_cur_row = cute.arch.fmax(row_max_prev_row, row_max_cur_row)
-            if self._is_causal:
+            if cutlass.const_expr(self._is_causal):
                 row_max_cur_row = (
                     0.0 if row_max_cur_row == -cutlass.Float32.inf else row_max_cur_row
                 )
@@ -1043,7 +1043,7 @@ class FlashAttentionForwardAmpere:
                 cute.ReductionOp.ADD, cutlass.Float32.zero, 0
             )
             # if it is not the first tile, load the row r of previous row_max and minus row_max_cur_row to update row_sum.
-            if not is_first_n_block:
+            if cutlass.const_expr(not is_first_n_block):
                 prev_minus_cur_exp = self._exp2f(
                     row_max_prev_row * softmax_params.softmax_scale_log2
                     - row_max_cur_row * softmax_params.softmax_scale_log2
@@ -1072,7 +1072,7 @@ class FlashAttentionForwardAmpere:
         """
         # do quad reduction for row_sum.
         acc_O_mn = self._make_acc_tensor_mn_view(acc_O)
-        for r in range(cute.size(row_sum)):
+        for r in cutlass.range_constexpr(cute.size(row_sum)):
             row_sum[r] = self._threadquad_reduce_sum(row_sum[r])
             # if row_sum is zero or nan, set acc_O_mn_row to 1.0
             acc_O_mn_row_is_zero_or_nan = row_sum[r] == 0.0 or row_sum[r] != row_sum[r]

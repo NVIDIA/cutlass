@@ -59,13 +59,7 @@ namespace library {
 namespace detail {
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 }
 
@@ -73,7 +67,7 @@ auto make_iterator(T* ptr) {
 
 template <
   Provider Provider_,
-  typename ElementA_, 
+  typename ElementA_,
   typename LayoutA_,
   typename ElementSFA_,
   typename ElementB_,
@@ -125,7 +119,7 @@ public:
 
   /// Constructor
   BlockScaledGemmReferenceOperation() {
-    
+
     // Basic information
     description_.provider = kProvider;
     description_.kind = OperationKind::kBlockScaledGemm;
@@ -139,7 +133,7 @@ public:
     description_.C = make_TensorDescription<ElementC, LayoutC>();
     description_.D = make_TensorDescription<ElementD, LayoutC>();
     description_.SFD = make_TensorDescription<ElementSFD, LayoutSFD>();
-    
+
     // Epilogue compute and accumulator type description
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
 
@@ -147,7 +141,7 @@ public:
       NumericTypeMap<ElementAccumulator>::kId;
 
     // Compute capability for gemm reference
-    description_.tile_description.minimum_compute_capability = 
+    description_.tile_description.minimum_compute_capability =
       (kProvider == Provider::kReferenceDevice ? 50 : 0);
 
     description_.tile_description.maximum_compute_capability = 1024;
@@ -158,7 +152,7 @@ public:
     // Procedural name
     std::stringstream ss;
 
-    ss << "gemm"  
+    ss << "gemm"
       << "_reference_" << to_string(description_.provider)
       << "_" << to_string(description_.A.element) << to_string(description_.A.layout)
       << "_" << to_string(description_.SFA.element) << to_string(description_.SFA.layout)
@@ -221,7 +215,7 @@ public:
 
     BlockScaledGemmArguments const &args = *static_cast<BlockScaledGemmArguments const *>(arguments);
 
-    // Construct cute::Tensor A/B/C 
+    // Construct cute::Tensor A/B/C
 
     int M = args.problem_size.m();
     int N = args.problem_size.n();
@@ -266,12 +260,12 @@ public:
     auto D = cute::make_tensor(detail::make_iterator(static_cast<ElementD *>(args.D)),
         cute::make_layout(cute::make_shape(M, N, L), stride_d));
 
-    cutlass::reference::host::GettBlockScalingMainloopParams<ElementAccumulator, 
-        decltype(A), decltype(SfA), 
-        decltype(B), decltype(SfB)> 
+    cutlass::reference::host::GettBlockScalingMainloopParams<ElementAccumulator,
+        decltype(A), decltype(SfA),
+        decltype(B), decltype(SfB)>
         mainloop_params{A, SfA, B, SfB};
 
-    if constexpr (not is_same_v<ElementSFD, void>) { 
+    if constexpr (not is_same_v<ElementSFD, void>) {
 
       using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
                                               EpilogueSFVecSize
@@ -289,7 +283,7 @@ public:
     else {
       //  W/O SF generation
       auto SfD = cute::make_tensor(static_cast<ElementSFA *>(nullptr),
-          cute::make_layout(cute::make_shape(M, N, L))); // not used. 
+          cute::make_layout(cute::make_shape(M, N, L))); // not used.
       cutlass::reference::host::GettBlockScalingEpilogueParams<
           ElementCompute, ElementAccumulator, ElementCompute,
           decltype(C), decltype(D), decltype(SfD)>
@@ -362,7 +356,7 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_block_scaled_gemm(Manifest &manifest) {
-  /// 
+  ///
   /// A is Row , B is Col
   ///
   manifest.append(new BlockScaledGemmReferenceOperation<
@@ -405,7 +399,7 @@ void make_block_scaled_gemm(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
-  /// 
+  ///
   /// A is Col , B is Row
   ///
   manifest.append(new BlockScaledGemmReferenceOperation<
