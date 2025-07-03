@@ -194,6 +194,9 @@ struct ArithmeticTupleIterator
   CUTE_HOST_DEVICE constexpr
   ArithTuple operator*() const { return coord_; }
 
+  CUTE_HOST_DEVICE constexpr
+  ArithTuple coord() const { return coord_; }
+
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
   auto operator[](Coord const& c) const { return *(*this + c); }
@@ -463,7 +466,7 @@ operator+(ScaledBasis<T,Ns...> const& t, C<u>) {
 template <class ArithTuple>
 CUTE_HOST_DEVICE void print(ArithmeticTupleIterator<ArithTuple> const& iter)
 {
-  printf("ArithTuple"); print(iter.coord_);
+  printf("ArithTuple"); print(iter.coord());
 }
 
 template <class T, int... Ns>
@@ -476,7 +479,7 @@ CUTE_HOST_DEVICE void print(ScaledBasis<T,Ns...> const& e)
 template <class ArithTuple>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, ArithmeticTupleIterator<ArithTuple> const& iter)
 {
-  return os << "ArithTuple" << iter.coord_;
+  return os << "ArithTuple" << iter.coord();
 }
 
 template <class T, int... Ns>
