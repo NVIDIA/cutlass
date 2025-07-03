@@ -98,7 +98,10 @@ class _LdBase(CopyOp):
     repeat: Repetition = Repetition.x1
     pack: Pack = Pack.NONE
 
-    admissible_archs = ["sm_100a"]
+    admissible_archs = [
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self) -> None:
         # Arch verification
@@ -284,7 +287,10 @@ class _StBase(CopyOp):
     repeat: Repetition
     unpack: Unpack = Unpack.NONE
 
-    admissible_archs = ["sm_100a"]
+    admissible_archs = [
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self) -> None:
         # Arch verification

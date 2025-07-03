@@ -108,7 +108,7 @@ using KernelScheduleType =  cutlass::gemm::KernelSparseTmaWarpSpecializedMxf8f6f
 using ThreadBlockShape    = Shape<_128,_128,_256>;                           // Threadblock's tile size
 using ClusterShape        = Shape<_1,_1,_1>;                                 // Shape of the threadblocks in a cluster
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,                      
+    ArchTag, OperatorClass,
     ThreadBlockShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -175,13 +175,7 @@ cutlass::HostTensor<ElementD, cutlass::layout::PackedVectorLayout> block_referen
 #endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -289,7 +283,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 /// Initialize blocks that released to sparse Matrix A and its metadata E
@@ -465,7 +459,7 @@ template <typename Gemm>
 int run(Options &options)
 {
   // Initialization
-  if(!initialize(options)) 
+  if(!initialize(options))
   {
     std::cerr << " Initialization failed! " << std::endl;
     exit(-1);
@@ -527,9 +521,9 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
-  
+
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  
+
   if (!(props.major == 12 && props.minor == 0)) {
     std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 120)." << std::endl;
     return 0;

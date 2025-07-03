@@ -422,24 +422,30 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
   static bool can_implement(Arguments const& args) {
     if (kIsCpAsync) {
       if ((args.mainloop.page_size & (args.mainloop.page_size - 1)) != 0) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): cpasync page size pow2\n";
         return false;
       }
       if (args.mainloop.page_size > TileShapeS{}) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): cpasync page size too big\n";
         return false;
       }
     }
     else {
       if (args.mainloop.ptr_page_table != nullptr && args.mainloop.page_size != TileShapeS{}) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): tma page size off\n";
         return false;
       }
     }
     if (get<0>(args.problem_shape) != 128) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): heads off\n";
       return false;
     }
     if (get<1>(args.problem_shape) <= 0) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): heads off\n";
       return false;
     }
     if (args.split_kv <= 0) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): split-k off\n";
       return false;
     }
     return true;

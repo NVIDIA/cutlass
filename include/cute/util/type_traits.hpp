@@ -92,6 +92,29 @@ using CUTE_STL_NAMESPACE::remove_const_t;
 using CUTE_STL_NAMESPACE::remove_cv_t;
 using CUTE_STL_NAMESPACE::remove_reference_t;
 
+template <class Src, class Dst>
+struct copy_cv {
+  using type = Dst;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src const, Dst> {
+  using type = Dst const;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src volatile, Dst> {
+  using type = Dst volatile;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src const volatile, Dst> {
+  using type = Dst const volatile;
+};
+
+template <class Src, class Dst>
+using copy_cv_t = typename copy_cv<Src,Dst>::type;
+
 using CUTE_STL_NAMESPACE::extent;
 using CUTE_STL_NAMESPACE::remove_extent;
 

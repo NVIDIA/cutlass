@@ -39,6 +39,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/detail/helper_macros.hpp"
+#include "cutlass/conv/convnd_problem_shape.hpp"
+#include "cutlass/conv/detail.hpp"
 
 #include "cute/tensor.hpp"
 #include "cute/numeric/numeric_types.hpp"
@@ -133,6 +135,7 @@ public:
   constexpr static int ThreadCount = 128;
   constexpr static int kOutputAlignment = ThreadEpilogueOp::kCount;
   constexpr static bool isEpilogueBiasSupported = detail::IsThreadEpilogueOpWithBias<ThreadEpilogueOp>::value;
+  constexpr static bool isSourceNeeded = not cute::is_void_v<ElementC>;
 
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
   constexpr static uint32_t TmaTransactionBytes = 0;
@@ -173,12 +176,27 @@ public:
     return cutlass::Status::kSuccess;
   }
 
+  template <conv::Operator ConvOp, int NumDims>
+  static bool
+  can_implement(cutlass::conv::ConvProblemShape<ConvOp,NumDims> const& problem_shape, Arguments const& args) {
+    return can_implement(cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape), args);
+  }
+
   template <class ProblemShape>
   static bool
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
-    return true;
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+    auto shape = cute::make_shape(M,N,L);
+
+    bool implementable = true;
+    implementable = implementable && cutlass::detail::check_alignment<AlignmentD{}>(shape, StrideD{});
+    if constexpr (isSourceNeeded) {
+      implementable = implementable && cutlass::detail::check_alignment<AlignmentC{}>(shape, StrideC{});
+    }
+    return implementable;  
   }
 
   //

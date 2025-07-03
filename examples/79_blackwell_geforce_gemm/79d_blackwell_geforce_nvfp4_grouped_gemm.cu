@@ -137,8 +137,8 @@ constexpr int OutputSFVectorSize = 16;
 // With BlockScaleFactor generation.
 using FusionOperation = cutlass::epilogue::fusion::LinCombBlockScaleFactor<
     OutputSFVectorSize,
-    ElementD, 
-    ElementCompute, 
+    ElementD,
+    ElementCompute,
     ElementSFD, LayoutCTag,
     ElementC>;
 
@@ -201,7 +201,7 @@ using LayoutSFA = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutS
 using LayoutSFB = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFB;
 using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
-                                        OutputSFVectorSize, 
+                                        OutputSFVectorSize,
                                         cute::is_same_v<typename FusionOperation::GmemLayoutTagScalefactor,
                                             cutlass::layout::RowMajor> ? cute::UMMA::Major::K : cute::UMMA::Major::MN
                                      >;
@@ -267,13 +267,7 @@ cutlass::DeviceAllocation<ElementAccumulator> norm_constant_device;
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -511,7 +505,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -760,9 +754,9 @@ bool verify(const Options &options) {
         decltype(tensor_SFA),
         decltype(tensor_B),
         decltype(tensor_SFB)
-      > 
+      >
     mainloop_params{tensor_A, tensor_SFA, tensor_B, tensor_SFB};
-  
+
     auto tensor_C = cute::make_tensor(make_iterator(block_C.at(i).host_data()), layout_C);
     auto tensor_ref_D = cute::make_tensor(make_iterator(block_ref_D.at(i).host_data()), layout_D);
     auto tensor_ref_SFD = cute::make_tensor(make_iterator(block_ref_SFD.at(i).host_data()), layout_SFD);
@@ -777,7 +771,7 @@ bool verify(const Options &options) {
         cute::Int<OutputSFVectorSize>,
         cutlass::reference::host::SfStrategy::SfDGen
       > epilogue_params {alpha_host.at(i), beta_host.at(i), tensor_C, tensor_ref_D, tensor_ref_SFD, options.norm_constant};
-    
+
     cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
 
     // Comparison
@@ -842,7 +836,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
   }
   else {
     std::cout << "  Verfication is turned off for this run." << std::endl;
-  } 
+  }
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -918,7 +912,7 @@ int main(int argc, char const **args) {
   std::cout << "Running kernel with Cooperative kernel schedule:" << std::endl;
   run<Gemm>(options, false /*host_problem_shapes_available*/);
   std::cout << "Running kernel with Pingpong kernel schedule:" << std::endl;
-  run<GemmPingpong>(options, false /*host_problem_shapes_available*/); 
+  run<GemmPingpong>(options, false /*host_problem_shapes_available*/);
 #endif
 
   return 0;

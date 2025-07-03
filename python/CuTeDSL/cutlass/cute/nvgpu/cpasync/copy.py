@@ -127,7 +127,12 @@ class CopyBulkTensorTileG2SOp(CopyOp):
 
     cta_group: CtaGroup = CtaGroup.ONE
 
-    admissible_archs = ["sm_90", "sm_90a", "sm_100a"]
+    admissible_archs = [
+        "sm_90",
+        "sm_90a",
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self) -> None:
         if not isinstance(self.cta_group, CtaGroup):
@@ -159,7 +164,7 @@ class CopyBulkTensorTileG2SOp(CopyOp):
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "CopyBulkTensorTileG2SNonExecTrait":
         raise NotImplementedError(
-            "Use cpasync.make_tma_tile_atom to obtain a copy Atom for TMA"
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
 
     def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
@@ -224,7 +229,12 @@ class CopyBulkTensorTileG2SMulticastOp(CopyOp):
 
     cta_group: CtaGroup = CtaGroup.ONE
 
-    admissible_archs = ["sm_90", "sm_90a", "sm_100a"]
+    admissible_archs = [
+        "sm_90",
+        "sm_90a",
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self):
         if not isinstance(self.cta_group, CtaGroup):
@@ -256,7 +266,7 @@ class CopyBulkTensorTileG2SMulticastOp(CopyOp):
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "CopyBulkTensorTileG2SMulticastNonExecTrait":
         raise NotImplementedError(
-            "Use cpasync.make_tma_tile_atom to obtain a copy Atom for TMA"
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
 
     def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
@@ -326,7 +336,12 @@ class CopyBulkTensorTileS2GOp(CopyOp):
     This Operation uses TMA in the ``.tile`` mode.
     """
 
-    admissible_archs = ["sm_90", "sm_90a", "sm_100a"]
+    admissible_archs = [
+        "sm_90",
+        "sm_90a",
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self):
         # Arch verification
@@ -345,7 +360,7 @@ class CopyBulkTensorTileS2GOp(CopyOp):
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "CopyBulkTensorTileS2GTrait":
         raise NotImplementedError(
-            "Use cpasync.make_tma_tile_atom to obtain a copy Atom for TMA"
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
 
 

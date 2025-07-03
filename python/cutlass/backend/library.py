@@ -118,6 +118,7 @@ class FunctionalOp(enum.Enum):
     Multiplies = enum_auto()
     MultiplyAdd = enum_auto()
     Plus = enum_auto()
+    Exp = enum_auto()
 
 
 FunctionalOpTag = {
@@ -130,6 +131,7 @@ FunctionalOpTag = {
     FunctionalOp.Multiplies: "cutlass::multiplies",
     FunctionalOp.MultiplyAdd: "cutlass::multiply_add",
     FunctionalOp.Plus: "cutlass::plus",
+    FunctionalOp.Exp: "cutlass::fast_exp_op",
 }
 
 

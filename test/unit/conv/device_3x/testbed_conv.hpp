@@ -176,6 +176,8 @@ struct ConvTestbed {
 
   static constexpr bool DisableSource = cute::is_void_v<typename FusionOp::ElementSource>;
 
+  static constexpr bool IsResidualEnabled = cutlass::epilogue::collective::detail::IsThreadEpilogueOpWithResidualAdd<FusionOp>::value;
+
   using StrideC  = typename Conv::ConvKernel::StrideC;
   using StrideD  = typename Conv::ConvKernel::StrideD;
   using ThreadEpilogueOp = typename Conv::ConvKernel::CollectiveEpilogue::ThreadEpilogueOp;
@@ -494,6 +496,7 @@ struct ConvTestbed {
       ElementCompute,
       ElementC,
       ElementD,
+      IsResidualEnabled,
       decltype(mAlpha),
       decltype(mBeta),
       decltype(mBias),

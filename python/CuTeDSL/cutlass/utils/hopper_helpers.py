@@ -96,6 +96,10 @@ def make_trivial_tiled_mma(
     acc_dtype: Type[Numeric],
     atom_layout_mnk: Tuple[int, int, int],
     tiler_mn: Tuple[int, int],
+    a_source: OperandSource = OperandSource.SMEM,
+    *,
+    loc=None,
+    ip=None,
 ) -> cute.TiledMma:
     """Make a tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
     By default, the MMA atom is created with SMEM operand source for A.
@@ -131,7 +135,7 @@ def make_trivial_tiled_mma(
             a_dtype,
             acc_dtype,
             (*tiler_mn, 16),
-            OperandSource.SMEM,
+            a_source,
             a_leading_mode,
             b_leading_mode,
         )
@@ -144,7 +148,7 @@ def make_trivial_tiled_mma(
             b_dtype,
             acc_dtype,
             (*tiler_mn, 32),
-            OperandSource.SMEM,
+            a_source,
             a_leading_mode,
             b_leading_mode,
         )

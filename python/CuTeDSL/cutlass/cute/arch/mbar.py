@@ -8,6 +8,7 @@
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
+from typing import Optional
 
 from cutlass.cutlass_dsl import CuTeDSL, T, if_generate, dsl_user_op
 
@@ -26,7 +27,7 @@ from ...impl_utils import check_value_in
 
 
 @dsl_user_op
-def mbarrier_init_arrive_cnt(mbar_ptr: Pointer, cnt: Int, *, loc=None, ip=None) -> None:
+def mbarrier_init(mbar_ptr: Pointer, cnt: Int, *, loc=None, ip=None) -> None:
     """
     Initializes a mbarrier with the specified thread arrival count.
 
@@ -46,16 +47,25 @@ def mbarrier_init_fence(*, loc=None, ip=None) -> None:
     A fence operation that applies to the mbarrier initializations.
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
     nvvm.fence_mbarrier_init(loc=loc, ip=ip)
 
 
 @dsl_user_op
-def mbarrier_init_tx_bytes(
+def mbarrier_arrive_and_expect_tx(
     mbar_ptr: Pointer, bytes: Int, peer_cta_rank_in_cluster=None, *, loc=None, ip=None
 ) -> None:
     """
-    Initializes a mbarrier with the specified number of transaction bytes.
+    Arrives on a mbarrier and expects a specified number of transaction bytes.
 
     :param mbar_ptr:                 A pointer to the mbarrier in SMEM
     :type mbar_ptr:                  Pointer
@@ -66,7 +76,16 @@ def mbarrier_init_tx_bytes(
                                      SMEM.
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
 
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
@@ -92,6 +111,56 @@ def mbarrier_init_tx_bytes(
 
 
 @dsl_user_op
+def mbarrier_expect_tx(
+    mbar_ptr: Pointer, bytes: Int, peer_cta_rank_in_cluster=None, *, loc=None, ip=None
+) -> None:
+    """
+    Expects a specified number of transaction bytes without an arrive.
+
+    :param mbar_ptr:                 A pointer to the mbarrier in SMEM
+    :type mbar_ptr:                  Pointer
+    :param bytes:                    The number of transaction bytes
+    :type bytes:                     Int
+    :param peer_cta_rank_in_cluster: An optional CTA rank in cluster. If provided, the pointer to
+                                     the mbarrier is converted to a remote address in the peer CTA's
+                                     SMEM.
+    """
+    arch = CuTeDSL._get_dsl().envar.arch
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
+
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
+    if peer_cta_rank_in_cluster is not None:
+        mbar_llvm_ptr = nvvm.mapa(
+            mbar_llvm_ptr.type,
+            mbar_llvm_ptr,
+            Int32(peer_cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+        space = nvvm.MBarrierSpaceKind.CLUSTER
+    else:
+        space = nvvm.MBarrierSpaceKind.CTA
+
+    nvvm.mbarrier_txn(
+        mbar_llvm_ptr,
+        Int32(bytes).ir_value(loc=loc, ip=ip),
+        kind=nvvm.MBarrierTxnKind.EXPECT_TX,
+        space=space,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
 def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
     """
     Waits on a mbarrier with a specified phase.
@@ -102,7 +171,16 @@ def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
     :type phase:     Int
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
 
     timeout_ns = 10000000
     # This NVVM Op is a spin-loop wrapping the mbarrier.try_wait.parity.shared.b64 PTX
@@ -129,7 +207,16 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
     :rtype:          Boolean
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
 
     return Boolean(
         nvvm.mbarrier_wait_parity(
@@ -144,7 +231,7 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
 
 
 @dsl_user_op
-def conditional_mbarrier_try_wait(
+def mbarrier_conditional_try_wait(
     cond, mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None
 ) -> Boolean:
     """
@@ -159,7 +246,16 @@ def conditional_mbarrier_try_wait(
     :rtype:          Boolean
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
     return if_generate(
         cond,
         lambda: mbarrier_try_wait(mbar_ptr, phase, loc=loc, ip=ip),
@@ -171,7 +267,11 @@ def conditional_mbarrier_try_wait(
 
 @dsl_user_op
 def mbarrier_arrive(
-    mbar_ptr: Pointer, peer_cta_rank_in_cluster: Int = None, *, loc=None, ip=None
+    mbar_ptr: Pointer,
+    peer_cta_rank_in_cluster: Optional[Int] = None,
+    *,
+    loc=None,
+    ip=None,
 ) -> None:
     """
     Arrives on an mbarrier.
@@ -185,7 +285,16 @@ def mbarrier_arrive(
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
         arch = CuTeDSL._get_dsl().envar.arch
-        check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+        check_value_in(
+            arch,
+            [
+                "sm_90",
+                "sm_90a",
+                "sm_100a",
+                "sm_100f",
+            ],
+            "arch",
+        )
 
         mbar_llvm_ptr = nvvm.mapa_shared_cluster(
             mbar_llvm_ptr.type,

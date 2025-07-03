@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 from typing import List, Tuple
+from types import NoneType
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import scf, arith
 from cutlass._mlir.extras import types as T
@@ -145,6 +146,30 @@ class ScfGenerator:
                     # Use the provided terminator generator
                     block_term_op_builder[builder](region_result)
                 else:
+                    # For standard yield op, check result
+                    for arg, result, name in zip(
+                        mix_iter_args,
+                        (
+                            region_result
+                            if isinstance(region_result, list)
+                            else [region_result]
+                        ),
+                        mix_iter_arg_names,
+                    ):
+                        if isinstance(arg, NoneType) and not isinstance(
+                            result, NoneType
+                        ):
+                            raise DSLRuntimeError(
+                                (
+                                    f"`{name}` is None prior to this `{op_type_name}`, "
+                                    f"and update to non-None value inside of this `{op_type_name}` is not supported."
+                                ),
+                                suggestion=(
+                                    f"Please make sure `{name}` is not None prior to this `{op_type_name}`, "
+                                    f"or mark this `{op_type_name}` with "
+                                    f"`{'range' if op_type_name == 'for' else 'const_expr'}`."
+                                ),
+                            )
                     # Normalize region_result
                     region_result_list = ScfGenerator._normalize_region_result_to_list(
                         region_result
@@ -200,6 +225,7 @@ def _loop_execute_range_dynamic(
     mix_iter_arg_names: List[str] = [],
     unroll: int = -1,
     unroll_full: bool = False,
+    pipelining: int = None,
 ):
     """
     Example: build an scf.for with optional unroll, using our universal helper.
@@ -236,6 +262,18 @@ def _loop_execute_range_dynamic(
             unroll_attr = LoopUnroll(count=unroll)
         log().debug("Unroll attribute: %s", unroll_attr)
 
+        pipelining_attr = None
+        if pipelining is not None:
+            if pipelining >= 0:
+                pipelining_attr = ir.IntegerAttr.get(
+                    ir.IntegerType.get_signless(32), pipelining
+                )
+            else:
+                raise DSLRuntimeError(
+                    f"Pipelining must be non-negative, got {pipelining}"
+                )
+        log().debug("Pipelining attribute: %s", pipelining_attr)
+
         log().debug(
             "Creating scf.ForOp \n\t\tstart=%s: type : %s\n\t\tstop=%s: type : %s\n\t\tstep=%s: type : %s",
             start_,
@@ -264,6 +302,9 @@ def _loop_execute_range_dynamic(
 
         if unroll_attr is not None:
             for_op.attributes["loop_annotation"] = unroll_attr
+
+        if pipelining_attr is not None:
+            for_op.attributes["cutlass.pipelining"] = pipelining_attr
 
         return for_op
 

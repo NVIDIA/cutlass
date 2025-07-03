@@ -1519,6 +1519,105 @@ public:
     >::CollectiveOp;
 };
 
+template <
+  class MmaTileShape_MNK,
+  class ClusterShape_MNK,
+  class ElementAccumulator,
+  class ElementCompute,
+  class ElementC_,
+  class GmemLayoutTagC_,
+  int AlignmentC,
+  class ElementD,
+  class GmemLayoutTagD,
+  int AlignmentD,
+  class EpilogueScheduleType,
+  class FusionOp
+>
+struct CollectiveBuilder<
+    arch::Sm100,
+    arch::OpClassSimt,
+    MmaTileShape_MNK,
+    ClusterShape_MNK,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator,
+    ElementCompute,
+    ElementC_,
+    GmemLayoutTagC_,
+    AlignmentC,
+    ElementD,
+    GmemLayoutTagD,
+    AlignmentD,
+    EpilogueScheduleType,
+    FusionOp,
+    cute::enable_if_t<
+      cute::is_same_v<EpilogueScheduleType, EpilogueSimtVectorized> ||
+      cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized> ||
+      cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto> >> {
+  using CtaTileShape_MNK = MmaTileShape_MNK; // cluster MMA not supported
+
+  // Passing void C disables source load
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      ElementD, ElementC_>; // prevents void ref breakages
+  using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      GmemLayoutTagD, GmemLayoutTagC_>;
+  static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
+      thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
+
+  using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
+  using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
+
+  using ThreadOp = cute::conditional_t<
+    IsDefaultFusionOp<FusionOp>::value,
+    thread::LinearCombination<
+      ElementD, AlignmentD, ElementAccumulator, ElementCompute,
+      ScaleType, FloatRoundStyle::round_to_nearest, ElementC>
+    ,
+    thread::LinearCombinationBiasElementwise<
+      ElementC, ElementAccumulator, ElementCompute, ElementD, ElementD, AlignmentD,
+      typename FusionOp::ActivationFn, cutlass::plus<ElementCompute>,
+      false, typename FusionOp::ElementBias>
+  >;
+  static_assert(not (cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized> && not IsDefaultFusionOp<FusionOp>::value), "unsupported schedule + fusion");
+
+  using WarpShape_MNK = decltype(cutlass::gemm::collective::detail::sm100_simt_f32_warp_shape_mnk_selector<CtaTileShape_MNK>());
+  static constexpr int ThreadCount = cute::size(WarpShape_MNK{}) * NumThreadsPerWarp;
+  static constexpr int WarpShape_M = cute::size<0>(WarpShape_MNK{});
+  static constexpr int WarpShape_N = cute::size<1>(WarpShape_MNK{});
+
+  // For 32 threads in 1 warp, we use [8 x 4] thread layouts and each thread will hold [4 x 4] accumulator value layouts.
+  // Then totally each warp will hold [32 x 16] accumulator value layouts.
+  // We separate the whole epilogue calculation to multi steps,
+  // each step will calculate 1x [32 x 16] for each warp to reduce register pressure (mainly for C register allocation for beta 1!= 0 case).
+  // So EpiTileM = WarpShape_M * 32 and EpiTileN = WarpShape_N * 16.
+  using EpiTileM = Int<WarpShape_M * 32>;
+  using EpiTileN = Int<WarpShape_N * 16>;
+
+  using SmemLayout = cute::conditional_t<cutlass::detail::is_major<0>(GmemStrideTypeD{}),
+                                         cute::Layout<cute::Shape<EpiTileM, EpiTileN>, cute::Stride<_1, EpiTileM>>,
+                                         cute::Layout<cute::Shape<EpiTileM, EpiTileN>, cute::Stride<EpiTileN, _1>>>;
+
+  using CopyAtomR2S = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<128>, ElementAccumulator>;
+
+  using CopyAtomS2R = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<AlignmentD * sizeof_bits_v<ElementAccumulator>>, ElementAccumulator>;
+
+  using TiledCopyS2R = decltype(
+        cutlass::gemm::collective::detail::make_simt_gmem_tiled_copy<
+          CopyAtomS2R, ThreadCount, AlignmentD, GmemStrideTypeD, EpiTileM, EpiTileN>());
+
+  using Schedule = cute::conditional_t<is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>,
+                                       EpilogueSimtVectorized,
+                                       EpilogueScheduleType>;
+  using CopyAtomR2G = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<AlignmentD * sizeof_bits_v<ElementD>>, ElementD>;
+  using CollectiveOp = cutlass::epilogue::collective::Epilogue<
+      GmemStrideTypeC,
+      GmemStrideTypeD,
+      ThreadOp,
+      SmemLayout,
+      CopyAtomR2S,
+      TiledCopyS2R,
+      CopyAtomR2G,
+      Schedule>;
+};
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective

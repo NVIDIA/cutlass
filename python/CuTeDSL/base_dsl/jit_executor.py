@@ -12,23 +12,24 @@
 """
 This module provides jit executor related classes
 """
-import io
-import inspect
 import ctypes
-import numpy as np
+import inspect
+import io
 from typing import get_origin
 
+import numpy as np
+
+# MLIR modules imports
+from .._mlir import ir
+
 # Local modules imports
-from .utils.timer import timer
-from .utils.logger import log
+from . import typing as t
 from .common import DSLRuntimeError
 from .runtime import cuda as cuda_helpers
 from .runtime.jit_arg_adapters import JitArgAdapterRegistry, is_arg_spec_constexpr
 from .typing import get_c_pointers
-from . import typing as t
-
-# MLIR modules imports
-from .._mlir import ir
+from .utils.logger import log
+from .utils.timer import timer
 
 
 class CudaSingleModule:
@@ -64,6 +65,7 @@ class JitExecutor:
         self.args_spec = args_spec
         self.function_name = function_name
         if args_spec is not None:
+            self.original_args_spec = args_spec
             self.args_spec = self.filter_runtime_arg_spec(args_spec)
         # cuda kernels
         self.cuda_modules = cuda_modules
@@ -135,6 +137,29 @@ class JitExecutor:
             for module in set(cuda_modules):
                 cuda_helpers.unload_cubin_module(module)
 
+    def get_constexpr_args(self) -> list[dict[str, int | str]]:
+        """
+        This function returns the constexpr args that have been pruned from the original function signature.
+        The return type is a list of dicts, each dict contains the argument index (argument_index) and argument name (argument_name).
+
+        :return: list of dicts, each dict contains the argument index (argument_index) and argument name (argument_name).
+        :rtype: list[dict[str, int | str]]
+        """
+        if self.original_args_spec is None:
+            return list()
+        constexpr_args = list()
+        for i, arg_name in enumerate(self.original_args_spec.args):
+            if arg_name not in self.args_spec.args:
+                constexpr_args.append({"argument_index": i, "argument_name": arg_name})
+
+        if self.original_args_spec.kwonlyargs:
+            for kwarg in self.original_args_spec.kwonlyargs:
+                if kwarg not in self.args_spec.kwonlyargs:
+                    constexpr_args.append(
+                        {"argument_index": None, "argument_name": kwarg}
+                    )
+        return constexpr_args
+
     def generate_execution_args(self, args, kwargs, args_spec: inspect.FullArgSpec):
         """
         This function is the prune version of `generate_mlir_function_types` which only generates execution args
@@ -175,6 +200,7 @@ class JitExecutor:
             )
 
         exe_args = []
+        adapted_args = []
         input_args = rectified_args + list(rectified_kwargs.values())
         input_arg_names = args_spec.args + args_spec.kwonlyargs
         for arg, arg_name in zip(input_args, input_arg_names):
@@ -193,13 +219,16 @@ class JitExecutor:
                 adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
                 if adapter:
                     arg = adapter(arg)
+                    adapted_args.append(arg)
 
             exe_args.extend(get_c_pointers(arg))
 
-        return exe_args
+        return exe_args, adapted_args
 
     def __call__(self, *args, **kwargs):
-        exe_args = self.generate_execution_args(args, kwargs, self.args_spec)
+        exe_args, adapted_args = self.generate_execution_args(
+            args, kwargs, self.args_spec
+        )
 
         self.run_compiled_program(exe_args)
 

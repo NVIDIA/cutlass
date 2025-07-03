@@ -1173,8 +1173,9 @@ public:
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     Layout ref_layout_MN = [&] () {
-      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
-      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+      auto mn_shape = shape(typename decltype(args.tiled_copy)::Tiler_MN{});
+      if constexpr (ReferenceSrc) { return right_inverse(args.tiled_copy.get_layoutS_TV()).with_shape(mn_shape); }
+      else                        { return right_inverse(args.tiled_copy.get_layoutD_TV()).with_shape(mn_shape); }
     }();                                                                                         // tile_mn -> tv_idx
 
     // Get the MN layout + coord of lanes to determine shuffle reduction iterations
@@ -1650,8 +1651,9 @@ public:
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     Layout ref_layout_MN = [&] () {
-      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
-      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+      auto mn_shape = shape(typename decltype(args.tiled_copy)::Tiler_MN{});
+      if constexpr (ReferenceSrc) { return right_inverse(args.tiled_copy.get_layoutS_TV()).with_shape(mn_shape); }
+      else                        { return right_inverse(args.tiled_copy.get_layoutD_TV()).with_shape(mn_shape); }
     }();                                                                                         // tile_mn -> tv_idx
 
     // Get the MN layout + coord of lanes to determine shuffle reduction iterations

@@ -15,20 +15,6 @@ from .static_persistent_tile_scheduler import (
     StaticPersistentTileScheduler,
 )
 
-from .pipeline import (
-    Agent,
-    CooperativeGroup,
-    PipelineUserType,
-    PipelineState,
-    make_pipeline_state,
-    PipelineAsync,
-    PipelineTmaAsync,
-    PipelineTmaUmma,
-    PipelineUmmaAsync,
-    PipelineTmaStore,
-    pipeline_init_wait,
-)
-
 from .hardware_info import (
     HardwareInfo,
 )
@@ -65,6 +51,8 @@ from .smem_allocator import SmemAllocator
 from .layout import LayoutEnum
 
 __all__ = [
+    "SmemAllocator",
+    "LayoutEnum",
     "WorkTileInfo",
     "PersistentTileSchedulerParams",
     "StaticPersistentTileScheduler",

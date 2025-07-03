@@ -260,13 +260,10 @@ copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
     {
       // If more than one element vectorizes to 8bits or more, then recast and copy
       using VecType = uint_bit_t<vec_bits>;
-      // Preserve volatility
-      using SrcVecType = conditional_t<is_volatile_v<typename SrcEngine::element_type>, VecType const volatile, VecType const>;
-      using DstVecType = conditional_t<is_volatile_v<typename DstEngine::element_type>, VecType       volatile, VecType      >;
 
       // Recast
-      Tensor src_v = recast<SrcVecType>(src);
-      Tensor dst_v = recast<DstVecType>(dst);
+      Tensor src_v = recast<VecType>(src);
+      Tensor dst_v = recast<VecType>(dst);
       return copy_if(constant_fn<true_type>{}, src_v, dst_v);
     } else {
       return copy_if(constant_fn<true_type>{}, src, dst);

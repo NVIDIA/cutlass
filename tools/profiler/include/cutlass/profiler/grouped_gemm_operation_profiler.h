@@ -286,14 +286,25 @@ protected:
     library::GroupedGemmDescription const& operation_desc,
     ProblemSpace const& problem_space);
 
+  /// Update workspace configuration according to flexible user setups
+  void update_workspace_(
+    GroupedGemmWorkspace &gemm_workspace,
+    std::array<int64_t, 3> const &preferred_cluster,
+    std::array<int64_t, 3> const &fallback_cluster,
+    cutlass::library::RasterOrder const &raster_order,
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
+
   /// Update performance result configuration for exploration parameters
-  void update_result_(
+  void update_workspace_and_result_(
+    GroupedGemmWorkspace &gemm_workspace,
     PerformanceResult &result,
     ProblemSpace const &problem_space,
     cutlass::library::RasterOrder const &raster_order,
     std::array<int64_t, 3> const &preferred_cluster,
     std::array<int64_t, 3> const &fallback_cluster,
-    int swizzle_size);
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
 
   /// Verifies CUTLASS against host and device references
   bool verify_with_reference_(

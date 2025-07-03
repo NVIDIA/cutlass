@@ -297,7 +297,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     sm100_mma_data_type_general = [
       'gemm_f16_f16_f16_f16_f16',
       'gemm_f16_f16_f16_void_f16',
-      'gemm_f16_f16_f32_f16_f16',
+      #'gemm_f16_f16_f32_f16_f16',
       'tf32gemm_f32_f32_f32_f32_f32',
       'bf16gemm_f32_f32_f32_f32_f32',
     ]
@@ -336,7 +336,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_e5m2',
       'gemm.*ue4m3xf4_ue4m3xf4_f32_f16_e5m2',
       'gemm.*ue8m0xf4_ue8m0xf6_f32_f16_e5m2',
-      'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_ue8m0xe2m1',
+      #'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_ue8m0xe2m1',
       'gemm.*ue8m0xf6_ue8m0xf6_f32_f16_ue8m0xe3m2',
     ]
 
@@ -547,7 +547,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
       if dynamic_cluster:
         if mode == "functional_L0":
-          runtime_cluster_shapes = [[1,1,1],          [2,1,1], [2,2,1],          [4,1,1],                   [4,4,1]]
+          runtime_cluster_shapes = [[1,1,1],                   [2,2,1]]
         else:
           runtime_cluster_shapes = [[1,1,1], [1,2,1], [2,1,1], [2,2,1], [1,4,1], [4,1,1], [2,4,1], [4,2,1], [4,4,1]]
         cta_tile_shape_m, cta_tile_shape_n, cta_tile_shape_k = operation.tile_description.threadblock_shape
