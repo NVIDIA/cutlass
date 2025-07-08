@@ -41,10 +41,10 @@ namespace cute
 /**
  * concept MMA_Traits
  * {
- *   using ValTypeD =  // Logical A-value type
- *   using ValTypeA =  // Logical B-value type
- *   using ValTypeB =  // Logical C-value type
- *   using ValTypeC =  // Logical D-value type    (NOTE: Not used? Assumed == ValTypeD)
+ *   using ValTypeA =  // Logical A-value type
+ *   using ValTypeB =  // Logical B-value type
+ *   using ValTypeC =  // Logical C-value type
+ *   using ValTypeD =  // Logical D-value type    (NOTE: Not used? Assumed == ValTypeD)
  *
  *   using FrgTypeA =  // A-type consumed by MMA  (if ommitted, same as ValTypeA)
  *   using FrgTypeB =  // B_type consumed by MMA  (if ommitted, same as ValTypeB)
