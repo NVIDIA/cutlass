@@ -347,7 +347,7 @@ public:
     Tensor<EngineScales, LayoutScales>& tCrS_input,
     Tensor<EngineZeros, LayoutZeros> tCrZ_input
   ) {
-    // TODO: add assert here because such cases not support for int4 now
+    // TODO (Codeplay): add assert here because such cases not support for int4 now
     static_assert(!IsATransformed);
 
     static_assert(is_rmem<EngineIn>::value, "Input tensor for conversion must come from registers");
@@ -759,8 +759,8 @@ CUTLASS_DEVICE auto create_copies(LoadTensors const& load_tensors) {
       }
     }();
 
-    TensorMKL mA_mkl = make_tensor(make_gmem_ptr(ptr_A_curr_batch), make_shape(M, K,(int32_t)1), mainloop_params.dA[next_group]);
-    TensorNKL mB_nkl = make_tensor(ptr_B_curr_batch, make_shape(N, K,(int32_t)1), mainloop_params.dB[next_group]);
+    TensorMKL mA_mkl = make_tensor(make_gmem_ptr(ptr_A_curr_batch), make_shape(M, K, static_cast<int32_t>(1)), mainloop_params.dA[next_group]);
+    TensorNKL mB_nkl = make_tensor(ptr_B_curr_batch, make_shape(N, K,static_cast<int32_t>(1)), mainloop_params.dB[next_group]);
 
     if constexpr(KernelConversionMode == ConversionMode::DirectConvert){
       return cute::make_tuple(mA_mkl, mB_nkl, TensorS{}, TensorZ{});
@@ -769,7 +769,7 @@ CUTLASS_DEVICE auto create_copies(LoadTensors const& load_tensors) {
     auto scale_k = cute::ceil_div(K, mainloop_params.group_size);
     TensorS mScale = make_tensor(
         make_gmem_ptr(static_cast<NonVoidElementScale const *>(mainloop_params.ptr_S[next_group])),
-        make_layout(make_shape(IsATransformed ? M : N, scale_k, (int32_t)1), mainloop_params.dS[next_group]));
+        make_layout(make_shape(IsATransformed ? M : N, scale_k, static_cast<int32_t>(1)), mainloop_params.dS[next_group]));
 
     if constexpr(KernelConversionMode == ConversionMode::ConvertAndScale){
       return cute::make_tuple(mA_mkl, mB_nkl, mScale, TensorZ{});
@@ -784,8 +784,8 @@ CUTLASS_DEVICE auto create_copies(LoadTensors const& load_tensors) {
     }();
 
     TensorZ mZero = make_tensor(ptr_Z,
-                    make_layout(make_shape(zero_elements_packed_along_k * (IsATransformed ? M : N), scale_k / zero_elements_packed_along_k, (int32_t)1),
-                    make_stride(_1{}, (int64_t)zero_elements_packed_along_k * (IsATransformed ? M : N), (int64_t)(IsATransformed ? M : N) * scale_k)));
+                    make_layout(make_shape(zero_elements_packed_along_k * (IsATransformed ? M : N), scale_k / zero_elements_packed_along_k, static_cast<int32_t>(1)),
+                    make_stride(_1{}, static_cast<int64_t>(zero_elements_packed_along_k) * (IsATransformed ? M : N), static_cast<int64_t>(IsATransformed ? M : N) * scale_k)));
 
     return cute::make_tuple(mA_mkl, mB_nkl, mScale, mZero);
   }

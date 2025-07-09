@@ -151,7 +151,7 @@ struct Options {
               static_cast<uint64_t>(get<2>(problem));
     }
     // Two flops per multiply-add
-    uint64_t flop = uint64_t(2) * uint64_t(fmas);
+    uint64_t flop = static_cast<uint64_t>(2) * static_cast<uint64_t>(fmas);
     double gflop = double(flop) / double(1.0e9);
     return gflop / runtime_s;
   }
@@ -526,8 +526,8 @@ struct ExampleRunner {
       auto stride_zero = [&]() {
         if constexpr (is_tuple_v<std::remove_reference_t<decltype(cute::get<1>(StrideZero{}))>>) {
           return make_stride(Int<zero_elements_packed_along_k>{},
-                             make_stride(_1{}, int64_t(zero_elements_packed_along_k * dq_mn_size)),
-                             int64_t(dq_mn_size * scale_k));
+                             make_stride(_1{}, static_cast<int64_t>(zero_elements_packed_along_k * dq_mn_size)),
+                             static_cast<int64_t>(dq_mn_size * scale_k));
         } else {
           return stride_scale;
         }
@@ -649,17 +649,17 @@ struct ExampleRunner {
           using ret_type = cute::conditional_t<sizeof_bits_v<ElementZero> >= 8, ElementZero, int8_t>;
           ret_type a = [&]() {
             if constexpr (sizeof_bits_v<QuantizedElement> >= 8) {
-              return  (ret_type)(src_tensor(n, k, l));
+              return  static_cast<ret_type>(src_tensor(n, k, l));
             } else {
-              return (ret_type)(src_tensor(n, k, l).get());
+              return static_cast<ret_type>(src_tensor(n, k, l).get());
             }}();
 
           ret_type b = [&]() {
             if constexpr (sizeof_bits_v<ElementZero> >= 8) {
-              return (ret_type)(zero_tensor(n, k / group_size, l));
+              return static_cast<ret_type>(zero_tensor(n, k / group_size, l));
             } else {
               auto zero_elements_packed_along_k = get<0>(zero_tensor.shape());
-              return (ret_type)(zero_tensor((k / group_size) % zero_elements_packed_along_k, n, k / group_size / zero_elements_packed_along_k, l).get());
+              return static_cast<ret_type>(zero_tensor((k / group_size) % zero_elements_packed_along_k, n, k / group_size / zero_elements_packed_along_k, l).get());
             }
           }();
 
@@ -793,8 +793,8 @@ struct ExampleRunner {
       auto stride_zero = [&]() {
         if constexpr (is_tuple_v<std::remove_reference_t<decltype(cute::get<1>(StrideZero{}))>>) {
           return make_stride(Int<zero_elements_packed_along_k>{},
-                             make_stride(_1{}, int64_t(zero_elements_packed_along_k * dq_mn_size)),
-                             int64_t(dq_mn_size * scale_k));
+                             make_stride(_1{}, static_cast<int64_t>(zero_elements_packed_along_k * dq_mn_size)),
+                             static_cast<int64_t>(dq_mn_size * scale_k));
         } else {
           return stride_scale;
         }

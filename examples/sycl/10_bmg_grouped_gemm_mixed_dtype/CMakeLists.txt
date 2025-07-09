@@ -50,7 +50,7 @@ foreach(MMA_TYPE IN LISTS MMA_T)
 
     cutlass_example_add_executable(
       ${exe_name}
-      10_bmg_grouped_gemm_mixed_dtype.cpp
+      10_bmg_grouped_gemm_bf16_f16_s8.cpp
       TEST_COMMAND_OPTIONS
       TEST_GROUPS
       TEST_MODE_1
