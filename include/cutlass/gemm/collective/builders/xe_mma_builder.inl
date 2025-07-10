@@ -161,9 +161,8 @@ struct CollectiveBuilder<
   KernelScheduleType,
   cute::enable_if_t<
     cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelXe, KernelXeCooperative, KernelXePtrArrayCooperative> &&
-    cute::is_same_v<ElementA, ElementB> &&
-    cute::is_any_of_v<ElementA, bfloat16_t, half_t> &&
-    cute::is_any_of_v<ElementB, bfloat16_t, half_t>
+    cute::is_any_of_v<ElementA, bfloat16_t, half_t, cute::int8_t> &&
+    cute::is_any_of_v<ElementB, bfloat16_t, half_t, cute::int8_t, cute::uint4_t>
   >
     >{
 
@@ -175,7 +174,9 @@ struct CollectiveBuilder<
       static_assert(cute::is_any_of_v<ElementAccumulator, float, bfloat16_t, half_t>,
         "Intel multi-stage pipeline requires ElementC to be of type float, bfloat or half");
 
-      using MMAAtom = typename pick_mma_atom<ElementA, ElementAccumulator>::atom;
+      static constexpr bool isAtypeBig = cute::sizeof_bits_v<ElementA> > cute::sizeof_bits_v<ElementB>;
+      using MMAType = std::conditional_t<isAtypeBig, ElementA, ElementB>;
+      using MMAAtom = typename pick_mma_atom<MMAType, ElementAccumulator>::atom;
 
       static constexpr auto tile_M = get<0>(TileShape_MNK{});
       static constexpr auto tile_N = get<1>(TileShape_MNK{});
@@ -193,12 +194,17 @@ struct CollectiveBuilder<
 
       using KernelSchedule = std::conditional_t<cute::is_same_v<KernelScheduleType, KernelScheduleAuto>, KernelXe, KernelScheduleType>;
       static constexpr int PipelineStages = IsGroup ? 2 : 3;
-      using DispatchPolicy = std::conditional_t<IsGroup,
-                                                cutlass::gemm::MainloopIntelXeXMX16Group<PipelineStages, KernelSchedule>,
-                                                cutlass::gemm::MainloopIntelXeXMX16<PipelineStages, KernelSchedule>>;
+      using DispatchPolicy = std::conditional_t<!IsGroup, cutlass::gemm::MainloopIntelXeXMX16<PipelineStages, KernelSchedule>,
+                                                std::conditional_t<cute::is_same_v<ElementA, ElementB>, cutlass::gemm::MainloopIntelXeXMX16Group<PipelineStages, KernelSchedule>,
+                                                                   cutlass::gemm::MainloopIntelXeXMX16GroupMixedPrecision<PipelineStages, KernelSchedule>>>;
 
-      using GmemTiledCopyA = decltype(select_copy_atom_16b<cute::is_same_v<GmemLayoutATag, cutlass::layout::ColumnMajor>, false>(tile_M/atoms_M{}, tile_K));
-      using GmemTiledCopyB = decltype(select_copy_atom_16b<cute::is_same_v<GmemLayoutBTag, cutlass::layout::ColumnMajor>, true>(tile_K, tile_N/atoms_N{}));
+      static constexpr bool isAtransposed = cute::is_same_v<GmemLayoutATag, cutlass::layout::ColumnMajor>;
+      static constexpr bool isBtransposed = cute::is_same_v<GmemLayoutBTag, cutlass::layout::ColumnMajor>;
+      using GmemTiledCopyA = std::conditional_t<cute::sizeof_bits_v<ElementA> == 8, std::conditional_t<isAtransposed, cute::XE_2D_U8x16x16_LD_T, cute::XE_2D_U8x32x32_LD_N>, 
+                                                decltype(select_copy_atom_16b<isAtransposed, false>(tile_M/atoms_M{}, tile_K))>;
+      using GmemTiledCopyB = std::conditional_t<cute::sizeof_bits_v<ElementB> == 4, std::conditional_t<isBtransposed, cute::XE_2D_U4x16x16_LD_T, cute::XE_2D_U4x32x64_LD_N>, 
+                                                std::conditional_t<cute::sizeof_bits_v<ElementB> == 8, std::conditional_t<isBtransposed, cute::XE_2D_U8x16x16_LD_T, cute::XE_2D_U8x32x32_LD_N>, 
+                                                                   decltype(select_copy_atom_16b<isBtransposed, true>(tile_K, tile_N/atoms_N{}))>>;
 
       // Xe pipeline does not use shared memory
       using SmemLayoutAtomA = void;
@@ -209,12 +215,15 @@ struct CollectiveBuilder<
       using TransformA = cute::identity;
       using TransformB = cute::identity;
 
+      using ElementA_ = std::conditional_t<cute::sizeof_bits_v<ElementA> <= 8, cute::tuple<ElementA>, ElementA>;
+      using ElementB_ = std::conditional_t<cute::sizeof_bits_v<ElementB> <= 8, cute::tuple<ElementB>, ElementB>;
+
       using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
               DispatchPolicy,
               TileShape_MNK,
-              ElementA,
+              ElementA_,
               cutlass::gemm::TagToStrideA_t<std::conditional_t<IsGroup, GmemLayoutATag*, GmemLayoutATag>>,
-              ElementB,
+              ElementB_,
               cutlass::gemm::TagToStrideB_t<std::conditional_t<IsGroup, GmemLayoutBTag*, GmemLayoutBTag>>,
               TiledMma,
               GmemTiledCopyA,
