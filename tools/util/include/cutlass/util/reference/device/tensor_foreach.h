@@ -34,6 +34,7 @@
 #include <stdexcept>
 #include "cutlass/cutlass.h"
 #include "cutlass/util/reference/device/kernel/tensor_foreach.h"
+#include "cutlass/kernel_hardware_info.h"
 
 namespace cutlass  {
 namespace reference {
