@@ -55,21 +55,17 @@ void copy_kernel(TensorS S) {
   }
   syncthreads();
 
-  using CopyThreadShape = Shape<_1, Int<SUBGROUP_SIZE>>;
-  using traits_load = Copy_Traits<CopyInstruction, decltype(S)>;
-  using Atom_load = Copy_Atom<traits_load, Element>;
-  auto tiled_copy_load = make_tiled_copy(Atom_load{}.with(S),
-    Layout<CopyThreadShape>{},
-    make_layout(shape_div(typename traits_load::BlockShape{}, CopyThreadShape{})));
+  using Copy = typename Copy_Traits<CopyInstruction, decltype(S)>::template DefaultTiledCopy<Element>;
+  Copy tiled_copy_load{Copy{}.with(S)};
     
   auto thr_copy_load = tiled_copy_load.get_slice(ThreadIdxX());
 
-  using actual_fragment_size = std::conditional_t<std::is_same_v<fragment_size, void>, C<Atom_load::NumValDst>, fragment_size>;
+  using actual_fragment_size = std::conditional_t<std::is_same_v<fragment_size, void>, C<Copy::NumValDst>, fragment_size>;
   Tensor fragment = make_tensor<Element>(make_shape(actual_fragment_size{},_1{},_1{}));
   clear(fragment);
 
-  static_assert(actual_fragment_size::value >= Atom_load::NumValDst, "fragment is too small to hold all results!");
-  Tensor fragment_copy_view = make_tensor(fragment.data(), make_shape(C<Atom_load::NumValDst>{},_1{},_1{}));
+  static_assert(actual_fragment_size::value >= Copy::NumValDst, "fragment is too small to hold all results!");
+  Tensor fragment_copy_view = make_tensor(fragment.data(), make_shape(C<Copy::NumValDst>{},_1{},_1{}));
   auto blk_load_S = cute::get_xe_tensor(S.shape());
   // preferably we would not partition to be generic in case layouts in copies are wrong, but now that copies check size we need to
   auto thread_s = thr_copy_load.partition_S(blk_load_S(_,_,0));

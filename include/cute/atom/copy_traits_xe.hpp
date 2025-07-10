@@ -291,9 +291,8 @@ CUTE_HOST_DEVICE auto prefetch_selector(TiledCopy<TiledCopyArgs...> const& tiled
 
 template <class CopyOp, class StrideOrTensor = cute::Stride<int64_t, cute::Int<1>, int64_t>>
 struct XE_2D_LD_Unpack {
-  using BlockShape = typename CopyOp::BlockShape;
+  using BlockShape = typename CopyOp::BlockShape; // this is not the same as Traits_LD_t::BlockShape iff is_matrix_B
   using Traits_LD_t = Copy_Traits<CopyOp, StrideOrTensor>;
-
   static constexpr auto stride_rank = rank(StrideOrTensor{});
   static_assert(stride_rank == 2 || stride_rank == 3);
 
@@ -307,6 +306,13 @@ struct XE_2D_LD_Unpack {
   // For matrix B cute internally has transposed representation compared to other matrices, for cute its shape is (N,K)
   // Intel copy instructions, on the other hand follow blas convention, where matrix B has shape (K,N)
   static constexpr bool is_matrix_B = is_tensor_M_major ^ is_transpose_copy;
+  
+  using CopyThreadShape = Shape<_1, Int<detail::subgroup_size>>;
+  // we can not use Traits_LD_t::BlockShape as this is a parent class of Traits_LD_t, so that would be recursion. Recalculate it instead.
+  using DefaultValLayout = decltype(make_layout(shape_div(std::conditional_t<is_matrix_B, decltype(cute::reverse(BlockShape{})), BlockShape>{}, CopyThreadShape{})));
+
+  template<typename T>
+  using DefaultTiledCopy = decltype(make_tiled_copy(Copy_Atom<Traits_LD_t, T>{}, Layout<CopyThreadShape>{}, DefaultValLayout{}));
 
   // 2d copy parameters
   const void *base_ptr;
@@ -314,7 +320,6 @@ struct XE_2D_LD_Unpack {
   uint32_t height;
   uint32_t pitch;
   uint32_t stride_l = 0;
-
 
 
   XE_2D_LD_Unpack(const void *ptr, uint32_t y,
