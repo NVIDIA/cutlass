@@ -100,17 +100,8 @@ struct CollectiveMma<MainloopIntelXeXMX16<Stages, Schedule>, TileShape_, Element
   static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
 
-  using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
-
-  using traits_load_A = Copy_Traits<GmemTiledCopyA, StrideA>;
-  using atom_load_A = Copy_Atom<traits_load_A, ElementA>;
-  using val_layout_load_A = decltype(make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{})));
-  using Copy_A = decltype(make_tiled_copy(atom_load_A{}, Layout<CopyThreadShape>{}, val_layout_load_A{}));
-
-  using traits_load_B = Copy_Traits<GmemTiledCopyB, StrideB>;
-  using atom_load_B = Copy_Atom<traits_load_B, ElementB>;
-  using val_layout_load_B = decltype(make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{})));
-  using Copy_B = decltype(make_tiled_copy(atom_load_B{}, Layout<CopyThreadShape>{}, val_layout_load_B{}));
+  using Copy_A = typename Copy_Traits<GmemTiledCopyA, StrideA>::template DefaultTiledCopy<ElementA>;
+  using Copy_B = typename Copy_Traits<GmemTiledCopyB, StrideB>::template DefaultTiledCopy<ElementB>;
 
   // Host side kernel arguments
   struct Arguments {
