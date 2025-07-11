@@ -203,7 +203,7 @@ using GemmConvertOnlyShuffled = cutlass::gemm::device::GemmUniversalAdapter<Gemm
 // The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
 using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Transpose *, AlignmentB,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Transpose *, AlignmentB,
     ElementA, LayoutA_Transpose *, AlignmentA,
     ElementAccumulator,
     TileShape, ClusterShape,
@@ -222,7 +222,7 @@ using GemmScaleOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScal
 
 using CollectiveMainloopScaleOnlyShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Reordered *, AlignmentB,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Reordered *, AlignmentB,
     ElementA, LayoutA_Transpose *, AlignmentA,
     ElementAccumulator,
     TileShape, ClusterShape,
@@ -238,6 +238,88 @@ using GemmKernelScaleOnlyShuffled = cutlass::gemm::kernel::GemmUniversal<
 >;
 
 using GemmScaleOnlyShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleOnlyShuffled>;
+
+// =========================================================== MIXED INPUT WITH SCALES AND ZEROS ===========================================================================
+// The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
+using CollectiveMainloopScaleZero = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Transpose *, AlignmentB,
+    ElementA, LayoutA_Transpose *, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleZero = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloopScaleZero,
+    CollectiveEpilogue
+>;
+
+using GemmScaleZero = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleZero>;
+
+using CollectiveMainloopScaleZeroShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Reordered *, AlignmentB,
+    ElementA, LayoutA_Transpose *, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleZeroShuffled = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloopScaleZeroShuffled,
+    CollectiveEpilogue
+>;
+
+using GemmScaleZeroShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleZeroShuffled>;
+
+
+// =========================================================== MIXED INPUT WITH SCALES AND ZEROS GPTQ ===========================================================================
+// The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
+using CollectiveMainloopScaleZeroGptq = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero, cute::Int<3>>, LayoutB_Transpose *, AlignmentB,
+    ElementA, LayoutA_Transpose *, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleZeroGptq = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloopScaleZeroGptq,
+    CollectiveEpilogue
+>;
+
+using GemmScaleZeroGptq = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleZeroGptq>;
+
+using CollectiveMainloopScaleZeroGptqShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero, cute::Int<3>>, LayoutB_Reordered *, AlignmentB,
+    ElementA, LayoutA_Transpose *, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleZeroGptqShuffled = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloopScaleZeroGptqShuffled,
+    CollectiveEpilogue
+>;
+
+using GemmScaleZeroGptqShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleZeroGptqShuffled>;
+
 
 using StrideC = typename GemmKernelConvertOnly::InternalStrideC;
 using StrideD = typename GemmKernelConvertOnly::InternalStrideD;
@@ -564,7 +646,9 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
   auto&& dB = [&]() {
     // NOTE: add GemmScaleWithZeroPointShuffled
     if constexpr (cute::is_same_v<Gemm, GemmConvertOnlyShuffled> ||
-                  cute::is_same_v<Gemm, GemmScaleOnlyShuffled>) {
+                  cute::is_same_v<Gemm, GemmScaleOnlyShuffled> ||
+                  cute::is_same_v<Gemm, GemmScaleZeroShuffled> ||
+                  cute::is_same_v<Gemm, GemmScaleZeroGptqShuffled>) {
       // offline swizzling is enabled.
       return layout_B_reordered.get();
     }
@@ -605,7 +689,7 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
     fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 1};
     fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
   }
-
+  std::cerr << "ABOBA " << static_cast<int>(Gemm::CollectiveMainloop::KernelConversionMode) << std::endl;
   if constexpr (Gemm::CollectiveMainloop::KernelConversionMode == Gemm::CollectiveMainloop::ConversionMode::DirectConvert) {
     arguments = Args {
       cutlass::gemm::GemmUniversalMode::kGrouped,
@@ -619,11 +703,21 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
     arguments = Args {
       cutlass::gemm::GemmUniversalMode::kGrouped,
       {options.groups, problem_sizes.get(), nullptr},
+      {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.c},
+      {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
+      hw_info
+    };
+  }
+  else if constexpr (Gemm::CollectiveMainloop::KernelConversionMode == Gemm::CollectiveMainloop::ConversionMode::ConvertAndScaleWithZero || Gemm::CollectiveMainloop::KernelConversionMode == Gemm::CollectiveMainloop::ConversionMode::ConvertAndScaleWithZeroGptq) {
+    arguments = Args {
+      cutlass::gemm::GemmUniversalMode::kGrouped,
+      {options.groups, problem_sizes.get(), nullptr},
       {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.c, ptr_zero.get()},
       {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
       hw_info
     };
   }
+
   else {
     std::cerr << "Invalid mode " << options.mode << ". Must be 0, 1 or 2." << std::endl;
     exit(-1);
@@ -803,7 +897,7 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
-  if (options.mode == MixedDtypeGemmMode::ConvertOnly) {
+  if (options.mode == static_cast<int>(GemmConvertOnly::CollectiveMainloop::ConversionMode::DirectConvert)) {
     std::cout << "Running in no scale mode." << std::endl;
     if (options.shuffle) {
       std::cout << "Offline shuffle enabled." << std::endl;
@@ -813,7 +907,7 @@ int main(int argc, char const **args) {
       run<GemmConvertOnly>(options, false);
     }
   }
-  else if (options.mode == MixedDtypeGemmMode::ScaleOnly) {
+  else if (options.mode == static_cast<int>(GemmConvertOnly::CollectiveMainloop::ConversionMode::ConvertAndScale)) {
     std::cout << "Running in per-column scale mode." << std::endl;
     if (options.shuffle) {
       std::cout << "Offline shuffle enabled." << std::endl;
@@ -821,6 +915,27 @@ int main(int argc, char const **args) {
     } else {
       std::cout << "Offline shuffle disabled." << std::endl;
       run<GemmScaleOnly>(options, false);
+    }
+  }
+
+  else if (options.mode == static_cast<int>(GemmConvertOnly::CollectiveMainloop::ConversionMode::ConvertAndScaleWithZero)) {
+    std::cout << "Running in per-column scale + zero mode." << std::endl;
+    if (options.shuffle) {
+      std::cout << "Offline shuffle enabled." << std::endl;
+      run<GemmScaleZeroShuffled>(options, false);
+    } else {
+      std::cout << "Offline shuffle disabled." << std::endl;
+      run<GemmScaleZero>(options, false);
+    }
+  }
+  else if (options.mode == static_cast<int>(GemmConvertOnly::CollectiveMainloop::ConversionMode::ConvertAndScaleWithZeroGptq)) {
+    std::cout << "Running in per-column gptq mode." << std::endl;
+    if (options.shuffle) {
+      std::cout << "Offline shuffle enabled." << std::endl;
+      run<GemmScaleZeroGptqShuffled>(options, false);
+    } else {
+      std::cout << "Offline shuffle disabled." << std::endl;
+      run<GemmScaleZeroGptq>(options, false);
     }
   }
 #endif

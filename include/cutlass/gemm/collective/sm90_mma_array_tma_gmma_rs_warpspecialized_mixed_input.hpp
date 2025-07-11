@@ -246,17 +246,24 @@ public:
 private:
   static constexpr ConversionMode
   get_conversion_mode() {
-    if constexpr (!cute::is_void_v<ConversionModeFromUser>) {
-      return ConversionModeFromUser;
-    }
     if constexpr (cute::is_void_v<ElementScale>) {
       return ConversionMode::DirectConvert;
     }
     else if constexpr (cute::is_void_v<ElementZero>) {
       return ConversionMode::ConvertAndScale;
     }
-    else {
-      return ConversionMode::ConvertAndScaleWithZero;
+    else if constexpr (IsATransformed) {
+      if constexpr (cute::tuple_size_v<ElementAOptionalTuple> == 3) {
+        return ConversionMode::ConvertAndScaleWithZero;
+      } else {
+        return static_cast<ConversionMode>(cute::get<3>(ElementAOptionalTuple{}).value);
+      }
+    } else {
+      if constexpr (cute::tuple_size_v<ElementBOptionalTuple> == 3) {
+        return ConversionMode::ConvertAndScaleWithZero;
+      } else {
+        return static_cast<ConversionMode>(cute::get<3>(ElementBOptionalTuple{}).value);
+      }
     }
   }
 

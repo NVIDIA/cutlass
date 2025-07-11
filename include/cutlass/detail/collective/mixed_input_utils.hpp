@@ -650,7 +650,7 @@ public:
         copy(smem_tiled_copy_S, tCsS(_,_,k_block,read_stage), tCrS_copy_view(_,_,k_block));
         if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
           // Nothing extra to do
-        } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
           auto tCsZ              = cute::get<2>(partitioned_mma_extra_info);
           auto tCrZ_copy_view    = cute::get<2>(tiled_copy_and_views);
           copy(smem_tiled_copy_S, tCsZ(_,_,k_block,read_stage), tCrZ_copy_view(_,_,k_block));
