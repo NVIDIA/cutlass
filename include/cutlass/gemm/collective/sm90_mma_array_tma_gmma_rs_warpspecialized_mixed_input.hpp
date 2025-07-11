@@ -116,6 +116,8 @@ private:
   using ScaleB = detail::deduce_mixed_width_dtype_t<1, ElementBOptionalTuple>;
   using ZeroA = detail::deduce_mixed_width_dtype_t<2, ElementAOptionalTuple>;
   using ZeroB = detail::deduce_mixed_width_dtype_t<2, ElementBOptionalTuple>;
+  using ModeA = detail::deduce_mixed_width_dtype_t<3, ElementAOptionalTuple>;
+  using ModeB = detail::deduce_mixed_width_dtype_t<3, ElementBOptionalTuple>;
 
 public:
   static_assert(cute::is_tuple<ElementAOptionalTuple>::value ^ cute::is_tuple<ElementBOptionalTuple>::value,
@@ -126,6 +128,8 @@ public:
   static constexpr bool IsATransformed = cute::is_tuple<ElementAOptionalTuple>::value;
   using ElementScale = cute::conditional_t<IsATransformed, ScaleA, ScaleB>;
   using ElementZero = cute::conditional_t<IsATransformed, ZeroA, ZeroB>;
+  using ConversionModeFromUser = cute::conditional_t<IsATransformed, ModeA, ModeB>;
+
   // For cases where we can't have a void type, we can use this to allow the code to compile when the scale / zero is void.
   using NonVoidElementScale = cute::conditional_t<cute::is_void_v<ElementScale>, float, ElementScale>;
   using NonVoidElementZero = cute::conditional_t<cute::is_void_v<ElementZero>, float, ElementZero>;
@@ -242,6 +246,9 @@ public:
 private:
   static constexpr ConversionMode
   get_conversion_mode() {
+    if constexpr (!cute::is_void_v<ConversionModeFromUser>) {
+      return ConversionModeFromUser;
+    }
     if constexpr (cute::is_void_v<ElementScale>) {
       return ConversionMode::DirectConvert;
     }
@@ -256,7 +263,7 @@ private:
 public:
   static constexpr ConversionMode KernelConversionMode = get_conversion_mode();
   static constexpr bool ModeHasScales = KernelConversionMode == ConversionMode::ConvertAndScale ||
-                                        KernelConversionMode == ConversionMode::ConvertAndScaleWithZero;
+                                        KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq;
   static constexpr bool UseScaleLookupTable = KernelConversionMode == ConversionMode::ConvertAndScale &&
                                               cutlass::detail::is_Array_v<ElementScale>;
   static constexpr size_t SmemAlignmentA = cutlass::detail::alignment_for_swizzle(SmemLayoutA{});
@@ -505,7 +512,7 @@ public:
         return SwapAB ? args_setup(args.ptr_B, args.ptr_A, scale_k, args.chunk_size, (args.chunk_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{}))
                       : args_setup(args.ptr_A, args.ptr_B, scale_k, args.chunk_size, (args.chunk_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{}));
       }
-      else if constexpr(KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr(KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         ElementZero const* ptr_Z = reinterpret_cast<ElementZero const*>(args.ptr_Z);
         Tensor tensor_zero = make_tensor(detail::get_logical_ptr(ptr_Z), make_layout(make_shape(init_M,scale_k,mock_L), dS));
         tma_load_zero = make_tma_copy<TmaElementZero>(
@@ -545,7 +552,7 @@ public:
       // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies, followed by scale tensormap copies
       return calculate_workspace_size(3);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies, followed by scale and zeros tensormap copies
       return calculate_workspace_size(4);
     }
@@ -603,7 +610,7 @@ public:
           if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
             implementable = implementable && (args.ptr_Z == nullptr);
           }
-          else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+          else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
             constexpr int min_tma_aligned_elements_zero = tma_alignment_bits / cutlass::sizeof_bits<ElementZero>::value;
             implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_zero>(cute::make_shape(scale_mn,scale_k,L), StrideScale{});
             implementable = implementable && (args.ptr_Z != nullptr);
@@ -665,7 +672,7 @@ public:
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl);
       }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         Tensor mZ_mkl = mainloop_params.tma_load_zero.get_tma_tensor(make_shape(scale_mn,scale_k,L));
         Tensor gZ_mkl = local_tile(mZ_mkl, ScaleTileShape{}, make_coord(_,_));      // (BLK_M,BLK_Scale_K,m,scale_k,l)
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl, gZ_mkl);
@@ -707,7 +714,7 @@ public:
       static_assert(sizeof... (Ts) == 3, "Scaled convert needs three inputs");
       static_assert(sizeof... (TMs) == 3, "Scaled convert needs three tensormaps");
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       static_assert(sizeof... (Ts) == 4, "Scaled and zero convert needs four inputs");
       static_assert(sizeof... (TMs) == 4, "Scaled and zero convert needs four tensormaps");
     }
@@ -805,7 +812,7 @@ public:
         if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
           // Nothing extra to do
         }
-        else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
           auto tZgZ = get<2>(extra_input_partitions);
           auto tZsZ = get<3>(extra_input_partitions);
           if (cute::elect_one_sync()) {
@@ -1156,7 +1163,7 @@ public:
         copy(recast<uint128_t>(pS_tensormap), recast<uint128_t>(sS_tensormap));
       }
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       Tensor pS_tensormap = make_tensor(mainloop_params.tma_load_scale.get_tma_descriptor(), Int<1>{}, Int<1>{});
       Tensor sS_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_scale), Int<1>{}, Int<1>{});
       Tensor pZ_tensormap = make_tensor(mainloop_params.tma_load_zero.get_tma_descriptor(), Int<1>{}, Int<1>{});
@@ -1178,7 +1185,7 @@ public:
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
       return cute::make_tuple(tma_desc_a, tma_desc_b, tma_desc_scale);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       return cute::make_tuple(tma_desc_a, tma_desc_b, tma_desc_scale, tma_desc_zero);
     }
     else {
@@ -1202,7 +1209,7 @@ public:
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_scale,
                                                     mainloop_params.ptr_S[next_batch]);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_scale,
                                                     mainloop_params.ptr_S[next_batch]);
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_zero,
@@ -1255,7 +1262,7 @@ public:
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_scale, tensor_scale,
                                              prob_shape_scale, prob_stride_scale);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       ElementZero const* ptr_Z = nullptr;
       auto scale_k = ceil_div(K, mainloop_params.chunk_size);
       NonVoidElementScale const* ptr_S = nullptr;
@@ -1298,7 +1305,7 @@ public:
                                                             prob_shape_scale,
                                                             prob_stride_scale);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
 
       cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_scale,
                                                             prob_shape_scale,
@@ -1350,7 +1357,7 @@ public:
     if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
       tma_descriptor_cp_fence_release(get<2>(input_tensormaps), shared_tensormaps.smem_tensormap_scale);
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       tma_descriptor_cp_fence_release(get<2>(input_tensormaps), shared_tensormaps.smem_tensormap_scale);
       tma_descriptor_cp_fence_release(get<3>(input_tensormaps), shared_tensormaps.smem_tensormap_zero);
     }
@@ -1369,7 +1376,7 @@ public:
     if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
       cute::tma_descriptor_fence_acquire(get<2>(input_tensormaps));
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       cute::tma_descriptor_fence_acquire(get<2>(input_tensormaps));
       cute::tma_descriptor_fence_acquire(get<3>(input_tensormaps));
     }
