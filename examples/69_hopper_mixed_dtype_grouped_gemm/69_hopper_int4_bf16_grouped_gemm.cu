@@ -31,7 +31,7 @@
 
 
 /*! \file
-    \brief 
+    \brief
     Hopper Mixed-input Grouped GEMM example using CUTLASS 3 APIs for NVIDIA Hopper architecture.
     See 55_hopper_int4_bf16_gemm.cu for more details about W4A16 GEMMs with layout shuffling.
 
@@ -203,7 +203,7 @@ using GemmConvertOnlyShuffled = cutlass::gemm::device::GemmUniversalAdapter<Gemm
 // The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
 using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    cute::tuple<ElementB, ElementScale>, LayoutB_Transpose *, AlignmentB,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Transpose *, AlignmentB,
     ElementA, LayoutA_Transpose *, AlignmentA,
     ElementAccumulator,
     TileShape, ClusterShape,
@@ -213,7 +213,7 @@ using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::Collecti
   >::CollectiveOp;
 
 using GemmKernelScaleOnly = cutlass::gemm::kernel::GemmUniversal<
-    ProblemShape, 
+    ProblemShape,
     CollectiveMainloopScaleOnly,
     CollectiveEpilogue
 >;
@@ -222,7 +222,7 @@ using GemmScaleOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScal
 
 using CollectiveMainloopScaleOnlyShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    cute::tuple<ElementB, ElementScale>, LayoutB_Reordered *, AlignmentB,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Reordered *, AlignmentB,
     ElementA, LayoutA_Transpose *, AlignmentA,
     ElementAccumulator,
     TileShape, ClusterShape,
@@ -232,7 +232,7 @@ using CollectiveMainloopScaleOnlyShuffled = typename cutlass::gemm::collective::
   >::CollectiveOp;
 
 using GemmKernelScaleOnlyShuffled = cutlass::gemm::kernel::GemmUniversal<
-    ProblemShape, 
+    ProblemShape,
     CollectiveMainloopScaleOnlyShuffled,
     CollectiveEpilogue
 >;
@@ -517,7 +517,7 @@ void initialize(Options &options) {
   block_alpha.copy_from_host(alpha_host.data());
   block_beta.copy_from_host(beta_host.data());
 
-  
+
   for (int32_t i = 0; i < options.groups; ++i) {
     int const scale_k = cutlass::ceil_div(options.k, options.c);
     auto shape_B = cute::make_shape(cute::get<1>(options.problem_sizes_host[i]), cute::get<2>(options.problem_sizes_host[i]), Int<1>{});
@@ -535,7 +535,7 @@ void initialize(Options &options) {
     for (int32_t i = 0; i < options.groups; ++i) {
       auto shape_B = cute::make_shape(cute::get<1>(options.problem_sizes_host[i]), cute::get<2>(options.problem_sizes_host[i]), Int<1>{});
       auto layout_B = make_layout(shape_B, stride_B_host.at(i));
-      // Repeat the reorder layout atom to tile the whole tensor shape 
+      // Repeat the reorder layout atom to tile the whole tensor shape
       layout_B_reordered_host[i] = tile_to_shape(LayoutAtomQuant{}, shape_B);
       cutlass::reorder_tensor(block_B.get() + offset_B.at(i), layout_B, layout_B_reordered_host[i]);
       if (i == 0) {
@@ -619,11 +619,11 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
     arguments = Args {
       cutlass::gemm::GemmUniversalMode::kGrouped,
       {options.groups, problem_sizes.get(), nullptr},
-      {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.c},
+      {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.c, ptr_zero.get()},
       {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
       hw_info
     };
-  } 
+  }
   else {
     std::cerr << "Invalid mode " << options.mode << ". Must be 0, 1 or 2." << std::endl;
     exit(-1);
@@ -783,7 +783,7 @@ int main(int argc, char const **args) {
       << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
     return 0;
   }
-  
+
 
   //
   // Parse options
