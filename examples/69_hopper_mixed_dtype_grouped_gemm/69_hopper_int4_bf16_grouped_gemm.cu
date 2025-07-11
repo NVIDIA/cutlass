@@ -689,7 +689,6 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
     fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 1};
     fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
   }
-  std::cerr << "ABOBA " << static_cast<int>(Gemm::CollectiveMainloop::KernelConversionMode) << std::endl;
   if constexpr (Gemm::CollectiveMainloop::KernelConversionMode == Gemm::CollectiveMainloop::ConversionMode::DirectConvert) {
     arguments = Args {
       cutlass::gemm::GemmUniversalMode::kGrouped,
