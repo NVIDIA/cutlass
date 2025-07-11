@@ -108,7 +108,7 @@ int main(int argc, const char** argv) {
   using TileShape = Shape<_16, _64, _64>;
 
   using TiledMma =
-      typename TiledMMAHelper<MMA_Atom<typename helpers::MMAOp<half_t>>, Layout<TileShape>,
+      typename TiledMMAHelper<MMA_Atom<typename helpers::MMAOp<half_t>::type>, Layout<TileShape>,
                                     Layout<Shape<_1, _2, _1>, Stride<_2, _1, _0>>>::TiledMMA;
 
   constexpr int PipelineStages = 3;
