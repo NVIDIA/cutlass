@@ -193,6 +193,7 @@ public:
   static constexpr int IsSubbyteA = cute::sizeof_bits_v<SwappedElementA> < 8;
   using TmaElementA = cute::conditional_t<IsSubbyteA, uint8_t, SwappedElementA>;
   using TmaElementScale = uint_bit_t<sizeof_bits_v<NonVoidElementScale> >; // in case we have array. translating to uint to satisfy tma descriptor's specialization
+  using TmaElementZero = uint_bit_t<sizeof_bits_v<NonVoidElementZero> >; // in case we have array. translating to uint to satisfy tma descriptor's specialization
 
   using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
@@ -329,7 +330,7 @@ public:
         ScaleTileShape{},
         _1{}));  // mcast along N mode for this M load, if any. Scale is ALWAYS loaded with A for RF kernel
 
-   using TMA_Zero = decltype(make_tma_copy(
+   using TMA_Zero = decltype(make_tma_copy<TmaElementZero>(
         GmemTiledCopyScale{},
         make_tensor(detail::get_logical_ptr(static_cast<NonVoidElementZero const*>(nullptr)), repeat_like(NonVoidStrideScale{}, int32_t(0)), NonVoidStrideScale{}),
         SmemLayoutScale{}(_,_,cute::Int<0>{}),
@@ -507,7 +508,7 @@ public:
       else if constexpr(KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         ElementZero const* ptr_Z = reinterpret_cast<ElementZero const*>(args.ptr_Z);
         Tensor tensor_zero = make_tensor(detail::get_logical_ptr(ptr_Z), make_layout(make_shape(init_M,scale_k,mock_L), dS));
-        tma_load_zero = make_tma_copy(
+        tma_load_zero = make_tma_copy<TmaElementZero>(
             GmemTiledCopyScale{},
             tensor_zero,
             SmemLayoutScale{}(_,_,cute::Int<0>{}),
@@ -532,7 +533,7 @@ public:
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
 
     // Calculating workspace size
-    auto calculate_workspace_size = [SizeOfCuTensorMap, sm_count](uint32_t num_input_tensors) {
+    auto calculate_workspace_size =  [sm_count](uint32_t num_input_tensors) {
         return num_input_tensors * SizeOfCuTensorMap * sm_count;
     };
 
@@ -1156,9 +1157,12 @@ public:
       }
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      Tensor pS_tensormap = make_tensor(mainloop_params.tma_load_scale.get_tma_descriptor(), Int<1>{}, Int<1>{});
+      Tensor sS_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_scale), Int<1>{}, Int<1>{});
       Tensor pZ_tensormap = make_tensor(mainloop_params.tma_load_zero.get_tma_descriptor(), Int<1>{}, Int<1>{});
       Tensor sZ_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_zero), Int<1>{}, Int<1>{});
       if (cute::elect_one_sync()) {
+        copy(recast<uint128_t>(pS_tensormap), recast<uint128_t>(sS_tensormap));
         copy(recast<uint128_t>(pZ_tensormap), recast<uint128_t>(sZ_tensormap));
       }
     }
@@ -1199,6 +1203,8 @@ public:
                                                     mainloop_params.ptr_S[next_batch]);
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_scale,
+                                                    mainloop_params.ptr_S[next_batch]);
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_zero,
                                                     mainloop_params.ptr_Z[next_batch]);
     }
@@ -1252,6 +1258,11 @@ public:
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
       ElementZero const* ptr_Z = nullptr;
       auto scale_k = ceil_div(K, mainloop_params.chunk_size);
+      NonVoidElementScale const* ptr_S = nullptr;
+
+      Tensor tensor_scale = make_tensor(detail::get_logical_ptr(ptr_S), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
+      cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_scale, tensor_scale,
+                                             prob_shape_scale, prob_stride_scale);
       Tensor tensor_zero = make_tensor(detail::get_logical_ptr(ptr_Z), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_zero, tensor_zero,
                                                prob_shape_zero, prob_stride_zero);
@@ -1288,6 +1299,11 @@ public:
                                                             prob_stride_scale);
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+
+      cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_scale,
+                                                            prob_shape_scale,
+                                                            prob_stride_scale);
+
       cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_zero,
                                                             prob_shape_zero,
                                                             prob_stride_zero);
@@ -1335,6 +1351,7 @@ public:
       tma_descriptor_cp_fence_release(get<2>(input_tensormaps), shared_tensormaps.smem_tensormap_scale);
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      tma_descriptor_cp_fence_release(get<2>(input_tensormaps), shared_tensormaps.smem_tensormap_scale);
       tma_descriptor_cp_fence_release(get<3>(input_tensormaps), shared_tensormaps.smem_tensormap_zero);
     }
     else if constexpr (KernelConversionMode != ConversionMode::DirectConvert){
@@ -1353,6 +1370,7 @@ public:
       cute::tma_descriptor_fence_acquire(get<2>(input_tensormaps));
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      cute::tma_descriptor_fence_acquire(get<2>(input_tensormaps));
       cute::tma_descriptor_fence_acquire(get<3>(input_tensormaps));
     }
     else if constexpr (KernelConversionMode != ConversionMode::DirectConvert){
