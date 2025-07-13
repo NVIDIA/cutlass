@@ -162,7 +162,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
       ElementB, LayoutB, ElementAccumulator, LayoutC,
-      arch::OpClassSimt, 2, Operator>;
+      arch::OpClassSimt, Stages, Operator>;
 
   // Define iterators over tiles from the A operand
   using IteratorA =
@@ -233,7 +233,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
       ElementB, LayoutB, ElementAccumulator, layout::RowMajor,
-      arch::OpClassTensorOp, 2, Operator>;
+      arch::OpClassTensorOp, Stages, Operator>;
 
   // Define iterators over tiles from the A operand
   using IteratorA =
