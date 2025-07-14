@@ -49,8 +49,8 @@
 
     To build & run this example (from your build dir):
 
-      $ ninja 02_bmg_gemm_f18_s8_tensorwise
-      $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f18_s8_tensorwise
+      $ ninja 02_bmg_gemm_f18_s8_f16_tensorwise
+      $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f18_s8_f16_tensorwise
 
     Call with `--help` for information about available options
 */

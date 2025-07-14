@@ -47,8 +47,8 @@
    export IGC_allowDecompose2DBlockFuncs=0
  To build & run this example (from your build dir):
 
-    $ ninja 02_bmg_gemm_f16_u4
-    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f16_u4
+    $ ninja 02_bmg_gemm_f16_u4_f16
+    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f16_u4_f16
 
   Call with `--help` for information about available options
 */
@@ -243,7 +243,7 @@ struct ExampleRunner {
   //
 
   bool verify(const Options &options) {
-      
+
     //
     // Compute reference output (default gemm kernel w/ ElementA == ElementB)
     //
