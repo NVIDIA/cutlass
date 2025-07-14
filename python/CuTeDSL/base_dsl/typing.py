@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import ast
 import ctypes
 import numpy as np
 import operator
@@ -603,7 +604,7 @@ class FloatMeta(NumericMeta):
         return cls._mantissa_width
 
     def recast_width(cls, width):
-        return eval(f"Float{width}")
+        return ast.literal_eval(f"Float{width}")
 
 
 def _arith_signless_to_int(a, target_type):
