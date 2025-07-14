@@ -33,7 +33,9 @@
 #pragma once
 
 #include "cute/tensor.hpp"
+#include "collective/fmha_fusion.hpp"
 
+using namespace cutlass::fmha::collective;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
@@ -61,20 +63,20 @@ void __global__ fmha_bwd_reference_dQ_kernel(
 
   ElementAccumulator softmax_scale = 1.0 / sqrt(ElementAccumulator(size<2>(problem_shape_in)));
 
-  for (int idx_L = blockIdx.y; idx_L < size<3>(problem_shape_in); idx_L += gridDim.y) {
+  for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
     auto [problem_shape, offset] = apply_variable_length_offset(
         problem_shape_in,
-        make_coord(_0{}, _0{}, _0{}, idx2crd(idx_L, get<3>(problem_shape_in)))
+        make_coord(_0{}, _0{}, _0{}, _0{},idx2crd(idx_L, get<4>(problem_shape_in)))
     );
     // problem_shape = problem_shape_in;
     // offset = repeat_like(problem_shape_in, _0{});
-    auto mQ = domain_offset(select<0,2,3>(offset), mQ_in);
-    auto mK = domain_offset(select<1,2,3>(offset), mK_in);
-    auto mV = domain_offset(select<1,2,3>(offset), mV_in);
-    auto mO = domain_offset(select<0,2,3>(offset), mO_in);
-    auto mLSE = domain_offset(select<0,3>(offset), mLSE_in);
-    auto mDO = domain_offset(select<0,2,3>(offset), mDO_in);
-    auto mDQ = domain_offset(select<0,2,3>(offset), mDQ_in);
+    auto mQ = domain_offset(select<0,2,4>(offset), mQ_in);
+    auto mK = domain_offset(select<1,2,4>(offset), mK_in);
+    auto mV = domain_offset(select<1,3,4>(offset), mV_in);
+    auto mO = domain_offset(select<0,3,4>(offset), mO_in);
+    auto mLSE = domain_offset(select<0,4>(offset), mLSE_in);
+    auto mDO = domain_offset(select<0,3,4>(offset), mDO_in);
+    auto mDQ = domain_offset(select<0,2,4>(offset), mDQ_in);
     for (int idx_Q = blockIdx.x; idx_Q < size<0>(problem_shape); idx_Q += gridDim.x) {
       for (int idx_K = threadIdx.x; idx_K < size<1>(problem_shape); idx_K += blockDim.x) {
         ElementAccumulator acc_qk = 0;
@@ -82,9 +84,14 @@ void __global__ fmha_bwd_reference_dQ_kernel(
         ElementAccumulator acc_doo = 0;
         for (int idx_D0 = 0; idx_D0 < size<2>(problem_shape); idx_D0++) {
           acc_qk += mQ(idx_Q, idx_D0, idx_L) * mK(idx_K, idx_D0, idx_L);
-          acc_dov += mDO(idx_Q, idx_D0, idx_L) * mV(idx_K, idx_D0, idx_L);
-          acc_doo += mDO(idx_Q, idx_D0, idx_L) * mO(idx_Q, idx_D0, idx_L);
+          // acc_dov += mDO(idx_Q, idx_D0, idx_L) * mV(idx_K, idx_D0, idx_L);
+          // acc_doo += mDO(idx_Q, idx_D0, idx_L) * mO(idx_Q, idx_D0, idx_L);
         }  // for idx_D0
+
+        for (int idx_D1 = 0; idx_D1 < size<3>(problem_shape); idx_D1++) {
+          acc_dov += mDO(idx_Q, idx_D1, idx_L) * mV(idx_K, idx_D1, idx_L);
+          acc_doo += mDO(idx_Q, idx_D1, idx_L) * mO(idx_Q, idx_D1, idx_L);
+        }
 
         auto id = make_identity_tensor(make_shape(1, 1));
         auto frag = make_tensor<ElementAccumulator>(Shape<_1, _1>{});
@@ -135,20 +142,20 @@ void __global__ fmha_bwd_reference_dK_kernel(
 
   ElementAccumulator softmax_scale = 1.0 / sqrt(ElementAccumulator(size<2>(problem_shape_in)));
 
-  for (int idx_L = blockIdx.y; idx_L < size<3>(problem_shape_in); idx_L += gridDim.y) {
+  for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
     auto [problem_shape, offset] = apply_variable_length_offset(
         problem_shape_in,
-        make_coord(_0{}, _0{}, _0{}, idx2crd(idx_L, get<3>(problem_shape_in)))
+        make_coord(_0{}, _0{}, _0{}, _0{}, idx2crd(idx_L, get<4>(problem_shape_in)))
     );
     // problem_shape = problem_shape_in;
     // offset = repeat_like(problem_shape_in, _0{});
-    auto mQ = domain_offset(select<0,2,3>(offset), mQ_in);
-    auto mK = domain_offset(select<1,2,3>(offset), mK_in);
-    auto mV = domain_offset(select<1,2,3>(offset), mV_in);
-    auto mO = domain_offset(select<0,2,3>(offset), mO_in);
-    auto mLSE = domain_offset(select<0,3>(offset), mLSE_in);
-    auto mDO = domain_offset(select<0,2,3>(offset), mDO_in);
-    auto mDK = domain_offset(select<1,2,3>(offset), mDK_in);
+    auto mQ = domain_offset(select<0,2,4>(offset), mQ_in);
+    auto mK = domain_offset(select<1,2,4>(offset), mK_in);
+    auto mV = domain_offset(select<1,3,4>(offset), mV_in);
+    auto mO = domain_offset(select<0,3,4>(offset), mO_in);
+    auto mLSE = domain_offset(select<0,4>(offset), mLSE_in);
+    auto mDO = domain_offset(select<0,3,4>(offset), mDO_in);
+    auto mDK = domain_offset(select<1,2,4>(offset), mDK_in);
     for (int idx_K = blockIdx.x; idx_K < size<1>(problem_shape); idx_K += gridDim.x) {
       for (int idx_Q = threadIdx.x; idx_Q < size<0>(problem_shape); idx_Q += blockDim.x) {
         ElementAccumulator acc_qk = 0;
@@ -156,10 +163,14 @@ void __global__ fmha_bwd_reference_dK_kernel(
         ElementAccumulator acc_doo = 0;
         for (int idx_D0 = 0; idx_D0 < size<2>(problem_shape); idx_D0++) {
           acc_qk += mQ(idx_Q, idx_D0, idx_L) * mK(idx_K, idx_D0, idx_L);
-          acc_dov += mDO(idx_Q, idx_D0, idx_L) * mV(idx_K, idx_D0, idx_L);
-          acc_doo += mDO(idx_Q, idx_D0, idx_L) * mO(idx_Q, idx_D0, idx_L);
+          // acc_dov += mDO(idx_Q, idx_D0, idx_L) * mV(idx_K, idx_D0, idx_L);
+          // acc_doo += mDO(idx_Q, idx_D0, idx_L) * mO(idx_Q, idx_D0, idx_L);
         }  // for idx_D0
-        
+
+        for (int idx_D1 = 0; idx_D1 < size<3>(problem_shape); idx_D1++) {
+          acc_dov += mDO(idx_Q, idx_D1, idx_L) * mV(idx_K, idx_D1, idx_L);
+          acc_doo += mDO(idx_Q, idx_D1, idx_L) * mO(idx_Q, idx_D1, idx_L);
+        }
         auto id = make_identity_tensor(make_shape(1, 1));
         auto frag = make_tensor<ElementAccumulator>(Shape<_1, _1>{});
         frag(0) = acc_qk;
@@ -209,20 +220,20 @@ void __global__ fmha_bwd_reference_dV_kernel(
 
   ElementAcc softmax_scale = 1.0 / sqrt(ElementAcc(size<2>(problem_shape_in)));
 
-  for (int idx_L = blockIdx.y; idx_L < size<3>(problem_shape_in); idx_L += gridDim.y) {
+  for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
     auto [problem_shape, offset] = apply_variable_length_offset(
         problem_shape_in,
-        make_coord(_0{}, _0{}, _0{}, idx2crd(idx_L, get<3>(problem_shape_in)))
+        make_coord(_0{}, _0{}, _0{}, _0{}, idx2crd(idx_L, get<4>(problem_shape_in)))
     );
     // problem_shape = problem_shape_in;
     // offset = repeat_like(problem_shape_in, _0{});
-    auto mQ = domain_offset(select<0,2,3>(offset), mQ_in);
-    auto mK = domain_offset(select<1,2,3>(offset), mK_in);
-    auto mV = domain_offset(select<1,2,3>(offset), mV_in);
-    auto mO = domain_offset(select<0,2,3>(offset), mO_in);
-    auto mLSE = domain_offset(select<0,3>(offset), mLSE_in);
-    auto mDO = domain_offset(select<0,2,3>(offset), mDO_in);
-    auto mDV = domain_offset(select<1,2,3>(offset), mDV_in);
+    auto mQ = domain_offset(select<0,2,4>(offset), mQ_in);
+    auto mK = domain_offset(select<1,2,4>(offset), mK_in);
+    auto mV = domain_offset(select<1,3,4>(offset), mV_in);
+    auto mO = domain_offset(select<0,3,4>(offset), mO_in);
+    auto mLSE = domain_offset(select<0,4>(offset), mLSE_in);
+    auto mDO = domain_offset(select<0,3,4>(offset), mDO_in);
+    auto mDV = domain_offset(select<1,3,4>(offset), mDV_in);
     for (int idx_K = blockIdx.x; idx_K < size<1>(problem_shape); idx_K += gridDim.x) {
       for (int idx_Q = threadIdx.x; idx_Q < size<0>(problem_shape); idx_Q += blockDim.x) {
         ElementAcc acc_qk = 0;
@@ -244,7 +255,7 @@ void __global__ fmha_bwd_reference_dV_kernel(
 
       __syncthreads();
 
-      for (int idx_D = threadIdx.x; idx_D < size<2>(problem_shape); idx_D += blockDim.x) {
+      for (int idx_D = threadIdx.x; idx_D < size<3>(problem_shape); idx_D += blockDim.x) {
         ElementAcc acc = 0;
         for (int idx_Q = 0; idx_Q < size<0>(problem_shape); idx_Q++) {
           ElementAcc rS = static_cast<Element>(mS[idx_Q]);
