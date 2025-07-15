@@ -102,7 +102,7 @@ public:
   using CopyOpR2S = CopyOpR2S_;
 
   using ThreadEpilogueOp = typename fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
-  using GmemTiledCopyC = CopyOpG2R;
+  using GmemTiledCopyC = conditional_t<cute::is_void_v<CopyOpG2R>, XE_2D_U32x8x16_LD_N, CopyOpG2R>;
   using GmemTiledCopyD = cute::conditional_t<not cute::is_void_v<ElementD> && not cute::is_void_v<CopyOpR2G>,
                                              CopyOpR2G, XE_2D_U32x8x16_ST_N>;
   using ElementOutput = ElementD;
