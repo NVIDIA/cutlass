@@ -35,12 +35,32 @@
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/sycl_tensor_fill.h"
 
-/// Helper to initialize a block of device data
-template <class Element>
-bool initialize_block(Element* block, std::size_t size, uint64_t seed=2023) {
+template <class T, class = void>
+static constexpr auto is_signed_v = cute::is_signed<T>::value;
 
-  Element scope_max = Element(1 << cute::ceil_div(std::numeric_limits<Element>::digits, 4));
-  Element scope_min = cute::is_signed<Element>::value ? Element(-scope_max) : Element(0);
+template<class T>
+static constexpr auto digits = std::numeric_limits<T>::digits > 0 ? std::numeric_limits<T>::digits : cute::numeric_limits<T>::digits;
+
+template<class T>
+auto max_for_test = T(cute::sizeof_bits_v<T> >= 8 ? 1 << cute::ceil_div(digits<T> , 4) : cutlass::platform::numeric_limits<T>::max() / 2);
+
+/// Helper to initialize a block of device data
+template <class Element, class... Args_t>
+bool initialize_block(Element* block, std::size_t size, uint64_t seed, Args_t&&... args) {
+
+  static_assert(sizeof...(Args_t) == 0 || sizeof...(Args_t) == 2);
+
+  Element scope_max;
+  Element scope_min;
+
+  if constexpr ( sizeof...(Args_t) == 2) {
+    auto tuple_args = std::forward_as_tuple(std::forward<Args_t>(args)...);
+    scope_min = std::get<0>(tuple_args);
+    scope_max = std::get<1>(tuple_args);
+  } else {
+    scope_max = max_for_test<Element>;
+    scope_min = is_signed_v<Element> ? Element(-scope_max) : Element(1);
+  }
 
   cutlass::reference::device::BlockFillRandomUniform(
        block, size, seed, scope_max, scope_min, 0);
@@ -49,26 +69,35 @@ bool initialize_block(Element* block, std::size_t size, uint64_t seed=2023) {
   return true;
 }
 
-template <class Element>
-bool initialize_block(
-        cutlass::DeviceAllocation<Element>& block,
-        uint64_t seed=2023) {
-  return initialize_block<Element>(block.get(), block.size(), seed);
+template <class Element, class... Args_t>
+bool initialize_block(cutlass::DeviceAllocation<Element>& block, uint64_t seed, Args_t&&... args) {
+  return initialize_block<Element>(block.get(), block.size(), seed, args...);
 }
 
-template <typename T1, typename T2>
+template <typename T1, typename T2, class... Args_t>
 void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
-                           cutlass::DeviceAllocation<T2>& block_device_dq,
-                          uint64_t seed) {
+                                  cutlass::DeviceAllocation<T2>& block_device_dq,
+                                  uint64_t seed,
+                                  Args_t&&... args) {
   static_assert(cute::sizeof_bits_v<T2> >= 8);
+  static_assert(sizeof...(Args_t) == 0 || sizeof...(Args_t) == 2);
+
+  T1 scope_max;
+  T1 scope_min;
+
+  if constexpr ( sizeof...(Args_t) == 2) {
+    auto tuple_args = std::forward_as_tuple(std::forward<Args_t>(args)...);
+    scope_min = std::get<0>(tuple_args);
+    scope_max = std::get<1>(tuple_args);
+  } else {
+    scope_max = max_for_test<T1>;
+    scope_min = is_signed_v<T1> ? T1(-scope_max) : T1(1);
+  }
+
+  std::uniform_int_distribution<> dist(scope_min, scope_max);
 
   std::ranlux24_base rng(std::random_device{}());
   rng.seed(seed);
-
-  T1 scope_max = T1(1 << cute::ceil_div(std::numeric_limits<T1>::digits, 4));
-  T1 scope_min = cute::is_signed<T1>::value ? T1(-scope_max) : T1(0);
-
-  std::uniform_int_distribution<> dist(scope_min, scope_max);
 
   if constexpr (cute::sizeof_bits_v<T1> >= 8) {
     auto block_host = std::vector<T1>(block_device.size());
@@ -95,8 +124,8 @@ void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
 
     int loop_cnt = block_device.size() / array_size;
     for (int i = 0; i < loop_cnt; i++) {
-      cutlass::device_memory::copy_to_device(block_device.get() + (i * array_size) / elements_per_byte,
-                                    raw_pointer_cast(block_host.begin()),
+      cutlass::device_memory::copy_to_device(((uint8_t*)(block_device.get())) + (i * array_size) / elements_per_byte,
+                                    (uint8_t*)(raw_pointer_cast(block_host.begin())),
                                     array_size / elements_per_byte);
       cutlass::device_memory::copy_to_device(block_device_dq.get() + i * array_size,
                                     block_host_dq.data(),
@@ -105,14 +134,16 @@ void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
 
     auto tail_size = block_device.size() % array_size;
     if (tail_size) {
-      cutlass::device_memory::copy_to_device(block_device.get() + (loop_cnt * array_size) / elements_per_byte,
-                                    raw_pointer_cast(block_host.begin()),
+      cutlass::device_memory::copy_to_device(((uint8_t*)block_device.get()) + (loop_cnt * array_size) / elements_per_byte,
+                                    (uint8_t*)(raw_pointer_cast(block_host.begin())),
                                     tail_size / elements_per_byte);
       cutlass::device_memory::copy_to_device(block_device_dq.get() + loop_cnt * array_size,
                                     block_host_dq.data(),
                                     tail_size);
     }
   }
+
+  syclcompat::wait();
 }
 
 template<typename T>

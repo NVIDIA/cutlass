@@ -57,8 +57,8 @@
 
   To build & run this example (from your build dir):
 
-    $ ninja 02_bmg_gemm_bf16_s8
-    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_bf16_s8
+    $ ninja 02_bmg_gemm_bf16_s8_bf16
+    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_bf16_s8_bf16
 
   Call with `--help` for information about available options
 */
@@ -576,78 +576,54 @@ int main(int argc, const char** argv)
   // Use the helpers to avoid template arg repetition
   using GemmAdapterBuilder = helpers::MixedGemmUniversalAdapterBuilder<Shape<int, int, int, int>, CollectiveEpilogue>;
 
-  using MixedBuilderQuantA =
-      helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
-                                cutlass::gemm::TagToStrideA_t<LayoutA>,
-                                cutlass::gemm::TagToStrideB_t<LayoutB>,
-                                TiledMma, GmemTiledCopyA, GmemTiledCopyB>;
-
-  using MixedBuilderQuantB =
-      helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
-                                cutlass::gemm::TagToStrideA_t<LayoutA>,
-                                cutlass::gemm::TagToStrideB_t<LayoutB>,
-                                TiledMma, GmemTiledCopyB, GmemTiledCopyA>;
-
-  // A-narrow Mainloop & GemmUniversalAdapter
-  using MainloopAConvertOnly =
-      MixedBuilderQuantA::CollectiveMma<cute::tuple<ElementInputA>,
-                                        ElementInputB>;
-  using GemmAConvertOnly =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertOnly>;
-
-  using MainloopAConvertAndScale = MixedBuilderQuantA::CollectiveMma<
-      cute::tuple<ElementInputA, ElementScale, StrideScale>, ElementInputB>;
-  using GemmAConvertAndScale =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertAndScale>;
-
-  using MainloopAConvertAndScaleWithZeroPoint =
-      MixedBuilderQuantA::CollectiveMma<
-          cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>, ElementInputB>;
-  using GemmAConvertAndScaleWithZeroPoint =
-      GemmAdapterBuilder::GemmUniversalAdapter<
-          MainloopAConvertAndScaleWithZeroPoint>;
-
-  // B-narrow Mainloop & GemmUniversalAdapter
-  using MainloopBConvertOnly =
-      MixedBuilderQuantB::CollectiveMma<ElementInputB,
-                                        cute::tuple<ElementInputA>>;
-  using GemmBConvertOnly =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertOnly>;
-
-  using MainloopBConvertAndScale = MixedBuilderQuantB::CollectiveMma<
-      ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale>>;
-  using GemmBConvertAndScale =
-      GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertAndScale>;
-
-  using MainloopBConvertAndScaleWithZeroPoint =
-      MixedBuilderQuantB::CollectiveMma<
-          ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>>;
-  using GemmBConvertAndScaleWithZeroPoint =
-      GemmAdapterBuilder::GemmUniversalAdapter<
-          MainloopBConvertAndScaleWithZeroPoint>;
-
   if(options.a_narrower){
     std::cout << "Setting A as narrower type" << std::endl;
+    using MixedBuilderQuantA = helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
+                                  cutlass::gemm::TagToStrideA_t<LayoutA>,
+                                  cutlass::gemm::TagToStrideB_t<LayoutB>,
+                                  TiledMma, GmemTiledCopyA, GmemTiledCopyB>;
+
     if(options.mode ==  GemmMode::ConvertOnly) {
       std::cout << "Running in ConvertOnly mode." << std::endl;
+      using MainloopAConvertOnly = MixedBuilderQuantA::CollectiveMma<cute::tuple<ElementInputA>, ElementInputB>;
+      using GemmAConvertOnly = GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertOnly>;
       CUTLASS_CHECK(ExampleRunner<GemmAConvertOnly>{}.run(options, hw_info));
     }else if(options.mode == GemmMode::ConvertAndScale){
       std::cout << "Running in ConvertAndScale mode." << std::endl;
+      using MainloopAConvertAndScale = MixedBuilderQuantA::CollectiveMma<cute::tuple<ElementInputA, ElementScale, StrideScale>, ElementInputB>;
+      using GemmAConvertAndScale = GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertAndScale>;
       CUTLASS_CHECK(ExampleRunner<GemmAConvertAndScale>{}.run(options, hw_info));
     }else{
       std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
+      using MainloopAConvertAndScaleWithZeroPoint = MixedBuilderQuantA::CollectiveMma<cute::tuple<ElementInputA, ElementScale,
+                                                                                          StrideScale, ElementZero, StrideZero>,
+                                                                                      ElementInputB>;
+      using GemmAConvertAndScaleWithZeroPoint = GemmAdapterBuilder::GemmUniversalAdapter<MainloopAConvertAndScaleWithZeroPoint>;
       CUTLASS_CHECK(ExampleRunner<GemmAConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
     }
   }else{
     std::cout << "Setting B as narrower type" << std::endl;
+    using MixedBuilderQuantB = helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
+                                  cutlass::gemm::TagToStrideA_t<LayoutA>,
+                                  cutlass::gemm::TagToStrideB_t<LayoutB>,
+                                  TiledMma, GmemTiledCopyB, GmemTiledCopyA>;
+
     if(options.mode ==  GemmMode::ConvertOnly) {
       std::cout << "Running in ConvertOnly mode." << std::endl;
+      using MainloopBConvertOnly = MixedBuilderQuantB::CollectiveMma<ElementInputB, cute::tuple<ElementInputA>>;
+      using GemmBConvertOnly = GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertOnly>;
       CUTLASS_CHECK(ExampleRunner<GemmBConvertOnly>{}.run(options, hw_info));
     }else if(options.mode == GemmMode::ConvertAndScale){
       std::cout << "Running in ConvertAndScale mode." << std::endl;
+      using MainloopBConvertAndScale = MixedBuilderQuantB::CollectiveMma<ElementInputB,
+                                                       cute::tuple<ElementInputA, ElementScale, StrideScale>>;
+      using GemmBConvertAndScale = GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertAndScale>;
       CUTLASS_CHECK(ExampleRunner<GemmBConvertAndScale>{}.run(options, hw_info));
     }else{
       std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
+      using MainloopBConvertAndScaleWithZeroPoint = MixedBuilderQuantB::CollectiveMma<ElementInputB,
+                                                       cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>>;
+      using GemmBConvertAndScaleWithZeroPoint = GemmAdapterBuilder::GemmUniversalAdapter<MainloopBConvertAndScaleWithZeroPoint>;
       CUTLASS_CHECK(ExampleRunner<GemmBConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
     }
   }
