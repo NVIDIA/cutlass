@@ -112,7 +112,7 @@ public:
       >
   >;
 
-  using Operation = std::conditional_t<IsMla, OperationMla, OperationNormal>;
+  using Operation = std::conditional_t<IsMla, OperationMla, OperationMha>;
 
   using Kernel = typename Operation::Kernel;
 
