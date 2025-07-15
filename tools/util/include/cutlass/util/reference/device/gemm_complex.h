@@ -113,7 +113,7 @@ __global__ void
 
   tensor_a.add_pointer_offset(batch_idx * batch_stride_A);
   tensor_b.add_pointer_offset(batch_idx * batch_stride_B);
-  tensor_c.add_pointer_offset(batch_idx * batch_stride_C);
+  if(beta != ScalarType(0)) tensor_c.add_pointer_offset(batch_idx * batch_stride_C);
   tensor_d.add_pointer_offset(batch_idx * batch_stride_D);
 
   for (; batch_idx < batch_count; batch_idx += GridDimZ()) {
@@ -168,17 +168,22 @@ __global__ void
         MatrixCoord coord = MatrixCoord(row, col);
 
         if (row < M && col < N) {
+          if(beta != ScalarType(0)) {
+            tensor_d.at(coord) = convert_op(
+              alpha * ScalarType(accum[i][j]) + 
+              beta * ScalarType(tensor_c.at(coord)));
+          } else {
+            tensor_d.at(coord) = convert_op(
+              alpha * ScalarType(accum[i][j]));
+          }
 
-          tensor_d.at(coord) = convert_op(
-            alpha * ScalarType(accum[i][j]) + 
-            beta * ScalarType(tensor_c.at(coord)));
         }
       }
     }
 
     tensor_a.add_pointer_offset(batch_stride_A * GridDimZ());
     tensor_b.add_pointer_offset(batch_stride_B * GridDimZ());
-    tensor_c.add_pointer_offset(batch_stride_C * GridDimZ());
+    if(beta != ScalarType(0)) tensor_c.add_pointer_offset(batch_stride_C * GridDimZ());
     tensor_d.add_pointer_offset(batch_stride_D * GridDimZ());
 
   } // for (batch_idx)

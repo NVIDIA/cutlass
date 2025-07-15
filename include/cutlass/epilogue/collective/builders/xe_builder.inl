@@ -182,7 +182,7 @@ template <
       static_assert(get<1>(std::remove_pointer_t<StrideC>{}) == 1, "Only N-Major/Row-Major layouts for C are supported in the xe epilogue collective builder");
       static_assert(get<1>(std::remove_pointer_t<StrideD>{}) == 1, "Only N-Major/Row-Major layouts for D are supported in the xe epilogue collective builder");
 
-      using CopyOpG2R = std::conditional_t<cutlass::sizeof_bits_v<ElementC> == 32, XE_2D_U32x8x16_LD_N, XE_2D_U16x8x16_LD_N>;
+      using CopyOpG2R = std::conditional_t<is_void_v<ElementC>, void, std::conditional_t<cutlass::sizeof_bits_v<ElementC> == 32, XE_2D_U32x8x16_LD_N, XE_2D_U16x8x16_LD_N>>;
       using CopyOpR2G = std::conditional_t<cutlass::sizeof_bits_v<ElementD> == 32, XE_2D_U32x8x16_ST_N, XE_2D_U16x8x16_ST_N>;
 
       // Intel Epilogue with Linear Combination does not use shared memory
