@@ -184,9 +184,15 @@ struct ResidualMaskForBackward : NoMask {
   }
 };
 
+// There are two ways to do causal if N_Q != N_K
+// (1) The Q is at the beginning of the matrix
+// (2) The Q is at the end of the matrix
+template<bool kIsQBegin = true>
 struct CausalMask : NoMask {
 
   using Base = NoMask;
+
+  static constexpr bool IsQBegin = kIsQBegin;
 
   template<class BlkCoord, class TileShape, class ProblemSize>
   CUTLASS_DEVICE
@@ -197,9 +203,16 @@ struct CausalMask : NoMask {
 
     // See note below on different ways to think about causal attention
     // Again, we'd add the offset_q into the max_blocks_q calculation
-    int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
-    int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
-    return std::min(max_blocks_k, max_blocks_q);
+    if constexpr (IsQBegin) {
+      int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
+      return std::min(max_blocks_k, max_blocks_q);
+    } else {
+      const int offset_q = get<1>(problem_size) - get<0>(problem_size);
+      int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape) + offset_q, get<1>(tile_shape));
+      return std::min(max_blocks_k, max_blocks_q);
+    }
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -208,9 +221,14 @@ struct CausalMask : NoMask {
       BlkCoord const& blk_coord,
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
-
+        
+    if constexpr (IsQBegin) {
       int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
       return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
+    } else {
+      const int offset_tile_q = get<1>(problem_size) % get<1>(tile_shape);
+      return ceil_div(get<0>(tile_shape) +  offset_tile_q, get<1>(tile_shape));
+    }
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -232,26 +250,36 @@ struct CausalMask : NoMask {
 
     // There are two ways to do causal if N_Q != N_K
     // (1) is to assume that the Q is at the beginning of the matrix
-    //    - this is what we demonstrate here
+    //    - this is the default setting.
     // (2) is that it is at the end of the matrix
     //    - this is usually what we want for inference settings
     //      where we only compute the next row and use cache for the rest
-    //    - if you'd like this, you only need to add an offset like so:
-    //      get<0>(pos) + offset_q < get<1>(pos)
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size(acc_qk); i++) {
-      auto pos = index_qk(i);
-      if ((get<0>(pos) < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
-        acc_qk(i) = -INFINITY;
+    //    - if you'd like this, you only need to set kIsQBegin=false
+
+    if constexpr (IsQBegin) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        if ((get<0>(pos) < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
+          acc_qk(i) = -INFINITY;
+        }
+      }
+    } else {
+      const auto offset_q = get<1>(problem_size) - get<0>(problem_size);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        if ((get<0>(pos) + offset_q < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
+          acc_qk(i) = -INFINITY;
+        }
       }
     }
   }
-
 };
 
-struct CausalForBackwardMask : CausalMask, ResidualMaskForBackward {
+struct CausalForBackwardMask : CausalMask<true>, ResidualMaskForBackward {
 
-  using Base = CausalMask;
+  using Base = CausalMask<true>;
 
   template<class AccQK, class IndexQK, class ProblemSize>
   CUTLASS_DEVICE
