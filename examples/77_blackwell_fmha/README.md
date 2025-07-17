@@ -37,6 +37,12 @@ There are three kernels to compute backwards:
 
 `Sm100FmhaBwdKernelTmaWarpSpecialized` is the main point of this sample, as it demonstrates how to use tensor cores to achieve a high performance fused kernel.
 
+## MLA Blackwell Backward
+
+The sample also provides the feature of MLA backward(d=192, d_vo=128). To enable MLA backward, please specify `--d=192 --d_vo=128` when running the bwd sample. 
+
+`Sm100FmhaBwdMlaKernelTmaWarpSpecialized`is the main point for MLA backward. The MLA approach is slightly different from the original one to enable high performance with the MLA shape. 
+
 # MLA Inference for Blackwell
 
 This sample provides code for fused multi-head latent attention inference in

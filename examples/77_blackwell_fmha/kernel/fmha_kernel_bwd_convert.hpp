@@ -85,11 +85,11 @@ struct FmhaKernelBwdConvert {
   static const int kIterationsSeq = kBlockSeq / kNumThreadsSeq;
 
   static bool can_implement(Arguments const& args) {
-    return get<2>(args.problem_shape) % kElementsPerLoad == 0;
+    return get<2>(args.problem_shape) % kElementsPerLoad == 0 && get<3>(args.problem_shape) % kElementsPerLoad == 0;
   }
 
   static dim3 get_grid_shape(Params const& params) {
-    dim3 grid(size<3,0>(params.problem_shape), size<3,1>(params.problem_shape), ceil_div(std::max(size<0>(params.problem_shape), size<1>(params.problem_shape)), kBlockSeq));
+    dim3 grid(size<4,0>(params.problem_shape), size<4,1>(params.problem_shape), ceil_div(std::max(size<0>(params.problem_shape), size<1>(params.problem_shape)), kBlockSeq));
     return grid;
   }
 
@@ -120,7 +120,7 @@ struct FmhaKernelBwdConvert {
       auto ptr_src_bhs = ptr_src_bh + idx_s * get<0>(stride_src);
       auto ptr_dest_bhs = ptr_dest_bh + idx_s * get<0>(stride_dest);
 
-      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<2>(params.problem_shape); idx_d += kElementsPerLoad * kNumThreadsD) {
+      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<0>(stride_dest); idx_d += kElementsPerLoad * kNumThreadsD) {
         ElementAcc value_src[kElementsPerLoad];
         Element value_dest[kElementsPerLoad];
         

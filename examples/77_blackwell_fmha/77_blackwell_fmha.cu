@@ -505,8 +505,12 @@ struct FwdRunner {
     Tensor mLSE = make_tensor(make_gmem_ptr(buffer.block_ref_LSE.get()),
       select<0,3>(problem_shape),
       stride_LSE);
+    
+    auto [Q, K, D, HB] = problem_shape;
 
-    fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
+    auto problem_shape_ref = cute::make_tuple(Q, K, D, D, HB);
+
+    fmha_reference(problem_shape_ref, mQ, mK, mV, mO, mLSE, ActiveMask{});
 
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
