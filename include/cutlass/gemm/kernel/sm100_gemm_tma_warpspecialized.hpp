@@ -396,8 +396,7 @@ public:
         params.hw_info);
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
