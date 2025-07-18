@@ -1245,7 +1245,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       };
 
       bool leading_causal_masking = false;
-      if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask>) {
+      if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask<true>, Mask> 
+                    || std::is_base_of_v<cutlass::fmha::collective::CausalMask<false>, Mask>) {
         leading_causal_masking = warp_uniform(iter_index == get<1>(blk_coord));
       }
       bool trailing_residual_masking = false;
@@ -1682,7 +1683,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     );
     int iter_count = ceil_div(get<0>(problem_shape), TileShapeQ{});
     int iter_start = 0;
-    if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask, Mask>) {
+    if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask<true>, Mask> || 
+                  std::is_base_of_v<cutlass::fmha::collective::CausalMask<false>, Mask>) {
       iter_start = (get<1>(blk_coord) * TileShapeK{}) / TileShapeQ{};
     }
     if (get<1>(blk_coord) * TileShapeK{} >= get<1>(problem_shape)) {

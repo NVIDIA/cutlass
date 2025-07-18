@@ -28,44 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! \file
-    \brief Example implementation of fused multi-head attention for the NVIDIA Blackwell SM100
-    architecture using CUTLASS 3.
-
-    MQA/GQA
-    -------
-
-    The head dimension can be represented as a tuple, where the K/V strides in the
-    first dimension is zero. This has the effect of MQA or GQA.
-    * MHA is (head_size:head_stride).
-    * MQA is (head_size:head_stride) in Q and (head_size:_0) in K and V.
-    * GQA is (grouped_heads,heads_kv):(head_stride,grouped_heads*head_stride) in Q
-      and (grouped_heads,heads_kv):(0,head_stride) in K and V
-
-    Output Scale
-    ------------
-
-    The output scale gets passed to the collective mainloop, and is applied
-    using FP32 compute pre-quantization
-
-    Variable Sequence Length
-    ------------------------
-
-    For variable sequence length, pass in VariableLength objects
-    (max_seqlen, cumulative_seqlen_ptr) in the problem shape for
-    seqlen Q and KV.
-
-    Support
-    ---------
-
-    Right now e4m3 with fp32 compute is using a 256x256 tiling and a head dimension
-    of 128 is supported.
-
-
-    Example usage:
-      $ ./examples/77_blackell_fmha/77_blackell_fmha_fp8 \
-            --b=2048 --h=2048 --d=2048 --q=2048 --k=2048
-*/
 
 #include <iostream>
 #include <random>
@@ -84,10 +46,11 @@
 
 #include "device/fmha.hpp"
 #include "collective/fmha_fusion.hpp"
-#include "collective/sm100_fmha_fwd_mainloop_tma_warpspecialized.hpp"
+#include "collective/sm100_fmha_mla_fwd_mainloop_tma_warpspecialized.hpp"
 #include "collective/sm100_fmha_fwd_epilogue_tma_warpspecialized.hpp"
 #include "kernel/fmha_options.hpp"
 #include "kernel/fmha_tile_scheduler.hpp"
+#include "kernel/fmha_causal_tile_scheduler.hpp"
 #include "kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -118,7 +81,8 @@ struct Options {
   int k = 256;
   std::vector<int> varlen_q;
   std::vector<int> varlen_k;
-  int d = 128;
+  int dl = 128; // headdim latent
+  int dr = 64;  // headdim rope
   int warmup_iterations = 1;
   int iterations = 3;
   int tensor_ring_buffers = 1;
@@ -176,9 +140,10 @@ struct Options {
       return;
     }
 
-    cmd.get_cmd_line_argument("d", d, defaults.d);
+    cmd.get_cmd_line_argument("dl", dl, defaults.dl);
+    cmd.get_cmd_line_argument("dr", dr, defaults.dr);
     cmd.get_cmd_line_argument("h", h, -1);
-    if (h == -1) h = 2048 / d;
+    if (h == -1) h = 2048 / dl;
 
     cmd.get_cmd_line_argument("h_k", h_k, -1);
     if (h_k == -1) h_k = h;
@@ -294,9 +259,9 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "77_blackwell_fmha\n\n"
+    out << "77_blackwell_mla_fwd\n\n"
       << "  This example showcases the use of CUTLASS's collective operation builders to easily construct\n"
-      << "  fused multi-head attention forward-passkernels targeting NVIDIA's Blackwell architecture.\n\n"
+      << "  fused multi-head latent attention forward-passkernels targeting NVIDIA's Blackwell architecture.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --b=<int>                   Sets the B extent\n"
@@ -306,7 +271,8 @@ struct Options {
       << "  --k=<int>                   Sets the K extent\n"
       << "  --varlen-q=<int>:<int...>   Sets the variable Q extent per batch (colon separated)\n"
       << "  --varlen-k=<int>:<int...>   Sets the variable K extent per batch (colon separated)\n"
-      << "  --d=<int>                   Sets the D extent\n"
+      << "  --dl=<int>                  Sets the D latent extent\n"
+      << "  --dr=<int>                  Sets the D rope extent\n"
       << "  --tensor_ring_buffers=<int> Sets the number of tensor ring buffers\n"
       << "  --warmup_iterations=<int>   Sets the warmup iterations\n"
       << "  --iterations=<int>          Benchmarking iterations\n"
@@ -392,13 +358,14 @@ struct ExampleResult {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
+  bool kIsMaskTileSchedulerValid,
   bool kIsVarlen,
   class TileShape,
   class DispatchPolicy,
   class ActiveMask,
   class... KernelOptions
 >
-struct FwdRunner {
+struct MlaFwdRunner {
 
 #ifdef FP8
   using Element = cutlass::float_e4m3_t;
@@ -410,9 +377,9 @@ struct FwdRunner {
   using ElementAccumulatorPV = float;
   using ElementOut = cutlass::half_t;
 
-  // Q K D (B H)
-  using ProblemShapeRegular = cute::tuple<int, int, int, cute::tuple<cute::tuple<int, int>, int>>;
-  using ProblemShapeVarlen = cute::tuple<VariableLength, VariableLength, int, cute::tuple<cute::tuple<int, int>, int>>;
+  // Q K (D_latent D_rope) (H B)
+  using ProblemShapeRegular = cute::tuple<int, int, cute::tuple<int, int>, cute::tuple<cute::tuple<int, int>, int>>;
+  using ProblemShapeVarlen = cute::tuple<VariableLength, VariableLength, cute::tuple<int, int>, cute::tuple<cute::tuple<int, int>, int>>;
   using ProblemShapeType = std::conditional_t<kIsVarlen, ProblemShapeVarlen, ProblemShapeRegular>;
   
   using StrideQ = cute::tuple<int, _1, cute::tuple<cute::tuple<int, int>, int>>;  // Q D (H_G H_R B)
@@ -422,13 +389,23 @@ struct FwdRunner {
   using StrideLSE = cute::tuple<_1, cute::tuple<cute::tuple<int, int>, int>>;     // Q   (H_G H_R B)
 
   static constexpr bool kIsPersistent = find_option_t<Tag::kIsPersistent, true_type, KernelOptions...>::value;
-  using TileScheduler = std::conditional_t<kIsPersistent, cutlass::fmha::kernel::PersistentTileScheduler, cutlass::fmha::kernel::IndividualTileScheduler>;
+  using TileScheduler = std::conditional_t<kIsPersistent, 
+                                          std::conditional_t<std::is_same_v<ActiveMask, CausalMask<false>> 
+                                                                          || std::is_same_v<ActiveMask, CausalMask<true>>, 
+                                                            cutlass::fmha::kernel::CausalPersistentTileScheduler,
+                                                            cutlass::fmha::kernel::PersistentTileScheduler>,
+                                          std::conditional_t<kIsMaskTileSchedulerValid, 
+                                                            cutlass::fmha::kernel::CausalIndividualTileScheduler,
+                                                            cutlass::fmha::kernel::IndividualTileScheduler>>;
+
+  static constexpr bool IsOrderLoadEpilogue = kIsPersistent && (sizeof(Element) == sizeof(ElementOut));
+  using OrderLoadEpilogue = std::conditional_t<IsOrderLoadEpilogue, true_type, false_type>;
 
   using Mainloop = 
-    cutlass::fmha::collective::Sm100FmhaFwdMainloopTmaWarpspecialized<
+    cutlass::fmha::collective::Sm100MlaFwdMainloopTmaWarpspecialized<
       Element, ElementAccumulatorQK, ElementAccumulatorPV,
       TileShape, StrideQ, StrideK, StrideV,
-      ActiveMask
+      ActiveMask, Shape<_2, _1, _1>, OrderLoadEpilogue
     >;
   using Operation = cutlass::fmha::device::FMHA<
     cutlass::fmha::kernel::Sm100FmhaFwdKernelTmaWarpspecialized<
@@ -437,9 +414,10 @@ struct FwdRunner {
       cutlass::fmha::collective::Sm100FmhaFwdEpilogueTmaWarpspecialized<
         ElementOut, ElementAccumulatorPV,
         typename Mainloop::TileShapePV,
-        StrideO, StrideLSE
+        StrideO, StrideLSE, OrderLoadEpilogue
       >,
-      TileScheduler
+      TileScheduler,
+      cutlass::fmha::kernel::Sm100MlaFwdCtxKernelWarpspecializedSchedule
     >>;
 
   //
@@ -486,20 +464,21 @@ struct FwdRunner {
   // Methods
   //
   bool verify(const ProblemShapeType& problem_shape, DeviceBuffer& buffer) {
+    int D_latent_rope = size<2, 0>(problem_shape) + size<2, 1>(problem_shape);
     Tensor mQ = make_tensor(make_gmem_ptr(buffer.block_Q.get()),
-      select<0,2,3>(problem_shape),
+      replace<1>(select<0,2,3>(problem_shape), D_latent_rope),
       stride_Q);
 
     Tensor mK = make_tensor(make_gmem_ptr(buffer.block_K.get()),
-      select<1,2,3>(problem_shape),
+      replace<1>(select<1,2,3>(problem_shape), D_latent_rope),
       stride_K);
 
     Tensor mV = make_tensor(make_gmem_ptr(buffer.block_V.get()),
-      select<1,2,3>(problem_shape),
+      replace<1>(select<1,2,3>(problem_shape), get<2, 0>(problem_shape)),
       stride_V);
 
     Tensor mO = make_tensor(make_gmem_ptr(buffer.block_ref_O.get()),
-      select<0,2,3>(problem_shape),
+      replace<1>(select<0,2,3>(problem_shape), get<2, 0>(problem_shape)),
       stride_O);
 
     Tensor mLSE = make_tensor(make_gmem_ptr(buffer.block_ref_LSE.get()),
@@ -612,7 +591,7 @@ struct FwdRunner {
   ProblemShapeType initialize(const Options& options) {
     int h_r = options.h / options.h_k;
     assert(options.h % options.h_k == 0);
-    auto problem_shape_in = cute::make_tuple(options.q, options.k, options.d, cute::make_tuple(cute::make_tuple(h_r, options.h_k), options.b));
+    auto problem_shape_in = cute::make_tuple(options.q, options.k, cute::make_tuple(options.dl, options.dr), cute::make_tuple(cute::make_tuple(h_r, options.h_k), options.b));
     
     ProblemShapeType problem_shape;
     decltype(problem_shape_in) problem_size;
@@ -627,24 +606,27 @@ struct FwdRunner {
       problem_shape = problem_shape_in;
     }
 
-    get<2>(problem_size) = cutlass::round_up(get<2>(problem_size), 8);  // alignment
+    int D_latent_rope = size<2, 0>(problem_shape) + size<2, 1>(problem_shape);
+    auto shape_Q = replace<1>(select<0,2,3>(problem_shape), D_latent_rope);
+    auto shape_K = replace<1>(select<1,2,3>(problem_shape), D_latent_rope);
 
-    auto shape_QO = select<0,2,3>(problem_size);
-    auto shape_KV = select<1,2,3>(problem_size);
+    auto shape_O = replace<1>(select<0,2,3>(problem_shape), get<2, 0>(problem_shape));
+    auto shape_V = replace<1>(select<1,2,3>(problem_shape), get<2, 0>(problem_shape));
+
     auto shape_LSE = select<0,3>(problem_size);
 
     int SQ = size<0>(problem_size);
     int SK = size<1>(problem_size);
-    int D = size<2>(problem_size);
+    int D = size<2, 0>(problem_size);
     int H  = size<3,0>(problem_size);
     int H_K = size<3,0,1>(problem_size);
     int H_Q = size<3,0,0>(problem_size);
     int B = size<3,1>(problem_size);
 
-    stride_Q = make_stride(H*D , _1{}, make_stride(make_stride(D, H_Q*D), H*D*SQ));
-    stride_O = stride_Q;
-    stride_K = make_stride(H_K*D , _1{}, make_stride(make_stride(_0{}, D), H_K*D*SK));
-    stride_V = stride_K;
+    stride_Q = make_stride(H*D_latent_rope , _1{}, make_stride(make_stride(D_latent_rope, H_Q*D_latent_rope), H*D_latent_rope*SQ));
+    stride_O = make_stride(H*D , _1{}, make_stride(make_stride(D, H_Q*D), H*D*SQ));
+    stride_K = make_stride(H_K*D_latent_rope , _1{}, make_stride(make_stride(_0{}, D_latent_rope), H_K*D_latent_rope*SK));
+    stride_V = make_stride(H_K*D , _1{}, make_stride(make_stride(_0{}, D), H_K*D*SK));
     stride_LSE = make_stride(_1{}, make_stride(make_stride(SQ, SQ*H_Q), SQ*H));
 
     if (kIsVarlen) {
@@ -656,12 +638,12 @@ struct FwdRunner {
     }
 
     auto buffer_init_fn = [&](auto& buffer) {
-      buffer.block_Q.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
-      buffer.block_K.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
-      buffer.block_V.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
-      buffer.block_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
+      buffer.block_Q.reset(size(shape_Q), kIsVarlen ? D_latent_rope*SQ*H : 0);
+      buffer.block_K.reset(size(shape_K), kIsVarlen ? D_latent_rope*SK*H_K : 0);
+      buffer.block_V.reset(size(shape_V), kIsVarlen ? D*SK*H_K : 0);
+      buffer.block_O.reset(size(shape_O), kIsVarlen ? D*SQ*H : 0);
       buffer.block_LSE.reset(size(shape_LSE));
-      buffer.block_ref_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
+      buffer.block_ref_O.reset(size(shape_O), kIsVarlen ? D*SQ*H : 0);
       buffer.block_ref_LSE.reset(size(shape_LSE));
 
       initialize_block(buffer.block_Q, seed + 2023, options.init_style_q);
@@ -853,9 +835,14 @@ struct FwdRunner {
       flops *= static_cast<double>(size<1>(problem_shape));
       flops *= static_cast<double>(size<3,1>(problem_shape));
     }
-    flops *= 4.0 * (std::is_same_v<ActiveMask, CausalMask<true>> || std::is_same_v<ActiveMask, CausalMask<false>> ? 0.5 : 1.0);
-    flops *= static_cast<double>(size<2>(problem_shape));
+
+    flops *= 2.0 * (std::is_same_v<ActiveMask, CausalMask<false>> ? 0.5 : 1.0);
     flops *= static_cast<double>(size<3,0>(problem_shape));
+
+    double flops0 = flops * static_cast<double>(size<2, 0>(problem_shape) + size<2, 1>(problem_shape));
+    double flops1 = flops * static_cast<double>(size<2, 0>(problem_shape));
+    flops = flops0 + flops1;
+
     double tflops_s = flops * 1e-12 /*tera*/ / (runtime_ms * 1e-3 /*ms*/);
     example_result.tflops_tc_s = tflops_s;
     example_result.runtime_ms = runtime_ms;
@@ -912,25 +899,38 @@ void print_result(const std::string& description, ExampleResult result, bool ver
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<class Mask>
-void run_fwd_128(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
+void run_prefill_mla_fwd(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
   auto run = [&](auto shape, const char* name, auto... kernel_options) {
     if ((! options.kernel_filter.empty()) && (! std::regex_search(name, std::basic_regex(options.kernel_filter)))) {
         return;
     }
     if (options.varlen) {
-      FwdRunner<true, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
+      if(options.h % cutlass::fmha::kernel::CausalIndividualTileScheduler::TileH == 0 && (!std::is_same_v<Mask, NoMask>)) {
+        MlaFwdRunner<true, true, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
+        auto result = runner.run(options, hw_info);
+        print_result(name, result, options.verbose);
+      } else {
+        MlaFwdRunner<false, true, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
+        auto result = runner.run(options, hw_info);
+        print_result(name, result, options.verbose);
+      }
     }
     else 
     {
-      FwdRunner<false, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
+      if(options.h % cutlass::fmha::kernel::CausalIndividualTileScheduler::TileH == 0 && (!std::is_same_v<Mask, NoMask>)) {
+        MlaFwdRunner<true, false, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
+        auto result = runner.run(options, hw_info);
+        print_result(name, result, options.verbose);
+      } else {
+        MlaFwdRunner<false, false, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
+        auto result = runner.run(options, hw_info);
+        print_result(name, result, options.verbose);
+      }
     }
   };
 
-  using HeadDim = _128;
+  using HeadDimLatent = _128;
+  using HeadDim = Shape<HeadDimLatent, _64>;
 
   if (options.persistent) {
     // Persistent Tile Scheduler
@@ -940,71 +940,6 @@ void run_fwd_128(Mask fusion, Options const & options, cutlass::KernelHardwareIn
     // Individual Tile Scheduler
     run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
   }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<class Mask>
-void run_fwd_64(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
-  auto run = [&](auto shape, const char* name, auto... kernel_options) {
-    if ((! options.kernel_filter.empty()) && (! std::regex_search(name, std::basic_regex(options.kernel_filter)))) {
-        return;
-    }
-    if (options.varlen) {
-      FwdRunner<true, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
-    }
-    else 
-    {
-      FwdRunner<false, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
-    }
-  };
-
-  using HeadDim = _64;
-
-  if (options.persistent) {
-    // Persistent Tile Scheduler
-    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
-  }
-  else {
-    // Individual Tile Scheduler
-    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
-  }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<class Mask>
-void run_fwd_32(Mask fusion, Options const & options, cutlass::KernelHardwareInfo const& hw_info) {
-  auto run = [&](auto shape, const char* name, auto... kernel_options) {
-    if (options.varlen) {
-      FwdRunner<true, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
-    }
-    else {
-      FwdRunner<false, decltype(shape), void, Mask, decltype(kernel_options)...> runner;
-      auto result = runner.run(options, hw_info);
-      print_result(name, result, options.verbose);
-    }
-  };
-
-  using HeadDim = _32;
-
-#ifdef FP8
-  if (options.persistent) {
-    // Persistent Tile Scheduler
-    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
-  }
-  else {
-    // Individual Tile Scheduler
-    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
-  }
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1068,13 +1003,13 @@ int main_single(int argc, char const **args) {
     hw_info.sm_count = options.sm_count;
   }
 
-  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " Q " << options.q << " K " << options.k << " D " << options.d << " ";
-  std::cout << "Forward" << " " << (options.causal ? "Causal" : (options.residual ? "Residual" : "None")) << " ";
+  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " Q " << options.q << " K " << options.k << " D latent " << options.dl << " D rope " << options.dr << " ";
+  std::cout << "MLA Forward" << " " << (options.causal ? "Causal" : (options.residual ? "Residual" : "None")) << " ";
   std::cout << "#SM " << hw_info.sm_count << std::endl;
 
   auto with_mask = [&](auto fn) {
     if (options.causal) {
-      fn(CausalMask{});
+      fn(CausalMask<false>{});
     }
     else if (options.residual) {
       fn(ResidualMask{});
@@ -1085,17 +1020,11 @@ int main_single(int argc, char const **args) {
   };
 
   with_mask([&](auto fusion) {
-    if (options.d <= 32) {
-      run_fwd_32(fusion, options, hw_info);
-    }
-    else if (options.d <= 64) {
-      run_fwd_64(fusion, options, hw_info);
-    }
-    else if (options.d <= 128) {
-      run_fwd_128(fusion, options, hw_info);
+    if (options.dl == 128 && options.dr == 64) {
+      run_prefill_mla_fwd(fusion, options, hw_info);
     }
     else {
-      std::cout << "No kernel instantiated for d=" << options.d << std::endl;
+      std::cout << "No kernel instantiated for dl=" << options.dl << " dr=" << options.dr << std::endl;
     }
   });
 #endif
