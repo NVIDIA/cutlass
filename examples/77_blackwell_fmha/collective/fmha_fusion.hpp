@@ -188,17 +188,33 @@ struct CausalMask : NoMask {
 
   using Base = NoMask;
 
-  template<class BlkCoord, class TileShape, class ProblemSize>
+  // Flag to determine which type of causal masking to use
+  // false: top causal (Q at beginning) - default
+  // true: bottom causal (Q at end) - useful for inference
+  bool bottom_causal = false;
+
+  // Default constructor - uses top causal masking
   CUTLASS_DEVICE
+  CausalMask() : bottom_causal(false) {}
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE 
   int get_trip_count(
-      BlkCoord const& blk_coord,
-      TileShape const& tile_shape,
-      ProblemSize const& problem_size) {
+    BlkCoord const& blk_coord,
+    TileShape const& tile_shape,
+    ProblemSize const& problem_size) {
 
     // See note below on different ways to think about causal attention
     // Again, we'd add the offset_q into the max_blocks_q calculation
-    int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
-    int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
+  int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
+
+    int offset_q = bottom_causal
+                       ? int(get<1>(problem_size)) - int(get<0>(problem_size))
+                       : 0;
+
+    int max_blocks_q =
+        ceil_div(offset_q + (get<0>(blk_coord) + 1) * get<0>(tile_shape),
+                 get<1>(tile_shape));
     return std::min(max_blocks_k, max_blocks_q);
   }
 
@@ -209,8 +225,19 @@ struct CausalMask : NoMask {
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
 
-      int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
-      return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
+    int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
+    int q_tile =
+        min(get<0>(tile_shape),
+            get<0>(problem_size) - get<0>(blk_coord) * get<0>(tile_shape));
+
+    int offset_q = bottom_causal
+                       ? int(get<1>(problem_size)) - int(get<0>(problem_size))
+                       : 0;
+
+    int first_masked_tile_k = int(offset_q / get<1>(tile_shape));
+    int last_masked_tile_k = int((offset_q + q_tile - 1) / get<1>(tile_shape));
+    int masked_blocks = last_masked_tile_k - first_masked_tile_k + 1;
+    return std::min(masked_blocks, trip_count);
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -236,12 +263,16 @@ struct CausalMask : NoMask {
     // (2) is that it is at the end of the matrix
     //    - this is usually what we want for inference settings
     //      where we only compute the next row and use cache for the rest
-    //    - if you'd like this, you only need to add an offset like so:
-    //      get<0>(pos) + offset_q < get<1>(pos)
+    //    - this is what we do in BottomCausalMask
+    int offset_q = bottom_causal
+                       ? int(get<1>(problem_size)) - int(get<0>(problem_size))
+                       : 0;
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(acc_qk); i++) {
       auto pos = index_qk(i);
       if ((get<0>(pos) < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
+      if ((get<0>(pos) + offset_q < get<1>(pos)) ||
+          (get<1>(pos) >= get<1>(problem_size))) {
         acc_qk(i) = -INFINITY;
       }
     }
@@ -249,7 +280,9 @@ struct CausalMask : NoMask {
 
 };
 
-struct CausalForBackwardMask : CausalMask, ResidualMaskForBackward {
+// Bottom causal mask - assumes Q is at the end of the matrix
+// Optimized for inference scenarios where we compute only the next token
+struct BottomCausalMask : CausalMask {
 
   using Base = CausalMask;
 
@@ -259,6 +292,10 @@ struct CausalForBackwardMask : CausalMask, ResidualMaskForBackward {
       AccQK& acc_qk,
       IndexQK const& index_qk,
       ProblemSize const& problem_size) {
+  // Constructor always sets bottom_causal to true
+  CUTLASS_DEVICE
+  BottomCausalMask() : CausalMask() { bottom_causal = true; }
+};
 
     // There are two ways to do causal if N_Q != N_K
     // (1) is to assume that the Q is at the beginning of the matrix
@@ -274,21 +311,52 @@ struct CausalForBackwardMask : CausalMask, ResidualMaskForBackward {
       bool masked = (get<0>(pos) < get<1>(pos)) || !elem_less(pos, problem_size);
       if (masked) {
         acc_qk(i) = -INFINITY;
+  struct CausalForBackwardMask : CausalMask, ResidualMaskForBackward {
+
+    using Base = CausalMask;
+
+    template <class AccQK, class IndexQK, class ProblemSize>
+    CUTLASS_DEVICE void apply_mask(AccQK &acc_qk, IndexQK const &index_qk,
+                                   ProblemSize const &problem_size) {
+
+      // There are two ways to do causal if N_Q != N_K
+      // (1) is to assume that the Q is at the beginning of the matrix
+      //    - this is what we demonstrate here
+      // (2) is that it is at the end of the matrix
+      //    - this is usually what we want for inference settings
+      //      where we only compute the next row and use cache for the rest
+      //    - if you'd like this, you only need to add an offset like so:
+      //      get<0>(pos) + offset_q < get<1>(pos)
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        bool masked =
+            (get<0>(pos) < get<1>(pos)) || !elem_less(pos, problem_size);
+        if (masked) {
+          acc_qk(i) = -INFINITY;
+        }
       }
     }
   }
 
 };
+  };
 
 struct VariableLength {
   int max_length;
   int* cumulative_length = nullptr;
   int total_length = -1;
+  struct VariableLength {
+    int max_length;
+    int *cumulative_length = nullptr;
+    int total_length = -1;
 
   CUTE_HOST_DEVICE operator int() const {
     return max_length;
   }
 };
+    CUTE_HOST_DEVICE operator int() const { return max_length; }
+  };
 
 template<class T> struct is_variable_length_impl : std::false_type {};
 template<> struct is_variable_length_impl<VariableLength> : std::true_type {};
@@ -303,10 +371,10 @@ apply_variable_length(Shape const& shape, Idx const& idx) {
       return s.cumulative_length[idx+1] - s.cumulative_length[idx];
     }
     else {
-      return s;
-    }
-  });
-}
+        return s;
+      }
+    });
+  }
 
 template<class Shape, class Coord, class Idx>
 CUTE_HOST_DEVICE
@@ -318,11 +386,11 @@ apply_variable_length(Shape const& shape, Coord const& coord, Idx const& idx) {
       return cute::make_tuple(c, s.cumulative_length[idx]);
     }
     else {
-      return c;
-    }
-  });
-  return cute::make_tuple(new_shape, new_coord);
-}
+            return c;
+          }
+        });
+    return cute::make_tuple(new_shape, new_coord);
+  }
 
 template<class Shape, class Coord>
 CUTE_HOST_DEVICE
@@ -342,22 +410,22 @@ apply_variable_length_offset(Shape const& shape, Coord const& coord) {
       return s.cumulative_length[idx];
     }
     else {
-      return _0{};
-    }
-  });
-  return cute::make_tuple(result_shape, result_offset);
-}
+            return _0{};
+          }
+        });
+    return cute::make_tuple(result_shape, result_offset);
+  }
 
 }  // namespace cutlass::fmha::collective
 
 namespace cute {
 
 template<>
-struct is_integral<cutlass::fmha::collective::VariableLength> : true_type {};
+  struct is_integral<cutlass::fmha::collective::VariableLength> : true_type {};
 
-CUTE_HOST_DEVICE
-void print(cutlass::fmha::collective::VariableLength a) {
-  printf("Varlen<%d, %p>", a.max_length, a.cumulative_length);
-}
+  CUTE_HOST_DEVICE
+  void print(cutlass::fmha::collective::VariableLength a) {
+    printf("Varlen<%d, %p>", a.max_length, a.cumulative_length);
+  }
 
 }
