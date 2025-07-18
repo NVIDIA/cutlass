@@ -950,3 +950,32 @@ cutlass_test_unit_gemm_device_add_executable(
 endif()
 
 
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_simt_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f32_f32_f32_simt_align1.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_simt_sm100_bias_relu
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f32_f32_f32_simt_align1_bias_relu.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_simt_sm100_ptr_array
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+  sm100_gemm_f32_f32_f32_simt_align1_ptr_array.cu
+)
+

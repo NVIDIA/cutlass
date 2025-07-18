@@ -20,6 +20,7 @@ from typing import Union
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 
+from cutlass.base_dsl.dsl import is_dynamic_expression
 from cutlass.cutlass_dsl import TensorFormat, JitArgAdapterRegistry
 
 # Local modules imports
@@ -45,7 +46,8 @@ from .typing import (
     BFloat16,
     Float8E5M2,
 )
-from .core import find, _Tensor as CoreTensor
+from . import core
+from .core import _Tensor as CoreTensor
 
 
 class _Pointer(Pointer):
@@ -130,6 +132,9 @@ class _Pointer(Pointer):
     @property
     def memspace(self):
         return self._addr_space
+
+    def align(self, min_align: int, *, loc=None, ip=None) -> Pointer:
+        raise NotImplementedError("align is not supported in runtime")
 
     def verify(self, expected_py_type):
         if expected_py_type is Pointer:
@@ -361,7 +366,7 @@ class _Tensor(Tensor):
         * If nested leading dimensions are found, returns a tuple of indices
         * If no leading dimension is found, returns None
         """
-        return find(1, self.stride, exclude_when=(1, self.shape))
+        return core.leading_dim(self.shape, self.stride)
 
     def fill(self, value: Numeric):
         raise TypeError(f"fill function is not supported in runtime")
@@ -479,12 +484,8 @@ class TensorAdapter:
     Convert a DLPack protocol supported tensor/array to a cute tensor.
     """
 
-    # Need reference these capsules to avoid being garbage collected
-    tensor_capsules = []
-
     def __init__(self, arg):
         self._arg = from_dlpack(arg).mark_layout_dynamic()
-        self.tensor_capsules.append(self._arg)
 
     def __new_from_mlir_values__(self, values):
         return self._arg.__new_from_mlir_values__(values)

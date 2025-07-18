@@ -29,14 +29,14 @@ from .copy import (
 
 
 @dsl_user_op
-def make_tma_tile_atom(
+def make_tiled_tma_atom(
     op: Union[
         CopyBulkTensorTileG2SOp,
         CopyBulkTensorTileG2SMulticastOp,
         CopyBulkTensorTileS2GOp,
     ],
     gmem_tensor: Tensor,
-    smem_layout: Layout,
+    smem_layout: Union[Layout, core.ComposedLayout],
     cta_tiler: Tiler,
     num_multicast: int = 1,
     *,
@@ -45,7 +45,7 @@ def make_tma_tile_atom(
     ip=None,
 ) -> Tuple[core.CopyAtom, Tensor]:
     """
-    Makes a TMA Copy Atom in the ``.tile`` mode to copy tiles of a GMEM tensor to/from and SMEM
+    Makes a TMA Copy Atom in the ``.tile`` mode to copy tiles of a GMEM tensor to/from SMEM
     buffer with the given Layout.
 
     Given
@@ -71,7 +71,7 @@ def make_tma_tile_atom(
     :param gmem_tensor:   The GMEM tensor involved in the Copy
     :type gmem_tensor:    Tensor
     :param smem_layout:   The SMEM layout to construct the Copy Atom for
-    :type smem_layout:    Layout
+    :type smem_layout:    Union[Layout, core.ComposedLayout]
     :param cta_tiler:     The CTA Tiler to use
     :type cta_tiler:      Tiler
     :param num_multicast: The multicast factor
@@ -93,6 +93,12 @@ def make_tma_tile_atom(
         loc=loc,
         ip=ip,
     )
+
+    # Wrap smem_layout in a composed layout to make it a TMA-friendly layout
+    if isinstance(smem_layout, Layout):
+        smem_layout = core.make_composed_layout(
+            core.make_swizzle(0, 4, 3), 0, smem_layout
+        )
 
     if isinstance(op, CopyBulkTensorTileG2SOp):
         if num_multicast != 1:

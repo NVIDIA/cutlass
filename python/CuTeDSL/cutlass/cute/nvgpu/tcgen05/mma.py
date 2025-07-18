@@ -136,7 +136,10 @@ class MmaOp(MmaOp):
     a_major_mode: OperandMajorMode
     b_major_mode: OperandMajorMode
 
-    admissible_archs = ["sm_100a"]
+    admissible_archs = [
+        "sm_100a",
+        "sm_100f",
+    ]
 
     def __post_init__(self) -> None:
         # Verify arch

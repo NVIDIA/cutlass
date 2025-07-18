@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.0.0
+# CUTLASS 4.1.0
 
-_CUTLASS 4.0.0 - May 2025_
+_CUTLASS 4.1.0 - July 2025_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -43,56 +43,45 @@ To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/quick_start.html).
 
-# What's New in CUTLASS 4.0
+# What's New in CUTLASS 4.1
 
-### CuTe DSL
-* CuTe DSL, a Python DSL centered around CuTe's abstractions
-    - [Core DSL implementation files](https://github.com/NVIDIA/cutlass/tree/main/python/CuTeDSL)
-    - [DSL quick start](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/quick_start.html)
-    - [DSL Overview](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/overview.html)
-* [Overhauled documentation with an new dedicated website](https://docs.nvidia.com/cutlass)
-* Set of examples demonstrating how to use CuTe DSL to write peak-performance kernels
-    - [Blackwell SM100 persistent dense GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py)
-    - [Blackwell SM100 grouped GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/grouped_gemm.py)
-    - [Blackwell SM100 fused multi-head attention forward pass](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/fmha.py)
-    - [Hopper GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/hopper/dense_gemm.py)
-    - [Ampere GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/ampere/tensorop_gemm.py)
-    - [FlashAttention-2 implementation targeting Ampere and Ada class GPUs (SM80, SM86, SM89)](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/ampere/flash_attention_v2.py)
-    - [SmemAllocator to facilitate shared memory allocation and management](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/ampere/smem_allocator.py)
-    - [C-structure based customized interface between JIT function and user codes](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/ffi/jit_argument.py)
-* [Educational notebooks for getting started with CuTe DSL](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/notebooks)
+## CuTe DSL
+* More examples demonstrating how to use CuTe DSL to write peak-performance kernels
+    - [Blackwell Mamba2 SSD](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py)
 * API updates
-    - Fixed API mismatch in class ``cute.runtime.Pointer``: change ``element_type`` to ``dtype`` to match ``typing.Pointer``
+    - for loop
+        - Python built-in ``range`` now always generates IR and executes at runtime
+        - ``cutlass.range`` is advanced ``range`` with IR level unrolling and pipelining control
+        - Deprecated ``cutlass.range_dynamic``, please replace with ``range`` or ``cutlass.range``
+        - **Experimental** Added ``pipelining`` control for compiler generated software pipeline code
+    - while/if
+        - ``while``/``if`` now by default generates IR and executes at runtime unless ``cutlass.const_expr`` is specified for the predicate
+        - Deprecated ``cutlass.dynamic_expr``, please remove it
+    - Rename mbarrier functions to reduce ambiguity
+    - Modify SyncObject API (`MbarrierArray`, `NamedBarrier`, `TmaStoreFence`) to match `std::barrier`
+    - Change pipeline `create` function to take only keyword arguments, and make `barrier_storage` optional.
 
-### CUTLASS C++
-* Support [Family Specific Architecture Features](https://developer.nvidia.com/blog/nvidia-blackwell-and-nvidia-cuda-12-9-introduce-family-specific-architecture-features/) which was introduced in CUDA 12.9
-  - 100f, 101f, 120f were added to support Family Specific Architecture Features which allows running the same binary on different chips belonging to the same Family (e.g. sm100) without recompiling.  Note 101a is supported since CUTLASS 3.9
-* Instruction shapes and redundant accumulation type have been removed from CUTLASS 3.x-style library kernel names to disambiguate kernels and shorten names.
-  - For example:
-    + `(old) cutlass3x_sm90_tensorop_s64x128x16gemm_bf16_bf16_f32_bf16_bf16_128x256x64_1x1x1_0_tnn_align8_warpspecialized_cooperative_epi_tma`
-    + `(new) cutlass3x_sm90_tensorop_gemm_bf16_bf16_f32_bf16_bf16_128x256x64_1x1x1_0_tnn_align8_warpspecialized_cooperative_epi_tma`
-   - If you are using the CUTLASS library kernel names directly (e.g. to compile a subset of the CUTLASS library with `-DCUTLASS_LIBRARY_KERNELS`, filter kernels in the CUTLASS profiler with `--kernels`), please update your uses accordingly, this is a breaking change.
-* Further improved [Blockwise](https://github.com/NVIDIA/cutlass/tree/main/examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling.cu) and [Groupwise](https://github.com/NVIDIA/cutlass/tree/main/examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling.cu) GEMMs on Hopper and Blackwell.
-  - Added non-power-of-two tile sizes.
-  - Improved performance for K-major scale factors.
-  - The argument `mma_promotion_interval` has been removed from non-grouped GEMM to align with the grouped and Blackwell SM100 versions.
-* Support LSE output in Blackwell SM100 FMHA Forward kernel in example 77.
-* Improve Blackwell and Hopper grouped GEMM performance, functionality, and profiler support.
-  - Enable runtime datatype for Blackwell SM100 grouped GEMM. Profiler support is also added.
-  - Enable kernel parameter exploration for Blackwell SM100 grouped GEMM - raster_order, swizzle.
-* Add [Blackwell SM100 implicit GEMM conv fprop/dgrad/wgrad unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/conv/device_3x/).
-* Add dynamic and preferred cluster support for convolution Blackwell SM100 kernels.
-* Fix profiler issues which cause no output or not supported error for some kernels.
-* Optimizations for Blackwell SM100 and SM120 block scaled kernels.
-* Support for Blackwell SM120 blockwise dense gemm in CUTLASS library and profiler.
-* New [Hopper SM90 FMHA example](https://github.com/NVIDIA/cutlass/tree/main/examples/88_hopper_fmha/), similar in design to the existing [Blackwell FMHA](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+## CUTLASS C++
+* Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+    - Add variable sequence length support for FMHA Backward kernel.
+    - Add varlen test support to Backward runner.
+    - Codes support empty batch sequences.
+* Replace `subbyte_iterator` with `cute::recast_ptr` when constructing logical iterators/arrays.
 * CuTe changes:
-    - Rework `cute::copy_if` so that the predicate tensor is also a true CuTe Tensor rather than a lambda and introduces transform-tensors to avoid any extra register or load/store overhead in using bool-tensors.
-    - New [CuTe tutorial](https://github.com/NVIDIA/cutlass/tree/main/examples/cute/tutorial/tiled_copy_if.cu) to show the usage of copy_if in tile copy.
-    - Add [CuTe C++ reduce op](https://github.com/NVIDIA/cutlass/tree/main/include/cute/algorithm/tensor_reduce.hpp).
-        - Add several [unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/core/tensor_algs.cpp) for CuTe tensor algorithms.
-* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
-* Optimal code generation with CUDA toolkit versions 12.9.
+    - Rewrite ArithTuple and ScaledBasis for robustness and clarity.
+    - Remove buggy and kludgy `get_layoutA|B|C_MN` and friends from Atoms/TiledX.
+    - Factor out `print_latex` and friends and rewrite.
+    - Factor out `print_svg` and friends and rewrite.
+* Support Blackwell SM100 SIMT FFMA2 kernels.
+* Support residual add for implicit gemm kernels.
+* Various fixes for CUTLASS C++ Python interface's EVT tracer:
+    - Add verifier for sm90 to report the invalid input.
+    - When adding an edge to the graph, if the edge already exists, add an identity compute node to avoid having multiple parallel edges.
+    - Register operations of tanh, sigmoid, exp, gelu to the python ast frontend.
+    - Replace the NotImplemented Error by packing all nodes into a single topological visitor node as a fallback.
+* Fix profiler bugs in exhaustive perf search.
+    - Fix incorrect cluster shape output issue when doing exhaustive search.
+    - Fix a bug in profiler grouped GEMM for setting tile scheduler swizzles, cluster shapes, and raster orders.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

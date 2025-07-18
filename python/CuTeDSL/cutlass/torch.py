@@ -29,6 +29,7 @@ from cutlass.cute.typing import (
 from cutlass.cute.runtime import from_dlpack
 import cutlass.cute as cute
 import torch
+from cuda import cuda
 
 
 def dtype(ty: Type[Numeric]):
@@ -94,12 +95,13 @@ def create_and_permute_torch_tensor(
     init_config: Optional[
         Union[RandomInitConfig, ScalarInitConfig, GaussianInitConfig]
     ] = None,
+    device: Optional[torch.device] = None,
 ) -> "torch.Tensor":
     """
     Create a torch tensor with specified shape and dtype. Optionally permute it and initialize it with specified init type and config
     """
     init_dtype = torch.int32 if init_type == TensorInitType.RANDOM else torch.float32
-    init_torch_tensor = torch.empty(*shape, dtype=init_dtype)
+    init_torch_tensor = torch.empty(*shape, dtype=init_dtype, device=device)
     if init_type == TensorInitType.SKIP:
         assert init_config is None
         f32_torch_tensor = init_torch_tensor
@@ -167,3 +169,122 @@ def convert_cute_tensor(
         # Copy and convert from f32 cute tensor to dtype cute tensor
         cute.testing.convert(fp32_cute_tensor, cute_tensor)
     return cute_tensor
+
+
+def default_stream() -> cuda.CUstream:
+    """
+    Get default CUstream from torch stream
+    """
+    torch_stream = torch.cuda.default_stream()
+    stream = cuda.CUstream(torch_stream.cuda_stream)
+    return stream
+
+
+def current_stream() -> cuda.CUstream:
+    """
+    Get current CUstream from torch stream
+    """
+    torch_stream = torch.cuda.current_stream()
+    stream = cuda.CUstream(torch_stream.cuda_stream)
+    return stream
+
+
+def matrix(
+    l: int,
+    mode0: int,
+    mode1: int,
+    is_mode0_major: bool,
+    cutlass_dtype: Type[Numeric],
+    init_type: TensorInitType = TensorInitType.RANDOM,
+    init_config: Optional[
+        Union[RandomInitConfig, ScalarInitConfig, GaussianInitConfig]
+    ] = None,
+    device: Optional[torch.device] = None,
+) -> torch.Tensor:
+    """
+    Create a torch tensor for matrix
+
+    :param l: length of the matrix
+    :param mode0: mode0 of the matrix
+    :param mode1: mode1 of the matrix
+    :param is_mode0_major: whether the matrix is mode0 major
+    :param cutlass_dtype: cutlass dtype of the matrix
+    :param init_type: type of initialization
+    :param init_config: configuration for initialization
+    :param device: target torch device
+    """
+
+    shape = (l, mode1, mode0) if is_mode0_major else (l, mode0, mode1)
+    permute_order = (2, 1, 0) if is_mode0_major else (1, 2, 0)
+
+    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+        torch_dtype = torch.int8
+    else:
+        torch_dtype = dtype(cutlass_dtype)
+
+    if init_type == TensorInitType.RANDOM and init_config is None:
+        if torch_dtype.is_signed:
+            min_val = -2
+            max_val = 2
+        else:
+            min_val = 0
+            max_val = 4
+        init_config = RandomInitConfig(min_val=min_val, max_val=max_val)
+
+    # Create dtype torch tensor
+    torch_tensor = create_and_permute_torch_tensor(
+        shape,
+        torch_dtype,
+        permute_order=permute_order,
+        init_type=init_type,
+        init_config=init_config,
+        device=device,
+    )
+
+    return torch_tensor
+
+
+def cute_tensor_like(
+    data_ref: torch.Tensor,
+    cutlass_dtype: Type[Numeric],
+    is_dynamic_layout: bool,
+    assumed_align: Optional[int] = None,
+) -> tuple[Tensor, torch.Tensor]:
+    """
+    Create a cute tensor use a torch tensor as the data source
+
+    :param data_ref: torch tensor as the data source
+    :param cutlass_dtype: cutlass dtype of the cute tensor
+    :param is_dynamic_layout: whether the cute tensor uses dynamic layout
+    :param assumed_align: assumed alignment of the cute tensor
+    """
+
+    # allocate device buffer for cute tensor
+    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+        torch_dtype = torch.int8
+    else:
+        torch_dtype = dtype(cutlass_dtype)
+    torch_tensor = torch.empty_like(data_ref, dtype=torch_dtype, device="cuda")
+
+    # create cute tensor using the device buffer
+    cute_tensor = from_dlpack(torch_tensor, assumed_align=assumed_align)
+    cute_tensor.element_type = cutlass_dtype
+    if is_dynamic_layout:
+        for i, stride in enumerate(torch_tensor.stride()):
+            if stride == 1:
+                leading_dim = i
+                break
+        cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
+
+    # initialize the cute tensor data
+    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+        cute_tensor = convert_cute_tensor(
+            data_ref.to(dtype=torch.float32),
+            cute_tensor,
+            cutlass_dtype,
+            is_dynamic_layout,
+        )
+    else:
+        torch_tensor.copy_(data_ref.to(dtype=torch_dtype))
+
+    return cute_tensor, torch_tensor

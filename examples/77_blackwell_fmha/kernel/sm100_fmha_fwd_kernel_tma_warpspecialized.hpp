@@ -28,6 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+#pragma once
 
 #include "cutlass/cutlass.h"
 #include "cute/layout.hpp"
@@ -38,6 +39,7 @@
 
 #include "kernel/fmha_options.hpp"
 #include "kernel/fmha_tile_scheduler.hpp"
+#include "kernel/fmha_causal_tile_scheduler.hpp"
 #include "collective/fmha_fusion.hpp"
 #include "collective/fmha_common.hpp"
 
@@ -79,6 +81,45 @@ struct Sm100FmhaCtxKernelWarpspecializedSchedule {
   static const int NumRegsCorrection = 96 - (kDebugUsingPrintf ? 16 : 0);
   static const int NumRegsOther = 32 + (kDebugUsingPrintf ? 16 : 0);
   static const int NumRegsEmpty = 24;
+  
+  static const int NumWarps = 16;
+  
+};
+
+
+struct Sm100MlaFwdCtxKernelWarpspecializedSchedule {
+
+  enum class WarpRole {
+    Softmax0,
+    Softmax1,
+    Correction,
+    MMA,
+    Load,
+    Epilogue,
+    Empty
+  };
+
+  static constexpr WarpRole warp_idx_to_WarpRole(int warp_idx) {
+    int wg_idx = warp_idx / 4;                        // warp_idx
+    if (wg_idx == 0) return WarpRole::Softmax0;       //   0 -  3
+    if (wg_idx == 1) return WarpRole::Softmax1;       //   4 -  7
+    if (wg_idx == 2) return WarpRole::Correction;     //   8 - 11
+    if (warp_idx == 12) return WarpRole::MMA;         //       12
+    if (warp_idx == 13) return WarpRole::Load;        //       13
+    if (warp_idx == 14) return WarpRole::Epilogue;    //       14
+    return WarpRole::Empty;                           //       15
+  }
+
+  static const int NumWarpsSoftmax = 4;
+  static const int NumWarpsCorrection = 4;
+  static const int NumWarpsEpilogue = 1;
+  static const int NumWarpsLoad = 1;
+
+  static const bool kDebugUsingPrintf = false;
+  static const int NumRegsSoftmax = 184;
+  static const int NumRegsCorrection = 96 - (kDebugUsingPrintf ? 16 : 0);
+  static const int NumRegsOther = 48 + (kDebugUsingPrintf ? 16 : 0);
+  static const int NumRegsEmpty = 24;
 
   static const int NumWarps = 16;
 
@@ -106,6 +147,9 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
   static const int NumWarpsCorrection = KernelSchedule::NumWarpsCorrection;
   static const int NumWarpsEpilogue = KernelSchedule::NumWarpsEpilogue;
   static const int NumWarpsLoad = KernelSchedule::NumWarpsLoad;
+  
+  static_assert(NumWarpsEpilogue == CollectiveEpilogue::NumWarpsEpilogue);
+  static_assert(NumWarpsLoad == CollectiveEpilogue::NumWarpsLoad);
 
   static const int NumRegsSoftmax = KernelSchedule::NumRegsSoftmax;
   static const int NumRegsCorrection = KernelSchedule::NumRegsCorrection;
@@ -114,13 +158,31 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
 
   static const int NumWarps = KernelSchedule::NumWarps;
 
+  static constexpr bool IsMla = std::is_same_v<KernelSchedule, Sm100MlaFwdCtxKernelWarpspecializedSchedule>;
+
   using ClusterShape = typename CollectiveMainloop::ClusterShape;
 
   using TmemAllocator = cute::TMEM::Allocator1Sm;
 
   struct SharedStorage {
-    typename CollectiveMainloop::TensorStorage mainloop;
-    typename CollectiveEpilogue::TensorStorage epilogue;
+    using UnionType = union {
+      typename CollectiveMainloop::TensorStorage mainloop;
+      typename CollectiveEpilogue::TensorStorage epilogue;
+    };
+
+    using  StructType = struct {
+      typename CollectiveMainloop::TensorStorage mainloop;
+      typename CollectiveEpilogue::TensorStorage epilogue;
+    };
+
+    static constexpr bool IsPersistent = std::is_same_v<TileScheduler, PersistentTileScheduler> || std::is_same_v<TileScheduler, CausalPersistentTileScheduler>;
+    using MainloopEpilogueStorage = std::conditional_t<IsPersistent, 
+                                                       std::conditional_t<IsMla, 
+                                                                          std::conditional_t<CollectiveMainloop::IsOrderLoadEpilogue, UnionType, StructType>,
+                                                                          StructType>,
+                                                       UnionType>;
+
+    MainloopEpilogueStorage mainloop_epilogue; 
 
     struct PipelineStorage {
       alignas(16) typename CollectiveMainloop::PipelineQ::SharedStorage load_q;
@@ -206,6 +268,16 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
 
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem);
 
+    auto get_epilogue_storage = [&]() {
+      if constexpr (IsMla && CollectiveMainloop::IsOrderLoadEpilogue) {
+        return reinterpret_cast<typename CollectiveEpilogue::TensorStorage *>(shared_storage.mainloop_epilogue.mainloop.smem_o.data());
+      } else {
+        return &shared_storage.mainloop_epilogue.epilogue;
+      }
+    };
+    typename CollectiveEpilogue::TensorStorage & epilogue_storage = *get_epilogue_storage();
+
+
     typename CollectiveMainloop::PipelineQ::Params pipeline_load_q_params;
     if (role == WarpRole::Load) {
       pipeline_load_q_params.role = CollectiveMainloop::PipelineQ::ThreadCategory::Producer;
@@ -228,7 +300,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
       pipeline_load_kv_params.role = CollectiveMainloop::PipelineKV::ThreadCategory::Consumer;
     }
     pipeline_load_kv_params.is_leader = lane_predicate && (role == WarpRole::Load);
-    pipeline_load_kv_params.transaction_bytes = CollectiveMainloop::TransactionBytesLoadKV;
+    pipeline_load_kv_params.transaction_bytes = CollectiveMainloop::TransactionBytesLoadK;
     typename CollectiveMainloop::PipelineKV pipeline_load_kv(
       shared_storage.pipelines.load_kv,
       pipeline_load_kv_params,
@@ -372,6 +444,10 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           continue;
         }
 
+        if (get<1>(logical_problem_shape) == 0) {
+          continue;
+        }
+
         bool is_softmax_0 = role == WarpRole::Softmax0;
 
         mainloop.softmax(
@@ -400,18 +476,29 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           continue;
         }
 
+        if (get<1>(logical_problem_shape) == 0) {
+          mainloop.correction_empty(
+            blk_coord,
+            params.mainloop, logical_problem_shape,
+            params.problem_shape,
+            epilogue_storage,
+            pipeline_corr_epi, pipeline_corr_epi_producer_state,
+            epilogue
+          );
+          continue;
+        }
+
         mainloop.correction(
           blk_coord,
           params.mainloop, logical_problem_shape,
           params.problem_shape,
-          shared_storage.epilogue,
+          epilogue_storage,
           pipeline_s0_corr, pipeline_s0_corr_consumer_state,
           pipeline_s1_corr, pipeline_s1_corr_consumer_state,
           pipeline_mma_corr, pipeline_mma_corr_consumer_state,
           pipeline_corr_epi, pipeline_corr_epi_producer_state,
           epilogue
         );
-
 
       }
 
@@ -440,11 +527,14 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           continue;
         }
 
+        if (get<1>(logical_problem_shape) == 0) {
+          continue;
+        }
 
         mainloop.mma(
           blk_coord,
           params.mainloop, logical_problem_shape,
-          shared_storage.mainloop,
+          shared_storage.mainloop_epilogue.mainloop,
           pipeline_load_q, pipeline_load_q_consumer_state,
           pipeline_load_kv, pipeline_load_kv_consumer_state,
           pipeline_mma_s0, pipeline_mma_s0_producer_state,
@@ -452,11 +542,15 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           pipeline_mma_corr, pipeline_mma_corr_producer_state
         );
 
-
       }
     }
     else if (role == WarpRole::Load) {
       warpgroup_reg_set<NumRegsOther>();
+
+      if constexpr (IsMla && CollectiveMainloop::IsOrderLoadEpilogue) {
+        cutlass::arch::NamedBarrier::arrive((NumWarpsLoad + NumWarpsEpilogue) * NumThreadsPerWarp, 
+                                      cutlass::arch::ReservedNamedBarriers::EpilogueBarrier);
+      }
 
       CUTLASS_PRAGMA_NO_UNROLL
       for (; tile_scheduler.is_valid(); ++tile_scheduler) {
@@ -469,10 +563,14 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           continue;
         }
 
+        if (get<1>(logical_problem_shape) == 0) {
+          continue;
+        }
+
         mainloop.load(
           blk_coord, logical_problem_shape,
           params.mainloop, params.problem_shape,
-          shared_storage.mainloop,
+          shared_storage.mainloop_epilogue.mainloop,
           pipeline_load_q, pipeline_load_q_producer_state,
           pipeline_load_kv, pipeline_load_kv_producer_state
         );
@@ -496,7 +594,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
         epilogue.store(
           blk_coord, logical_problem_shape,
           params.epilogue, params.problem_shape,
-          shared_storage.epilogue,
+          epilogue_storage,
           pipeline_corr_epi, pipeline_corr_epi_consumer_state
         );
 

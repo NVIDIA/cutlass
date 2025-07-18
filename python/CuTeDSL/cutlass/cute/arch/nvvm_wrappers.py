@@ -225,6 +225,25 @@ def barrier(*, barrier_id=None, number_of_threads=None, loc=None, ip=None) -> No
         barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
     )
 
+
+@dsl_user_op
+def barrier_arrive(
+    *, barrier_id=None, number_of_threads=None, loc=None, ip=None
+) -> None:
+    if barrier_id is not None:
+        barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
+
+    if number_of_threads is None:
+        raise ValueError(
+            "barrier_arrive needs pass number_of_threads to arrive the barrier",
+        )
+    number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
+
+    nvvm.barrier_arrive(
+        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
+    )
+
+
 @dsl_user_op
 def sync_threads(*, loc=None, ip=None) -> None:
     """
@@ -545,3 +564,20 @@ def exp2(a: Union[float, Float32], *, loc=None, ip=None) -> Float32:
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
     )
+
+
+# TODO: add `fastmath` flag for this op
+@dsl_user_op
+def exp(a: Union[float, Float32], *, loc=None, ip=None) -> Float32:
+    LOG2_E = 1.4426950408889634
+    return exp2(a * LOG2_E, loc=loc, ip=ip)
+
+
+# TODO: add `fastmath` flag for this op
+@dsl_user_op
+def exp_packed_f32x2(
+    a: Tuple[Float32, Float32], *, loc=None, ip=None
+) -> Tuple[Float32, Float32]:
+    LOG2_E = Float32(1.4426950408889634)
+    b = mul_packed_f32x2(a, (LOG2_E, LOG2_E), loc=loc, ip=ip)
+    return exp2(b[0], loc=loc, ip=ip), exp2(b[1], loc=loc, ip=ip)

@@ -25,12 +25,13 @@ __all__ = [
     #
     # mbar.py
     #
-    "mbarrier_init_arrive_cnt",
+    "mbarrier_init",
     "mbarrier_init_fence",
-    "mbarrier_init_tx_bytes",
+    "mbarrier_arrive_and_expect_tx",
+    "mbarrier_expect_tx",
     "mbarrier_wait",
     "mbarrier_try_wait",
-    "conditional_mbarrier_try_wait",
+    "mbarrier_conditional_try_wait",
     "mbarrier_arrive",
     #
     # nvvm_wrappers.py
@@ -51,6 +52,7 @@ __all__ = [
     "shuffle_sync_down",
     "shuffle_sync_bfly",
     "barrier",
+    "barrier_arrive",
     "sync_threads",
     "sync_warp",
     "fence_acq_rel_cta",

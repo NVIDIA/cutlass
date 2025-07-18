@@ -75,15 +75,7 @@ __global__ void dequantize_kernel(DequantizedElement* dq_buffer,
   // Represent the full tensors to gmem elements.
   // These are expected to have shape [MN, K, L]
   cute::Tensor gmem_op_dq = cute::make_tensor(cute::make_gmem_ptr(dq_buffer), operand_layout);
-  auto init_quantized_iterator = [&]() {
-    if constexpr (cute::sizeof_bits_v<QuantizedElement> >= 8) {
-      return cute::make_gmem_ptr(q_buffer);
-    }
-    else {
-      return cute::subbyte_iterator<const QuantizedElement>(q_buffer);
-    }
-  };
-  cute::Tensor gmem_op_q  = cute::make_tensor(init_quantized_iterator(), operand_layout);
+  cute::Tensor gmem_op_q  = cute::make_tensor(cute::make_gmem_ptr<QuantizedElement const>(q_buffer), operand_layout);
   // While the scales are expected to have shape [MN, G, L] but with a stride to allow broadcasting
   // It is expected that K % G == 0
   cute::Tensor gmem_scale_broadcasted = cute::make_tensor(make_gmem_ptr(scale_buffer), broadcasted_scale_layout);

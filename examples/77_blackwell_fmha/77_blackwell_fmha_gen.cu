@@ -689,11 +689,18 @@ struct ExampleRunner {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+int main_result = 0;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Helper to print a description of the example run and its result
 void print_result(const std::string& description, ExampleResult result, bool verbose) {
   std::ios fmt(nullptr);
   fmt.copyfmt(std::cout);
   std::cout << (result.supported ? (result.passed ? (result.verified ? " [OK]  " : " [--] ") : "[FAIL] ") : "[NSUP] ");
+  if (result.supported && ! result.passed) {
+    main_result = -1;
+  }
   std::cout << std::setw(32) << std::left << description;
   std::cout.copyfmt(fmt);
   std::cout << " : " << result.tbytes_s << " TB/s" << std::endl;
@@ -781,12 +788,17 @@ int main_single(int argc, char const **args) {
       std::integral_constant<KernelType, KernelType::MODE>{}, Shape<_##m, _##n, _##k>{}, Shape<_##tm, _##tn, _##tk>{} \
     )
 
-  RUN(UMMA_I, 128, 64, 128, 1, 1, 1);
-  RUN(UMMA_I, 128, 128, 128, 1, 1, 1);
-  RUN(UMMA_I, 128, 256, 128, 1, 1, 1);
-  RUN(UMMA_P, 128, 64, 128, 1, 1, 1);
-  RUN(UMMA_P, 128, 128, 128, 1, 1, 1);
-  RUN(UMMA_P, 128, 256, 128, 1, 1, 1);
+  if (options.d == 128) {
+    RUN(UMMA_I, 128, 64, 128, 1, 1, 1);
+    RUN(UMMA_I, 128, 128, 128, 1, 1, 1);
+    RUN(UMMA_I, 128, 256, 128, 1, 1, 1);
+    RUN(UMMA_P, 128, 64, 128, 1, 1, 1);
+    RUN(UMMA_P, 128, 128, 128, 1, 1, 1);
+    RUN(UMMA_P, 128, 256, 128, 1, 1, 1);
+  }
+  else {
+    std::cout << "Head Dimension != 128 is not supported for the fmha_gen example\n";
+  }
 #endif
 
   return 0;
@@ -796,8 +808,6 @@ int main_single(int argc, char const **args) {
 
 int main(int argc, char const **args) {
   std::vector<std::string> full_arguments(args, args + argc);
-
-  int result = 0;
 
   bool recursed = false;
   for (size_t i = 1; i < full_arguments.size(); i++) {
@@ -825,7 +835,7 @@ int main(int argc, char const **args) {
     main_single(argc, args);
   }
 
-  return result;
+  return main_result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

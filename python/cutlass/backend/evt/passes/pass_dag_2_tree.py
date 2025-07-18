@@ -80,7 +80,6 @@ class PassDAG2Tree(EVTPassBase):
             node_to_fuse = set.union(*reachable_nodes).difference(common_items)
 
             lca = None
-
             # If common ancestor exists, find the lowest one
             if len(common_items) > 0:
                 topo_order = self.dag_ir.nodes_topological_order()

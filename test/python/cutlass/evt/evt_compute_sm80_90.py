@@ -117,7 +117,7 @@ class TestEVTCompute(EVTTestCaseBase):
             input_keys = ["C", "alpha", "beta"]
             result_keys = ["D"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
-            
+ 
     def test_tanh(self):
         """
         Test Tanh op

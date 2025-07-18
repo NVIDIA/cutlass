@@ -149,6 +149,19 @@ TEST(CuTe_core, Subbyte_iterator)
   }
 
   {
+  array_subbyte<uint6b_t, 15> a{};
+  auto tensor = make_tensor(a.begin(), make_shape(15));
+
+  fill(a, uint6b_t(13));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(uint6b_t(tensor(i)), uint6b_t(13));
+    tensor(i) = uint6b_t(i);
+    EXPECT_EQ(uint6b_t(a[i]), uint6b_t(tensor(i)));
+  }
+
+  }
+
+  {
   array_subbyte<int4_t, 15> a{};
   auto tensor = make_tensor(a.begin(), make_shape(15));
 

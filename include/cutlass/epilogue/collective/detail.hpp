@@ -206,6 +206,16 @@ struct IsThreadEpilogueOpWithPerChannelScaling <ThreadEpilogueOp, cute::enable_i
 };
 
 template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithResidualAdd {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithResidualAdd <ThreadEpilogueOp, cute::void_t<decltype(ThreadEpilogueOp::IsResidualSupported)>> {
+  static constexpr bool value = ThreadEpilogueOp::IsResidualSupported;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
 struct IsThreadEpilogueOpWithActivation {
   static constexpr bool value = false;
   using type = void;

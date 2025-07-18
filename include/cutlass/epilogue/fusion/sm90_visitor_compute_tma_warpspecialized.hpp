@@ -591,7 +591,7 @@ struct Sm90TreeVisitor<
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m, n, k, l] = args.tile_coord_mnkl;
-    gmem_ptr ptr_aux = make_gmem_ptr(subbyte_iterator<cutlass::uint1b_t>(params_aux.ptr_aux));
+    gmem_ptr ptr_aux = make_gmem_ptr<cutlass::uint1b_t>(params_aux.ptr_aux);
     Tensor mAux = make_tensor(ptr_aux, make_layout(make_shape(M,N,L), params_aux.dAux));                     // (M,N,L)
     Tensor gAux = local_tile(mAux, take<0,2>(args.tile_shape_mnk), make_coord(m,n,l));                 // (CTA_M,CTA_N)
 
@@ -765,7 +765,7 @@ struct Sm90AuxLoad<
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m, n, k, l] = args.tile_coord_mnkl;
-    gmem_ptr ptr_aux = make_gmem_ptr(subbyte_iterator<cutlass::uint1b_t const>(params.ptr_aux));
+    gmem_ptr ptr_aux = make_gmem_ptr<cutlass::uint1b_t const>(params.ptr_aux);
     Tensor mAux = make_tensor(ptr_aux, make_layout(make_shape(M,N,L), params.dAux));                         // (M,N,L)
     Tensor gAux = local_tile(mAux, take<0,2>(args.tile_shape_mnk), make_coord(m,n,l));                 // (CTA_M,CTA_N)
 

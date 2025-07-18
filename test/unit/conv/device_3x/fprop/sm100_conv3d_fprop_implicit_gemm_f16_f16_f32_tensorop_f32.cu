@@ -100,6 +100,53 @@ TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
 }
 
+TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f16ndhwc_tensor_op_f32, 64x64x64_1x1x1_alpha_beta_scaled_bias_relu_residual) {
+  using ElementAct     = cutlass::half_t;
+  using ElementFlt     = cutlass::half_t;
+  using ElementOut     = cutlass::half_t;
+  using ElementAcc     = float;
+  using ElementCompute = float;
+  using ElementSrc     = cutlass::half_t;
+  using ElementBias    = float;
+  using MmaTileShape = Shape<_64, _64, Shape<_64>>;
+  using ClusterShape = Shape<_1,_1,_1>;
+
+  using FusionOperation = cutlass::epilogue::fusion::PerColResAddPerColBiasEltAct<
+      cutlass::epilogue::thread::ReLu, ElementOut, ElementCompute, ElementBias, ElementSrc>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAcc, ElementCompute,
+      ElementSrc, cutlass::layout::TensorNDHWC, 128 /  cutlass::sizeof_bits<ElementSrc>::value,
+      ElementOut, cutlass::layout::TensorNDHWC, 128 /  cutlass::sizeof_bits<ElementOut>::value,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      FusionOperation
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      cutlass::conv::Operator::kFprop,
+      ElementAct, cutlass::layout::TensorNDHWC, 16 / sizeof(ElementAct),
+      ElementFlt, cutlass::layout::TensorNDHWC, 16 / sizeof(ElementFlt),
+      ElementAcc,
+      MmaTileShape, ClusterShape,
+      cutlass::conv::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::conv::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>; 
+  using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
+
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+}
+
 //
 // Cluster tile shape 128x64x64
 // Cluster shape 1x1x1
