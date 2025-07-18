@@ -219,7 +219,7 @@ struct CausalMask : NoMask {
     int q_tile = min(get<0>(tile_shape), get<0>(problem_size) - get<0>(blk_coord) * get<0>(tile_shape));
     int offset_tile_q = IsQBegin ? int((get<1>(problem_size)) - int(get<0>(problem_size))% get<1>(tile_shape)) : 0;
     
-    int masked_blocks = ceil_div(q_tile + offset_tile_q, get<1>tile_shape);
+    int masked_blocks = ceil_div(q_tile + offset_tile_q, get<1>(tile_shape));
     return std::min(masked_blocks, trip_count);
   }
 
