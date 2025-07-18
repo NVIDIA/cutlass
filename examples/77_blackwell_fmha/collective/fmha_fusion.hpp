@@ -215,13 +215,14 @@ struct CausalMask : NoMask {
       BlkCoord const& blk_coord,
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
-    int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
-    int q_tile = min(get<0>(tile_shape), get<0>(problem_size) - get<0>(blk_coord) * get<0>(tile_shape));
-    int offset_q = IsQBegin ? int(get<1>(problem_size)) - int(get<0>(problem_size)) : 0;
-    int first_masked_tile_k = int(offset_q / get<1>(tile_shape));
-    int last_masked_tile_k = int((offset_q + q_tile - 1) / get<1>(tile_shape));
-    int masked_blocks = last_masked_tile_k - first_masked_tile_k + 1;
-    return std::min(masked_blocks, trip_count);
+        
+    if constexpr (IsQBegin) {
+      int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
+      return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
+    } else {
+      const int offset_tile_q = get<1>(problem_size) % get<1>(tile_shape);
+      return ceil_div(get<0>(tile_shape) +  offset_tile_q, get<1>(tile_shape));
+    }
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
