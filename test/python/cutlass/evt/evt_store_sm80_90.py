@@ -48,6 +48,7 @@ cutlass.set_log_level(logging.WARNING)
 
 @unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
 class TestEVTStore(EVTTestCaseBase):
+
     @unittest.skipIf(device_cc() != 90, "This test is only for CC 90")
     def test_invalid_store(self):
         """
