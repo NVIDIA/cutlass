@@ -46,29 +46,75 @@ from .._mlir.dialects import arith, math
 
 @runtime_checkable
 class DynamicExpression(Protocol):
-    """
-    This is a protocol class that provides a common interface
-    to generate user-defined dynamic expressions.
+    """Protocol defining the interface for object holding dynamic values in the DSL.
 
-    The DSL checks this protocol to determine if a class is a dynamic expression (SSA value) or not.
+    This protocol enables classes to represent dynamic values in the DSL. Classes implementing
+    this protocol can be used in JIT-compiled functions and dynamic value generation.
+
+    It is required for custom data types to work correctly with following JIT features:
+    * as function argument to call another JIT function from JIT function
+    * as return value from JIT function
+    * for constructions like if-else, while-loop, etc.
+
+    :param value: The MLIR operation result value to initialize the object with
+    :type value: ir.Value
+
+    **Required Methods**
+
+    * ``__extract_mlir_values__``: Extract MLIR values from the object
+    * ``__new_from_mlir_values__``: Create new instance from MLIR values
+
+    **Implementation Example**
+
+    To implement a custom data type that works with the DSL:
+
+    .. code-block:: python
+
+        class CustomData(metaclass=DslType):
+            def __init__(self, int_value):
+                self.int_value = int_value
+
+            def __extract_mlir_values__(self):
+                return [self.int_value]
+
+            def __new_from_mlir_values__(self, values):
+                return CustomData(values[0])
+
+    **Usage in JIT Functions**
+
+    When used in JIT-compiled functions, the DSL automatically extracts MLIR values:
+
+    .. code-block:: python
+
+        @jit
+        def caller():
+            x = CustomData(1)
+            return foo(x)
+
+    This generates MLIR like:
+
+    .. code-block:: mlir
+
+        func @caller() -> i32 {
+            %0 = func.call @foo(%arg0) : (i32) -> i32
+            return %0 : i32
+        }
     """
 
     def __extract_mlir_values__(self):
-        """
-        Generate a dynamic expression for the current object.
+        """Extract MLIR values from this object.
 
-        :return: List of MLIR values
+        :return: List of MLIR values representing this object's data
         :rtype: List[ir.Value]
         """
         raise NotImplementedError
 
     def __new_from_mlir_values__(self, values):
-        """
-        Create a new object from MLIR values.
+        """Create a new instance from MLIR values.
 
-        :param values: List of MLIR values
+        :param values: List of MLIR values to construct the object from
         :type values: List[ir.Value]
-        :return: A new instance of the class that implements this protocol
+        :return: New instance of the implementing class
         :rtype: Any
         """
         raise NotImplementedError
@@ -77,50 +123,73 @@ class DynamicExpression(Protocol):
 @runtime_checkable
 class JitArgument(Protocol):
     """
-    This is a protocol class that provides a common interface
-    for JIT function arguments generation for Python to call JIT functions.
+    Protocol class defining the interface for JIT function argument generation.
 
-    The DSL checks this protocol to determine if a class is capable of providing information
-    needed for generating JIT function arguments.
+    This protocol enables classes to provide the necessary information for generating
+    JIT function arguments and allow the DSL JIT executor to call JIT compiled functions.
 
-    See breakdowns below for JitArgument protocol based JIT function calls.
+    **Required Methods**
+
+    * ``__c_pointers__``: Returns ctypes pointers for runtime execution
+    * ``__get_mlir_types__``: Returns MLIR types for function definition
+    * ``__new_from_mlir_values__``: Creates new instances from MLIR values
+
+    **Example**
 
     .. code-block:: python
 
+        class CustomData:
+            def __init__(self, int_value, ...):
+                self.int_value = int_value
+                ...
+
+            def __c_pointers__(self):
+                return [ctypes.pointer(ctypes.c_int32(self.int_value)), ...]
+
+            def __get_mlir_types__(self):
+                return [ir.IntegerType.get(32), ...]
+
+            def __new_from_mlir_values__(self, values):
+                return CustomData(values[0], ...)
+
         @jit
         def foo(x: CustomData):
-            return x.int_value + 1
+            a = x.int_value + 1
+            ...
 
-        # Emit: `%c0 = arith.constant(1, i32)`
-        c1 = const(1, Int32)
-        # `c1` tracks `%c0` defined outside of function body of `foo`
-        # `%c0` can't be used directly in function body of `foo`
-        x = CustomData(c1, ...)
+        # `CustomData` is an argument of `foo`
+        foo(CustomData(1, ...))
 
     When called like ``y = foo(x)``, the following steps occur:
 
-    1. JIT compiler generates MLIR function definition using ``__get_mlir_types__``:
+    1. JIT compiler generates MLIR function definition using ``__get_mlir_types__``
 
     .. code-block:: mlir
 
-        func @foo(%arg0: i32, ...) -> i32 {
+        func.func @foo(%arg0: i32, ...) {
             ...
+
+            return
         }
 
-    2. Function is traced in Python, wrapping MLIR values with ``__new_from_mlir_values__``:
+    2. JIT function can't use values from Python, so it needs to reconstruct the object from
+    MLIR values, a.k.a `%arg0`, with ``__new_from_mlir_values__`` and pass it to `foo`.
+
+    Following code demonstrates how JIT compiler reconstructs the object and pass to Python.
 
     .. code-block:: python
 
         # Implementation of IR tracing
         new_x = CustomData(ir.Value(%arg0), ...)
         y = foo(new_x)
-        # `x.int_value` is %arg0 rather than `c1` defined outside
+        # `x.int_value` is %arg0 rather than `c1` defined by Python.
 
-    3. For Python runtime execution, JIT engine invokes compiled function using ``__c_pointers__``:
+    3. For Python runtime execution, JIT engine invokes compiled function using ``__c_pointers__``
+    pointing to the underlying data object passing to JIT compiled function.
 
     .. code-block:: python
 
-        jit_engine.invoke(foo, concat([x.__c_pointers__(), ...]))
+        jit_engine.invoke(compiled_foo, concat([x.__c_pointers__(), ...]))
     """
 
     def __c_pointers__(self):
@@ -224,47 +293,6 @@ class DslType(type):
     :property mlir_type: Returns the corresponding MLIR type for this DSL type
     :type mlir_type: Any
 
-    **Examples**
-
-    Define a custom data type:
-
-    .. code-block:: python
-
-        class CustomData(metaclass=DslType, ...):
-            def __init__(self, int_value, ...):
-                self.int_value = int_value
-                ...
-
-            def __str__(cls):
-                return "CustomData[int, ...]"
-
-            def __c_pointers__(self):
-                return [ctypes.pointer(ctypes.c_int32(self.int_value)), ...]
-
-            def __get_mlir_types__(self):
-                return [_T.i32(), ...]
-
-            def __extract_mlir_values__(self):
-                return [self.int_value, ...]
-
-            def __new_from_mlir_values__(self, values):
-                return CustomData(values[0], ...)
-
-    For JIT function calls, MLIR values are extracted with ``__extract_mlir_values__``:
-
-    .. code-block:: python
-
-        @jit
-        def caller():
-            x = CustomData(1, ...)
-            return foo(x)
-
-    .. code-block:: mlir
-
-        func @caller() -> i32 {
-            %0 = func.call @foo(%arg0, ...) : (i32, ...) -> i32
-            return %0 : i32
-        }
     """
 
     _is_abstract: bool
@@ -629,7 +657,7 @@ def _binary_op_type_promote(a, b, promote_bool: bool = False):
     b_type = b.dtype
 
     # Early return for same types (except when they're bools that need promotion)
-    if a_type == b_type and not (promote_bool and a_type.width == 1):
+    if a_type == b_type and not (promote_bool and a_type is Boolean):
         return a, b, a_type
 
     # Handle floating point promotions
@@ -946,9 +974,12 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         :return: The result of the logical not operation
         :rtype: Boolean
         """
-        ty = type(self)
-        zero_val = arith.constant(ty.mlir_type, ty.zero)
-        return self.__eq__(ty(zero_val), loc=loc, ip=ip)
+        if isinstance(self.value, (int, float, bool)):
+            return not self.value
+        else:
+            ty = type(self)
+            zero_val = arith.constant(ty.mlir_type, ty.zero)
+            return self.__eq__(ty(zero_val), loc=loc, ip=ip)
 
     def __dsl_and__(self, other, *, loc=None, ip=None):
         """DSL implementation of Python's `and` operator.
@@ -1055,6 +1086,15 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
                     "Ensure not using patterns that DSL does not support.",
                     "Otherwise, please file a bug report.",
                 ],
+            )
+
+    def __index__(self):
+        if isinstance(self.value, (int, float, bool)):
+            return self.value
+        else:
+            raise DSLRuntimeError(
+                f"'{type(self.value)}' object cannot be interpreted as an integer",
+                suggestion="Mark the loop as dynamic with `dynamic_expr` or `range_dynamic` and decorate the parent function with `jit` decorator",
             )
 
     def __neg__(self, *, loc=None, ip=None):
@@ -1315,10 +1355,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
 
     def __invert__(self, *, loc=None, ip=None):
         res_type = type(self)
-        # Create a constant of -1 (all bits set to 1) of the same type as value
-        all_ones = arith.constant(res_type.mlir_type, -1)
-        # XOR with -1 gives us bitwise NOT
-        return res_type(arith.xori(self.ir_value(), all_ones, loc=loc, ip=ip))
+        return res_type(self.ir_value(loc=loc, ip=ip).__invert__(loc=loc, ip=ip))
 
     def __lshift__(self, other, *, loc=None, ip=None):
         return _binary_op(operator.lshift)(self, other, loc=loc, ip=ip)
@@ -1457,18 +1494,14 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
        - Converted using Python's bool() function
        - Example: Boolean(1) -> True, Boolean(0) -> False
 
-    2. Boolean:
-       - Direct value assignment
-       - Example: Boolean(Boolean(True)) -> True
+    2. Numeric:
+       - Uses the Numeric.value to construct Boolean recursively
 
-    3. Numeric:
-       - Uses the __dsl_bool__ method of the Numeric type
-
-    4. MLIR Value with IntegerType:
+    3. MLIR Value with IntegerType:
        - If width is 1: Direct assignment
        - Otherwise: Compares with 0 using arith.cmpi
 
-    5. MLIR Value with FloatType:
+    4. MLIR Value with FloatType:
        - Compares with 0.0 using arith.cmpf
        - Uses unordered comparison to handle NaN values
     """
@@ -1479,19 +1512,35 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
-        elif isinstance(a, Boolean):
-            value = a.value
         elif isinstance(a, Numeric):
-            value = a.__dsl_bool__(loc=loc, ip=ip)
+            Boolean.__init__(self, a.value, loc=loc, ip=ip)
+            return
         elif isinstance(a, ArithValue):
             if a.type == T.bool():
                 value = a
             else:
-                value = a != arith_helper.const(0, a.type)
-
+                value = a != arith_helper.const(0, a.type, loc=loc, ip=ip)
         if value is None:
             raise DSLRuntimeError(f"Cannot convert {a} to Boolean")
         super().__init__(value, loc=loc, ip=ip)
+        self._value_int8 = None
+
+    def ir_value_int8(self, *, loc=None, ip=None):
+        """
+        Returns int8 ir value of Boolean.
+        When we need to store Boolean tensor element, use ir_value_int8().
+
+        :param loc: Source location information, defaults to None
+        :type loc: Optional[Location], optional
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint], optional
+        :return: The int8 value of this Boolean
+        :rtype: ir.Value
+        """
+        if self._value_int8 is not None:
+            return self._value_int8
+        self._value_int8 = Int8(self.value, loc=loc, ip=ip).ir_value()
+        return self._value_int8
 
     def __neg__(self, *, loc=None, ip=None):
         """Negation operator is not supported for boolean type.
@@ -1804,7 +1853,7 @@ class IRVariadic:
 
     def __init__(self, operands):
         """
-        Create a list of variadic operands. `operands` must be SSA values.
+        Create a list of variadic operands. `operands` must be dynamic values.
         """
         self.operands = operands
 

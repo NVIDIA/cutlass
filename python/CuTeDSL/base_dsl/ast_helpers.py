@@ -15,6 +15,8 @@ The preprocessor read through python's ast and changes the input code.
 """
 
 from typing import Callable, Iterator, Optional, overload
+from typing_extensions import deprecated
+import warnings
 
 from .utils.logger import log
 from .common import *
@@ -30,13 +32,9 @@ class Executor:
         set_functions:  Assigns the functions for checking loop bounds and
                         conditional evaluation.
 
-        for_dynamic: Generates MLIR for OP
-        for_constexpr: Executes a for loop at JIT compile-time
-        for_execute: Decides whether to execute the loop at compile-time or generate MLIR for OP based on the provided bounds.
-
-        if_dynamic: Generates MLIR if OP
-        if_constexpr: Executes a if at JIT compile-time by python interpreter
-        if_execute: Decides whether to execute the if statement at compile-time or generate MLIR if OP based on the predicate.
+        for_execute: Generates MLIR for OP
+        while_execute: Generates MLIR while OP
+        if_execute: generate MLIR if OP
     """
 
     def __init__(self):
@@ -44,6 +42,9 @@ class Executor:
         self._loop_execute_range_dynamic = None
         self._if_dynamic = None
         self._while_dynamic = None
+        self._compare_executor = None
+        self._any_executor = None
+        self._all_executor = None
 
     def set_functions(
         self,
@@ -51,11 +52,17 @@ class Executor:
         loop_execute_range_dynamic: Callable,
         if_dynamic: Callable,
         while_dynamic: Callable,
+        compare_executor: Callable,
+        any_executor: Callable = None,
+        all_executor: Callable = None,
     ):
         self._is_dynamic_expression = is_dynamic_expression
         self._loop_execute_range_dynamic = loop_execute_range_dynamic
         self._if_dynamic = if_dynamic
         self._while_dynamic = while_dynamic
+        self._compare_executor = compare_executor
+        self._any_executor = any_executor
+        self._all_executor = all_executor
 
     @staticmethod
     def convert_to_list(x):
@@ -83,31 +90,6 @@ class Executor:
             return res[0]
         return res
 
-    def for_dynamic(
-        self,
-        func: Callable,
-        start,
-        stop,
-        step,
-        used_args: list,
-        iter_args: list,
-        iter_arg_names: list,
-        unroll=bool,
-        unroll_full=int,
-    ):
-        log().info("start [%s] stop [%s] step [%s]", start, stop, step)
-        return self._loop_execute_range_dynamic(
-            func,
-            start,
-            stop,
-            step,
-            used_args,
-            iter_args,
-            iter_arg_names,
-            unroll,
-            unroll_full,
-        )
-
     @staticmethod
     def for_constexpr(
         func: Callable,
@@ -117,7 +99,7 @@ class Executor:
         used_args: list,
         iter_args: list,
     ):
-        log().info("start [%s] stop [%s] step [%s]", start, stop, step)
+        log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
         loop_results = iter_args
         log().debug("iter_args [%s]", iter_args)
         for i in range(start, stop, step):
@@ -143,44 +125,14 @@ class Executor:
         iter_arg_names=[],
         unroll=-1,
         unroll_full=False,
-        is_range_constexpr=None,
+        pipelining=None,
     ):
         assert (
-            self._loop_execute_range_dynamic and self._is_dynamic_expression
+            self._loop_execute_range_dynamic
         ), "Functions must be set before execution."
         log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
-        any_dynamic_expression = (
-            self._is_dynamic_expression(start)
-            or self._is_dynamic_expression(stop)
-            or self._is_dynamic_expression(step)
-        )
 
-        if is_range_constexpr is None:
-            if not any_dynamic_expression:
-                return self.for_constexpr(func, start, stop, step, used_args, iter_args)
-            else:
-                return self.for_dynamic(
-                    func,
-                    start,
-                    stop,
-                    step,
-                    used_args,
-                    iter_args,
-                    iter_arg_names,
-                    unroll,
-                    unroll_full,
-                )
-
-        # Ensure bounds are compile-time constants for constexpr execution
-        if is_range_constexpr:
-            if any_dynamic_expression:
-                raise DSLRuntimeError(
-                    "Loop bounds must be constexpr (compile-time constants)"
-                )
-            return self.for_constexpr(func, start, stop, step, used_args, iter_args)
-
-        # MLIR generation
-        return self.for_dynamic(
+        return self._loop_execute_range_dynamic(
             func,
             start,
             stop,
@@ -190,39 +142,8 @@ class Executor:
             iter_arg_names,
             unroll,
             unroll_full,
+            pipelining,
         )
-
-    def if_dynamic(
-        self,
-        pred,
-        then_block: Callable,
-        else_block: Optional[Callable] = None,
-        used_args=[],
-        yield_args=[],
-        yield_arg_names=[],
-    ):
-        return self._if_dynamic(
-            pred, then_block, else_block, used_args, yield_args, yield_arg_names
-        )
-
-    @staticmethod
-    def if_constexpr(
-        pred,
-        then_block: Callable,
-        else_block: Optional[Callable] = None,
-        used_args=[],
-        yield_args=[],
-    ):
-        if pred:
-            log().debug(" running then block [%s]", yield_args)
-            res = then_block(*used_args, *yield_args)
-            log().debug("result [%s]", res)
-            return Executor.converge_ret_val(res)
-        elif else_block is not None:
-            log().debug("running else [%s]", yield_args)
-            res = else_block(*used_args, *yield_args)
-            log().debug("result [%s]", res)
-            return Executor.converge_ret_val(res)
 
     def if_execute(
         self,
@@ -232,93 +153,13 @@ class Executor:
         used_args=[],
         yield_args=[],
         yield_arg_names=[],
-        if_constexpr=None,
     ):
-        assert (
-            self._if_dynamic and self._is_dynamic_expression
-        ), "Functions must be set before execution."
-
-        is_if_constexpr = not self._is_dynamic_expression(pred)
-        if if_constexpr is None:
-            if is_if_constexpr:
-                return self.if_constexpr(
-                    pred, then_block, else_block, used_args, yield_args
-                )
-            else:
-                return self.if_dynamic(
-                    pred, then_block, else_block, used_args, yield_args, yield_arg_names
-                )
-
-        # Ensure bounds are compile-time constants for constexpr execution
-        if if_constexpr:
-            if not is_if_constexpr:
-                raise DSLRuntimeError(
-                    "If predicate must be constexpr (compile-time constants)"
-                )
-            return self.if_constexpr(
-                pred, then_block, else_block, used_args, yield_args
-            )
+        assert self._if_dynamic, "Functions must be set before execution."
 
         # MLIR generation
-        return self.if_dynamic(
+        return self._if_dynamic(
             pred, then_block, else_block, used_args, yield_args, yield_arg_names
         )
-
-    def while_dynamic(
-        self,
-        while_before_block: Callable,
-        while_after_block: Callable,
-        used_args=[],
-        yield_args=[],
-        yield_arg_names=[],
-    ):
-        return self._while_dynamic(
-            while_before_block,
-            while_after_block,
-            used_args,
-            yield_args,
-            yield_arg_names,
-        )
-
-    @staticmethod
-    def while_constexpr(
-        while_before_block,
-        while_after_block,
-        used_args=[],
-        yield_args=[],
-    ):
-        log().debug(
-            "while_constexpr begin %s", while_before_block.__qualname__
-        )
-        cond, loop_results = while_before_block(*used_args, *yield_args)
-        while cond:
-            loop_results = Executor.convert_to_list(loop_results)
-            log().debug(
-                "calling while_after [%s], [%s]",
-                used_args,
-                loop_results,
-            )
-            loop_results = while_after_block(*used_args, *loop_results)
-            log().debug(
-                "while after [%s]", loop_results
-            )
-            loop_results = Executor.convert_to_list(loop_results)
-            log().debug(
-                "calling while_before [%s], [%s]",
-                used_args,
-                loop_results,
-            )
-            cond, loop_results = while_before_block(*used_args, *loop_results)
-            log().debug(
-                "while_before cond, results [%s], [%s]",
-                cond,
-                loop_results,
-            )
-
-        log().debug(
-            "while_constexpr results %s", loop_results
-        )
-        return Executor.converge_ret_val(loop_results)
 
     def while_execute(
         self,
@@ -328,26 +169,11 @@ class Executor:
         used_args=[],
         yield_args=[],
         yield_arg_names=[],
-        while_constexpr=None,
     ):
-        assert (
-            self._while_dynamic and self._is_dynamic_expression
-        ), "Functions must be set before execution."
-
-        is_while_constexpr = not self._is_dynamic_expression(pred)
-
-        # Ensure bounds are compile-time constants for constexpr execution
-        if while_constexpr:
-            if not is_while_constexpr:
-                raise DSLRuntimeError(
-                    "While predicate must be constexpr (compile-time constants)"
-                )
-            return self.while_constexpr(
-                while_before_block, while_after_block, used_args, yield_args
-            )
+        assert self._while_dynamic, "Functions must be set before execution."
 
         # MLIR generation
-        return self.while_dynamic(
+        return self._while_dynamic(
             while_before_block,
             while_after_block,
             used_args,
@@ -367,15 +193,16 @@ def loop_selector(
     start,
     stop,
     step,
+    *,
     used_args=[],
     iter_args=[],
     iter_arg_names=[],
     unroll=-1,
     unroll_full=False,
-    constexpr=None,
+    pipelining=None,
 ):
-    log().info(
-        "start [%s] stop [%s] step [%s] used_args [%s] iter_args [%s] unroll [%s] unroll_full [%s] constexpr [%s]",
+    log().debug(
+        "start [%s] stop [%s] step [%s] used_args [%s] iter_args [%s] unroll [%s] unroll_full [%s] pipelining [%s]",
         start,
         stop,
         step,
@@ -383,7 +210,7 @@ def loop_selector(
         iter_args,
         unroll,
         unroll_full,
-        constexpr,
+        pipelining,
     )
     from .typing import Integer, Numeric
 
@@ -408,14 +235,14 @@ def loop_selector(
             iter_arg_names,
             unroll,
             unroll_full,
-            constexpr,
+            pipelining,
         )
 
     return ir_loop
 
 
 def if_selector(pred, used_args=[], yield_args=[]):
-    log().info("pred [%s] used_args [%s] yield_args [%s]", pred, used_args, yield_args)
+    log().debug("pred [%s] used_args [%s] yield_args [%s]", pred, used_args, yield_args)
     # Handle Numeric types here?
 
     from .typing import Numeric
@@ -443,7 +270,6 @@ def while_executor(
     used_args=[],
     yield_args=[],
     yield_arg_names=[],
-    constexpr=None,
 ):
     return executor.while_execute(
         pred,
@@ -452,7 +278,6 @@ def while_executor(
         used_args,
         yield_args,
         yield_arg_names,
-        constexpr,
     )
 
 
@@ -463,10 +288,9 @@ def if_executor(
     used_args=[],
     yield_args=[],
     yield_arg_names=[],
-    constexpr=None,
 ):
     return executor.if_execute(
-        pred, then_block, else_block, used_args, yield_args, yield_arg_names, constexpr
+        pred, then_block, else_block, used_args, yield_args, yield_arg_names
     )
 
 
@@ -475,54 +299,31 @@ def if_executor(
 # =============================================================================
 
 
-class range_dynamic:
+class range:
     @overload
-    def __new__(cls, stop, unroll=0, unroll_full=False):
+    def __new__(cls, stop, unroll=0, unroll_full=False, pipelining=None):
         pass
 
     @overload
-    def __new__(cls, start, stop, step, unroll=0, unroll_full=False):
+    def __new__(cls, start, stop, step, unroll=0, unroll_full=False, pipelining=None):
         pass
 
     def __new__(cls, *args, **kwargs):
-        raise DSLRuntimeError("range_dynamic should be always preprocessed to IR")
-
-
-class range_constexpr:
-    def __init__(self, *args):
-        if len(args) == 1:
-            self.start = 0
-            self.stop = args[0]
-            self.step = 1
-        elif len(args) == 2:
-            self.start, self.stop = args
-            self.step = 1
-        elif len(args) == 3:
-            self.start, self.stop, self.step = args
-        else:
-            raise DSLRuntimeError(
-                "range_constexpr supports up to 3 arguments (start, stop, step)"
-            )
-        # Ensure the arguments are compile-time constants (if required)
-        for arg_name, arg_value in [
-            ("step", self.step),
-            ("start", self.start),
-            ("stop", self.stop),
-        ]:
-            if executor._is_dynamic_expression(arg_value):
-                raise DSLRuntimeError(
-                    f"`range_constexpr` requires `constexpr` (non-IR Values) for all arguments, "
-                    f"but `{arg_name}` is not. If the arguments are dynamic, use `range`; the DSL "
-                    f"will handle them during runtime. ",
-                    suggestion="Use `range` instead of `range_constexpr`.",
-                )
+        raise DSLRuntimeError("dynamic range should be always preprocessed to IR")
 
     def __iter__(self) -> Iterator[int]:
-        current = self.start
-        while current < self.stop:
-            yield current
-            current += self.step
+        raise DSLRuntimeError("dynamic range should be always preprocessed to IR")
 
+
+@deprecated(
+    "range_dynamic is deprecated and will be removed in the future, please remove it."
+)
+def range_dynamic(*args, **kwargs):
+    raise DSLRuntimeError("range_dynamic should be always preprocessed to IR")
+
+
+def range_constexpr(*args):
+    raise DSLRuntimeError("range_constexpr should be preprocessed by preprocessor.")
 
 # =============================================================================
 # If expressions
@@ -530,20 +331,38 @@ class range_constexpr:
 
 
 def const_expr(expression):
-    if executor._is_dynamic_expression(expression):
+    """
+    This function is used to check if the expression is a python value.
+    If the expression is a python value, return the boolean value of the expression.
+    If the expression is a dynamic expression, raise an error.
+    """
+    from .typing import Numeric
+
+    failed = False
+
+    if isinstance(expression, Numeric):
+        if isinstance(expression.value, (int, float, bool)):
+            return expression.value
+        else:
+            failed = True
+    elif executor._is_dynamic_expression(expression):
+        failed = True
+
+    if failed:
         raise DSLRuntimeError(
             f"The function `const_expr({expression})` received a dynamic expression (non compile-time constant).",
             context={
-                "const_expr": "Accepts only constexpr (compile-time constant)",
-                "If your expression depends on dynamic values": "Avoid marking it as `const_expr()`",
-                "If the expression could be either dynamic or constexpr": "Omit explicit `const_expr()` marker; the DSL will infer the correct handling automatically",
+                "If your expression depends on dynamic values": "Remove `const_expr()`",
             },
         )
     return expression
 
 
+@deprecated(
+    "dynamic_expr is deprecated and will be removed in the future, please remove it."
+)
 def dynamic_expr(expression):
-    raise DSLRuntimeError("dynamic_expr should be always preprocessed to IR")
+    return expression
 
 
 # =============================================================================
@@ -582,3 +401,86 @@ def bool_cast(value):
             suggestion = "Please explicitly convert to boolean with expressions like comparision."
         )
     return bool(value)
+
+def compare_executor(left, comparators, ops):
+    """
+    Executes comparison operations with a left operand and a list of comparators.
+
+    Args:
+        left: The leftmost value in the comparison chain
+        comparators: A list of values to compare against
+        ops: A list of comparison operators to apply
+
+    Returns:
+        The result of the comparison chain
+
+    Raises:
+        AssertionError: If the executor function is not set before execution
+    """
+    assert (
+        executor._compare_executor is not None
+    ), "Function must be set before execution."
+    return executor._compare_executor(left, comparators, ops)
+
+
+def any_executor(iterable):
+    """Executes the 'any' operation on an iterable, handling both dynamic and static expressions.
+
+    :param iterable: An iterable to check if any elements evaluate to True
+    :type iterable: Iterable
+    :return: boolean of Python value or IR value
+    :rtype: bool or cutlass.Boolean
+
+    """
+    if executor._any_executor and executor._is_dynamic_expression(iterable):
+        return executor._any_executor(iterable)
+    else:
+        return any(iterable)
+
+
+def all_executor(iterable):
+    """Executes the 'all' operation on an iterable, handling both dynamic and static expressions.
+
+    :param iterable: An iterable to check if all elements evaluate to True
+    :type iterable: Iterable
+    :return: boolean of Python value or IR value
+    :rtype: bool or cutlass.Boolean
+    """
+    if executor._all_executor and executor._is_dynamic_expression(iterable):
+        return executor._all_executor(iterable)
+    else:
+        return all(iterable)
+
+
+# =============================================================================
+# Control flow checks
+# =============================================================================
+def range_value_check(*args):
+    """
+    Ensure all `range_constexpr` bounds are compile-time constants (Python ints).
+    """
+    try:
+        return tuple(arg.__index__() for arg in args)
+    except:
+        raise DSLRuntimeError(
+            "`range_constexpr` requires constexpr (compile-time constant) for all arguments.",
+            suggestion="Use `range` instead of `range_constexpr`.",
+        )
+
+
+def range_perf_warning(filename, lineno, *args):
+    has_dynamic_expr = False
+    for arg in args:
+        if executor._is_dynamic_expression(arg):
+            has_dynamic_expr = True
+            break
+    if not has_dynamic_expr:
+        warnings.warn_explicit(
+            (
+                "The loop was previously unrolled in Python, but now it may not unroll in IR. This may cause performance regression."
+                "If you want to unroll the loop in Python, please use `range_constexpr` instead of `range`."
+            ),
+            category=UserWarning,
+            filename=filename,
+            lineno=lineno,
+        )

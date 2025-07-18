@@ -164,16 +164,17 @@ def _mlir_type_to_numpy_type(type):
 
 def is_dynamic_expression(value):
     """
-    Check if the value is an MLIR's SSA value.
+    Given the `value`, check if itself is an IR value or recursively go through it to check if it contains IR value
     """
-    # Case 1: If the value has MLIR's SSA value, return True
-    # Case 2: If the value supports __extract_mlir_values__ then it's possible to get SSA value
-    return (
-        isinstance(value, ir.Value)
-        or hasattr(value, "__extract_mlir_values__")
-        or len(extract_mlir_values(value)) > 0
-    )
-
+    if isinstance(value, (tuple, list)):
+        for x in value:
+            if is_dynamic_expression(x):
+                return True
+    elif isinstance(value, (ir.Value, ir.BlockArgumentList)) or hasattr(
+        value, "__extract_mlir_values__"
+    ):
+        return True
+    return False
 
 def extract_mlir_values(obj):
     """
@@ -566,7 +567,9 @@ class BaseDSL:
                 log().debug("Processing [%d] Argument [%s : %s]", i, arg_name, arg_spec)
 
                 # Implicit cast to NumericMeta
-                if isinstance(arg_spec, t.NumericMeta):
+                if isinstance(arg_spec, t.NumericMeta) and not isinstance(
+                    arg, arg_spec
+                ):
                     arg = t.cast(arg, arg_spec)
 
                 ir_arg, iv_block_args = (
@@ -589,15 +592,17 @@ class BaseDSL:
                 self.log_additions(ir_arg)
                 ir_args.extend(ir_arg)
 
-            return ir_args
+            return ir_args, iv_block_args
 
         fop_args = list(fop.regions[0].blocks[0].arguments)
-        ir_args = gen_exec_args(args, args_spec.args, args_spec.annotations, fop_args)
-        ir_kwargs = gen_exec_args(
+        ir_args, iv_block_args = gen_exec_args(
+            args, args_spec.args, args_spec.annotations, fop_args
+        )
+        ir_kwargs, _ = gen_exec_args(
             [kwargs[arg] for arg in args_spec.kwonlyargs],
             args_spec.kwonlyargs,
             args_spec.annotations,
-            fop_args[len(ir_args) :],
+            fop_args[iv_block_args:],
         )
         ir_kwargs = {k: v for k, v in zip(args_spec.kwonlyargs, ir_kwargs)}
 
@@ -716,10 +721,13 @@ class BaseDSL:
 
         assert len(args) == len(args_spec.args) and len(kwargs) == len(
             args_spec.kwonlyargs
-        ), f"Input args {len(args)=} and kwargs {len(kwargs)=} must match arg_spec.args "
-        f"{len(args_spec.args)=} and arg_spec.kwonlyargs {len(args_spec.kwonlyargs)=}"
+        ), (
+            f"Input args {len(args)=} and kwargs {len(kwargs)=} must match arg_spec.args "
+            f"{len(args_spec.args)=} and arg_spec.kwonlyargs {len(args_spec.kwonlyargs)=}"
+        )
 
         jit_arg_types, jit_arg_attrs, jit_exec_args = [], [], []
+        jit_adapted_args = []
         default_attr = ir.DictAttr.get({})
 
         input_args = [*args, *kwargs.values()]
@@ -729,7 +737,7 @@ class BaseDSL:
             log().debug("Processing [%d] Argument [%s : %s]", i, arg_name, spec_ty)
 
             # Implicitly convert into Numeric type if possible
-            if isinstance(spec_ty, t.NumericMeta):
+            if isinstance(spec_ty, t.NumericMeta) and not isinstance(arg, spec_ty):
                 arg = t.cast(arg, spec_ty)
 
             # Type safety check
@@ -753,7 +761,9 @@ class BaseDSL:
                 # If not any known type, try JIT argument adapter
                 # to convert the argument
                 adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
-                arg = adapter(arg) if adapter else arg
+                if adapter:
+                    arg = adapter(arg)
+                    jit_adapted_args.append(arg)
 
                 if is_host:
                     jit_exec_arg.extend(get_c_pointers(arg))
@@ -792,14 +802,14 @@ class BaseDSL:
                 jit_arg_types.extend(jit_arg_type)
                 jit_arg_attrs.extend(jit_arg_attr)
 
-        return jit_exec_args, jit_arg_types, jit_arg_attrs
+        return jit_exec_args, jit_arg_types, jit_arg_attrs, jit_adapted_args
 
     def generate_mlir_function_types(
         self, func, function_name, input_args, kwargs, args_spec: inspect.FullArgSpec
     ):
         """Convert input arguments to MLIR function signature also convert numpy arrays to memref."""
 
-        exe_args, types, _ = self._generate_jit_func_args(
+        exe_args, types, attrs, adapted_args = self._generate_jit_func_args(
             func, function_name, input_args, kwargs, args_spec, is_host=True
         )
 
@@ -810,7 +820,7 @@ class BaseDSL:
             types
         ), "expects the same number of arguments and function parameters"
 
-        return exe_args, types
+        return exe_args, types, adapted_args
 
     @dataclass
     class LaunchConfig:
@@ -1152,7 +1162,7 @@ class BaseDSL:
         """Generate MLIR module and compile iself.T_provider."""
         with ir.Context(), ir.Location.unknown():
             # Convert input arguments to MLIR arguments
-            exe_args, func_types = self.generate_mlir_function_types(
+            exe_args, func_types, adapted_args = self.generate_mlir_function_types(
                 funcBody, function_name, args, kwargs, args_spec
             )
 
@@ -1470,7 +1480,7 @@ class BaseDSL:
         if self.device_compilation_only:
             return kernel_operands, kernel_arg_types, kernel_arg_attrs
 
-        kernel_operands, kernel_arg_types, kernel_arg_attrs = (
+        kernel_operands, kernel_arg_types, kernel_arg_attrs, _ = (
             self._generate_jit_func_args(
                 kernel_func, kernel_name, args, kwargs, args_spec, is_host=False
             )
@@ -1580,12 +1590,14 @@ class BaseDSL:
                     if self.device_compilation_only:
                         log().debug("Generating cuda-python arguments")
                         # Convert input arguments to MLIR arguments
-                        self.exe_args, kernel_types = self.generate_mlir_function_types(
-                            funcBody,
-                            kernel_name,
-                            canonicalized_args,
-                            canonicalized_kwargs,
-                            args_spec,
+                        self.exe_args, kernel_types, _ = (
+                            self.generate_mlir_function_types(
+                                funcBody,
+                                kernel_name,
+                                canonicalized_args,
+                                canonicalized_kwargs,
+                                args_spec,
+                            )
                         )
 
                     helper = kernelGenHelper()

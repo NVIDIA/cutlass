@@ -355,6 +355,10 @@ class GemmOperation:
 
   # Generates the full kernel function name
   def procedural_name(self):
+    return self._procedural_name
+
+  @functools.cached_property
+  def _procedural_name(self):
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
@@ -994,6 +998,12 @@ ${compile_guard_end}
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
 
+    alignment_c = get_tma_alignment(operation.C.element) \
+                  if is_tma_epilogue(operation.epilogue_schedule) and opcode_class_epi != OpcodeClass.Simt \
+                  else operation.C.alignment
+    alignment_d = get_tma_alignment(operation.D.element) \
+                  if is_tma_epilogue(operation.epilogue_schedule) and opcode_class_epi != OpcodeClass.Simt \
+                  else operation.D.alignment
 
     operation_name_str = operation.procedural_name()
     layout_a_str = LayoutTag[instance_layout_A]
@@ -1103,8 +1113,8 @@ using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig
       'stages': stage_count_string,
       'align_a': str(operation.A.alignment),
       'align_b': str(operation.B.alignment),
-      'align_c': str(operation.C.alignment),
-      'align_d': str(operation.C.alignment),
+      'align_c': str(alignment_c),
+      'align_d': str(alignment_d),
       'transform_a': ComplexTransformTag[operation.A.complex_transform],
       'transform_b': ComplexTransformTag[operation.B.complex_transform],
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],

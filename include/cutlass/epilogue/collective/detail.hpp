@@ -206,6 +206,16 @@ struct IsThreadEpilogueOpWithPerChannelScaling <ThreadEpilogueOp, cute::enable_i
 };
 
 template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithResidualAdd {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithResidualAdd <ThreadEpilogueOp, cute::void_t<decltype(ThreadEpilogueOp::IsResidualSupported)>> {
+  static constexpr bool value = ThreadEpilogueOp::IsResidualSupported;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
 struct IsThreadEpilogueOpWithActivation {
   static constexpr bool value = false;
   using type = void;
@@ -215,6 +225,16 @@ template <typename ThreadEpilogueOp>
 struct IsThreadEpilogueOpWithActivation <ThreadEpilogueOp, cute::enable_if_t<ThreadEpilogueOp::IsEltActSupported>> {
   static constexpr bool value = true;
   using type = typename ThreadEpilogueOp::ActivationFn;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithPerChannelScaled {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithPerChannelScaled <ThreadEpilogueOp, cute::void_t<decltype(ThreadEpilogueOp::IsPerRowScaleSupported)>> {
+  static constexpr bool value = ThreadEpilogueOp::IsPerRowScaleSupported || ThreadEpilogueOp::IsPerColScaleSupported;
 };
 
 template <typename ThreadEpilogueOp, typename = void>

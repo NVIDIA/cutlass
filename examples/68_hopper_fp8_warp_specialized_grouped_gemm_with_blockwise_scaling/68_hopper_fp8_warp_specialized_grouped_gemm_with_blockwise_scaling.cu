@@ -250,8 +250,6 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90GroupParams<Shape<int,int,int>>::RasterOrderOptions;
-
 /// Result structure
 struct Result
 {
@@ -518,7 +516,7 @@ GemmArguments args_from_options(const OptionType &options, bool host_problem_sha
     fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
   }
 
-  arguments.scheduler.raster_order = options.raster;
+  arguments.scheduler.raster_order = options.raster_order;
   // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8)
   arguments.scheduler.max_swizzle_size = options.swizzle;
 
@@ -690,10 +688,10 @@ int run(OptionType &options, bool host_problem_shapes_available = true)
 
     std::string raster = "Heuristic";
 
-    if (options.raster == RasterOrderOptions::AlongN) {
+    if (options.raster_order == RasterOrderOptions::AlongN) {
       raster = "Along N";
     }
-    else if (options.raster == RasterOrderOptions::AlongM) {
+    else if (options.raster_order == RasterOrderOptions::AlongM) {
       raster = "Along M";
     }
 
@@ -747,7 +745,7 @@ int main(int argc, char const **args) {
   // Parse options
   //
 
-  Options<RasterOrderOptions, ProblemShape> options;
+  Options<ProblemShape> options;
 
   options.parse(argc, args);
 

@@ -20,7 +20,7 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError
-from ...core import MmaOp, Trait, _pack_shape, rank, depth
+from ...core import MmaOp, Trait, _pack_shape, rank, depth, _Tensor
 from ...typing import (
     Shape,
     Float16,
@@ -30,6 +30,7 @@ from ...typing import (
     Float8E5M2,
     Float8E4M3FN,
     Numeric,
+    AddressSpace,
 )
 
 
@@ -166,6 +167,30 @@ class MmaOp(MmaOp):
             + f"\n  B major mode          = {self.b_major_mode}"
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
+
+    def _verify_fragment_A(self, input: _Tensor, *, loc=None, ip=None):
+        if input.memspace == AddressSpace.smem and isinstance(
+            input.layout.type, _cute_ir.ComposedLayoutType
+        ):
+            raise OpError(
+                self,
+                f"Expected affine layout for {self._make_trait()}'s operand A, "
+                f"but got composed layout instead: {input.layout}"
+                f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
+            )
+        return True
+
+    def _verify_fragment_B(self, input: _Tensor, *, loc=None, ip=None):
+        if input.memspace == AddressSpace.smem and isinstance(
+            input.layout.type, _cute_ir.ComposedLayoutType
+        ):
+            raise OpError(
+                self,
+                f"Expected affine layout for {self._make_trait()}'s operand B, "
+                f"but got composed layout instead: {input.layout}"
+                f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
+            )
+        return True
 
 
 class MmaTrait(Trait):
@@ -314,10 +339,10 @@ class MmaF8Op(MmaOp):
                 "expects the 'b_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
             )
         # Accumulator data type verification
-        if self.acc_dtype != Float32:
+        if self.acc_dtype not in [Float16, Float32]:
             raise OpError(
                 self,
-                "expects the 'acc_dtype' Op parameter to be Float32",
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Verify the instruction shape
         instruction_k = 32

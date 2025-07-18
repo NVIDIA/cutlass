@@ -38,7 +38,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/trace.h"
@@ -191,7 +190,7 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = 1;
-  
+
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Producer Perspective
   template <
@@ -202,7 +201,7 @@ struct CollectiveMma<
   >
   CUTLASS_DEVICE void
   load(
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       TensorA const& gA_in,
       TensorB const& gB_in,
@@ -318,13 +317,13 @@ struct CollectiveMma<
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
   CUTLASS_DEVICE void
   load_tail(
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write) {
     // Issue the epilogue waits
     /* This helps avoid early exit of blocks in Cluster
-     * Waits for all stages to either be released (all 
+     * Waits for all stages to either be released (all
      * Consumer UNLOCKs), or if the stage was never used
-     * then would just be acquired since the phase was 
+     * then would just be acquired since the phase was
      * still inverted from make_producer_start_state
      */
     pipeline.producer_tail(smem_pipe_write);
@@ -363,14 +362,14 @@ struct CollectiveMma<
 
     // Layout of warp group to thread mapping
 
-    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and
                   stride<0>(typename TiledMma::BLayout{}) == 0 and
                   size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
-    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
                                                   Int<NumThreadsPerWarpGroup>{});
 
     int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
@@ -461,7 +460,7 @@ struct CollectiveMma<
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
-      
+
       warpgroup_fence_operand(accum);
       warpgroup_arrive();
       // (V,M,K) x (V,N,K) => (V,M,N)
@@ -491,7 +490,7 @@ struct CollectiveMma<
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-    
+
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 

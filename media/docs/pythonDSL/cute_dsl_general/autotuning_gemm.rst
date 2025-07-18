@@ -3,10 +3,6 @@
 Guidance for Auto-Tuning
 ============================= 
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
-
 Numerous GEMM kernel code examples are offered within our codebase. 
 When integrating these kernels into frameworks, auto-tuning becomes essential 
 for achieving optimal performance. This involves selecting the appropriate 

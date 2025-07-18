@@ -64,6 +64,13 @@ public:
   using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
+  static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
+  static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB),
+                "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
+  static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
+
   GroupedGemmOperation3xBase(char const* name = "unknown_gemm")
       : GemmOperation3xBase<Operator_>(name, GemmKind::kGrouped) {
     this->description_.kind = OperationKind::kGroupedGemm;
@@ -152,8 +159,65 @@ protected:
       arguments.problem_sizes_3x,
       arguments.pointer_mode == ScalarPointerMode::kHost ? arguments.problem_sizes_3x_host
                                                          : nullptr};
-    operator_args.mainloop.ptr_A = static_cast<ElementA const**>(arguments.ptr_A);
-    operator_args.mainloop.ptr_B = static_cast<ElementB const**>(arguments.ptr_B);
+
+    if constexpr (IsRuntimeDataType) {
+      using ArrayElementA = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementA;
+      using ArrayElementB = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementB;
+      operator_args.mainloop.ptr_A = static_cast<ArrayElementA const**>(arguments.ptr_A);
+      operator_args.mainloop.ptr_B = static_cast<ArrayElementB const**>(arguments.ptr_B);
+
+      using RuntimeDataTypeA = typename Operator::GemmKernel::CollectiveMainloop::RuntimeDataTypeA;
+      using RuntimeDataTypeB = typename Operator::GemmKernel::CollectiveMainloop::RuntimeDataTypeB;
+
+      static_assert(cute::is_same_v<RuntimeDataTypeA, RuntimeDataTypeB>, 
+        "RuntimeDataTypeA/B should be identical, either MXF8F6F4Format or MXF4Format");
+      using RuntimeDatatypeArg = RuntimeDataTypeA;
+
+      auto mapping = [](RuntimeDatatype type) {
+        if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF8F6F4Format>) {
+          if (type == RuntimeDatatype::kE5M2) {
+            return cute::UMMA::MXF8F6F4Format::E5M2;
+          }
+          else if (type == RuntimeDatatype::kE4M3) {
+            return cute::UMMA::MXF8F6F4Format::E4M3;
+          }
+          else if (type == RuntimeDatatype::kE3M2) {
+            return cute::UMMA::MXF8F6F4Format::E3M2;
+          }
+          else if (type == RuntimeDatatype::kE2M3) {
+            return cute::UMMA::MXF8F6F4Format::E2M3;
+          }
+          else if (type == RuntimeDatatype::kE2M1) {
+            return cute::UMMA::MXF8F6F4Format::E2M1;
+          }
+          else {
+            #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && CUTLASS_DEBUG_TRACE_LEVEL >= 1
+            std::cerr << "Invalid input datatype specified. Running with e4m3." << std::endl;
+            #endif
+            return cute::UMMA::MXF8F6F4Format::E4M3;
+          }
+        }
+        else if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF4Format>) {
+          if (type == RuntimeDatatype::kE2M1) {
+            return cute::UMMA::MXF4Format::E2M1;
+          }
+          else {
+            #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && CUTLASS_DEBUG_TRACE_LEVEL >= 1
+            std::cerr << "Invalid input datatype specified. Running with e2m1." << std::endl;
+            #endif
+            return cute::UMMA::MXF4Format::E2M1;
+          }
+        }
+        // BlockScaled kernels receive either MXF4Format or MXF8F6F4Format runtime datatype
+        CUTE_GCC_UNREACHABLE;
+      };
+      operator_args.mainloop.runtime_data_type_a = mapping(arguments.runtime_input_datatype_a);
+      operator_args.mainloop.runtime_data_type_b = mapping(arguments.runtime_input_datatype_b);
+    }
+    else {
+      operator_args.mainloop.ptr_A = static_cast<ElementA const**>(arguments.ptr_A);
+      operator_args.mainloop.ptr_B = static_cast<ElementB const**>(arguments.ptr_B);
+    }
     operator_args.epilogue.ptr_C = static_cast<ElementC const**>(arguments.ptr_C);
     operator_args.epilogue.ptr_D = static_cast<ElementD**>(arguments.ptr_D);
 
@@ -166,10 +230,29 @@ protected:
     operator_args.epilogue.dD =
       static_cast<typename Operator::GemmKernel::InternalStrideD*>(this->strideD_device.data());
 
+    /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments.sm_count;
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 90) {
       operator_args.hw_info.max_active_clusters = arguments.max_active_clusters;
     }
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
+      operator_args.scheduler.max_swizzle_size = arguments.swizzle_size;
+    }
+
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
+      using Enum_t = decltype(operator_args.scheduler.raster_order);
+      switch (arguments.raster_order) {
+        case RasterOrder::kAlongN:
+          operator_args.scheduler.raster_order = Enum_t::AlongN;
+          break;
+        case RasterOrder::kAlongM:
+          operator_args.scheduler.raster_order = Enum_t::AlongM;
+          break;
+        default:
+          operator_args.scheduler.raster_order = Enum_t::Heuristic;
+      }
+    }
+
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
       operator_args.hw_info.cluster_shape =
         dim3(arguments.cluster_shape.m(), arguments.cluster_shape.n(), arguments.cluster_shape.k());
@@ -330,7 +413,6 @@ public:
     return status;
   }
 
-
   // Set arguments that should only be set once before verifying or profiling the kernel.
   // This should encompass any expensive operations that don't vary from run to run
   // (e.g., max_active_clusters).
@@ -363,9 +445,10 @@ public:
       cluster_dims,
       threads_per_block,
       kernel_ptr);
-    
+
     if (args->max_active_clusters == 0) {
-      return Status::kErrorInternal;
+      std::cerr << "Max Active Clusters could not be queried. " 
+                << "Falling back to heuristics mode (static cluster shape) or preferred cluster mode.\n";
     }
 
     return Status::kSuccess;

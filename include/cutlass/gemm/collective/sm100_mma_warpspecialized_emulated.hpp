@@ -48,7 +48,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/atom/copy_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/arch/mma_sm100.hpp"
 #include "cutlass/trace.h"
 #include "cutlass/kernel_hardware_info.hpp"
@@ -313,7 +312,7 @@ struct CollectiveMma<
 
   // Device side kernel params
   struct Params {
-    using ClusterLayout_VMNK = decltype(tiled_divide(make_layout(conditional_return<IsDynamicCluster>(make_shape(uint32_t(0), uint32_t(0), Int<1>{}), ClusterShape{})), 
+    using ClusterLayout_VMNK = decltype(tiled_divide(make_layout(conditional_return<IsDynamicCluster>(make_shape(uint32_t(0), uint32_t(0), Int<1>{}), ClusterShape{})),
                                                      make_tile(typename TiledMma::AtomThrID{})));
 
     using TMA_A = decltype(make_tma_atom_A_sm100<ElementA>(
@@ -344,11 +343,11 @@ struct CollectiveMma<
     : cluster_shape_(cluster_shape)
     , block_rank_in_cluster_(block_rank_in_cluster) {
     if constexpr (IsDynamicCluster) {
-      const bool is_fallback_cluster = (cute::size<0>(cluster_shape_) == params.cluster_shape_fallback.x && 
+      const bool is_fallback_cluster = (cute::size<0>(cluster_shape_) == params.cluster_shape_fallback.x &&
                                         cute::size<1>(cluster_shape_) == params.cluster_shape_fallback.y);
       observed_tma_load_a_ = is_fallback_cluster ? &params.tma_load_a_fallback : &params.tma_load_a;
       observed_tma_load_b_ = is_fallback_cluster ? &params.tma_load_b_fallback : &params.tma_load_b;
-    } 
+    }
     else {
       observed_tma_load_a_ = &params.tma_load_a;
       observed_tma_load_b_ = &params.tma_load_b;
@@ -366,7 +365,7 @@ struct CollectiveMma<
 
     Tensor tensor_a = make_tensor(args.ptr_A, make_layout(make_shape(M,K,L), args.dA));
     Tensor tensor_b = make_tensor(args.ptr_B, make_layout(make_shape(N,K,L), args.dB));
-  
+
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, hw_info.cluster_shape);
     // Cluster layout for TMA construction
     auto cluster_layout_vmnk = tiled_divide(make_layout(cluster_shape), make_tile(typename TiledMma::AtomThrID{}));
@@ -459,7 +458,7 @@ struct CollectiveMma<
   }
 
   /// Construct A Single Stage's Accumulator Shape
-  CUTLASS_DEVICE auto 
+  CUTLASS_DEVICE auto
   partition_accumulator_shape() {
     auto acc_shape = partition_shape_C(TiledMma{}, take<0,2>(TileShape{}));  // ((MMA_TILE_M,MMA_TILE_N),MMA_M,MMA_N)
 
@@ -917,7 +916,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE auto
   accum_init(cute::Tensor<FrgEngine, FrgLayout> const& accumulators, TmemCopyAtom tmem_cp_atom, EpilogueTile epilogue_tile) {
     // Obtain a single accumulator
-    Tensor tAcc = tensor<0>(accumulators(_,_,_,_0{})); 
+    Tensor tAcc = tensor<0>(accumulators(_,_,_,_0{}));
     // Apply epilogue subtiling
     Tensor tAcc_epi = flat_divide(tAcc, EpilogueTile{});                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
     // Create the TMEM copy for single EpilogueTile.
@@ -929,7 +928,7 @@ struct CollectiveMma<
     Tensor tTR_rGlobAcc = make_tensor<ElementAccumulator>(shape(tTR_gC));                           // (T2R,T2R_M,T2R_N)
     Tensor tTR_rAcc_float2 = recast<Array<ElementAccumulator,2>>(tTR_rAcc);                       // (T2R/2,T2R_M,T2R_N)
     Tensor tTR_rGlobAcc_float2 = recast<Array<ElementAccumulator,2>>(tTR_rGlobAcc);               // (T2R/2,T2R_M,T2R_N)
-    
+
     // Apply epilogue subtiling to bulk accumulator
     // We need to tile the whole bulk_tmem allocation with EpilogueTile.
     // The accumulation should be aware of the AccumulatorPipelineStages
@@ -959,7 +958,7 @@ struct CollectiveMma<
 
     uint32_t skip_wait = 0;
     auto mma2accum_flag = mma2accum_pipeline.consumer_try_wait(mma2accum_pipeline_consumer_state, skip_wait);
-    
+
     // 1. Global periodic accumulation in registers
     CUTLASS_PRAGMA_NO_UNROLL
     for (; k_tile_count > 0; --k_tile_count) {

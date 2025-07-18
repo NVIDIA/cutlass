@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,21 +29,55 @@
  *
  **************************************************************************************************/
 
-#include "cutlass_unit_test.h"
+#pragma once
 
-#include <cutlass/trace.h>
-#include <cute/tensor.hpp>
-#include <cute/numeric/complex.hpp>
+#include "cutlass/cutlass.h"
 
-TEST(CuTe_core, Transform) {
-  using namespace cute;
-  complex<float> array[4] = {{0,0}, {1,0}, {0,1}, {1,1}};
-  complex<float> correct[4] = {{0,0}, {1,0}, {0,-1}, {1,-1}};
-  auto tensor = make_tensor(static_cast<complex<float>*>(array), make_layout(make_shape(4)));
-  conjugate conj;
-  transform(tensor, conj);
-  for (int i = 0; i < 4; ++i)
-  {
-    EXPECT_EQ(tensor(i), correct[i]);
-  }
-}
+namespace cutlass::fmha::kernel {
+
+template<auto kTag, typename Default, typename... Options>
+struct find_option;
+
+template<auto kTag, typename Default>
+struct find_option<kTag, Default> {
+  using option_value = Default;
+};
+
+template<auto kTag, typename Default, typename Option, typename... Options>
+struct find_option<kTag, Default, Option, Options...> :
+  std::conditional_t<
+    Option::tag == kTag,
+    Option,
+    find_option<kTag, Default, Options...>
+  >
+{};
+
+template<auto kTag, typename Default, typename... Options>
+using find_option_t = typename find_option<kTag, Default, Options...>::option_value;
+
+enum class Tag {
+  kIsPersistent,
+  kNumMmaWarpGroups,
+  kLoadsQSeparately,
+
+  kIsMainloopLocked,
+  kIsEpilogueLocked,
+
+  kStagesQ,
+  kStagesKV,
+
+  kEpilogueKind,
+
+  kBlocksPerSM,
+  kClusterM,
+
+  kAccQK
+};
+
+template<auto kTag, class Value>
+struct Option {
+  static constexpr auto tag = kTag;
+  using option_value = Value;
+};
+
+}  // namespace cutlass::fmha::kernel

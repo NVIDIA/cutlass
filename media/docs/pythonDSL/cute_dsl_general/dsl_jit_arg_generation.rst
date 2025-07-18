@@ -2,12 +2,9 @@
 .. |DSL| replace:: CuTe DSL
 .. |CUSTOM_TYPES| replace:: customized types
 
-|DSL| JIT Function Argument Generation
+JIT Function Argument Generation
 =======================================
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
 
 In a nutshell
 --------------
@@ -39,7 +36,7 @@ By default, |DSL| assumes dynamic arguments and tries to infer the argument type
     import cutlass.cute as cute
 
     @cute.jit
-    def foo(x: cutlass.Int32, y: cute.Constexpr):
+    def foo(x: cutlass.Int32, y: cutlass.Constexpr):
         print("x = ", x)        # Prints x = ?
         print("y = ", y)        # Prints y = 2
         cute.printf("x: {}", x) # Prints x: 2

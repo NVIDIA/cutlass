@@ -194,6 +194,9 @@ struct integer_subbyte {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// 1-bit binary type
+using bin1_t = bool;
+
 /// 1-bit Unsigned integer type
 using uint1b_t = integer_subbyte<1, false>;
 
@@ -209,13 +212,11 @@ using int4b_t = integer_subbyte<4, true>;
 /// 4-bit Unsigned integer type
 using uint4b_t = integer_subbyte<4, false>;
 
+/// 6-bit integer type
+using int6b_t = integer_subbyte<6, true>;
 
 /// 6-bit unsigned integer type
 using uint6b_t = integer_subbyte<6, false>;
-
-
-/// 1-bit binary type
-using bin1_t = bool;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

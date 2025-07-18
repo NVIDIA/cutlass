@@ -3,10 +3,6 @@
 .. |SLAY| replace:: static layout
 .. |DLAY| replace:: dynamic layout
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
-
 Static vs Dynamic layouts
 =========================
 

@@ -11,13 +11,25 @@
 
 import copy as py_copy
 from dataclasses import dataclass
+import inspect
 import math
 import operator
 from abc import ABC, abstractmethod
 from functools import lru_cache, partial, reduce
 from inspect import isclass
 from itertools import chain
-from typing import Iterable, overload, List, Tuple, Union, Type, Any, Dict, Optional
+from typing import (
+    Callable,
+    Iterable,
+    overload,
+    List,
+    Tuple,
+    Union,
+    Type,
+    Any,
+    Dict,
+    Optional,
+)
 from enum import Enum, auto
 
 from cutlass.cutlass_dsl import (
@@ -37,6 +49,7 @@ from cutlass.cutlass_dsl import (
 )
 
 from cutlass._mlir import ir
+from cutlass._mlir.dialects._ods_common import get_op_result_or_op_results
 from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass._mlir.dialects.cute import (
     ScaledBasis as _ScaledBasis,
@@ -99,10 +112,12 @@ def _pack_x(x, packer, op, *, loc=None, ip=None) -> ir.Value:
 
 
 def _pack_shape(shape: Shape, *, loc=None, ip=None) -> ir.Value:
+    _check_shape(shape)
     return _pack_x(shape, _cute_ir.pack_shape, _cute_ir.MakeShapeOp, loc=loc, ip=ip)
 
 
 def _pack_stride(stride: Stride, *, loc=None, ip=None) -> ir.Value:
+    _check_stride(stride)
     # Convert basis elements to the base class before _pack_x
     stride = transform_leaf(
         lambda x: x.to(_cute_ir.ScaledBasis) if isinstance(x, ScaledBasis) else x,
@@ -112,16 +127,20 @@ def _pack_stride(stride: Stride, *, loc=None, ip=None) -> ir.Value:
 
 
 def _pack_coord(coord: Coord, *, loc=None, ip=None) -> ir.Value:
+    _check_coord(coord)
     return _pack_x(coord, _cute_ir.pack_coord, _cute_ir.MakeCoordOp, loc=loc, ip=ip)
 
 
 def _pack_int_tuple(int_tuple: IntTuple, *, loc=None, ip=None) -> ir.Value:
+    _check_int_tuple(int_tuple)
     return _pack_x(
         int_tuple, _cute_ir.pack_int_tuple, _cute_ir.MakeIntTupleOp, loc=loc, ip=ip
     )
 
 
 def _pack_tile(tile: Tile, *, loc=None, ip=None) -> ir.Value:
+    _check_tile(tile)
+
     def expand_leaves(tile) -> list:
         leaves = []
         for e in tile:
@@ -173,6 +192,63 @@ def _unpack_x_tuple(t: Union[ir.Type, ir.Value], *, loc=None, ip=None) -> XTuple
             return x
 
     return transform_leaf(post_process, res)
+
+
+####################################################################################################
+# Validation helpers
+####################################################################################################
+
+
+def _check_shape(shape: Shape) -> None:
+    if is_integer(shape):
+        if isinstance(shape, int):
+            if shape <= 0:
+                raise ValueError(
+                    f"Expected size in shape to be strictly positive, but got {shape}"
+                )
+        elif isinstance(shape, Integer):
+            pass
+        else:
+            raise TypeError(f"Expected size be int or Integer, but got {type(shape)}")
+    elif isinstance(shape, tuple):
+        for s in shape:
+            _check_shape(s)
+    else:
+        raise ValueError(
+            f"Expected Shape, which is a positive integer or tuple of Shapes, but got {shape}"
+        )
+
+
+def _check_coord(coord: Coord) -> None:
+    flat_coord = flatten_to_tuple(coord)
+    if not all(is_integer(c) or c is None for c in flat_coord):
+        raise ValueError(
+            f"Expected Coord, whose leaves are integers or None, but got {coord}"
+        )
+
+
+def _check_stride(stride: Stride) -> None:
+    flat_stride = flatten_to_tuple(stride)
+    if not all(is_integer(s) or isinstance(s, ScaledBasis) for s in flat_stride):
+        raise ValueError(
+            f"Expected Stride, whose leaves are integers or ScaledBasis, but got {stride}"
+        )
+
+
+def _check_int_tuple(int_tuple: IntTuple) -> None:
+    flat_int_tuple = flatten_to_tuple(int_tuple)
+    if not all(is_integer(d) for d in flat_int_tuple):
+        raise ValueError(
+            f"Expected IntTuple, whose leaves are integers, but got {int_tuple}"
+        )
+
+
+def _check_tile(tile: Tile) -> None:
+    flat_tile = flatten_to_tuple(tile)
+    if not all(is_integer(t) or isinstance(t, _Layout) or t is None for t in flat_tile):
+        raise ValueError(
+            f"Expected Tile, whose leaves are integers or Layout or None, but got {tile}"
+        )
 
 
 ####################################################################################################
@@ -427,7 +503,9 @@ class ScaledBasis:
     :type mode: Union[int, List[int]]
     :raises TypeError: If mode is not an integer or list of integers
 
-    **Examples**::
+    **Examples:**
+
+    .. code-block:: python
 
         # Create a scaled basis with integer scale and mode
         sb1 = ScaledBasis(2, 0)  # 2 * E(0)
@@ -571,7 +649,9 @@ def E(mode: Union[int, List[int]]) -> ScaledBasis:
     :rtype: ScaledBasis
     :raises TypeError: If mode is not an integer or a list
 
-    **Examples**::
+    **Examples:**
+
+    .. code-block:: python
 
         # Create a basis element for the first dimension (mode 0)
         e0 = E(0)
@@ -663,7 +743,7 @@ class _Layout(Layout):
     :ivar stride: An IntTuple representing the strides of the layout.
     :ivar max_alignment: The maximum alignment of the layout.
 
-    **Examples**::
+    **Examples:**
 
     .. code-block:: python
 
@@ -795,7 +875,9 @@ class _Layout(Layout):
         :param idx: The linear index to convert.
         :return: The hierarchical coordinate corresponding to the index.
 
-        **Examples**::
+        **Examples:**
+
+        .. code-block:: python
 
             layout = make_layout((4, 8), stride=(8, 1))
 
@@ -835,7 +917,9 @@ class ComposedLayout(ir.Value):
     :ivar outer: The outer layout component
     :ivar max_alignment: The maximum alignment of the composed layout
 
-    **Examples**::
+    **Examples:**
+
+    .. code-block:: python
 
         # Create a composed layout with inner layout, offset, and outer layout
 
@@ -855,11 +939,11 @@ class ComposedLayout(ir.Value):
         offset = composed.offset
         outer = composed.outer
 
-        # map coordinate (1, 2) to linear index
-        #  - outer(1, 2) = (1, 2)
-        #  - offset + outer(1, 2) = (1, 2)
-        #  - inner(1, 2) = 1 * 1 + 2 * 4 = 9
-        idx = crd2idx((1, 2), composed)
+        # map coordinate (0, 1) to linear index
+        #  - outer(0, 1) = (0, 1)
+        #  - offset + outer(0, 1) = (0, 1)
+        #  - inner(0, 1) = 0 * 1 + 1 * 4 = 4
+        idx = crd2idx((0, 1), composed)
 
         # Composition is used in many tiling operations
         # For example, in logical_product, raked_product, and blocked_product
@@ -962,6 +1046,9 @@ class _Pointer(Pointer):
         # Cut off the MLIR type's string for making pretty_str more concise
         return self.type.__str__()[6:]
 
+    def __get_mlir_types__(self):
+        return [self.value.type]
+
     def __extract_mlir_values__(self):
         return [self.value]
 
@@ -979,7 +1066,7 @@ class _Pointer(Pointer):
 
     @property
     @lru_cache_ir()
-    def value_type(self) -> Type[Numeric]:
+    def dtype(self) -> Type[Numeric]:
         return Numeric.from_mlir_type(self.value.type.value_type)
 
     @property
@@ -993,7 +1080,7 @@ class _Pointer(Pointer):
     @property
     @lru_cache_ir()
     def memspace(self) -> AddressSpace:
-        return self.type.address_space
+        return AddressSpace(self.type.address_space)
 
     # Make it behave as if it inherited from ir.Value
     @property
@@ -1015,7 +1102,7 @@ class _Pointer(Pointer):
         :return: The LLVM pointer representation
         :rtype: ir.Value
         """
-        llvm_ptr_ty = llvm.PointerType.get(self.type.address_space)
+        llvm_ptr_ty = llvm.PointerType.get(self.memspace.value)
         return builtin.unrealized_conversion_cast(
             [llvm_ptr_ty], [self.value], loc=loc, ip=ip
         )
@@ -1034,10 +1121,7 @@ class _Pointer(Pointer):
 
     @dsl_user_op
     def toint(self, *, loc=None, ip=None):
-        if self.type.address_space in (
-            _cute_ir.AddressSpace.gmem,
-            _cute_ir.AddressSpace.generic,
-        ):
+        if self.memspace in (AddressSpace.gmem, AddressSpace.generic):
             res_type = Int64
         else:
             res_type = Int32
@@ -1067,29 +1151,30 @@ class _Pointer(Pointer):
             raise ValueError("Alignment must be a power of 2")
 
         assert isinstance(self.type, _cute_ir.PtrType)
-        if self.type.address_space is AddressSpace.tmem:
+        if self.memspace is AddressSpace.tmem:
             raise ValueError("aligning a TMEM pointer is not supported")
 
         if min_align <= self.alignment:
             return self
-        else:
-            # Convert pointer to integer
-            address_int = self.toint(loc=loc, ip=ip)
-            # Align the address
-            aligned_address = (address_int + min_align - 1) & ~(min_align - 1)
-            # Create and return the aligned pointer
-            return make_ptr(
-                Numeric.from_mlir_type(self.type.value_type),
-                aligned_address,
-                self.type.address_space,
-                assumed_align=min_align,
-                loc=loc,
-                ip=ip,
-            )
+
+        dtype = Numeric.from_mlir_type(self.type.value_type)
+        # Convert pointer to integer
+        address_int = self.toint(loc=loc, ip=ip)
+        # Align the address
+        aligned_address = (address_int + min_align - 1) & ~(min_align - 1)
+
+        return make_ptr(
+            dtype,
+            aligned_address,
+            self.memspace,
+            assumed_align=min_align,
+            loc=loc,
+            ip=ip,
+        )
 
 
 @ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
-@ir.register_value_caster(_cute_ir.CountingTensorType.get_static_typeid(), replace=True)
+@ir.register_value_caster(_cute_ir.CoordTensorType.get_static_typeid(), replace=True)
 @ir.register_value_caster(
     _cute_nvgpu_ir.SmemDescViewType.get_static_typeid(), replace=True
 )
@@ -1120,7 +1205,7 @@ class _Tensor(Tensor):
         - For composed layouts, stride information is not directly accessible
         - Dynamic layouts do not support vector load/store operations
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -1138,8 +1223,34 @@ class _Tensor(Tensor):
         self._dtype = dtype
         if isinstance(value, ir.Value):
             self.value = value
+        elif isinstance(value, _Tensor):
+            self.value = value.value
         else:
-            raise TypeError(f"Expected ir.Value, got {type(value)}")
+            raise TypeError(f"Expected ir.Value or core._Tensor, got {type(value)}")
+
+        # Set iterator
+        iter_val = _cute_ir.get_iter(self.value)
+        if isinstance(iter_val, Pointer):
+            self._iterator = iter_val
+        elif isinstance(iter_val.type, _cute_ir.IntTupleType):
+            self._iterator = _unpack_x_tuple(iter_val)
+        elif isinstance(iter_val, ir.Value):
+            # Example: SMEM descriptor iterator, not well supported today
+            self._iterator = iter_val
+        else:
+            raise TypeError(f"unsupported iterator type, got {type(iter_val)}")
+
+        # Set dtype
+        if self._dtype is None:
+            if is_int_tuple(self.iterator):
+                self._dtype = IntTuple
+            elif isinstance(self.iterator, Pointer):
+                self._dtype = self.iterator.value_type
+            elif isinstance(self.type, _cute_nvgpu_ir.SmemDescViewType):
+                # SmemDescViewType do not need dtype
+                self._dtype = None
+            else:
+                raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
 
     def __str__(self):
         return f"tensor<{pretty_str(self.iterator)} o {pretty_str(self.layout)}>"
@@ -1150,14 +1261,14 @@ class _Tensor(Tensor):
     def __new_from_mlir_values__(self, values):
         # Only expecting single value of _Tensor or ir.Value
         # In this context, a _Tensor instance is an encapsulated ir.Value which is automatically created
-        # by value caster for MemRef/CountingTensor/SmemDescView typed values
+        # by value caster for MemRef/CoordTensor/SmemDescView typed values
         assert len(values) == 1, f"Expected 1 value, but got {len(values)}"
         assert isinstance(
             values[0], (_Tensor, ir.Value)
         ), f"Expected _Tensor or ir.Value, but got {type(values[0])}"
         return _Tensor(
             values[0] if isinstance(values[0], ir.Value) else values[0].value,
-            self._dtype,
+            dtype=self.element_type,
         )
 
     # Cheat to let `Type(_Tensor())` to return cute.Tensor
@@ -1193,7 +1304,7 @@ class _Tensor(Tensor):
 
         :raises ValueError: If coordinate access is invalid for the tensor layout
 
-        Examples:
+        **Examples:**
 
         .. code-block:: python
 
@@ -1207,7 +1318,7 @@ class _Tensor(Tensor):
             val = tensor[1]  # Loads element at offset 4 (4bytes per Float32)
             val = tensor[(0, 1)]  # Loads element at offset 64
 
-            # Create a counting tensor
+            # Create a coord tensor
             layout = make_layout((64, 128), stride=(1 * E(0), 1 * E(1)))
             tensor = make_tensor((128, 128), layout)
 
@@ -1223,7 +1334,7 @@ class _Tensor(Tensor):
             dereference operations. Attempting to set individual elements of tensors with
             these element types will result in errors.
 
-        Examples:
+        **Examples:**
 
         .. code-block:: python
 
@@ -1240,7 +1351,7 @@ class _Tensor(Tensor):
         """
         if has_underscore(crd):
             return slice_(self.value, crd)
-        elif isinstance(self.type, _cute_ir.CountingTensorType):
+        elif isinstance(self.type, _cute_ir.CoordTensorType):
             res = _cute_ir.get_iter(slice_(self, crd).value, loc=loc, ip=ip)
             return _unpack_x_tuple(res)
         else:
@@ -1252,9 +1363,6 @@ class _Tensor(Tensor):
             return self.element_type(data_val)
 
     def _cvt_to_dest(self, data: Union["TensorSSA", Numeric], *, loc=None, ip=None):
-        if data.dtype is self.element_type:
-            return data.ir_value(loc=loc, ip=ip)
-
         orig_dtype = data.dtype
         # Implicit upcast to wider type
         if (
@@ -1269,11 +1377,11 @@ class _Tensor(Tensor):
                 f"to Tensor with element type {self.element_type}"
             )
 
-        val = data.ir_value(loc=loc, ip=ip)
-        if isinstance(data.dtype, (Int8, Boolean)) and (self.element_type is Boolean):
-            zero = Int8(0).ir_value(loc=loc, ip=ip)
-            val = arith.cmpi(arith.CmpIPredicate.ne, val, zero, loc=loc, ip=ip)
-
+        if data.dtype is Boolean and self.element_type is Boolean:
+            # Boolean Numeric and Boolean TensorSSA both hold i1 value, but we need int8 value store to memory
+            val = data.ir_value_int8()
+        else:
+            val = data.ir_value()
         return val
 
     @dsl_user_op
@@ -1292,8 +1400,8 @@ class _Tensor(Tensor):
 
         :param crd: Coordinate or slice specification for tensor element assignment
         :type crd: Coord
-        :param value: Value to assign - can be scalar or TensorSSA for slice assignment
-        :type value: Union[int, float, ir.Value, TensorSSA]
+        :param data: Value to assign - can be scalar or TensorSSA for slice assignment
+        :type data: Union[int, float, ir.Value, Numeric, TensorSSA]
         :param loc: Source location for MLIR operation tracking, defaults to None
         :type loc: Optional[Location]
         :param ip: Insertion point for MLIR operation, defaults to None
@@ -1309,7 +1417,7 @@ class _Tensor(Tensor):
             dereference operations. Attempting to set individual elements of tensors with
             these element types will result in errors.
 
-        Examples:
+        **Examples:**
 
         .. code-block:: python
 
@@ -1340,7 +1448,7 @@ class _Tensor(Tensor):
 
             # Implicit upcast to wider type
             val = self._cvt_to_dest(data, loc=loc, ip=ip)
-            if val.type != self.element_type.mlir_type:
+            if val.type != self.type.value_type:
                 raise ValueError(
                     f"type mismatch, store {val.type} to {self.element_type}"
                 )
@@ -1365,16 +1473,7 @@ class _Tensor(Tensor):
 
     @property
     def iterator(self) -> Union[Pointer, IntTuple]:
-        res = _cute_ir.get_iter(self.value)
-        if isinstance(res, Pointer):
-            return res
-        elif isinstance(res.type, _cute_ir.IntTupleType):
-            return _unpack_x_tuple(res)
-        elif isinstance(res, ir.Value):
-            # Example: SMEM descriptor iterator, not well supported today
-            return res
-        else:
-            raise TypeError(f"unsupported iterator type, got {type(res)}")
+        return self._iterator
 
     @property
     def layout(self) -> Layout:
@@ -1392,25 +1491,23 @@ class _Tensor(Tensor):
 
     @property
     def leading_dim(self) -> Union[int, Tuple[int], None]:
-        """
-        Get the leading dimension of this Tensor.
+        """Get the leading dimension of this Tensor.
 
-        Returns:
-            int: Single leading dimension index if found
-            Tuple[int, ...]: Tuple of indices for nested leading dimensions
-            None: If no leading dimension is found
+        :return: The index or indices of the first mode (from left to right) with stride 1
+        :rtype: Union[int, Tuple[int], None]
+        :returns:
+            - int: Single leading dimension index if found
+            - Tuple[int]: Tuple of indices for nested leading dimensions
+            - None: If no leading dimension is found
+
+        :postcondition: ``get(self.stride(), mode=self.leading_dim()) == 1 if self.leading_dim() != None else True``
         """
-        return find(1, self.stride, exclude_when=(1, self.shape))
+        return leading_dim(self.shape, self.stride)
 
     @property
     @lru_cache_ir()
     def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]:
-        if is_integer(self.iterator) or isinstance(self.iterator, tuple):
-            return IntTuple
-        elif isinstance(self.iterator, Pointer):
-            return self.iterator.value_type
-        else:
-            raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
+        return self._dtype
 
     @property
     @lru_cache_ir()
@@ -1443,7 +1540,14 @@ class _Tensor(Tensor):
         self._check_can_load_store()
 
         res_vect = _cute_ir.memref_load_vec(self.value, row_major=True, loc=loc, ip=ip)
-
+        if self.element_type is Boolean:
+            assert (
+                res_vect.type.element_type == T.i8()
+            ), f"Boolean tensor must be stored as i8 in memory, but got {res_vect.type.element_type}"
+            zeros = full_like(self, 0, Int8, loc=loc, ip=ip)
+            res_vect = arith.cmpi(
+                arith.CmpIPredicate.ne, res_vect, zeros, loc=loc, ip=ip
+            )
         return TensorSSA(res_vect, self.shape, self.element_type)
 
     @dsl_user_op
@@ -1508,7 +1612,7 @@ class _Tensor(Tensor):
 
         :raises NotImplementedError: If tensor has dynamic size
 
-        Examples:
+        **Examples:**
 
         .. code-block:: python
 
@@ -1532,9 +1636,7 @@ class _Tensor(Tensor):
         self[None] = full(self.shape, fill_value=value, dtype=dst_type, loc=loc, ip=ip)
 
     def _check_can_load_store(self):
-        if not isinstance(
-            self.type, _cute_ir.MemRefType
-        ) or not self.type.address_space in (
+        if not isinstance(self.type, _cute_ir.MemRefType) or not self.memspace in (
             AddressSpace.rmem,
             AddressSpace.smem,
             AddressSpace.gmem,
@@ -1554,15 +1656,30 @@ class _Tensor(Tensor):
 def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
     """Print content of the tensor in human readable format.
 
-    tensor(raw_ptr<@..., Float32, generic, align(4)> o (8,5):(5,1), data=
-           [[-0.4326, -0.5434,  0.1238,  0.7132,  0.8042],
-            [-0.8462,  0.9871,  0.4389,  0.7298,  0.6948],
-            [ 0.3426,  0.5856,  0.1541,  0.2923,  0.6976],
-            [-0.1649,  0.8811,  0.1788,  0.1404,  0.2568],
-            [-0.2944,  0.8593,  0.4171,  0.8998,  0.1766],
-            [ 0.8814,  0.7919,  0.7390,  0.4566,  0.1576],
-            [ 0.9159,  0.7577,  0.6918,  0.0754,  0.0591],
-            [ 0.6551,  0.1626,  0.1189,  0.0292,  0.8655]])
+    Outputs the tensor data in a structured format showing both metadata
+    and the actual data values. The output includes tensor type information,
+    layout details, and a formatted array representation of the values.
+
+    :param tensor: The tensor to print
+    :type tensor: Tensor
+    :param verbose: If True, includes additional debug information in the output
+    :type verbose: bool
+    :param loc: Source location where it's called, defaults to None
+    :type loc: source location, optional
+    :param ip: Insertion pointer for IR generation, defaults to None
+    :type ip: insertion pointer, optional
+    :raises NotImplementedError: If the tensor type doesn't support trivial dereferencing
+
+    Example output:
+        tensor(raw_ptr<@..., Float32, generic, align(4)> o (8,5):(5,1), data=
+               [[-0.4326, -0.5434,  0.1238,  0.7132,  0.8042],
+                [-0.8462,  0.9871,  0.4389,  0.7298,  0.6948],
+                [ 0.3426,  0.5856,  0.1541,  0.2923,  0.6976],
+                [-0.1649,  0.8811,  0.1788,  0.1404,  0.2568],
+                [-0.2944,  0.8593,  0.4171,  0.8998,  0.1766],
+                [ 0.8814,  0.7919,  0.7390,  0.4566,  0.1576],
+                [ 0.9159,  0.7577,  0.6918,  0.0754,  0.0591],
+                [ 0.6551,  0.1626,  0.1189,  0.0292,  0.8655]])
     """
     if not isinstance(tensor.type, _cute_ir.MemRefType):
         raise NotImplementedError(
@@ -1595,10 +1712,9 @@ def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
 @lru_cache_ir()
 def is_integer(a) -> bool:
     """Check if an object is static integer or dynamic integer"""
-    return (
-        isinstance(a, int)
-        or isinstance(a, Integer)
-        or (isinstance(a, ir.Value) and isinstance(a.type, ir.IntegerType))
+    return isinstance(a, (int, Integer)) or (
+        isinstance(a, ir.Value)
+        and isinstance(a.type, (ir.IntegerType, _cute_ir.ConstrainedIntType))
     )
 
 
@@ -1710,7 +1826,18 @@ def pretty_str(arg) -> str:
 
 @dsl_user_op
 def printf(*args, loc=None, ip=None) -> None:
-    """Print a value or a list of values.
+    """
+    Print a value or a list of values.
+
+    It supports c-style printf format as well:
+
+    .. code-block:: python
+
+        a = cute.make_layout(shape=(10, 10), stride=(10, 1))
+        b = cutlass.Float32(1.234)
+        cute.printf(a, b)
+        cute.printf("a={}, b={}", a, b)
+        cute.printf("a={}, b=%.2f", a, b)
 
     :param args: List of values to print
     :type args: list
@@ -1734,10 +1861,6 @@ def printf(*args, loc=None, ip=None) -> None:
         arg0 = arg.value if isinstance(arg, Numeric) else arg
 
         if isinstance(arg0, ir.Value):
-            if isinstance(arg0.type, ir.FloatType) and (arg0.type != T.f32()):
-                raise TypeError(
-                    f"cute.printf only supports 32-bit floating-point type, but got {arg0.type}"
-                )
             return arg0
         elif isinstance(arg0, bool):
             return const(arg0, Boolean)
@@ -1798,75 +1921,140 @@ def is_major(mode, stride: Stride, *, loc=None, ip=None) -> bool:
     return True if first_stride == 1 else False
 
 
+def leading_dim(shape: Shape, stride: Stride) -> Union[int, Tuple[int, ...], None]:
+    """
+    Find the leading dimension of a shape and stride.
+
+    :param shape: The shape of the tensor or layout
+    :type shape: Shape
+    :param stride: The stride of the tensor or layout
+    :type stride: Stride
+    :return: The leading dimension index or indices
+    :rtype: Union[int, Tuple[int, ...], None]
+
+    The return value depends on the stride pattern:
+
+        * If a single leading dimension is found, returns an integer index
+        * If nested leading dimensions are found, returns a tuple of indices
+        * If no leading dimension is found, returns None
+    """
+
+    def pred_fn(val, pos):
+        # skip dynamic values which can't be compared
+        # find the candidate target val, stride at this position is 1
+        if (not is_dynamic_expression(val)) and (val == 1):
+            # extract the shape at this position
+            mode = [pos] if isinstance(pos, int) else list(pos)
+            s = get(shape, mode)
+            if is_dynamic_expression(s) or s != 1:
+                # shape at this position is dynamic value or not 1
+                # we found the leading dimension
+                return True
+        return False
+
+    return find_if(stride, pred_fn=pred_fn)
+
+
 @dsl_user_op
-def find(
-    x: int,
+def find_if(
     t: Union[tuple, ir.Value, int],
+    pred_fn: Callable[[int, Tuple[int, ...]], bool],
     *,
-    exclude_when: Optional[IntTuple] = None,
     loc=None,
     ip=None,
 ) -> Union[int, Tuple[int, ...], None]:
-    """Find the first position of a x in t.
-    If exclude_when is provided, the positions where comparison equals comparison_value will be excluded from the search results.
+    """Find the first position in t where pred_fn(val, pos) returns True.
 
-    :param x: The static integer x to search for
-    :type x: int
     :param t: The search space
     :type t: Union[tuple, ir.Value, int]
-    :param exclude_when: A tuple of (comparison_value, comparison) - positions where comparison equals comparison_value will be excluded from the search results
-    :type exclude_when: Optional[Tuple[int, Union[tuple, ir.Value, int]]]
+    :param pred_fn: A callable object (lambda, function, etc.) that predicates the value and position in t.
+                    It takes the current leaf value and position, returns True if the value or position is satisfied.
+    :type pred_fn: Callable[[int, Tuple[int, ...]], bool]
+    :return: Index if found at top level, tuple of indices showing nested position, or None if not found
+    :rtype: Union[int, Tuple[int, ...], None]
+
+    Examples:
+    .. code-block:: python
+
+        # Find the first position of x in t
+        t = (3, 4)
+        find_if(t, pred_fn=lambda val, pos: val == x)
+
+    .. code-block:: python
+
+        # find the leading dimension
+        shape = (3, 4)
+        stride = (4, 1)
+        # Find value 1 in stride where the corresponding shape is not 1
+        def pred_fn(val, pos):
+            mode = [pos] if isinstance(pos, int) else list(pos)
+            return val == 1 and get(shape, mode) != 1
+        find_if(stride, pred_fn=pred_fn)
+    """
+
+    def _find_if_impl(curr, pos, *, loc=None, ip=None):
+        if isinstance(curr, tuple):
+            # Recursively search nested tuple
+            for i in range(rank(curr)):
+                sub_curr = get(curr, mode=[i], loc=loc, ip=ip)
+                sub_pos = (pos, i) if isinstance(pos, int) else pos + (i,)
+                res_pos = _find_if_impl(sub_curr, sub_pos, loc=loc, ip=ip)
+                if res_pos is not None:
+                    return res_pos
+        else:
+            # For leaf values, check if it matches x
+            if pred_fn(curr, pos):
+                return pos
+        return None
+
+    def _check_pred_fn():
+        if not callable(pred_fn):
+            raise TypeError(f"pred_fn must be callable, but got {type(pred_fn)}")
+        signature = inspect.signature(pred_fn)
+        if len(signature.parameters) != 2:
+            raise ValueError(
+                f"pred_fn must have two parameters (value, pos), but got {len(signature.parameters)}"
+            )
+
+    _check_pred_fn()
+
+    for i in range(rank(t)):
+        curr = get(t, mode=[i], loc=loc, ip=ip)
+        res_pos = _find_if_impl(curr, i, loc=loc, ip=ip)
+        if res_pos is not None:
+            return res_pos
+    return None
+
+
+@dsl_user_op
+def find(
+    t: Union[tuple, ir.Value, int],
+    x: int,
+    *,
+    loc=None,
+    ip=None,
+) -> Union[int, Tuple[int, ...], None]:
+    """Find the first position of a value ``x`` in a hierarchical structure ``t``.
+
+    Searches for the first occurrence of x in t, optionally excluding positions
+    where a comparison value matches. The search can traverse nested structures
+    and returns either a single index or a tuple of indices for nested positions.
+
+    :param t: The search space
+    :type t: Union[tuple, ir.Value, int]
+    :param x: The static integer x to search for
+    :type x: int
     :return: Index if found at top level, tuple of indices showing nested position, or None if not found
     :rtype: Union[int, Tuple[int, ...], None]
     """
     if not isinstance(x, int):
         raise TypeError(f"find() requires a static x to search for, but got {x}")
 
-    # Extract comparison value and tuple from exclude_when if provided
-    comparison_value, comparison = None, None
-    if exclude_when is not None:
-        comparison_value, comparison = exclude_when
+    def pred_fn(val, pos):
+        # Skip dynamic values which can't be compared
+        return not is_dynamic_expression(val) and val == x
 
-    # Iterate through t, checking both nested tuples and leaf values
-    for i in range(rank(t)):
-        # Get current elements from t and comparison
-        curr1 = get(t, mode=[i], loc=loc, ip=ip)
-        curr2 = (
-            get(comparison, mode=[i], loc=loc, ip=ip)
-            if comparison is not None
-            else None
-        )
-
-        if isinstance(curr1, tuple):
-            # Recursively search nested tuple
-            sub_pos = find(
-                x,
-                curr1,
-                exclude_when=(
-                    (comparison_value, curr2) if comparison is not None else None
-                ),
-                loc=loc,
-                ip=ip,
-            )
-            if sub_pos is not None:
-                # Combine current index with recursive result
-                if isinstance(sub_pos, int):
-                    return (i, sub_pos)
-                return (i,) + sub_pos
-        else:
-            # For leaf values, check if it matches x
-            # Skip dynamic expressions and Numeric types which can't be compared
-            if not (is_dynamic_expression(curr1) or isinstance(curr1, Numeric)):
-                if curr1 == x:
-                    if (
-                        comparison is None
-                        or is_dynamic_expression(curr2)
-                        or isinstance(curr2, Numeric)
-                        or curr2 != comparison_value
-                    ):
-                        return i
-
-    return None
+    return find_if(t, pred_fn=pred_fn, loc=loc, ip=ip)
 
 
 def transform_leaf(f, *args):
@@ -2069,7 +2257,9 @@ def get(input, mode: List[int], *, loc=None, ip=None):
     :raises ValueError: If any index in mode is out of range
     :raises TypeError: If mode contains non-integer elements or if input has unsupported type
 
-    **Examples**:
+    :postcondition: ``get(t, mode=find(x,t)) == x if find(x,t) != None else True``
+
+    **Examples:**
 
     For a layout like ((4,8),2):((16,1),8), get with mode=[0,1] would extract
     the element 8 from the shape component.
@@ -2131,6 +2321,20 @@ def select(input, mode: List[int], *, loc=None, ip=None):
     :rtype: Layout, ComposedLayout, tuple
     :raises ValueError: If any index in mode is out of range
     :raises TypeError: If the input type is invalid
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Select specific dimensions from a layout
+        layout = make_layout((4, 8, 16), stride=(32, 4, 1))
+        selected = select(layout, mode=[0, 2])  # Select mode 0 and mode 2
+        # Result: (4, 16):(32, 1)
+
+        # Select elements from a tuple
+        t = (1, 2, 3, 4, 5)
+        selected = select(t, mode=[0, 2, 4])  # Select mode 0, mode 2, and mode 4
+        # Result: (1, 3, 5)
     """
     if any((not isinstance(i, int)) or (i >= rank(input)) for i in mode):
         raise ValueError(
@@ -2196,7 +2400,7 @@ def group_modes(input, begin: int, end: int = -1, *, loc=None, ip=None):
     :return: A new object with the specified modes grouped
     :rtype: Same type as input with modified structure
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2212,11 +2416,13 @@ def group_modes(input, begin: int, end: int = -1, *, loc=None, ip=None):
         shape = make_shape(2, 3, 4, 5)
         grouped_shape = group_modes(shape, 0, 2)  # Shape ((2, 3), 4, 5)
     """
-    if depth(input) == 0:
+    if depth(input) == 0 and is_integer(input):
         return (input,)
     if isinstance(input, tuple):
         return (*input[:begin], (input[begin:end]), *input[end:])
-    return _cute_ir.group_modes(input.value, begin, end, loc=loc, ip=ip)
+    return _cute_ir.group_modes(
+        input.value if isinstance(input, Tensor) else input, begin, end, loc=loc, ip=ip
+    )
 
 
 @overload
@@ -2259,7 +2465,7 @@ def slice_(src, coord: Coord, *, loc=None, ip=None):
     :rtype: Union[Tensor, Layout, IntTuple, tuple]
     :raises ValueError: If the coordinate pattern is incompatible with source
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2315,10 +2521,13 @@ def slice_(src, coord: Coord, *, loc=None, ip=None):
         else:
             return ()
 
+    res_type = None
     if isinstance(src, Tensor):
+        res_type = src.element_type
         src = src.value
     coord_val = _pack_coord(coord, loc=loc, ip=ip)
-    return _cute_ir.slice(input=src, coord=coord_val, loc=loc, ip=ip)
+    res = _cute_ir.slice(input=src, coord=coord_val, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -2359,7 +2568,7 @@ def dice(src, dicer, *, loc=None, ip=None):
     :raises TypeError: If dicer has an unsupported type
     :raises ValueError: If input is not provided
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2496,7 +2705,7 @@ def prepend(input, elem, up_to_rank: Union[None, int] = None, *, loc=None, ip=No
     :raises ValueError: If up_to_rank is less than input's current rank
     :raises TypeError: If input or elem has unsupported type
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2565,7 +2774,7 @@ def append(input, elem, up_to_rank: Union[None, int] = None, *, loc=None, ip=Non
     :raises ValueError: If up_to_rank is less than input's current rank
     :raises TypeError: If input or elem has unsupported type
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2621,7 +2830,7 @@ def repeat_like(x, target):
     :return: A structure matching target but filled with x
     :rtype: Union[tuple, Any]
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2649,7 +2858,7 @@ def flatten_to_tuple(a: Union[IntTuple, Coord, Shape, Stride]) -> tuple:
     :return: A flattened tuple containing all elements from the input
     :rtype: tuple
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2675,7 +2884,7 @@ def flatten(a: Union[IntTuple, Coord, Shape, Stride, Layout, Tensor]) -> tuple:
     :rtype: Union[tuple, Any]
     :raises NotImplementedError: If input is a Layout or Tensor
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -2751,7 +2960,8 @@ def filter_zeros(input, *, target_profile=None, loc=None, ip=None):
     """Filter out zeros from a layout or tensor.
 
     This function removes zero-stride dimensions from a layout or tensor.
-    See Section 3.3 in the CuTe Whitepaper for more details on layout operations.
+    Refer to https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/02_layout_algebra.md
+    for more layout algebra operations.
 
     :param input: The input layout or tensor to filter
     :type input: Layout or Tensor
@@ -2913,7 +3123,8 @@ def size(
 
     Computes the size (number of elements) in the domain of a layout or tensor.
     For layouts, this corresponds to the shape of the coordinate space.
-    See Section 3.2 in the CuTe Whitepaper for more details on layout domains.
+    See https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/01_layout.md
+    for more details on layout domains.
 
     :param a: The input object whose size to compute
     :type a: IntTuple, Shape, Layout, ComposedLayout or Tensor
@@ -3050,7 +3261,7 @@ def make_layout(
     :return: A new Layout object with the specified shape and stride
     :rtype: Layout
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -3079,6 +3290,9 @@ def make_layout(
           * make_layout((3,4), (1,4)) can be confusing with make_layout(((3,4), (1,4)))
           * make_layout((3,4), stride=(1,4)) is more readable
     """
+    if stride is not None and not is_congruent(shape, stride):
+        raise ValueError(f"shape and stride must be congruent")
+
     shape_val = _pack_shape(shape, loc=loc, ip=ip)
     if stride is not None:
         stride_val = _pack_stride(stride, loc=loc, ip=ip)
@@ -3108,7 +3322,7 @@ def make_identity_layout(shape: Shape, *, loc=None, ip=None) -> Layout:
     :return: A new identity Layout object with the specified shape
     :rtype: Layout
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -3146,7 +3360,7 @@ def make_ordered_layout(shape: Shape, order: Shape, *, loc=None, ip=None) -> Lay
     :return: A new Layout object with the specified shape and dimension ordering
     :rtype: Layout
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -3165,7 +3379,7 @@ def make_ordered_layout(shape: Shape, order: Shape, *, loc=None, ip=None) -> Lay
         - The length of order must match the rank of the shape
     """
     shape_val = _pack_shape(shape, loc=loc, ip=ip)
-    order_val = _pack_shape(order, loc=loc, ip=ip)
+    order_val = _pack_int_tuple(order, loc=loc, ip=ip)
     return _cute_ir.make_ordered_layout(
         shape=shape_val, order=order_val, loc=loc, ip=ip
     )
@@ -3177,7 +3391,7 @@ def make_composed_layout(
 ) -> ComposedLayout:
     """Create a composed layout by composing an inner transformation with an outer layout.
 
-    As described in the CuTe whitepaper, a composed layout applies a sequence of transformations
+    A composed layout applies a sequence of transformations
     to coordinates. The composition is defined as (inner ∘ offset ∘ outer), where the operations
     are applied from right to left.
 
@@ -3194,7 +3408,7 @@ def make_composed_layout(
     :return: A new ComposedLayout representing the composition
     :rtype: ComposedLayout
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -3416,12 +3630,7 @@ def recast_ptr(
 
     value_type = ptr.type.value_type if dtype is None else dtype
     swizzle = swizzle_.type.attribute if swizzle_ is not None else None
-    res_ty = _cute_ir.PtrType.get(
-        value_type,
-        AddressSpace(ptr.type.address_space),
-        ptr.alignment,
-        swizzle,
-    )
+    res_ty = _cute_ir.PtrType.get(value_type, ptr.memspace, ptr.alignment, swizzle)
     return _cute_ir.recast_iter(res_ty, ptr.value, loc=loc, ip=ip)
 
 
@@ -3438,8 +3647,15 @@ def make_ptr(
     if dtype is None or not isinstance(dtype, NumericMeta):
         raise TypeError(f"expects dtype to be a type of Numeric, but got {dtype}")
 
+    if not isinstance(mem_space, AddressSpace):
+        raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
+
+    if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
+        value = llvm.ptrtoint(T.i64(), value)
+
     if not is_integer(value):
         raise TypeError(f"expects integer value, but got {type(value)}")
+    value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
 
     bytes_per_elt = max(1, dtype.width // 8)
     if assumed_align is None:
@@ -3450,13 +3666,11 @@ def make_ptr(
             f"{bytes_per_elt=} is not a multiple of {assumed_align=} and vice versa."
         )
 
-    value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
     aligned_ty = _cute_ir.ConstrainedIntType.get(assumed_align, type(value).width)
     aligned_intptr = _cute_ir.assume(aligned_ty, value.ir_value(), loc=loc, ip=ip)
 
-    ptr_ty = _cute_ir.PtrType.get(
-        T.i8() if dtype is None else dtype.mlir_type, mem_space, assumed_align
-    )
+    data_ty = T.i8() if dtype is None else dtype.mlir_type
+    ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align)
     return _cute_ir.inttoptr(ptr_ty, aligned_intptr, loc=loc, ip=ip)
 
 
@@ -3491,7 +3705,7 @@ def make_tensor(
 
     :raises ValueError: If iterator type is not supported
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
@@ -3503,7 +3717,7 @@ def make_tensor(
         layout = make_layout(((128, 8), (1, 4, 1)), stride=((32, 1), (0, 8, 4096)))
         tensor = make_tensor(smem_ptr, layout)
 
-        # Create a counting tensor
+        # Create a coord tensor
         layout = make_layout(2, stride=16 * E(0))
         tensor = make_tensor(5, layout)
 
@@ -3521,7 +3735,7 @@ def make_tensor(
     ty = None
     if is_integer(iterator) or isinstance(iterator, tuple):
         iterator = _pack_int_tuple(iterator, loc=loc, ip=ip)
-        ty = _cute_ir.CountingTensorType.get(iterator.type, layout.type)
+        ty = _cute_ir.CoordTensorType.get(iterator.type, layout.type)
     elif isinstance(iterator, Pointer):
         iterator = iterator.value
         ty = _cute_ir.MemRefType.get(iterator.type, layout.type)
@@ -3549,17 +3763,17 @@ def make_identity_tensor(shape: Shape, *, loc=None, ip=None) -> Tensor:
     :return: A tensor that maps each coordinate to itself
     :rtype: Tensor
 
-    Examples:
+    **Examples:**
 
     .. code-block:: python
 
-        # Create a simple 1D counting tensor
+        # Create a simple 1D coord tensor
         tensor = make_identity_tensor(6)  # [0,1,2,3,4,5]
 
-        # Create a 2D counting tensor
+        # Create a 2D coord tensor
         tensor = make_identity_tensor((3,2))  # [(0,0),(1,0),(2,0),(0,1),(1,1),(2,1)]
 
-        # Create hierarchical counting tensor
+        # Create hierarchical coord tensor
         tensor = make_identity_tensor(((2,1),3))
         # [((0,0),0),((1,0),0),((0,0),1),((1,0),1),((0,0),2),((1,0),2)]
 
@@ -3582,7 +3796,7 @@ def make_fragment(
 ) -> Tensor:
     if not issubclass(dtype, Numeric):
         raise TypeError(f"value_type must be a type of Numeric, but got {type(dtype)}")
-    elem_ty = dtype.mlir_type
+    elem_ty = dtype.mlir_type if dtype is not Boolean else T.i8()
 
     # Alignment for register memory is useless(?), pick-up large enough number
     # to allow .128 (> 16B) load store
@@ -3635,7 +3849,7 @@ def make_fragment_like(src, dtype=None, *, loc=None, ip=None):
     :return: A new layout or fragment tensor with matching shape
     :rtype: Union[Layout, Tensor]
 
-    **Examples**
+    **Examples:**
 
     Creating a rmem tensor from a tensor:
 
@@ -3680,7 +3894,7 @@ def make_fragment_like(src, dtype=None, *, loc=None, ip=None):
         else:
             return new_layout
     elif isinstance(src, Tensor):
-        if isinstance(src.type, _cute_ir.CountingTensorType):
+        if isinstance(src.type, _cute_ir.CoordTensorType):
             if dtype is None:
                 raise ValueError(
                     "dtype must be provided when src is a coordinate tensor"
@@ -3691,16 +3905,12 @@ def make_fragment_like(src, dtype=None, *, loc=None, ip=None):
             )
             return make_fragment(new_layout, dtype, loc=loc, ip=ip)
         else:
-            if dtype is None:
-                ty = src.element_type.mlir_type
-            else:
-                ty = dtype.mlir_type
+            dtype = src.element_type if dtype is None else dtype
+            ty = dtype.mlir_type if dtype is not Boolean else T.i8()
             new_tensor = _cute_ir.make_fragment_like(
                 src.value, elem_type=ty, loc=loc, ip=ip
             )
-            return _Tensor(
-                new_tensor.value, dtype if dtype is not None else src.element_type
-            )
+            return _Tensor(new_tensor.value, dtype)
     else:
         raise TypeError(
             f"src must be a Layout or ComposedLayout or tensor, got {type(src)}"
@@ -3958,11 +4168,14 @@ def logical_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor
 
 @dsl_user_op
 def logical_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.logical_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.logical_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -3973,11 +4186,14 @@ def zipped_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor:
 
 @dsl_user_op
 def zipped_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.zipped_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.zipped_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -3988,11 +4204,14 @@ def tiled_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor: 
 
 @dsl_user_op
 def tiled_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.tiled_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.tiled_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -4003,11 +4222,14 @@ def flat_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor: .
 
 @dsl_user_op
 def flat_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.flat_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.flat_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 #
@@ -4067,7 +4289,7 @@ def tile_to_shape(
     ip=None,
 ) -> Union[Layout, ComposedLayout]:
     trg_shape = _pack_shape(shape(trg_shape), loc=loc, ip=ip)
-    order = _pack_shape(order, loc=loc, ip=ip)
+    order = _pack_int_tuple(order, loc=loc, ip=ip)
     return _cute_ir.tile_to_shape(atom, trg_shape, order, loc=loc, ip=ip)
 
 
@@ -4075,14 +4297,22 @@ def tile_to_shape(
 def local_partition(
     target: Tensor,
     tiler: Union[Layout, Shape],
-    index,
+    index: Union[int, Numeric],
     proj: XTuple = 1,
     *,
     loc=None,
     ip=None,
 ) -> Tensor:
+    if isinstance(index, cutlass_arith.ArithValue):
+        index_val = index
+    else:
+        index_val = index.ir_value()
+    if index_val.type.width > 32:
+        raise NotImplementedError(
+            f"Index value should be 32-bit or smaller integer type, but got {index_val.type}"
+        )
     return _cute_ir.local_partition(
-        input=target.value, tiler=dice(tiler, proj), index=index, loc=loc, ip=ip
+        input=target.value, tiler=dice(tiler, proj), index=index_val, loc=loc, ip=ip
     )
 
 
@@ -4332,6 +4562,8 @@ class MmaAtom(Atom):
     def make_fragment_A(self, input, *, loc=None, ip=None):
         # input could be memref/shape/layout for tmem based fragment
         if isinstance(input, _Tensor):
+            if self.op is not None:
+                self.op._verify_fragment_A(input, loc=loc, ip=ip)
             input = input.value
         if isinstance(input, tuple):
             input = _pack_shape(input, loc=loc, ip=ip)
@@ -4346,6 +4578,8 @@ class MmaAtom(Atom):
     @dsl_user_op
     def make_fragment_B(self, input, *, loc=None, ip=None):
         if isinstance(input, _Tensor):
+            if self.op is not None:
+                self.op._verify_fragment_B(input, loc=loc, ip=ip)
             input = input.value
         return _cute_ir.mma_make_fragment(
             _cute_ir.MmaOperand.B,
@@ -4791,24 +5025,44 @@ def make_copy_atom(
 def make_layout_tv(
     thr_layout: Layout, val_layout: Layout, *, loc=None, ip=None
 ) -> Tuple[Shape, Layout]:
-    """
-    Create a tiled copy given separate thr and val layouts. A TV partitioner is inferred based on inputs.
-    Requires input thr layout be compact.
+    """Create a thread-value layout for partitioning data tensors.
 
-    Parameters
-    ----------
-    atom : copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
-    thr_layout : mn -> tid (need to be compact?)
-    val_layout : mn -> vid
-    loc     : source location for mlir (optional)
-    ip      : insertion point (optional)
+    This function creates a thread-value layout that maps between ``(thread_idx, value_idx)``
+    coordinates and logical ``(M,N)`` coordinates. The thread layout must be compact to ensure
+    proper partitioning.
 
-    Returns
-    -------
-    layout_mn
-            logical tile size
-    layout_tv
-            thread-value layout (tid, vid) -> mn
+    This implements the thread-value partitioning pattern shown in
+    Figure TVLayout, where data is partitioned across threads and values within each thread.
+
+    :param thr_layout: Layout mapping from ``(TileM,TileN)`` coordinates to thread IDs (must be compact)
+    :type thr_layout: Layout
+    :param val_layout: Layout mapping from ``(ValueM,ValueN)`` coordinates to value IDs within each thread
+    :type val_layout: Layout
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    :return: A tuple containing ``tiler_mn`` and ``layout_tv``
+    :rtype: Tuple[Shape, Layout]
+
+    where:
+        * ``tiler_mn`` is tiler and ``shape(tiler_mn)`` is compatible with ``shape(zipped_divide(x, tiler_mn))[0]``
+        * ``layout_tv``: Thread-value layout mapping (thread_idx, value_idx) -> (M,N)
+
+    **Example:**
+
+    .. code-block:: python
+
+        tiler_mn, layout_tv = cute.make_layout_tv(
+            cute.make_layout((4, 8), stride=(8, 1)), cute.make_layout(2, stride=1)
+        )
+
+    Above code creates a TV layout that maps between thread/value coordinates
+    and the logical coordinates in a 8x8 matrix with:
+
+    * thread block layout ``(4,8):(8,1)``
+    * 2 elements per thread
     """
 
     # Take the raked_products to compute the Layout_MN
@@ -4829,22 +5083,24 @@ def make_layout_tv(
 
 @dsl_user_op
 def make_tiled_copy_tv(atom, thr_layout, val_layout, *, loc=None, ip=None) -> TiledCopy:
-    """
-    Create a tiled copy given separate thr and val layouts. A TV partitioner is inferred based on inputs.
-    Requires input thr layout be compact.
+    """Create a tiled copy given separate thread and value layouts.
 
-    Parameters
-    ----------
-    atom : copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
-    thr_layout : mn -> tid (need to be compact?)
-    val_layout : mn -> vid
-    loc     : source location for mlir (optional)
-    ip      : insertion point (optional)
+    A TV partitioner is inferred based on the input layouts. The input thread layout
+    must be compact.
 
-    Returns
-    -------
-    tiled_copy
-            A tiled copy for partitioner
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param thr_layout: Layout mapping from ``(TileM,TileN)`` coordinates to thread IDs (must be compact)
+    :type thr_layout: Layout
+    :param val_layout: Layout mapping from ``(ValueM,ValueN)`` coordinates to value IDs
+    :type val_layout: Layout
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
     """
 
     tiler_mn, layout_tv = make_layout_tv(thr_layout, val_layout, loc=loc, ip=ip)
@@ -4865,21 +5121,21 @@ def make_tiled_copy_tv(atom, thr_layout, val_layout, *, loc=None, ip=None) -> Ti
 
 @dsl_user_op
 def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
-    """
-    Create a tiled type given a TV partitioner and tiler
+    """Create a tiled type given a TV partitioner and tiler.
 
-    Parameters
-    ----------
-    atom : copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
-    layout_tv : thread-value layout.
-    tiler_mn : tile size (??)
-    loc     : source location for mlir (optional)
-    ip      : insertion point (optional)
+    :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
+    :type atom: CopyAtom
+    :param layout_tv: Thread-value layout
+    :type layout_tv: Layout
+    :param tiler_mn: Tile size
+    :type tiler_mn: Tiler
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
 
-    Returns
-    -------
-    tiled_copy
-            A tuple of A tiled copy and atom
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
     """
 
     # tiler_mn = pack_tuple(tiler_mn, make_tile)
@@ -4901,20 +5157,19 @@ def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
 
 @dsl_user_op
 def make_tiled_copy_S(atom, tiled_copy, *, loc=None, ip=None):
-    """
-    Create a tiled type out of the copy_atom that matches the Src-Layout of tiled_copy.
+    """Create a tiled copy out of the copy_atom that matches the Src-Layout of tiled_copy.
 
-    Parameters
-    ----------
-    atom : copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
-    tiled_copy : tiled copy
-    loc     : source location for mlir (optional)
-    ip      : insertion point (optional)
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param tiled_copy: Tiled copy
+    :type tiled_copy: TiledCopy
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
 
-    Returns
-    -------
-    tiled_copy
-            A tuple of A tiled copy and atom
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
     """
 
     return make_tiled_copy(
@@ -4924,20 +5179,19 @@ def make_tiled_copy_S(atom, tiled_copy, *, loc=None, ip=None):
 
 @dsl_user_op
 def make_tiled_copy_D(atom, tiled_copy, *, loc=None, ip=None):
-    """
-    Create a tiled type out of the copy_atom that matches the Dst-Layout of tiled_copy.
+    """Create a tiled copy out of the copy_atom that matches the Dst-Layout of tiled_copy.
 
-    Parameters
-    ----------
-    atom : copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
-    tiled_copy : tiled copy
-    loc     : source location for mlir (optional)
-    ip      : insertion point (optional)
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param tiled_copy: Tiled copy
+    :type tiled_copy: TiledCopy
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
 
-    Returns
-    -------
-    tiled_copy
-            A tuple of A tiled copy and atom
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
     """
 
     return make_tiled_copy(
@@ -4947,21 +5201,21 @@ def make_tiled_copy_D(atom, tiled_copy, *, loc=None, ip=None):
 
 @dsl_user_op
 def make_tiled_copy_C_atom(atom: CopyAtom, mma: TiledMma, *, loc=None, ip=None):
-    """
-    Create the smallest tiled copy that can retile LayoutC_TV
-    for use with pipelined epilogues with subtiled stores
+    """Create the smallest tiled copy that can retile LayoutC_TV for use with pipelined epilogues with subtiled stores.
 
-    Parameters
-    ----------
-    atom: CopyAtom
-    mma : TiledMma
-    loc : source location for mlir (optional)
-    ip : insertion point (optional)
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param mma: Tiled MMA
+    :type mma: TiledMma
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
 
-    Returns
-    -------
-    tiled_copy
-            A tiled copy for partitioner
+    :return: A tiled copy for partitioner
+    :rtype: TiledCopy
+
+    :raises ValueError: If the number value of CopyAtom's source layout is greater than the size of TiledMma's LayoutC_TV
     """
     # Truncate the V-layout to just the Copy_Atom, keep the V-order
     layoutC_tv = mma.tv_layout_C_tiled
@@ -5041,29 +5295,60 @@ def gemm(
     ip=None,
     **kwargs,
 ) -> None:
-    """
-    The GEMM algorithm.
+    """The GEMM algorithm.
 
     Computes ``D <- AB + C`` where ``C`` and ``D`` can alias. Note that some MMA Atoms (e.g.
     warpgroup-wide or tcgen05 MMAs) require manually setting an "accumulate" boolean field.
 
     All tensors must be partitioned according to the provided MMA Atom.
+
+    For MMA Atoms that require single-threaded execution, the gemm op automatically handles thread
+    election internally. Manual thread selection is not required in such cases.
+
+    :param atom: MMA atom
+    :type atom: MmaAtom
+    :param d: Destination tensor
+    :type d: Tensor
+    :param a: First source tensor
+    :type a: Tensor
+    :param b: Second source tensor
+    :type b: Tensor
+    :param c: Third source tensor
+    :type c: Tensor
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point for MLIR, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+    :param kwargs: Additional keyword arguments
+    :type kwargs: dict
+    :return: None
+    :rtype: None
     """
+
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     return _cute_ir.gemm(value, d.value, a.value, b.value, c.value, loc=loc, ip=ip)
 
 
 @dsl_user_op
 def basic_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
-    """
-    Performs a basic element-wise copy.
+    """Performs a basic element-wise copy.
 
     This functions **assumes** the following pre-conditions:
     1. `size(src) == size(dst)`
 
     When the `src` and `dst` shapes are static, the pre-conditions are actually verified and the
     element-wise loop is fully unrolled.
+
+    :param src: Source tensor
+    :type src: Tensor
+    :param dst: Destination tensor
+    :type dst: Tensor
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
     """
+
     if is_static(src.shape) and is_static(dst.shape):
         simt_copy_ty = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
             src.element_type.mlir_type, src.element_type.width
@@ -5080,8 +5365,7 @@ def basic_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
 
 @dsl_user_op
 def basic_copy_if(pred: Tensor, src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
-    """
-    Performs a basic predicated element-wise copy.
+    """Performs a basic predicated element-wise copy.
 
     This functions **assumes** the following pre-conditions:
     1. `size(src) == size(dst)`
@@ -5089,6 +5373,7 @@ def basic_copy_if(pred: Tensor, src: Tensor, dst: Tensor, *, loc=None, ip=None) 
 
     When all shapes are static, the pre-conditions are actually verified and the element-wise loop
     is fully unrolled.
+
     """
     if src.element_type.width != dst.element_type.width:
         raise NotImplementedError(
@@ -5193,7 +5478,7 @@ def copy(
     src: Tensor,
     dst: Tensor,
     *,
-    pred: Tensor = None,
+    pred: Optional[Tensor] = None,
     loc=None,
     ip=None,
     **kwargs,
@@ -5212,6 +5497,9 @@ def copy(
     An additional predication tensor can be provided. If the partitioned tensors have the following
     logical profile ``((ATOM_V,ATOM_REST),REST_M,...)``, the predication tensor must have a profile
     consistent with ``(ATOM_REST,REST_M,...)``.
+
+    For Copy Atoms that require single-threaded execution, the copy op automatically handles thread
+    election internally. Manual thread selection is not required in such cases.
     """
     if isinstance(src.type, _cute_ir.MemRefType) and isinstance(
         dst.type, _cute_ir.MemRefType
@@ -5334,7 +5622,7 @@ class TensorSSA(cutlass_arith.ArithValue):
             other = as_numeric(other)
 
         # Promote types
-        lhs, rhs, res_type = _binary_op_type_promote(self, other, True)
+        lhs, rhs, res_type = _binary_op_type_promote(self, other)
 
         # Promote scalar to vector
         if not isinstance(rhs, TensorSSA):
@@ -5721,7 +6009,7 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         :raises ValueError: If coordinate access is invalid for the tensor layout
 
-        Examples:
+        **Examples:**
 
         .. code-block:: python
 
@@ -5827,6 +6115,28 @@ class TensorSSA(cutlass_arith.ArithValue):
     def ir_value(self, *, loc=None, ip=None):
         return self
 
+    def ir_value_int8(self, *, loc=None, ip=None):
+        """
+        Returns int8 ir value of Boolean tensor.
+        When we need to store Boolean tensor ssa, use ir_value_int8().
+
+        :param loc: Source location information, defaults to None
+        :type loc: Optional[Location], optional
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint], optional
+        :return: The int8 value of this Boolean
+        :rtype: ir.Value
+        """
+        assert (
+            self.element_type is Boolean
+        ), f"Only boolean type needs to be converted to int8, got {self.element_type}"
+
+        if not hasattr(self, "_value_int8"):
+            self._value_int8 = arith.extsi(
+                T.vector(self.type.shape[0], T.i8()), self, loc=loc, ip=ip
+            )
+        return self._value_int8
+
     def reduce(self, op, init_val, reduction_profile: Coord, *, loc=None, ip=None):
         """
         Perform reduce on selected modes with given predefined reduction op.
@@ -5841,9 +6151,13 @@ class TensorSSA(cutlass_arith.ArithValue):
         :return: The reduced tensor
         :rtype: TensorSSA
 
-        Examples:
+        **Examples:**
+
+        .. code-block:: python
+
             reduce(f32 o (4,))
               => f32
+
             reduce(f32 o (4, 5))
               => f32
             reduce(f32 o (4, (5, 4)), reduction_profile=(_, 1))
@@ -5854,6 +6168,12 @@ class TensorSSA(cutlass_arith.ArithValue):
         # short-cut to no-op
         if reduction_profile is None:
             return self
+
+        if not is_weakly_congruent(reduction_profile, self.shape):
+            raise ValueError(
+                f"Expect reduction_profile be weakly congruent to the shape of the tensor, "
+                f"but got {reduction_profile} and {self.shape}"
+            )
 
         if op is ReductionOp.ADD:
             red_kind = vector.CombiningKind.ADD
@@ -5946,7 +6266,7 @@ def full(shape, fill_value, dtype: Type[Numeric], *, loc=None, ip=None) -> Tenso
 
 
 def full_like(
-    a: TensorSSA,
+    a: Union[TensorSSA, Tensor],
     fill_value,
     dtype: Union[None, Type[Numeric]] = None,
     *,
@@ -5971,14 +6291,17 @@ def full_like(
        :func:`zeros_like`: Return an array of zeros with shape and type of input.
        :func:`full`: Return a new array of given shape filled with value.
 
-    Examples
-    --------
+    **Examples:**
+
     .. code-block:: python
 
         frg = cute.make_fragment(Float32, (2, 3))
         a = frg.load()
         b = cute.full_like(a, 1.0)
     """
+    if not hasattr(a, "shape"):
+        raise TypeError(f"Expect `a` be shaped type, but got {type(a)}")
+
     return full(
         a.shape, fill_value, dtype if dtype is not None else a.dtype, loc=loc, ip=ip
     )

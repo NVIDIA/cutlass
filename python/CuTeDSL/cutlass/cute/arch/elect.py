@@ -69,7 +69,16 @@ def elect_one(*, loc=None, ip=None) -> IfOpRegion:
             pass
     """
     arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(arch, ["sm_90", "sm_90a", "sm_100a"], "arch")
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
     is_thread_leader = nvvm.elect_sync(T.bool())
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)

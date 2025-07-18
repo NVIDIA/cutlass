@@ -4,12 +4,9 @@
 .. |DSL| replace:: CuTe DSL
 
 
-|DSL|
+Introduction
 ======================
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
 
 Overview
 --------

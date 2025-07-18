@@ -50,6 +50,6 @@ cutlass_test_unit_add_executable(
   pointer.cpp
   reverse.cpp
   swizzle_layout.cpp
-  transform.cpp
+  tensor_algs.cpp
   tuple.cpp
 )

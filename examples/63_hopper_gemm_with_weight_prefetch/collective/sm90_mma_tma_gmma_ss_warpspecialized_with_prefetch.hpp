@@ -42,7 +42,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cutlass/arch/grid_dependency_control.h"
 
@@ -288,7 +287,7 @@ struct CollectiveMma<
     constexpr int tma_alignment_bits = 128;
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M,N,K,L] = problem_shape_MNKL;
-    
+
     constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
     bool implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
@@ -445,7 +444,7 @@ struct CollectiveMma<
         copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b, cute::TMA::CacheHintSm90::EVICT_LAST), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
         ++k_tile_iter;
 
-        if (!disable_gdc && cnt >= launch_dep_grids_threshold && !launch_dep_grids) { 
+        if (!disable_gdc && cnt >= launch_dep_grids_threshold && !launch_dep_grids) {
           launch_dep_grids = true;
           cutlass::arch::launch_dependent_grids();
         }
@@ -453,7 +452,7 @@ struct CollectiveMma<
         // Advance smem_pipe_write
         ++smem_pipe_write;
       }
-      if (!disable_gdc && !launch_dep_grids) { 
+      if (!disable_gdc && !launch_dep_grids) {
         cutlass::arch::launch_dependent_grids();
       }
     }
@@ -533,7 +532,7 @@ struct CollectiveMma<
         copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a, cute::TMA::CacheHintSm90::EVICT_FIRST), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
         ++k_tile_iter;
 
-        if (!disable_gdc && cnt >= launch_dep_grids_threshold && !launch_dep_grids) { 
+        if (!disable_gdc && cnt >= launch_dep_grids_threshold && !launch_dep_grids) {
           launch_dep_grids = true;
           cutlass::arch::launch_dependent_grids();
         }
@@ -541,7 +540,7 @@ struct CollectiveMma<
         // Advance smem_pipe_write
         ++smem_pipe_write;
       }
-      if (!disable_gdc && !launch_dep_grids) { 
+      if (!disable_gdc && !launch_dep_grids) {
         cutlass::arch::launch_dependent_grids();
       }
     }
@@ -634,9 +633,9 @@ struct CollectiveMma<
     // Issue the epilogue waits
     if (lane_predicate) {
       /* This helps avoid early exit of blocks in Cluster
-       * Waits for all stages to either be released (all 
+       * Waits for all stages to either be released (all
        * Consumer UNLOCKs), or if the stage was never used
-       * then would just be acquired since the phase was 
+       * then would just be acquired since the phase was
        * still inverted from make_producer_start_state
        */
       pipeline.producer_tail(smem_pipe_write);
@@ -854,7 +853,7 @@ struct CollectiveMma<
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-    
+
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 

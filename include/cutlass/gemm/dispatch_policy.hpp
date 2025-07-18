@@ -109,6 +109,7 @@ static constexpr bool HasAuxiliaryLoad_v = HasAuxiliaryLoad<T>::value;
 // Kernel schedule policies (the base class tags, one for each kernel layer file)
 //
 struct KernelMultistage { };
+struct KernelPtrArrayMultistage { };
 struct KernelCpAsyncWarpSpecialized { };
 struct KernelCpAsyncWarpSpecializedPingpong { };
 struct KernelCpAsyncWarpSpecializedCooperative { };
@@ -195,6 +196,17 @@ struct MainloopSm80CpAsync {
   constexpr static int Stages = Stages_;
   using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
   using Schedule = KernelMultistage;
+  using ClusterShape = ClusterShape_;
+};
+
+// n-buffer in smem (cp.async), pipelined with registers, with predicated gmem loads for SM100 Simt Ptr-Array
+template<int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm80ArrayCpAsync {
+  constexpr static int Stages = Stages_;
+  using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
+  using Schedule = KernelPtrArrayMultistage;
   using ClusterShape = ClusterShape_;
 };
 
@@ -479,6 +491,16 @@ struct KernelTmaWarpSpecializedInputTransformSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
+// InputTransform GEMM
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedMixedInputTransformSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
 // Ptr-Array Dense GEMM: SM100 tensor op policy that applies to both 1SM and 2SM MMA atoms
 template<
   int SchedulerPipelineStageCount_,
@@ -511,59 +533,80 @@ struct KernelPtrArrayTmaWarpSpecializedInputTransformSm100 final {
 
 
 // SM120 kernel schedules
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelTmaWarpSpecializedCooperativeSm120 : KernelTmaWarpSpecializedCooperative { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelTmaWarpSpecializedPingpongSm120 : KernelTmaWarpSpecializedPingpong { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelTmaWarpSpecializedCooperativeBlockScaledSm120 : KernelTmaWarpSpecializedCooperative { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelTmaWarpSpecializedPingpongBlockScaledSm120 : KernelTmaWarpSpecializedPingpong { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
 // SM120 dense Ptr-array kernel schedules
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelPtrArrayTmaWarpSpecializedCooperativeSm120 : KernelPtrArrayTmaWarpSpecializedCooperative { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelPtrArrayTmaWarpSpecializedPingpongSm120 : KernelPtrArrayTmaWarpSpecializedPingpong { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelPtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120 : KernelPtrArrayTmaWarpSpecializedCooperative { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
-template< int SchedulerPipelineStageCount_>
+template<int SchedulerPipelineStageCount_>
 struct KernelPtrArrayTmaWarpSpecializedPingpongBlockScaledSm120 : KernelPtrArrayTmaWarpSpecializedPingpong { 
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
 // SM120 sparse kernel schedules
-template< int SchedulerPipelineStageCount_, bool isAsymmetric_>
+template<int SchedulerPipelineStageCount_, bool isAsymmetric_>
 struct KernelTmaWarpSpecializedCooperativeSparseSm120 {
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
   static constexpr bool isAsymmetric = isAsymmetric_;
 };
 
-template< int SchedulerPipelineStageCount_, bool isAsymmetric_>
+template<int SchedulerPipelineStageCount_, bool isAsymmetric_>
 struct KernelTmaWarpSpecializedCooperativeSparseBlockScaledSm120 {
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
   static constexpr bool isAsymmetric = isAsymmetric_;
+};
+
+// SM120 blockwise kernel schedules
+template <int SchedulerPipelineStageCount_>
+struct KernelTmaWarpSpecializedCooperativeBlockwiseScalingSm120 : KernelTmaWarpSpecializedCooperative {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+};
+
+template <int SchedulerPipelineStageCount_>
+struct KernelTmaWarpSpecializedPingpongBlockwiseScalingSm120 : KernelTmaWarpSpecializedPingpong {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+};
+
+template <int SchedulerPipelineStageCount_>
+struct KernelPtrArrayTmaWarpSpecializedCooperativeBlockwiseScalingSm120 : KernelPtrArrayTmaWarpSpecializedCooperative {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+};
+
+template <int SchedulerPipelineStageCount_>
+struct KernelPtrArrayTmaWarpSpecializedPingpongBlockwiseScalingSm120 : KernelPtrArrayTmaWarpSpecializedPingpong {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
 };
 
 // Auxiliary Load Tag.
@@ -776,6 +819,12 @@ struct KernelTmaWarpSpecializedMxf4Sm120             final : KernelScheduleMxNvf
 struct KernelTmaWarpSpecializedPingpongMxf4Sm120     final : KernelScheduleMxNvf4Sm120, KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedMxf8f6f4Sm120         final : KernelScheduleMxf8f6f4Sm120, KernelTmaWarpSpecializedCooperative { };
 struct KernelTmaWarpSpecializedPingpongMxf8f6f4Sm120 final : KernelScheduleMxf8f6f4Sm120, KernelTmaWarpSpecializedPingpong { };
+// Blockwise Scaled GEMM
+struct KernelScheduleSm120Blockwise: KernelScheduleSm120 { };
+struct KernelTmaWarpSpecializedBlockwiseCooperativeSm120 final : KernelScheduleSm120Blockwise, KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedBlockwisePingpongSm120 final : KernelScheduleSm120Blockwise, KernelTmaWarpSpecializedPingpong { };
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM120 Sparse GEMM Dispatch Policies
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1119,6 +1168,43 @@ struct MainloopSm120TmaWarpSpecializedSparseBlockScaled {
   using ArchTag = arch::Sm120;
   using Schedule = KernelTmaWarpSpecializedCooperativeSparseBlockScaledSm120<SchedulerPipelineStageCount_, isAsymmetric>;
 };
+
+template <
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  class ClusterShape_,
+  class KernelSchedule_
+>
+struct MainloopSm120TmaWarpSpecializedBlockwiseScaling {
+  constexpr static int Stages = Stages_;
+  constexpr static int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  using ClusterShape = ClusterShape_;
+  using Schedule = KernelSchedule_;
+
+  constexpr static int PipelineAsyncMmaStages = 0;
+  using ArchTag = arch::Sm120;
+};
+
+template <
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  class ClusterShape_,
+  class KernelSchedule_
+>
+struct MainloopSm120ArrayTmaWarpSpecializedBlockwiseScaling {
+  constexpr static int Stages = Stages_;
+  constexpr static int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  using ClusterShape = ClusterShape_;
+  using Schedule = KernelSchedule_;
+
+  constexpr static int PipelineAsyncMmaStages = 0;
+  using ArchTag = arch::Sm120;
+
+  static_assert(cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, Schedule> ||
+                cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, Schedule>, 
+                "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies.");
+};
+
 
 
 //////////////////////////////////////////////////////////////////////////////

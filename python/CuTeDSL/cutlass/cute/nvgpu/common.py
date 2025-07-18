@@ -84,6 +84,11 @@ class MmaUniversalOp(core.MmaOp):
         )
         return MmaUniversalTrait(_cute_ir.atom(atom_ty, loc=loc, ip=ip))
 
+    def _verify_fragment_A(self, input, *, loc=None, ip=None):
+        pass
+
+    def _verify_fragment_B(self, input, *, loc=None, ip=None):
+        pass
 
 class MmaUniversalTrait(core.Trait):
     pass

@@ -78,11 +78,9 @@ def detect_gpu_arch(prefix):
 
     major, minor = arch
     suffix = ""
-    if major >= 9 and minor >= 0:
+    if major >= 9:
         suffix = "a"
-    elif minor != 0:
-        # e.g sm_86, belong with sm_80 family
-        minor = 0
+
     return f"sm_{major}{minor}{suffix}"
 
 

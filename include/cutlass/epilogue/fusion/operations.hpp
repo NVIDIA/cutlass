@@ -57,6 +57,7 @@ struct FusionOperation {
 
   using ElementSource = void;
   static constexpr bool IsSourceSupported = false;
+  static constexpr bool IsResidualSupported = false; // Source is added after activation
 
   using ElementScalar = void;
   static constexpr int AlignmentScalar = 0;
@@ -315,6 +316,24 @@ struct PerColLinCombPerColBiasEltAct
         ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_> {
   static constexpr int AlignmentScalar = AlignmentScalar_;
   static constexpr bool IsPerColScaleSupported = true;
+};
+
+// D = activation(per-col alpha * acc + per-column bias) + per-col beta * C
+template<
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_ = ElementOutput_,
+  class ElementSource_ = ElementOutput_,
+  class ElementScalar_ = ElementCompute_, // per-row alpha/beta
+  int AlignmentBias_ = 128 / cute::sizeof_bits_v<ElementBias_>,
+  int AlignmentScalar_ = 128 / cute::sizeof_bits_v<ElementScalar_>,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct PerColResAddPerColBiasEltAct
+    : PerColLinCombPerColBiasEltAct<ActivationFn_, ElementOutput_, ElementCompute_,
+        ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, AlignmentScalar_, RoundStyle_> {
+  static constexpr bool IsResidualSupported = true;
 };
 
 // Z = scale_a * scale_b * alpha * acc + beta * scale_c * C + per-row bias

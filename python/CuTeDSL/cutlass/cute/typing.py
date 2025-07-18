@@ -56,14 +56,25 @@ XTuple = Union[IntTuple, Shape, Stride, Coord, Tile]
 Tiler = Union[Shape, Layout, Tile]
 
 
-class Pointer:
+class Pointer(ABC):
     """
     Abstract base class for CuTe jit function and runtime _Pointer
     """
 
-    def __extract_mlir_values__(self):
-        # Doesn't matter just return a value
-        return [self]
+    @property
+    def value_type(self) -> Type[Numeric]:
+        return self.dtype
+
+    @property
+    def dtype(self) -> Type[Numeric]: ...
+
+    def align(self, min_align: int) -> "Pointer": ...
+
+    def __get_mlir_types__(self) -> List[ir.Type]: ...
+
+    def __extract_mlir_values__(self) -> List[ir.Value]: ...
+
+    def __new_from_mlir_values__(self, values) -> "Pointer": ...
 
 
 class Tensor(ABC):
@@ -144,10 +155,13 @@ class Tensor(ABC):
 
     def store(self, data: "TensorSSA", *, loc=None, ip=None): ...
 
-    def mark_layout_dynamic(self, leading_dim: int|None = None) -> "Tensor": ...
+    def mark_layout_dynamic(self, leading_dim: int | None = None) -> "Tensor": ...
 
     def mark_compact_shape_dynamic(
-        self, mode: int, stride_order: tuple[int, ...]|None = None, divisibility: int = 1
+        self,
+        mode: int,
+        stride_order: tuple[int, ...] | None = None,
+        divisibility: int = 1,
     ) -> "Tensor": ...
 
     @abstractmethod

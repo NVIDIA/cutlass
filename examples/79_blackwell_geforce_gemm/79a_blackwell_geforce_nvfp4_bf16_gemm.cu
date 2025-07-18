@@ -36,7 +36,7 @@
     This kernel is optimized for the GeForce RTX 50 series GPUs.
 
     The Blackwell SM120 CUTLASS kernel uses the new Block Scaled Tensor Core MMA Instructions (mma.sync.aligned.block_scale).
-    NVFP4 MMA has 2x throughput compared to MXFP8 MMA and 4x throughput compared to Ada Tensor Core FP8 MMA. 
+    NVFP4 MMA has 2x throughput compared to MXFP8 MMA and 4x throughput compared to Ada Tensor Core FP8 MMA.
     (See https://docs.nvidia.com/cuda/parallel-thread-execution).
 
     This kernel leverages:
@@ -44,11 +44,11 @@
     2. The new SW controlled dynamic scheduler based on cluster launch control (See https://docs.nvidia.com/cuda/parallel-thread-execution).
     3. Block Scaled Tensor Core MMA Instructions
     4. Epilogue Optimization
-    
+
     Note that GeForce RTX 50 series GPUs do not support:
     1. Multicast feature of TMA load. Cluster shape has to be 1x1x1.
     2. Dynamic datatypes.
-    
+
     Usage:
 
       $ ./examples/79_blackwell_geforce_gemm/79a_blackwell_geforce_nvfp4_bf16_gemm --m=2048 --n=2048 --k=2048
@@ -122,7 +122,7 @@ using ThreadBlockShape    = Shape<_128,_128,_128>;                          // T
 using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,                      
+    ArchTag, OperatorClass,
     ThreadBlockShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -193,13 +193,7 @@ cutlass::HostTensor<ElementD, cutlass::layout::PackedVectorLayout> block_referen
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -328,7 +322,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -411,7 +405,7 @@ bool verify(const Options &options) {
 
   auto tensor_C = cute::make_tensor(make_iterator(block_C.host_data()), layout_C);
   auto tensor_D = cute::make_tensor(make_iterator(block_reference_D.host_data()), layout_D);
- 
+
   cutlass::reference::host::GettBlockScalingEpilogueParams<
       ElementAccumulator,                   // ElementScalar
       ElementAccumulator,                   // ElementAccumulator
@@ -512,9 +506,9 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
-  
+
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  
+
   if (!(props.major == 12 && props.minor == 0)) {
     std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 120)." << std::endl;
     return 0;

@@ -133,7 +133,7 @@ using TP = _8;
 static constexpr int TP_ = TP{};
 
 #if defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && \
-  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
+  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 // Distributed GEMM tiling/sharding schedule
 // Choices:
@@ -252,7 +252,8 @@ HostTensorB tensor_B_arr[TP_];
 HostTensorD tensor_C_arr[TP_];
 HostTensorD tensor_D_arr[TP_];
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) &&
+       // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -345,7 +346,7 @@ struct Result {
 };
 
 #if defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && \
-  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
+  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -803,17 +804,18 @@ int run(Options &options) {
   return 0;
 }
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) &&
+       // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA Toolkit 12.4 or newer to run this example
+  // CUTLASS must be compiled with CUDA Toolkit 12.6 or newer to run this example
   // and must have compute capability at least 90.
-  // Some necessary cuda graph APIs were only introduced in CUDA 12.4.
-  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 4)) {
-    std::cerr << "This example requires CUDA 12.4 or newer." << std::endl;
+  // Some necessary cuda graph APIs were only introduced in CUDA 12.6.
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 6)) {
+    std::cerr << "This example requires CUDA 12.6 or newer." << std::endl;
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
@@ -857,11 +859,11 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6)))
   run(options);
 #else
     std::cerr
-      << "This example must be compiled with `sm90a` and CUDA Toolkit 12.4 or later." << std::endl;
+      << "This example must be compiled with `sm90a` and CUDA Toolkit 12.6 or later." << std::endl;
     return 0;
 #endif
 

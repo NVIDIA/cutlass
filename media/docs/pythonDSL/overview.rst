@@ -42,7 +42,7 @@ Core CuTe DSL Abstractions
 - **Atoms** – Represent fundamental hardware operations like matrix multiply-accumulate (MMA) or memory copy.
 - **Tiled Operations** – Define how atoms are applied across thread blocks and warps (e.g., ``TiledMma``, ``TiledCopy``).
 
-For more on CuTe abstractions, refer to the `CuTe C++ library documentation <https://github.com/NVIDIA/cutlass/blob/main/media/docs/cute/00_quickstart.md>`__.
+For more on CuTe abstractions, refer to the `CuTe C++ library documentation <https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/00_quickstart.md>`__.
 
 **Pythonic Kernel Expression**
 

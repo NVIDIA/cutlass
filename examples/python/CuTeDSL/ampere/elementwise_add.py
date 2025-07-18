@@ -28,16 +28,17 @@
 
 
 import argparse
-import torch
 import time
 from typing import Type
 
 import cuda.bindings.driver as cuda
+import torch
 
 import cutlass
 import cutlass.cute as cute
-from cutlass.cute.runtime import from_dlpack
+import cutlass.cute.testing as testing
 import cutlass.torch as cutlass_torch
+from cutlass.cute.runtime import from_dlpack
 
 """
 An Elementwise Addition Example using CuTe DSL.
@@ -153,6 +154,7 @@ def elementwise_add_kernel(
     blkC = gC[blk_coord]  # (TileM,TileN)
     blkCrd = cC[blk_coord]  # (TileM, TileN)
 
+    # Note: these prints only run at compile/jit time
     print(f"[DSL INFO] Sliced Tensors per thread block:")
     print(f"[DSL INFO]   blkA = {blkA.type}")
     print(f"[DSL INFO]   blkB = {blkB.type}")
@@ -189,7 +191,7 @@ def elementwise_add_kernel(
     print(f"[DSL INFO]   thrC = {thrC.type}")
     print(f"[DSL INFO]   thrCrd = {thrCrd.type}")
 
-    for i in cutlass.range_dynamic(0, cute.size(frgPred), 1):
+    for i in range(0, cute.size(frgPred), 1):
         val = cute.elem_less(thrCrd[i], shape)
         frgPred[i] = val
 
@@ -270,9 +272,6 @@ def run_elementwise_add(
     warmup_iterations=2,
     iterations=200,
 ):
-    if not torch.cuda.is_available():
-        raise RuntimeError(f"Ampere GPU is required to run this example!")
-
     print(f"\nRunning Elementwise Add test with:")
     print(f"Tensor dimensions: [{M}, {N}]")
     print(f"Input and Output Data type: {dtype}")
@@ -315,10 +314,8 @@ def run_elementwise_add(
 
     print("Executing vector add kernel...")
 
-    # Get current CUDA stream from PyTorch
-    torch_stream = torch.cuda.current_stream()
-    # Get the raw stream pointer as a CUstream
-    current_stream = cuda.CUstream(torch_stream.cuda_stream)
+    # Get current CUstream from torch
+    current_stream = cutlass_torch.current_stream()
 
     if not skip_ref_check:
         compiled_func(a_tensor, b_tensor, c_tensor)
@@ -329,40 +326,51 @@ def run_elementwise_add(
     if not benchmark:
         return
 
-    # Create CUDA events for timing
-    start_event = cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT)[1]
-    end_event = cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT)[1]
+    def generate_tensors():
+        if dtype.is_integer:
+            a = torch.randint(
+                0, 10, (M, N), device=torch.device("cuda"), dtype=torch_dtype
+            )
+            b = torch.randint(
+                0, 10, (M, N), device=torch.device("cuda"), dtype=torch_dtype
+            )
+        else:
+            a = torch.randn(M, N, device=torch.device("cuda"), dtype=torch_dtype)
+            b = torch.randn(M, N, device=torch.device("cuda"), dtype=torch_dtype)
 
-    # Warmup
-    for _ in range(warmup_iterations):
-        compiled_func(a_tensor, b_tensor, c_tensor)
+        c = torch.zeros_like(a)
 
-    # Use the current stream for CUDA events instead of the default stream
-    # Record start event
-    cuda.cuEventRecord(start_event, current_stream)
+        if not is_a_dynamic_layout:
+            a_tensor = from_dlpack(a).mark_layout_dynamic()
+        else:
+            a_tensor = a
 
-    # Execute the kernel
-    for _ in range(iterations):
-        compiled_func(a_tensor, b_tensor, c_tensor)
+        if not is_b_dynamic_layout:
+            b_tensor = from_dlpack(b).mark_layout_dynamic()
+        else:
+            b_tensor = b
 
-    # Record end event
-    cuda.cuEventRecord(end_event, current_stream)
-    cuda.cuEventSynchronize(end_event)
+        if not is_result_dynamic_layout:
+            c_tensor = from_dlpack(c).mark_layout_dynamic()
+        else:
+            c_tensor = c
 
-    # Calculate elapsed time
-    err, elapsed_time = cuda.cuEventElapsedTime(start_event, end_event)
-    avg_time = elapsed_time / iterations
+        return testing.JitArguments(a_tensor, b_tensor, c_tensor)
+
+    avg_time_us = testing.benchmark(
+        compiled_func,
+        workspace_generator=generate_tensors,
+        workspace_count=10,
+        warmup_iterations=warmup_iterations,
+        profiling_iterations=iterations,
+    )
 
     # Print execution results
-    print(f"Kernel execution time: {avg_time:.4f} ms")
+    print(f"Kernel execution time: {avg_time_us / 1e3:.4f} ms")
     print(
-        f"Achieved memory throughput: {(3 * a.numel() * dtype.width // 8) / (avg_time / 1000) / 1e9:.2f} GB/s"
+        f"Achieved memory throughput: {(3 * a.numel() * dtype.width // 8) / (avg_time_us / 1e6) / 1e9:.2f} GB/s"
     )
     print(f"First few elements of result: \n{c[:3, :3]}")
-
-    # Destroy events
-    cuda.cuEventDestroy(start_event)
-    cuda.cuEventDestroy(end_event)
 
 
 if __name__ == "__main__":
@@ -377,6 +385,10 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", action="store_true")
 
     args = parser.parse_args()
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(f"Ampere GPU is required to run this example!")
+
     run_elementwise_add(
         args.M,
         args.N,

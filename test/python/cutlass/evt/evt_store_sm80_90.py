@@ -49,6 +49,31 @@ cutlass.set_log_level(logging.WARNING)
 @unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
 class TestEVTStore(EVTTestCaseBase):
 
+    @unittest.skipIf(device_cc() != 90, "This test is only for CC 90")
+    def test_invalid_store(self):
+        """
+        Test invalid store
+        """
+        def evt_invalid_store(accum):
+            D = accum
+            F = D + 1 # D has users, which is not allowed on SM90 or higher
+            return D, F
+        
+        for m, n, k, l in self.get_problem_sizes(8):
+            example_inputs = {
+                "accum": self.fake_tensor(self.element, (l, m, n)),
+                "D": self.fake_tensor(self.element, (l, m, n)),
+                "F": self.fake_tensor(self.element, (l, m, n))
+            }
+            with self.assertRaisesRegex(
+                    RuntimeError, 
+                    r"On SM90 or higher, D is expected to be a output node with 0 users " 
+                    r"to enable smem reuse between C and D, but got 1"
+                ):
+                launcher = EVTTestBed(self.element, evt_invalid_store, example_inputs)
+            
+            break  # Only need to test once
+
     def test_aux_store(self):
         """
         Returning a tensor with shape [m, n]

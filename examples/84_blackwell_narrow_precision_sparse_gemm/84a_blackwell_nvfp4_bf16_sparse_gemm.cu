@@ -41,8 +41,8 @@
     Similar to 83_blackwell_sparse_gemm, this kernel leverages:
     1. Per-SM memory called Tensor Memory (TMEM)  (Please refer to CUDA 12.8 docs on https://docs.nvidia.com/cuda/).
 
-    2. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM 
-    which allows us to decouple the execution of MMA and epilogue into separate warps. 
+    2. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM
+    which allows us to decouple the execution of MMA and epilogue into separate warps.
 
     3. A new SW controlled dynamic scheduler based on cluster launch control (See https://docs.nvidia.com/cuda/parallel-thread-execution).
 
@@ -123,8 +123,8 @@ using ArchTag             = cutlass::arch::Sm100;                            // 
 using OperatorClass       = cutlass::arch::OpClassBlockScaledSparseTensorOp; // Operator class tag
 
 // MMA and Cluster Tile Shapes
-// Shape of the tile computed by tcgen05 MMA, could be across 2 SMs if Cluster Shape %2 == 0 
-using MmaTileShape = Shape<_256,_128,_256>;                          
+// Shape of the tile computed by tcgen05 MMA, could be across 2 SMs if Cluster Shape %2 == 0
+using MmaTileShape = Shape<_256,_128,_256>;
 // Shape of the threadblocks in a cluster
 using ClusterShape = Shape<_2,_1,_1>;
 
@@ -157,7 +157,7 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
     ProblemShape,
     CollectiveMainloop,
     CollectiveEpilogue,
-    void>;                   // Default to ClusterLaunchControl (CLC) based tile scheduler 
+    void>;                   // Default to ClusterLaunchControl (CLC) based tile scheduler
 
 using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
@@ -244,13 +244,7 @@ cutlass::HostTensor<ElementD, LayoutTagD> reference_D;
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -536,18 +530,18 @@ bool verify(const Options &options) {
   // Create the arguments for host reference implementation
   auto A = make_tensor(make_iterator(tensor_A.host_data()), layout_A);
   auto SFA = make_tensor(tensor_SFA.host_data(), layout_SFA);
-  auto B = make_tensor(make_iterator(tensor_B.host_data()), 
+  auto B = make_tensor(make_iterator(tensor_B.host_data()),
     make_layout(make_shape(options.n, options.k, options.l), stride_B));
   auto SFB = make_tensor(tensor_SFB.host_data(), layout_SFB);
 
   cutlass::reference::host::GettMainloopParams<
-      ElementAccumulator, 
-      decltype(A),  
-      decltype(B), 
-      decltype(SFA), 
+      ElementAccumulator,
+      decltype(A),
+      decltype(B),
+      decltype(SFA),
       decltype(SFB)> mainloop_params{A, SFA, B, SFB};
 
-  auto C = make_tensor(make_iterator(tensor_C.host_data()), 
+  auto C = make_tensor(make_iterator(tensor_C.host_data()),
     make_layout(make_shape(options.m, options.n, options.l), stride_C));
   auto D = make_tensor(make_iterator(reference_D.host_data()),
     make_layout(make_shape(options.m, options.n, options.l), stride_D));
@@ -563,7 +557,7 @@ bool verify(const Options &options) {
       options.beta,
       C,
       D};
-  
+
   cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
 
   // Comparison

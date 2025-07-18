@@ -185,7 +185,9 @@ class EVTTestBed:
         
         # Compare the results
         for result, ref in zip(result_keys, reference_results):
-            assert torch.equal(epilogue_args[result].flatten(), ref.flatten())
+            assert torch.equal(
+                epilogue_args[result].flatten(), 
+                ref.masked_fill(torch.isnan(ref), float('inf')).flatten())
         
         # Run profile
         if self.profile:
@@ -210,8 +212,11 @@ class EVTTestCaseBase(unittest.TestCase):
         
         torch.random.manual_seed(42)
     
-    def fake_tensor(self, element, shape):
-        return Tensor(element=element, shape=shape, layout_tag=cutlass.LayoutType.RowMajor)
+    def fake_tensor(self, element, shape, stride=None):
+        if stride is None:
+            return Tensor(element=element, shape=shape, layout_tag=cutlass.LayoutType.RowMajor)
+        else:
+            return Tensor(element=element, shape=shape, stride=stride)
     
     def get_problem_sizes(self, alignment, k=None, batch_count=[3,]):
         k = k if k else self.k

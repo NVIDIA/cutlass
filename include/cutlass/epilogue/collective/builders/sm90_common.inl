@@ -91,6 +91,14 @@ sm90_get_smem_load_op_for_source() {
   }
 }
 
+// C/D should meet TMA alignment requirement if not void
+template <class ElementC, int AlignmentC, class ElementD, int AlignmentD>
+constexpr bool
+is_aligned() {
+  return (cute::is_void_v<ElementC> || (cute::sizeof_bits_v<ElementC> * AlignmentC) % cutlass::detail::get_output_alignment_bits<ElementC>() == 0) &&
+         (cute::is_void_v<ElementD> || (cute::sizeof_bits_v<ElementD> * AlignmentD) % cutlass::detail::get_output_alignment_bits<ElementD>() == 0);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective::detail

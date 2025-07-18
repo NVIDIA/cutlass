@@ -69,6 +69,12 @@ public:
     std::vector<gemm::GemmCoord> problem_sizes;
     std::vector<cute::Shape<int, int, int>> problem_sizes_3x;
 
+    /// For exploration purposes
+    std::vector<std::array<int64_t, 3>> preferred_clusters;
+    std::vector<std::array<int64_t, 3>> fallback_clusters;
+    std::vector<cutlass::library::RasterOrder> raster_orders;
+    std::vector<int> swizzle_sizes;
+
     int cluster_m{1};
     int cluster_n{1};
     int cluster_k{1};
@@ -82,6 +88,14 @@ public:
 
     std::vector<uint8_t> alpha;
     std::vector<uint8_t> beta;
+
+    cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
+    int swizzle_size{1};
+
+    cutlass::library::RuntimeDatatype runtime_input_datatype_a{};
+    cutlass::library::RuntimeDatatype runtime_input_datatype_b{};
+
+    bool use_pdl{false};
 
     /// Parses the problem
     Status parse(
@@ -190,7 +204,7 @@ private:
     gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
-    arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    arguments.sm_count = options.device.get_sm_count(0);
     if (is_block_scaled) {
       auto& block_scaled_ws = gemm_workspace_.block_scales.value();
       arguments.SFA = block_scaled_ws.SFA_ptr_array_device[0]->data();
@@ -272,6 +286,26 @@ protected:
     library::GroupedGemmDescription const& operation_desc,
     ProblemSpace const& problem_space);
 
+  /// Update workspace configuration according to flexible user setups
+  void update_workspace_(
+    GroupedGemmWorkspace &gemm_workspace,
+    std::array<int64_t, 3> const &preferred_cluster,
+    std::array<int64_t, 3> const &fallback_cluster,
+    cutlass::library::RasterOrder const &raster_order,
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
+
+  /// Update performance result configuration for exploration parameters
+  void update_workspace_and_result_(
+    GroupedGemmWorkspace &gemm_workspace,
+    PerformanceResult &result,
+    ProblemSpace const &problem_space,
+    cutlass::library::RasterOrder const &raster_order,
+    std::array<int64_t, 3> const &preferred_cluster,
+    std::array<int64_t, 3> const &fallback_cluster,
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
+
   /// Verifies CUTLASS against host and device references
   bool verify_with_reference_(
     Options const& options,
@@ -291,6 +325,12 @@ protected:
     void* arguments,
     void* host_workspace,
     void* device_workspace) override;
+
+  /// Method to profile a CUTLASS Operation for the best configuration for a fixed shape
+  bool profile_cutlass_for_fixed_shape_(
+    Options const& options,
+    library::Operation const* operation,
+    ProblemSpace const& problem_space);
 
 };
 

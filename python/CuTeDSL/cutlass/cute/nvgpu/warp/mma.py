@@ -16,8 +16,8 @@ import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from ..common import OpError
-from ...core import MmaOp, Trait, _pack_shape
-from ...typing import Shape, Float16, BFloat16, Float32, Numeric
+from ...core import MmaOp, Trait, _pack_shape, _Tensor
+from ...typing import Shape, Float16, BFloat16, Float32, Numeric, AddressSpace
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,11 @@ class MmaF16BF16Op(MmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
+    def _verify_fragment_A(self, input: _Tensor, *, loc=None, ip=None):
+        pass
+
+    def _verify_fragment_B(self, input: _Tensor, *, loc=None, ip=None):
+        pass
 
 class MmaF16BF16Trait(Trait):
     pass
