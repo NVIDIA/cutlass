@@ -232,6 +232,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // Size of the register pipeline
   auto K_BLOCK_MAX = size<2>(tCrA);
+  CUTE_STATIC_ASSERT_V(K_BLOCK_MAX == size<2>(tXrA));
 
   // PREFETCH register pipeline
   if (K_BLOCK_MAX > 1) {
@@ -371,7 +372,7 @@ gemm_tn(int m, int n, int k,
                                     Layout<Shape<_16,_8>,Stride<_8,_1>>{},  // Thr layout 16x8 k-major
                                     Layout<Shape< _1,_8>>{});               // Val layout  1x8 n-major
 
-  TiledMMA mmaC = make_tiled_mma(SM80_16x8x8_F16F16F16F16_TN{},
+  TiledMMA mmaC = make_tiled_mma(SM80_16x8x16_F16F16F16F16_TN{},
                                  Layout<Shape<_2,_2>>{},    // 2x2x1 MMA Atoms
                                  Tile<_32,_32,_16>{});      // 32x32x16 Tiled MMA for LDSM
 
