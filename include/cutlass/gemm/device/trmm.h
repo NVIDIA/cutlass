@@ -300,7 +300,7 @@ class Trmm {
   static int const kAlignmentBKernel = (SideModeA == SideMode::kRight) ? AlignmentA : AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp::kCount;
   static bool const kSplitKSerial = SplitKSerial;
-  // Complex Transform don't appply to B
+  // Complex Transform don't apply to B
   static ComplexTransform const kTransformA = TransformA; 
   static ComplexTransform const kTransformB = ComplexTransform::kNone; 
   static ComplexTransform const kTransformAKernel = (SideModeA == SideMode::kRight) ? 
@@ -651,7 +651,7 @@ class Trmm<ElementA_, LayoutA_, SideModeA, FillModeA, DiagTypeA,
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
   static ComplexTransform const kTransformA = TransformA;
-  // Complex Transform don't appply to B
+  // Complex Transform don't apply to B
   static ComplexTransform const kTransformB = ComplexTransform::kNone; 
   static bool const kSplitKSerial = SplitKSerial;
 
@@ -694,7 +694,7 @@ public:
   /// Constructs the TRMM.
   Trmm() { }
 
-  /// Helper to construct a transposed equivalent for the underying TRMM operator which is identical
+  /// Helper to construct a transposed equivalent for the underlying TRMM operator which is identical
   static Arguments to_underlying_arguments(Arguments const &args) {
     return args.transposed_problem_size();
   }

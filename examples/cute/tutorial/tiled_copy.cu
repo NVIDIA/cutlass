@@ -200,7 +200,7 @@ int main(int argc, char** argv)
 
   // Construct tiled copy, a tiling of copy atoms.
   //
-  // Note, this assumes the vector and thread layouts are aligned with contigous data
+  // Note, this assumes the vector and thread layouts are aligned with contiguous data
   // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
   // reads. Alternative value layouts are also possible, though incompatible layouts
   // will result in compile time errors.

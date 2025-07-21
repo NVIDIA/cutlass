@@ -36,7 +36,7 @@
     APIs on NVIDIA Blackwell SM100 architecture.
 
     The basic computation logic of fprop convolution kernel is, take 3D convolution as an example:
-        Activation (NDHWC) * Weight/Filter (KTRSC) = Xformed Actication (NZPQK)
+        Activation (NDHWC) * Weight/Filter (KTRSC) = Xformed Activation (NZPQK)
 
     where in terms of GEMM perspective,
         Matrix A = Activation, Matrix B = Weight/Filter, Matrix C = Xformed Activation

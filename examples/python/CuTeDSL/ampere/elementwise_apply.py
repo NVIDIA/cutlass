@@ -353,7 +353,7 @@ def run_elementwise_apply_and_verify(
             current_stream,
         ),
         warmup_iterations=warmup_iterations,
-        profiling_iterations=iterations,
+        iterations=iterations,
         use_cuda_graphs=True,
         stream=current_stream,
     )

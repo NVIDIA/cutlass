@@ -173,7 +173,7 @@ public:
     FragmentC &accum,                 ///< destination accumulator tile
     IteratorA iterator_A,             ///< iterator over A operand in global memory
     IteratorB iterator_B,             ///< iterator over B operand in global memory
-    FragmentC const &src_accum) {     ///< source accumualtor tile
+    FragmentC const &src_accum) {     ///< source accumulator tile
 
     //
     // Prologue

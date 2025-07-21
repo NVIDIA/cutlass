@@ -46,20 +46,12 @@ To get started quickly - please refer :
 # What's New in CUTLASS 4.1
 
 ## CuTe DSL
+* Add aarch64 support, you can now pip install `nvidia-cutlass-dsl` on GB200 systems!
 * More examples demonstrating how to use CuTe DSL to write peak-performance kernels
     - [Blackwell Mamba2 SSD](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py)
+    - [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py)
 * API updates
-    - for loop
-        - Python built-in ``range`` now always generates IR and executes at runtime
-        - ``cutlass.range`` is advanced ``range`` with IR level unrolling and pipelining control
-        - Deprecated ``cutlass.range_dynamic``, please replace with ``range`` or ``cutlass.range``
-        - **Experimental** Added ``pipelining`` control for compiler generated software pipeline code
-    - while/if
-        - ``while``/``if`` now by default generates IR and executes at runtime unless ``cutlass.const_expr`` is specified for the predicate
-        - Deprecated ``cutlass.dynamic_expr``, please remove it
-    - Rename mbarrier functions to reduce ambiguity
-    - Modify SyncObject API (`MbarrierArray`, `NamedBarrier`, `TmaStoreFence`) to match `std::barrier`
-    - Change pipeline `create` function to take only keyword arguments, and make `barrier_storage` optional.
+    - Please refer to [FUNCTIONALITY.md](https://github.com/NVIDIA/cutlass/blob/main/FUNCTIONALITY.md) for details
 
 ## CUTLASS C++
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
@@ -72,7 +64,7 @@ To get started quickly - please refer :
     - Remove buggy and kludgy `get_layoutA|B|C_MN` and friends from Atoms/TiledX.
     - Factor out `print_latex` and friends and rewrite.
     - Factor out `print_svg` and friends and rewrite.
-* Support Blackwell SM100 SIMT FFMA2 kernels.
+* Support Blackwell SM100 SIMT packed fp32x2 kernels.
 * Support residual add for implicit gemm kernels.
 * Various fixes for CUTLASS C++ Python interface's EVT tracer:
     - Add verifier for sm90 to report the invalid input.
@@ -82,6 +74,9 @@ To get started quickly - please refer :
 * Fix profiler bugs in exhaustive perf search.
     - Fix incorrect cluster shape output issue when doing exhaustive search.
     - Fix a bug in profiler grouped GEMM for setting tile scheduler swizzles, cluster shapes, and raster orders.
+* Fix some profiler issues.
+    - Complete the reference for Blackwell blockwise gemm kernels.
+    - Fix incorrect regex logic for L1 test.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

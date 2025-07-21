@@ -527,7 +527,16 @@ class IntegerMeta(NumericMeta):
             return 2**cls.width - 1
 
     def recast_width(cls, width):
-        return eval(f"Int{width}")
+        type_map = {
+            8: Int8,
+            16: Int16,
+            32: Int32,
+            64: Int64,
+            128: Int128,
+        }
+        if width not in type_map:
+            raise TypeError(f"Unsupported width: {width}")
+        return type_map[width]
 
 
 class FloatMeta(NumericMeta):
@@ -603,7 +612,14 @@ class FloatMeta(NumericMeta):
         return cls._mantissa_width
 
     def recast_width(cls, width):
-        return eval(f"Float{width}")
+        type_map = {
+            16: Float16,
+            32: Float32,
+            64: Float64,
+        }
+        if width not in type_map:
+            raise TypeError(f"Unsupported width: {width}")
+        return type_map[width]
 
 
 def _arith_signless_to_int(a, target_type):

@@ -90,18 +90,17 @@ If you already know the TV layout you want to use for your tiled copy, CuTe DSL 
     # Tile input tensor to thread blocks: ((TileM,TileN),(RestM,RestN))
     gA = cute.zipped_divide(mA, tiler_mn)
 
-where `tiler_mn` is the tile size per thread block and `tv_layout` is the TV layout which maps
-thread index and inter-thread index of data array per thread to logical coordinates of elements in
-input and output tensors.
-
-Then we can build tiled copy for input and output tensors with `cute.make_tiled_copy` utility.
+Then we can build tiled copy for input and output tensors with `cute.make_tiled_copy_tv` utility, which
+infers the tiler and tv layout for the tiled copy automatically, where `tiler` is the tile size per thread
+block and `tv_layout` is the TV layout which maps thread index and inter-thread index of data array per
+thread to logical coordinates of elements in input and output tensors.
 
 .. code-block:: python
 
     blkA = gA[((None, None), bidx)]  # (TileM,TileN)
 
     copy_atom_load = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), gA.element_type)
-    tiled_copy_A = cute.make_tiled_copy(copy_atom_load, tv_layout, tiler_mn)
+    tiled_copy_A = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
 
     # get slice of tiled_copy_A for current thread
     thr_copy_A = tiled_copy_A.get_slice(tidx)
@@ -140,8 +139,8 @@ def elementwise_add_kernel(
     gC: cute.Tensor,
     cC: cute.Tensor,  # coordinate tensor
     shape: cute.Shape,
-    tv_layout: cute.Layout,
-    tiler_mn: cute.Shape,
+    thr_layout: cute.Layout,
+    val_layout: cute.Layout,
 ):
     tidx, _, _ = cute.arch.thread_idx()
     bidx, _, _ = cute.arch.block_idx()
@@ -165,9 +164,9 @@ def elementwise_add_kernel(
     copy_atom_load = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), gA.element_type)
     copy_atom_store = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), gC.element_type)
 
-    tiled_copy_A = cute.make_tiled_copy(copy_atom_load, tv_layout, tiler_mn)
-    tiled_copy_B = cute.make_tiled_copy(copy_atom_load, tv_layout, tiler_mn)
-    tiled_copy_C = cute.make_tiled_copy(copy_atom_store, tv_layout, tiler_mn)
+    tiled_copy_A = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
+    tiled_copy_B = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
+    tiled_copy_C = cute.make_tiled_copy_tv(copy_atom_store, thr_layout, val_layout)
 
     thr_copy_A = tiled_copy_A.get_slice(tidx)
     thr_copy_B = tiled_copy_B.get_slice(tidx)
@@ -254,7 +253,7 @@ def elementwise_add(mA, mB, mC, copy_bits: cutlass.Constexpr = 128):
     cC = cute.zipped_divide(idC, tiler=tiler_mn)
     print(f"[DSL INFO]   coord tensor = {cC.type}")
 
-    elementwise_add_kernel(gA, gB, gC, cC, mC.shape, tv_layout, tiler_mn).launch(
+    elementwise_add_kernel(gA, gB, gC, cC, mC.shape, thr_layout, val_layout).launch(
         grid=[cute.size(gC, mode=[1]), 1, 1],
         block=[cute.size(tv_layout, mode=[0]), 1, 1],
     )
@@ -362,7 +361,7 @@ def run_elementwise_add(
         workspace_generator=generate_tensors,
         workspace_count=10,
         warmup_iterations=warmup_iterations,
-        profiling_iterations=iterations,
+        iterations=iterations,
     )
 
     # Print execution results

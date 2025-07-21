@@ -11,6 +11,8 @@
 
 from typing import Type, Tuple
 from enum import Enum
+from typing_extensions import deprecated
+import warnings
 
 from cutlass.utils.layout import LayoutEnum
 from cutlass.cutlass_dsl import (
@@ -33,6 +35,23 @@ from cutlass.cute.nvgpu.warpgroup import (
     OperandMajorMode,
     OperandSource,
 )
+
+
+@deprecated("Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead")
+class SmemCapacity(Enum):
+    SM90_SMEM_CAPACITY_BYTES = (228 - 1) * 1024
+
+
+warnings.warn(
+    "SMEM_CAPACITY is deprecated: Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
+# Dictionary to map compute capability to SMEM capacity
+SMEM_CAPACITY = {
+    "sm90": SmemCapacity.SM90_SMEM_CAPACITY_BYTES.value,
+}
+
 
 @dsl_user_op
 def sm90_get_smem_store_op(
@@ -78,15 +97,6 @@ def sm90_get_smem_store_op(
     else:
         return cute.make_copy_atom(CopyUniversalOp(), elem_ty_d, loc=loc, ip=ip)
 
-
-class SmemCapacity(Enum):
-    SM90_SMEM_CAPACITY_BYTES = (228 - 1) * 1024
-
-
-# Dictionary to map compute capability to SMEM capacity
-SMEM_CAPACITY = {
-    "sm90": SmemCapacity.SM90_SMEM_CAPACITY_BYTES.value,
-}
 
 def make_trivial_tiled_mma(
     a_dtype: Type[Numeric],

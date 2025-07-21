@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Example demonstrating CuTe and CUTLASS 3.x based Ampere convolution forward propogation kernel
+  \brief Example demonstrating CuTe and CUTLASS 3.x based Ampere convolution forward propagation kernel
       capable of operating on both affine and gather/scatter tensors.
 
   This example demonstartes a few super cool features of CUTLASS and CuTe. It shows off
@@ -284,7 +284,7 @@ int ampere_gather_scatter_conv_fprop(
 int
 main(int argc, char const** argv) {
   cutlass::CommandLine cmd(argc, argv);
-  std::cout << "Ampere convolution forward propogation kernel supporting both affine and gather/scatter tensors.\n\n";
+  std::cout << "Ampere convolution forward propagation kernel supporting both affine and gather/scatter tensors.\n\n";
   if (cmd.check_cmd_line_flag("help")) {
     std::cout
       << "Options:\n"

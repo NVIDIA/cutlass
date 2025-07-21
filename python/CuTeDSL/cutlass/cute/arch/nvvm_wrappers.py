@@ -26,7 +26,19 @@ from cutlass._mlir.dialects.nvvm import (
     RoundingModeKind,
 )
 
-from ..typing import Int, Boolean, Int32, Float32, Numeric, as_numeric
+from ..typing import (
+    Int,
+    Boolean,
+    Int16,
+    Uint16,
+    Int32,
+    Uint32,
+    Int64,
+    Float32,
+    BFloat16,
+    Numeric,
+    as_numeric,
+)
 
 WARP_SIZE = 32
 FULL_MASK = 0xFFFFFFFF
@@ -190,19 +202,97 @@ def shuffle_sync_op(
     """
     if not isinstance(value, Numeric):
         value = as_numeric(value)
-    return type(value)(
-        nvvm.shfl_sync(
-            type(value).mlir_type,
+    if value.width > 64:
+        raise ValueError("shuffle_sync only supports values up to 64 bits")
+
+    orig_type = type(value)
+    if value.width < 32:
+        if value.dtype.is_float:
+            value = value.to(Float32)
+        else:
+            if value.signed:
+                value = value.to(Int32)
+            else:
+                value = value.to(Uint32)
+        return orig_type(
+            nvvm.shfl_sync(
+                type(value).mlir_type,
+                Int32(mask).ir_value(loc=loc, ip=ip),
+                value.ir_value(loc=loc, ip=ip),
+                Int32(offset).ir_value(loc=loc, ip=ip),
+                Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+                kind,
+                loc=loc,
+                ip=ip,
+            )
+        )
+    elif value.width == 32:
+        return orig_type(
+            nvvm.shfl_sync(
+                type(value).mlir_type,
+                Int32(mask).ir_value(loc=loc, ip=ip),
+                value.ir_value(loc=loc, ip=ip),
+                Int32(offset).ir_value(loc=loc, ip=ip),
+                Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+                kind,
+                loc=loc,
+                ip=ip,
+            )
+        )
+    else:
+        if value.width != 64:
+            raise ValueError(
+                "shuffle_sync only supports 64 bits values when the bit width is larger than 32"
+            )
+        value = llvm.bitcast(
+            T.i64(), value.to(ir.Value, loc=loc, ip=ip), loc=loc, ip=ip
+        )
+        # extract low 32 bits
+        low_32_bits = llvm.trunc(
+            T.i32(), value, llvm.IntegerOverflowFlags.none, loc=loc, ip=ip
+        )
+        # extract high 32 bits
+        high_32_bits = llvm.lshr(
+            value, Int64(32).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+        )
+        high_32_bits = llvm.trunc(
+            T.i32(), high_32_bits, llvm.IntegerOverflowFlags.none, loc=loc, ip=ip
+        )
+
+        low_32_bits_shfl = nvvm.shfl_sync(
+            T.i32(),
             Int32(mask).ir_value(loc=loc, ip=ip),
-            value.ir_value(loc=loc, ip=ip),
+            low_32_bits,
             Int32(offset).ir_value(loc=loc, ip=ip),
             Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
             kind,
             loc=loc,
             ip=ip,
         )
-    )
+        high_32_bits_shfl = nvvm.shfl_sync(
+            T.i32(),
+            Int32(mask).ir_value(loc=loc, ip=ip),
+            high_32_bits,
+            Int32(offset).ir_value(loc=loc, ip=ip),
+            Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+            kind,
+            loc=loc,
+            ip=ip,
+        )
 
+        # combine low and high 32 bits
+        low_64_bit = llvm.zext(T.i64(), low_32_bits_shfl, loc=loc, ip=ip)
+        high_64_bit = llvm.zext(T.i64(), high_32_bits_shfl, loc=loc, ip=ip)
+        shlf_res = llvm.shl(
+            high_64_bit,
+            Int64(32).ir_value(loc=loc, ip=ip),
+            llvm.IntegerOverflowFlags.none,
+            loc=loc,
+            ip=ip,
+        )
+        shlf_res = llvm.or_(shlf_res, low_64_bit, loc=loc, ip=ip)
+        shlf_res = llvm.bitcast(orig_type.mlir_type, shlf_res, loc=loc, ip=ip)
+        return orig_type(shlf_res)
 
 shuffle_sync = partial(shuffle_sync_op, kind=nvvm.ShflKind.idx)
 shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up)

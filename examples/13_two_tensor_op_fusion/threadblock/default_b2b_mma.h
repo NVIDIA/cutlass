@@ -93,7 +93,7 @@ template <
     typename InstructionShape_,
     /// Number of stages used in the pipelined mainloop
     int Stages,
-    /// Operation perfomed by GEMM
+    /// Operation performed by GEMM
     typename Operator,
     /// Epilogue output operator
     typename EpilogueOutputOp,

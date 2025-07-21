@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Instanciates the right WarpIterator to read from shared memory
+    \brief Instantiates the right WarpIterator to read from shared memory
     The class `DefaultWarpIteratorAFromSharedMemory` is useful when reading
         data dumped with `B2bGemm::accumToSmem`.
 */
