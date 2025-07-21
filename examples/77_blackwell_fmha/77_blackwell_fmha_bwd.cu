@@ -816,7 +816,7 @@ struct BwdRunner {
 
     runtime_ms /= static_cast<float>(options.iterations);
 
-    double flops = 2.0 * (std::is_same_v<ActiveMask, CausalForBackwardMask> ? 0.5 : 1.0);
+    double flops = 2.0 * (std::is_same_v<ActiveMask, CausalForBackwardMask<false>> || std::is_same_v<ActiveMask, CausalForBackwardMask<true>> ? 0.5 : 1.0);
     flops *= static_cast<double>(get<0>(problem_shape));
     flops *= static_cast<double>(get<1>(problem_shape));
     flops *= (3 * static_cast<double>(get<2>(problem_shape)) + 2 * static_cast<double>(get<3>(problem_shape)));
