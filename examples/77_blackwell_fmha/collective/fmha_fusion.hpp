@@ -296,7 +296,7 @@ struct CausalForBackwardMask : CausalMask<kIsQBegin>, ResidualMaskForBackward {
     //      where we only compute the next row and use cache for the rest
     //    - if you'd like this, you only need to add an offset like so:
     //      get<0>(pos) + offset_q < get<1>(pos)
-    const auto offset_q = 0;
+    int offset_q = 0;
     if constexpr (!kIsQBegin) {
       offset_q = get<1>(problem_size) - get<0>(problem_size);
     }
