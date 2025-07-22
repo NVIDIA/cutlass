@@ -29,7 +29,7 @@ from cutlass.cute.typing import (
 from cutlass.cute.runtime import from_dlpack
 import cutlass.cute as cute
 import torch
-from cuda import cuda
+import cuda.bindings.driver as cuda
 
 
 def dtype(ty: Type[Numeric]):

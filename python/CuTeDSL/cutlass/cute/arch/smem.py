@@ -94,3 +94,15 @@ def get_dyn_smem(
         alignment,
     )
     return _cute_nvgpu_ir.arch_get_dyn_smem(ptr=ptr_ty, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def get_dyn_smem_size(*, loc=None, ip=None) -> int:
+    """
+    Gets the size in bytes of the dynamic shared memory that was specified at kernel launch time.
+    This can be used for bounds checking during shared memory allocation.
+
+    :return: The size of dynamic shared memory in bytes
+    :rtype:  int
+    """
+    return _cute_nvgpu_ir.arch_get_dyn_smem_size(loc=loc, ip=ip)

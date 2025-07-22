@@ -28,11 +28,12 @@ import cutlass.base_dsl.jit_executor
 import cutlass.cute as cute
 from cutlass._mlir.dialects import builtin, cf, nvvm, vector
 from cutlass.cute import core, nvgpu
-from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, t
+from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, t, dsl_user_op
 
 
-def assert_(cond, msg=None):
-    cf.assert_(t.Boolean(cond).ir_value(), msg if msg else "")
+@dsl_user_op
+def assert_(cond, msg=None, *, loc=None, ip=None):
+    cf.assert_(t.Boolean(cond).ir_value(), msg if msg else "", loc=loc, ip=ip)
 
 
 def _maybe_recast_tensor_from_f4(src: core.Tensor, tv_layout: core.Layout):
@@ -214,7 +215,14 @@ def convert(src: core.Tensor, dst: core.Tensor):
         dst.shape
     ), "Shape of src and dst tensors should be the same rank."
     # find leading mode
-    leading_mode = np.argmin([np.min(s) for s in src.stride])
+    leading_mode = [
+        idx
+        for idx, (shape, stride) in enumerate(zip(src.shape, src.stride))
+        if shape > 1 and stride == 1
+    ]
+    if len(leading_mode) != 1:
+        raise ValueError(f"Leading mode should be unique, but got {leading_mode}")
+    leading_mode = leading_mode[0]
 
     elem_per_copy = 2
 
@@ -345,7 +353,7 @@ def benchmark(
     callable: Callable,
     *,
     warmup_iterations: int = 10,
-    profiling_iterations: int = 100,
+    iterations: int = 100,
     stream: Optional[cuda_driver.CUstream] = None,
     kernel_arguments: Optional[JitArguments] = None,
     workspace_generator: Optional[Callable[[], JitArguments]] = None,
@@ -365,7 +373,7 @@ def benchmark(
             pass
 
         time_us = benchmark(user_function, kernel_arguments=JitArguments(a, b, c, stream)
-                            warmup_iterations=10, profiling_iterations=100
+                            warmup_iterations=10, iterations=100
                             stream=stream)
 
     To prevent skewing results by repeately accessing the L2 cache, use the workspace_count and workspace_generator
@@ -388,7 +396,7 @@ def benchmark(
                             workspace_generator=workspace_generator,
                             workspace_count=10,
                             warmup_iterations=10000,
-                            profiling_iterations=1000)
+                            iterations=1000)
 
     To benchmark you may always configure the function being profiled (callable), the warmup iterations, and
     the number of profiling iterations.
@@ -402,8 +410,8 @@ def benchmark(
     :type callable: Callable
     :param warmup_iterations: Number of warmup iterations, defaults to 10
     :type warmup_iterations: int, optional
-    :param profiling_iterations: Number of benchmark iterations, defaults to 100
-    :type profiling_iterations: int, optional
+    :param iterations: Number of benchmark iterations, defaults to 100
+    :type iterations: int, optional
     :param stream: Stream kernel is launched in, defaults to CUDA stream default
     :type stream: CUstream, None
     :param kernel_arguments: Kernel arguments to launch callable with, defaults to None
@@ -502,7 +510,7 @@ def benchmark(
             stream, cuda_runtime.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
         )
         _cuda_success(err, "Error on stream capture")
-        _loop_and_call_kernel(profiling_iterations, workspace_index)
+        _loop_and_call_kernel(iterations, workspace_index)
         err, gprofile = cuda_runtime.cudaStreamEndCapture(stream)
         _cuda_success(err, "Error on stream capture")
 
@@ -557,7 +565,7 @@ def benchmark(
         # Record start event
         err = cuda_driver.cuEventRecord(start_event, stream)
         _cuda_success(err, "Error on recording event")
-        _loop_and_call_kernel(profiling_iterations, workspace_index)
+        _loop_and_call_kernel(iterations, workspace_index)
         # Record end event
         err = cuda_driver.cuEventRecord(end_event, stream)
         _cuda_success(err, "Error on recording event")
@@ -573,6 +581,30 @@ def benchmark(
     err = cuda_driver.cuEventDestroy(end_event)
     _cuda_success(err, "Error on destroying event")
 
-    return elapsed_time / profiling_iterations * 1e3
+    return elapsed_time / iterations * 1e3
 
+
+def get_workspace_count(
+    one_workspace_bytes: int, warmup_iterations: int, iterations: int
+) -> int:
+    """Calculate the number of workspaces needed to fill L2 cache.
+
+    :param one_workspace_bytes: Size of one workspace in bytes
+    :type one_workspace_bytes: int
+    :param warmup_iterations: Number of warmup iterations
+    :type warmup_iterations: int
+    :param iterations: Number of iterations
+    :type iterations: int
+    :return: Number of workspaces needed
+    :rtype: int
+    """
+    num_l2_cache_bytes = cutlass.utils.HardwareInfo().get_l2_cache_size_in_bytes()
+    return max(
+        1,
+        min(
+            warmup_iterations + iterations,  # Don't create more workspaces than needed
+            (num_l2_cache_bytes + one_workspace_bytes - 1)
+            // one_workspace_bytes,  # Ceiling division
+        ),
+    )
 

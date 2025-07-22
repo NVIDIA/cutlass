@@ -291,7 +291,7 @@ struct Options {
     // Post-process the problem sizes
     bin_problems();
 
-    // Initalize alpha array
+    // Initialize alpha array
     randomize_alpha_ptr_array(cmd);
   }
 

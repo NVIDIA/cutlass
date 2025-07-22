@@ -42,6 +42,9 @@ __all__ = [
     "MmaF16BF16Op",
     "MmaI8Op",
     "MmaFP8Op",
+    "MmaMXF8Op",
+    "MmaMXF4Op",
+    "MmaMXF4NVF4Op",
     "SmemLayoutAtomKind",
     #
     # helpers.py
@@ -54,4 +57,6 @@ __all__ = [
     "get_tmem_copy_properties",
     "find_tmem_tensor_col_offset",
     "make_tmem_copy",
+    "make_s2t_copy",
+    "get_s2t_smem_desc_tensor",
 ]

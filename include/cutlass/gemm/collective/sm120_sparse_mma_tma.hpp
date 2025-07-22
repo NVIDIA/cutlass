@@ -136,7 +136,7 @@ struct CollectiveMma<
   // Asymmetric buffering
   // Tensor A/B could have different buffering, with TILEK, and STAGEs.
   //    It let AsymmetricKRatio equals TILEK_A / TILEK_B, to make sure A/B's
-  //    pipeline keep same steps when procude / consume data.
+  //    pipeline keep same steps when produce / consume data.
   static constexpr int AsymmetricKRatio = DispatchPolicy::StagesA != DispatchPolicy::StagesB ? 2 : 1;
 
   using TileShapeB = decltype(make_shape(size<0>(TileShape{}),

@@ -485,7 +485,11 @@ struct MlaFwdRunner {
       select<0,3>(problem_shape),
       stride_LSE);
 
-    fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
+    auto [Q, K, D, HB] = problem_shape;
+
+    auto problem_shape_ref = cute::make_tuple(Q, K, D, D, HB);
+
+    fmha_reference(problem_shape_ref, mQ, mK, mV, mO, mLSE, ActiveMask{});
 
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {

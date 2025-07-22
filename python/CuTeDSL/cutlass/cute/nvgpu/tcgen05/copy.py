@@ -23,6 +23,8 @@ from ..common import OpError
 from ...core import CopyOp, Trait
 from ...typing import Numeric
 
+from .mma import CtaGroup
+
 
 class Repetition(enum.Enum):
     """
@@ -468,4 +470,194 @@ class St32x32bOp(_StBase):
 
 
 class St32x32bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class _S2TCopyBase(CopyOp):
+    cta_group: CtaGroup
+
+    admissible_archs = [
+        "sm_100a",
+        "sm_100f",
+    ]
+
+    def __post_init__(self) -> None:
+        # Arch verification
+        arch = CuTeDSL._get_dsl().envar.arch
+        if arch not in self.admissible_archs:
+            raise OpError(
+                self,
+                f"expects arch to be one of {self.admissible_archs}, but got {arch}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        # Verify that the user provided enum values
+        if not isinstance(self.cta_group, CtaGroup):
+            raise OpError(
+                self,
+                "expects the 'cta_group' Op parameter to be a tcgen05.CtaGroup instance",
+            )
+
+    def __str__(self) -> str:
+        res = (
+            f"tcgen05 {self.__class__.__name__[:-2]} Copy Operation"
+            + f"\n  CTA group = {self.cta_group}"
+        )
+
+        return res
+
+
+@dataclass(frozen=True)
+class Cp128x256bOp(_S2TCopyBase):
+    """
+    128x256b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.128x256b`` qualifier.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp128x256bTrait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            128,
+            256,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.none,
+        )
+        return Cp128x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp128x256bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class Cp128x128bOp(_S2TCopyBase):
+    """
+    128x128b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.128x128b`` qualifier.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp128x128bTrait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            128,
+            128,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.none,
+        )
+        return Cp128x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp128x128bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class Cp4x256bOp(_S2TCopyBase):
+    """
+    4x256b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.4x256b`` qualifier.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp4x256bTrait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            4,
+            256,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.none,
+        )
+        return Cp4x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp4x256bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class Cp4x32x128bOp(_S2TCopyBase):
+    """
+    32x128b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.32x128b`` qualifier with ``warpx4`` broadcast qualifier enabled.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp4x32x128bTrait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            32,
+            128,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.x4,
+        )
+        return Cp4x32x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp4x32x128bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class Cp2x64x128b0213Op(_S2TCopyBase):
+    """
+    64x128b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.64x128b`` qualifier with ``.warpx2::02_13`` broadcast qualifier enabled.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp2x64x128b0213Trait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            64,
+            128,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.lw_0213,
+        )
+        return Cp2x64x128b0213Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp2x64x128b0213Trait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class Cp2x64x128b0123Op(_S2TCopyBase):
+    """
+    64x128b SMEM to TMEM Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05#tcgen05-instructions-tcgen05-cp>`__.
+    This Operation corresponds to the ``.64x128b`` qualifier with ``.warpx2::01_23`` broadcast qualifier enabled.
+    """
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "Cp2x64x128b0123Trait":
+        ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
+            copy_internal_type.mlir_type,
+            64,
+            128,
+            self.cta_group.value,
+            _cute_nvgpu_ir.CopyS2TBroadcast.lw_0123,
+        )
+        return Cp2x64x128b0123Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+
+
+class Cp2x64x128b0123Trait(Trait):
     pass
