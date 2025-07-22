@@ -36,6 +36,8 @@
 * Fix some profiler issues.
     - Complete the reference for Blackwell blockwise gemm kernels.
     - Fix incorrect regex logic for L1 test.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 12.9.
 
 ## [4.0.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.0.0) (2025-06-03)
 
