@@ -18,8 +18,12 @@ jobs:
             const body = issue.body || '';
             
             // Parse the issue body to find the component selection
-            // GitHub renders dropdown selections as "### Which component has the problem?\n\n{selection}"
-            const componentMatch = body.match(/### Which component has the problem\?\s*\n\s*\n\s*(.+?)(?:\n|$)/);
+            // GitHub renders dropdown selections as "### {label}\n\n{selection}"
+            // Check for both bug report and feature request dropdown labels
+            const bugComponentMatch = body.match(/### Which component has the problem\?\s*\n\s*\n\s*(.+?)(?:\n|$)/);
+            const featureComponentMatch = body.match(/### Which component requires the feature\?\s*\n\s*\n\s*(.+?)(?:\n|$)/);
+            
+            const componentMatch = bugComponentMatch || featureComponentMatch;
             
             if (componentMatch) {
               const component = componentMatch[1].trim();
