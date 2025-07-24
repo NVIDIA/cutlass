@@ -100,7 +100,7 @@ public:
     cutlass::fmha::kernel::FmhaKernelBwdConvert<ProblemShape, Element, ElementAccumulator>
   >;
 
-  using OperationNormal= cutlass::fmha::device::FMHA<
+  using OperationMha= cutlass::fmha::device::FMHA<
       cutlass::fmha::kernel::Sm100FmhaBwdKernelTmaWarpSpecialized<
           ProblemShape, Element, ElementAccumulator, TileShape, Mask
       >
@@ -112,7 +112,7 @@ public:
       >
   >;
 
-  using Operation = std::conditional_t<IsMla, OperationMla, OperationNormal>;
+  using Operation = std::conditional_t<IsMla, OperationMla, OperationMha>;
 
   using Kernel = typename Operation::Kernel;
 
