@@ -103,7 +103,7 @@ struct FmhaKernelBwdConvert {
   }
 
   template<class StrideSrc, class StrideDest, class Count>
-  CUTLASS_DEVICE void copy(Params const& params, const ElementAcc* ptr_src, StrideSrc const& stride_src, Element* ptr_dest, StrideDest const& stride_dest, Count const& count) {
+  CUTLASS_DEVICE void copy(Params const& params, const ElementAcc* ptr_src, StrideSrc const& stride_src, Element* ptr_dest, StrideDest const& stride_dest, Count const& count, int d_dim) {
     auto ptr_src_bh = ptr_src + get<2,0>(stride_src) * blockIdx.x + get<2,1>(stride_src) * blockIdx.y;
     auto ptr_dest_bh = ptr_dest + get<2,0>(stride_dest) * blockIdx.x + get<2,1>(stride_dest) * blockIdx.y;
 
@@ -120,7 +120,7 @@ struct FmhaKernelBwdConvert {
       auto ptr_src_bhs = ptr_src_bh + idx_s * get<0>(stride_src);
       auto ptr_dest_bhs = ptr_dest_bh + idx_s * get<0>(stride_dest);
 
-      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<0>(stride_dest); idx_d += kElementsPerLoad * kNumThreadsD) {
+      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < d_dim; idx_d += kElementsPerLoad * kNumThreadsD) {
         ElementAcc value_src[kElementsPerLoad];
         Element value_dest[kElementsPerLoad];
         
@@ -139,13 +139,13 @@ struct FmhaKernelBwdConvert {
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
     if (params.ptr_src_dQ != nullptr) {
-      copy(params, params.ptr_src_dQ, params.stride_src_dQ, params.ptr_dest_dQ, params.stride_dest_dQ, get<0>(params.problem_shape));
+      copy(params, params.ptr_src_dQ, params.stride_src_dQ, params.ptr_dest_dQ, params.stride_dest_dQ, get<0>(params.problem_shape), get<2>(params.problem_shape));
     }
     if (params.ptr_src_dK != nullptr) {
-      copy(params, params.ptr_src_dK, params.stride_src_dK, params.ptr_dest_dK, params.stride_dest_dK, get<1>(params.problem_shape));
+      copy(params, params.ptr_src_dK, params.stride_src_dK, params.ptr_dest_dK, params.stride_dest_dK, get<1>(params.problem_shape), get<2>(params.problem_shape));
     }
     if (params.ptr_src_dV != nullptr) {
-      copy(params, params.ptr_src_dV, params.stride_src_dV, params.ptr_dest_dV, params.stride_dest_dV, get<1>(params.problem_shape));
+      copy(params, params.ptr_src_dV, params.stride_src_dV, params.ptr_dest_dV, params.stride_dest_dV, get<1>(params.problem_shape), get<3>(params.problem_shape));
     }
   }
 };

@@ -127,7 +127,11 @@ public:
     int waves = ceil_div(B * split_heur, sm_count);
     int k_waves = ceil_div(max_splits, split_heur);
     int split_wave_aware = ceil_div(max_splits, k_waves);
-    args.split_kv = split_wave_aware;
+    if (args.is_fused_reduction && split_wave_aware > 1) {
+      args.split_kv = std::min(split_wave_aware, static_cast<int>(sm_count/2));
+    } else {
+      args.split_kv = split_wave_aware;
+    }
   }
 
   /// Determines whether the GEMM can execute the given problem.
@@ -273,11 +277,33 @@ public:
     CUTLASS_TRACE_HOST("MLA::run()");
     dim3 const block = Kernel::get_block_shape();
     dim3 const grid = Kernel::get_grid_shape(params.fmha_params);
+    auto [H, K, D, B] = params.fmha_params.problem_shape;
+    auto [D_latent, D_rope] = D;
 
     // configure smem size and carveout
     int smem_size = Kernel::SharedStorageSize;
 
     Status launch_result;
+    if (params.fmha_params.is_fused_reduction && params.reduction_params.split_kv > 1) {
+      auto result = cudaMemsetAsync(params.fmha_params.epilogue.ptr_o, 0, sizeof(typename Kernel::ElementOut) * H * D_latent * B, stream);
+      if (cudaSuccess != result) {
+        result = cudaGetLastError(); // to clear the error bit
+        CUTLASS_TRACE_HOST(
+        "  cudaMemsetAsync() returned error: "
+        << cudaGetErrorString(result));
+        return Status::kErrorInternal;
+      }
+      auto total_bytes = H * B * (sizeof(int) + sizeof(typename Kernel::ElementLSE)) + 2 * B * sizeof(int);
+      uint8_t* ws = reinterpret_cast<uint8_t*>(params.fmha_params.epilogue.ptr_lse_exchange_buff);
+      result = cudaMemsetAsync(ws, 0, total_bytes, stream);
+      if (cudaSuccess != result) {
+        result = cudaGetLastError(); // to clear the error bit
+        CUTLASS_TRACE_HOST(
+        "  cudaMemsetAsync() returned error: "
+        << cudaGetErrorString(result));
+        return Status::kErrorInternal;;
+      }
+    }
     // Use extended launch API only for mainloops that use it
     if constexpr(Kernel::ArchTag::kMinComputeCapability >= 90) {
       dim3 cluster(cute::size<0>(typename Kernel::ClusterShape{}),
@@ -298,7 +324,7 @@ public:
       CUTLASS_TRACE_HOST("  Kernel launch failed. Reason: " << result);
       return Status::kErrorInternal;
     }
-    if (params.reduction_params.split_kv > 1) {
+    if (!params.fmha_params.is_fused_reduction && params.reduction_params.split_kv > 1) {
       // launch reduction kernel
       dim3 const block = ReductionKernel::get_block_shape();
       dim3 const grid  = ReductionKernel::get_grid_shape(params.reduction_params);
