@@ -239,7 +239,7 @@ to_CUtensorMapDataType() {
 inline CUtensorMapSwizzle
 to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
   switch (t) {
-    default: assert(false && "Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
+    default: throw std::runtime_error("Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
     case SmemSwizzleBits::DISABLE: 
       assert((b == SmemSwizzleBase::SWIZZLE_BASE_16B) && "Expected 16B swizzle base for 0B swizzle bits.");
       return CU_TENSOR_MAP_SWIZZLE_NONE;
@@ -251,7 +251,7 @@ to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
       return CU_TENSOR_MAP_SWIZZLE_64B;
     case SmemSwizzleBits::B128:
       switch (b) {
-        default: assert(false && "Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
+        default: throw std::runtime_error("Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
         case SmemSwizzleBase::SWIZZLE_BASE_16B: return CU_TENSOR_MAP_SWIZZLE_128B;
         
         #if ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ > 6)))
@@ -265,7 +265,7 @@ to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
 inline CUtensorMapFloatOOBfill
 to_CUtensorMapFloatOOBfill(OOBFill const& t) {
   switch(t) {
-    default:                assert(false && "Unknown OOBFill!");
+    default: throw std::runtime_error("Unknown OOBFill!");
     case OOBFill::ZERO:     return CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
     case OOBFill::CONSTANT: return CU_TENSOR_MAP_FLOAT_OOB_FILL_NAN_REQUEST_ZERO_FMA;
   }
@@ -274,7 +274,7 @@ to_CUtensorMapFloatOOBfill(OOBFill const& t) {
 inline CUtensorMapL2promotion
 to_CUtensorMapL2promotion(L2Promotion const& t) {
   switch(t) {
-    default: assert(false && "Unknown L2Promotion!");
+    default: throw std::runtime_error("Unknown L2Promotion!");
     case L2Promotion::DISABLE: return CU_TENSOR_MAP_L2_PROMOTION_NONE;
     case L2Promotion::B64:     return CU_TENSOR_MAP_L2_PROMOTION_L2_64B;
     case L2Promotion::B128:    return CU_TENSOR_MAP_L2_PROMOTION_L2_128B;
