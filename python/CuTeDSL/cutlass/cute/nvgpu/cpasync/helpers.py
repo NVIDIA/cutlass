@@ -94,12 +94,6 @@ def make_tiled_tma_atom(
         ip=ip,
     )
 
-    # Wrap smem_layout in a composed layout to make it a TMA-friendly layout
-    if isinstance(smem_layout, Layout):
-        smem_layout = core.make_composed_layout(
-            core.make_swizzle(0, 4, 3), 0, smem_layout
-        )
-
     if isinstance(op, CopyBulkTensorTileG2SOp):
         if num_multicast != 1:
             raise ValueError(

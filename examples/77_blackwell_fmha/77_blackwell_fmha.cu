@@ -126,6 +126,7 @@ struct Options {
   bool verbose = false;
 
   bool causal = false;
+  bool causal_q_begin = true;
   bool residual = false;
   bool varlen = false;
   bool persistent = false;
@@ -266,6 +267,8 @@ struct Options {
 
     std::string mask;
     cmd.get_cmd_line_argument<std::string>("mask", mask, "");
+    std::string causal_type;
+    cmd.get_cmd_line_argument<std::string>("causal-type", causal_type, "");
     if (mask == "no" || mask == "") {
       causal = residual = false;
       if (varlen) {
@@ -275,6 +278,11 @@ struct Options {
     else if (mask == "causal") {
       residual = false;
       causal = true;
+      if(causal_type == "qend") {
+        causal_q_begin = false;
+      } else {
+        causal_q_begin = true;
+      }
     }
     else if (mask == "residual") {
       residual = true;
@@ -313,6 +321,7 @@ struct Options {
       << "  --verify                    Verify results\n"
       << "  --verbose                   Print smem and execution time per kernel\n"
       << "  --mask=<no|residual|causal> Enables masking\n"
+      << "  --causal-type=<qbegin|qend> Causal mask type\n"
       << "  --persistent                Enables persistent scheduler\n"
       << "  --varlen                    Enables variable sequence length\n"
       << "                              B*Q and B*K become the total sequence length\n"
@@ -505,8 +514,12 @@ struct FwdRunner {
     Tensor mLSE = make_tensor(make_gmem_ptr(buffer.block_ref_LSE.get()),
       select<0,3>(problem_shape),
       stride_LSE);
+    
+    auto [Q, K, D, HB] = problem_shape;
 
-    fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
+    auto problem_shape_ref = cute::make_tuple(Q, K, D, D, HB);
+
+    fmha_reference(problem_shape_ref, mQ, mK, mV, mO, mLSE, ActiveMask{});
 
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
@@ -1074,7 +1087,11 @@ int main_single(int argc, char const **args) {
 
   auto with_mask = [&](auto fn) {
     if (options.causal) {
-      fn(CausalMask{});
+      if(options.causal_q_begin) {
+        fn(CausalMask{});
+      } else {
+        fn(CausalMask<false>{});
+      }
     }
     else if (options.residual) {
       fn(ResidualMask{});

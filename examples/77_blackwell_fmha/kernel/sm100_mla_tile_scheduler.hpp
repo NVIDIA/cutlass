@@ -142,8 +142,8 @@ struct Sm100MlaPersistentTileScheduler {
     int block_decode = block_idx;
     int m_block, bidb, n_split_kv;
     params.divmod_m_block(block_decode, m_block, block_decode);
-    params.divmod_b(block_decode, bidb, block_decode);
     params.divmod_split_kv(block_decode, n_split_kv, block_decode);
+    params.divmod_b(block_decode, bidb, block_decode);
     return make_coord(m_block, _0{}, bidb, n_split_kv);
   }
 

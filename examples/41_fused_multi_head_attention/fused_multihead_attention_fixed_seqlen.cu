@@ -55,7 +55,7 @@
       ```
 
       In practice, and for numerical stability reasons,
-      we also substract the maximum so far (`mi`) before doing
+      we also subtract the maximum so far (`mi`) before doing
       the exponential. When we encounter new keys, the maximum
       used to compute O so far (`m_prime`) can differ from the
       current maximum, so we update O before accumulating with

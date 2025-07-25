@@ -178,7 +178,7 @@ Limitations of Dynamic Control Flow
         n = 10
 
         # ❌ This loop is dynamic, early-exit isn't allowed.
-        for i in cutlass.range_dynamic(n):
+        for i in range(n):
             if i == 5:
                 break         # Early-exit
 

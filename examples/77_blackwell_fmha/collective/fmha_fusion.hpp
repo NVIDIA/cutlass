@@ -207,6 +207,7 @@ struct CausalMask : NoMask {
     int offset_q = IsQBegin ? int(get<1>(problem_size)) - int(get<0>(problem_size)) : 0;
     int max_blocks_q = ceil_div(offset_q + (get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
     return std::min(max_blocks_k, max_blocks_q);
+
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -215,12 +216,14 @@ struct CausalMask : NoMask {
       BlkCoord const& blk_coord,
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
+
     int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
     int q_tile = min(get<0>(tile_shape), get<0>(problem_size) - get<0>(blk_coord) * get<0>(tile_shape));
     int offset_tile_q = IsQBegin ? int((get<1>(problem_size)) - int(get<0>(problem_size))% get<1>(tile_shape)) : 0;
     
     int masked_blocks = ceil_div(q_tile + offset_tile_q, get<1>(tile_shape));
     return std::min(masked_blocks, trip_count);
+
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -258,9 +261,10 @@ struct CausalMask : NoMask {
   }
 };
 
-struct CausalForBackwardMask : CausalMask<true>, ResidualMaskForBackward {
+template<bool kIsQBegin = true>
+struct CausalForBackwardMask : CausalMask<kIsQBegin>, ResidualMaskForBackward {
 
-  using Base = CausalMask<true>;
+  using Base = CausalMask<kIsQBegin>;
 
   template<class AccQK, class IndexQK, class ProblemSize>
   CUTLASS_DEVICE
@@ -277,10 +281,15 @@ struct CausalForBackwardMask : CausalMask<true>, ResidualMaskForBackward {
     //      where we only compute the next row and use cache for the rest
     //    - if you'd like this, you only need to add an offset like so:
     //      get<0>(pos) + offset_q < get<1>(pos)
+    int offset_q = 0;
+    if constexpr (!kIsQBegin) {
+      offset_q = get<1>(problem_size) - get<0>(problem_size);
+    }
+
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(acc_qk); i++) {
       auto pos = index_qk(i);
-      bool masked = (get<0>(pos) < get<1>(pos)) || !elem_less(pos, problem_size);
+      bool masked = (get<0>(pos) + offset_q < get<1>(pos)) || !elem_less(pos, problem_size);
       if (masked) {
         acc_qk(i) = -INFINITY;
       }

@@ -31,6 +31,7 @@ from typing import (
     Optional,
 )
 from enum import Enum, auto
+from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import (
     const,
@@ -517,10 +518,14 @@ class ScaledBasis:
         sb3 = ScaledBasis(4, [0, 1])  # 4 * E([0, 1])
 
         # Scaled basis elements are commonly used in layout strides
-        layout = make_layout((4, 8), stride=(ScaledBasis(1, 0), ScaledBasis(1, 1)))
+        layout = make_layout((4, 8), stride=(ScaledBasis(2, 0), ScaledBasis(1, 1)))
 
-        # This creates a layout with strides (1@0, 1@1) representing
+        # This creates a layout with strides (2@0, 1@1) representing
         # a coordinate system where each dimension has its own basis
+
+        # Example: Mapping coordinates to indices using the layout
+        coord = (2, 3)
+        idx = crd2idx(coord, layout)  # Maps (2, 3) to (4, 3)
     """
 
     def __init__(self, value, mode) -> None:
@@ -712,8 +717,9 @@ class Swizzle(ir.Value):
 
         e.g. Given
         0bxxxxxxxxxxxxxxxxYYxxxxxxxxxZZxxx
+
         the result is
-        0bxxxxxxxxxxxxxxxxYYxxxxxxxxxAAxxx where AA = ZZ xor YY
+        0bxxxxxxxxxxxxxxxxYYxxxxxxxxxAAxxx where AA = ZZ `xor` YY
 
     """
 
@@ -897,7 +903,7 @@ class _Layout(Layout):
 
 @ir.register_value_caster(_cute_ir.ComposedLayoutType.get_static_typeid(), replace=True)
 class ComposedLayout(ir.Value):
-    """ComposedLayout represents the functional composition of layouts in CuTe.
+    r"""ComposedLayout represents the functional composition of layouts in CuTe.
 
     A ComposedLayout is formed by the composition of three components:
     inner o offset o outer, where:
@@ -907,7 +913,10 @@ class ComposedLayout(ir.Value):
     - outer: The outer layout that is applied first
 
     ComposedLayout implements the functional composition operation where:
-    R(c) := (inner o offset o outer)(c) := inner(offset + outer(c))
+
+    .. math::
+
+        R(c) := (inner \\circ offset \\circ outer)(c) := inner(offset + outer(c))
 
     This composition allows for complex transformations of coordinates and indices,
     enabling operations like tiling, partitioning, and reshaping of data.
@@ -1670,7 +1679,10 @@ def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
     :type ip: insertion pointer, optional
     :raises NotImplementedError: If the tensor type doesn't support trivial dereferencing
 
-    Example output:
+    **Example output:**
+
+    .. code-block:: text
+
         tensor(raw_ptr<@..., Float32, generic, align(4)> o (8,5):(5,1), data=
                [[-0.4326, -0.5434,  0.1238,  0.7132,  0.8042],
                 [-0.8462,  0.9871,  0.4389,  0.7298,  0.6948],
@@ -1973,7 +1985,8 @@ def find_if(
     :return: Index if found at top level, tuple of indices showing nested position, or None if not found
     :rtype: Union[int, Tuple[int, ...], None]
 
-    Examples:
+    **Examples:**
+
     .. code-block:: python
 
         # Find the first position of x in t
@@ -2186,6 +2199,23 @@ def is_congruent(
 ) -> bool:
     """
     Returns whether a is congruent to b.
+
+    Congruence is an equivalence relation between hierarchical structures.
+
+    Two objects are congruent if:
+    * They have the same rank, AND
+    * They are both non-tuple values, OR
+    * They are both tuples AND all corresponding elements are congruent.
+
+    Congruence requires type matching at each level -- scalar values match with
+    scalar values, and tuples match with tuples of the same rank.
+
+    :param a: First object to compare
+    :type a: Union[XTuple, Layout, ComposedLayout, Tensor]
+    :param b: Second object to compare
+    :type b: Union[XTuple, Layout, ComposedLayout, Tensor]
+    :return: True if a and b are congruent, False otherwise
+    :rtype: bool
     """
     if isinstance(a, (Layout, ComposedLayout, Tensor)):
         a = a.shape
@@ -2204,6 +2234,22 @@ def is_weakly_congruent(
 ) -> bool:
     """
     Returns whether a is weakly congruent to b.
+
+    Weak congruence is a partial order on hierarchical structures.
+
+    Object X is weakly congruent to object Y if:
+    * X is a non-tuple value, OR
+    * X and Y are both tuples of the same rank AND all corresponding elements are weakly congruent.
+
+    Weak congruence allows scalar values to match with tuples, making it useful 
+    for determining whether an object has a hierarchical structure "up to" another.
+
+    :param a: First object to compare
+    :type a: Union[XTuple, Layout, ComposedLayout, Tensor]
+    :param b: Second object to compare
+    :type b: Union[XTuple, Layout, ComposedLayout, Tensor]
+    :return: True if a and b are weakly congruent, False otherwise
+    :rtype: bool
     """
     if isinstance(a, (Layout, ComposedLayout, Tensor)):
         a = a.shape
@@ -2261,8 +2307,11 @@ def get(input, mode: List[int], *, loc=None, ip=None):
 
     **Examples:**
 
-    For a layout like ((4,8),2):((16,1),8), get with mode=[0,1] would extract
-    the element 8 from the shape component.
+    .. code-block:: python
+
+        layout = make_layout(((4, 8), (16, 1), 8), stride=((1, 4), (32, 0), 512))
+        sub_layout = get(layout, mode=[0, 1])   # 8:4
+        sub_layout = get(layout, mode=[1])      # (16, 1):(32, 0)
     """
     # Empty mode returns input and terminates the recursive call
     if not mode:
@@ -5065,6 +5114,11 @@ def make_layout_tv(
     * 2 elements per thread
     """
 
+    if not isinstance(thr_layout, Layout):
+        raise TypeError(f"expected a Layout for thr_layout, but got {type(thr_layout)}")
+    if not isinstance(val_layout, Layout):
+        raise TypeError(f"expected a Layout for val_layout, but got {type(val_layout)}")
+
     # Take the raked_products to compute the Layout_MN
     # (M,N) -> (thr_idx, val_idx)
     layout_mn = raked_product(thr_layout, val_layout, loc=loc, ip=ip)
@@ -5081,8 +5135,52 @@ def make_layout_tv(
     return (tiler_mn, layout_tv)
 
 
+def _make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
+    if type(tiler_mn) is tuple:
+        tiler_mn = _pack_tile(tiler_mn, loc=loc, ip=ip)
+
+    assert isinstance(tiler_mn, ir.Value) and _cute_ir.TileType.isinstance(
+        tiler_mn.type
+    ), f"tiler_mn must be a Tile, but got {type(tiler_mn)}"
+    assert is_static(layout_tv.type) and is_static(
+        tiler_mn.type
+    ), "layout tv and tiler mn must be static"
+    tiled_copy_ty = _cute_nvgpu_ir.TiledCopyType.get(
+        atom.type, layout_tv.type, tiler_mn.type
+    )
+
+    val = _cute_ir.make_tiled_copy(tiled_copy_ty, atom._trait.value, loc=loc, ip=ip)
+    # Instead of modifying atom which might have been provided by the user, create a brand new
+    # trait instance and replace the Atom ir.Value with the tiled one
+    trait = new_from_mlir_values(atom._trait, [val])
+    return TiledCopy(atom.op, trait)
+
+
+@deprecated("Use make_tiled_copy_tv instead")
+def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
+    """Create a tiled type given a TV partitioner and tiler.
+
+    :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
+    :type atom: CopyAtom
+    :param layout_tv: Thread-value layout
+    :type layout_tv: Layout
+    :param tiler_mn: Tile size
+    :type tiler_mn: Tiler
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
+    """
+    return _make_tiled_copy(atom, layout_tv, tiler_mn, loc=loc, ip=ip)
+
+
 @dsl_user_op
-def make_tiled_copy_tv(atom, thr_layout, val_layout, *, loc=None, ip=None) -> TiledCopy:
+def make_tiled_copy_tv(
+    atom: CopyAtom, thr_layout: Layout, val_layout: Layout, *, loc=None, ip=None
+) -> TiledCopy:
     """Create a tiled copy given separate thread and value layouts.
 
     A TV partitioner is inferred based on the input layouts. The input thread layout
@@ -5105,30 +5203,17 @@ def make_tiled_copy_tv(atom, thr_layout, val_layout, *, loc=None, ip=None) -> Ti
 
     tiler_mn, layout_tv = make_layout_tv(thr_layout, val_layout, loc=loc, ip=ip)
     tiler_mn = _pack_tile(product_each(tiler_mn, loc=loc, ip=ip), loc=loc, ip=ip)
-    if not is_static(layout_tv.type) or not is_static(tiler_mn.type):
-        raise ValueError(
-            f"expects layout tv and tiler mn, but got {layout_tv.type} and {tiler_mn.type}"
-        )
-    tiled_copy_ty = _cute_nvgpu_ir.TiledCopyType.get(
-        atom.type, layout_tv.type, tiler_mn.type
-    )
-    val = _cute_ir.make_tiled_copy(tiled_copy_ty, atom._trait.value, loc=loc, ip=ip)
-    # Instead of modifying atom which might have been provided by the user, create a brand new
-    # trait instance and replace the Atom ir.Value with the tiled one
-    trait = new_from_mlir_values(atom._trait, [val])
-    return TiledCopy(atom.op, trait)
+    return _make_tiled_copy(atom, layout_tv, tiler_mn, loc=loc, ip=ip)
 
 
 @dsl_user_op
-def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
-    """Create a tiled type given a TV partitioner and tiler.
+def make_tiled_copy_A(atom, tiled_mma, *, loc=None, ip=None):
+    """Create a tiled copy out of the copy_atom that matches the A-Layout of tiled_mma.
 
-    :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
+    :param atom: Copy atom
     :type atom: CopyAtom
-    :param layout_tv: Thread-value layout
-    :type layout_tv: Layout
-    :param tiler_mn: Tile size
-    :type tiler_mn: Tiler
+    :param tiled_mma: Tiled MMA
+    :type tiled_mma: TiledMma
     :param loc: Source location for MLIR, defaults to None
     :type loc: Optional[Location], optional
     :param ip: Insertion point, defaults to None
@@ -5138,21 +5223,65 @@ def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
     :rtype: TiledCopy
     """
 
-    # tiler_mn = pack_tuple(tiler_mn, make_tile)
-    if type(tiler_mn) is tuple:
-        tiler_mn = _pack_tile(tiler_mn, loc=loc, ip=ip)
-
-    assert is_static(layout_tv.type) and is_static(
-        tiler_mn.type
-    ), "layout tv and tiler mn must be static"
-    tiled_copy_ty = _cute_nvgpu_ir.TiledCopyType.get(
-        atom.type, layout_tv.type, tiler_mn.type
+    return _make_tiled_copy(
+        atom,
+        tiled_mma.tv_layout_A_tiled,
+        (tiled_mma.get_tile_size(0), tiled_mma.get_tile_size(2)),
+        loc=loc,
+        ip=ip,
     )
-    val = _cute_ir.make_tiled_copy(tiled_copy_ty, atom._trait.value, loc=loc, ip=ip)
-    # Instead of modifying atom which might have been provided by the user, create a brand new
-    # trait instance and replace the Atom ir.Value with the tiled one
-    trait = new_from_mlir_values(atom._trait, [val])
-    return TiledCopy(atom.op, trait)
+
+
+@dsl_user_op
+def make_tiled_copy_B(atom, tiled_mma, *, loc=None, ip=None):
+    """Create a tiled copy out of the copy_atom that matches the B-Layout of tiled_mma.
+
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param tiled_mma: Tiled MMA
+    :type tiled_mma: TiledMma
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
+    """
+
+    return _make_tiled_copy(
+        atom,
+        tiled_mma.tv_layout_B_tiled,
+        (tiled_mma.get_tile_size(1), tiled_mma.get_tile_size(2)),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def make_tiled_copy_C(atom, tiled_mma, *, loc=None, ip=None):
+    """Create a tiled copy out of the copy_atom that matches the C-Layout of tiled_mma.
+
+    :param atom: Copy atom
+    :type atom: CopyAtom
+    :param tiled_mma: Tiled MMA
+    :type tiled_mma: TiledMma
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    :return: A tiled copy for the partitioner
+    :rtype: TiledCopy
+    """
+
+    return _make_tiled_copy(
+        atom,
+        tiled_mma.tv_layout_C_tiled,
+        (tiled_mma.get_tile_size(0), tiled_mma.get_tile_size(1)),
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -5172,7 +5301,7 @@ def make_tiled_copy_S(atom, tiled_copy, *, loc=None, ip=None):
     :rtype: TiledCopy
     """
 
-    return make_tiled_copy(
+    return _make_tiled_copy(
         atom, tiled_copy.layout_src_tv_tiled, tiled_copy.tiler_mn, loc=loc, ip=ip
     )
 
@@ -5194,7 +5323,7 @@ def make_tiled_copy_D(atom, tiled_copy, *, loc=None, ip=None):
     :rtype: TiledCopy
     """
 
-    return make_tiled_copy(
+    return _make_tiled_copy(
         atom, tiled_copy.layout_dst_tv_tiled, tiled_copy.tiler_mn, loc=loc, ip=ip
     )
 
@@ -5273,7 +5402,7 @@ def make_tiled_copy_C_atom(atom: CopyAtom, mma: TiledMma, *, loc=None, ip=None):
 
     tiler_mn = _pack_tile(tiler, loc=loc, ip=ip)
 
-    return make_tiled_copy(atom, layout_tv, tiler_mn, loc=loc, ip=ip)
+    return _make_tiled_copy(atom, layout_tv, tiler_mn, loc=loc, ip=ip)
 
 
 ####################################################################################################
@@ -5297,7 +5426,7 @@ def gemm(
 ) -> None:
     """The GEMM algorithm.
 
-    Computes ``D <- AB + C`` where ``C`` and ``D`` can alias. Note that some MMA Atoms (e.g.
+    Computes ``D <- A * B + C`` where ``C`` and ``D`` can alias. Note that some MMA Atoms (e.g.
     warpgroup-wide or tcgen05 MMAs) require manually setting an "accumulate" boolean field.
 
     All tensors must be partitioned according to the provided MMA Atom.
@@ -6416,7 +6545,8 @@ class struct:
     """
     Decorator to abstract C structure in Python DSL.
 
-    Usage:
+    **Usage:**
+
     .. code-block::
 
         # Supports base_dsl scalar int/float elements, array and nested struct:
@@ -6424,11 +6554,14 @@ class struct:
         class complex:
             real : cutlass.Float32
             imag : cutlass.Float32
+
+
         @cute.struct
         class StorageA:
             mbarA : cute.struct.MemRange[cutlass.Int64, stage]
             compA : complex
             intA : cutlass.Int16
+
 
         # Supports aligment for its elements:
         @cute.struct
@@ -6441,6 +6574,7 @@ class struct:
             ]
             x: cute.struct.Align[cutlass.Int32, 16]
             compA: cute.struct.Align[complex, 16]
+
 
         # Statically get size and alignment:
         size = StorageB.__sizeof__()

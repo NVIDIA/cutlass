@@ -29,13 +29,14 @@
 
 import argparse
 from typing import List, Type, Tuple, Optional
-from cuda import cuda
+import cuda.bindings.driver as cuda
 
 import torch
 import torch.nn.functional as F
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
@@ -43,13 +44,16 @@ import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
-from .mamba2_ssd_reference import (
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent))
+from mamba2_ssd_reference import (
     ssd_reference_fp32_all,
     ssd_reference_lowprecision_intermediates,
     analyze_relative_diffs,
 )
-
-from .mamba2_ssd_tile_scheduler import (
+from mamba2_ssd_tile_scheduler import (
     Mamba2SSDTileSchedulerParams,
     Mamba2SSDTileScheduler,
 )
@@ -122,7 +126,7 @@ class SSDKernel:
                 *self.epilog_warp_id,
             )
         )
-        self.smem_capacity = sm100_utils.SMEM_CAPACITY["sm100"]
+        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
 
         # Named barriers
         self.pre_inter_sync_bar_id = 1
@@ -1522,7 +1526,10 @@ class SSDKernel:
             # ((R2S_ATOM_V, R2S_REST_V), R2S_M, R2S_N)
             # ((R2S_ATOM_V, R2S_REST_V), R2S_M, R2S_N, INTERNAL_STAGE)
             tiled_r2s_b, tBrB_r2s, tBsB_r2s = self.pre_inter_smem_store_and_partition_b(
-                local_tidx, smem_bt_internal_, tiled_s2r_b, tBrB_s2r
+                local_tidx,
+                smem_bt_internal_,
+                tiled_s2r_b,
+                tBrB_s2r,
             )
 
             # (MMA, MMA_M, MMA_K, INPUT_STAGE)
@@ -3053,7 +3060,7 @@ class SSDKernel:
 
         # SegSum
         # fadd2 + fsel + fmul2/mufu + fmul2
-        for subtile_idx in range(0, cute.size(tTR_rQ), 2):
+        for subtile_idx in cutlass.range(0, cute.size(tTR_rQ), 2, unroll_full=True):
             (
                 tCompute[subtile_idx],
                 tCompute[subtile_idx + 1],
@@ -3061,11 +3068,11 @@ class SSDKernel:
                 (tCrDeltaA_Col[subtile_idx], tCrDeltaA_Col[subtile_idx + 1]),
                 (-tCrDeltaA_Row[subtile_idx], -tCrDeltaA_Row[subtile_idx + 1]),
             )
-        for subtile_idx in range(cute.size(tTR_rQ)):
+        for subtile_idx in cutlass.range(cute.size(tTR_rQ), unroll_full=True):
             m, n = tCoord[subtile_idx]
             if m < n:
                 tCompute[subtile_idx] = cutlass.Float32(-float("inf"))
-        for subtile_idx in range(0, cute.size(tTR_rQ), 2):
+        for subtile_idx in cutlass.range(0, cute.size(tTR_rQ), 2, unroll_full=True):
             # TODO: use math.exp directly
             (
                 tCompute[subtile_idx],
@@ -3130,11 +3137,7 @@ class SSDKernel:
             dtype,
             num_bits_per_copy=128,
         )
-        tiled_r2s_b = cute.make_tiled_copy(
-            copy_atom_r2s_b,
-            layout_tv=tiled_s2r_b.layout_tv_tiled,
-            tiler_mn=tiled_s2r_b.tiler_mn,
-        )
+        tiled_r2s_b = cute.make_tiled_copy_S(copy_atom_r2s_b, tiled_s2r_b)
         thr_r2s_b = tiled_r2s_b.get_slice(local_tidx)
 
         # Partition shared tensor for smem store Bt
@@ -3333,17 +3336,24 @@ class SSDKernel:
         )
 
 
-def run_ssd(
+def run(
     gbehcdln: Tuple[int, int, int, int, int, int, int, int],
     io_dtype: Type[cutlass.Numeric],
     cumsum_delta_dtype: Type[cutlass.Numeric],
     acc_dtype: Type[cutlass.Numeric],
-    has_d: bool,
-    d_has_hdim: bool,
+    fuse_scale_d: str,
     tolerance: float,
     print_rtol_stats: bool,
     ref_lower_precision: bool,
+    warmup_iterations: int,
+    iterations: int,
+    skip_ref_check: bool,
+    use_cold_l2: bool = False,
+    **kwargs,
 ):
+    has_d = fuse_scale_d != "none"
+    d_has_hdim = fuse_scale_d == "vector"
+
     print(f"Running B100 Mamba2 SSD with:")
     print(f"GBEHCDLN: {gbehcdln}")
     print(
@@ -3353,6 +3363,10 @@ def run_ssd(
         f"Has D (True means fuse Y+=X*D): {has_d}, D has Hdim (True means D.shape DxEH, False means 1xEH): {d_has_hdim}"
     )
     print(f"Tolerance: {tolerance}")
+    print(f"Warmup iterations: {warmup_iterations}")
+    print(f"Iterations: {iterations}")
+    print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
 
     # Unpack parameters
     G, B, E, H, C, D, L, N = gbehcdln
@@ -3515,39 +3529,146 @@ def run_ssd(
         stream,
     )
 
-    # Launch compiled ssd kernel
-    compiled_ssd(
-        x_tensor,
-        cumsum_delta_tensor,
-        delta_tensor,
-        b_tensor,
-        c_tensor,
-        y_tensor,
-        fstate_tensor,
-        d_tensor,
-        stream,
+    # Launch compiled ssd kernel for reference check
+    if not skip_ref_check:
+        compiled_ssd(
+            x_tensor,
+            cumsum_delta_tensor,
+            delta_tensor,
+            b_tensor,
+            c_tensor,
+            y_tensor,
+            fstate_tensor,
+            d_tensor,
+            stream,
+        )
+
+        # Reference check
+        if print_rtol_stats:
+            print("\nY's Relative diffs:")
+            analyze_relative_diffs(
+                y_torch.cpu(), y_ref.to(cutlass_torch.dtype(io_dtype))
+            )
+            print("\nFstate's Relative diffs:")
+            analyze_relative_diffs(
+                fstate_torch.cpu(), fstate_ref.to(cutlass_torch.dtype(io_dtype))
+            )
+        torch.testing.assert_close(
+            y_torch.cpu(),
+            y_ref.to(cutlass_torch.dtype(io_dtype)),
+            atol=tolerance,
+            rtol=1e-02,
+        )
+        torch.testing.assert_close(
+            fstate_torch.cpu(),
+            fstate_ref.to(cutlass_torch.dtype(io_dtype)),
+            atol=tolerance,
+            rtol=1e-05,
+        )
+
+    def generate_tensors():
+        # Reuse existing CPU reference tensors and create new GPU tensors from them
+        _, x_tensor_new, _ = create_and_permute_tensor(
+            [B, EH, D, C, L],
+            [2, 4, 3, 1, 0],
+            io_dtype,
+            ref_tensor=x_ref,
+            dynamic_modes=[2, 3, 4],
+        )
+        _, cumsum_delta_tensor_new, _ = create_and_permute_tensor(
+            [B, EH, C, L],
+            [3, 2, 1, 0],
+            cumsum_delta_dtype,
+            ref_tensor=cumsum_delta_ref,
+            dynamic_modes=[1, 2, 3],
+        )
+        _, delta_tensor_new, _ = create_and_permute_tensor(
+            [B, EH, C, L],
+            [3, 2, 1, 0],
+            io_dtype,
+            ref_tensor=delta_ref,
+            dynamic_modes=[1, 2, 3],
+        )
+        _, b_tensor_new, _ = create_and_permute_tensor(
+            [B, G, N, C, L],
+            [4, 2, 3, 1, 0],
+            io_dtype,
+            ref_tensor=b_ref,
+            dynamic_modes=[2, 3, 4],
+        )
+        _, c_tensor_new, _ = create_and_permute_tensor(
+            [B, G, N, C, L],
+            [4, 2, 3, 1, 0],
+            io_dtype,
+            ref_tensor=c_ref,
+            dynamic_modes=[2, 3, 4],
+        )
+        _, y_tensor_new, _ = create_and_permute_tensor(
+            [B, EH, D, C, L],
+            [4, 2, 3, 1, 0],
+            io_dtype,
+            ref_tensor=y_ref,
+            dynamic_modes=[2, 3, 4],
+        )
+        _, fstate_tensor_new, _ = create_and_permute_tensor(
+            [B, EH, D, N],
+            [2, 3, 1, 0],
+            io_dtype,
+            ref_tensor=fstate_ref,
+            dynamic_modes=[2, 3],
+        )
+
+        if has_d:
+            _, d_tensor_new, _ = create_and_permute_tensor(
+                [EH, D if d_has_hdim else 1],
+                [1, 0],
+                io_dtype,
+                ref_tensor=d_ref,
+                dynamic_modes=[1],
+            )
+        else:
+            d_tensor_new = d_tensor
+
+        return testing.JitArguments(
+            x_tensor_new,
+            cumsum_delta_tensor_new,
+            delta_tensor_new,
+            b_tensor_new,
+            c_tensor_new,
+            y_tensor_new,
+            fstate_tensor_new,
+            d_tensor_new,
+            stream,
+        )
+
+    workspace_count = 1
+    if use_cold_l2:
+        one_workspace_bytes = (
+            x_torch.numel() * x_torch.element_size()
+            + cumsum_delta_torch.numel() * cumsum_delta_torch.element_size()
+            + delta_torch.numel() * delta_torch.element_size()
+            + b_torch.numel() * b_torch.element_size()
+            + c_torch.numel() * c_torch.element_size()
+            + y_torch.numel() * y_torch.element_size()
+            + fstate_torch.numel() * fstate_torch.element_size()
+        )
+        if has_d:
+            one_workspace_bytes += d_torch.numel() * d_torch.element_size()
+
+        workspace_count = testing.get_workspace_count(
+            one_workspace_bytes, warmup_iterations, iterations
+        )
+
+    exec_time = testing.benchmark(
+        compiled_ssd,
+        workspace_generator=generate_tensors,
+        workspace_count=workspace_count,
+        stream=stream,
+        warmup_iterations=warmup_iterations,
+        iterations=iterations,
     )
 
-    # Reference check
-    if print_rtol_stats:
-        print("\nY's Relative diffs:")
-        analyze_relative_diffs(y_torch.cpu(), y_ref.to(cutlass_torch.dtype(io_dtype)))
-        print("\nFstate's Relative diffs:")
-        analyze_relative_diffs(
-            fstate_torch.cpu(), fstate_ref.to(cutlass_torch.dtype(io_dtype))
-        )
-    torch.testing.assert_close(
-        y_torch.cpu(),
-        y_ref.to(cutlass_torch.dtype(io_dtype)),
-        atol=tolerance,
-        rtol=1e-02,
-    )
-    torch.testing.assert_close(
-        fstate_torch.cpu(),
-        fstate_ref.to(cutlass_torch.dtype(io_dtype)),
-        atol=tolerance,
-        rtol=1e-05,
-    )
+    return exec_time  # Return execution time in microseconds
 
 
 if __name__ == "__main__":
@@ -3586,15 +3707,53 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--ref_lower_precision",
-        type=bool,
+        action="store_true",
         default=True,
         help="Use lower precision for reference check",
+    )
+    parser.add_argument(
+        "--no-ref_lower_precision",
+        action="store_false",
+        dest="ref_lower_precision",
+        default=False,
+        help="Disable lower precision for reference check",
     )
     parser.add_argument(
         "--tolerance", type=float, default=5e-02, help="Tolerance for validation"
     )
     parser.add_argument(
-        "--print_rtol_stats", type=bool, default=True, help="Print rtol stats"
+        "--print_rtol_stats",
+        action="store_true",
+        default=True,
+        help="Enable print rtol stats",
+    )
+    parser.add_argument(
+        "--no-print_rtol_stats",
+        action="store_false",
+        dest="print_rtol_stats",
+        default=False,
+        help="Disable print rtol stats",
+    )
+    parser.add_argument(
+        "--warmup_iterations",
+        type=int,
+        default=0,
+        help="Number of warmup iterations",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=1,
+        help="Number of iterations",
+    )
+    parser.add_argument(
+        "--skip_ref_check", action="store_true", help="Skip reference checking"
+    )
+    parser.add_argument(
+        "--use_cold_l2",
+        action="store_true",
+        default=False,
+        help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
 
     args = parser.parse_args()
@@ -3602,18 +3761,18 @@ if __name__ == "__main__":
     if len(args.gbehcdln) != 8:
         parser.error("--gbehcdln must contain exactly 8 values")
 
-    has_d = args.fuse_scale_d != "none"
-    d_has_hdim = args.fuse_scale_d == "vector"
-
-    run_ssd(
+    run(
         args.gbehcdln,
         args.io_dtype,
         args.cumsum_delta_dtype,
         args.acc_dtype,
-        has_d,
-        d_has_hdim,
+        args.fuse_scale_d,
         args.tolerance,
         args.print_rtol_stats,
         args.ref_lower_precision,
+        args.warmup_iterations,
+        args.iterations,
+        args.skip_ref_check,
+        args.use_cold_l2,
     )
     print("PASS")

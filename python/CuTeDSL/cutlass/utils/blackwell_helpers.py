@@ -12,6 +12,8 @@
 from enum import Enum
 from math import log2, ceil
 from typing import List, Type, Union, Tuple
+from typing_extensions import deprecated
+import warnings
 
 from cutlass.cutlass_dsl import (
     Float16,
@@ -22,6 +24,7 @@ from cutlass.cutlass_dsl import (
     Int8,
     Float8E4M3FN,
     Float8E5M2,
+    Float4E2M1FN,
     Numeric,
     NumericMeta,
     dsl_user_op,
@@ -34,6 +37,9 @@ from cutlass.cute.nvgpu.tcgen05 import (
     MmaTF32Op,
     MmaI8Op,
     MmaFP8Op,
+    MmaMXF8Op,
+    MmaMXF4Op,
+    MmaMXF4NVF4Op,
     OperandSource,
     OperandMajorMode,
     CtaGroup,
@@ -56,6 +62,24 @@ from cutlass.cute.nvgpu.cpasync import (
     CopyBulkTensorTileG2SOp,
 )
 from cutlass.utils.layout import LayoutEnum
+
+
+@deprecated("Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead")
+class SmemCapacity(Enum):
+    SM100_SMEM_CAPACITY_BYTES = (228 - 1) * 1024
+    SM120_SMEM_CAPACITY_BYTES = (100 - 1) * 1024
+
+
+warnings.warn(
+    "SMEM_CAPACITY is deprecated: Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
+# Dictionary to map compute capability to SMEM capacity
+SMEM_CAPACITY = {
+    "sm100": SmemCapacity.SM100_SMEM_CAPACITY_BYTES.value,
+    "sm120": SmemCapacity.SM120_SMEM_CAPACITY_BYTES.value,
+}
 
 
 @dsl_user_op
@@ -822,18 +846,6 @@ def make_smem_layout_epi(
     return epi_smem_layout_staged
 
 
-class SmemCapacity(Enum):
-    SM100_SMEM_CAPACITY_BYTES = (228 - 1) * 1024
-    SM120_SMEM_CAPACITY_BYTES = (100 - 1) * 1024
-
-
-# Dictionary to map compute capability to SMEM capacity
-SMEM_CAPACITY = {
-    "sm100": SmemCapacity.SM100_SMEM_CAPACITY_BYTES.value,
-    "sm120": SmemCapacity.SM120_SMEM_CAPACITY_BYTES.value,
-}
-
-
 @dsl_user_op
 def make_trivial_tiled_mma(
     ab_dtype: Type[Numeric],
@@ -911,6 +923,76 @@ def make_trivial_tiled_mma(
             a_leading_mode,
             b_leading_mode,
         )
+    else:
+        raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
+
+    return cute.make_tiled_mma(cute.make_mma_atom(mma_op))
+
+
+@dsl_user_op
+def make_blockscaled_trivial_tiled_mma(
+    ab_dtype: Type[Numeric],
+    a_leading_mode: OperandMajorMode,
+    b_leading_mode: OperandMajorMode,
+    sf_dtype: Type[Numeric],
+    sf_vec_size: int,
+    cta_group: CtaGroup,
+    mma_tiler_mn: Tuple[int, int],
+    a_source: OperandSource = OperandSource.SMEM,
+    *,
+    loc=None,
+    ip=None,
+) -> cute.TiledMma:
+    """Make a BlockScaled tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
+    By default, the MMA atom is created with SMEM operand source for A.
+
+    :param ab_dtype: Data type of operands A and B.
+    :type ab_dtype: type[Numeric]
+    :param a_leading_mode: Leading dimension of operand A (1 for K, 0 for M/N).
+    :type a_leading_mode: tcgen05.OperandMajorMode
+    :param b_leading_mode: Leading dimension of operand B (1 for K, 0 for M/N).
+    :type b_leading_mode: tcgen05.OperandMajorMode
+    :param sf_dtype: Data type of the Scale Factor.
+    :type sf_dtype: type[Numeric]
+    :param sf_vec_size: The vector size of the Scale Factor.
+    :type sf_vec_size: int
+    :param cta_group: The CTA group to use.
+    :type cta_group: tcgen05.CtaGroup
+    :param mma_tiler_mn: The shape (M, N, K) of the MMA tiler.
+    :type mma_tiler_mn: Tuple[int, int]
+    :param a_source: The source of operand A (SMEM by default or TMEM).
+    :type a_source: OperandSource
+
+    :return: A tiled MMA atom.
+    :rtype: cute.TiledMma
+
+    :raises TypeError: If the data type is not supported.
+    """
+    if ab_dtype in {Float8E4M3FN, Float8E5M2}:
+        mma_op = MmaMXF8Op(
+            ab_dtype,
+            (*mma_tiler_mn, 32),
+            cta_group,
+            a_source,
+            a_leading_mode,
+            b_leading_mode,
+        )
+    elif ab_dtype == Float4E2M1FN:
+        if sf_vec_size == 32:
+            mma_op = MmaMXF4Op(
+                (*mma_tiler_mn, 64),
+                cta_group,
+                a_source,
+            )
+        elif sf_vec_size == 16:
+            mma_op = MmaMXF4NVF4Op(
+                sf_dtype,
+                (*mma_tiler_mn, 64),
+                cta_group,
+                a_source,
+            )
+        else:
+            raise ValueError(f"unsupported sf_vec_size, got {sf_vec_size}")
     else:
         raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
 
