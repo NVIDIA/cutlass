@@ -582,8 +582,8 @@ void gemm_host_f16xf16_f32_f32_tnt(TypeA const* device_ptr_A, LayoutA layout_A,
 
   dim3 dimBlock(128);
   dim3 dimCluster(size<0>(cluster_shape), size<1>(cluster_shape), size<2>(cluster_shape));
-  dim3 dimGrid(round_up(size(ceil_div(Gemm_M, cta_tilerM)), dimCluster.x),
-               round_up(size(ceil_div(Gemm_N, cta_tilerN)), dimCluster.y));
+  dim3 dimGrid(size(ceil_div(Gemm_M, bM * size<1>(cluster_layout_vmnk))) * dimCluster.x,
+               size(ceil_div(Gemm_N, bN * size<2>(cluster_layout_vmnk))) * dimCluster.y);
   int  smemBytes = sizeof(SMEMStorage);
 
   auto* kernel_ptr = &gemm_device<SMEMStorage,
