@@ -469,15 +469,6 @@ void gemm_host_f16xf16_f32_f32_tnt(TypeA const* device_ptr_A, LayoutA layout_A,
   auto bK = tile_size<2>(tiled_mma) * Int<4>{};  // MMA Tile K. We'll use 4 MMAs per MMA Tile K. For 16b types, tcgen05.mma has K16.
   auto mma_tiler = make_shape(bM, bN, bK);       // (MMA_M, MMA_N, MMA_K)
 
-  // The accumulator is always split between the two CTAs in the M direction,
-  using AtomThrShapeMNK = Shape<decltype(shape<0>(tiled_mma.get_thr_layout_vmnk())), _1, _1>;
-  using CtaShape_MNK = decltype(shape_div(mma_tiler, AtomThrShapeMNK{}));
-
-  // Define CTA tiler sizes (static)
-  auto cta_tiler = CtaShape_MNK{};
-  auto cta_tilerM = size<0>(cta_tiler);
-  auto cta_tilerN = size<1>(cta_tiler);
-
   // In SM90,  the MMAs are CTA-local and perform thread-level partitioning.
   // In SM100, the MMAs are Cluster-local and perform CTA-level partitioning.
   // Thus, SM90 uses a cta_tiler to extract portions of the Problem for the CTA
