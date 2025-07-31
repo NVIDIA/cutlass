@@ -170,7 +170,7 @@ CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be
 |NVIDIA H100 Tensor Core GPU            |9.0|11.8|
 |NVIDIA H200 Tensor Core GPU            |9.0|11.8|
 |NVIDIA B200 Tensor Core GPU            |10.0|12.8|
-|NVIDIA GeForce RTX 50x0 series         |10.0|12.8|
+|NVIDIA GeForce RTX 50x0 series         |12.0|12.8|
 
 ## Target Architecture
 
@@ -202,7 +202,7 @@ cmake .. -DCUTLASS_NVCC_ARCHS="100a"
 
 Note: The NVIDIA Blackwell SM100 architecture used in the datacenter
 products has a different compute capability than the one underpinning
-NVIDIA Blackwell GeForce RTX 50 series GPUs. As a result, kernels
+NVIDIA Blackwell GeForce RTX 50 series GPUs (SM120). As a result, kernels
 compiled for Blackwell SM100 architecture with arch conditional features
 (using `sm100a`) are not compatible with RTX 50 series GPUs.
 
