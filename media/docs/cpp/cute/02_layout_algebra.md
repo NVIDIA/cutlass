@@ -332,7 +332,7 @@ Informally, `logical_divide(A, B)` splits a layout `A` into two modes -- in the 
 
 Formally, this can be written as
 
-$A \oslash B := A \circ (B,B^*)$
+```A ⊘ B := A ∘ (B, B*)```
 
 and implemented as
 ```cpp
@@ -431,7 +431,7 @@ Informally, `logical_product(A, B)` results in a two mode layout where the first
 
 Formally, this can be written as
 
-$A \otimes B := (A, A^* \circ B)$
+```A ⊗ B := (A, A* ∘ B)```
 
 and implemented in CuTe as
 ```cpp
