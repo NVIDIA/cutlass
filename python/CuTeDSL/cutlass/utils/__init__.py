@@ -28,10 +28,20 @@ from .blackwell_helpers import (
     make_smem_layout_b,
     make_smem_layout_epi,
     make_trivial_tiled_mma,
+    make_blockscaled_trivial_tiled_mma,
 )
 
 from .hopper_helpers import (
     sm90_get_smem_store_op,
+)
+
+from .blockscaled_layout import (
+    BlockScaledBasicChunk,
+    tile_atom_to_shape_SF,
+    make_smem_layout_sfa,
+    make_smem_layout_sfb,
+    make_tmem_layout_sfa,
+    make_tmem_layout_sfb,
 )
 
 from .grouped_gemm_tile_scheduler_helper import (
@@ -50,7 +60,12 @@ from .smem_allocator import SmemAllocator
 
 from .layout import LayoutEnum
 
+from .smem_capacity import (
+    get_smem_capacity_in_bytes,
+)
+
 __all__ = [
+    "get_smem_capacity_in_bytes",
     "SmemAllocator",
     "LayoutEnum",
     "WorkTileInfo",

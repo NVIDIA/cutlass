@@ -212,7 +212,7 @@ class DenseGemmKernel:
 
         self.occupancy = 1
         self.threads_per_cta = 128
-        self.smem_capacity = sm100_utils.SMEM_CAPACITY["sm100"]
+        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -1106,11 +1106,7 @@ class DenseGemmKernel:
         copy_atom_r2s = sm100_utils.get_smem_store_op(
             self.c_layout, self.c_dtype, self.acc_dtype, tiled_copy_t2r
         )
-        tiled_copy_r2s = cute.make_tiled_copy(
-            copy_atom_r2s,
-            layout_tv=tiled_copy_t2r.layout_dst_tv_tiled,
-            tiler_mn=tiled_copy_t2r.tiler_mn,
-        )
+        tiled_copy_r2s = cute.make_tiled_copy_D(copy_atom_r2s, tiled_copy_t2r)
         # (R2S, R2S_M, R2S_N, PIPE_D)
         thr_copy_r2s = tiled_copy_r2s.get_slice(tidx)
         tRS_sC = thr_copy_r2s.partition_D(sC)
@@ -1772,7 +1768,7 @@ def run_dense_gemm(
             ref_c = ref
         elif c_dtype in {cutlass.Float8E5M2, cutlass.Float8E4M3FN}:
             # m major: (l, n, m) -> (m, n, l)
-            # k major: (l, m, n) -> (m, n, l)
+            # n major: (l, m, n) -> (m, n, l)
             permute_order = (1, 2, 0) if c_major == "n" else (2, 1, 0)
             shape = (l, m, n) if c_major == "n" else (l, n, m)
             f8_torch_tensor = cutlass_torch.create_and_permute_torch_tensor(

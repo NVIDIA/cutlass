@@ -39,6 +39,7 @@
 
 #include "../device/fmha.hpp"
 #include "../kernel/sm100_fmha_bwd_kernel_tma_warpspecialized.hpp"
+#include "../kernel/sm100_fmha_bwd_mla_kernel_tma_warpspecialized.hpp"
 #include "../kernel/fmha_kernel_bwd_sum_OdO.hpp"
 #include "../kernel/fmha_kernel_bwd_convert.hpp"
 
@@ -55,13 +56,14 @@ template<
     class Element,
     class ElementAccumulator,
     class TileShape,
+    bool IsMla,
     class Mask
 >
 class Sm100FmhaBwd {
 public:
   /// Argument structure: User API
   struct Arguments {
-    // Q K D HB
+    // Q K D D_VO HB
     ProblemShape problem_shape;
 
     const Element* ptr_Q;
@@ -98,11 +100,20 @@ public:
     cutlass::fmha::kernel::FmhaKernelBwdConvert<ProblemShape, Element, ElementAccumulator>
   >;
 
-  using Operation = cutlass::fmha::device::FMHA<
+  using OperationMha= cutlass::fmha::device::FMHA<
       cutlass::fmha::kernel::Sm100FmhaBwdKernelTmaWarpSpecialized<
           ProblemShape, Element, ElementAccumulator, TileShape, Mask
       >
   >;
+
+  using OperationMla = cutlass::fmha::device::FMHA<
+      cutlass::fmha::kernel::Sm100FmhaBwdMlaKernelTmaWarpSpecialized<
+          ProblemShape, Element, ElementAccumulator, TileShape, Mask
+      >
+  >;
+
+  using Operation = std::conditional_t<IsMla, OperationMla, OperationMha>;
+
   using Kernel = typename Operation::Kernel;
 
   struct Params {
@@ -121,7 +132,7 @@ private:
         ElementAccumulator* sum_odo = nullptr,
         ElementAccumulator* scaled_lse = nullptr) {
     using namespace cute;
-    auto [Q_, K, D, HB] = args.problem_shape;
+    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
@@ -141,7 +152,7 @@ private:
 
   static typename OperationConvert::Arguments to_convert_arguments(Arguments const& args, ElementAccumulator* src = nullptr) {
     using namespace cute;
-    auto [Q_, K, D, HB] = args.problem_shape;
+    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
@@ -163,6 +174,7 @@ private:
       ElementAccumulator* sum_OdO = nullptr, cute::tuple<cute::_1, cute::tuple<int, int>> const& stride_sum_OdO = {},
       ElementAccumulator* scaled_lse = nullptr, cute::tuple<cute::_1, cute::tuple<int, int>> const& stride_scaled_lse = {},
       ElementAccumulator* dQ_acc = nullptr, cute::tuple<int, cute::_1, cute::tuple<int, int>> const& stride_dQ = {}) {
+           
     return typename Operation::Arguments{
       args.problem_shape,
       { args.ptr_Q,  args.stride_Q,
@@ -207,7 +219,7 @@ public:
   /// Gets the workspace size
   static size_t
   get_workspace_size(Arguments const& args) {
-    auto [Q_, K, D, HB] = args.problem_shape;
+    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
@@ -227,7 +239,7 @@ public:
     CUTLASS_TRACE_HOST("Universal::initialize_split() - workspace_dQ="
       << workspace_dQ << ", workspace_sum_OdO=" << workspace_sum_OdO << "stream: " << (stream ? "non-null" : "null"));
 
-    auto [Q_, K, D, HB] = args.problem_shape;
+    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
@@ -256,7 +268,7 @@ public:
     CUTLASS_TRACE_HOST("Universal::initialize() - workspace "
       << workspace << ", stream: " << (stream ? "non-null" : "null"));
 
-    auto [Q_, K, D, HB] = args.problem_shape;
+    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment

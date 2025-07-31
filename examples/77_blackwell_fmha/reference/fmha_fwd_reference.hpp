@@ -59,15 +59,34 @@ void __global__ fmha_reference_kernel(
   extern __shared__ char mS_mem[];
   ElementAccumulator* mS = reinterpret_cast<ElementAccumulator*>(mS_mem);
 
-  ElementAccumulator softmax_scale = static_cast<ElementAccumulator>(1.0 / sqrt(1.0 * size<1>(mO)));
+  ElementAccumulator softmax_scale = static_cast<ElementAccumulator>(1.0 / sqrt(1.0 * size<1>(mQ)));
 
   auto id = make_identity_tensor(make_shape(1, 1));
-  for (int idx_L = blockIdx.y; idx_L < size<3>(problem_shape_in); idx_L += gridDim.y) {
-    for (int idx_Q = blockIdx.x; idx_Q < size<0>(problem_shape_in); idx_Q += gridDim.x) {
 
-      auto coord_L = idx2crd(idx_L, shape<3>(problem_shape_in));
-      auto coord_in = cute::make_tuple(idx_Q, _0{}, _0{}, coord_L);
-      auto [problem_shape, coord] = apply_variable_length(problem_shape_in, coord_in, get<3,1>(coord_in));
+  for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
+    for (int idx_Q = blockIdx.x; idx_Q < size<0>(problem_shape_in); idx_Q += gridDim.x) {
+      
+      auto coord_L = idx2crd(idx_L, shape<4>(problem_shape_in));
+      auto get_coord_in = [&]() {
+        if constexpr (rank_v<decltype(get<2>(ProblemShapeIn{}))> == 2) {
+          return cute::make_tuple(idx_Q, _0{}, cute::make_tuple(_0{}, _0{}), cute::make_tuple(_0{}, _0{}), coord_L);
+        } else {
+          return cute::make_tuple(idx_Q, _0{}, _0{}, _0{}, coord_L);
+        }
+      };
+      auto coord_in = get_coord_in();
+      auto [problem_shape, coord] = apply_variable_length(problem_shape_in, coord_in, get<4,1>(coord_in));
+
+      int head_qk = 0;
+      int head_v = 0;
+      if constexpr (rank_v<decltype(get<2>(problem_shape))> == 2) {
+        // MLA case: head_qk 192, head_v = 128
+        head_qk = size<2, 0>(problem_shape) + size<2, 1>(problem_shape);
+        head_v = size<2, 0>(problem_shape);
+      } else {
+        head_qk = size<3>(problem_shape);
+        head_v = head_qk;
+      }
 
       if (get<0,0>(coord) >= get<0>(problem_shape)) continue;
 
@@ -82,7 +101,7 @@ void __global__ fmha_reference_kernel(
       }
 
       if (get<1>(problem_shape) == 0) {
-        for (int idx_D = threadIdx.x; idx_D < size<2>(problem_shape); idx_D += blockDim.x) {
+        for (int idx_D = threadIdx.x; idx_D < head_qk; idx_D += blockDim.x) {
           mO(idx_Q + offset_Q, idx_D, idx_L) = Element(0);
         }
 
@@ -94,7 +113,7 @@ void __global__ fmha_reference_kernel(
   
       for (int idx_K = threadIdx.x; idx_K < size<1>(problem_shape); idx_K += blockDim.x) {
         ElementAccumulator acc = 0;
-        for (int idx_D = 0; idx_D < size<2>(problem_shape); idx_D++) {
+        for (int idx_D = 0; idx_D < head_qk; idx_D++) {
           ElementAccumulator eQ = mQ(idx_Q + offset_Q, idx_D, idx_L);
           ElementAccumulator eK = mK(idx_K + offset_K, idx_D, idx_L);
           acc += eQ * eK;
@@ -128,7 +147,8 @@ void __global__ fmha_reference_kernel(
 
       ElementAccumulator scale = 1.0f / sum;
 
-      for (int idx_D = threadIdx.x; idx_D < size<2>(problem_shape); idx_D += blockDim.x) {
+
+      for (int idx_D = threadIdx.x; idx_D < head_v; idx_D += blockDim.x) {
         ElementAccumulator acc = 0;
         for (int idx_K = 0; idx_K < size<1>(problem_shape); idx_K++) {
           ElementAccumulator eV = mV(idx_K + offset_K, idx_D, idx_L);
@@ -137,6 +157,7 @@ void __global__ fmha_reference_kernel(
         }
         mO(idx_Q + offset_Q, idx_D, idx_L) = static_cast<typename TensorO::value_type>(acc * scale);
       }
+
 
       if (threadIdx.x == 0 && mLSE.data() != nullptr) {
         mLSE(idx_Q + offset_Q, idx_L) = log(sum) + softmax_scale * maxS;

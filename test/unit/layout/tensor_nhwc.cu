@@ -34,19 +34,19 @@
 
 #include "../common/cutlass_unit_test.h"
 #include "cutlass/layout/tensor.h"
-#include "cutlass/util/device_memory.h"    
+#include "cutlass/util/device_memory.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 namespace test {
 namespace layout {
-  
+
   void test_nhwc_layout(int n_size, int h_size, int w_size, int c_size) {
     int ldc = c_size + 1;
     int ldw = ldc * (w_size + 2);
     int ldh = ldw * (h_size + 3);
 
     typedef cutlass::layout::TensorNHWC Tensor;
-        
+
     Tensor::Stride tensor_stride({ ldc, ldw, ldh });
     Tensor tensor_nhw_packed_c(tensor_stride);
 
@@ -74,8 +74,8 @@ namespace layout {
     // test capacity
     auto capacity = tensor_nhw_packed_c.capacity(
             cutlass::Tensor4DCoord(n_size, h_size, w_size, c_size));
-    decltype(capacity) referece_capacity = ldh * n_size;
-    EXPECT_EQ(capacity, referece_capacity);
+    decltype(capacity) reference_capacity = ldh * n_size;
+    EXPECT_EQ(capacity, reference_capacity);
 
   }
 
@@ -86,7 +86,7 @@ namespace layout {
     int ldh = ldw * h_size;
 
     typedef cutlass::layout::TensorNHWC Tensor;
-        
+
     Tensor::Stride tensor_stride({ ldc, ldw, ldh });
     Tensor tensor_nhw_packed_c(tensor_stride);
 
@@ -130,7 +130,7 @@ namespace layout {
     dim3 grid(1,1);
     dim3 block(c_size, 1, 1);
 
-    test::layout::test_nhwc_inverse<<< grid, block >>>(output.get(), 
+    test::layout::test_nhwc_inverse<<< grid, block >>>(output.get(),
             n_size, h_size, w_size, c_size);
 
     cudaError_t result = cudaDeviceSynchronize();

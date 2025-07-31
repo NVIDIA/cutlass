@@ -10,14 +10,22 @@
 # is strictly prohibited.
 
 from enum import Enum
+from typing_extensions import deprecated
+import warnings
 
 
+@deprecated("Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead")
 class SmemCapacity(Enum):
     SM80_SMEM_CAPACITY_BYTES = (164 - 1) * 1024
     SM86_SMEM_CAPACITY_BYTES = (100 - 1) * 1024
     SM89_SMEM_CAPACITY_BYTES = (100 - 1) * 1024
 
 
+warnings.warn(
+    "SMEM_CAPACITY is deprecated: Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 # Dictionary to map compute capability to SMEM capacity
 SMEM_CAPACITY = {
     "sm80": SmemCapacity.SM80_SMEM_CAPACITY_BYTES.value,

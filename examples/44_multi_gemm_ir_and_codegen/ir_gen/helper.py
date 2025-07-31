@@ -64,8 +64,8 @@ def write_2_headfile(filename, file_dir, string):
     with open(file_dir + filename, 'w') as f:
         f.write("/* Auto Generated code - Do not edit.*/\n\n\n#pragma once\n" + string)
 
-def var_idx(varaiable, index):
-    return varaiable + str(index)
+def var_idx(variable, index):
+    return variable + str(index)
 
 
 def list_2_string(input_list, ):
