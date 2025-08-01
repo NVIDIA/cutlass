@@ -418,7 +418,7 @@ Coord<Rank, Index> operator/(Coord<Rank, Index> coord, Index s) {
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Helper to make a 2-element coordinate
+/// Helper to make a 1-element coordinate
 template <typename T> 
 CUTLASS_HOST_DEVICE
 Coord<1, T> make_Coord(T _0) {
