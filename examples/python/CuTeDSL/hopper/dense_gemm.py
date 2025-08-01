@@ -91,8 +91,8 @@ To collect performance with NCU profiler:
       --a_major k --b_major k --c_major n
 
 Constraints:
-* Supported input data types: fp16, fp8 (e4m3fn, e5m2)
-* For fp16 types, A and B must have the same data type
+* Supported input data types: fp16, bf16, fp8 (e4m3fn, e5m2)
+* For fp16, bf16 types, A and B must have the same data type
 * For fp8 types, A and B can have different types (e4m3fn or e5m2) but both must be 8-bit
 * Fp8 types only support k-major layout
 * Only fp32 accumulation is supported in this example
@@ -1316,6 +1316,7 @@ class HopperWgmmaGemmKernel:
         # tested a_dtype
         if a_dtype not in {
             cutlass.Float16,
+            cutlass.BFloat16,
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
         }:
@@ -1323,6 +1324,7 @@ class HopperWgmmaGemmKernel:
         # tested b_dtype
         if b_dtype not in {
             cutlass.Float16,
+            cutlass.BFloat16,
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
         }:
@@ -1333,6 +1335,7 @@ class HopperWgmmaGemmKernel:
         # tested c_dtype
         if c_dtype not in {
             cutlass.Float32,
+            cutlass.BFloat16,
             cutlass.Float16,
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
