@@ -373,7 +373,7 @@ for (int j = 0; j < size<1>(gmem_tiled); ++j) {
 }
 ```
 
-This applies a statically shaped `Tiler` to the global memory `Tensor`, creates an register `Tensor` that is compatible with the shape of that tile, then loops through each tile to copy it into memory and `do_something`.
+This applies a statically shaped `Tiler` to the global memory `Tensor`, creates a register `Tensor` that is compatible with the shape of that tile, then loops through each tile to copy it into memory and `do_something`.
 
 ## Summary
 
