@@ -133,13 +133,13 @@ First, a few observations:
 
 With the above, we can assume without loss of generality that `B = s:d` is a layout with integral shape and stride. We can also assume that `A` is a flattened, coalesced layout.
 
-When `A` is integral, `A = a:b`, the result is rather trivial: `R = A o B = a:b o s:d = s:(b*d)`. Here the composition `R` selects `s` elements, indexed from the natural coordinate 0, strided by `d`.
+When `A` is integral, `A = a:b`, the result is rather trivial: `R = A o B = a:b o s:d = s:(b*d)`. Here, the result of the composition `R` are the first `s` elements of `A` strided by `d`.
 
 When `A` is multimodal, we need to be more careful. Put into words, `A o B = A o s:d`, for integral `s` and `d` means that we want to:
 
-1. Find a view of `A` such that we incorporate the stride `d` of `B`. This also allows us to to calculate the stride of the composed layout.
+1. Determine a layout that produces every `d`th element of `A`.
 
-The shape of the view can be calculated by progressively "dividing out" the first `d` elements from the shape of `A` starting from the left.
+The shape of this intermediate layout can be calculated by progressively "dividing out" the first `d` elements from the shape of `A` starting from the left.
 
 For example,
 * `(6,2) /  2 => (3,2)`
@@ -151,13 +151,12 @@ For example,
 * `(3,6,2,8) /  9 => (1,2,2,8)`
 * `(3,6,2,8) / 72 => (1,1,1,4)`
 
-To understand how this allows us to calculate the stride of the composition, consider for the composition `(6,2):(x, y) o (2, 2)`, where `x, y` are integers.
+To compute the strides of the strided layout, the residues of the above operation are used to scale the strides of `A`. For instance, the last example `(3,6,2,8):(w,x,y,z) / 72` with strides `(w,x,y,z)` produces `(3*w,6*x,2*x,2*z)` as the strides of the strided layout.
 
-"Dividing out" to find the shape of view we see that `(6,2) / 2 = (3,2)`, implying that the stride of the composed layouts is `(2*x, y)` - incorporating both strides.
 
 As you may have noticed, we can only divide shapes by certain values and get a sensible result. This is called the **stride divisibility condition** and is statically checked in CuTe when possible.
 
-2. Keep the first `s` elements of the newly strided `A`. This defines the shape of the composed layout. This can be computed by "modding out" the first `s` elements from the shape of `A` starting from the left.
+2. Keep the first `s` elements of the newly strided `A` so that the result has a compatible shape with `B`. This can be computed by "modding out" the first `s` elements from the shape of `A` starting from the left.
 
 For example,
 * `(6,2) %  2 => (2,1)`
@@ -169,11 +168,11 @@ For example,
 * `(1,2,2,8) %  2 => (1,2,1,1)`
 * `(1,2,2,8) % 16 => (1,2,2,4)`
 
-Essentially, this operation finds a layout shape that remains compatible with `B`, while maintaining our new stride.
+This operation causes the result to have a shape that is compatible with `B`.
 
 Again, this operation must satisfy a **shape divisibility condition** to yield a sensible result and is statically checked in CuTe when possible.
 
-Returning to our example `(6,2):(x, y) o (2, 2)`, we see that "modding out" to find the required shape results in `(6, 2) % 2 = (2, 1)`. This results in a final composition `(6,2):(x, y) o (2, 2) = (2, 1): (2*x, y)`.
+From the above examples, we can construct the composition `(3,6,2,8):(w,x,y,z) o 16:9 = (1,2,2,4):(3*w,3*x,y,z)`.
 
 ---
 
@@ -196,36 +195,30 @@ R = A o B
   = ((6,2):(8,2) o 4:3, (6,2):(8,2) o 3:1)
 
 ---
-1. Beginning with (6,2):(8,2) o 4:3
+1. Compute `(6,2):(8,2) o 4:3`
 
-- Calculate the shape of the new strided view of the composition
+- First, we compute the strided layout,
 
-(6, 2) / 3 = (2, 2)
+(6,2):(8,2) / 3 = (6/3,2):(8*3,2) = (2,2):(24,2)
 
-- This implies a stride of
+- Next, we keep the shape compatible,
 
-(8*3, 2) = (24, 2)
-
-- Calculate the shape of the composition
-
-(6, 2) % 4 = (2, 2)
-
-- We note that the operation above must respect the two-dimensional nature of the stride over A, so (4, 1) is not acceptable.
+(2,2):(24,2) % 4 = (2,2):(24,2)
 
 ---
-2. Now compute (6,2):(8,2) o 3:1
+2. Compute `(6,2):(8,2) o 3:1`
 
-- Again calculate the shape of the new strided view of the composition
+- First, we compute the strided layout
 
-(6, 2) / 1 = (1, 1) = 1
+(6,2):(8,2) / 1 = (6,2):(8,2)
 
-- Calculate the shape of the composition
+- Next, we keep the shape compatible,
 
-(6, 2) % 3 = (3, 1) = 3
+(6,2):(8,2) % 3 = (3,1):(8,2)
 
 ---
 
-Putting this together, we see that the composition
+Putting this together and coalescing each mode, we obtain the result
 
 R = A o B
   = ((2, 2), 3): ((24, 2), 8)
