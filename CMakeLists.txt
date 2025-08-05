@@ -704,8 +704,14 @@ target_include_directories(
   CUTLASS
   SYSTEM INTERFACE
   $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
-  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include/cccl>
   )
+if(CUDA_VERSION VERSION_GREATER_EQUAL 13.0)
+  target_include_directories(
+    CUTLASS
+    SYSTEM INTERFACE
+    $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include/cccl>
+    )
+endif()
 
 install(
   DIRECTORY
