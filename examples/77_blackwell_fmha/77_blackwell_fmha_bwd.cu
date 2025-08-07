@@ -183,6 +183,9 @@ struct Options {
     cmd.get_cmd_line_argument("h", h, -1);
     if (h == -1) h = 2048 / d;
 
+    cmd.get_cmd_line_argument("h_k", h_k, -1);
+    if (h_k == -1) h_k = h;
+
     varlen = cmd.check_cmd_line_flag("varlen");
 
     cmd.get_cmd_line_argument("q", q, -1);
@@ -298,6 +301,7 @@ struct Options {
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --b=<int>                   Sets the B extent\n"
       << "  --h=<int>                   Sets the H extent\n"
+      << "  --h_k=<int>                 Sets the H_K/V extent (for GQA/MQA)\n"
       << "  --q=<int>                   Sets the Q extent\n"
       << "  --k=<int>                   Sets the K extent\n"
       << "  --varlen-q=<int>:<int...>   Sets the variable Q extent per batch (colon separated)\n"
@@ -405,25 +409,24 @@ struct BwdRunner {
 #endif
   using ElementAccumulator = float;
 
-  // Q K D (H B)
+  // Q K D D_VO ((H_R, H_K) B)
   using ProblemShape = std::conditional_t<
       kIsVarlen,
-      cute::tuple<VariableLength, VariableLength, int, int, cute::tuple<int, int>>,
-      cute::tuple<int, int, int, int, cute::tuple<int, int>>
+      cute::tuple<VariableLength, VariableLength, int, int, cute::tuple<cute::tuple<int, int>, int>>,
+      cute::tuple<int, int, int, int, cute::tuple<cute::tuple<int, int>, int>>
   >;
   
-  using TensorStride = Stride<int, _1, Stride<int, int>>; // Seq D (H B)
-  using StrideQ = TensorStride;
-  using StrideK = TensorStride;
-  using StrideV = TensorStride;
-  using StrideO = TensorStride;
-  using StrideLSE = Stride<_1, Stride<int, int>>; // Seq (H B)
+  using StrideQ = Stride<int, _1, Stride<Stride<int, int>, int>>; // Q D    ((H_R, H_K), B)
+  using StrideK = Stride<int, _1, Stride<Stride<_0, int>, int>>;  // K D    ((H_R, H_K), B)
+  using StrideV = StrideK;                                        // K D_VO ((H_R, H_K), B)
+  using StrideO = StrideQ;                                        // Q D_VO ((H_R, H_K), B)
+  using StrideLSE = Stride<_1, Stride<Stride<int, int>, int>>;    // Q      ((H_R, H_K), B)
 
   // Backwards specific
-  using StrideDQ = TensorStride;
-  using StrideDK = TensorStride;
-  using StrideDV = TensorStride;
-  using StrideDO = TensorStride;
+  using StrideDQ = StrideQ;
+  using StrideDK = StrideK;
+  using StrideDV = StrideV;
+  using StrideDO = StrideO;
 
   //
   // Data members
@@ -468,43 +471,15 @@ struct BwdRunner {
     auto [Q, K, D, D_VO, HB] = problem_shape;
     auto [H, B] = HB;
 
-    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
-      select<0,2,4>(problem_shape),
-      stride_Q);
-
-    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()),
-      select<1,2,4>(problem_shape),
-      stride_K);
-
-    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()),
-      select<1,3,4>(problem_shape),
-      stride_V);
-
-    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()),
-      select<0,3,4>(problem_shape),
-      stride_O);
-
-    // keep going here! (this might be better in cursor)
-
-    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()),
-      select<0,4>(problem_shape),
-      stride_LSE);
-
-    Tensor mDQ = make_tensor(make_gmem_ptr(block_ref_dQ.get()),
-      select<0,2,4>(problem_shape),
-      stride_dQ);
-
-    Tensor mDK = make_tensor(make_gmem_ptr(block_ref_dK.get()),
-      select<1,2,4>(problem_shape),
-      stride_dK);
-
-    Tensor mDV = make_tensor(make_gmem_ptr(block_ref_dV.get()),
-      select<1,3,4>(problem_shape),
-      stride_dV);
-
-    Tensor mDO = make_tensor(make_gmem_ptr(block_dO.get()),
-      select<0,3,4>(problem_shape),
-      stride_dO);
+    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()), make_shape(Q, D, HB), stride_Q);
+    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()), make_shape(K, D, HB), stride_K);
+    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()), make_shape(K, D_VO, HB), stride_V);
+    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()), make_shape(Q, D_VO, HB), stride_O);
+    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()), make_shape(Q, HB), stride_LSE);
+    Tensor mDQ = make_tensor(make_gmem_ptr(block_ref_dQ.get()), make_shape(Q, D, HB), stride_dQ);
+    Tensor mDK = make_tensor(make_gmem_ptr(block_ref_dK.get()), make_shape(K, D, HB), stride_dK);
+    Tensor mDV = make_tensor(make_gmem_ptr(block_ref_dV.get()), make_shape(K, D_VO, HB), stride_dV);
+    Tensor mDO = make_tensor(make_gmem_ptr(block_dO.get()), make_shape(Q, D_VO, HB), stride_dO);
 
     fmha_bwd_reference(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDQ, mDK, mDV, ActiveMask{});
 
@@ -549,6 +524,9 @@ struct BwdRunner {
   }
 
   auto initialize_problem_shape(Options const& options) {
+    int h_r = options.h / options.h_k;
+    assert(options.h % options.h_k == 0);
+
     if constexpr (kIsVarlen) {
       int num_batches = options.b;
 
@@ -599,14 +577,14 @@ struct BwdRunner {
       ProblemShape problem_shape{
           {max_seqlen_q, block_cumulative_seqlen_q.get(), total_seqlen_q},
           {max_seqlen_kv, block_cumulative_seqlen_kv.get(), total_seqlen_kv},
-          options.d, options.d_vo, {options.h, options.b}
+          options.d, options.d_vo, {{h_r, options.h_k}, options.b}
       };
-      auto tensor_shape = make_shape(total_seqlen_q, total_seqlen_kv, options.d, options.d_vo, make_shape(options.h, 1));
+      auto tensor_shape = make_shape(total_seqlen_q, total_seqlen_kv, options.d, options.d_vo, make_shape(make_shape(h_r, options.h_k), 1));
 
       return cute::make_tuple(problem_shape, tensor_shape);
     }
     else {
-      ProblemShape problem_shape{options.q, options.k, options.d, options.d_vo, {options.h, options.b}};
+      ProblemShape problem_shape{options.q, options.k, options.d, options.d_vo, {{h_r, options.h_k}, options.b}};
       return cute::make_tuple(problem_shape, problem_shape);
     }
   }
@@ -616,22 +594,23 @@ struct BwdRunner {
     auto [problem_shape, tensor_shape] = initialize_problem_shape(options);
     auto [Q, K, D, D_VO, HB] = tensor_shape;
     auto [H, B] = HB;
+    auto [H_R, H_K] = H;
     D = cutlass::round_up(D, 8);  // Alignment
 
     // for varlen, Q == total_Q, K == total_K, B = 1
     // but in problem_shape, they've got to be max_Q/max_K, and B = B
 
-    auto shape_Q = make_shape(Q, D, make_shape(H, B));
-    auto shape_O = make_shape(Q, D_VO, make_shape(H, B));
-    auto shape_K = make_shape(K, D, make_shape(H, B));
-    auto shape_V = make_shape(K, D_VO, make_shape(H, B));
-    auto shape_LSE = make_shape(Q, make_shape(H, B));
+    auto shape_Q = make_shape(Q, D, HB);
+    auto shape_K = make_shape(K, D, HB);
+    auto shape_V = make_shape(K, D_VO, HB);
+    auto shape_O = make_shape(Q, D_VO, HB);
+    auto shape_LSE = make_shape(Q, HB);
 
-    stride_Q = make_stride(D, _1{}, make_stride(D*Q, B == 1 ? 0 : D*Q*H));
-    stride_K = make_stride(D, _1{}, make_stride(D*K, B == 1 ? 0 : D*K*H));
-    stride_V = make_stride(D_VO, _1{}, make_stride(D_VO*K, B == 1 ? 0 : D_VO*K*H));
-    stride_O = make_stride(D_VO, _1{}, make_stride(D_VO*Q, B == 1 ? 0 : D_VO*Q*H));
-    stride_LSE = make_stride(_1{}, make_stride(Q, B == 1 ? 0 : Q*H));
+    stride_Q = make_stride(D, _1{}, make_stride(make_stride(D*Q, D*Q*H_R), B == 1 ? 0 : D*Q*H_R*H_K));
+    stride_K = make_stride(D, _1{}, make_stride(make_stride(_0{}, D*K), B == 1 ? 0 : D*K*H_K));
+    stride_V = make_stride(D_VO, _1{}, make_stride(make_stride(_0{},D_VO*K), B == 1 ? 0 : D_VO*K*H_K));
+    stride_O = make_stride(D_VO, _1{}, make_stride(make_stride(D_VO*Q, D_VO*Q*H_R), B == 1 ? 0 : D_VO*Q*H_R*H_K));
+    stride_LSE = make_stride(_1{}, make_stride(make_stride(Q, Q*H_R), B == 1 ? 0 : Q*H_R*H_K));
 
     stride_dQ = stride_Q;
     stride_dK = stride_K;
@@ -642,20 +621,23 @@ struct BwdRunner {
       return size(make_shape(1ull, shape));
     };
 
+    auto size_K = lsize(K * D * H_K * B);
+    auto size_V = lsize(K * D_VO * H_K * B);
+
     block_Q.reset(lsize(shape_Q));
-    block_K.reset(lsize(shape_K));
-    block_V.reset(lsize(shape_V));
+    block_K.reset(size_K);
+    block_V.reset(size_V);
     block_O.reset(lsize(shape_O));
     block_LSE.reset(lsize(shape_LSE));
 
     block_dQ.reset(lsize(shape_Q));
-    block_dK.reset(lsize(shape_K));
-    block_dV.reset(lsize(shape_V));
+    block_dK.reset(size_K);
+    block_dV.reset(size_V);
     block_dO.reset(lsize(shape_O));
 
     block_ref_dQ.reset(lsize(shape_Q));
-    block_ref_dK.reset(lsize(shape_K));
-    block_ref_dV.reset(lsize(shape_V));
+    block_ref_dK.reset(size_K);
+    block_ref_dV.reset(size_V);
 
     initialize_block(block_Q, seed + 2023, options.init_style_q);
     initialize_block(block_K, seed + 2022, options.init_style_k);
@@ -669,27 +651,13 @@ struct BwdRunner {
     initialize_block(block_ref_dK, seed + 2034);
     initialize_block(block_ref_dV, seed + 2035);
 
-    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
-      select<0,2,4>(problem_shape),
-      stride_Q);
+    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()), shape_Q, stride_Q);
+    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()), shape_K, stride_K);
+    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()), shape_V, stride_V);
+    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()), shape_O, stride_O);
+    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()), shape_LSE, stride_LSE);
 
-    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()),
-      select<1,2,4>(problem_shape),
-      stride_K);
-
-    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()),
-      select<1,3,4>(problem_shape),
-      stride_V);
-
-    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()),
-      select<0,3,4>(problem_shape),
-      stride_O);
-
-    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()),
-      select<0,4>(problem_shape),
-      stride_LSE);
-
-    if (! options.skip_reference) {
+    if (not options.skip_reference) {
       fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
     }
 
@@ -820,7 +788,8 @@ struct BwdRunner {
     flops *= static_cast<double>(get<0>(problem_shape));
     flops *= static_cast<double>(get<1>(problem_shape));
     flops *= (3 * static_cast<double>(get<2>(problem_shape)) + 2 * static_cast<double>(get<3>(problem_shape)));
-    flops *= static_cast<double>(get<4,0>(problem_shape));
+    flops *= static_cast<double>(get<4,0,0>(problem_shape));
+    flops *= static_cast<double>(get<4,0,1>(problem_shape));
     flops *= static_cast<double>(get<4,1>(problem_shape));
     double tflops_s = flops * 1e-12 /*tera*/ / (runtime_ms * 1e-3 /*ms*/);
     example_result.tflops_tc_s = tflops_s;
@@ -1001,7 +970,7 @@ int main_single(int argc, char const **args) {
     hw_info.sm_count = options.sm_count;
   }
 
-  std::cout << "###### B " << options.b << " H " << options.h << " Q " << options.q << " K " << options.k << " D " << options.d << " D_VO " << options.d_vo << " ";
+  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " Q " << options.q << " K " << options.k << " D " << options.d << " D_VO " << options.d_vo << " ";
   std::cout << "Backward" << " " << (options.causal ? "Causal" : "Full") << " ";
   std::cout << "#SM " << hw_info.sm_count << std::endl;
 
