@@ -651,11 +651,25 @@ struct BwdRunner {
     initialize_block(block_ref_dK, seed + 2034);
     initialize_block(block_ref_dV, seed + 2035);
 
-    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()), shape_Q, stride_Q);
-    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()), shape_K, stride_K);
-    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()), shape_V, stride_V);
-    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()), shape_O, stride_O);
-    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()), shape_LSE, stride_LSE);
+    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
+      select<0,2,4>(problem_shape),
+      stride_Q);
+
+    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()),
+      select<1,2,4>(problem_shape),
+      stride_K);
+
+    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()),
+      select<1,3,4>(problem_shape),
+      stride_V);
+
+    Tensor mO = make_tensor(make_gmem_ptr(block_O.get()),
+      select<0,3,4>(problem_shape),
+      stride_O);
+
+    Tensor mLSE = make_tensor(make_gmem_ptr(block_LSE.get()),
+      select<0,4>(problem_shape),
+      stride_LSE);
 
     if (not options.skip_reference) {
       fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
