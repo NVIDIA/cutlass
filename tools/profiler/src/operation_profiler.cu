@@ -383,7 +383,7 @@ int OperationProfiler::profile_all(
 
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       std::cerr << "    min_cc: " << min_cc << "\n";
-      std::cerr << "    max_cc: " << min_cc << "\n";
+      std::cerr << "    max_cc: " << max_cc << "\n";
 #endif
 
       // Clear named allocations
