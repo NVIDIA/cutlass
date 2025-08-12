@@ -32,13 +32,13 @@ from typing import Type, Union, Callable
 
 import torch
 import cuda.bindings.driver as cuda
-
+import cutlass.cute.testing as testing
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu import cpasync, warp
 import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
-import cutlass.utils.ampere_helpers as sm80_utils
+import cutlass.utils as utils
 
 """
 A flash attention v2 forward pass example for NVIDIA Ampere SM80 architecture using CUTE DSL.
@@ -163,7 +163,7 @@ class FlashAttentionForwardAmpere:
         # Check if block size setting is out of shared memory capacity
         # Shared memory usage: Q tile + (K tile + V tile) where K and V use the same tile size
         smem_usage = (m_block_size * head_dim + n_block_size * head_dim * 2) * 2
-        smem_capacity = sm80_utils.SMEM_CAPACITY["sm80"]
+        smem_capacity = utils.get_smem_capacity_in_bytes("sm_80")
         if smem_usage > smem_capacity:
             return False
 
@@ -469,21 +469,9 @@ class FlashAttentionForwardAmpere:
             warp.LdMatrix8x8x16bOp(transpose=True, num_matrices=4),
             self._dtype,
         )
-        smem_tiled_copy_Q = cute.make_tiled_copy(
-            smem_copy_atom_Q,
-            layout_tv=tiled_mma.tv_layout_A_tiled,
-            tiler_mn=(tiled_mma.get_tile_size(0), tiled_mma.get_tile_size(2)),
-        )
-        smem_tiled_copy_K = cute.make_tiled_copy(
-            smem_copy_atom_K,
-            layout_tv=tiled_mma.tv_layout_B_tiled,
-            tiler_mn=(tiled_mma.get_tile_size(1), tiled_mma.get_tile_size(2)),
-        )
-        smem_tiled_copy_V = cute.make_tiled_copy(
-            smem_copy_atom_V,
-            layout_tv=tiled_mma.tv_layout_B_tiled,
-            tiler_mn=(tiled_mma.get_tile_size(1), tiled_mma.get_tile_size(2)),
-        )
+        smem_tiled_copy_Q = cute.make_tiled_copy_A(smem_copy_atom_Q, tiled_mma)
+        smem_tiled_copy_K = cute.make_tiled_copy_B(smem_copy_atom_K, tiled_mma)
+        smem_tiled_copy_V = cute.make_tiled_copy_B(smem_copy_atom_V, tiled_mma)
 
         smem_thr_copy_Q = smem_tiled_copy_Q.get_slice(tidx)
         smem_thr_copy_K = smem_tiled_copy_K.get_slice(tidx)
@@ -702,11 +690,7 @@ class FlashAttentionForwardAmpere:
             cute.nvgpu.CopyUniversalOp(), self._dtype
         )
         # tiled copy atom for O
-        smem_tiled_copy_O = cute.make_tiled_copy(
-            smem_copy_atom_O,
-            layout_tv=tiled_mma.tv_layout_C_tiled,
-            tiler_mn=(tiled_mma.get_tile_size(0), tiled_mma.get_tile_size(1)),
-        )
+        smem_tiled_copy_O = cute.make_tiled_copy_C(smem_copy_atom_O, tiled_mma)
         smem_thr_copy_O = smem_tiled_copy_O.get_slice(tidx)
         taccOrO = smem_thr_copy_O.retile(rO)
         taccOsO = smem_thr_copy_O.partition_D(sO)
@@ -1178,7 +1162,7 @@ class FlashAttentionForwardAmpere:
         return cute.arch.exp2(x)
 
 
-def run_flash_attention_fwd(
+def run(
     dtype: Type[cutlass.Numeric],
     batch_size: int,
     seqlen_q: int,
@@ -1193,6 +1177,8 @@ def run_flash_attention_fwd(
     warmup_iterations: int = 0,
     iterations: int = 1,
     skip_ref_check: bool = False,
+    use_cold_l2: bool = False,
+    **kwargs,
 ):
     # Skip unsupported testcase
     if not FlashAttentionForwardAmpere.can_implement(
@@ -1207,6 +1193,23 @@ def run_flash_attention_fwd(
             f"Unsupported testcase {dtype}, {head_dim}, {m_block_size}, {n_block_size}, {num_threads}, {is_causal}"
         )
 
+    print(f"Running Ampere SM80 FlashAttentionForward test with:")
+    print(f"  dtype: {dtype}")
+    print(f"  batch_size: {batch_size}")
+    print(f"  seqlen_q: {seqlen_q}")
+    print(f"  seqlen_k: {seqlen_k}")
+    print(f"  num_head: {num_head}")
+    print(f"  head_dim: {head_dim}")
+    print(f"  softmax_scale: {softmax_scale}")
+    print(f"  m_block_size: {m_block_size}")
+    print(f"  n_block_size: {n_block_size}")
+    print(f"  num_threads: {num_threads}")
+    print(f"  is_causal: {is_causal}")
+    print(f"  warmup_iterations: {warmup_iterations}")
+    print(f"  iterations: {iterations}")
+    print(f"  skip_ref_check: {skip_ref_check}")
+    print(f"  use_cold_l2: {use_cold_l2}")
+
     # Create tensor Q/K/V/O
     def create_tensor(
         batch_size: int,
@@ -1217,22 +1220,28 @@ def run_flash_attention_fwd(
     ) -> cute.Tensor:
         # (batch_size, seqlen, num_head, head_dim)
         shape = (batch_size, seqlen, num_head, head_dim)
-        return (
-            torch.empty(*shape, dtype=torch.int32).random_(-2, 2).to(dtype=dtype).cuda()
+        torch_tensor = (
+            torch.empty(*shape, dtype=torch.int32)
+            .random_(-2, 2)
+            .to(dtype=cutlass_torch.dtype(dtype))
+            .cuda()
         )
+        # assume input is 16B aligned.
+        cute_tensor = (
+            from_dlpack(torch_tensor, assumed_align=16)
+            .mark_layout_dynamic(leading_dim=3)
+            .mark_compact_shape_dynamic(
+                mode=3,
+                stride_order=torch_tensor.dim_order(),
+                divisibility=(128 // dtype.width),
+            )
+        )
+        return cute_tensor, torch_tensor
 
-    q = create_tensor(
-        batch_size, seqlen_q, num_head, head_dim, cutlass_torch.dtype(dtype)
-    )
-    k = create_tensor(
-        batch_size, seqlen_k, num_head, head_dim, cutlass_torch.dtype(dtype)
-    )
-    v = create_tensor(
-        batch_size, seqlen_k, num_head, head_dim, cutlass_torch.dtype(dtype)
-    )
-    o = create_tensor(
-        batch_size, seqlen_q, num_head, head_dim, cutlass_torch.dtype(dtype)
-    )
+    q, q_torch = create_tensor(batch_size, seqlen_q, num_head, head_dim, dtype)
+    k, k_torch = create_tensor(batch_size, seqlen_k, num_head, head_dim, dtype)
+    v, v_torch = create_tensor(batch_size, seqlen_k, num_head, head_dim, dtype)
+    o, o_torch = create_tensor(batch_size, seqlen_q, num_head, head_dim, dtype)
 
     fa2_fwd = FlashAttentionForwardAmpere(
         head_dim,
@@ -1241,78 +1250,63 @@ def run_flash_attention_fwd(
         num_threads,
         is_causal,
     )
-    # assume input is 16B align.
-    q_tensor = (
-        from_dlpack(q, assumed_align=16)
-        .mark_layout_dynamic(leading_dim=3)
-        .mark_compact_shape_dynamic(
-            mode=3, stride_order=q.dim_order(), divisibility=(128 // dtype.width)
-        )
-    )
-    k_tensor = (
-        from_dlpack(k, assumed_align=16)
-        .mark_layout_dynamic(leading_dim=3)
-        .mark_compact_shape_dynamic(
-            mode=3, stride_order=k.dim_order(), divisibility=(128 // dtype.width)
-        )
-    )
-    v_tensor = (
-        from_dlpack(v, assumed_align=16)
-        .mark_layout_dynamic(leading_dim=3)
-        .mark_compact_shape_dynamic(
-            mode=3, stride_order=v.dim_order(), divisibility=(128 // dtype.width)
-        )
-    )
-    o_tensor = (
-        from_dlpack(o, assumed_align=16)
-        .mark_layout_dynamic(leading_dim=3)
-        .mark_compact_shape_dynamic(
-            mode=3, stride_order=o.dim_order(), divisibility=(128 // dtype.width)
-        )
-    )
+
     # Get current CUDA stream from PyTorch
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
     # compile the fa2 forward pass
-    compiled_fa2_fwd = cute.compile(
-        fa2_fwd, q_tensor, k_tensor, v_tensor, o_tensor, softmax_scale, current_stream
+    compiled_fa2_fwd = cute.compile(fa2_fwd, q, k, v, o, softmax_scale, current_stream)
+
+    if not skip_ref_check:
+        compiled_fa2_fwd(q, k, v, o, softmax_scale, current_stream)
+        torch.cuda.synchronize()
+        q_ref = q_torch.permute(0, 2, 1, 3)
+        k_ref = k_torch.permute(0, 2, 1, 3)
+        v_ref = v_torch.permute(0, 2, 1, 3)
+        torch.backends.cuda.enable_flash_sdp(enabled=True)
+        ref_o = torch.nn.functional.scaled_dot_product_attention(
+            q_ref, k_ref, v_ref, scale=softmax_scale, is_causal=is_causal
+        ).permute(0, 2, 1, 3)
+        torch.testing.assert_close(o_torch.cpu(), ref_o.cpu(), atol=1e-02, rtol=1e-04)
+        print("Results verified successfully!")
+
+    def generate_tensors():
+        q_workspace, _ = create_tensor(batch_size, seqlen_q, num_head, head_dim, dtype)
+        k_workspace, _ = create_tensor(batch_size, seqlen_k, num_head, head_dim, dtype)
+        v_workspace, _ = create_tensor(batch_size, seqlen_k, num_head, head_dim, dtype)
+        o_workspace, _ = create_tensor(batch_size, seqlen_q, num_head, head_dim, dtype)
+        return testing.JitArguments(
+            q_workspace,
+            k_workspace,
+            v_workspace,
+            o_workspace,
+            softmax_scale,
+            current_stream,
+        )
+
+    workspace_count = 1
+    if use_cold_l2:
+        one_workspace_bytes = (
+            q_torch.numel() * q_torch.element_size()
+            + k_torch.numel() * k_torch.element_size()
+            + v_torch.numel() * v_torch.element_size()
+            + o_torch.numel() * o_torch.element_size()
+        )
+        workspace_count = testing.get_workspace_count(
+            one_workspace_bytes, warmup_iterations, iterations
+        )
+
+    avg_time_us = testing.benchmark(
+        compiled_fa2_fwd,
+        workspace_generator=generate_tensors,
+        workspace_count=workspace_count,
+        stream=current_stream,
+        warmup_iterations=warmup_iterations,
+        iterations=iterations,
     )
-    # warmup
-    for _ in range(warmup_iterations):
-        compiled_fa2_fwd(
-            q_tensor,
-            k_tensor,
-            v_tensor,
-            o_tensor,
-            softmax_scale,
-            current_stream,
-        )
-    # run the compiled fa2 forward pass
-    for _ in range(iterations):
-        compiled_fa2_fwd(
-            q_tensor,
-            k_tensor,
-            v_tensor,
-            o_tensor,
-            softmax_scale,
-            current_stream,
-        )
-    torch.cuda.synchronize()
 
-    if skip_ref_check:
-        return
-    # reference implementation
-    q_ref = q.permute(0, 2, 1, 3)
-    k_ref = k.permute(0, 2, 1, 3)
-    v_ref = v.permute(0, 2, 1, 3)
-    torch.backends.cuda.enable_flash_sdp(enabled=True)
-    ref_o = torch.nn.functional.scaled_dot_product_attention(
-        q_ref, k_ref, v_ref, scale=softmax_scale, is_causal=is_causal
-    ).permute(0, 2, 1, 3)
-
-    torch.testing.assert_close(o.cpu(), ref_o.cpu(), atol=1e-02, rtol=1e-04)
-
+    return avg_time_us  # Return execution time in microseconds
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -1334,9 +1328,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip_ref_check", action="store_true", help="Skip reference check"
     )
+    parser.add_argument(
+        "--use_cold_l2",
+        action="store_true",
+        default=False,
+        help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
 
     args = parser.parse_args()
-    run_flash_attention_fwd(
+    run(
         args.dtype,
         args.batch_size,
         args.seqlen_q,
@@ -1348,6 +1348,10 @@ if __name__ == "__main__":
         args.n_block_size,
         args.num_threads,
         args.is_causal,
+        args.warmup_iterations,
+        args.iterations,
+        args.skip_ref_check,
+        args.use_cold_l2,
     )
 
     print("PASS")

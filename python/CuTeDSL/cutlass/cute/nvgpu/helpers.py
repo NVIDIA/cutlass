@@ -37,7 +37,7 @@ from .cpasync.copy import (
 def make_tiled_tma_atom_A(
     op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
     gmem_tensor: Tensor,
-    smem_layout: Layout,
+    smem_layout: Union[Layout, core.ComposedLayout],
     mma_tiler_mnk: Shape,
     tiled_mma: core.TiledMma,
     cluster_shape_vmnk: Shape,
@@ -76,7 +76,7 @@ def make_tiled_tma_atom_A(
     :param gmem_tensor:        The GMEM tensor to be loaded by this copy atom
     :type gmem_tensor:         Tensor
     :param smem_layout:        Shared memory layout to load the tensor into (PDSL)
-    :type smem_layout:         Layout
+    :type smem_layout:         Union[Layout, core.ComposedLayout]
     :param mma_tiler_mnk:      The MMA Tiler shape (TILE_M, TILE_N, TILE_K) in MNK dimensions
     :type mma_tiler_mnk:       Shape
     :param tiled_mma:          The TiledMMA that will consume the load as operands
@@ -142,7 +142,7 @@ def make_tiled_tma_atom_A(
 def make_tiled_tma_atom_B(
     op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
     gmem_tensor: Tensor,
-    smem_layout: Layout,
+    smem_layout: Union[Layout, core.ComposedLayout],
     mma_tiler_mnk: Shape,
     tiled_mma: core.TiledMma,
     cluster_shape_vmnk: Shape,
@@ -181,7 +181,7 @@ def make_tiled_tma_atom_B(
     :param gmem_tensor:        The GMEM tensor to be loaded by this copy atom
     :type gmem_tensor:         Tensor
     :param smem_layout:        Shared memory layout to load the tensor into (PDSL)
-    :type smem_layout:         Layout
+    :type smem_layout:         Union[Layout, core.ComposedLayout]
     :param mma_tiler_mnk:      The MMA Tiler shape (TILE_M, TILE_N, TILE_K) in MNK dimensions
     :type mma_tiler_mnk:       Shape
     :param tiled_mma:          The TiledMMA that will consume the load as operands

@@ -634,16 +634,50 @@ class SGemm:
         return
 
 
-def main(
+def run(
+    mnk: Tuple[int, int, int],
     a_major: str,
     b_major: str,
     c_major: str,
-    problem_shape: Tuple[int, int, int],
+    static_shape: bool = False,
     warmup_iterations: int = 2,
     iterations: int = 100,
     skip_ref_check: bool = False,
+    use_cold_l2: bool = False,
+    **kwargs,
 ):
-    M, N, K = problem_shape
+    """Execute SIMT GEMM operation and benchmark performance.
+
+    :param mnk: GEMM problem size (M, N, K, L)
+    :type mnk: Tuple[int, int, int, int]
+    :param a_major: Memory layout of tensor A
+    :type a_major: str
+    :param b_major: Memory layout of tensor B
+    :type b_major: str
+    :param c_major: Memory layout of tensor C
+    :type c_major: str
+    :param static_shape: Whether to use static shape optimization, defaults to False
+    :type static_shape: bool, optional
+    :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 2
+    :type warmup_iterations: int, optional
+    :param iterations: Number of benchmark iterations to run, defaults to 100
+    :type iterations: int, optional
+    :param skip_ref_check: Skip validation against reference implementation, defaults to False
+    :type skip_ref_check: bool, optional
+    :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
+    :type use_cold_l2: bool, optional
+    :return: Execution time of the GEMM kernel in microseconds
+    :rtype: float
+    """
+    print(f"Running Ampere SIMT GEMM example:")
+    print(f"mnk: {mnk}")
+    print(f"A major: {a_major}, B major: {b_major}, C major: {c_major}")
+    print(f"Static shape: {static_shape}")
+    print(f"Warmup iterations: {warmup_iterations}")
+    print(f"Iterations: {iterations}")
+    print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Use cold L2: {use_cold_l2}")
+    M, N, K = mnk
 
     # Create and permute tensor A/B/C
     def create_and_permute_tensor(mode0, mode1, is_mode0_major, dtype):
@@ -710,20 +744,6 @@ def main(
 
     print("Executing GEMM kernel...")
 
-    avg_time_us = testing.benchmark(
-        gemm,
-        kernel_arguments=testing.JitArguments(
-            a_tensor, b_tensor, c_tensor, current_stream
-        ),
-        warmup_iterations=warmup_iterations,
-        profiling_iterations=iterations,
-        use_cuda_graphs=False,
-        stream=current_stream,
-    )
-
-    # Print execution results
-    print(f"Kernel execution time: {avg_time_us / 1e3:.4f} ms")
-
     if not skip_ref_check:
         gemm(a_tensor, b_tensor, c_tensor)
         torch.cuda.synchronize()
@@ -731,6 +751,71 @@ def main(
         ref = torch.einsum("mk,nk->mn", a, b)
         torch.testing.assert_close(c.cpu(), ref.cpu(), atol=1e-03, rtol=1e-05)
         print("Results verified successfully!")
+
+    def generate_tensors():
+        # Create new tensors for each workspace to ensure cold L2 cache
+        a_workspace = create_and_permute_tensor(M, K, a_major == "m", torch.float32)
+        b_workspace = create_and_permute_tensor(N, K, b_major == "n", torch.float32)
+        c_workspace = create_and_permute_tensor(M, N, c_major == "m", torch.float32)
+
+        if static_shape:
+            a_tensor_workspace = (
+                from_dlpack(a_workspace, assumed_align=16)
+                .mark_layout_dynamic(leading_dim=(1 if a_major == "k" else 0))
+                .mark_compact_shape_dynamic(
+                    mode=(1 if a_major == "k" else 0),
+                    divisibility=divisibility_a,
+                )
+            )
+        else:
+            a_tensor_workspace = from_dlpack(a_workspace, assumed_align=16)
+
+        b_tensor_workspace = (
+            from_dlpack(b_workspace, assumed_align=16)
+            .mark_layout_dynamic(leading_dim=(1 if b_major == "k" else 0))
+            .mark_compact_shape_dynamic(
+                mode=(1 if b_major == "k" else 0),
+                divisibility=divisibility_b,
+            )
+        )
+
+        c_tensor_workspace = (
+            from_dlpack(c_workspace, assumed_align=16)
+            .mark_layout_dynamic(leading_dim=(1 if c_major == "n" else 0))
+            .mark_compact_shape_dynamic(
+                mode=(1 if c_major == "n" else 0),
+                divisibility=divisibility_c,
+            )
+        )
+
+        return testing.JitArguments(
+            a_tensor_workspace, b_tensor_workspace, c_tensor_workspace, current_stream
+        )
+
+    workspace_count = 1
+    if use_cold_l2:
+        one_workspace_bytes = (
+            a.numel() * a.element_size()
+            + b.numel() * b.element_size()
+            + c.numel() * c.element_size()
+        )
+        workspace_count = testing.get_workspace_count(
+            one_workspace_bytes, warmup_iterations, iterations
+        )
+
+    avg_time_us = testing.benchmark(
+        gemm,
+        workspace_generator=generate_tensors,
+        workspace_count=workspace_count,
+        stream=current_stream,
+        warmup_iterations=warmup_iterations,
+        iterations=iterations,
+    )
+
+    # Print execution results
+    print(f"Kernel execution time: {avg_time_us / 1e3:.4f} ms")
+
+    return avg_time_us  # Return execution time in microseconds
 
 
 if __name__ == "__main__":
@@ -753,19 +838,27 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_iterations", default=2, type=int)
     parser.add_argument("--iterations", default=100, type=int)
     parser.add_argument("--skip_ref_check", action="store_true")
+    parser.add_argument(
+        "--use_cold_l2",
+        action="store_true",
+        default=False,
+        help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
 
     args = parser.parse_args()
     print("Running SIMT GEMM example:")
 
     torch.manual_seed(1024)
 
-    main(
+    run(
+        args.mnk,
         args.a_major,
         args.b_major,
         args.c_major,
-        args.mnk,
+        args.static_shape,
         args.warmup_iterations,
         args.iterations,
         args.skip_ref_check,
+        args.use_cold_l2,
     )
     print("PASS")

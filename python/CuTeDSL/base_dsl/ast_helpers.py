@@ -300,6 +300,21 @@ def if_executor(
 
 
 class range:
+    """
+    A range-like object for dynamic loop iteration in the DSL.
+
+    This class provides a range interface similar to Python's built-in range,
+    but is designed to be preprocessed into constructs for dynamic
+    loop execution.
+
+    The class supports both single-argument (stop) and three-argument
+    (start, stop, step) constructors with additional parameters for loop
+    optimization:
+
+    - unroll: Number of iterations to unroll (0 or 1 = no unrolling)
+    - unroll_full: Whether to fully unroll the loop
+    - pipelining: Compiler generated pipeline configuration
+    """
     @overload
     def __new__(cls, stop, unroll=0, unroll_full=False, pipelining=None):
         pass
@@ -460,7 +475,31 @@ def range_value_check(*args):
     Ensure all `range_constexpr` bounds are compile-time constants (Python ints).
     """
     try:
-        return tuple(arg.__index__() for arg in args)
+        args = tuple(arg.__index__() for arg in args)
+
+        # Compute range size and warn if it's too large
+        start = 0
+        end = 0
+        step = 1
+        if len(args) == 1:
+            end = args[0]
+        elif len(args) == 2:
+            start = args[0]
+            end = args[1]
+        elif len(args) == 3:
+            start = args[0]
+            end = args[1]
+            step = args[2]
+
+        range_length = (abs(end - start) - 1) // abs(step) + 1
+        if range_length >= 64:
+            warnings.warn(
+                f"This static loop has {range_length} iterations, which may be very slow to compile, consider using `cutlass.range(..., unroll_full=True)` instead.",
+                category=UserWarning,
+                stacklevel=2,
+            )
+
+        return (start, end, step)
     except:
         raise DSLRuntimeError(
             "`range_constexpr` requires constexpr (compile-time constant) for all arguments.",
@@ -477,8 +516,8 @@ def range_perf_warning(filename, lineno, *args):
     if not has_dynamic_expr:
         warnings.warn_explicit(
             (
-                "The loop was previously unrolled in Python, but now it may not unroll in IR. This may cause performance regression."
-                "If you want to unroll the loop in Python, please use `range_constexpr` instead of `range`."
+                "This loop is no longer unrolled and may cause performance regression. "
+                "Use `range(..., unroll_full=True)` for full unrolling, or switch to `range_constexpr` when bounds are compile-time constants."
             ),
             category=UserWarning,
             filename=filename,

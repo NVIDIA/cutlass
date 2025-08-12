@@ -102,6 +102,8 @@ class ScopeManager:
         return cls([])
 
     def add_to_scope(self, name: str) -> None:
+        if name == "_":
+            return
         self.scopes[-1].add(name)
 
     def get_active_symbols(self) -> List[Set[str]]:
@@ -361,13 +363,13 @@ class DSLPreprocessor(ast.NodeTransformer):
                 isinstance(func, ast.Name)
                 and func.id in self.SUPPORTED_FOR_RANGE_STATEMENTS
             ):
-                return func.id, True
+                return func.id, True, len(iter_node.keywords) != 0
             if (
                 isinstance(func, ast.Attribute)
                 and func.attr in self.SUPPORTED_FOR_RANGE_STATEMENTS
             ):
-                return func.attr, False
-        return None, None
+                return func.attr, False, len(iter_node.keywords) != 0
+        return None, None, None
 
     def transform(self, original_function, exec_globals):
         """
@@ -378,6 +380,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         transformed_tree = self.transform_function(
             original_function.__name__, original_function
         )
+        self.function_globals = None
         unified_tree = ast.Module(body=transformed_tree, type_ignores=[])
         unified_tree = ast.fix_missing_locations(unified_tree)
 
@@ -731,7 +734,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.scope_manager.add_to_scope(node.target.id)
 
             # For static for loop (for with range_constexpr or not range based for), preprocessor keeps the loop.
-            range_kind, is_builtin_range = self._get_range_kind(node.iter)
+            range_kind, is_builtin_range, has_keyword = self._get_range_kind(node.iter)
             if range_kind == "range_constexpr" or range_kind == None:
                 self.generic_visit(node)
                 if range_kind == "range_constexpr":
@@ -752,7 +755,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 warnings.simplefilter("default", DeprecationWarning)  # reset filter
 
             warning_call = None
-            if range_kind == "range" and is_builtin_range:
+            if range_kind == "range" and is_builtin_range and not has_keyword:
                 # Warn about possible performance regression due to behavior change
                 warning_call = ast.Expr(
                     ast.Call(
@@ -1107,6 +1110,12 @@ class DSLPreprocessor(ast.NodeTransformer):
     def visit_AugAssign(self, node):
         self._visit_target(node.target)
         self.generic_visit(node)
+        return node
+
+    def visit_Name(self, node):
+        self.generic_visit(node)
+        if node.id == "_" and isinstance(node.ctx, ast.Load):
+            raise DSLAstPreprocessorError("Read '_' is not allowed")
         return node
 
     def check_decorator(self, node: ast.AST) -> bool:

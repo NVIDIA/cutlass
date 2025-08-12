@@ -14,7 +14,7 @@ from typing import Type, Union, overload
 from cutlass.cutlass_dsl import Int8, Numeric, NumericMeta
 
 import cutlass.cute as cute
-from cutlass.cute.arch import get_dyn_smem
+from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
 
 
 class SmemAllocator:
@@ -60,6 +60,7 @@ class SmemAllocator:
         :return: Pointer to the start of the allocated memory block or struct instance
         :rtype: cute.Pointer
         :raises ValueError: If size is negative or alignment is less than 1
+        :raises RuntimeError: If allocation would exceed available shared memory
         """
         if isinstance(size_or_type, cute.struct):
             alignment = max(byte_alignment, size_or_type.__alignof__())
@@ -80,6 +81,14 @@ class SmemAllocator:
                 byte_alignment - self._allocated_bytes % byte_alignment
             )
         self._allocated_bytes += num_bytes
+
+        # Check bounds against available dynamic shared memory
+        cute.testing.assert_(
+            self._allocated_bytes <= get_dyn_smem_size(),
+            f"Allocation failed: shared memory allocation exceeds available memory set in kernel launch. "
+            f"Allocated bytes: {self._allocated_bytes} bytes. "
+            f"Please reduce the allocation or set a larger smem size in kernel launch.",
+        )
         return ptr
 
     def allocate_array(self, element_type: Type[Numeric], num_elems: int = 1):

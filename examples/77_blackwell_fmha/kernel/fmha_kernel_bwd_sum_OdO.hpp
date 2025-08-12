@@ -86,11 +86,11 @@ struct FmhaKernelBwdSumOdO {
   static const int kIterationsQ = kBlockQ / kNumThreadsQ;
 
   static bool can_implement(Arguments const& args) {
-    return get<2>(args.problem_shape) % kElementsPerLoad == 0;
+    return get<2>(args.problem_shape) % kElementsPerLoad == 0 && get<3>(args.problem_shape) % kElementsPerLoad == 0;
   }
 
   static dim3 get_grid_shape(Params const& params) {
-    dim3 grid(ceil_div(size<0>(params.problem_shape), kBlockQ), size<3,0>(params.problem_shape), size<3,1>(params.problem_shape));
+    dim3 grid(ceil_div(size<0>(params.problem_shape), kBlockQ), size<4,0>(params.problem_shape), size<4,1>(params.problem_shape));
     return grid;
   }
 
@@ -131,7 +131,7 @@ struct FmhaKernelBwdSumOdO {
       auto ptr_lse_bhq = ptr_lse_bh + idx_q * get<0>(params.stride_lse);
       auto ptr_scaled_lse_bhq = ptr_scaled_lse_bh + idx_q * get<0>(params.stride_scaled_lse);
 
-      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<2>(params.problem_shape); idx_d += kElementsPerLoad * kNumThreadsD) {
+      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<3>(params.problem_shape); idx_d += kElementsPerLoad * kNumThreadsD) {
         Element value_O[kElementsPerLoad];
         Element value_dO[kElementsPerLoad];
         

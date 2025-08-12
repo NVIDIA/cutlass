@@ -62,19 +62,20 @@ void __global__ fmha_reference_kernel(
   ElementAccumulator softmax_scale = static_cast<ElementAccumulator>(1.0 / sqrt(1.0 * size<1>(mQ)));
 
   auto id = make_identity_tensor(make_shape(1, 1));
-  for (int idx_L = blockIdx.y; idx_L < size<3>(problem_shape_in); idx_L += gridDim.y) {
+
+  for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
     for (int idx_Q = blockIdx.x; idx_Q < size<0>(problem_shape_in); idx_Q += gridDim.x) {
       
-      auto coord_L = idx2crd(idx_L, shape<3>(problem_shape_in));
+      auto coord_L = idx2crd(idx_L, shape<4>(problem_shape_in));
       auto get_coord_in = [&]() {
         if constexpr (rank_v<decltype(get<2>(ProblemShapeIn{}))> == 2) {
-          return cute::make_tuple(idx_Q, _0{}, cute::make_tuple(_0{}, _0{}), coord_L);
+          return cute::make_tuple(idx_Q, _0{}, cute::make_tuple(_0{}, _0{}), cute::make_tuple(_0{}, _0{}), coord_L);
         } else {
-          return cute::make_tuple(idx_Q, _0{}, _0{}, coord_L);
+          return cute::make_tuple(idx_Q, _0{}, _0{}, _0{}, coord_L);
         }
       };
       auto coord_in = get_coord_in();
-      auto [problem_shape, coord] = apply_variable_length(problem_shape_in, coord_in, get<3,1>(coord_in));
+      auto [problem_shape, coord] = apply_variable_length(problem_shape_in, coord_in, get<4,1>(coord_in));
 
       int head_qk = 0;
       int head_v = 0;
@@ -83,7 +84,7 @@ void __global__ fmha_reference_kernel(
         head_qk = size<2, 0>(problem_shape) + size<2, 1>(problem_shape);
         head_v = size<2, 0>(problem_shape);
       } else {
-        head_qk = size<2>(problem_shape);
+        head_qk = size<3>(problem_shape);
         head_v = head_qk;
       }
 
@@ -156,6 +157,7 @@ void __global__ fmha_reference_kernel(
         }
         mO(idx_Q + offset_Q, idx_D, idx_L) = static_cast<typename TensorO::value_type>(acc * scale);
       }
+
 
       if (threadIdx.x == 0 && mLSE.data() != nullptr) {
         mLSE(idx_Q + offset_Q, idx_L) = log(sum) + softmax_scale * maxS;

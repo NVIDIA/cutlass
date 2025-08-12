@@ -36,6 +36,7 @@ import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.cute.testing as testing
 import cutlass.utils as utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
@@ -157,7 +158,7 @@ class GroupedGemmKernel:
         self.tmem_ptr_sync_bar_id = 2
         # Barrier ID used by MMA/TMA warps to signal A/B tensormap initialization completion
         self.tensormap_ab_init_bar_id = 4
-        self.smem_capacity = sm100_utils.SMEM_CAPACITY["sm100"]
+        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
         self.num_tma_load_bytes = 0
 
     def _setup_attributes(self):
@@ -951,7 +952,7 @@ class GroupedGemmKernel:
         # Specialized MMA warp
         #
         if warp_idx == self.mma_warp_id:
-            # initilize tensormap A, B for TMA warp
+            # initialize tensormap A, B for TMA warp
             if cutlass.const_expr(self.delegate_tensormap_ab_init):
                 tensormap_manager.init_tensormap_from_atom(
                     tma_atom_a, tensormap_a_init_ptr, self.mma_warp_id
@@ -1540,11 +1541,7 @@ class GroupedGemmKernel:
         copy_atom_r2s = sm100_utils.get_smem_store_op(
             self.c_layout, self.c_dtype, self.acc_dtype, tiled_copy_t2r
         )
-        tiled_copy_r2s = cute.make_tiled_copy(
-            copy_atom_r2s,
-            layout_tv=tiled_copy_t2r.layout_dst_tv_tiled,
-            tiler_mn=tiled_copy_t2r.tiler_mn,
-        )
+        tiled_copy_r2s = cute.make_tiled_copy_D(copy_atom_r2s, tiled_copy_t2r)
         # (R2S, R2S_M, R2S_N, PIPE_D)
         thr_copy_r2s = tiled_copy_r2s.get_slice(tidx)
         tRS_sC = thr_copy_r2s.partition_D(sC)
@@ -1815,7 +1812,136 @@ class GroupedGemmKernel:
     tensor_memory_management_bytes = 12
 
 
-def run_grouped_gemm(
+# Create tensor and return the pointer, tensor, and stride
+def create_tensor_and_stride(
+    l: int,
+    mode0: int,
+    mode1: int,
+    is_mode0_major: bool,
+    dtype: type[cutlass.Numeric],
+    is_dynamic_layout: bool = True,
+    torch_tensor_cpu: torch.Tensor = None,
+) -> tuple[int, torch.Tensor, cute.Tensor, torch.Tensor, tuple[int, int]]:
+    """Create a GPU tensor from scratch or based on an existing CPU tensor.
+
+    :param torch_tensor_cpu: Optional existing CPU tensor to reuse. If None, creates a new one.
+    :type torch_tensor_cpu: torch.Tensor, optional
+    """
+    if torch_tensor_cpu is None:
+        # Create new CPU tensor
+        torch_tensor_cpu = cutlass_torch.matrix(l, mode0, mode1, is_mode0_major, dtype)
+
+    # Create GPU tensor from CPU tensor (new or existing)
+    cute_tensor, torch_tensor = cutlass_torch.cute_tensor_like(
+        torch_tensor_cpu, dtype, is_dynamic_layout, assumed_align=16
+    )
+    return (
+        torch_tensor.data_ptr(),
+        torch_tensor,
+        cute_tensor,
+        torch_tensor_cpu,
+        torch_tensor.stride()[:-1],
+    )
+
+
+def create_tensors_for_all_groups(
+    problem_sizes_mnkl: List[tuple[int, int, int, int]],
+    ab_dtype: Type[cutlass.Numeric],
+    c_dtype: Type[cutlass.Numeric],
+    a_major: str,
+    b_major: str,
+    c_major: str,
+    torch_fp32_tensors_abc: List[List[torch.Tensor]] = None,
+) -> tuple[
+    List[List[int]],
+    List[List[torch.Tensor]],
+    List[tuple],
+    List[List[tuple]],
+    List[List[torch.Tensor]],
+]:
+    if torch_fp32_tensors_abc is not None and len(torch_fp32_tensors_abc) != len(
+        problem_sizes_mnkl
+    ):
+        raise ValueError("torch_fp32_tensors_abc must have one entry per group")
+
+    # Initialize lists to store tensors for all groups
+    new_torch_fp32_tensors_abc = (
+        [] if torch_fp32_tensors_abc is None else torch_fp32_tensors_abc
+    )
+    torch_tensors_abc = []
+    cute_tensors_abc = []
+    strides_abc = []
+    ptrs_abc = []
+
+    # Iterate through all groups and create tensors for each group
+    for group_idx, (m, n, k, l) in enumerate(problem_sizes_mnkl):
+        # Get existing CPU tensors if available, otherwise None
+        existing_cpu_a = (
+            torch_fp32_tensors_abc[group_idx][0] if torch_fp32_tensors_abc else None
+        )
+        existing_cpu_b = (
+            torch_fp32_tensors_abc[group_idx][1] if torch_fp32_tensors_abc else None
+        )
+        existing_cpu_c = (
+            torch_fp32_tensors_abc[group_idx][2] if torch_fp32_tensors_abc else None
+        )
+
+        # Create tensors (reusing CPU tensors if provided)
+        (
+            ptr_a,
+            torch_tensor_a,
+            cute_tensor_a,
+            tensor_fp32_a,
+            stride_mk_a,
+        ) = create_tensor_and_stride(
+            l, m, k, a_major == "m", ab_dtype, torch_tensor_cpu=existing_cpu_a
+        )
+        (
+            ptr_b,
+            torch_tensor_b,
+            cute_tensor_b,
+            tensor_fp32_b,
+            stride_nk_b,
+        ) = create_tensor_and_stride(
+            l, n, k, b_major == "n", ab_dtype, torch_tensor_cpu=existing_cpu_b
+        )
+        (
+            ptr_c,
+            torch_tensor_c,
+            cute_tensor_c,
+            tensor_fp32_c,
+            stride_mn_c,
+        ) = create_tensor_and_stride(
+            l, m, n, c_major == "m", c_dtype, torch_tensor_cpu=existing_cpu_c
+        )
+
+        # Only append to new_torch_fp32_tensors_abc if we created new CPU tensors
+        if torch_fp32_tensors_abc is None:
+            new_torch_fp32_tensors_abc.append(
+                [tensor_fp32_a, tensor_fp32_b, tensor_fp32_c]
+            )
+
+        ptrs_abc.append([ptr_a, ptr_b, ptr_c])
+        torch_tensors_abc.append([torch_tensor_a, torch_tensor_b, torch_tensor_c])
+        strides_abc.append([stride_mk_a, stride_nk_b, stride_mn_c])
+        cute_tensors_abc.append(
+            (
+                cute_tensor_a,
+                cute_tensor_b,
+                cute_tensor_c,
+            )
+        )
+
+    return (
+        ptrs_abc,
+        torch_tensors_abc,
+        cute_tensors_abc,
+        strides_abc,
+        new_torch_fp32_tensors_abc,
+    )
+
+
+def run(
     num_groups: int,
     problem_sizes_mnkl: tuple[int, int, int, int],
     ab_dtype: Type[cutlass.Numeric],
@@ -1832,8 +1958,16 @@ def run_grouped_gemm(
     warmup_iterations: int,
     iterations: int,
     skip_ref_check: bool,
+    use_cold_l2: bool = False,
+    **kwargs,
 ):
-    """Run grouped GEMM example with specified configurations."""
+    """Run grouped GEMM example with specified configurations.
+
+    :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
+    :type use_cold_l2: bool, optional
+    :return: Execution time of the GEMM kernel in microseconds
+    :rtype: float
+    """
     print(f"Running Blackwell Grouped GEMM test with:")
     print(f"{num_groups} groups")
     for i, (m, n, k, l) in enumerate(problem_sizes_mnkl):
@@ -1847,6 +1981,7 @@ def run_grouped_gemm(
     print(f"Warmup iterations: {warmup_iterations}")
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
 
     # Skip unsupported types
     if ab_dtype not in {
@@ -1902,66 +2037,22 @@ def run_grouped_gemm(
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
 
-    # Create tensor and return the pointer, tensor, and stride
-    def create_tensor_and_stride(
-        l: int,
-        mode0: int,
-        mode1: int,
-        is_mode0_major: bool,
-        dtype: type[cutlass.Numeric],
-        is_dynamic_layout: bool = True,
-    ) -> tuple[int, torch.Tensor, cute.Tensor, torch.Tensor, tuple[int, int]]:
-        torch_tensor_cpu = cutlass_torch.matrix(l, mode0, mode1, is_mode0_major, dtype)
-        cute_tensor, torch_tensor = cutlass_torch.cute_tensor_like(
-            torch_tensor_cpu, dtype, is_dynamic_layout, assumed_align=16
-        )
-        return (
-            torch_tensor.data_ptr(),
-            torch_tensor,
-            cute_tensor,
-            torch_tensor_cpu,
-            torch_tensor.stride()[:-1],
-        )
+    # Create tensors for all groups using the new function
+    (
+        ptrs_abc,
+        torch_tensors_abc,
+        cute_tensors_abc,
+        strides_abc,
+        torch_fp32_tensors_abc,
+    ) = create_tensors_for_all_groups(
+        problem_sizes_mnkl,
+        ab_dtype,
+        c_dtype,
+        a_major,
+        b_major,
+        c_major,
+    )
 
-    # iterate all groups and create tensors for each group
-    torch_fp32_tensors_abc = []
-    torch_tensors_abc = []
-    cute_tensors_abc = []
-    strides_abc = []
-    ptrs_abc = []
-    for _, (m, n, k, l) in enumerate(problem_sizes_mnkl):
-        (
-            ptr_a,
-            torch_tensor_a,
-            cute_tensor_a,
-            tensor_fp32_a,
-            stride_mk_a,
-        ) = create_tensor_and_stride(l, m, k, a_major == "m", ab_dtype)
-        (
-            ptr_b,
-            torch_tensor_b,
-            cute_tensor_b,
-            tensor_fp32_b,
-            stride_nk_b,
-        ) = create_tensor_and_stride(l, n, k, b_major == "n", ab_dtype)
-        (
-            ptr_c,
-            torch_tensor_c,
-            cute_tensor_c,
-            tensor_fp32_c,
-            stride_mn_c,
-        ) = create_tensor_and_stride(l, m, n, c_major == "m", c_dtype)
-        ptrs_abc.append([ptr_a, ptr_b, ptr_c])
-        torch_tensors_abc.append([torch_tensor_a, torch_tensor_b, torch_tensor_c])
-        torch_fp32_tensors_abc.append([tensor_fp32_a, tensor_fp32_b, tensor_fp32_c])
-        strides_abc.append([stride_mk_a, stride_nk_b, stride_mn_c])
-        cute_tensors_abc.append(
-            (
-                cute_tensor_a,
-                cute_tensor_b,
-                cute_tensor_c,
-            )
-        )
     # Choose A, B, C with the smallest size to create initial tensormaps
     key_size_a = lambda item: item[1][0] * item[1][2]
     key_size_b = lambda item: item[1][1] * item[1][2]
@@ -2078,36 +2169,19 @@ def run_grouped_gemm(
         current_stream,
     )
 
-    # Launch GPU kernel
-    # Warm up
-    for _ in range(warmup_iterations):
-        compiled_grouped_gemm(
-            initial_cute_tensors_abc[0],
-            initial_cute_tensors_abc[1],
-            initial_cute_tensors_abc[2],
-            tensor_of_dim_size_mnkl,
-            tensor_of_strides_abc,
-            tensor_of_ptrs_abc,
-            tensor_of_tensormap,
-            current_stream,
-        )
-    # Execution
-    for i in range(iterations):
-        compiled_grouped_gemm(
-            initial_cute_tensors_abc[0],
-            initial_cute_tensors_abc[1],
-            initial_cute_tensors_abc[2],
-            tensor_of_dim_size_mnkl,
-            tensor_of_strides_abc,
-            tensor_of_ptrs_abc,
-            tensor_of_tensormap,
-            current_stream,
-        )
-
-    torch.cuda.synchronize()
-
-    # Compute reference result
     if not skip_ref_check:
+        compiled_grouped_gemm(
+            initial_cute_tensors_abc[0],
+            initial_cute_tensors_abc[1],
+            initial_cute_tensors_abc[2],
+            tensor_of_dim_size_mnkl,
+            tensor_of_strides_abc,
+            tensor_of_ptrs_abc,
+            tensor_of_tensormap,
+            current_stream,
+        )
+
+        # Compute reference result
         for i, (a, b, c) in enumerate(torch_tensors_abc):
             ref = torch.einsum(
                 "mkl,nkl->mnl",
@@ -2121,6 +2195,102 @@ def run_grouped_gemm(
                 atol=tolerance,
                 rtol=1e-05,
             )
+
+    def generate_tensors():
+        # Reuse existing CPU tensors and create new GPU tensors from them
+        (
+            ptrs_abc_workspace,
+            torch_tensors_abc_workspace,
+            cute_tensors_abc_workspace,
+            strides_abc_workspace,
+            _,
+        ) = create_tensors_for_all_groups(
+            problem_sizes_mnkl,
+            ab_dtype,
+            c_dtype,
+            a_major,
+            b_major,
+            c_major,
+            torch_fp32_tensors_abc,
+        )
+
+        initial_cute_tensors_abc_workspace = [
+            cute_tensors_abc_workspace[min_a_idx][0],  # A with smallest (m, k)
+            cute_tensors_abc_workspace[min_b_idx][1],  # B with smallest (n, k)
+            cute_tensors_abc_workspace[min_c_idx][2],  # C with smallest (m, n)
+        ]
+
+        # Create new tensors for this workspace
+        tensor_of_strides_abc_workspace, _ = cutlass_torch.cute_tensor_like(
+            torch.tensor(strides_abc_workspace, dtype=torch.int32),
+            cutlass.Int32,
+            is_dynamic_layout=False,
+            assumed_align=16,
+        )
+
+        tensor_of_ptrs_abc_workspace, _ = cutlass_torch.cute_tensor_like(
+            torch.tensor(ptrs_abc_workspace, dtype=torch.int64),
+            cutlass.Int64,
+            is_dynamic_layout=False,
+            assumed_align=16,
+        )
+
+        tensormap_workspace, _ = cutlass_torch.cute_tensor_like(
+            torch.empty(tensormap_shape, dtype=torch.int64),
+            cutlass.Int64,
+            is_dynamic_layout=False,
+        )
+
+        return testing.JitArguments(
+            initial_cute_tensors_abc_workspace[0],
+            initial_cute_tensors_abc_workspace[1],
+            initial_cute_tensors_abc_workspace[2],
+            tensor_of_dim_size_mnkl,
+            tensor_of_strides_abc_workspace,
+            tensor_of_ptrs_abc_workspace,
+            tensormap_workspace,
+            current_stream,
+        )
+
+    workspace_count = 1
+    if use_cold_l2:
+        one_workspace_bytes = (
+            sum(
+                [
+                    sum(
+                        [
+                            torch_tensor.numel() * torch_tensor.element_size()
+                            for torch_tensor in group_tensors
+                        ]
+                    )
+                    for group_tensors in torch_tensors_abc
+                ]
+            )
+            +
+            # Add size of strides tensor
+            tensor_of_strides_abc_torch.numel()
+            * tensor_of_strides_abc_torch.element_size()
+            +
+            # Add size of ptrs tensor
+            tensor_of_ptrs_abc_torch.numel() * tensor_of_ptrs_abc_torch.element_size()
+            +
+            # Add size of tensormap tensor
+            tensor_of_tensormap_torch.numel() * tensor_of_tensormap_torch.element_size()
+        )
+        workspace_count = testing.get_workspace_count(
+            one_workspace_bytes, warmup_iterations, iterations
+        )
+
+    exec_time = testing.benchmark(
+        compiled_grouped_gemm,
+        workspace_generator=generate_tensors,
+        workspace_count=workspace_count,
+        stream=current_stream,
+        warmup_iterations=warmup_iterations,
+        iterations=iterations,
+    )
+
+    return exec_time  # Return execution time in microseconds
 
 
 if __name__ == "__main__":
@@ -2218,6 +2388,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip_ref_check", action="store_true", help="Skip reference checking"
     )
+    parser.add_argument(
+        "--use_cold_l2",
+        action="store_true",
+        default=False,
+        help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
 
     args = parser.parse_args()
 
@@ -2248,7 +2424,7 @@ if __name__ == "__main__":
 
     torch.manual_seed(2025)
 
-    run_grouped_gemm(
+    run(
         args.num_groups,
         args.problem_sizes_mnkl,
         args.ab_dtype,
@@ -2265,5 +2441,6 @@ if __name__ == "__main__":
         args.warmup_iterations,
         args.iterations,
         args.skip_ref_check,
+        args.use_cold_l2,
     )
     print("PASS")

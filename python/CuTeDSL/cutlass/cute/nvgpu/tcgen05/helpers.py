@@ -299,3 +299,30 @@ def make_tmem_copy(
     )
     new_trait = type(atom._trait)(tiled_copy_val)
     return core.TiledCopy(atom.op, new_trait)
+
+
+@dsl_user_op
+def make_s2t_copy(
+    atom: core.CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
+) -> core.TiledCopy:
+    """
+    Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
+    """
+    tiled_copy_val = _cute_nvgpu_ir.atom_make_s2t_copy(
+        atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
+    )
+    new_trait = type(atom._trait)(tiled_copy_val)
+    return core.TiledCopy(atom.op, new_trait)
+
+
+@dsl_user_op
+def get_s2t_smem_desc_tensor(
+    atom: core.CopyAtom, smem_tensor: Tensor, *, loc=None, ip=None
+) -> Tensor:
+    """
+    Returns the SMEM descriptor tensor from a S2T copy atom and a SMEM tensor.
+    """
+    smem_desc_tensor = _cute_nvgpu_ir.atom_get_copy_s2t_smem_desc_view(
+        atom._trait.value, smem_tensor.value, loc=loc, ip=ip
+    )
+    return smem_desc_tensor

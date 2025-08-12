@@ -203,7 +203,7 @@ requires any memory for scratch space.
 If yes, we reserve scratch space and pass it along
 with other arguments to initialize the CUTLASS kernel.
 
-After lauching the CUTLASS kernel, this example runs
+After launching the CUTLASS kernel, this example runs
 a reference convolution kernel (from CUTLASS utilities)
 to check correctness.
 */
