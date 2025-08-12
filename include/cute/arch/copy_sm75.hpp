@@ -60,6 +60,12 @@
   #define CUTE_ARCH_LDSM_SM75_ACTIVATED 1
 #endif
 
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750)
+  #define CUTE_ARCH_MOVM_SM75_ACTIVATED 1
+#else
+  #define CUTE_ARCH_MOVM_SM75_ACTIVATED 0
+#endif
+
 namespace cute
 {
 
@@ -179,6 +185,25 @@ struct SM75_U16x8_LDSM_T
         :  "r"(smem_int_ptr));
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+#endif
+  }
+};
+
+struct SM75_U32x1_MOVM_T 
+{
+  using SRegisters = uint32_t[1];
+  using DRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void 
+  copy(uint32_t src, 
+       uint32_t &dst) 
+  {
+#if CUTE_ARCH_MOVM_SM75_ACTIVATED
+    asm volatile("movmatrix.sync.aligned.m8n8.trans.b16 %0, %1;\n"
+        : "=r"(dst)
+        :  "r"(src));
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use movmatrix without CUTE_ARCH_MOVM_SM75_ACTIVATED.");
 #endif
   }
 };
