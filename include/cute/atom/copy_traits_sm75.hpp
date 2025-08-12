@@ -140,4 +140,21 @@ struct Copy_Traits<SM75_U16x8_LDSM_T>
   using RefLayout = DstLayout;
 };
 
+template <>
+struct Copy_Traits<SM75_U32x1_MOVM_T>
+{
+  // Logical thread id to thread idx (warp)
+  using ThrID = Layout<_32>;
+
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_32,_32>,
+                           Stride<_32, _1>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_32,_32>, 
+                           Stride<_32, _1>>;
+
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+};
+
 } // end namespace cute
