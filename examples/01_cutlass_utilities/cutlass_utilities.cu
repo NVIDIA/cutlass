@@ -45,7 +45,7 @@
   cutlass::half_t
 
     This is a numeric type implementing IEEE half-precision quantities. It is functional in host
-    and device code. In host-side code, CUTLASS_ENABLE_F16C optionally enables harware-accelerated
+    and device code. In host-side code, CUTLASS_ENABLE_F16C optionally enables hardware-accelerated
     numeric conversion on x86-64 CPUs support F16C extensions. In device code, all available
     hardware is used to implement conversion and numeric operations.
 
