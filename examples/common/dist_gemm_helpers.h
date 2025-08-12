@@ -60,7 +60,9 @@ using AtomicBoolean = cuda::atomic<bool>;
 
 __global__ void delay_kernel(const AtomicBoolean* atomic_flag_ptr) {
   while (not atomic_flag_ptr->load()) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
     __nanosleep(40);
+#endif
   }
 }
 
