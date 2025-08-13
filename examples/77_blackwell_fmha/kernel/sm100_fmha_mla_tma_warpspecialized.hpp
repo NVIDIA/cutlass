@@ -507,6 +507,9 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
 
   CUTLASS_DEVICE void operator()(Params const& params, char* smem_raw) {
+#if ! defined(__CUDA_ARCH_FEAT_SM100_ALL)
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
 
     TileScheduler tile_scheduler(params.tile_scheduler);
 
@@ -814,6 +817,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
       tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
     }
+#endif
   }
 
   template<class BlkCoord>

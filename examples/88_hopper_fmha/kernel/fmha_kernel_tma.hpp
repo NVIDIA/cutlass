@@ -137,6 +137,9 @@ struct FmhaKernelTma {
   }
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
+#if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
     TileScheduler tile_scheduler{params.tile_scheduler};
 
     // Shared memory.
@@ -216,6 +219,7 @@ struct FmhaKernelTma {
       result, typename CollectiveMainloop::TiledMmaPV{},
       params.problem_size, params.epilogue,
       epi_load_pipeline, storage.epilogue);
+#endif
   }
 };
 
