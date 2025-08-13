@@ -194,7 +194,7 @@ Status BlockwiseGemmOperationProfiler::GemmProblem::parse(
   
   if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
     // default value
-    this->cluster_m = 1;
+    this->cluster_m = std::string(operation_desc.name).find("_2sm") != std::string::npos ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n, "cluster_n", problem_space, problem)) {
@@ -209,17 +209,17 @@ Status BlockwiseGemmOperationProfiler::GemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
     // default value
-    this->cluster_m_fallback = 0;
+    this->cluster_m_fallback = std::string(operation_desc.name).find("_2sm") != std::string::npos ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
     // default value
-    this->cluster_n_fallback = 0;
+    this->cluster_n_fallback = 1;
   }
 
   if (!arg_as_int(this->cluster_k_fallback, "cluster_k_fallback", problem_space, problem)) {
     // default value
-    this->cluster_k_fallback = 0;
+    this->cluster_k_fallback = 1;
   }
   
 
