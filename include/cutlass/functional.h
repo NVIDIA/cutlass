@@ -655,7 +655,7 @@ struct and_popc_add {
   }
 };
 
-/// Fused multiply-add
+/// Fused and-add
 template <typename T>
 struct and_add {
   CUTLASS_HOST_DEVICE
@@ -677,7 +677,7 @@ struct xor_popc_add {
   }
 };
 
-/// Fused multiply-add
+/// Fused xor-add
 template <typename T>
 struct xor_add {
   CUTLASS_HOST_DEVICE
@@ -699,7 +699,7 @@ struct or_popc_add {
 };
 
 
-/// Fused multiply-add
+/// Fused or-add
 template <typename T>
 struct or_add {
   CUTLASS_HOST_DEVICE
