@@ -777,6 +777,7 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 #include <cute/atom/mma_traits_sm120_sparse.hpp>
 
 #if defined(CUTLASS_ENABLE_SYCL)
+#include <cute/atom/mma_traits_xe.hpp>
 #include <cute/atom/mma_traits_xe_legacy.hpp>
 #endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
