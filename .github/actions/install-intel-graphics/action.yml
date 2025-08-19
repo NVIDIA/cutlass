@@ -25,7 +25,6 @@ runs:
           wget https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
           chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
           sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          sudo apt update
           sudo apt install -y \
             intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
             libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev  \
