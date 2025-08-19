@@ -21,11 +21,10 @@ runs:
           sudo add-apt-repository ppa:kobuk-team/intel-graphics
           sudo apt update
         else
-          . /etc/os-release
-          wget -qO - https://repositories.intel.com/gpu/intel-graphics.key | \
-          sudo gpg --yes --dearmor --output /usr/share/keyrings/intel-graphics.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${VERSION_CODENAME} unified" | \
-          sudo tee /etc/apt/sources.list.d/intel-gpu-${VERSION_CODENAME}.list
+        . /etc/os-release
+          wget https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
           sudo apt update
           sudo apt install -y \
             intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
