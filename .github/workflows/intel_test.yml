@@ -79,6 +79,9 @@ jobs:
       - name: Setup virtual environment
         shell: bash
         run: |
+          # Install cmake and ninja
+          sudo apt update
+          sudo apt install -y cmake ninja-build
           . setvars.sh
           export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
           export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file -gline-tables-only" 
