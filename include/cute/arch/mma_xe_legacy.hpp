@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,9 +36,9 @@
 #endif
 
 #if defined(CUTE_ARCH_MMA_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
-#include<cute/arch/mma_xe_builtin.hpp>
+#include <cute/arch/mma_xe_legacy_builtin.hpp>
 #elif defined(CUTE_ARCH_MMA_XE_ENABLED)
-#include<cute/arch/mma_xe_spirv.hpp>
+#include <cute/arch/mma_xe_legacy_spirv.hpp>
 #endif
 
 #include <cute/config.hpp>

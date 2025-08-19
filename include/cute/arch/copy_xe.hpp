@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,41 +31,9 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
-#define CUTE_ARCH_COPY_XE_ENABLED
-#endif
-
-#if defined(CUTE_ARCH_COPY_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
-#include <cute/arch/copy_xe_builtin.hpp>
-#elif defined(CUTE_ARCH_COPY_XE_ENABLED)
-#include <cute/arch/copy_xe_spirv.hpp>
-#endif
-
-#include <cute/arch/copy_xe_U4.hpp>
-#include <cute/arch/copy_xe_U8.hpp>
-#include <cute/arch/copy_xe_U16.hpp>
-#include <cute/arch/copy_xe_U32.hpp>
-#include <cute/arch/copy_xe_U64.hpp>
-
-#ifdef __SYCL_DEVICE_ONLY__
-SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
-SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope, int memory_semantics);
-#endif
 
 namespace cute
 {
-
-// scope = 3 is for subgroup, scope = 2 is for workgroup
-CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = 0, int memory_semantics = 0) { 
-#ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, memory_semantics); 
-#endif
-}
-CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = 0, int memory_semantics = 0) { 
-#ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, memory_semantics); 
-#endif
-}
 
 template<class S, class D = S>
 struct XE_ATOMIC {
@@ -112,7 +81,7 @@ struct XE_1D_LDSM {
           sg, &src, *reinterpret_cast<sycl::vec<S_, N> *>(&dst), props);
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
-    #endif 
+    #endif
   }
 };
 
@@ -141,7 +110,7 @@ struct XE_1D_LOAD_GLOBAL {
           sg, &src, *reinterpret_cast<sycl::vec<S_, N> *>(&dst), props);
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
-    #endif 
+    #endif
   }
 };
 

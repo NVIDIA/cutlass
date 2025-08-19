@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,10 +36,6 @@
 #include <cute/atom/mma_traits.hpp>
 #include <cute/tensor_impl.hpp>
 #include <cute/util/type_traits.hpp>
-
-#if defined(CUTLASS_ENABLE_SYCL)
-#include <cute/atom/mma_traits_xe.hpp>
-#endif
 
 namespace cute {
 
@@ -561,10 +558,10 @@ make_tiled_mma(MMA_Op       const&,
 // media/docs/cute/0t_mma_atom.md#tiledmmas to construct a scatter
 // permutation which ensures hardware operates on contiguous
 // chunks of the TiledMMA. The docs describe how the Layout
-// implies a repetition of the atom across additional hardware. 
+// implies a repetition of the atom across additional hardware.
 // Permutations, in the simplest form, imply additional iterations
 // to cover a larger tile (i.e. CTALayout) than the hardware can handle
-// at once. 
+// at once.
 //
 // Consider an example for Xe hardware:
 //   using TiledMma =
@@ -572,13 +569,13 @@ make_tiled_mma(MMA_Op       const&,
 //                Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
 //                Tile<_256, _256, _32>>;
 //
-// This MMA_Atom is performed by a whole warp and operates on an 8x16x16 chunk. 
+// This MMA_Atom is performed by a whole warp and operates on an 8x16x16 chunk.
 // The second arg (Layout) defines a repetition of the atom across *additional warps*,
 // i.e. iterating across more hardware. The third arg (Tile) defines a repetition of this
 // MMA across *additional values*. For this example, in the M dimension, the atom produces
 // 8 values of C, the hardware repetition (8) scales this up to 64 values in M, and the
-// requested permutation (256) scales this up to 256 values (implying 4 iterations in the 
-// M direction). 
+// requested permutation (256) scales this up to 256 values (implying 4 iterations in the
+// M direction).
 //
 // By cute convention, the repetition of the atom across hardware is the inner
 // iteration, while the repetition across values is the outer. We can use a more complex
@@ -595,11 +592,11 @@ make_tiled_mma(MMA_Op       const&,
 //                  Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, // Permutation on N
 //                  _32>>; // K unpermuted
 //
-// Consider only the M permutation (each mode's permutation is independent and in this 
+// Consider only the M permutation (each mode's permutation is independent and in this
 // example the M & N permutations are similar). This permutation maintains blocks of 8
 // contiguous values from the canonical tiling (mode 0 is 8:1).
-// It scatters 8 of these blocks of 8 to a spacing of 32 values (mode 1 is 8:32), leaving 
-// a 'gap' of 24. These gaps of 24 are filled by repeating the preceding pattern 4 times, 
+// It scatters 8 of these blocks of 8 to a spacing of 32 values (mode 1 is 8:32), leaving
+// a 'gap' of 24. These gaps of 24 are filled by repeating the preceding pattern 4 times,
 // at a spacing of 8 values (mode 2 is 4:8).
 // In this manner, the tiling has been permuted so that the values handled by each thread are
 // closer together.
@@ -780,6 +777,6 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 #include <cute/atom/mma_traits_sm120_sparse.hpp>
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#include <cute/atom/mma_traits_xe.hpp>
+#include <cute/atom/mma_traits_xe_legacy.hpp>
 #endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
