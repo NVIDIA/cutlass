@@ -79,9 +79,14 @@ jobs:
       - name: Setup virtual environment
         shell: bash
         run: |
-          # Install cmake and ninja
-          sudo apt update
-          sudo apt install -y cmake ninja-build
+          # Install cmake and ninja if not already available
+          if ! command -v cmake &> /dev/null || ! command -v ninja &> /dev/null; then
+            echo "Installing cmake and/or ninja..."
+            sudo apt update
+            sudo apt install -y cmake ninja-build
+          else
+            echo "cmake and ninja already available"
+          fi
           . setvars.sh
           export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
           export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file -gline-tables-only" 
