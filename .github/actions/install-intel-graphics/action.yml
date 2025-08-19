@@ -23,7 +23,7 @@ runs:
         else
           wget -qO - https://repositories.intel.com/gpu/intel-graphics.key | \
           sudo gpg --yes --dearmor --output /usr/share/keyrings/intel-graphics.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${VERSION_CODENAME}/lts/2350 unified" | \
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${VERSION_CODENAME} unified" | \
           sudo tee /etc/apt/sources.list.d/intel-gpu-${VERSION_CODENAME}.list
           sudo apt update
           sudo apt install -y \
