@@ -22,7 +22,6 @@ concurrency:
 jobs:
   run-tests:
     strategy:
-      fail-fast: false
       matrix:
         include:
           - compiler: NIGHTLY
