@@ -36,7 +36,12 @@ runs:
           URL=https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz;
         else
           echo "Will use latest DPCPP version"
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
+          # Use grep and sed instead of jq to avoid additional dependencies
+          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | \
+            grep '"tag_name":' | \
+            grep 'nightly-[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' | \
+            head -1 | \
+            sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
           URL=https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz;
         fi
         echo "Downloading DPCPP from ${URL}"
