@@ -399,6 +399,20 @@ struct ThrCopy
     //               "Expected ValType for tiling DstTensor.");
     return make_tensor(static_cast<DTensor&&>(dtensor).data(), TiledCopy::retile(dtensor.layout()));
   }
+
+  template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_fragment_S(STensor&& stensor) const {
+    return make_fragment_like<typename TiledCopy::ValType>(partition_S(stensor));
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_fragment_D(DTensor&& dtensor) const {
+    return make_fragment_like<typename TiledCopy::ValType>(partition_D(dtensor));
+  }
 };
 
 
