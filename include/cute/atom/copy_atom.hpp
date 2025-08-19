@@ -716,6 +716,7 @@ print(ThrCopy<TiledCopy, ThrIdx> const& thr_copy)
 
 #if defined(SYCL_INTEL_TARGET)
 #include <cute/atom/copy_traits_xe.hpp>
+#include <cute/atom/copy_traits_xe_2d.hpp>
 #include <cute/atom/copy_traits_xe_legacy.hpp>
 #endif
 
