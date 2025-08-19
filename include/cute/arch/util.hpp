@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -160,6 +161,19 @@ struct CallCOPY {
   CUTE_HOST_DEVICE constexpr void
   operator()(Args&&... args) const {
     return CopyOp::copy(static_cast<Args&&>(args)...);
+  }
+};
+
+//
+// Wrapper for ReorderOp::reorder
+//
+
+template <class ReorderOp>
+struct CallReorder {
+  template <class... Args>
+  CUTE_HOST_DEVICE constexpr void
+  operator()(Args&&... args) const {
+    return ReorderOp::reorder(static_cast<Args&&>(args)...);
   }
 };
 

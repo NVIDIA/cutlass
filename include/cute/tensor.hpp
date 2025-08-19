@@ -54,6 +54,7 @@
 #include <cute/algorithm/prefetch.hpp>
 #include <cute/algorithm/axpby.hpp>
 #include <cute/algorithm/gemm.hpp>
+#include <cute/algorithm/reorder.hpp>
 
 #include <cute/algorithm/cooperative_copy.hpp>
 #include <cute/algorithm/cooperative_gemm.hpp>
