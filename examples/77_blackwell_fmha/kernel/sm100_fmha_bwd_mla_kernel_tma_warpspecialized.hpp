@@ -1480,7 +1480,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
 
 
   CUTLASS_DEVICE void operator()(Params const& params, char* smem) {
-#if ! defined(__CUDA_ARCH_FEAT_SM100_ALL)
+#if (! defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && ! defined(CUTLASS_ARCH_MMA_SM100F_ENABLED))
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
     int warp_idx = cutlass::canonical_warp_idx_sync();

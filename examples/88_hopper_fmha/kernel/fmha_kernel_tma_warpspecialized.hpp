@@ -161,7 +161,7 @@ struct FmhaKernelTmaWarpSpecialized {
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
 
-#if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
+#if ! defined(CUTLASS_ARCH_MMA_SM90A_ENABLED)
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
     enum class WarpGroupRole {
