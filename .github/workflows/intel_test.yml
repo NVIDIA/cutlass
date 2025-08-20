@@ -25,21 +25,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - compiler: NIGHTLY
-            gpu: BMG
-            intel_graphics: STAGING
-            sycl_target: intel_gpu_bmg_g21
-            runner: bmg108629-01
+          # Temporarily disabled NIGHTLY BMG builds
+          # - compiler: NIGHTLY
+          #   gpu: BMG
+          #   intel_graphics: STAGING
+          #   sycl_target: intel_gpu_bmg_g21
+          #   runner: bmg108629-01
           - compiler: RELEASE
             gpu: BMG
             intel_graphics: STAGING
             sycl_target: intel_gpu_bmg_g21
             runner: bmg108629-01
-          - compiler: NIGHTLY
-            gpu: BMG
-            intel_graphics: ROLLING
-            sycl_target: intel_gpu_bmg_g21
-            runner: bmg108629-01
+          # Temporarily disabled NIGHTLY BMG builds
+          # - compiler: NIGHTLY
+          #   gpu: BMG
+          #   intel_graphics: ROLLING
+          #   sycl_target: intel_gpu_bmg_g21
+          #   runner: bmg108629-01
           - compiler: RELEASE
             gpu: BMG
             intel_graphics: ROLLING
@@ -107,7 +109,7 @@ jobs:
             -DCUTLASS_SYCL_RUNNING_CI=ON
           # Use reduced parallelism for BMG runners, full for PVC
           if [[ "${{ matrix.gpu }}" == "BMG" ]]; then
-            cmake --build . -j 16
+            cmake --build . -j 8
           else
             cmake --build . 
           fi
