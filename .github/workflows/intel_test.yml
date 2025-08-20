@@ -106,7 +106,7 @@ jobs:
             -DCUTLASS_SYCL_RUNNING_CI=ON
           # Use reduced parallelism for BMG runners, full for PVC
           if [[ "${{ matrix.gpu }}" == "BMG" ]]; then
-            cmake --build . -j 4
+            cmake --build . -j 2
           else
             cmake --build . 
           fi
