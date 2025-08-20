@@ -22,6 +22,7 @@ concurrency:
 jobs:
   run-tests:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - compiler: NIGHTLY
@@ -34,12 +35,12 @@ jobs:
             intel_graphics: STAGING
             sycl_target: intel_gpu_bmg_g21
             runner: bmg108629-01
-          - compiler: RELEASE
+          - compiler: NIGHTLY
             gpu: BMG
             intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
             runner: bmg108629-01
-          - compiler: NIGHTLY
+          - compiler: RELEASE
             gpu: BMG
             intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
@@ -54,7 +55,6 @@ jobs:
             intel_graphics: ROLLING
             sycl_target: intel_gpu_pvc
             runner: pvc146162-01
-
 
     name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
     runs-on: ${{ matrix.runner }}
