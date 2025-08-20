@@ -87,6 +87,9 @@ jobs:
           else
             echo "cmake and ninja already available"
           fi
+          . setvars.sh
+          export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
+          export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file -gline-tables-only"
           export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
           export IGC_VectorAliasBBThreshold=100000000000
           # Persist environment variables to following steps 
