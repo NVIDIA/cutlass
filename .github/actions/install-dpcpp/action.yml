@@ -53,11 +53,13 @@ runs:
         export PATH=$DPCPP_PATH/bin:/bin:/usr/bin:/usr/local/bin:\$PATH
         export C_INCLUDE_PATH=$DPCPP_PATH/include:/usr/include/c++/11:/usr/include/x86_64-linux-gnu/c++/11:/usr/include/x86_64-linux-gnu:/usr/include:\$C_INCLUDE_PATH
         export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include:/usr/include/c++/11:/usr/include/x86_64-linux-gnu/c++/11:/usr/include/x86_64-linux-gnu:/usr/include:\$CPLUS_INCLUDE_PATH
-        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:/usr/lib/x86_64-linux-gnu:/usr/lib/gcc/x86_64-linux-gnu/11:\$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:/usr/lib/x86_64-linux-gnu:/usr/lib/gcc/x86_64-linux-gnu/11:/usr/lib:\$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib/gcc/x86_64-linux-gnu/11:/usr/lib:\$LIBRARY_PATH
         export CC=$DPCPP_PATH/bin/clang
         export CXX=$DPCPP_PATH/bin/clang++
-        # Configure DPC++ to use system C++ standard library
+        # Configure DPC++ to use system C++ standard library with proper linking
         export CXXFLAGS="-stdlib=libstdc++ -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 \$CXXFLAGS"
+        export LDFLAGS="-L/usr/lib/x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib \$LDFLAGS"
         EOF
     - name: Install DPCPP
       if: inputs.DPCPP_RELEASE == 'RELEASE'
