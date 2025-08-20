@@ -22,26 +22,23 @@ concurrency:
 jobs:
   run-tests:
     strategy:
-      fail-fast: false
       matrix:
         include:
-          # Temporarily disabled NIGHTLY BMG builds
-          # - compiler: NIGHTLY
-          #   gpu: BMG
-          #   intel_graphics: STAGING
-          #   sycl_target: intel_gpu_bmg_g21
-          #   runner: bmg108629-01
+          - compiler: NIGHTLY
+            gpu: BMG
+            intel_graphics: STAGING
+            sycl_target: intel_gpu_bmg_g21
+            runner: bmg108629-01
           - compiler: RELEASE
             gpu: BMG
             intel_graphics: STAGING
             sycl_target: intel_gpu_bmg_g21
             runner: bmg108629-01
-          # Temporarily disabled NIGHTLY BMG builds
-          # - compiler: NIGHTLY
-          #   gpu: BMG
-          #   intel_graphics: ROLLING
-          #   sycl_target: intel_gpu_bmg_g21
-          #   runner: bmg108629-01
+          - compiler: NIGHTLY
+            gpu: BMG
+            intel_graphics: ROLLING
+            sycl_target: intel_gpu_bmg_g21
+            runner: bmg108629-01
           - compiler: RELEASE
             gpu: BMG
             intel_graphics: ROLLING
@@ -90,9 +87,6 @@ jobs:
           else
             echo "cmake and ninja already available"
           fi
-          . setvars.sh
-          export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
-          export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file -gline-tables-only" 
           export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
           export IGC_VectorAliasBBThreshold=100000000000
           # Persist environment variables to following steps 
