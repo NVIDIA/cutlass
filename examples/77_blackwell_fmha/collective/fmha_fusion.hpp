@@ -204,10 +204,14 @@ struct CausalMask : NoMask {
     // See note below on different ways to think about causal attention
     // Again, we'd add the offset_q into the max_blocks_q calculation
     int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
-    int offset_q = IsQBegin ? 0: int(get<1>(problem_size)) - int(get<0>(problem_size));
-    int max_blocks_q = ceil_div(offset_q + (get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
-    return std::min(max_blocks_k, max_blocks_q);
-
+    if constexpr (IsQBegin) {
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
+      return std::min(max_blocks_k, max_blocks_q);
+    } else {
+      const int offset_q = get<1>(problem_size) - get<0>(problem_size);
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape) + offset_q, get<1>(tile_shape));
+      return std::min(max_blocks_k, max_blocks_q);
+    }
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -216,14 +220,14 @@ struct CausalMask : NoMask {
       BlkCoord const& blk_coord,
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
-
+        
     int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
-    int q_tile = min(get<0>(tile_shape), get<0>(problem_size) - get<0>(blk_coord) * get<0>(tile_shape));
-    int offset_tile_q = IsQBegin ? 0: int((get<1>(problem_size)) - int(get<0>(problem_size))% get<1>(tile_shape));
-    
-    int masked_blocks = ceil_div(q_tile + offset_tile_q, get<1>(tile_shape));
-    return std::min(masked_blocks, trip_count);
-
+    if constexpr (IsQBegin) {
+      return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
+    } else {
+      const int corner_count = int((get<1>(problem_size) % get<1>(tile_shape) || get<0>(problem_size) % get<0>(tile_shape))) ; 
+      return std::min(trip_count, int(ceil_div(get<0>(tile_shape), get<1>(tile_shape))) + corner_count);
+    }
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -250,17 +254,27 @@ struct CausalMask : NoMask {
     //    - this is usually what we want for inference settings
     //      where we only compute the next row and use cache for the rest
     //    - if you'd like this, you only need to set kIsQBegin=false
-    int offset_q = IsQBegin ? 0: int(get<1>(problem_size)) - int(get<0>(problem_size));
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size(acc_qk); i++) {
-      auto pos = index_qk(i);
-      if ((get<0>(pos) + offset_q < get<1>(pos)) ||(get<1>(pos) >= get<1>(problem_size))) {
-        acc_qk(i) = -INFINITY;
+
+    if constexpr (IsQBegin) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        if ((get<0>(pos) < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
+          acc_qk(i) = -INFINITY;
+        }
+      }
+    } else {
+      const auto offset_q = get<1>(problem_size) - get<0>(problem_size);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        if ((get<0>(pos) + offset_q < get<1>(pos)) || (get<1>(pos) >= get<1>(problem_size))) {
+          acc_qk(i) = -INFINITY;
+        }
       }
     }
   }
 };
-
 template<bool kIsQBegin = true>
 struct CausalForBackwardMask : CausalMask<kIsQBegin>, ResidualMaskForBackward {
 
