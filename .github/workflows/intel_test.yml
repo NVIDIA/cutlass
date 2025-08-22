@@ -113,7 +113,7 @@ jobs:
       - name: Unit test
         shell: bash
         run: |
-          cmake --build . --target test_unit
+          cmake --build . --target test_unit -j 8
       - name: Examples
         shell: bash
         run: |
