@@ -196,6 +196,8 @@ struct TiledCopy : Copy_Atom
   using AtomNumThr = decltype(size<0>(AtomLayoutRef{}));
   using AtomNumVal = decltype(size<1>(AtomLayoutRef{}));
 
+  using Atom = Copy_Atom;
+
   // Layout information for the TiledCopy
   using Tiler_MN       = ShapeTiler_MN;
   using TiledLayout_TV = LayoutCopy_TV;
@@ -204,6 +206,16 @@ struct TiledCopy : Copy_Atom
 
   CUTE_STATIC_ASSERT_V(TiledNumThr{} % AtomNumThr{} == Int<0>{}, "TiledCopy uses too few thrs for selected CopyAtom");
   CUTE_STATIC_ASSERT_V(TiledNumVal{} % AtomNumVal{} == Int<0>{}, "TiledCopy uses too few vals for selected CopyAtom");
+
+  // Additional Trait parameters/transformations
+  template <class... TraitsArgs>
+  CUTE_HOST_DEVICE
+  auto
+  with(TraitsArgs&&... args) const {
+    TiledCopy result;
+    static_cast<Copy_Atom&>(result) = Copy_Atom::with(static_cast<TraitsArgs&&>(args)...);
+    return result;
+  }
 
   // Tile a tensor or a layout from shape
   //   (M,N,...)
