@@ -138,13 +138,15 @@ In principle, layout strides may be any integer-module.
 CuTe's basis elements live in the header file `cute/numeric/arithmetic_tuple.hpp`.
 To make it easy to create `ArithmeticTuple`s that can be used as strides, CuTe defines normalized basis elements using the `E` type alias. "Normalized" means that the scaling factor of the basis element is the compile-time integer 1.
 
-| C++ object | Description           | String representation |
-| ---        | ---                   | ---                   |
-| `E<>{}`    | `1`                   | `1`                   |
-| `E<0>{}`   | `(1,0,...)`           | `1@0`                 |
-| `E<1>{}`   | `(0,1,0,...)`         | `1@1`                 |
-| `E<0,1>{}` | `((0,1,0,...),0,...)` | `1@1@0`               |
-| `E<1,0>{}` | `(0,(1,0,...),0,...)` | `1@0@1`               |
+| C++ object | Description             | String representation |
+| ---        | ---                     | ---                   |
+| `E<>{}`    | `1`                     | `1`                   |
+| `E<0>{}`   | `(1,0,...)`             | `1@0`                 |
+| `E<1>{}`   | `(0,1,0,...)`           | `1@1`                 |
+| `E<0,0>{}` | `((1,0,...),0,...)`     | `1@0@0`               |
+| `E<0,1>{}` | `((0,1,0,...),0,...)`   | `1@1@0`               |
+| `E<1,0>{}` | `(0,(1,0,...),0,...)`   | `1@0@1`               |
+| `E<1,1>{}` | `(0,(0,1,0,...),0,...)` | `1@1@1`               |
 
 The "description" column in the above table
 interprets each basis element as an infinite tuple of integers,
@@ -155,7 +157,9 @@ For example, `E<1>{}` has a 1 in position 1: `(0,1,0,...)`.
 
 Basis elements can be *nested*.
 For instance, in the above table, `E<0,1>{}` means that
-in position 0 there is a `E<1>{}`: `((0,1,0,...),0,...)`.
+in position 0 there is a `E<1>{}`: `((0,1,0,...),0,...)`. Similarly,
+`1@1@0` means that `1` is lifted to position 1 to create `1@1`: `(0,1,0,...)`
+which is then lifted again to position 0.
 
 Basis elements can be *scaled*.
 That is, they can be multiplied by an integer *scaling factor*.

@@ -41,11 +41,13 @@
   //   * https://reviews.llvm.org/D121666
   //   * https://reviews.llvm.org/D126846
   #define CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75 (__clang_major__ >= 15)
+  #define CUTE_ARCH_CLANG_SUPPORTS_MOVM_SM75 (__clang_major__ >= 15)
 #endif
 
 #if defined(__NVCC__) || defined(__CUDACC_RTC__)
   // ldmatrix PTX instruction added in CUDA 10.2+
   #define CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 ((__CUDACC_VER_MAJOR__  == 10 && __CUDACC_VER_MINOR__ >= 2) || __CUDACC_VER_MAJOR__ >= 11)
+  #define CUTE_ARCH_NVCC_SUPPORTS_MOVM_SM75 ((__CUDACC_VER_MAJOR__  == 10 && __CUDACC_VER_MINOR__ >= 2) || __CUDACC_VER_MAJOR__ >= 11)
 #endif
 
 #if ! defined(CUTE_ARCH_LDSM_SM75_SUPPORTED)
@@ -60,11 +62,18 @@
   #define CUTE_ARCH_LDSM_SM75_ACTIVATED 1
 #endif
 
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750)
-  #define CUTE_ARCH_MOVM_SM75_ACTIVATED 1
-#else
-  #define CUTE_ARCH_MOVM_SM75_ACTIVATED 0
+#if ! defined(CUTE_ARCH_MOVM_SM75_SUPPORTED)
+  #define CUTE_ARCH_MOVM_SM75_SUPPORTED (CUTE_ARCH_NVCC_SUPPORTS_MOVM_SM75 || CUTE_ARCH_CLANG_SUPPORTS_MOVM_SM75)
 #endif
+
+#if ! defined(CUTE_ARCH_MOVM_SM75_ENABLED)
+  #define CUTE_ARCH_MOVM_SM75_ENABLED (CUTE_ARCH_MOVM_SM75_SUPPORTED)
+#endif
+
+#if (CUTE_ARCH_MOVM_SM75_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
+  #define CUTE_ARCH_MOVM_SM75_ACTIVATED 1
+#endif
+
 
 namespace cute
 {
@@ -207,7 +216,6 @@ struct SM75_U32x1_MOVM_T
 #endif
   }
 };
-
 //
 // Legacy LDSM interfaces that aren't very useful
 //

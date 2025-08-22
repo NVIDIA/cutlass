@@ -33,14 +33,12 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
-
-#include "cutlass/cutlass.h"
 
 namespace cutlass {
 

@@ -265,7 +265,7 @@ to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
 inline CUtensorMapFloatOOBfill
 to_CUtensorMapFloatOOBfill(OOBFill const& t) {
   switch(t) {
-    default: throw std::runtime_error("Unknown OOBFill!");
+    default:                throw std::runtime_error("Unknown OOBFill!");
     case OOBFill::ZERO:     return CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
     case OOBFill::CONSTANT: return CU_TENSOR_MAP_FLOAT_OOB_FILL_NAN_REQUEST_ZERO_FMA;
   }

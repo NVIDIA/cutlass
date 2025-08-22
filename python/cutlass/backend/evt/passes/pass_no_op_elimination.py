@@ -36,8 +36,8 @@ No op elimination node
 
 from typing import Any
 
-from cutlass.backend.evt.ir import NoOpImpl
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.ir import NoOpImpl
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
 
 
 class PassNoOpElimination(EVTPassBase):

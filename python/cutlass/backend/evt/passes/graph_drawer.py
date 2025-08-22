@@ -35,7 +35,7 @@ import subprocess
 
 from cutlass_library import DataTypeTag
 
-from cutlass.backend.evt.ir.dag_ir import DAGIR
+from cutlass_cppgen.backend.evt.ir.dag_ir import DAGIR
 
 
 _COLOR_MAP = {

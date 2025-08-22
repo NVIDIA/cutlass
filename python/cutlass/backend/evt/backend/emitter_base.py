@@ -35,7 +35,7 @@ Base class for Epilogue Visitor Emitter
 """
 
 from cutlass_library import DataTypeTag
-from cutlass.backend.evt.ir import TopoVisitorNode, DAGIR
+from cutlass_cppgen.backend.evt.ir import TopoVisitorNode, DAGIR
 
 
 class FusionCallbacks:

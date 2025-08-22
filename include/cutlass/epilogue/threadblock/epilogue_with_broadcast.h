@@ -38,16 +38,15 @@
 */
 
 #pragma once
-
-#include <cuda/std/cassert>
+#include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/utility>
+#include CUDA_STD_HEADER(utility)
 #else
 #include <utility>
 #endif
 
-#include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/numeric_conversion.h"

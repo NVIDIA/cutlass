@@ -40,9 +40,9 @@ import logging
 import cutlass_library
 from cutlass_library.library import ConvKind, IteratorAlgorithm, StrideSupport, GroupMode
 
-import cutlass
-from cutlass.utils.check import valid_stage_count
-from cutlass.utils.datatypes import td_from_profiler_td, td_from_profiler_op
+import cutlass_cppgen
+from cutlass_cppgen.utils.check import valid_stage_count
+from cutlass_cppgen.utils.datatypes import td_from_profiler_td, td_from_profiler_op
 
 
 _generator_ccs = [50, 60, 61, 70, 75, 80, 90]
@@ -99,14 +99,14 @@ class KernelsForDataType:
             ops.extend(alignment_ops)
         return ops
 
-    def default_operation(self, math_operation: cutlass.MathOperation):
+    def default_operation(self, math_operation: cutlass_cppgen.MathOperation):
         key = sorted(list(self.kernels_by_alignment.keys()))[0]
         kernels = self.kernels_by_alignment[key]
         if math_operation is not None:
             kernels = [x for x in kernels if x.tile_description.math_instruction.math_operation == math_operation]
         return kernels[0]
 
-    def operations(self, alignment_A: int, alignment_B: int, alignment_C: int, math_operation: cutlass.MathOperation):
+    def operations(self, alignment_A: int, alignment_B: int, alignment_C: int, math_operation: cutlass_cppgen.MathOperation):
         """
         Returns operations satisfying the alignment constraints
 
@@ -117,7 +117,7 @@ class KernelsForDataType:
         :param alignment_C: alignment constraint of operations to return
         :type alignment_C: int
         :param math_operation: math operation to consider
-        :type math_operation: cutlass.MathOperation
+        :type math_operation: cutlass_cppgen.MathOperation
 
         :return: list of operations
         :rtype: list
@@ -158,14 +158,14 @@ class KernelsForDataType:
 
         return operand_list.index(key)
 
-    def find_alignment(self, shape: tuple, layout: cutlass.LayoutType, operand=str) -> int:
+    def find_alignment(self, shape: tuple, layout: cutlass_cppgen.LayoutType, operand=str) -> int:
         """
         Returns the most preferable alignment for a given shape and layout
 
         :param shape: extent of each dimension of the tensor
         :type shape: tuple
         :param layout: layout of the tensor
-        :type layout: cutlass.LayoutType
+        :type layout: cutlass_cppgen.LayoutType
         :param operand: descriptor of the operand in question
         :type operand: str
 
@@ -175,11 +175,11 @@ class KernelsForDataType:
         operand_idx = self._operand_idx(operand)
 
         # Determine the leading dimension of the shape
-        if layout == cutlass.LayoutType.ColumnMajor:
+        if layout == cutlass_cppgen.LayoutType.ColumnMajor:
             ld = shape[-2]
-        elif layout == cutlass.LayoutType.RowMajor:
+        elif layout == cutlass_cppgen.LayoutType.RowMajor:
             ld = shape[-1]
-        elif layout == cutlass.LayoutType.TensorNHWC:
+        elif layout == cutlass_cppgen.LayoutType.TensorNHWC:
             ld = shape[-1]
         else:
             raise Exception(f"Unexpected or unsupported layout {layout}")
@@ -204,12 +204,12 @@ class KernelsForDataType:
         for alignment in self.kernels_by_alignment.keys():
             self.kernels_by_alignment[alignment].sort(key=key, reverse=True)
 
-    def supports_math_operation(self, math_operation: cutlass.MathOperation) -> bool:
+    def supports_math_operation(self, math_operation: cutlass_cppgen.MathOperation) -> bool:
         """
         Returns whether `math_operation` is supported by at least one operation.
 
         :param math_operation: math operation to consider
-        :type math_operation: cutlass.MathOperation
+        :type math_operation: cutlass_cppgen.MathOperation
 
         :return: whether math_operation is supported by at least one operation
         :rtype: bool
@@ -262,7 +262,7 @@ class ArchOptions:
         # descriptions for the target CC
         generate_function_name = "GenerateSM" + str(kernel_cc)
         if not hasattr(cutlass_library.generator, generate_function_name):
-            cutlass.logger.warning(f"No generator found for architecture {kernel_cc}")
+            cutlass_cppgen.logger.warning(f"No generator found for architecture {kernel_cc}")
             return
         generate_function = getattr(cutlass_library.generator, generate_function_name)
 
@@ -270,16 +270,16 @@ class ArchOptions:
         # for the target CC
         args = [
             "--kernels=all",
-            f"--log-level={logging.getLevelName(cutlass.logger.level)}"
+            f"--log-level={logging.getLevelName(cutlass_cppgen.logger.level)}"
         ]
         manifest_args = cutlass_library.generator.define_parser().parse_args(args)
         manifest = cutlass_library.manifest.Manifest(manifest_args)
-        generate_function(manifest, cutlass._nvcc_version)
+        generate_function(manifest, cutlass_cppgen._nvcc_version)
 
         if operation_kind not in manifest.operations:
             # No kernels generated for this architecture, this could be because the CUDA
             # toolkit is insufficient to support operations in this CC
-            cutlass.logger.warning(f"No operations of type {operation_kind} found for CC {kernel_cc}")
+            cutlass_cppgen.logger.warning(f"No operations of type {operation_kind} found for CC {kernel_cc}")
             return
 
         # Only one CC should be returned, given the setup above of calling only the generation scripts
@@ -358,7 +358,7 @@ class ArchOptions:
 
             # Add FP8 A/B with FP32 C
             for type_comb in combinations_with_replacement(fp8_types, 2):
-                types.append(type_comb + (cutlass.DataType.f32,))
+                types.append(type_comb + (cutlass_cppgen.DataType.f32,))
 
             layouts = [
                 (cutlass_library.LayoutType.RowMajor, cutlass_library.LayoutType.RowMajor),
@@ -444,7 +444,7 @@ class ArchOptions:
         :param layout_comb: tuple of data types for (layout_A, layout_B)
         :type layout_comb: tuple[cutlass_library.LayoutType]
         :param math_operation: math operation to consider or None if any can be considered
-        :type math_operation: cutlass.MathOperation
+        :type math_operation: cutlass_cppgen.MathOperation
 
         :return: set of operation classes that support the provided data type and layout combination
         :rtype: set
@@ -484,7 +484,7 @@ class ArchOptions:
         :param layout_b: layout of operand B
         :type layout_b: cutlass_library.LayoutType
         :param math_operation: math operation to consider
-        :type math_operation: cutlass.MathOperation
+        :type math_operation: cutlass_cppgen.MathOperation
 
         :return: set of operation classes that support the provided data type combination
         :rtype: set
@@ -524,7 +524,7 @@ class ArchOptions:
         :param layout_b: layout of operand B
         :type layout_b: cutlass_library.LayoutType
         :param math_operation: math operation to consider
-        :type math_operation: cutlass.MathOperation
+        :type math_operation: cutlass_cppgen.MathOperation
 
         :return: container of kernels by alignment supported by the provided combination of parameters
         :rtype: KernelsForDataType

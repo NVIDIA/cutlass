@@ -180,6 +180,8 @@ public:
 
     /// Buffer used for the cutlass reduction operations' host workspace
     std::vector<uint8_t> reduction_host_workspace;
+
+    cudaStream_t stream;
   };
 
 protected:

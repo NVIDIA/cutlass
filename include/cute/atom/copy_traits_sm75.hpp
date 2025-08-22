@@ -156,5 +156,4 @@ struct Copy_Traits<SM75_U32x1_MOVM_T>
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 };
-
 } // end namespace cute

@@ -343,8 +343,7 @@ public:
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
     // source is not needed, avoid load
-    else
-    {
+    else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tTR_rAcc); i++) {
         tTR_rD_frag(i) = epilogue_op(tTR_rAcc(i));
@@ -587,8 +586,8 @@ public:
       CtaTileMNK cta_tile_mnk,
       CtaCoordMNKL cta_coord_mnkl,
       cute::Tensor<AccEngine,AccLayout> accumulators,
-      [[maybe_unused]]SharedStorage&
-      ) {
+      [[maybe_unused]] SharedStorage&
+  ) {
     using ElementAccumulator = typename AccEngine::value_type;
     using ElementCompute_ = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::ElementCompute;
     using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
@@ -718,10 +717,20 @@ public:
             if (is_C_load_needed) {
               using CVecType = uint_bit_t<VC * sizeof_bits_v<ElementC>>;
 
+              if constexpr (!is_same_v<CVecType, uint256_t>) {
                 Tensor tTR_gC_frg = recast<CVecType>(coalesce(tTR_gC(_,_,_,epi_m,epi_n)));
                 Tensor tTR_rC_frg = recast<CVecType>(coalesce(tCrC));
                 Tensor tTR_pC_frg = tensor<1>(zipped_divide(coalesce(tTR_pCD_mn), mclC.compose(Int<VC>{})));
                 copy_if(tTR_pC_frg, tTR_gC_frg, tTR_rC_frg);
+              }
+              else {
+                auto tiled_g2r = make_tiled_copy_D(Copy_Atom<SM100_LOAD_256bit_CACHE_NOALLOCATION, ElementC>{}, tiled_t2r);
+                auto thr_g2r = tiled_g2r.get_slice(threadIdx.x);
+                Tensor c_src = thr_g2r.retile_S(tTR_gC(_,_,_,epi_m,epi_n));
+                Tensor c_dst = thr_g2r.retile_D(tCrC);
+                Tensor c_prd = thr_g2r.retile_D(tTR_pCD_mn);
+                copy_if(tiled_g2r, c_prd, c_src, c_dst);
+              }
             }
           }
 
@@ -753,10 +762,21 @@ public:
           cst_callbacks.end_loop(epi_m, epi_n);
 
           using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
+          if constexpr (!is_same_v<VecType, uint256_t>) {
             Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
             Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
             Tensor tTR_pD_frg = tensor<1>(zipped_divide(coalesce(tTR_pCD_mn), mclD.compose(Int<VD>{})));
             copy_if(tTR_pD_frg, tTR_rD_frg, tTR_gD_frg);
+          }
+          else {
+            auto tiled_r2g = make_tiled_copy_D(Copy_Atom<SM100_STORE_256bit_CACHE_NOALLOCATION, ElementD>{}, tiled_t2r);
+            auto thr_r2g = tiled_r2g.get_slice(threadIdx.x);
+            Tensor src = thr_r2g.retile_S(tTR_rD);
+            Tensor dst = thr_r2g.retile_D(tTR_gD(_,_,_,epi_m,epi_n));
+            Tensor prd = thr_r2g.retile_D(tTR_pCD_mn);
+            copy_if(tiled_r2g, prd, src, dst);
+          }
+
         } // for epi_m
       } // for epi_n
 

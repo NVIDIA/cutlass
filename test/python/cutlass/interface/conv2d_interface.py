@@ -37,9 +37,9 @@ Tests the high-level Conv2d interface
 from math import ceil
 import unittest
 
-import cutlass
-import cutlass.utils.datatypes as datatypes
-from cutlass.backend.utils.device import device_cc
+import cutlass_cppgen
+import cutlass_cppgen.utils.datatypes as datatypes
+from cutlass_cppgen.backend.utils.device import device_cc
 from utils import ExpectException
 import os
 
@@ -62,7 +62,7 @@ class Conv2dEquivalence:
 
         self.conv_kind = conv_kind
 
-        self.plan = cutlass.op.Conv2d(
+        self.plan = cutlass_cppgen.op.Conv2d(
             kind=self.conv_kind, element_A=element_A, element_B=element_B, element_C=element_C,
             element_D=element_D, element_accumulator=element_accumulator)
 
@@ -75,7 +75,7 @@ class Conv2dEquivalence:
         Compares whether two plans are equal
 
         :param other_plan: plan to compare against the default Conv2d
-        :type other_plan: cutlass.op.Conv2d
+        :type other_plan: cutlass_cppgen.op.Conv2d
 
         :return: whether `other_plan` is equivalent to `self.plan`
         :rtype: bool
@@ -95,14 +95,14 @@ class Conv2dEquivalence:
             return
 
         # Test when specifying all parameters
-        plan_other = cutlass.op.Conv2d(
+        plan_other = cutlass_cppgen.op.Conv2d(
             kind=self.conv_kind,
             element_A=self.element_A, element_B=self.element_B, element_C=self.element_C,
             element_D=self.element_D, element_accumulator=self.element_accumulator)
         assert self._plans_equal(plan_other)
 
         # Test when specifying all parameters but A
-        plan_other = cutlass.op.Conv2d(
+        plan_other = cutlass_cppgen.op.Conv2d(
             kind=self.conv_kind,
             element_B=self.element_B, element_C=self.element_C,
             element_D=self.element_D, element_accumulator=self.element_accumulator,
@@ -110,7 +110,7 @@ class Conv2dEquivalence:
         assert self._plans_equal(plan_other)
 
         # Test when specifying all parameters but A and B as tensors using generic element and output
-        plan_other = cutlass.op.Conv2d(
+        plan_other = cutlass_cppgen.op.Conv2d(
             kind=self.conv_kind,
             element_C=self.element_C,
             element_D=self.element_D, element_accumulator=self.element_accumulator,
@@ -119,7 +119,7 @@ class Conv2dEquivalence:
 
         # Test without explicit accumulator. Only run if the type of C and the accumulator are equal
         if self.element_C == self.element_accumulator:
-            plan_other = cutlass.op.Conv2d(
+            plan_other = cutlass_cppgen.op.Conv2d(
                 kind=self.conv_kind,
                 element_C=self.element_C,
                 element_D=self.element_D,
@@ -129,7 +129,7 @@ class Conv2dEquivalence:
         # Test with only the generic types. Only rune if the types of A, B, C, and D are the same
         if (self.element_A == self.element_B and self.element_A == self.element_C and self.element_A == self.element_D
             and self.element_A == self.element_accumulator):
-            plan_other = cutlass.op.Conv2d(kind=self.conv_kind, element=self.element_A)
+            plan_other = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, element=self.element_A)
             assert self._plans_equal(plan_other)
 
     def numpy_test(self):
@@ -179,26 +179,26 @@ class Conv2dEquivalence:
 
     def tensor_test(self, type_A, type_B, type_C, type_D, type_accum, A, B, C, D):
         # Test when specifying all parameters via tensors
-        plan_np = cutlass.op.Conv2d(kind=self.conv_kind, A=A, B=B, C=C, D=D, element_accumulator=type_accum)
+        plan_np = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, A=A, B=B, C=C, D=D, element_accumulator=type_accum)
         assert self._plans_equal(plan_np)
 
         # Test when specifying all parameters but A as tensors
-        plan_np = cutlass.op.Conv2d(kind=self.conv_kind, B=B, C=C, D=D, element_accumulator=type_accum, element_A=type_A)
+        plan_np = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, B=B, C=C, D=D, element_accumulator=type_accum, element_A=type_A)
         assert self._plans_equal(plan_np)
 
         # Test when specifying all parameters but A and B as tensors and using generic element and output
         if type_A == type_B:
-            plan_np = cutlass.op.Conv2d(kind=self.conv_kind, C=C, D=D, element_accumulator=type_accum, element=type_A)
+            plan_np = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, C=C, D=D, element_accumulator=type_accum, element=type_A)
             assert self._plans_equal(plan_np)
 
         # Test without explicit accumulator. Only run if the type of C and the accumulator.
         if type_C == type_accum:
-            plan_np = cutlass.op.Conv2d(kind=self.conv_kind, A=A, B=B, C=C, D=D)
+            plan_np = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, A=A, B=B, C=C, D=D)
             assert self._plans_equal(plan_np)
 
         # Test with only the generic types and layouts. Only run if types and layouts of A, B, C, and D are the same.
         if (type_A == type_B and type_A == type_C and type_A == type_D and type_A == type_accum):
-            plan_np = cutlass.op.Conv2d(kind=self.conv_kind, element=type_A)
+            plan_np = cutlass_cppgen.op.Conv2d(kind=self.conv_kind, element=type_A)
             assert self._plans_equal(plan_np)
 
     def test_all(self):
@@ -218,8 +218,8 @@ class ConvEquivalenceTest(unittest.TestCase):
     pass
 
 type2alignment = {
-    cutlass.DataType.f16: 8,
-    cutlass.DataType.f32: 4
+    cutlass_cppgen.DataType.f16: 8,
+    cutlass_cppgen.DataType.f32: 4
 }
 
 def add_test(conv_kind, element_A, element_B, element_C, element_D, element_accumulator):
@@ -241,11 +241,11 @@ def add_test(conv_kind, element_A, element_B, element_C, element_D, element_accu
 
 for conv_kind in ["fprop", "wgrad", "dgrad"]:
     for types in [
-        [cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16],
-        [cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32],
-        [cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f16],
-        [cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32],
-        [cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32]
+        [cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16],
+        [cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f32],
+        [cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f16],
+        [cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32],
+        [cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32, cutlass_cppgen.DataType.f32]
     ]:
         add_test(conv_kind, types[0], types[1], types[2], types[3], types[4])
 
@@ -260,7 +260,7 @@ class Conv2dErrorTests(unittest.TestCase):
         """
         Tests case in which the alignment specified is unsupported
         """
-        plan = cutlass.op.Conv2d(kind="fprop", element=cutlass.DataType.f16)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=cutlass_cppgen.DataType.f16)
 
         with ExpectException(True, 'Alignment 3 is not supported for F16. The construction should fail.'):
             op = plan.construct(alignment_A=3, alignment_B=3, alignment_C=3)
@@ -269,7 +269,7 @@ class Conv2dErrorTests(unittest.TestCase):
         """
         Tests scenarios in which an invalid tile description is provided for a given CC
         """
-        plan = cutlass.op.Conv2d(kind="fprop", element=cutlass.DataType.f16)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=cutlass_cppgen.DataType.f16)
 
         td = plan.tile_descriptions()[0]
         td.threadblock_shape=[17, 32, 5]

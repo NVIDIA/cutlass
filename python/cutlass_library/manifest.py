@@ -526,44 +526,49 @@ class Manifest:
       if args.filter_by_cc in ['false', 'False', '0']:
         self.filter_by_cc = False
 
-    if args.operations == 'all':
-      self.operations_enabled = []
-    else:
-      operations_list = [
-        OperationKind.Gemm
-        , OperationKind.Conv2d
-        , OperationKind.Conv3d
-          , OperationKind.RankK
-          , OperationKind.Trmm
-          , OperationKind.Symm
-      ]
-      self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
+      if args.operations == 'all':
+        self.operations_enabled = []
+      else:
+        operations_list = [
+          OperationKind.Gemm
+          , OperationKind.Conv2d
+          , OperationKind.Conv3d
+            , OperationKind.RankK
+            , OperationKind.Trmm
+            , OperationKind.Symm
+        ]
+        self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
 
-    if args.kernels == 'all':
-      self.kernel_names = []
-    else:
-      self.kernel_names = [x for x in args.kernels.split(',') if x != '']
+      if args.kernels == 'all':
+        self.kernel_names = []
+      else:
+        self.kernel_names = [x for x in args.kernels.split(',') if x != '']
 
-    self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
-    self.exclude_kernel_names = [x for x in args.exclude_kernels.split(',') if x != '']
+      self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
+      self.exclude_kernel_names = [x for x in args.exclude_kernels.split(',') if x != '']
 
-    if args.kernel_filter_file is None:
-        self.kernel_filter_list = []
-    else:
-        self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
-        _LOGGER.debug("Using {filter_count} kernel filters from {filter_file}".format(
-            filter_count = len(self.kernel_filter_list),
-            filter_file = args.kernel_filter_file))
+      if args.kernel_filter_file is None:
+          self.kernel_filter_list = []
+      else:
+          self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
+          _LOGGER.debug("Using {filter_count} kernel filters from {filter_file}".format(
+              filter_count = len(self.kernel_filter_list),
+              filter_file = args.kernel_filter_file))
 
-    self.operation_count = 0
-    self.operations_by_name = {}
-    self.disable_full_archs_compilation = args.disable_full_archs_compilation
-    self.is_kernel_filter_set_to_all = args.instantiation_level == "max" and args.kernels != ''
-    self.instantiation_level = 0
-    try:
-        self.instantiation_level = int(args.instantiation_level)
-    except ValueError:
-        self.instantiation_level = 0
+      self.operation_count = 0
+      self.operations_by_name = {}
+      self.disable_full_archs_compilation = args.disable_full_archs_compilation
+      self.is_kernel_filter_set_to_all = args.instantiation_level == "max" and args.kernels != ''
+      self.instantiation_level = 0
+      try:
+          self.instantiation_level = int(args.instantiation_level)
+      except ValueError:
+          self.instantiation_level = 0
+
+  def add_kernel_filter(self, filter_str):
+    filter_re = re.compile(filter_str)
+
+    self.kernel_filter_list.append(filter_re)
 
   def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9992):
     # Non-negative integer which determines how many kernels are instantiated.

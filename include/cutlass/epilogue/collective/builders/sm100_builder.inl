@@ -50,9 +50,10 @@
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/operations.hpp" // detail::is_sfd_epilogue_v
 #include "cutlass/epilogue/fusion/sm100_callbacks_tma_warpspecialized.hpp"
+#include "cutlass/cutlass.h"
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
+#include CUDA_STD_HEADER(type_traits)
 #else
 #include <type_traits>
 #endif
@@ -1272,6 +1273,13 @@ private:
 
   static constexpr bool Is1SmMma = is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType>;
   static constexpr bool Is2SmMma = is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  static constexpr bool IsInterleavedComplex = is_complex<ElementAccumulator>::value;
+  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
+                                    is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  // Input transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
+  static constexpr bool IsInputTransformSchedule = IsInterleavedComplex || IsFastF32Schedule;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
 
@@ -1315,7 +1323,9 @@ private:
       static_assert(is_tuple_v<EpilogueTileType>, "Shape or Tile");
       return EpilogueTileType{};
     }
-    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp>) { // perf specialized case
+    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp> || not IsInputTransformSchedule) {
+      // Save register usage for sm103 blockscaled kernels and sm100 cpasync kernels
+      // to avoid register spilling.
       constexpr int EpiM = size<0>(CtaTileShape_MNK{});
       constexpr int EpiN = cute::min(_64{}, size<1>(CtaTileShape_MNK{}));
       return Shape<Int<EpiM>, Int<EpiN>>{};
@@ -1333,8 +1343,8 @@ private:
 
   static constexpr auto
   dispatch_policy() {
-    if constexpr (is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized1Sm> ||
-                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized2Sm>) {
+    if constexpr (std::is_base_of_v<PtrArrayNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                  std::is_base_of_v<PtrArrayNoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
       return Sm100PtrArrayNoSmemWarpSpecialized{};
     }
     else {
@@ -1347,7 +1357,12 @@ private:
   fusion_callbacks() {
     constexpr thread::ScaleType::Kind ScaleType =
       DisableSource ? thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
-    if constexpr (IsDefaultFusionOp<FusionOp>::value && not is_same_v<OpClass,arch::OpClassBlockScaledTensorOp>) {
+    if constexpr (IsDefaultFusionOp<FusionOp>::value &&\
+                  not is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && \
+                 (IsInputTransformSchedule || \
+                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized1Sm> || \
+                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized2Sm>)
+                 ) {
       // Legacy codepath using thread::LinearCombination, do not expect this to be stable
       return thread::LinearCombination<
                 ElementD, 1, ElementAccumulator, ElementCompute, ScaleType, FusionOp::RoundStyle, ElementC>({});

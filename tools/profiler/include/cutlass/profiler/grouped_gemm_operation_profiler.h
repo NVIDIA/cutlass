@@ -176,6 +176,8 @@ public:
 
     std::vector<uint8_t> host_workspace;
     DeviceAllocation device_workspace;
+
+    cudaStream_t stream;
   };
 
 private:

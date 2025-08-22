@@ -38,8 +38,8 @@ This file was ported from the C++ version in test/unit/conv/device/conv2d_proble
 
 from cutlass_library import ConvMode
 
-import cutlass
-from cutlass.shape import Conv2DProblemSize
+import cutlass_cppgen
+from cutlass_cppgen.shape import Conv2DProblemSize
 
 
 class TestbedConv2dProblemSizes:

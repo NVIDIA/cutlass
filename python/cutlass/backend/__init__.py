@@ -30,19 +30,19 @@
 #
 #################################################################################################
 
-from cutlass.backend.arguments import *
-from cutlass.backend.c_types import *
-from cutlass.backend.compiler import ArtifactManager
-from cutlass.backend.conv2d_operation import *
-from cutlass.backend.epilogue import *
-from cutlass.backend.frontend import *
-from cutlass.backend.gemm_operation import *
-from cutlass.backend.library import *
-from cutlass.backend.memory_manager import PoolMemoryManager, create_memory_pool
-from cutlass.backend.operation import *
-from cutlass.backend.reduction_operation import *
-from cutlass.backend.type_hint import *
-from cutlass.backend.utils import *
-from cutlass.backend.utils.device import device_cc
+from cutlass_cppgen.backend.arguments import *
+from cutlass_cppgen.backend.c_types import *
+from cutlass_cppgen.backend.compiler import ArtifactManager
+from cutlass_cppgen.backend.conv2d_operation import *
+from cutlass_cppgen.backend.epilogue import *
+from cutlass_cppgen.backend.frontend import *
+from cutlass_cppgen.backend.gemm_operation import *
+from cutlass_cppgen.backend.library import *
+from cutlass_cppgen.backend.memory_manager import PoolMemoryManager, create_memory_pool
+from cutlass_cppgen.backend.operation import *
+from cutlass_cppgen.backend.reduction_operation import *
+from cutlass_cppgen.backend.type_hint import *
+from cutlass_cppgen.backend.utils import *
+from cutlass_cppgen.backend.utils.device import device_cc
 
 compiler = ArtifactManager()

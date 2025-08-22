@@ -34,12 +34,12 @@
 Construct the epilogue visitor argument type
 """
 
-from cutlass.backend.c_types import visitor_factory
-from cutlass.backend.evt.ir import TopoVisitorNode
-from cutlass.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
-from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass_cppgen.backend.c_types import visitor_factory
+from cutlass_cppgen.backend.evt.ir import TopoVisitorNode
+from cutlass_cppgen.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
+from cutlass_cppgen.backend.evt.passes.pass_get_impl import PassGetImpl
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
 
 
 class PassGetArgumentType(EVTPassBase):

@@ -30,4 +30,4 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.frontend.python_ast import PythonASTFrontend
+from cutlass_cppgen.backend.evt.frontend.python_ast import PythonASTFrontend

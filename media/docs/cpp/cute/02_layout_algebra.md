@@ -153,7 +153,6 @@ For example,
 
 To compute the strides of the strided layout, the residues of the above operation are used to scale the strides of `A`. For instance, the last example `(3,6,2,8):(w,x,y,z) / 72` with strides `(w,x,y,z)` produces `(3*w,6*x,2*x,2*z)` as the strides of the strided layout.
 
-
 As you may have noticed, we can only divide shapes by certain values and get a sensible result. This is called the **stride divisibility condition** and is statically checked in CuTe when possible.
 
 2. Keep the first `s` elements of the newly strided `A` so that the result has a compatible shape with `B`. This can be computed by "modding out" the first `s` elements from the shape of `A` starting from the left.
@@ -175,11 +174,8 @@ Again, this operation must satisfy a **shape divisibility condition** to yield a
 From the above examples, we can construct the composition `(3,6,2,8):(w,x,y,z) o 16:9 = (1,2,2,4):(3*w,3*x,y,z)`.
 
 ---
-
 #### Example 1 -- Worked Example of Calculating a Composition
-
 We provide a more complex example of composition, where both operand layouts are multi-modal to illustrate the concepts introduced above.
-
 ```
 Functional composition, R := A o B
 R(c) := (A o B)(c) := A(B(c))
@@ -223,7 +219,6 @@ Putting this together and coalescing each mode, we obtain the result
 R = A o B
   = ((2, 2), 3): ((24, 2), 8)
 ```
-
 #### Example 2 -- Reshape a layout into a matrix
 
 `20:2  o  (5,4):(4,1)`. Composition formulation.

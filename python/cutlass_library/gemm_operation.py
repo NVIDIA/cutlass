@@ -341,7 +341,7 @@ class GemmOperation:
     Get the tile shape passed to the collective builder.
     On Blackwell, this is different than the operation.tile_description.tile_shape.
     """
-    is_sm100_kernel = (self.arch == 100)
+    is_sm100_kernel = (self.arch == 100 or self.arch == 103)
     if not is_sm100_kernel:
       return self.tile_description.tile_shape
 
@@ -995,6 +995,24 @@ ${compile_guard_end}
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
         if not is_no_smem_epilogue:
           epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized2Sm, grouped)]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs16Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs16Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
 

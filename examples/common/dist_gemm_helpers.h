@@ -39,14 +39,13 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #include <iostream>
 #include <cuda/atomic>
-#include <cuda/std/atomic>
+#include CUDA_STD_HEADER(atomic)
 
 #include "cute/layout.hpp"
 #include "cute/tensor.hpp"
-#include "cutlass/cutlass.h"
 #include "cutlass/cuda_host_adapter.hpp"
 
 

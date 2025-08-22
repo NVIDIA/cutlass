@@ -483,6 +483,7 @@ void LayoutAwareConvert(
                          decltype(dst_layout)>::convert(src_vm, dst_vm);
 }
 
+
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -618,6 +619,32 @@ public:
     }
   }
 
+  static constexpr uint32_t
+  compute_tma_transaction_bytes_extra_transform() {
+    if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
+      return 0;
+    }
+    else if constexpr (ModeHasScales) {
+      constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
+      static_assert(scale_tx_bytes % 128 == 0, "Each scale stage must be 128B aligned."); // required by TMA
+      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+        return scale_tx_bytes;
+      }
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        // Scale and zero share smem layout
+        constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
+        static_assert(zero_tx_bytes % 128 == 0, "Each zero stage must be 128B aligned."); // required by TMA
+        return scale_tx_bytes + zero_tx_bytes;
+      }
+      else {
+        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Type not handled in tma transaction bytes computation.");
+      }
+    }
+    else {
+      static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Type not handled in tma transaction bytes computation.");
+    }
+  }
+
   /// Utilities to copy A and extra inputs from smem to RF
   template <class SmemTiledCopyA,
             class TensorASmemView,
@@ -660,6 +687,43 @@ public:
       else {
         static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
       }
+    }
+  }
+
+  /// (Designed for separate transform pipeline in Blackwell)
+  /// Utilities to copy extra inputs from smem to RF
+  template <class... Ts>
+  CUTLASS_DEVICE
+  static void copy_scale_zeros_for_transform(
+    cute::tuple<Ts...> & partitioned_transform_extra_info,
+    int load2transform_consumer_index) {
+
+    if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
+      // nothing to do
+    }
+    else if constexpr (ModeHasScales) {
+      auto smem_tiled_copy_S = cute::get<0>(partitioned_transform_extra_info);
+      auto&& scales          = cute::get<1>(partitioned_transform_extra_info);
+      using ScaleType        = decltype(scales);
+      auto tSrS              = make_tensor(static_cast<ScaleType&&>(scales).data(), scales.layout());
+      auto tSsS              = cute::get<2>(partitioned_transform_extra_info);
+      copy(smem_tiled_copy_S, tSsS(_,_,_,_,load2transform_consumer_index), tSrS);
+
+      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+        // Nothing extra to do
+      } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        auto&& zeros           = cute::get<3>(partitioned_transform_extra_info);
+        using ZeroType         = decltype(zeros);
+        auto tZrZ              = make_tensor(static_cast<ZeroType&&>(zeros).data(), zeros.layout());
+        auto tZsZ              = cute::get<4>(partitioned_transform_extra_info);
+        copy(smem_tiled_copy_S, tZsZ(_,_,_,_,load2transform_consumer_index), tZrZ);
+
+      } else {
+        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
+      }
+    }
+    else {
+      static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
     }
   }
 
@@ -902,6 +966,115 @@ public:
     }
   }
 
+  /// (Designed for separate transform pipeline in Blackwell)
+  /// Utilities to dequantize A.
+  template <class EngineIn,
+            class EngineOut,
+            class LayoutIn,
+            class LayoutOut,
+            class... Ts>
+  CUTLASS_DEVICE
+  static void dequantize_A_kblock_for_transform(
+    Tensor<EngineIn, LayoutIn> const& tArA,
+    Tensor<EngineOut, LayoutOut>& tArACompute,
+    cute::tuple<Ts...> const& partitioned_extra_info,
+    int const k_block) {
+
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
+
+    auto src = tArA(_, _, _, k_block);
+    auto dst = tArACompute(_, _, _, k_block);
+    constexpr int num_elements = decltype(size(src))::value;
+
+    constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+    using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+    using SrcArray = cutlass::Array<SrcType, pack>;
+    using DstArray = cutlass::Array<DstType, pack>;
+    constexpr int DstElementsPerReg = 32 / sizeof_bits_v<DstType>;
+    using RegArray = cutlass::AlignedArray<uint32_t, pack / DstElementsPerReg, sizeof(DstArray)>;
+
+    auto src_arr = recast<SrcArray>(src);
+    auto dst_arr = recast<DstArray>(dst);
+
+    Tensor src_vm = cute::group_modes<1,-1>(cute::zipped_divide(src, pack));
+    Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
+
+    cute::transform(src_arr, dst_arr, Converter::convert);
+    
+    if constexpr (ModeHasScales) {
+
+      auto const& scales = cute::get<1>(partitioned_extra_info)(_,_,_,k_block);
+
+      CUTE_STATIC_ASSERT_V(size(src) == size(scales));
+
+      if constexpr (is_same_v<DstType, ElementScale>) {
+
+        using ScaleArray = cutlass::Array<ElementScale, pack>;
+        auto scale_arr = recast<ScaleArray>(filter_zeros(scales));
+
+        if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
+          Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
+          Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
+
+          for (int i = 0; i < size<1>(dst_vm); ++i){
+            auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
+            auto&& scale_reg = cute::recast<RegArray>(scales_vm(_,i))(0);
+            CUTLASS_PRAGMA_UNROLL
+            for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
+              __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+              bf16x2_val = __hmul2(bf16x2_val,
+                                  reinterpret_cast<const __nv_bfloat162&>(scale_reg[ii]));
+            }
+          }
+        }
+        else{
+          cute::transform(dst_arr, scale_arr, dst_arr, cute::multiplies{});
+        }
+      }
+      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+         // Do Nothing
+      }
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        static_assert(is_same_v<ElementScale, ElementZero>, "ElementScale and ElementZero must be the same.");
+
+        auto const& zeros = cute::get<3>(partitioned_extra_info)(_,_,_,k_block);
+        CUTE_STATIC_ASSERT_V(size(src) == size(zeros));
+
+        if constexpr (is_same_v<DstType, ElementZero>) {
+          using ZeroArray = cutlass::Array<ElementZero, pack>;
+          auto zero_arr = recast<ZeroArray>(filter_zeros(zeros));
+
+        if constexpr (is_same_v<DstType, cutlass::bfloat16_t>) {
+          Tensor zeros_vm = cute::group_modes<1,-1>(cute::zipped_divide(zeros, pack));
+
+          for (int i = 0; i < size<1>(dst_vm); ++i){
+            auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
+            auto&& zero_reg = cute::recast<RegArray>(zeros_vm(_,i))(0);
+            CUTLASS_PRAGMA_UNROLL
+            for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
+              __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+              bf16x2_val = __hadd2(bf16x2_val,
+                                  reinterpret_cast<const __nv_bfloat162&>(zero_reg[ii]));
+            }
+          }
+        }
+        else{
+          cute::transform(dst_arr, zero_arr, dst_arr, cute::plus{});
+         }
+       }
+     }
+     else {
+        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for input partitioning.");
+     }
+  }
+}
+
 
   /// Utilities for any additional inputs inside of the TMA load
   template <
@@ -988,6 +1161,65 @@ public:
         Tensor tCsZ = mma_thread_slice.partition_A(sZ);
         Tensor tCrZ = make_tensor<ElementZero>(mma_thread_slice.partition_fragment_A(sZ(_,_,Int<0>{})).layout());
         return cute::make_tuple(tCsS, tCrS, tCsZ, tCrZ);
+      }
+      else {
+        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
+      }
+    }
+    else {
+      static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
+    }
+  }
+
+  template <
+    class TiledMma,
+    class TiledCopy,
+    class TensorStorage
+  >
+  CUTLASS_DEVICE
+  static auto partition_extra_transform_info(
+    TiledMma const& tiled_mma,
+    TiledCopy const& smem_tiled_copy_S,
+    TensorStorage& shared_storage) {
+
+    if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
+      // nothing to do
+      return cute::make_tuple();
+    }
+    else if constexpr (ModeHasScales) {
+      ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
+      auto smem_thr_copy_S = smem_tiled_copy_S.get_slice(threadIdx.x % 128);
+
+      Tensor sS = make_tensor(make_smem_ptr(shared_storage.input.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_SCALE_K,PIPE)
+      Tensor tCsS = cta_mma.partition_A(sS);
+      Tensor tSsS = smem_thr_copy_S.partition_S(tCsS);
+      Tensor tSrS = make_tensor<ElementScale>(tSsS(_,_,_,_,0).shape());
+#if 0
+      if(cute::thread(128, 0)){
+        print("sS: ");print(sS);print("\n");
+        print("tSsS: ");print(tSsS);print("\n");
+        print("tSrS: ");print(tSrS);print("\n");
+      }
+#endif
+      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+        return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS);
+      }
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        Tensor sZ = make_tensor(make_smem_ptr(shared_storage.input.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
+        Tensor tCsZ = cta_mma.partition_A(sZ);
+        Tensor tZsZ = smem_thr_copy_S.partition_S(tCsZ);
+        Tensor tZrZ = make_tensor<ElementZero>(tZsZ(_,_,_,_,0).shape());
+#if 0
+        if(cute::thread(128, 0)){
+          print("sS: ");print(sS);print("\n");
+          print("tSsS: ");print(tSsS);print("\n");
+          print("tSrS: ");print(tSrS);print("\n");
+          print("sZ: ");print(sZ);print("\n");
+          print("tZsZ: ");print(tZsZ);print("\n");
+          print("tZrZ: ");print(tZrZ);print("\n");
+        }
+#endif
+        return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS, tZrZ, tZsZ);
       }
       else {
         static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in A -> RF path.");
