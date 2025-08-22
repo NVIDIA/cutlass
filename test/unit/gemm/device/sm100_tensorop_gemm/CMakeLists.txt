@@ -44,6 +44,7 @@ cutlass_test_unit_gemm_device_add_executable(
 
   f16_f16_void_f32.cu
   f16_f16_f16_f16_fusion.cu
+  f16_f16_void_f32_narrow_mma_n.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
@@ -54,6 +55,7 @@ cutlass_test_unit_gemm_device_add_executable(
 
   f8_f8_void_f32.cu
   f8_f8_f16_f8_fusion.cu
+  f8_f8_void_bf16_narrow_mma_n.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(

@@ -871,11 +871,11 @@ struct Sm90ScalarBroadcastPtrArray {
   template <class... Args>
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
-    // Get the scalar for batched broadcast
-    if (size<2>(params_ptr->dScalar[0]) != 0) {
-      auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
-      update_scalar(l_coord);
-    }
+    // Always refresh scalar with the current group index so per-group
+    // alpha/beta values (provided through pointer arrays) are loaded
+    // correctly even when the L-stride is zero.
+    auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
+    update_scalar(l_coord);
 
     return EmptyProducerLoadCallbacks{};
   }
@@ -904,12 +904,8 @@ struct Sm90ScalarBroadcastPtrArray {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-
-    // Get the scalar for batched broadcast
-    if (get<2>(params_ptr->dScalar[0]) != 0) {
-      auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
-      update_scalar(l_coord);
-    }
+    auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
+    update_scalar(l_coord);
 
     return ConsumerStoreCallbacks(scalar);
   }
@@ -920,13 +916,15 @@ private:
     int l_offset = l_coord * size<2>(params_ptr->dScalar[0]);
 
     if (params_ptr->scalar_ptr_arrays[0] != nullptr) {
-      scalar = *(params_ptr->scalar_ptr_arrays[0][l_offset]);
+      // Pointer-array variant: each entry already points to the scalar of a group.
+      scalar = *(params_ptr->scalar_ptr_arrays[0][l_coord]);
     }
     else if (params_ptr->scalar_ptrs[0] != nullptr) {
+      // Strided pointer variant.
       scalar = params_ptr->scalar_ptrs[0][l_offset];
     }
     else {
-      // batch stride is ignored for nullptr fallback
+      // Literal fallback.
       scalar = params_ptr->scalars[0];
     }
 
@@ -936,15 +934,13 @@ private:
     for (int i = 1; i < BroadcastCount; ++i) {
 
       if (params_ptr->scalar_ptr_arrays[i] != nullptr) {
-        int rest_l_offset = l_coord * size<2>(params_ptr->dScalar[i]);
-        scalar = reduction_fn(scalar, *(params_ptr->scalar_ptr_arrays[i][rest_l_offset]));
+        scalar = reduction_fn(scalar, *(params_ptr->scalar_ptr_arrays[i][l_coord]));
       }
-      if (params_ptr->scalar_ptrs[i] != nullptr) {
+      else if (params_ptr->scalar_ptrs[i] != nullptr) {
         int rest_l_offset = l_coord * size<2>(params_ptr->dScalar[i]);
         scalar = reduction_fn(scalar, params_ptr->scalar_ptrs[i][rest_l_offset]);
       }
       else {
-        // batch stride is ignored for nullptr fallback
         scalar = reduction_fn(scalar, params_ptr->scalars[i]);
       }
     }

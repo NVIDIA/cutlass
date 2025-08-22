@@ -30,13 +30,13 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.passes.graph_drawer import EVTGraphDrawer
-from cutlass.backend.evt.passes.pass_argument_type import PassGetArgumentType
-from cutlass.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
-from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
-from cutlass.backend.evt.passes.pass_layout_elimination import PassLayoutManipulateElimination
-from cutlass.backend.evt.passes.pass_manager import EVTPassManager
-from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
-from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize
+from cutlass_cppgen.backend.evt.passes.graph_drawer import EVTGraphDrawer
+from cutlass_cppgen.backend.evt.passes.pass_argument_type import PassGetArgumentType
+from cutlass_cppgen.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
+from cutlass_cppgen.backend.evt.passes.pass_get_impl import PassGetImpl
+from cutlass_cppgen.backend.evt.passes.pass_fix_element_d import PassFixElementD
+from cutlass_cppgen.backend.evt.passes.pass_layout_elimination import PassLayoutManipulateElimination
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassManager
+from cutlass_cppgen.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
+from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass_cppgen.backend.evt.passes.smem_size_calculator import GetSmemSize

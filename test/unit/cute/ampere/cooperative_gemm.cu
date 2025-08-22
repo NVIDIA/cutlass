@@ -609,6 +609,8 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e5m2f32_MMA) {
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
 
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+
 TEST(SM89_CuTe_Ada, CooperativeGemm_e4m3e4m3f16_MMA) {
   using TA = cutlass::float_e4m3_t;
   using TB = cutlass::float_e4m3_t;
@@ -680,3 +682,5 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e5m2f16_MMA) {
 
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
+
+#endif

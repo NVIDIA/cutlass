@@ -67,7 +67,7 @@ struct MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
 };
 
 template <>
-struct MMA_Traits<SM89_16x8x32_F32E4M3E5M2F32_TN>
+struct MMA_Traits<SM89_16x8x32_F32E4M3E5M2F32_TN> 
      : MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
   using ValTypeD = float;
   using ValTypeA = float_e4m3_t;
@@ -128,6 +128,5 @@ struct MMA_Traits<SM89_16x8x32_F16E5M2E4M3F16_TN>
   using ValTypeB = cutlass::float_e4m3_t;
   using ValTypeC = cutlass::half_t;
 };
-
 
 } // end namespace cute

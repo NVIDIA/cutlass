@@ -38,8 +38,8 @@ import ctypes
 
 from cutlass_library import DataTypeSize, OperationKind, SharedMemPerCC
 
-import cutlass
-from cutlass.backend.library import TileDescription
+import cutlass_cppgen
+from cutlass_cppgen.backend.library import TileDescription
 
 
 def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: OperationKind) -> int:
@@ -82,8 +82,8 @@ def valid_stage_count(
     cc: int,
     kernel_cc: int,
     td: TileDescription,
-    element_C: cutlass.DataType = None,
-    element_D: cutlass.DataType = None,
+    element_C: cutlass_cppgen.DataType = None,
+    element_D: cutlass_cppgen.DataType = None,
     verbose: bool = True) -> tuple:
     """
     Checks whether a device with `cc` supports the number of stages within `tile_description`, both
@@ -96,9 +96,9 @@ def valid_stage_count(
     :param td: tile description to check
     :type td: TileDescription
     :param element_C: data type of operand C
-    :type element_C: cutlass.DataType
+    :type element_C: cutlass_cppgen.DataType
     :param element_D: data type of operand D
-    :type element_D: cutlass.DataType
+    :type element_D: cutlass_cppgen.DataType
     :param verbose: whether to log warnings
     :type verbose: bool
 
@@ -112,7 +112,7 @@ def valid_stage_count(
             # determines the stage count to use. Thus, all settings are valid in these scenarios.
             return (True, "")
         elif verbose:
-            cutlass.logger.warning(
+            cutlass_cppgen.logger.warning(
                 "Setting an explicit stage count for SM90 kernels currently may "
                 "result in compilation errors if the combination of tile shape, "
                 "stage count, and shared memory requirement of the epilogue exceeds "
@@ -188,9 +188,9 @@ def valid_cluster_shape(cc: int, cluster_shape: list) -> tuple:
 
 def valid_schedule(
     cc: int,
-    kernel_schedule: cutlass.KernelScheduleType,
-    epilogue_schedule: cutlass.EpilogueScheduleType,
-    tile_scheduler: cutlass.TileSchedulerType) -> tuple:
+    kernel_schedule: cutlass_cppgen.KernelScheduleType,
+    epilogue_schedule: cutlass_cppgen.EpilogueScheduleType,
+    tile_scheduler: cutlass_cppgen.TileSchedulerType) -> tuple:
     """
     Checks that the kernel and epilogue schedules passed in are a valid combination for
     a device of compute capability ``cc``.
@@ -198,19 +198,19 @@ def valid_schedule(
     :param cc: compute capability of device in question
     :type cc: int
     :param kernel_schedule: kernel schedule type
-    :type kernel_schedule: cutlass.KernelScheduleType
+    :type kernel_schedule: cutlass_cppgen.KernelScheduleType
     :param epilogue_schedule: epilogue schedule type
-    :type epilogue_schedule: cutlass.EpilogueScheduleType
+    :type epilogue_schedule: cutlass_cppgen.EpilogueScheduleType
     :param tile_scheduler: tile scheduler type
-    :type tile_scheduler: cutlass.TileSchedulerType
+    :type tile_scheduler: cutlass_cppgen.TileSchedulerType
 
     :return: tuple with the first element indicating whether the provided schedules are
              valid for the provided device and the second element being an error message
     :rtype: tuple
     """
-    kernel_auto = (kernel_schedule == cutlass.KernelScheduleType.ScheduleAuto)
-    epilogue_auto = (epilogue_schedule == cutlass.EpilogueScheduleType.ScheduleAuto)
-    tile_scheduler_default = (tile_scheduler == cutlass.TileSchedulerType.Default)
+    kernel_auto = (kernel_schedule == cutlass_cppgen.KernelScheduleType.ScheduleAuto)
+    epilogue_auto = (epilogue_schedule == cutlass_cppgen.EpilogueScheduleType.ScheduleAuto)
+    tile_scheduler_default = (tile_scheduler == cutlass_cppgen.TileSchedulerType.Default)
     if cc < 90 and not (kernel_auto and epilogue_auto and tile_scheduler_default):
         return (False, "Non-default schedules are only supported on SM90 and beyond")
 
@@ -218,9 +218,9 @@ def valid_schedule(
         return (False, "Kernel and epilogue schedules must either both be auto or neither be auto")
 
     if not tile_scheduler_default:
-        cooperative_kernels = [cutlass.KernelScheduleType.TmaWarpSpecializedCooperative, 
-                               cutlass.KernelScheduleType.CpAsyncWarpSpecializedCooperative]
-        if (tile_scheduler == cutlass.TileSchedulerType.StreamK) and (kernel_schedule not in cooperative_kernels):
+        cooperative_kernels = [cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedCooperative, 
+                               cutlass_cppgen.KernelScheduleType.CpAsyncWarpSpecializedCooperative]
+        if (tile_scheduler == cutlass_cppgen.TileSchedulerType.StreamK) and (kernel_schedule not in cooperative_kernels):
             return (False, "Stream-K tile scheduler is currently only supported with the cooperative kernel schedule")
     return (True, "")
 

@@ -44,14 +44,14 @@ from cutlass_library import (
     SharedMemPerCC
 )
 
-import cutlass
-from cutlass import get_option_registry
-from cutlass.backend.evt import EpilogueFunctorVisitor
-from cutlass.backend.utils.device import device_cc
-from cutlass.epilogue import get_activations, get_activation_epilogue, identity
-from cutlass.library_defaults import KernelsForDataType, _generator_ccs
-from cutlass.swizzle import get_swizzling_functors
-from cutlass.utils import datatypes, check
+import cutlass_cppgen
+from cutlass_cppgen import get_option_registry
+from cutlass_cppgen.backend.evt import EpilogueFunctorVisitor
+from cutlass_cppgen.backend.utils.device import device_cc
+from cutlass_cppgen.epilogue import get_activations, get_activation_epilogue, identity
+from cutlass_cppgen.library_defaults import KernelsForDataType, _generator_ccs
+from cutlass_cppgen.swizzle import get_swizzling_functors
+from cutlass_cppgen.utils import datatypes, check
 
 
 class OperationBase:
@@ -205,19 +205,19 @@ class OperationBase:
         return tensor
 
     @property
-    def opclass(self) -> cutlass.OpcodeClass:
+    def opclass(self) -> cutlass_cppgen.OpcodeClass:
         """
         Returns the opcode class currently in use
 
         :return: opcode class currently in use
-        :rtype: cutlass.OpcodeClass
+        :rtype: cutlass_cppgen.OpcodeClass
         """
         return self.op_class
 
     @opclass.setter
-    def opclass(self, oc: cutlass.OpcodeClass):
+    def opclass(self, oc: cutlass_cppgen.OpcodeClass):
         if isinstance(oc, str):
-            oc = datatypes.getattr_enum(cutlass.OpcodeClass, oc)
+            oc = datatypes.getattr_enum(cutlass_cppgen.OpcodeClass, oc)
         if oc in self.possible_op_classes:
             self.op_class = oc
         else:
@@ -236,25 +236,25 @@ class OperationBase:
             self.epilogue_functor = self._reset_epilogue_functor_alignment(self._elements_per_access(), self.epilogue_functor)
 
     @property
-    def math_operation(self) -> cutlass.MathOperation:
+    def math_operation(self) -> cutlass_cppgen.MathOperation:
         """
         Returns the math operation currently in use
 
         :return: math operation currently in use
-        :rtype: cutlass.MathOperation
+        :rtype: cutlass_cppgen.MathOperation
         """
         return self._math_operation
 
     @math_operation.setter
-    def math_operation(self, mo: cutlass.MathOperation):
+    def math_operation(self, mo: cutlass_cppgen.MathOperation):
         if isinstance(mo, str):
-            mo = datatypes.getattr_enum(cutlass.MathOperation, mo)
+            mo = datatypes.getattr_enum(cutlass_cppgen.MathOperation, mo)
 
         if not self.specified_kernel_cc:
             if self.current_cc == 90:
                 # CUTLASS 3.0 kernels do not use different math operations. If one is specified, we
                 # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
-                cutlass.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
+                cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
                 self._reset_options(80)
                 self._reset_operations(reset_epilogue=False)
         elif self.current_cc == 90:
@@ -266,7 +266,7 @@ class OperationBase:
         self._reset_operations()
 
     def _elements_per_access(self):
-        if self.op_class == cutlass.OpcodeClass.Simt:
+        if self.op_class == cutlass_cppgen.OpcodeClass.Simt:
             return 1
         elif self._element_c != DataType.void:
             return 128 // DataTypeSize[self._element_c]
@@ -286,7 +286,7 @@ class OperationBase:
             if self.current_cc == 90 and activation != identity:
                 # CUTLASS 3.0 kernels in Python currently only support identity activation. If one requests a non-identity activation,
                 # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
-                cutlass.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
+                cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
                 if self._element_c != self._element_d:
                     raise Exception("CUTLASS 2.x kernels require element C to be the same as element D")
                 self._reset_options(80)
@@ -361,7 +361,7 @@ class OperationBase:
         """
         if isinstance(act, tuple):
             if isinstance(act[0], str):
-                act_fn = getattr(cutlass.backend.epilogue, act[0])
+                act_fn = getattr(cutlass_cppgen.backend.epilogue, act[0])
             else:
                 act_fn = act[0]
             self._reset_epilogue_functor_activation(act_fn)
@@ -369,7 +369,7 @@ class OperationBase:
             self._activation = act[0]
         else:
             if isinstance(act, str):
-                act = getattr(cutlass.backend.epilogue, act)
+                act = getattr(cutlass_cppgen.backend.epilogue, act)
             self._reset_epilogue_functor_activation(act)
             self._activation = act
 
@@ -401,8 +401,8 @@ class OperationBase:
             td = datatypes.td_from_profiler_op(operation)
             # Filter invalid epilogue schedules
             if td.epilogue_schedule not in [
-                cutlass.EpilogueScheduleType.TmaWarpSpecialized,
-                cutlass.EpilogueScheduleType.TmaWarpSpecializedCooperative]:
+                cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized,
+                cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecializedCooperative]:
                 continue
             epilogue_smem_bytes = self.epilogue_functor.get_smem_size(td)
 
@@ -427,4 +427,4 @@ class OperationBase:
         Steps that must be taken before caling `plan.run()`
         """
         # Initialize the memory pool if, if not already done
-        cutlass.get_memory_pool()
+        cutlass_cppgen.get_memory_pool()

@@ -46,7 +46,7 @@ set(TEST_SMALL_LARGE_GROUP --m=128 --n=128 --groups=50 --iterations=0)          
 set(TEST_RANDOM_PERF --iterations=10)                                               # Random problem sizes
 set(TEST_RANDOM_PERF_LARGE_GROUP --groups=50 --iterations=10)                       # Random problem sizes
 
-if (CUTLASS_NVCC_ARCHS MATCHES 120a)
+if (CUTLASS_NVCC_ARCHS MATCHES "120a|121a")
 cutlass_example_add_executable(
   79a_blackwell_geforce_nvfp4_bf16_gemm
   79a_blackwell_geforce_nvfp4_bf16_gemm.cu

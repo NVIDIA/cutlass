@@ -43,6 +43,51 @@ namespace cute {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
+// Global Memory Load and Store PTX definitions
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct SM100_LOAD_256bit_CACHE_NOALLOCATION
+{
+  using SRegisters = uint256_t[1];
+  using DRegisters = uint32_t[8];
+
+  CUTE_HOST_DEVICE static void
+  copy(uint256_t const& gmem_addr,
+       uint32_t& dst0, uint32_t& dst1, uint32_t& dst2, uint32_t& dst3,
+       uint32_t& dst4, uint32_t& dst5, uint32_t& dst6, uint32_t& dst7)
+  {
+    #if defined(CUTE_ARCH_LOAD256_SM100A_ENABLED)
+      asm volatile("ld.global.L1::no_allocate.v8.f32 {%0, %1, %2, %3, %4, %5, %6, %7}, [%8];\n"
+              : "=r"(dst0), "=r"(dst1), "=r"(dst2), "=r"(dst3), "=r"(dst4), "=r"(dst5), "=r"(dst6), "=r"(dst7)
+              : "l"(&gmem_addr) );
+    #else
+      CUTE_INVALID_CONTROL_PATH("Trying to use LOAD.256 without CUTE_ARCH_LOAD256_SM100A_ENABLED.");
+    #endif
+  }
+};
+
+struct SM100_STORE_256bit_CACHE_NOALLOCATION
+{
+  using SRegisters = uint32_t[8];
+  using DRegisters = uint256_t[1];
+
+  CUTE_HOST_DEVICE static void
+  copy(uint32_t const& src0, uint32_t const& src1, uint32_t const& src2, uint32_t const& src3,
+       uint32_t const& src4, uint32_t const& src5, uint32_t const& src6, uint32_t const& src7,
+       uint256_t& gmem_addr)
+  {
+    #if defined(CUTE_ARCH_STORE256_SM100A_ENABLED)
+      asm volatile("st.global.L1::no_allocate.v8.f32 [%0], {%1, %2, %3, %4, %5, %6, %7, %8};\n"
+              :: "l"(&gmem_addr), "r"(src0), "r"(src1), "r"(src2), "r"(src3), "r"(src4), "r"(src5), "r"(src6), "r"(src7));
+    #else
+      CUTE_INVALID_CONTROL_PATH("Trying to use stg.256 without CUTE_ARCH_STORE256_SM100A_ENABLED.");
+    #endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
 // LDSM PTX definitions
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////

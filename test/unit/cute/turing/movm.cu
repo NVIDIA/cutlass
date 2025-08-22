@@ -44,7 +44,7 @@ __global__ void
 movm_test_device(uint16_t* g_in, uint16_t* g_out)
 {
   int tid = threadIdx.x;
-  
+
   // load input gmem -> register
   uint32_t reg = reinterpret_cast<uint32_t*>(g_in)[tid];
 
@@ -128,7 +128,7 @@ TEST(SM75_CuTe_Turing, Movm)
   //
   // CuTe MOVM
   //
-  
+
   {
   thrust::device_vector<uint16_t> d_out(count);
 

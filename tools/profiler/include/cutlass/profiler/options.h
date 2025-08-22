@@ -346,6 +346,10 @@ public:
   /// Vector of operation name substrings
   std::vector<std::string> operation_names;
 
+  /// Map of problems to run for each operation
+  /// [operation_name] -> vector of problems, each problem specified as a vector of [argument name] -> [argument value]
+  std::unordered_map<std::string, std::vector<CommandLine>> operation_problems;
+
   /// Vector of operation name substrings
   std::vector<std::string> excluded_operation_names;
 

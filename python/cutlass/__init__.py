@@ -119,8 +119,8 @@ def set_log_level(level: int):
 
 set_log_level(logging.ERROR)
 
-from cutlass.library_defaults import OptionRegistry
-from cutlass.backend.utils.device import device_cc
+from cutlass_cppgen.library_defaults import OptionRegistry
+from cutlass_cppgen.backend.utils.device import device_cc
 
 this._option_registry = None
 def get_option_registry():
@@ -135,14 +135,14 @@ def get_option_registry():
 
 this.__version__ = '4.1.0'
 
-from cutlass.backend import create_memory_pool
-from cutlass.emit.pytorch import pytorch
-from cutlass.op.gemm import Gemm
-from cutlass.op.conv import Conv2d, Conv2dFprop, Conv2dDgrad, Conv2dWgrad
-from cutlass.op.gemm_grouped import GroupedGemm
-from cutlass.op.op import OperationBase
-from cutlass.backend.evt.ir.tensor import Tensor
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.backend import create_memory_pool
+from cutlass_cppgen.emit.pytorch import pytorch
+from cutlass_cppgen.op.gemm import Gemm
+from cutlass_cppgen.op.conv import Conv2d, Conv2dFprop, Conv2dDgrad, Conv2dWgrad
+from cutlass_cppgen.op.gemm_grouped import GroupedGemm
+from cutlass_cppgen.op.op import OperationBase
+from cutlass_cppgen.backend.evt.ir.tensor import Tensor
+from cutlass_cppgen.utils.lazy_import import lazy_import
 
 
 this.memory_pool = None

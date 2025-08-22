@@ -49,7 +49,6 @@ from . import rank_2k_operation
 from . import rank_k_operation
 from . import symm_operation
 from . import trmm_operation
-
 # Make enum types from library.py accessible via cutlass_library.*
 from .library import *
 

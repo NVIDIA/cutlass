@@ -65,7 +65,12 @@ endfunction()
 
 if(CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS)
 
-    set(PROFILER_ARCH_LIST 100a 100f 101a 101f 120a 120f)
+    set(PROFILER_ARCH_LIST 100a 100f 103a 120a 120f 121a)
+    if (CUDA_VERSION VERSION_LESS 13.0)
+      list(APPEND PROFILER_ARCH_LIST 101a 101f)
+    else()
+      list(APPEND PROFILER_ARCH_LIST 110a 110f)
+    endif()
     foreach(ARCH IN LISTS CUTLASS_NVCC_ARCHS)
       if(NOT (ARCH IN_LIST PROFILER_ARCH_LIST))
         message(FATAL_ERROR "Only SM${PROFILER_ARCH_LIST} compute capabilities are supported with profiler-based unit tests")

@@ -407,7 +407,7 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
 
 def is_tile_desc_compatible_with_cooperative(tile_description):
     # Cooperative kernels require a minimum CTA-M of 128
-    return tile_description.threadblock_shape[0] >= 128
+    return tile_description.threadblock_shape[0] % 128 == 0
 
 
 def can_tile_desc_use_shmem_in_epilogue(tile_description, data_types):

@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.1.0
+# CUTLASS 4.2.0
 
-_CUTLASS 4.1.0 - July 2025_
+_CUTLASS 4.2.0 - Aug 2025_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -43,40 +43,52 @@ To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/quick_start.html).
 
-# What's New in CUTLASS 4.1
+# What's New in CUTLASS 4.2
 
 ## CuTe DSL
-* Add aarch64 support, you can now pip install `nvidia-cutlass-dsl` on GB200 systems!
-* More examples demonstrating how to use CuTe DSL to write peak-performance kernels
-    - [Blackwell Mamba2 SSD](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py)
-    - [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py)
-* API updates
-    - Please refer to [FUNCTIONALITY.md](https://github.com/NVIDIA/cutlass/blob/main/FUNCTIONALITY.md) for details
+* We will likely be skipping 4.2.dev release and directly target 4.2.
+* CuTeDSL version remains at 4.1.0 till then.
 
 ## CUTLASS C++
+* Add K major scale factor support for Hopper SM90 blockwise kernels.
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
-    - Add variable sequence length support for FMHA Backward kernel.
-    - Add varlen test support to Backward runner.
-    - Codes support empty batch sequences.
-* Replace `subbyte_iterator` with `cute::recast_ptr` when constructing logical iterators/arrays.
+    - Add fused reduction kernel support for cutlass MLA.
+    - Fix an issue where `get_unmasked_trip_count` may return a negative value.
+    - Fix an issue where mbarriers are initialized with a zero arrival count.
+* Add Blackwell SM120 blockwise gemm kernel example: [example 87](https://github.com/NVIDIA/cutlass/tree/main/87_blackwell_geforce_gemm_blockwise/).
+* Support for Blackwell SM100 cpasync kernel.
+    - Collective mainloop codes: [cpasync mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm100_mma_cpasync_warpspecialized.hpp).
+    - Kernel codes: [cpasync kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm100_gemm_cpasync_warpspecialized.hpp).
+* Support for Blackwell SM121 kernels for DGX Spark GPUs.
+    - Share the major codes with Blackwell SM120 kernels.
+* Support for Blackwell SM100 legacy mixed input GEMM kernels.
+    - Collective mainloop codes: [Mixed input mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm100_mma_warpspecialized_mixed_input.hpp).
+    - Kernel codes: [Mixed input kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized_mixed_input_transform.hpp).
+    - Example codes: [example 86](https://github.com/NVIDIA/cutlass/tree/main/examples/86_blackwell_mixed_dtype_gemm/).
+* Support for Blackwell SM100 fp4 gemv kernels.
+    - Kernel codes: [Gemv kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/gemv_blockscaled.h).
+    - Example codes: [example 91](https://github.com/NVIDIA/cutlass/tree/main/examples/91_fp4_gemv/)
+* From CUDA 13.0, the Blackwell SM101 for Thor GPUs is renamed to SM110.
+    - For CUDA toolkit version < 13.0, SM101 is still used for Thor GPUs.
+    - For CUDA toolkit version >= 13.0, SM110 is used for Thor GPUs and SM101 is no longer valid.
 * CuTe changes:
-    - Rewrite ArithTuple and ScaledBasis for robustness and clarity.
-    - Remove buggy and kludgy `get_layoutA|B|C_MN` and friends from Atoms/TiledX.
-    - Factor out `print_latex` and friends and rewrite.
-    - Factor out `print_svg` and friends and rewrite.
-* Support Blackwell SM100 SIMT packed fp32x2 kernels.
-* Support residual add for implicit gemm kernels.
-* Various fixes for CUTLASS C++ Python interface's EVT tracer:
-    - Add verifier for sm90 to report the invalid input.
-    - When adding an edge to the graph, if the edge already exists, add an identity compute node to avoid having multiple parallel edges.
-    - Register operations of tanh, sigmoid, exp, gelu to the python ast frontend.
-    - Replace the NotImplemented Error by packing all nodes into a single topological visitor node as a fallback.
-* Fix profiler bugs in exhaustive perf search.
-    - Fix incorrect cluster shape output issue when doing exhaustive search.
-    - Fix a bug in profiler grouped GEMM for setting tile scheduler swizzles, cluster shapes, and raster orders.
-* Fix some profiler issues.
-    - Complete the reference for Blackwell blockwise gemm kernels.
-    - Fix incorrect regex logic for L1 test.
+    - Fix inaccurate GridDim calculation under [CuTe tutorial](https://github.com/NVIDIA/cutlass/tree/main/examples/cute/tutorial/blackwell/).
+    - Add [movmatrix](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-movmatrix) support.
+    - Fix smallest MMA-N allowed for Blackwell fp8 and fp16 gemm kernels.
+    - Support fp16 accmulator for sm89 fp8 mma.
+    - Shorten `nullspace` implementation.
+    - Isolate and comment on `cosize` hacks.
+    - Important documentation correction: `E<0,1> == 1@0@1`.
+* Add support for heuristics-based kernel filtering and autotuning using `nvidia-matmul-heuristics`.
+    - Details please refer to [heuristics doc](https://github.com/NVIDIA/cutlass/tree/main/media/docs/cpp/heuristics.md).
+* Rename legacy Python API package from `cutlass` to `cutlass_cppgen`.
+* Fix some profiler issues:
+    - Modify default cluster callback values to none 0 to avoid profiler failure when these values are not set in command line.
+    - Fix some no output and timeout issues.
+* Add following unit tests:
+    - [fp16 accmulator for sm89 fp8 mma](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/ampere/cooperative_gemm.cu)
+    - [movmatrix test](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/turing/movm.cu)
+    - [fp8 narrow mma n](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32_narrow_mma_n.cu) and [fp16 narrow mma n](test/unit/gemm/device/sm100_tensorop_gemm/f8_f8_void_bf16_narrow_mma_n.cu)
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

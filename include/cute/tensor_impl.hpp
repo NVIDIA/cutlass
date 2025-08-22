@@ -761,12 +761,12 @@ recast(Tensor&& tensor)
   using OldType = typename remove_cvref_t<Tensor>::element_type;
   using NewType = copy_cv_t<OldType, NewType_>;
 
-  auto old_layout = tensor.layout();
-  auto new_layout = recast_layout<OldType,NewType>(old_layout);
-
   if constexpr (is_same<NewType, OldType>::value) {
-    return tensor;
+    return make_tensor(static_cast<Tensor&&>(tensor).data(), tensor.layout());
   } else {
+    auto old_layout = tensor.layout();
+    auto new_layout = recast_layout<OldType,NewType>(old_layout);
+
     // If this is an upcast of a normal Layout with static negative strides, then offset as well
     if constexpr (sizeof(OldType) < sizeof(NewType) && not is_composed_layout<decltype(old_layout)>::value) {
       auto shape_diff = transform(flatten(old_layout.shape()), flatten(new_layout.shape()), minus{});

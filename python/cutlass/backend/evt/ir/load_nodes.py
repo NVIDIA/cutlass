@@ -36,9 +36,9 @@ Load nodes and implementations
 
 import ctypes
 
-from cutlass.backend.c_types import tuple_factory
-from cutlass.backend.epilogue import dtype2ctype, to_ctype_value
-from cutlass.backend.evt.ir.node import NodeBase, ImplBase
+from cutlass_cppgen.backend.c_types import tuple_factory
+from cutlass_cppgen.backend.epilogue import dtype2ctype, to_ctype_value
+from cutlass_cppgen.backend.evt.ir.node import NodeBase, ImplBase
 
 
 class LoadImplBase(ImplBase):

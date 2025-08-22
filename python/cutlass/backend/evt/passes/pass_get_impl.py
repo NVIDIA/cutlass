@@ -39,13 +39,13 @@ on their layout. For instance, a LoadNode can be AuxLoad, Row/Col/Scalar broadca
 This pass infers the underlying impl of each node
 """
 
-import cutlass.backend.evt.backend as evt_backend
-from cutlass.backend.evt.ir import DAGIR, LoadNode
-from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
-from cutlass.backend.evt.passes.pass_no_op_elimination import PassNoOpElimination
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
-from cutlass.backend.evt.passes.util import cc_map
+import cutlass_cppgen.backend.evt.backend as evt_backend
+from cutlass_cppgen.backend.evt.ir import DAGIR, LoadNode
+from cutlass_cppgen.backend.evt.passes.pass_fix_element_d import PassFixElementD
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.passes.pass_no_op_elimination import PassNoOpElimination
+from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass_cppgen.backend.evt.passes.util import cc_map
 
 
 class PassGetImpl(EVTPassBase):

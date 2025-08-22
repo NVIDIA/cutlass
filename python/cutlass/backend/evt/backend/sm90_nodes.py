@@ -33,7 +33,7 @@
 from pycute import product
 
 from cutlass_library import DataTypeSize, DataTypeTag
-from cutlass.backend.evt.ir import (
+from cutlass_cppgen.backend.evt.ir import (
     # Load Node
     AccumulatorImpl,
     AuxLoadImpl,
@@ -53,7 +53,7 @@ from cutlass.backend.evt.ir import (
     StoreNode,
     StoreDImpl,
 )
-from cutlass.backend.library import (
+from cutlass_cppgen.backend.library import (
     FloatRoundStyleTag,
     FunctionalOp,
     op_tag,

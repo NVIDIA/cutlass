@@ -191,7 +191,7 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
     // default value
-    this->cluster_m_fallback = std::string(operation_desc.name).find("_2sm") != std::string::npos ? 2 : 1;
+    this->cluster_m_fallback = (this->cluster_m % 2 == 0) ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
@@ -540,6 +540,8 @@ Status BlockScaledGemmOperationProfiler::initialize_configuration(
 
   gemm_workspace_.arguments.use_pdl = problem_.use_pdl;
 
+  cudaStreamCreateWithFlags(&gemm_workspace_.stream, cudaStreamNonBlocking);
+
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
     if (!initialize_reduction_configuration_(operation, problem)) {
@@ -643,6 +645,7 @@ void BlockScaledGemmOperationProfiler::initialize_result_(
   result.bytes = problem_.bytes(operation_desc);
   result.flops = problem_.flops(operation_desc);
   result.runtime = 0;
+  result.runtime_vector.resize(options.device.devices.size(), 0);
 
 }
 
@@ -1578,7 +1581,7 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
     }
   }
 
-  auto func = [&](cudaStream_t, int iteration) {
+  auto func = [&](cudaStream_t stream, int iteration) {
     // Iterate over copies of the problem in memory
     int problem_idx = (iteration % gemm_workspace_.problem_count) * problem_.batch_count;
 
@@ -1599,7 +1602,7 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
       arguments,
       host_workspace,
       device_workspace,
-      nullptr);
+      stream);
 
     if (status != Status::kSuccess) {
       return status;
@@ -1611,7 +1614,7 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
         &gemm_workspace_.reduction_arguments,
         gemm_workspace_.reduction_host_workspace.data(),
         nullptr,
-        nullptr);
+        stream);
 
       if (status != Status::kSuccess) {
         return status;
@@ -1621,7 +1624,7 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
     return status;
   };
 
-  return profile_kernel_(result, options, func);
+  return profile_kernel_(result, options, func, gemm_workspace_.stream);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

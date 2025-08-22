@@ -254,11 +254,11 @@ copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
   if constexpr (common_elem > 1)
   {
     constexpr int align_bits = CUTE_STATIC_V(gcd(max_alignment(src), max_alignment(dst), Int<MaxVecBits>{}));
-    constexpr int vec_bits   = gcd(common_elem * sizeof_bits_v<typename SrcEngine::value_type>, align_bits);
+    constexpr int vec_bits   = gcd(common_elem * sizeof_bits_v<typename DstEngine::value_type>, align_bits);
 
-    if constexpr ((vec_bits % 8) == 0)
+    if constexpr ((vec_bits % 8) == 0 && sizeof_bits_v<typename DstEngine::value_type> < Int<vec_bits>{})
     {
-      // If more than one element vectorizes to 8bits or more, then recast and copy
+      // If more than one element vectorizes to a multiple of 8bits that is larger than the value_type, then recast and copy
       using VecType = uint_bit_t<vec_bits>;
 
       // Recast

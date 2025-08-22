@@ -345,6 +345,13 @@ cutlass_test_unit_gemm_device_add_executable(
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm_pingpong.cu
 )
 
+# Blockwise Gemm test
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm90_blockwise
+
+  sm90_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu
+)
+
 # Sparse tests
 # Sparse kernels trigger an ICE in gcc 7.5
 if (NOT (CUTLASS_GNU_HOST_COMPILE AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0))
@@ -801,7 +808,7 @@ cutlass_test_unit_gemm_device_add_executable(
   hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
 )
 
-if (NOT CUTLASS_NVCC_ARCHS MATCHES 101|101a|101f|103|103a|103f)
+if (NOT CUTLASS_NVCC_ARCHS MATCHES 100f|101|101a|101f|103|103a|103f)
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_blas3_gaussian
 
@@ -945,6 +952,219 @@ cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_blockwise_gemm_sm100
 
   sm100_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_runtime_datatype_alignx_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f8_f8_f8_tensor_op_f32_runtime_datatype_alignx.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_alignx_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+  sm100_gemm_f8_f8_f8_tensor_op_f32_alignx.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_alignx_streamK_sm100
+
+  # setting batch size fo 1 to control memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f8_f8_f8_tensor_op_f32_alignx_streamK.cu
+)
+
+endif()
+
+if (CUTLASS_NVCC_ARCHS MATCHES 103a|103f)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_1sm
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_1sm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_f4_tensorop_sm103_nosmem
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_tensor_op_f32_nosmem.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_2sm
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_2sm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_group_1sm_128x128
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_group_1sm_128x128.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_group_1sm_128x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_group_1sm_128x192.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_group_2sm_256x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_group_2sm_256x192.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_group_2sm_256x256
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_group_2sm_256x256.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_ptr_array_1sm_128x128
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_ptr_array_1sm_128x128.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_ptr_array_1sm_128x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_ptr_array_1sm_128x192.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_ptr_array_2sm_256x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_ptr_array_2sm_256x192.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_ptr_array_2sm_256x256
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_ptr_array_2sm_256x256.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_streamk
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_stream_k.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_2sm_256x256
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_2sm_256x256.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_2sm_256x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_2sm_256x192.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_2sm_256x128
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_2sm_256x128.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_1sm_128x128
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_1sm_128x128.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_1sm_128x192
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_1sm_128x192.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm103_1sm_128x256
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm103_gemm_f4_f4_f32_tensor_op_f32_1sm_128x256.cu
 )
 
 endif()

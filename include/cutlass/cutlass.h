@@ -35,8 +35,13 @@
 
 #pragma once
 
-#include "cutlass/arch/synclog.hpp"
 #include "cutlass/detail/helper_macros.hpp"
+
+#if (__CUDACC_VER_MAJOR__ >= 13)
+  #define CUDA_STD_HEADER(header) <cccl/cuda/std/header>
+#else
+  #define CUDA_STD_HEADER(header) <cuda/std/header>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
