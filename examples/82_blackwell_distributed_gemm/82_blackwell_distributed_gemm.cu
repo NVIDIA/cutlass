@@ -119,9 +119,6 @@
 
 #include "helper.h"
 
-// Distributed GEMM helpers
-#include "dist_gemm_helpers.h"
-
 using namespace cute;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -134,6 +131,9 @@ static constexpr int TP_ = TP{};
 
 #if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && \
   (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+
+// Distributed GEMM helpers
+#include "dist_gemm_helpers.h"
 
 // Distributed GEMM tiling/sharding schedule
 // Choices:
