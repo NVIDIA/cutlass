@@ -36,7 +36,12 @@ runs:
           URL=https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz;
         else
           echo "Will use latest DPCPP version"
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
+          # Use grep and sed instead of jq to avoid additional dependencies
+          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | \
+            grep '"tag_name":' | \
+            grep 'nightly-[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' | \
+            head -1 | \
+            sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
           URL=https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz;
         fi
         echo "Downloading DPCPP from ${URL}"
@@ -44,13 +49,42 @@ runs:
         sudo tar -xf sycl_linux.tar.gz
         sudo rm sycl_linux.tar.gz
         popd
+        
+        # Detect system C++ compiler and standard library automatically
+        echo "=== Detecting system C++ environment ==="
+        SYSTEM_GCC_VERSION=$(gcc --version | head -1 | grep -o '[0-9]\+\.[0-9]\+' | head -1 | cut -d. -f1)
+        SYSTEM_CXX_INCLUDE_DIR="/usr/include/c++/${SYSTEM_GCC_VERSION}"
+        SYSTEM_CXX_ARCH_INCLUDE_DIR="/usr/include/x86_64-linux-gnu/c++/${SYSTEM_GCC_VERSION}"
+        SYSTEM_GCC_LIB_DIR="/usr/lib/gcc/x86_64-linux-gnu/${SYSTEM_GCC_VERSION}"
+        
+        echo "Detected GCC version: ${SYSTEM_GCC_VERSION}"
+        echo "C++ include directory: ${SYSTEM_CXX_INCLUDE_DIR}"
+        echo "C++ arch include directory: ${SYSTEM_CXX_ARCH_INCLUDE_DIR}"
+        echo "GCC library directory: ${SYSTEM_GCC_LIB_DIR}"
+        
+        # Verify directories exist, fallback to available versions if needed
+        if [[ ! -d "$SYSTEM_CXX_INCLUDE_DIR" ]]; then
+          echo "Primary C++ include dir not found, searching for alternatives..."
+          SYSTEM_CXX_INCLUDE_DIR=$(find /usr/include/c++/ -maxdepth 1 -type d -name '[0-9]*' | sort -V | tail -1)
+          if [[ -n "$SYSTEM_CXX_INCLUDE_DIR" ]]; then
+            DETECTED_VERSION=$(basename "$SYSTEM_CXX_INCLUDE_DIR")
+            SYSTEM_CXX_ARCH_INCLUDE_DIR="/usr/include/x86_64-linux-gnu/c++/${DETECTED_VERSION}"
+            SYSTEM_GCC_LIB_DIR="/usr/lib/gcc/x86_64-linux-gnu/${DETECTED_VERSION}"
+            echo "Using fallback C++ version: ${DETECTED_VERSION}"
+          fi
+        fi
+        
         cat <<EOF | tee setvars.sh
-        export PATH=$DPCPP_PATH/bin:$PATH
-        export C_INCLUDE_PATH=$DPCPP_PATH/include:$C_INCLUDE_PATH
-        export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include:$CPLUS_INCLUDE_PATH
-        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:$LD_LIBRARY_PATH
+        export PATH=$DPCPP_PATH/bin:/bin:/usr/bin:/usr/local/bin:\$PATH
+        export C_INCLUDE_PATH=$DPCPP_PATH/include:${SYSTEM_CXX_INCLUDE_DIR}:${SYSTEM_CXX_ARCH_INCLUDE_DIR}:/usr/include/x86_64-linux-gnu:/usr/include:\$C_INCLUDE_PATH
+        export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include:${SYSTEM_CXX_INCLUDE_DIR}:${SYSTEM_CXX_ARCH_INCLUDE_DIR}:/usr/include/x86_64-linux-gnu:/usr/include:\$CPLUS_INCLUDE_PATH
+        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:/usr/lib/x86_64-linux-gnu:${SYSTEM_GCC_LIB_DIR}:/usr/lib:\$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${SYSTEM_GCC_LIB_DIR}:/usr/lib:\$LIBRARY_PATH
         export CC=$DPCPP_PATH/bin/clang
         export CXX=$DPCPP_PATH/bin/clang++
+        # Configure DPC++ to use system C++ standard library with proper linking
+        export CXXFLAGS="-stdlib=libstdc++ -I${SYSTEM_CXX_INCLUDE_DIR} -I${SYSTEM_CXX_ARCH_INCLUDE_DIR} \$CXXFLAGS"
+        export LDFLAGS="-L/usr/lib/x86_64-linux-gnu -L${SYSTEM_GCC_LIB_DIR} -L/usr/lib \$LDFLAGS"
         EOF
     - name: Install DPCPP
       if: inputs.DPCPP_RELEASE == 'RELEASE'
@@ -58,10 +92,10 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-        sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-        rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-        echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+          gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | \
+          sudo tee /etc/apt/sources.list.d/oneAPI.list
         sudo apt update
         sudo apt install -y intel-oneapi-runtime-libs intel-oneapi-compiler-dpcpp-cpp
         . /opt/intel/oneapi/setvars.sh
