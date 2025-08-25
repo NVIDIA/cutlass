@@ -57,6 +57,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <cuda_runtime.h>
 
 // Helper methods to check for errors
 #include "helper.h"
@@ -357,6 +358,11 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta) {
   // Launch CUTLASS GEMM.
   //
 
+  cudaEvent_t start_cutlass, stop_cutlass;
+  cudaEventCreate(&start_cutlass);
+  cudaEventCreate(&stop_cutlass);
+  cudaEventRecord(start_cutlass, 0);
+
   result = CutlassSgemmNN(M, N, K, alpha, A, lda, B, ldb, beta, C_cutlass, ldc);
 
   if (result != cudaSuccess) {
@@ -371,11 +377,29 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta) {
     return result;
   }
 
+  cudaEventRecord(stop_cutlass, 0);
+  cudaEventSynchronize(stop_cutlass);
+
+  float ms_cutlass = 0.0f;
+  cudaEventElapsedTime(&ms_cutlass, start_cutlass, stop_cutlass);
+  float gflops_cutlass = 2.0f * M * N * K / (ms_cutlass * 1e6f);
+  std::cout << "CUTLASS GEMM: "
+	    << ms_cutlass << " ms, "
+	    << gflops_cutlass << " GFLOP/s\n";
+
+  cudaEventDestroy(start_cutlass);
+  cudaEventDestroy(stop_cutlass);
+
   //
   // Verify.
   //
 
   // Launch reference GEMM
+  cudaEvent_t start_ref, stop_ref;
+  cudaEventCreate(&start_ref);
+  cudaEventCreate(&stop_ref);
+
+  cudaEventRecord(start_ref, 0);
   result = ReferenceGemm(M, N, K, alpha, A, lda, B, ldb, beta, C_reference, ldc);
 
   if (result != cudaSuccess) {
@@ -389,6 +413,20 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta) {
 
     return result;
   }
+
+  cudaEventRecord(stop_ref, 0);
+  cudaEventSynchronize(stop_ref);
+
+  float ms_ref = 0.0f;
+  cudaEventElapsedTime(&ms_ref, start_ref, stop_ref);
+  float gflops_ref = 2.0f * M * N * K / (ms_ref * 1e6f);
+  std::cout << "Reference GEMM: "
+            << ms_ref << " ms, "
+            << gflops_ref << " GFLOP/s\n";
+
+  cudaEventDestroy(start_ref);
+  cudaEventDestroy(stop_ref);
+
 
   // Copy to host and verify equivalence.
   std::vector<float> host_cutlass(ldc * N, 0);
