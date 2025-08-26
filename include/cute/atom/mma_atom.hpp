@@ -372,6 +372,12 @@ struct TiledMMA : MMA_Atom
     return get_slice(thr_idx);
   }
 
+  CUTE_HOST_DEVICE constexpr
+  auto
+  tile_mnk() const {
+    return make_tile(tile_size_mnk<0>(), tile_size_mnk<1>(), tile_size_mnk<2>());
+  }
+
   //
   // Utility for printing and visualization
   //
@@ -493,6 +499,40 @@ struct ThrMMA : TiledMMA
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
+  }
+
+  // Atom-level partitioning
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_C(CTensor&& ctensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
+
+    auto atom_vmn = make_coord(_, make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
+    return thr_tensor(atom_vmn, _);       // (atom-local thr, val) -> coord
+  }
+
+  template <class ATensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_A(ATensor&& atensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(atensor.layout()));
+
+    auto atom_vmk = make_coord(_, make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
+    return thr_tensor(atom_vmk, _);
+  }
+
+  template <class BTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_B(BTensor&& btensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(btensor.layout()));
+
+    auto atom_vnk = make_coord(_, make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
+    return thr_tensor(atom_vnk, _);
   }
 
   template <class CTensor>

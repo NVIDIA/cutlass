@@ -396,6 +396,32 @@ struct ThrCopy
   }
 
   template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  atom_partition_S(STensor&& stensor) const {
+    // Get fragment layout, and group atom thread modes (ThrV) since that is not done by tidfrg_D.
+    static constexpr auto RThrV = rank<0>(typename TiledCopy::AtomLayoutSrc{});
+    auto tf_layout0 = TiledCopy::tidfrg_S(stensor.layout());
+    auto tf_layout = replace<0>(tf_layout0, group<0,RThrV>(get<0>(tf_layout0)));
+    auto thr_tensor = make_tensor(static_cast<STensor&&>(stensor).data(), tf_layout);
+    // Index, selecting full ThrV slice.
+    auto thr = idx2crd(thr_idx_, shape<0>(thr_tensor));
+    return thr_tensor(replace<0>(thr, _), _, _);
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  atom_partition_D(DTensor&& dtensor) const {
+    static constexpr auto RThrV = rank<0>(typename TiledCopy::AtomLayoutDst{});
+    auto tf_layout0 = TiledCopy::tidfrg_D(dtensor.layout());
+    auto tf_layout = replace<0>(tf_layout0, group<0,RThrV>(get<0>(tf_layout0)));
+    auto thr_tensor = make_tensor(static_cast<DTensor&&>(dtensor).data(), tf_layout);
+    auto thr = idx2crd(thr_idx_, shape<0>(thr_tensor));
+    return thr_tensor(replace<0>(thr, _), _, _);
+  }
+
+  template <class STensor>
   CUTE_HOST_DEVICE static
   auto
   retile_S(STensor&& stensor) {
