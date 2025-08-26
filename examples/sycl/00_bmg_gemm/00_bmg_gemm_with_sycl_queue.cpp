@@ -235,9 +235,9 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    initialize_block(mem.block_A, M * K * L, seed + 2023);
-    initialize_block(mem.block_B, N * K * L, seed + 2022);
-    initialize_block(mem.block_C, M * N * L, seed + 2021);
+    cutlass::initialize_block(mem.block_A, M * K * L, seed + 2023);
+    cutlass::initialize_block(mem.block_B, N * K * L, seed + 2022);
+    cutlass::initialize_block(mem.block_C, M * N * L, seed + 2021);
   }
 
   cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
