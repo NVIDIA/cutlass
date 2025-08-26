@@ -82,6 +82,13 @@ struct scale_zero_copy_traits<datatype, N, stride,
   using type = XE_2D_U16x1x32_LD_N;
 };
 
+// 32 bits
+template<class datatype, size_t N, class stride>
+struct scale_zero_copy_traits<datatype, N, stride,
+          std::enable_if_t<sizeof_bits_v<datatype> == 32>> {
+  using type = XE_2D_U32x1x16_LD_N;
+};
+
 template <
   int Stages,
   class TileShape_,
