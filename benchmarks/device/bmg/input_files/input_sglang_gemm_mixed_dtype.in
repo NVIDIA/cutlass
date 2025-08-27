@@ -1,0 +1,18 @@
+#############################################################################
+### Benchmarks for required shapes for second SGLang release              ###
+#############################################################################
+
+# The data type " FP16U4FP16F16FP16S4 " in the benchmark are: A, B, C, Mma, Scale, Zero
+
+
+# int4
+PvcMixedPrecisionGemmFP16U4FP16F16FP16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmBF16U4BF16BF16BF16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmFP16U4FP16S8FP16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmFP16U4S8S8FP16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmBF16U4BF16S8BF16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmBF16U4S8S8BF16S4_RCR_1 --bm_name=mixed_dtype_int4 --m=32 --k=4096 --n=14336 --l=1
+
+# int8
+PvcMixedPrecisionGemmBF16S8BF16S8BF16S8_RCR_1 --bm_name=mixed_dtype_int8 --m=32 --k=4096 --n=14336 --l=1
+PvcMixedPrecisionGemmFP16S8FP16S8FP16S8_RCR_1 --bm_name=mixed_dtype_int8 --m=32 --k=4096 --n=14336 --l=1

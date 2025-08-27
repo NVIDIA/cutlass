@@ -324,6 +324,9 @@ public:
       tiled_copy_scaleB = {};
     }
 
+    // TODO: Current examples/sycl/08_bmg_gemm_f8/08_bmg_gemm_f8_scaling.cpp doesn't cover this path
+    static_assert(!ModeHasScalesZeroA && !ModeHasScalesZeroB);
+
     if constexpr(ModeHasScalesZeroA) {
       auto ptr_Z = [&]() {
         if constexpr (sizeof_bits_v<NonVoidElementZeroA> < 8) {
@@ -400,8 +403,7 @@ public:
   };
 
   /// Utilities to transform A.
-  template <bool isA, bool isB,// TODO(Codeplay): this shouldn't be needed
-            class EngineIn,
+  template <class EngineIn,
             class EngineOut, 
             class EngineScales, 
             class EngineZeros, 
@@ -410,9 +412,9 @@ public:
             class LayoutScales,
             class LayoutZeros>
   CUTLASS_DEVICE typename std::enable_if_t<sizeof_bits_v<typename EngineIn::value_type> >= 8>
-  transform_quant(
-    Tensor<EngineIn, LayoutIn> const& tCrA_load, 
-    Tensor<EngineOut, LayoutOut>& tCrA_mma,
+  transform_A(
+    Tensor<EngineIn, LayoutIn> const& in,
+    Tensor<EngineOut, LayoutOut>& out,
     Tensor<EngineScales, LayoutScales>& tCrS_input,
     Tensor<EngineZeros, LayoutZeros>& tCrZ_input
   ) {
@@ -420,52 +422,80 @@ public:
     static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
     static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
     static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
-    static_assert(std::is_same_v<typename EngineOut::value_type, typename EngineScales::value_type>);
-    static_assert(std::is_same_v<LayoutScales, LayoutZeros>);
 
     using SrcType = typename EngineIn::value_type;
     using DstType = typename EngineOut::value_type;
+    using ZeroType = typename EngineZeros::value_type;
+    using ScaleType = typename EngineScales::value_type;
+    using MmaType = DstType;
 
-    convert_FP8_to_FP16<ElementQuant>(tCrA_load, tCrA_mma);
+    convert_FP8_to_FP16<ElementQuant>(in, out);
 
-    if constexpr (IsATransformed && isA && ModeHasScalesA) {
-      half_t z0 = tCrZ_input(0);
-      half_t z1 = tCrZ_input(1);
-      half_t s0 =  tCrS_input(0);
-      half_t s1 =  tCrS_input(1);
-      auto ptr_tcrA_mm = tCrA_mma.data();
-      // The current scale load atom (1x32) gives 2 scale values to
-      // each thread. All threads need access to all other threads
-      // scale values, and each scale value is reused twice (unrolled)
-      auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+    if constexpr (IsATransformed && ModeHasScalesA) {
+      static constexpr auto M = decltype(size<1>(in))::value;
+      static constexpr auto K = decltype(size(in))::value / 8 / M;
       CUTLASS_PRAGMA_NO_UNROLL
       for (int i = 0; i < 16; ++i) {
-        if constexpr (ModeHasScalesZeroA){
-          auto zero0 = group_broadcast(sg, z0, i);
-          ptr_tcrA_mm[i] -= zero0;
-          ptr_tcrA_mm[32 + i] -= zero0;
-          auto zero1 = group_broadcast(sg, z1, i);
-          ptr_tcrA_mm[16 + i] -= zero1;
-          ptr_tcrA_mm[32 + 16 + i] -= zero1;
+        // Example: for the scale load atom (1x32) gives 2 scale values to
+        // each thread. All threads need access to all other threads
+        // scale values, and each scale value is reused twice (k unrolled below)
+        CUTLASS_PRAGMA_UNROLL
+        for (int m = 0; m < M / 2; ++m) {
+          auto scale = static_cast<DstType>(shfl_sync(0xFFFFFFFF, tCrS_input(m), i));
+          auto zero = static_cast<DstType>(shfl_sync(0xFFFFFFFF, tCrZ_input(m), i));
+          CUTLASS_PRAGMA_UNROLL
+          for (int k = 0; k < K; k++) {
+            if constexpr (ModeHasScalesZeroA) {
+              out(_, _, k)[m * 16 + i] -= zero;
+            }
+            out(_, _, k)[m * 16 + i] *= scale;
+          }
         }
-        auto scale0 = group_broadcast(sg, s0, i);
-        ptr_tcrA_mm[i] *= scale0;
-        ptr_tcrA_mm[32 + i] *= scale0;
-        auto scale1 = group_broadcast(sg, s1, i);
-        ptr_tcrA_mm[16 + i] *= scale1;
-        ptr_tcrA_mm[32 + 16 + i] *= scale1;
       }
-   } else if constexpr (IsBTransformed && isB && ModeHasScalesB) {
-      static constexpr auto N = decltype(size<1>(tCrA_load))::value;
+    }
+  }
 
+    /// Utilities to transform B.
+  template <class EngineIn,
+            class EngineOut,
+            class EngineScales,
+            class EngineZeros,
+            class LayoutIn,
+            class LayoutOut,
+            class LayoutScales,
+            class LayoutZeros>
+  CUTLASS_DEVICE typename std::enable_if_t<sizeof_bits_v<typename EngineIn::value_type> >= 8>
+  transform_B(
+    Tensor<EngineIn, LayoutIn> const& in,
+    Tensor<EngineOut, LayoutOut>& out,
+    Tensor<EngineScales, LayoutScales>& tCrS_input,
+    Tensor<EngineZeros, LayoutZeros>& tCrZ_input
+  ) {
+
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
+    using ZeroType = typename EngineZeros::value_type;
+    using ScaleType = typename EngineScales::value_type;
+    using MmaType = DstType;
+
+    convert_FP8_to_FP16<ElementQuant>(in, out);
+
+    if constexpr (IsBTransformed && ModeHasScalesB) {
+      static constexpr auto N = decltype(size<1>(in))::value;
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < N; ++n) {
+        auto zero = static_cast<DstType>(tCrZ_input(n));
+        auto scale = static_cast<DstType>(tCrS_input(n));
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < decltype(size(tCrA_load))::value / N; ++i) {
+        for (int i = 0; i < decltype(size(in))::value / N; ++i) {
           if constexpr (ModeHasScalesZeroB){
-            tCrA_mma(_, n, _)[i] -= tCrZ_input(n);
+            out(_, n, _)[i] -= zero;
           }
-          tCrA_mma(_, n, _)[i] *= tCrS_input(n);
+          out(_, n, _)[i] *= scale;
         }
       }
     }
@@ -518,7 +548,9 @@ public:
 
     // If IsATransformed, we need modes M_atom, and M_iter from fragment_A
     // layout else we need mode N_iter from fragment_B layout.
-    using FragScaleALayout = Layout<Shape<_2, _1, _1>>;
+    static constexpr auto scaleA_traits_size = decltype(size(typename GmemTiledCopyScaleA::BlockShape{}))::value / SubgroupSize;
+    static constexpr auto scaleA_traits_num = SG_M / size<1>(typename GmemTiledCopyScaleA::BlockShape{});
+    using FragScaleALayout = Layout<Shape<Int<scaleA_traits_size>, Int<scaleA_traits_num>, _1>>;
     Tensor fragment_scaleA_input = make_tensor<NonVoidElementScaleA>(FragScaleALayout{});
 
     static constexpr auto scaleB_traits_size = decltype(size(typename GmemTiledCopyScaleB::BlockShape{}))::value / SubgroupSize;
@@ -526,7 +558,9 @@ public:
     using FragScaleBLayout = Layout<Shape<Int<scaleB_traits_size>, Int<scaleB_traits_num>, _1>>;
     Tensor fragment_scaleB_input = make_tensor<NonVoidElementScaleB>(FragScaleBLayout{});
 
-    using FragZeroALayout = Layout<Shape<_2, _1, _1>>;
+    static constexpr auto zeroA_traits_size = decltype(size(typename GmemTiledCopyZeroA::BlockShape{}))::value / SubgroupSize;
+    static constexpr auto zeroA_traits_num = SG_M / size<1>(typename GmemTiledCopyZeroA::BlockShape{});
+    using FragZeroALayout = Layout<Shape<Int<zeroA_traits_size>, Int<zeroA_traits_num>, _1>>;
     Tensor fragment_zeroA_input =  make_tensor<NonVoidElementZeroA> (FragZeroALayout{});
 
     static constexpr auto zeroB_traits_size = decltype(size(typename GmemTiledCopyZeroB::BlockShape{}))::value / SubgroupSize;
@@ -573,15 +607,16 @@ public:
     const int l_coord = l_idx;
 
     Tensor copy_iter_sA = make_tensor(make_inttuple_iter(make_coord(m_coord, 0, l_coord)),
-                           make_layout(make_shape(_2{}, _1{}, _1{}, k_tile_count),
-                                       make_stride(E<0>{} * _16{}, E<0>{} * _32{}, _0{}, E<1>{} * _1{})));
+                                      make_layout(make_shape(Int<scaleA_traits_size>{}, Int<scaleA_traits_num>{}, _1{}, k_tile_count),
+                                      make_stride(E<0>{} * _16{}, E<0>{} * size<1>(typename GmemTiledCopyScaleA::BlockShape{}), _0{}, E<1>{} * _1{})));
+
     Tensor copy_iter_sB = make_tensor(make_inttuple_iter(make_coord(n_coord, 0, l_coord)),
                            make_layout(make_shape(Int<scaleB_traits_size>{}, Int<scaleB_traits_num>{}, _1{}, k_tile_count),
                                        make_stride(E<0>{} * _16{}, E<0>{} * size<1>(typename GmemTiledCopyScaleB::BlockShape{}), _0{}, E<1>{} * _1{})));
 
     Tensor copy_iter_zA = make_tensor(make_inttuple_iter(make_coord(m_coord, 0, l_coord)),
-                           make_layout(make_shape(_2{}, _1{}, _1{}, k_tile_count),
-                                       make_stride(E<0>{} * _16{}, E<0>{} * _32{}, _0{}, E<1>{} * _1{})));
+                                      make_layout(make_shape(Int<zeroA_traits_size>{}, Int<zeroA_traits_num>{}, _1{}, k_tile_count),
+                                      make_stride(E<0>{} * _16{}, E<0>{} * size<1>(typename GmemTiledCopyZeroA::BlockShape{}), _0{}, E<1>{} * _1{})));
 
     Tensor copy_iter_zB = make_tensor(make_inttuple_iter(make_coord(n_coord, 0, l_coord)),
                            make_layout(make_shape(Int<zeroB_traits_size>{}, Int<zeroB_traits_num>{}, _1{}, k_tile_count),
@@ -657,8 +692,8 @@ public:
         prefetch(tiled_prefetch_b, pBgB(_,_,_,prefetch_k));
       }
 
-      transform_quant<true, false>(quantA_frag, mma_A, fragment_scaleA_input, fragment_zeroA_input);
-      transform_quant<false, true>(quantB_frag, mma_B, fragment_scaleB_input, fragment_zeroB_input);
+      transform_A(quantA_frag, mma_A, fragment_scaleA_input, fragment_zeroA_input);
+      transform_B(quantB_frag, mma_B, fragment_scaleB_input, fragment_zeroB_input);
 
       cute::gemm(tiled_mma, mma_A, mma_B, accum);
       barrier_wait(barrier_scope);

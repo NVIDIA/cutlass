@@ -66,6 +66,19 @@ struct GemmConfiguration {
   static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
 };
 
+template<
+  class ArchTag,
+  class ElementA, class LayoutA,
+  class ElementB, class LayoutB, class ElementC, typename LayoutC,
+  class ElementScale, typename StrideS,
+  class ElementZero, typename StrideZ,
+  class TileShape, Scheduler TileScheduler,
+  class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB,
+  class GmemTiledCopyC,   class EpilogueOp, int Stages = 3>
+struct MixedPrecisionGemmConfiguration{
+  static_assert(sizeof(ElementA) == 0, "No valid MixedPrecisionGemmConfiguration configuration exists.");
+};
+
 /////////////////////////////////////////////////////////////////////////
 
 // bfloat16
@@ -140,6 +153,82 @@ struct GemmConfiguration<
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
+
+  constexpr static typename GemmKernel::Arguments defaultArguments() {
+    using StreamKMode =
+      cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+    if constexpr (TileScheduler == Scheduler::Gemm) {
+      return {};
+    } else if constexpr (TileScheduler == Scheduler::GemmStreamK) {
+      typename GemmKernel::Arguments arguments{};
+      arguments.scheduler = {1, StreamKMode::StreamK};
+      return arguments;
+    } else {
+      static_assert(TileScheduler == Scheduler::GemmSplitK);
+      typename GemmKernel::Arguments arguments{};
+      arguments.scheduler = {2, StreamKMode::SplitK};
+      return arguments;
+    }
+  }
+};
+
+template<class ElementA, class LayoutA,
+  class ElementB, class LayoutB,
+  class ElementC, typename LayoutC,
+  class ElementScale, typename StrideS,
+  class ElementZero, typename StrideZ,
+  class TileShape, Scheduler TileScheduler,
+  class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB,
+  class GmemTiledCopyC, class EpilogueOp, int Stages>
+struct MixedPrecisionGemmConfiguration<
+      arch::IntelXe,
+      ElementA, LayoutA,
+      ElementB, LayoutB,
+      ElementC, LayoutC,
+      ElementScale, StrideS,
+      ElementZero, StrideZ,
+      TileShape, TileScheduler, TiledMma,
+      GmemTiledCopyA, GmemTiledCopyB,
+      GmemTiledCopyC, EpilogueOp, Stages>
+{
+  using LayoutD = LayoutC;
+
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16MixedPrecision<Stages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
+
+  using ElementAccumulator = typename TiledMma::ValTypeD;
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
+          decltype(tile_shape(TiledMma()))>;
+  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
+          EpilogueDispatchPolicy,
+          TileShape,
+          ElementAccumulator,
+          cutlass::gemm::TagToStrideC_t<LayoutC>,
+          ElementC,
+          cutlass::gemm::TagToStrideC_t<LayoutD>,
+          FusionCallBacks,
+          XE_2D_U32x8x16_LD_N,
+          void, void,
+          GmemTiledCopyC,
+          void, void>;
+
+  static constexpr bool IsAQuant = cutlass::platform::numeric_limits<ElementA>::is_integer
+                                    ^ cutlass::platform::numeric_limits<ElementAccumulator>::is_integer;
+  static constexpr bool IsBQuant = cutlass::platform::numeric_limits<ElementB>::is_integer
+                                    ^ cutlass::platform::numeric_limits<ElementAccumulator>::is_integer;
+
+  using CollectiveMainloop = collective::CollectiveMma<GEMMDispatchPolicy, TileShape,
+                                                       cute::conditional_t<IsAQuant, cute::tuple<ElementA, ElementScale, StrideS, ElementZero, StrideZ>, ElementA>,
+                                                       cutlass::gemm::TagToStrideA_t<LayoutA>,
+                                                       cute::conditional_t<IsBQuant, cute::tuple<ElementB, ElementScale, StrideS, ElementZero, StrideZ>, ElementB>,
+                                                       cutlass::gemm::TagToStrideB_t<LayoutB>, TiledMma,
+                                                       GmemTiledCopyA, void, void, cute::identity, GmemTiledCopyB, void, void,
+                                                       cute::identity>;
+
+  using GemmKernel = kernel::GemmUniversal<Shape<int, int, int, int>, CollectiveMainloop, CollectiveEpilogue>;
+
+  using Gemm = device::GemmUniversalAdapter<GemmKernel>;
 
   constexpr static typename GemmKernel::Arguments defaultArguments() {
     using StreamKMode =

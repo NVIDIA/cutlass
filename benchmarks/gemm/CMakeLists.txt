@@ -35,6 +35,8 @@ set(CONFIG_FILE_INTEL_SGLANG_SPLITK --config_file=${CMAKE_SOURCE_DIR}/benchmarks
 
 set(CONFIG_FILE_CUDA --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/ampere/input_files/input_gemm.in)
 
+set(CONFIG_FILE_INTEL_MIXED_DTYPE --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/bmg/input_files/input_sglang_gemm_mixed_dtype.in)
+
 cutlass_benchmark_add_suite(cutlass_benchmarks_gemm)
 
 if(CUTLASS_ENABLE_SYCL)
@@ -51,6 +53,7 @@ cutlass_benchmark_add_executable(
     CONFIG_FILE_INTEL_PYTORCH
     CONFIG_FILE_INTEL_SGLANG
     CONFIG_FILE_INTEL_SGLANG_SPLITK
+    CONFIG_FILE_INTEL_MIXED_DTYPE
 )
 
 else()

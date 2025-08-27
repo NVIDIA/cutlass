@@ -21,7 +21,10 @@ runs:
           sudo add-apt-repository ppa:kobuk-team/intel-graphics
           sudo apt update
         else
-          sudo apt update
+          . /etc/os-release
+          wget https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
           sudo apt install -y \
             intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
             libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev  \
@@ -39,7 +42,7 @@ runs:
         shopt -s expand_aliases
         which sudo || alias sudo=""
         if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
-          sudo rm /etc/apt/sources.list.d/ppa_kobuk_team_intel_graphics_oracular.list
+          sudo rm -f /etc/apt/sources.list.d/ppa_kobuk_team_intel_graphics_oracular.list
           sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
           sudo apt update
           sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
