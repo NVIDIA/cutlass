@@ -73,7 +73,7 @@
 
 using namespace cute;
 
-template <typename ArchTag, typename Element, int BLK_M, int BLK_N, int BLK_K, int PipelineStages = 3, int WARP_M = 2, int WARP_N = 2>
+template <typename ArchTag, typename Element, int BLK_M, int BLK_N, int BLK_K, int PipelineStages = 3, int WARP_M = 1, int WARP_N = 4>
 struct SM8x_Byte_Gemm_Traits {
   static constexpr int MMA_WARP_M = WARP_M * 16;
   static constexpr int MMA_WARP_N = WARP_N * 16;
