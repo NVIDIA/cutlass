@@ -347,7 +347,7 @@ public:
     Tensor<EngineScales, LayoutScales>& tCrS_input,
     Tensor<EngineZeros, LayoutZeros> tCrZ_input
   ) {
-    // TODO (Codeplay): add assert here because such cases not support for int4 now
+    // TODO (Codeplay): add assert here because int4 is not currently supported
     static_assert(!IsATransformed);
 
     static_assert(is_rmem<EngineIn>::value, "Input tensor for conversion must come from registers");
