@@ -292,4 +292,5 @@ struct SM89_16x8x32_F16E5M2E5M2F16_TN
 #endif
   }
 };
+
 } // namespace cute

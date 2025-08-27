@@ -37,14 +37,14 @@ Unittest for mixed types of nodes in SM90
 import logging
 import unittest
 
-import cutlass
-from cutlass.backend import *
-from cutlass.epilogue import *
-from cutlass.swizzle import ThreadblockSwizzleStreamK
+import cutlass_cppgen
+from cutlass_cppgen.backend import *
+from cutlass_cppgen.epilogue import *
+from cutlass_cppgen.swizzle import ThreadblockSwizzleStreamK
 
 from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 
-cutlass.set_log_level(logging.WARNING)
+cutlass_cppgen.set_log_level(logging.WARNING)
 
 
 @unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")

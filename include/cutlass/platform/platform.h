@@ -98,13 +98,13 @@
 //-----------------------------------------------------------------------------
 // Dependencies
 //-----------------------------------------------------------------------------
-
+#include <cutlass/cutlass.h>
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
-#include <cuda/std/utility>
-#include <cuda/std/cstddef>
-#include <cuda/std/cstdint>
-#include <cuda/std/limits>
+#include CUDA_STD_HEADER(type_traits)
+#include CUDA_STD_HEADER(utility)
+#include CUDA_STD_HEADER(cstddef)
+#include CUDA_STD_HEADER(cstdint)
+#include CUDA_STD_HEADER(limits)
 #else
 #include <type_traits>
 #include <utility>
@@ -128,7 +128,6 @@
 #endif
 
 #include <vector_types.h>
-#include <cutlass/cutlass.h>
 
 #endif
 
@@ -523,7 +522,7 @@ using std::is_trivially_copyable;
 
 #endif
 
-#if (201703L <=__cplusplus)
+#if (CUTLASS_CXX17_OR_LATER)
 
 /// std::is_unsigned_v
 using CUTLASS_STL_NAMESPACE::is_integral_v;
@@ -596,14 +595,6 @@ struct alignment_of<float4> {
   enum { value = 16 };
 };
 template <>
-struct alignment_of<long4> {
-  enum { value = 16 };
-};
-template <>
-struct alignment_of<ulong4> {
-  enum { value = 16 };
-};
-template <>
 struct alignment_of<longlong2> {
   enum { value = 16 };
 };
@@ -613,6 +604,15 @@ struct alignment_of<ulonglong2> {
 };
 template <>
 struct alignment_of<double2> {
+  enum { value = 16 };
+};
+
+template <>
+struct alignment_of<long4> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<ulong4> {
   enum { value = 16 };
 };
 template <>
@@ -627,6 +627,7 @@ template <>
 struct alignment_of<double4> {
   enum { value = 16 };
 };
+
 
 // Specializations for volatile/const qualified types
 template <typename value_t>

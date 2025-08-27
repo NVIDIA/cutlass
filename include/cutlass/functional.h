@@ -54,7 +54,8 @@
 #include <intrin.h>
 #endif // _MSC_VER
 
-#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM100F_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) ||\
+    defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM103F_ENABLED)
 #  define CUTLASS_ARCH_CREDUX_ENABLED
 #endif
 
@@ -655,7 +656,7 @@ struct and_popc_add {
   }
 };
 
-/// Fused multiply-add
+/// Fused and-add
 template <typename T>
 struct and_add {
   CUTLASS_HOST_DEVICE
@@ -677,7 +678,7 @@ struct xor_popc_add {
   }
 };
 
-/// Fused multiply-add
+/// Fused xor-add
 template <typename T>
 struct xor_add {
   CUTLASS_HOST_DEVICE
@@ -699,7 +700,7 @@ struct or_popc_add {
 };
 
 
-/// Fused multiply-add
+/// Fused or-add
 template <typename T>
 struct or_add {
   CUTLASS_HOST_DEVICE

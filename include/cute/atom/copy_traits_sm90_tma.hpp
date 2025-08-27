@@ -156,6 +156,13 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
   copy_unpack(Copy_Traits        const& traits,
               Tensor<TS,SLayout> const& src,
               Tensor<TD,DLayout>      & dst) = delete;
+
+  // Construct with updated TMA descriptor only (no barrier change)
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
+  with(TmaDescriptor const* new_tma_desc) const {
+    return {*new_tma_desc, aux_params_};
+  }
 };
 
 // The executable SM90_TMA_LOAD with tma_desc and tma_mbar
@@ -181,6 +188,13 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
   CUTE_HOST_DEVICE
   Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint64_t cache)
     : opargs_(desc, mbar, cache) {}
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 // The prefetch for SM90_TMA_LOAD with tma_desc
@@ -199,10 +213,22 @@ struct Copy_Traits<SM90_TMA_LOAD::PREFETCH, NumBitsPerTMA, Args...>
   tuple<TmaDescriptor const*> const opargs_;
 
   // Construct with any other Traits' TMA Desc
-  template <class... CopyArgs>
+  template <class OtherTraits>
   CUTE_HOST_DEVICE
-  Copy_Traits(Copy_Traits<CopyArgs...> const& traits)
-    : opargs_({&traits.tma_desc_}) {}
+  Copy_Traits(OtherTraits const& traits)
+    : opargs_({traits.get_tma_descriptor()}) {}
+
+  // Construct directly with a TMA descriptor pointer
+  CUTE_HOST_DEVICE
+  Copy_Traits(TmaDescriptor const* desc)
+    : opargs_({desc}) {}
+
+  // Build a new Prefetch traits with a different TMA descriptor pointer
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM90_TMA_LOAD::PREFETCH, NumBitsPerTMA>
+  with(TmaDescriptor const* new_tma_desc) const {
+    return {new_tma_desc};
+  }
 
   template <class TS, class SLayout,
             class TD, class DLayout>
@@ -312,6 +338,13 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   CUTE_HOST_DEVICE
   Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint16_t mask, uint64_t hint)
     : opargs_(desc, mbar, mask, hint) {}
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////

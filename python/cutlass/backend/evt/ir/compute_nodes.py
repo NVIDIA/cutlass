@@ -34,8 +34,8 @@
 Python registration for compute nodes in EVT
 """
 
-from cutlass.backend.evt.ir.node import NodeBase, ImplBase
-from cutlass.backend.library import FloatRoundStyle
+from cutlass_cppgen.backend.evt.ir.node import NodeBase, ImplBase
+from cutlass_cppgen.backend.library import FloatRoundStyle
 
 
 class ComputeImplBase(ImplBase):

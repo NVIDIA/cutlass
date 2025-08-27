@@ -55,7 +55,7 @@ jobs:
     if: |
         (startsWith(github.event.comment.body, '/bot run') ||
         startsWith(github.event.comment.body, '/bot kill')) && contains(
-        fromJson('["zekunf-nv"]'),
+        fromJson('["nv-fastkernels-cicd", "zekunf-nv", "hwu36", "IonThruster", "thakkarV", "d-k-b", "mihir-awatramani", "fengxie", "vickiw973", "Junkai-Wu", "brandon-yujie-sun", "lijingticy22", "hongw-nv", "vikgupta-nv", "IwakuraRein", "depaulmillz", "jackkosaian", "itramble", "ccecka", "sxtyzhangzk", "hbarclay", "yzhaiustc", "x86vk", "sklevtsov-nvidia", "ANIKET-SHIVAM", "Shreya-gaur", "azhurkevich", "serifyesil", "richardmcai", "lsyyy666", "Ethan-Yan27", "XiaoSong9905", "shdetect", "keithzzzzz"]'),
         github.actor)
     steps:
       - name: Check if comment is issued by authorized person

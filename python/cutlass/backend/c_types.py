@@ -37,7 +37,7 @@ from cutlass_library import (
     KernelScheduleType,
     TileSchedulerType
 )
-from cutlass.backend.library import DataTypeSizeBytes
+from cutlass_cppgen.backend.library import DataTypeSizeBytes
 
 
 class GemmCoord_(ctypes.Structure):

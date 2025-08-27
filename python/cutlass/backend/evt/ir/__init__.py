@@ -30,10 +30,10 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.ir.compute_nodes import ComputeNode, ComputeImpl
-from cutlass.backend.evt.ir.dag_ir import DAGIR
-from cutlass.backend.evt.ir.layout_nodes import LayoutNode
-from cutlass.backend.evt.ir.load_nodes import (
+from cutlass_cppgen.backend.evt.ir.compute_nodes import ComputeNode, ComputeImpl
+from cutlass_cppgen.backend.evt.ir.dag_ir import DAGIR
+from cutlass_cppgen.backend.evt.ir.layout_nodes import LayoutNode
+from cutlass_cppgen.backend.evt.ir.load_nodes import (
     LoadNode,
     AccumulatorImpl,
     LoadSrcImpl,
@@ -42,8 +42,8 @@ from cutlass.backend.evt.ir.load_nodes import (
     ColumnBroadcastImpl,
     ScalarBroadcastImpl
 )
-from cutlass.backend.evt.ir.node import TopoVisitorNode, NoOpImpl
-from cutlass.backend.evt.ir.store_nodes import (
+from cutlass_cppgen.backend.evt.ir.node import TopoVisitorNode, NoOpImpl
+from cutlass_cppgen.backend.evt.ir.store_nodes import (
     StoreNode,
     StoreDImpl,
     AuxStoreImpl,

@@ -469,7 +469,9 @@ CUTE_HOST_DEVICE void print(ArithmeticTupleIterator<ArithTuple> const& iter)
 template <class T, int... Ns>
 CUTE_HOST_DEVICE void print(ScaledBasis<T,Ns...> const& e)
 {
-  print(e.value()); (void(printf("@%d", Ns)), ...);
+  print(e.value());
+  // Param pack trick to print in reverse
+  [[maybe_unused]] int dummy; (dummy = ... = (void(printf("@%d", Ns)), 0));
 }
 
 #if !defined(__CUDACC_RTC__)
@@ -482,7 +484,9 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, ArithmeticTupleIterator<Ari
 template <class T, int... Ns>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, ScaledBasis<T,Ns...> const& e)
 {
-  os << e.value(); (void(os << "@" << Ns), ...);
+  os << e.value();
+  // Param pack trick to print in reverse
+  [[maybe_unused]] int dummy; (dummy = ... = (void(os << "@" << Ns),0));
   return os;
 }
 #endif

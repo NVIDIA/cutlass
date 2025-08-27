@@ -141,6 +141,18 @@ constexpr uint32_t find_vector_size() {
                 cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmNvf4Sm100> ||
                 cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedNvf4Sm120> ||
                 cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedPingpongNvf4Sm120>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
+                || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
               ) {
     return 16;
   }

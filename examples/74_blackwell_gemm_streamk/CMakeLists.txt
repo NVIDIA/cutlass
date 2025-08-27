@@ -29,9 +29,9 @@
 
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
-cutlass_example_add_executable(
-  74_blackwell_gemm_streamk
-  blackwell_gemm_streamk.cu
+if(CUTLASS_NVCC_ARCHS STREQUAL "100a" OR CUTLASS_NVCC_ARCHS STREQUAL "100f" OR CUTLASS_NVCC_ARCHS STREQUAL "101a" OR CUTLASS_NVCC_ARCHS STREQUAL "101f" OR CUTLASS_NVCC_ARCHS STREQUAL "103a" OR CUTLASS_NVCC_ARCHS STREQUAL "103f")
+  cutlass_example_add_executable(
+    74_blackwell_gemm_streamk
+    blackwell_gemm_streamk.cu
   )
 endif()

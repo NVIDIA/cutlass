@@ -2,6 +2,55 @@
 
 # CUTLASS 4.x
 
+## [4.2.0](https://github.com/NVIDIA/cutlass/tree/main) (2025-08-21)
+
+### CuTe DSL
+* We will likely be skipping 4.2.dev release and directly target 4.2.
+* CuTeDSL version remains at 4.1.0 till then.
+
+### CUTLASS C++
+* Add K major scale factor support for Hopper SM90 blockwise kernels.
+* Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+    - Add fused reduction kernel support for cutlass MLA.
+    - Fix an issue where `get_unmasked_trip_count` may return a negative value.
+    - Fix an issue where mbarriers are initialized with a zero arrival count.
+* Add Blackwell SM120 blockwise gemm kernel example: [example 87](https://github.com/NVIDIA/cutlass/tree/main/87_blackwell_geforce_gemm_blockwise/).
+* Support for Blackwell SM100 cpasync kernel.
+    - Collective mainloop codes: [cpasync mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm100_mma_cpasync_warpspecialized.hpp).
+    - Kernel codes: [cpasync kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm100_gemm_cpasync_warpspecialized.hpp).
+* Support for Blackwell SM121 kernels for DGX Spark GPUs.
+    - Share the major codes with Blackwell SM120 kernels.
+* Support for Blackwell SM100 legacy mixed input GEMM kernels.
+    - Collective mainloop codes: [Mixed input mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm100_mma_warpspecialized_mixed_input.hpp).
+    - Kernel codes: [Mixed input kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized_mixed_input_transform.hpp).
+    - Example codes: [example 86](https://github.com/NVIDIA/cutlass/tree/main/examples/86_blackwell_mixed_dtype_gemm/).
+* Support for Blackwell SM100 fp4 gemv kernels.
+    - Kernel codes: [Gemv kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/gemv_blockscaled.h).
+    - Example codes: [example 91](https://github.com/NVIDIA/cutlass/tree/main/examples/91_fp4_gemv/)
+* From CUDA 13.0, the Blackwell SM101 for Thor GPUs is renamed to SM110.
+    - For CUDA toolkit version < 13.0, SM101 is still used for Thor GPUs.
+    - For CUDA toolkit version >= 13.0, SM110 is used for Thor GPUs and SM101 is no longer valid.
+* CuTe changes:
+    - Fix inaccurate GridDim calculation under [CuTe tutorial](https://github.com/NVIDIA/cutlass/tree/main/examples/cute/tutorial/blackwell/).
+    - Add [movmatrix](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-movmatrix) support.
+    - Fix smallest MMA-N allowed for Blackwell fp8 and fp16 gemm kernels.
+    - Support fp16 accmulator for sm89 fp8 mma.
+    - Shorten `nullspace` implementation.
+    - Isolate and comment on `cosize` hacks.
+    - Important documentation correction: `E<0,1> == 1@0@1`.
+* Add support for heuristics-based kernel filtering and autotuning using `nvidia-matmul-heuristics`.
+    - Details please refer to [heuristics doc](https://github.com/NVIDIA/cutlass/tree/main/media/docs/cpp/heuristics.md).
+* Rename legacy Python API package from `cutlass` to `cutlass_cppgen`.
+* Fix some profiler issues:
+    - Modify default cluster callback values to none 0 to avoid profiler failure when these values are not set in command line.
+    - Fix some no output and timeout issues.
+* Add following unit tests:
+    - [fp16 accmulator for sm89 fp8 mma](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/ampere/cooperative_gemm.cu)
+    - [movmatrix test](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/turing/movm.cu)
+    - [fp8 narrow mma n](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32_narrow_mma_n.cu) and [fp16 narrow mma n](test/unit/gemm/device/sm100_tensorop_gemm/f8_f8_void_bf16_narrow_mma_n.cu)
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.0.
+
 ## [4.1.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.1.0) (2025-07-16)
 
 ### CuTe DSL
@@ -10,7 +59,7 @@
     - [Blackwell Mamba2 SSD](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py)
     - [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py)
 * API updates
-    - Please refer to [FUNCTIONALITY.md](https://github.com/NVIDIA/cutlass/blob/main/FUNCTIONALITY.md) for details
+    - Please refer to [DSL API changelog](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/cute_dsl_api/changelog.html) for details
 
 ### CUTLASS C++
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
@@ -58,7 +107,7 @@
     - [C-structure based customized interface between JIT function and user codes](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/ffi/jit_argument.py)
 * [Educational notebooks for getting started with CuTe DSL](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/notebooks)
 * API updates
-    - Please refer to [FUNCTIONALITY.md](https://github.com/NVIDIA/cutlass/blob/main/FUNCTIONALITY.md) for details
+    - Please refer to [DSL API changelog](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/cute_dsl_api/changelog.html) for details
 
 ### CUTLASS C++
 * Support [Family Specific Architecture Features](https://developer.nvidia.com/blog/nvidia-blackwell-and-nvidia-cuda-12-9-introduce-family-specific-architecture-features/) which was introduced in CUDA 12.9

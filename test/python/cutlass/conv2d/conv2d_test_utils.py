@@ -37,7 +37,7 @@ Utility functions for Conv2d tests.
 from cutlass_library import SubstituteTemplate
 import torch
 
-import cutlass
+import cutlass_cppgen
 from cutlass_library import (
     ConvKind,
     ConvMode,
@@ -51,8 +51,8 @@ from cutlass_library import (
     ShortLayoutTypeNames,
     SplitKMode,
 )
-from cutlass.shape import Conv2DProblemSize
-from cutlass.utils.datatypes import numpy_type, torch_type
+from cutlass_cppgen.shape import Conv2DProblemSize
+from cutlass_cppgen.utils.datatypes import numpy_type, torch_type
 
 from conv2d_problem_sizes import TestbedConv2dProblemSizes
 
@@ -88,7 +88,7 @@ def get_name_conv2d(
     :param element_c: data type of operand C
     :param element_accumulator: data type used in accumulation
     :param opclass: class of operation being performed (e.g., SIMT, Tensor Core)
-    :type opclass: cutlass.OpcodeClass
+    :type opclass: cutlass_cppgen.OpcodeClass
     :param threadblock_shape: indexable container of dimensions of threadblock tiles
     :param stages: number of pipeline stages to use in the kernel
     :type stages: int
@@ -216,7 +216,7 @@ def validate_problem_size(ps, conv_kind, split_k_slices):
 
 
 class Conv2dLauncherFrontend:
-    def __init__(self, plan: cutlass.Conv2d, seed: int = 80, backend="numpy"):
+    def __init__(self, plan: cutlass_cppgen.Conv2d, seed: int = 80, backend="numpy"):
         self.operation = plan
         self.conv_kind = plan.conv_kind
         self.seed = seed
@@ -233,7 +233,7 @@ class Conv2dLauncherFrontend:
 
         self.element_compute = DataType.f32
 
-        if self.dtype_A in [cutlass.DataType.f16, cutlass.DataType.bf16]:
+        if self.dtype_A in [cutlass_cppgen.DataType.f16, cutlass_cppgen.DataType.bf16]:
             self.rand_max = 1
         else:
             self.rand_max = 4
@@ -273,9 +273,9 @@ class Conv2dLauncherFrontend:
         else:
             raise Exception(f"Conv kind {self.conv_kind} is currently unsupported.")
 
-        if activation == cutlass.backend.epilogue.relu:
+        if activation == cutlass_cppgen.backend.epilogue.relu:
             torch_result = torch.nn.functional.relu(torch_result)
-        elif activation == cutlass.backend.epilogue.leaky_relu:
+        elif activation == cutlass_cppgen.backend.epilogue.leaky_relu:
             torch_result = torch.nn.functional.leaky_relu(torch_result, 0.5)
         return torch_result
 
@@ -345,7 +345,7 @@ def add_test(
 
     def run(self):
         # Create the plan
-        plan = cutlass.Conv2d(
+        plan = cutlass_cppgen.Conv2d(
             kind=conv_kind,
             element=element,
             element_accumulator=element_accumulator,
@@ -373,9 +373,9 @@ def add_test(
 
         if activation != "identity":
             if activation == "leaky_relu":
-                plan.activation = (cutlass.epilogue.leaky_relu, 0.5)
+                plan.activation = (cutlass_cppgen.epilogue.leaky_relu, 0.5)
             else:
-                plan.activation = getattr(cutlass.epilogue, activation)
+                plan.activation = getattr(cutlass_cppgen.epilogue, activation)
 
         conv2d_launcher = Conv2dLauncherFrontend(plan, 80, backend="torch")
 

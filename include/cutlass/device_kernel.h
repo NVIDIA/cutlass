@@ -35,6 +35,7 @@
 #pragma once
 
 #include <cutlass/detail/helper_macros.hpp> // CUTLASS_HOST_DEVICE
+#include <cutlass/arch/synclog.hpp>  // cutlass::arch::synclog_*
 #include <cutlass/platform/platform.h> // uint64_t
 
 // __grid_constant__ was introduced in CUDA 11.7.

@@ -43,6 +43,7 @@
 #include "cutlass/tfloat32.h"
 #include "cutlass/float8.h"
 #include "cutlass/uint128.h"
+#include "cutlass/uint256.h"
 #include "cutlass/exmy_base.h"
 #include "cutlass/float_subbyte.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////

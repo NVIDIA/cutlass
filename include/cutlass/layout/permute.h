@@ -38,9 +38,8 @@
     computation lies in operator() with private member variables  {col_permute_, row_permute_ and stride_} as new addresses after permute op.
 */
 #pragma once
-
-#include <cuda/std/cassert>
 #include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"

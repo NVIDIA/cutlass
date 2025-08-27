@@ -51,7 +51,9 @@
 // User could potentially define ComplexFloat/ComplexDouble instead of std::
 #ifndef BLAM_COMPLEX_TYPES
 #define BLAM_COMPLEX_TYPES 1
-#include <cuda/std/complex>
+#include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(complex)
+
 namespace blam {
 template <typename T>
 using Complex       = cuda::std::complex<T>;

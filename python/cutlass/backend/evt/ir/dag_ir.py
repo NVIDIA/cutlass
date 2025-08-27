@@ -38,10 +38,10 @@ import networkx as nx
 
 from cutlass_library import DataType
 
-from cutlass.backend.evt.ir.compute_nodes import ComputeNode
-from cutlass.backend.evt.ir.node import NodeBase
-from cutlass.backend.library import ActivationOp
-from cutlass.backend.utils import device_cc
+from cutlass_cppgen.backend.evt.ir.compute_nodes import ComputeNode
+from cutlass_cppgen.backend.evt.ir.node import NodeBase
+from cutlass_cppgen.backend.library import ActivationOp
+from cutlass_cppgen.backend.utils import device_cc
 
 
 class DAGIR:

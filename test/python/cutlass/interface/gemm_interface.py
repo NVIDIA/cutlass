@@ -37,9 +37,9 @@ Tests the high-level GEMM interface
 from math import ceil
 import unittest
 
-import cutlass
-import cutlass.utils.datatypes as datatypes
-from cutlass.backend.utils.device import device_cc
+import cutlass_cppgen
+import cutlass_cppgen.utils.datatypes as datatypes
+from cutlass_cppgen.backend.utils.device import device_cc
 from utils import ExpectException
 
 
@@ -60,7 +60,7 @@ class GemmEquivalence:
         self.alignment_A = alignment_A
         self.alignment_B = alignment_B
         self.alignment_C = alignment_C
-        self.plan = cutlass.op.Gemm(element_A=element_A, element_B=element_B, element_C=element_C,
+        self.plan = cutlass_cppgen.op.Gemm(element_A=element_A, element_B=element_B, element_C=element_C,
                                     element_D=element_D, element_accumulator=element_accumulator,
                                     layout_A=layout_A, layout_B=layout_B, layout_C=layout_C)
         self.op = self.plan.construct(alignment_A=alignment_A, alignment_B=alignment_B, alignment_C=alignment_C)
@@ -70,7 +70,7 @@ class GemmEquivalence:
         Compares whether two plans are equal
 
         :param other_plan: plan to compare against the default GEMM
-        :type other_plan: cutlass.op.Gemm
+        :type other_plan: cutlass_cppgen.op.Gemm
 
         :return: whether `other_plan` is equivalent to `self.plan`
         :rtype: bool
@@ -89,13 +89,13 @@ class GemmEquivalence:
             return
 
         # Test when specifying all parameters
-        plan_other = cutlass.op.Gemm(element_A=self.element_A, element_B=self.element_B, element_C=self.element_C,
+        plan_other = cutlass_cppgen.op.Gemm(element_A=self.element_A, element_B=self.element_B, element_C=self.element_C,
                                   element_D=self.element_D, element_accumulator=self.element_accumulator,
                                   layout_A=self.layout_A, layout_B=self.layout_B, layout_C=self.layout_C)
         assert self._plans_equal(plan_other)
 
         # Test when specifying all parameters but A
-        plan_other = cutlass.op.Gemm(element_B=self.element_B, element_C=self.element_C,
+        plan_other = cutlass_cppgen.op.Gemm(element_B=self.element_B, element_C=self.element_C,
                                   element_D=self.element_D, element_accumulator=self.element_accumulator,
                                   layout_B=self.layout_B, layout_C=self.layout_C,
                                   element=self.element_A, layout=self.layout_A)
@@ -104,13 +104,13 @@ class GemmEquivalence:
         # Test when specifying all parameters but A and B as tensors and using generic element and output
         # Only run this test if the layouts and types for A and B are equal.
         if self.element_A == self.element_B and self.layout_A == self.layout_B:
-            plan_other = cutlass.op.Gemm(element_C=self.element_C, element_D=self.element_D, element_accumulator=self.element_accumulator,
+            plan_other = cutlass_cppgen.op.Gemm(element_C=self.element_C, element_D=self.element_D, element_accumulator=self.element_accumulator,
                                       layout_C=self.layout_C, element=self.element_A, layout=self.layout_A)
             assert self._plans_equal(plan_other)
 
         # Test without explicit accumulator. Only run if the type of C and the accumulator.
         if self.element_C == self.element_accumulator:
-            plan_other = cutlass.op.Gemm(element_A=self.element_A, element_B=self.element_B, element_C=self.element_C,
+            plan_other = cutlass_cppgen.op.Gemm(element_A=self.element_A, element_B=self.element_B, element_C=self.element_C,
                                       element_D=self.element_D, layout_A=self.layout_A, layout_B=self.layout_B,
                                       layout_C=self.layout_C)
             assert self._plans_equal(plan_other)
@@ -119,7 +119,7 @@ class GemmEquivalence:
         if (self.element_A == self.element_B and self.element_A == self.element_C and self.element_A == self.element_D
             and self.element_A == self.element_accumulator and
             self.layout_A == self.layout_B and self.layout_A == self.layout_C):
-            plan_other = cutlass.op.Gemm(element=self.element_A, layout=self.layout_A)
+            plan_other = cutlass_cppgen.op.Gemm(element=self.element_A, layout=self.layout_A)
             assert self._plans_equal(plan_other)
 
     def numpy_test(self):
@@ -137,8 +137,8 @@ class GemmEquivalence:
         type_accum = datatypes.numpy_type(self.element_accumulator)
 
         layout_to_order = {
-            cutlass.LayoutType.RowMajor: 'C',
-            cutlass.LayoutType.ColumnMajor: 'F'
+            cutlass_cppgen.LayoutType.RowMajor: 'C',
+            cutlass_cppgen.LayoutType.ColumnMajor: 'F'
         }
         size = (2, 2)
         A = np.zeros(size, order=layout_to_order[self.layout_A], dtype=type_A)
@@ -147,28 +147,28 @@ class GemmEquivalence:
         D = np.zeros(size, order=layout_to_order[self.layout_C], dtype=type_D)
 
         # Test when specifying all parameters via tensors
-        plan_np = cutlass.op.Gemm(A=A, B=B, C=C, D=D, element_accumulator=type_accum)
+        plan_np = cutlass_cppgen.op.Gemm(A=A, B=B, C=C, D=D, element_accumulator=type_accum)
         assert self._plans_equal(plan_np)
 
         # Test when specifying all parameters but A as tensors
-        plan_np = cutlass.op.Gemm(B=B, C=C, D=D, element_accumulator=type_accum, element_A=type_A, layout_A=self.layout_A)
+        plan_np = cutlass_cppgen.op.Gemm(B=B, C=C, D=D, element_accumulator=type_accum, element_A=type_A, layout_A=self.layout_A)
         assert self._plans_equal(plan_np)
 
         # Test when specifying all parameters but A and B as tensors and using generic element and output
         # Only run this test if the layouts and types for A and B are equal.
         if type_A == type_B and self.layout_A == self.layout_B:
-            plan_np = cutlass.op.Gemm(C=C, D=D, element_accumulator=type_accum, element=type_A, layout=self.layout_A)
+            plan_np = cutlass_cppgen.op.Gemm(C=C, D=D, element_accumulator=type_accum, element=type_A, layout=self.layout_A)
             assert self._plans_equal(plan_np)
 
         # Test without explicit accumulator. Only run if the type of C and the accumulator.
         if type_C == type_accum:
-            plan_np = cutlass.op.Gemm(A=A, B=B, C=C, D=D)
+            plan_np = cutlass_cppgen.op.Gemm(A=A, B=B, C=C, D=D)
             assert self._plans_equal(plan_np)
 
         # Test with only the generic types and layouts. Only run if types and layouts of A, B, C, and D are the same.
         if (type_A == type_B and type_A == type_C and type_A == type_D and type_A == type_accum and
             self.layout_A == self.layout_B and self.layout_A == self.layout_C):
-            plan_np = cutlass.op.Gemm(element=type_A, layout=self.layout_A)
+            plan_np = cutlass_cppgen.op.Gemm(element=type_A, layout=self.layout_A)
             assert self._plans_equal(plan_np)
 
     def test_all(self):
@@ -186,36 +186,36 @@ class GemmEquivalenceTest(unittest.TestCase):
     @unittest.skipIf(device_cc() < 70, "Device compute capability is insufficient for FP16 Tensor Core tests.")
     def test_gemm_equivalence_f16_f16_f16_f16_f16_ttt_8_8_8(self):
         gemm_eq = GemmEquivalence(
-                element_A=cutlass.DataType.f16, element_B=cutlass.DataType.f16, element_C=cutlass.DataType.f16,
-                element_D=cutlass.DataType.f16, element_accumulator=cutlass.DataType.f16,
-                layout_A=cutlass.LayoutType.RowMajor, layout_B=cutlass.LayoutType.RowMajor, layout_C=cutlass.LayoutType.RowMajor,
+                element_A=cutlass_cppgen.DataType.f16, element_B=cutlass_cppgen.DataType.f16, element_C=cutlass_cppgen.DataType.f16,
+                element_D=cutlass_cppgen.DataType.f16, element_accumulator=cutlass_cppgen.DataType.f16,
+                layout_A=cutlass_cppgen.LayoutType.RowMajor, layout_B=cutlass_cppgen.LayoutType.RowMajor, layout_C=cutlass_cppgen.LayoutType.RowMajor,
                 alignment_A=8, alignment_B=8, alignment_C=8)
         gemm_eq.test_all()
 
     @unittest.skipIf(device_cc() < 70, "Device compute capability is insufficient for FP16 Tensor Core tests.")
     def test_gemm_equivalence_f16_f16_f16_f16_f32_ntn_8_8_8(self):
         gemm_eq = GemmEquivalence(
-                element_A=cutlass.DataType.f16, element_B=cutlass.DataType.f16, element_C=cutlass.DataType.f16,
-                element_D=cutlass.DataType.f16, element_accumulator=cutlass.DataType.f32,
-                layout_A=cutlass.LayoutType.ColumnMajor, layout_B=cutlass.LayoutType.RowMajor, layout_C=cutlass.LayoutType.ColumnMajor,
+                element_A=cutlass_cppgen.DataType.f16, element_B=cutlass_cppgen.DataType.f16, element_C=cutlass_cppgen.DataType.f16,
+                element_D=cutlass_cppgen.DataType.f16, element_accumulator=cutlass_cppgen.DataType.f32,
+                layout_A=cutlass_cppgen.LayoutType.ColumnMajor, layout_B=cutlass_cppgen.LayoutType.RowMajor, layout_C=cutlass_cppgen.LayoutType.ColumnMajor,
                 alignment_A=8, alignment_B=8, alignment_C=8)
         gemm_eq.test_all()
 
     @unittest.skipIf(device_cc() < 70, "Device compute capability is insufficient for FP16 Tensor Core tests.")
     def test_gemm_equivalence_f16_f16_f16_f16_f16_ttt_4_4_4(self):
         gemm_eq = GemmEquivalence(
-                element_A=cutlass.DataType.f16, element_B=cutlass.DataType.f16, element_C=cutlass.DataType.f16,
-                element_D=cutlass.DataType.f16, element_accumulator=cutlass.DataType.f16,
-                layout_A=cutlass.LayoutType.RowMajor, layout_B=cutlass.LayoutType.RowMajor, layout_C=cutlass.LayoutType.RowMajor,
+                element_A=cutlass_cppgen.DataType.f16, element_B=cutlass_cppgen.DataType.f16, element_C=cutlass_cppgen.DataType.f16,
+                element_D=cutlass_cppgen.DataType.f16, element_accumulator=cutlass_cppgen.DataType.f16,
+                layout_A=cutlass_cppgen.LayoutType.RowMajor, layout_B=cutlass_cppgen.LayoutType.RowMajor, layout_C=cutlass_cppgen.LayoutType.RowMajor,
                 alignment_A=8, alignment_B=8, alignment_C=8)
         gemm_eq.test_all()
 
     @unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for F64 Tensor Core tests.")
     def test_gemm_equivalence_f64_f64_f64_f64_f64_tnt_1_1_1(self):
         gemm_eq = GemmEquivalence(
-                element_A=cutlass.DataType.f64, element_B=cutlass.DataType.f64, element_C=cutlass.DataType.f64,
-                element_D=cutlass.DataType.f64, element_accumulator=cutlass.DataType.f64,
-                layout_A=cutlass.LayoutType.RowMajor, layout_B=cutlass.LayoutType.ColumnMajor, layout_C=cutlass.LayoutType.RowMajor,
+                element_A=cutlass_cppgen.DataType.f64, element_B=cutlass_cppgen.DataType.f64, element_C=cutlass_cppgen.DataType.f64,
+                element_D=cutlass_cppgen.DataType.f64, element_accumulator=cutlass_cppgen.DataType.f64,
+                layout_A=cutlass_cppgen.LayoutType.RowMajor, layout_B=cutlass_cppgen.LayoutType.ColumnMajor, layout_C=cutlass_cppgen.LayoutType.RowMajor,
                 alignment_A=1, alignment_B=1, alignment_C=1)
         gemm_eq.test_all()
 
@@ -229,7 +229,7 @@ class GemmErrorTests(unittest.TestCase):
         """
         Tests case in which the alignment specified is unsupported
         """
-        plan = cutlass.op.Gemm(element=cutlass.DataType.f16, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(element=cutlass_cppgen.DataType.f16, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         with ExpectException(True, 'Alignment 16 is not supported for F16. The construction should fail.'):
             op = plan.construct(alignment_A=16, alignment_B=16, alignment_C=16)
@@ -242,13 +242,13 @@ class GemmErrorTests(unittest.TestCase):
 
         # F64 Tensor Core operations are only avaiable on devices with CC >= 80
         supports_tensorop_f64 = cc >= 80
-        plan = cutlass.op.Gemm(cc=cc, element=cutlass.DataType.f64, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(cc=cc, element=cutlass_cppgen.DataType.f64, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         error_msg = f'Incorrectly raised an exception for availability of TensorOp with F64 operands on SM{cc}'
         with ExpectException(not supports_tensorop_f64, error_msg):
-            plan.opclass = cutlass.OpcodeClass.TensorOp
+            plan.opclass = cutlass_cppgen.OpcodeClass.TensorOp
 
-        expected_opclass = cutlass.OpcodeClass.TensorOp if supports_tensorop_f64 else cutlass.OpcodeClass.Simt
+        expected_opclass = cutlass_cppgen.OpcodeClass.TensorOp if supports_tensorop_f64 else cutlass_cppgen.OpcodeClass.Simt
         assert plan.opclass == expected_opclass, f'Expected opclass to be {expected_opclass}, but received {plan.opclass} for SM{cc}'
 
     @unittest.skipIf(device_cc() < 70, "Device compute capability is insufficient for F16 Tensor Core tests.")
@@ -256,25 +256,25 @@ class GemmErrorTests(unittest.TestCase):
         """
         Tests cases in which the opcode class in question is switched (e.g., from TensorOp to SIMT)
         """
-        plan = cutlass.op.Gemm( element=cutlass.DataType.f16, layout=cutlass.LayoutType.RowMajor)
-        assert plan.opclass == cutlass.OpcodeClass.TensorOp
+        plan = cutlass_cppgen.op.Gemm( element=cutlass_cppgen.DataType.f16, layout=cutlass_cppgen.LayoutType.RowMajor)
+        assert plan.opclass == cutlass_cppgen.OpcodeClass.TensorOp
 
         # Ensure that all tile descriptions have opclass of TensorOp
         for td in plan.tile_descriptions():
-            assert td.math_instruction.opcode_class == cutlass.OpcodeClass.TensorOp
+            assert td.math_instruction.opcode_class == cutlass_cppgen.OpcodeClass.TensorOp
 
-        plan.opclass = cutlass.OpcodeClass.Simt
+        plan.opclass = cutlass_cppgen.OpcodeClass.Simt
 
         # Ensure that all tile descriptions have opclass of Simt
         for td in plan.tile_descriptions():
-            assert td.math_instruction.opcode_class == cutlass.OpcodeClass.Simt
+            assert td.math_instruction.opcode_class == cutlass_cppgen.OpcodeClass.Simt
 
     def test_invalid_tile_description(self):
         """
         Tests scenarios in which an invalid tile description is provided for a given CC
         """
         cc = device_cc()
-        plan = cutlass.op.Gemm(cc=cc, element=cutlass.DataType.f16, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(cc=cc, element=cutlass_cppgen.DataType.f16, layout=cutlass_cppgen.LayoutType.RowMajor)
         td = plan.tile_descriptions()[0]
         stages = td.stages
 
@@ -292,8 +292,8 @@ class GemmErrorTests(unittest.TestCase):
             original_kschedule = td.kernel_schedule
             original_eschedule = td.epilogue_schedule
             with ExpectException(False, f'Incorrectly flagged an error for insufficient shared memory'):
-                td.kernel_schedule = cutlass.KernelScheduleType.TmaWarpSpecializedPingpong
-                td.epilogue_schedule = cutlass.EpilogueScheduleType.NoSmemWarpSpecialized
+                td.kernel_schedule = cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedPingpong
+                td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.NoSmemWarpSpecialized
                 td.stages = 3
                 plan.construct(td)
 
@@ -317,24 +317,24 @@ class GemmErrorTests(unittest.TestCase):
         td.cluster_shape = cluster_shape
 
         with ExpectException(cc < 90, f'Requested a non-auto schedule on SM{cc}'):
-            td.kernel_schedule = cutlass.KernelScheduleType.TmaWarpSpecializedPingpong
-            td.epilogue_schedule = cutlass.EpilogueScheduleType.TmaWarpSpecialized
+            td.kernel_schedule = cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedPingpong
+            td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized
             plan.construct(td)
 
         with ExpectException(True, f'Requested a non-auto kernel schedule with an auto epilogue schedule'):
-            td.kernel_schedule = cutlass.KernelScheduleType.TmaWarpSpecializedPingpong
-            td.epilogue_schedule = cutlass.EpilogueScheduleType.ScheduleAuto
+            td.kernel_schedule = cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedPingpong
+            td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.ScheduleAuto
             plan.construct(td)
 
         with ExpectException(True, f'Requested an auto kernel schedule with a non-auto epilogue schedule'):
-            td.kernel_schedule = cutlass.KernelScheduleType.ScheduleAuto
-            td.epilogue_schedule = cutlass.EpilogueScheduleType.TmaWarpSpecialized
+            td.kernel_schedule = cutlass_cppgen.KernelScheduleType.ScheduleAuto
+            td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized
             plan.construct(td)
 
         with ExpectException(cc < 90, f'Requested a tile scheduler on SM{cc}'):
-            td.kernel_schedule = cutlass.KernelScheduleType.TmaWarpSpecializedCooperative
-            td.epilogue_schedule = cutlass.EpilogueScheduleType.TmaWarpSpecializedCooperative
-            td.tile_scheduler = cutlass.TileSchedulerType.StreamK
+            td.kernel_schedule = cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedCooperative
+            td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecializedCooperative
+            td.tile_scheduler = cutlass_cppgen.TileSchedulerType.StreamK
             plan.construct(td)
 
         # Ensure that all returned tile descriptions are unique

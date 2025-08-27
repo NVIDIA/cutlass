@@ -39,7 +39,7 @@ from cutlass_library import (
     ConvKind,
     LayoutType
 )
-from cutlass.backend.c_types import (
+from cutlass_cppgen.backend.c_types import (
     Conv2DProblemSize_,
     GemmCoord_,
     GemmCoordBatched_

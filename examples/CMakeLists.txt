@@ -164,7 +164,12 @@ foreach(EXAMPLE
   83_blackwell_sparse_gemm
   84_blackwell_narrow_precision_sparse_gemm
   85_ada_ampere_gemm_with_blockwise_scaling
+  86_blackwell_mixed_dtype_gemm                 
+  87_blackwell_geforce_gemm_blockwise
   88_hopper_fmha
+  89_sm103_fp4_ultra_gemm
+  90_sm103_fp4_ultra_grouped_gemm
+  91_fp4_gemv
   )
 
   add_subdirectory(${EXAMPLE})

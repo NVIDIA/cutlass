@@ -97,7 +97,7 @@ using namespace cute;
 using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
 using ElementInput = cutlass::float_e2m1_t;                                // Element type for Input matrix operands
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,7 +263,7 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 // NormConst is a single device-side constant value, its not per-batch or per-group
 cutlass::DeviceAllocation<ElementAccumulator> norm_constant_device;
 
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 template <typename T>
 auto make_iterator(T* ptr) {
@@ -466,7 +466,7 @@ struct Result
   bool passed = false;
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -861,30 +861,39 @@ int run(Options &options, bool host_problem_shapes_available = true)
   return 0;
 }
 
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
+  // CUTLASS must be compiled with CUDA 12.8 or higher Toolkit for SM120 support,
+  // or CUDA 12.9 or higher for SM121 support.
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
   if (__CUDACC_VER_MAJOR__ < 12 ||
        ((__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)
        )
      ) {
-    std::cerr << "This example requires CUDA 12.8 or newer.\n";
+    std::cerr << "This example requires CUDA 12.8 or newer for SM120 support.\n";
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
+#elif defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 9)) {
+    std::cerr << "This example requires CUDA 12.9 or newer for SM121 support.\n";
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    return 0;
+  }
+#endif
 
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 12 && props.minor == 0)) {
+  if (!(props.major == 12 && (props.minor == 0 || props.minor == 1))) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 120a).\n";
+      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 120 or 121).\n";
     return 0;
   }
 
@@ -901,7 +910,7 @@ int main(int argc, char const **args) {
     return 0;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
   allocate(options);
   initialize(options);
 

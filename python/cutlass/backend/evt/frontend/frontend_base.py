@@ -37,14 +37,14 @@ Base class for Python EVT Frontend
 from typing import Union
 
 from cutlass_library import DataType
-from cutlass.backend.evt.ir import (
+from cutlass_cppgen.backend.evt.ir import (
     ComputeNode,
     DAGIR,
     LayoutNode,
     LoadNode,
     StoreNode,
 )
-from cutlass.backend.evt.passes import (
+from cutlass_cppgen.backend.evt.passes import (
     EVTGraphDrawer,
     EVTPassManager,
     GetSmemSize,
@@ -56,9 +56,9 @@ from cutlass.backend.evt.passes import (
     PassPreprocessRed,
     PassShapeTypePropagation,
 )
-from cutlass.backend.utils import device_cc
-from cutlass.epilogue.evt_ops import permute, reshape
-from cutlass.utils.datatypes import library_type
+from cutlass_cppgen.backend.utils import device_cc
+from cutlass_cppgen.epilogue.evt_ops import permute, reshape
+from cutlass_cppgen.utils.datatypes import library_type
 
 
 class EVTFrontendBase:

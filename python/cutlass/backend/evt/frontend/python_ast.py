@@ -40,10 +40,10 @@ import textwrap
 
 from cutlass_library import DataType
 
-import cutlass
-from cutlass.backend.evt.frontend.frontend_base import EVTFrontendBase
-from cutlass.backend.epilogue import identity, relu, tanh, sigmoid, silu, hardswish, gelu
-from cutlass.backend.library import FunctionalOp
+import cutlass_cppgen
+from cutlass_cppgen.backend.evt.frontend.frontend_base import EVTFrontendBase
+from cutlass_cppgen.backend.epilogue import identity, relu, tanh, sigmoid, silu, hardswish, gelu
+from cutlass_cppgen.backend.library import FunctionalOp
 
 
 class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):

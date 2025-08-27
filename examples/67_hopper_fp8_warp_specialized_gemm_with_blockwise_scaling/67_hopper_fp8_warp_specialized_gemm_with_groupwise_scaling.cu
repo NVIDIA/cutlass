@@ -132,7 +132,7 @@ constexpr int ScaleGranularityK = 128;
 constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
 constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
-using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK, cute::GMMA::Major::MN, cute::GMMA::Major::K>;
 
 using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout type for SFA matrix operand
 using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout type for SFB matrix operand

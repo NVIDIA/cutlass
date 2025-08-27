@@ -39,9 +39,8 @@
     defined in cutlass/tensor_ref.h.
 */
 #pragma once
-
-#include <cuda/std/cassert>
 #include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"
