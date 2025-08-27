@@ -102,7 +102,7 @@ struct SM8x_Byte_Gemm_Traits {
     Tile<Int<MMA_WARP_M>, Int<MMA_WARP_N>, Int<MMA_WARP_K>>>;
 
   using SmemLayoutAtom = decltype(composition(
-      Swizzle<2,4,3>{},
+      Swizzle<3,4,3>{},
       Layout<Shape <_8, Int<BLK_K>>,
               Stride<Int<BLK_K>, _1>>{}));
   using SmemLayoutAtomA = SmemLayoutAtom;

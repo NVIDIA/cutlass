@@ -130,6 +130,7 @@ struct CollectiveMma<
     "ScalePromotionInterval must be a multiple of the number of stages of the MMA atom.");
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
+  static constexpr bool OneScalePerTile = (ScaleMsPerTile == 1 && ScaleNsPerTile == 1);
 
   using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
@@ -411,7 +412,7 @@ struct CollectiveMma<
     Tensor tCrSFB = make_tensor_like<ElementBlockScale>(tCsSFB(_, _, _, _0{}));                     // (MMA,MMA_M,MMA_N)
 
     Tensor tCrAccum = cute::make_fragment_like(accum);              // (MMA_M,MMA_N)
-    clear(tCrAccum);
+    Tensor tCrScale = cute::make_fragment_like(accum);              // (MMA_M,MMA_N)
 
     CUTE_STATIC_ASSERT_V(size<1>(tCrA) == size<1>(accum));                     // MMA_M
     CUTE_STATIC_ASSERT_V(size<1>(tCrB) == size<2>(accum));                     // MMA_N
@@ -453,7 +454,7 @@ struct CollectiveMma<
     auto K_BLOCK_MAX = size<2>(tCrA);
 
     // PREFETCH register pipeline
-    if (K_BLOCK_MAX > 1) {
+    if constexpr (K_BLOCK_MAX > 1) {
       // Wait until our first prefetched tile is loaded in
       cp_async_wait<DispatchPolicy::Stages-2>();
       __syncthreads();
@@ -461,6 +462,14 @@ struct CollectiveMma<
       // Prefetch the first rmem from the first k-tile
       copy(smem_tiled_copy_A, tCsA_p(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
       copy(smem_tiled_copy_B, tCsB_p(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
+
+      // Prefetch the first per block scale values from shared memory to registers
+      copy(tCsSFA(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFA);
+      copy(tCsSFB(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFB);
+    }
+
+    if constexpr (OneScalePerTile) {
+      clear(tCrAccum);
     }
 
     CUTLASS_PRAGMA_NO_UNROLL
@@ -480,6 +489,10 @@ struct CollectiveMma<
           // Commit the smem for smem_pipe_read
           cp_async_wait<DispatchPolicy::Stages-2>();
           __syncthreads();
+
+          // Load per block scale values from shared memory to registers
+          copy(tCsSFA(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFA);
+          copy(tCsSFB(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFB);
         }
 
         // Load A, B shmem->regs for k_block+1
@@ -487,11 +500,7 @@ struct CollectiveMma<
         copy(smem_tiled_copy_A, tCsA_p(_,_,k_block_next), tCrA_copy_view(_,_,k_block_next));
         copy(smem_tiled_copy_B, tCsB_p(_,_,k_block_next), tCrB_copy_view(_,_,k_block_next));
         // Copy gmem to smem before computing gemm on each k-pipe
-        if (k_block == 0)
-        {
-          // Load per block scale values from shared memory to registers
-          copy(tCsSFA(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFA);
-          copy(tCsSFB(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFB);
+        if (k_block == 0) {
           // Set all predicates to false if we are going to overshoot bounds
           if (k_tile_count <= 0) {
             clear(tApA);
@@ -512,51 +521,36 @@ struct CollectiveMma<
           smem_pipe_write = smem_pipe_read;
           ++smem_pipe_read;
           smem_pipe_read = (smem_pipe_read == DispatchPolicy::Stages) ? 0 : smem_pipe_read;
-        }
 
+          if constexpr (OneScalePerTile) {
+            tCrScale(0) = tCrSFA(_0{}) * tCrSFB(_0{});
+          } else {
+            // Compute scale factor for next scale promotion, and reset the temp accumulator
+            CUTLASS_PRAGMA_UNROLL
+            for (int i = 0; i < size(tCrScale); ++i) {
+              tCrScale(i) = tCrSFA(i) * tCrSFB(i);
+              // tCrAccum and tCrScale share the same shape, reset here is a little faster
+              tCrAccum(i) = 0;
+            }
+          }
+        }
         // Transform before compute
         cute::transform(tCrA(_,_,k_block), TransformA{});
         cute::transform(tCrB(_,_,k_block), TransformB{});
         // Thread-level register gemm for k_block
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrAccum);
       });
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{}) * tCrSFB(_0{});
+      if constexpr (OneScalePerTile) {
+        // Prompt directly and reset the temp accumulator
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < size(accum); ++i) {
-          accum(i) += tCrAccum(i) * scale_ab;
+          accum(i) += tCrAccum(i) * tCrScale(0);
           tCrAccum(i) = 0;
         }
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrSFB(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
-          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
-        }
+      } else {
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < size(accum); ++i) {
-          accum(i) += tCrAccum(i) * tCrSFA(i);
-          tCrAccum(i) = 0;
-        }
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrSFA(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
-          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
-        }
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(accum); ++i) {
-          accum(i) += tCrAccum(i) * tCrSFB(i);
-          tCrAccum(i) = 0;
-        }
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(accum); ++i) {
-          accum(i) += tCrAccum(i) * tCrSFA(i) * tCrSFB(i);
-          tCrAccum(i) = 0;
+          accum(i) += tCrAccum(i) * tCrScale(i);
         }
       }
     }
