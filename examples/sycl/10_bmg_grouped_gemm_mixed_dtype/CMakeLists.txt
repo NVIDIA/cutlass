@@ -46,6 +46,7 @@ foreach(MMA_TYPE IN LISTS MMA_T)
     if(${MMA_TYPE} STREQUAL "half_t" AND ${QUANT_TYPE} STREQUAL "int8_t")
       set(exe_name "${mma_name}_s8_tensorwise")
       set(TEST_GROUP_DEQUANT --g=0)
+      set(TEST_A_NARROW --groups=2)
     endif()
 
     cutlass_example_add_executable(
