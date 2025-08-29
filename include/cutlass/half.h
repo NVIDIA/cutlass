@@ -918,12 +918,12 @@ half_t operator--(half_t & lhs, int) {
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::half_t operator "" _hf(long double x) {
+cutlass::half_t operator""_hf(long double x) {
   return cutlass::half_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::half_t operator "" _hf(unsigned long long int x) {
+cutlass::half_t operator""_hf(unsigned long long int x) {
   return cutlass::half_t(int(x));
 }
 
