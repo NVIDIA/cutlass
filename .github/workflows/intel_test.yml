@@ -2,11 +2,11 @@ name: "SYCL Intel Test"
 
 on:
   push:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   merge_group:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       DPCPP_VERSION:
