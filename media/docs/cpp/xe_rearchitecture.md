@@ -382,7 +382,7 @@ reorder(Tensor<...> const& src_fragment,
 
 ## Example CuTe GEMM
 
-Let's combine the pieces here to make a complete CuTe-level Xe GEMM kernel.
+Let's combine the pieces here to make a complete CuTe-level Xe GEMM kernel. Fully runnable code can be found at [examples/cute/tutorial/xe_gemm.cpp](../../../examples/cute/tutorial/xe_gemm.cpp).
 
 ```c++
 template <class ATensor, class BTensor, class CTensor,
@@ -393,11 +393,15 @@ gemm_device(ATensor   const& A,         // (M,K)
             CTensor        & C,         // (M,N)
             TiledMMA const & mma)
 {
-  using namespace cute;
-
   // -----
   // Setup
   // -----
+
+  /* Get workgroup and local IDs */
+  auto item = sycl::ext::oneapi::this_work_item::get_nd_item<2>();
+  auto wg_m = int(item.get_group(1));
+  auto wg_n = int(item.get_group(0));
+  auto local_id = int(item.get_local_id(0));
 
   /* Create proxy coordinate tensors for each global tensor */
   Tensor cA = make_identity_tensor(A.shape());   // (M,K)
@@ -406,11 +410,11 @@ gemm_device(ATensor   const& A,         // (M,K)
 
   /* Split GEMM into workgroup tiles, and identify our workgroup's tile (wg_coord) */
   auto wg_tile = mma.tile_mnk();
-  auto wg_coord = make_coord(BlockIdxX(), BlockIdxY(), 0);
+  auto wg_coord = make_coord(wg_m, wg_n, 0);
 
-  Tensor gA = local_tile(cA, select<0,2>(wg_tile), make_coord(BlockIdxX(),_));  // (BLK_M,BLK_K,k)
-  Tensor gB = local_tile(cB, select<1,2>(wg_tile), make_coord(BlockIdxY(),_));  // (BLK_N,BLK_K,k)
-  Tensor gC = local_tile(cC, wg_tile, wg_coord, Step<_1,_1, X>{});              // (BLK_M,BLK_N)
+  Tensor gA = local_tile(cA, select<0,2>(wg_tile), make_coord(wg_m,_));  // (BLK_M,BLK_K,k)
+  Tensor gB = local_tile(cB, select<1,2>(wg_tile), make_coord(wg_n,_));  // (BLK_N,BLK_K,k)
+  Tensor gC = local_tile(cC, wg_tile, wg_coord, Step<_1,_1, X>{});       // (BLK_M,BLK_N)
 
   /* Create block 2D TiledCopies */
   auto copy_a = make_block_2d_copy_A(mma, A);
@@ -418,11 +422,9 @@ gemm_device(ATensor   const& A,         // (M,K)
   auto copy_c = make_block_2d_copy_C(mma, C);
 
   /* Slice TiledCopy/TiledMMA operations to thread (work-item) level */
-  int thread_idx = int(ThreadIdxX());
-
-  auto thr_mma    =    mma.get_slice(thread_idx);
-  auto thr_copy_a = copy_a.get_slice(thread_idx);
-  auto thr_copy_b = copy_b.get_slice(thread_idx);
+  auto thr_mma    =    mma.get_slice(local_id);
+  auto thr_copy_a = copy_a.get_slice(local_id);
+  auto thr_copy_b = copy_b.get_slice(local_id);
 
   /* Register fragments for MMA */
   auto tCrA = thr_mma.partition_sg_fragment_A(gA(_,_,0));
@@ -444,12 +446,15 @@ gemm_device(ATensor   const& A,         // (M,K)
   auto prefetch_a = make_block_2d_prefetch(copy_a);
   auto prefetch_b = make_block_2d_prefetch(copy_b);
 
-  auto thr_prefetch_A = prefetch_a.get_slice(thread_idx);
-  auto thr_prefetch_B = prefetch_b.get_slice(thread_idx);
+  auto thr_prefetch_A = prefetch_a.get_slice(local_id);
+  auto thr_prefetch_B = prefetch_b.get_slice(local_id);
 
   /* Partition global tensor (proxies) for prefetch */
   auto pAgA = thr_prefetch_A.partition_S(gA);
   auto pBgB = thr_prefetch_B.partition_S(gB);
+
+  /* Prefetch distance, in units of k tiles */
+  const int prefetch_dist = 2;
 
   // ------
   // Kernel
@@ -457,32 +462,31 @@ gemm_device(ATensor   const& A,         // (M,K)
 
   constexpr int barrier_scope = 2;
 
-  int k_tile_count = ceil_div(get<2>(shape_MNK), get<2>(cta_tiler));
+  int k_tile_count = ceil_div(shape<1>(A), get<2>(wg_tile));
   int k_tile_prefetch = 0;
 
   /* Clear the accumulators */
   clear(tCrC);
 
   /* Warm up loops with prefetch to L1 */
-  CUTLASS_PRAGMA_UNROLL
-  for (; k_tile_prefetch < stages; k_tile_prefetch++) {
-    prefetch(prefetch_a, pAgA(_,_,k_tile_prefetch));
-    prefetch(prefetch_b, pBgB(_,_,k_tile_prefetch));
+  CUTE_UNROLL
+  for (; k_tile_prefetch < prefetch_dist; k_tile_prefetch++) {
+    prefetch(prefetch_a, pAgA(_,_,_,k_tile_prefetch));
+    prefetch(prefetch_b, pBgB(_,_,_,k_tile_prefetch));
   }
 
   /* Main loop */
-  CUTLASS_PRAGMA_UNROLL
   for (int k_tile = 0; k_tile < k_tile_count; k_tile++, k_tile_prefetch++) {
     /* Split barrier keeping threads loosely together */
     barrier_arrive(barrier_scope);
 
     /* Copy A/B from global memory (ideally L1 cache) to registers */
-    copy(copy_a, tAgA(_,_,k_tile), tArA);
-    copy(copy_b, tBgB(_,_,k_tile), tBrB);
+    copy(copy_a, tAgA(_,_,_,k_tile), tArA);
+    copy(copy_b, tBgB(_,_,_,k_tile), tBrB);
 
     /* Prefetch A/B tiles to L1 */
-    prefetch(prefetch_a, pAgA(_,_,k_tile_prefetch));
-    prefetch(prefetch_b, pBgB(_,_,k_tile_prefetch));
+    prefetch(prefetch_a, pAgA(_,_,_,k_tile_prefetch));
+    prefetch(prefetch_b, pBgB(_,_,_,k_tile_prefetch));
 
     /* Shuffle data from copy fragments to MMA fragments */
     reorder(tArA, tCrA);
