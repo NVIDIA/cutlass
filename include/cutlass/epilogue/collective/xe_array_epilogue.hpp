@@ -162,6 +162,7 @@ public:
 
   using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<ElementC const*>(nullptr)), make_shape(0,0,0), InternalStrideC{}));   //(m, n)
   using TensorD = decltype(make_tensor(make_gmem_ptr(static_cast<ElementD*>(nullptr)), make_shape(0,0,0), InternalStrideD{}));         //(m, n)
+  using EpilogueTensors = cute::tuple<TensorC, TensorD>;
 
   // Host side epilogue arguments
   struct Arguments {

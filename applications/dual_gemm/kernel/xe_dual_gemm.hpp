@@ -125,7 +125,7 @@ public:
  
   using TensorMKL = typename DualGemmMainloop::TensorMKL;
   using TensorNKL = typename DualGemmMainloop::TensorNKL;
-
+  using MainloopTensors = cute::tuple<TensorMKL, TensorNKL>;
   using TensorMK = decltype(TensorMKL{}(_, _, 0));
   using TensorNK = decltype(TensorNKL{}(_, _, 0));
 
