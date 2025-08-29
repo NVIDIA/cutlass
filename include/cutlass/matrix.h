@@ -429,8 +429,8 @@ struct Matrix<Element_, 1, 2> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
 
     return m;
   }
@@ -1023,9 +1023,9 @@ struct Matrix<Element_, 1, 3> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
 
     return m;
   }
@@ -1214,7 +1214,7 @@ struct Matrix<Element_, 1, 3> {
   Matrix cross(Matrix const &rhs) const {
     return Matrix(
       data[1] * rhs.data[2] - data[2] * rhs.data[1],
-      data[0] * rhs.data[2] - data[2] * rhs.data[1],
+      data[2] * rhs.data[0] - data[0] * rhs.data[2],
       data[0] * rhs.data[1] - data[1] * rhs.data[0]
     );
   }
@@ -1689,10 +1689,10 @@ struct Matrix<Element_, 1, 4> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
 
     return m;
   }
@@ -2306,8 +2306,8 @@ struct Matrix<Element_, 2, 1> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
 
     return m;
   }
@@ -3040,10 +3040,10 @@ struct Matrix<Element_, 2, 2> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
 
     return m;
   }
@@ -3912,12 +3912,12 @@ struct Matrix<Element_, 2, 3> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
 
     return m;
   }
@@ -4884,14 +4884,14 @@ struct Matrix<Element_, 2, 4> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
 
     return m;
   }
@@ -5590,9 +5590,9 @@ struct Matrix<Element_, 3, 1> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
 
     return m;
   }
@@ -5768,7 +5768,7 @@ struct Matrix<Element_, 3, 1> {
   Matrix cross(Matrix const &rhs) const {
     return Matrix(
       data[1] * rhs.data[2] - data[2] * rhs.data[1],
-      data[0] * rhs.data[2] - data[2] * rhs.data[1],
+      data[2] * rhs.data[0] - data[0] * rhs.data[2],
       data[0] * rhs.data[1] - data[1] * rhs.data[0]
     );
   }
@@ -6457,12 +6457,12 @@ struct Matrix<Element_, 3, 2> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
 
     return m;
   }
@@ -7514,15 +7514,15 @@ struct Matrix<Element_, 3, 3> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
-    m.data[8] = -m.data[8];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
+    m.data[8] = -data[8];
 
     return m;
   }
@@ -8905,18 +8905,18 @@ struct Matrix<Element_, 3, 4> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
-    m.data[8] = -m.data[8];
-    m.data[9] = -m.data[9];
-    m.data[10] = -m.data[10];
-    m.data[11] = -m.data[11];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
+    m.data[8] = -data[8];
+    m.data[9] = -data[9];
+    m.data[10] = -data[10];
+    m.data[11] = -data[11];
 
     return m;
   }
@@ -9723,10 +9723,10 @@ struct Matrix<Element_, 4, 1> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
 
     return m;
   }
@@ -10724,14 +10724,14 @@ struct Matrix<Element_, 4, 2> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
 
     return m;
   }
@@ -11996,18 +11996,18 @@ struct Matrix<Element_, 4, 3> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
-    m.data[8] = -m.data[8];
-    m.data[9] = -m.data[9];
-    m.data[10] = -m.data[10];
-    m.data[11] = -m.data[11];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
+    m.data[8] = -data[8];
+    m.data[9] = -data[9];
+    m.data[10] = -data[10];
+    m.data[11] = -data[11];
 
     return m;
   }
@@ -13594,22 +13594,22 @@ struct Matrix<Element_, 4, 4> {
   Matrix operator-() const {
     Matrix m;
     
-    m.data[0] = -m.data[0];
-    m.data[1] = -m.data[1];
-    m.data[2] = -m.data[2];
-    m.data[3] = -m.data[3];
-    m.data[4] = -m.data[4];
-    m.data[5] = -m.data[5];
-    m.data[6] = -m.data[6];
-    m.data[7] = -m.data[7];
-    m.data[8] = -m.data[8];
-    m.data[9] = -m.data[9];
-    m.data[10] = -m.data[10];
-    m.data[11] = -m.data[11];
-    m.data[12] = -m.data[12];
-    m.data[13] = -m.data[13];
-    m.data[14] = -m.data[14];
-    m.data[15] = -m.data[15];
+    m.data[0] = -data[0];
+    m.data[1] = -data[1];
+    m.data[2] = -data[2];
+    m.data[3] = -data[3];
+    m.data[4] = -data[4];
+    m.data[5] = -data[5];
+    m.data[6] = -data[6];
+    m.data[7] = -data[7];
+    m.data[8] = -data[8];
+    m.data[9] = -data[9];
+    m.data[10] = -data[10];
+    m.data[11] = -data[11];
+    m.data[12] = -data[12];
+    m.data[13] = -data[13];
+    m.data[14] = -data[14];
+    m.data[15] = -data[15];
 
     return m;
   }
