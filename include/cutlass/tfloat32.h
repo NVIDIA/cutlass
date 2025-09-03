@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -331,6 +332,65 @@ struct numeric_limits<cutlass::tfloat32_t> {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace std
+
+namespace cutlass {
+namespace platform {
+
+/// Forward Declaration
+template <class T>
+struct numeric_limits;
+
+/// Numeric limits
+template <>
+struct numeric_limits<cutlass::tfloat32_t> {
+  static bool const is_specialized = true;
+  static bool const is_signed = true;
+  static bool const is_integer = false;
+  static bool const is_exact = false;
+  static bool const has_infinity = true;
+  static bool const has_quiet_NaN = true;
+  static bool const has_signaling_NaN = false;
+#if !defined(__CUDACC_RTC__)
+  static std::float_denorm_style const has_denorm = std::denorm_present;
+#endif
+  static bool const has_denorm_loss = true;
+#if !defined(__CUDACC_RTC__)
+  static std::float_round_style const round_style = std::round_to_nearest;
+#endif
+  static bool const is_iec559 = false;
+  static bool const is_bounded = true;
+  static bool const is_modulo = false;
+  static int const digits = 19;
+
+  /// Least positive value
+  static cutlass::tfloat32_t min() { return cutlass::tfloat32_t::bitcast(0x01); }
+
+  /// Minimum finite value
+  static cutlass::tfloat32_t lowest() { return cutlass::tfloat32_t::bitcast(0xff7fffff); }
+
+  /// Maximum finite value
+  static cutlass::tfloat32_t max() { return cutlass::tfloat32_t::bitcast(0x7f7fffff); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t epsilon() { return cutlass::tfloat32_t::bitcast(0x1000); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t round_error() { return cutlass::tfloat32_t(0.5f); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t infinity() { return cutlass::tfloat32_t::bitcast(0x7f800000); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t quiet_NaN() { return cutlass::tfloat32_t::bitcast(0x7fffffff); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t signaling_NaN() { return cutlass::tfloat32_t::bitcast(0x7fffffff); }
+
+  /// Returns smallest finite value
+  static cutlass::tfloat32_t denorm_min() { return cutlass::tfloat32_t::bitcast(0x1); }
+};
+}  // namespace platform
+}  // namespace cutlass
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
