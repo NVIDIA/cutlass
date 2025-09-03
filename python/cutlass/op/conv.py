@@ -183,7 +183,7 @@ class Conv2d(OperationBase):
     :param B: tensor representing data type of operand B
     :param C: tensor representing data type of operand C
     :param D: tensor representing data type of operand D
-    :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
+    :param alpha: scalar parameter alpha from GEMM computation that scales the product of operands A and B
     :param beta: scalar parameter beta from GEMM operation that scales operand C
     :param element: generic data type to be used for operands A, B, C, D, as well as the accumulation data type
     :type element: cutlass_cppgen.DataType
@@ -749,7 +749,7 @@ class Conv2d(OperationBase):
 
         By default, this call returns only once the kernel has completed. To launch the kernel
         and immediately return, set ``sync=False``. In this case, it is the responsibility of the
-        caller to syncrhonize the results of the kernel before attempting to access outputs
+        caller to synchronize the results of the kernel before attempting to access outputs
         by calling ``sync()`` on the arguments returned from this call.
 
         :param A: tensor representing data type and layout of operand A
@@ -759,7 +759,7 @@ class Conv2d(OperationBase):
         :param stride: (stride_h, stride_w) describing the convolution stride. Default: (1, 1)
         :param padding: (pad_h, pad_w) describing the convolution padding. Default: (0, 0)
         :param dilation: (dilation_h, dilation_w) describing the dilation of convolution. Default: (1, 1)
-        :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
+        :param alpha: scalar parameter alpha from GEMM computation that scales the product of operands A and B
         :param beta: scalar parameter beta from GEMM operation that scales operand C
         :param split_k: a tuple (split_k_mode, split_k_slices)
         :param sync: whether the call should wait for the kernel to complete before returning

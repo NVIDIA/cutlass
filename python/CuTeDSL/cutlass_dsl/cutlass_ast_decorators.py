@@ -194,7 +194,7 @@ class ScfGenerator:
                                 original_idx = unpacked_idx
                                 break
                         raise DSLRuntimeError(
-                            f"`{op_type_name}` expects {expected_type} type for varible `{mix_iter_arg_names[original_idx]}`, but got {actual_type}.",
+                            f"`{op_type_name}` expects {expected_type} type for variable `{mix_iter_arg_names[original_idx]}`, but got {actual_type}.",
                             suggestion=f"Please make sure `{mix_iter_arg_names[original_idx]}` type is not changed inside of `{op_type_name}`.",
                         )
                     scf.YieldOp(region_values)

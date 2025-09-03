@@ -1717,7 +1717,7 @@ def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
 
 
 #
-# Utilties
+# Utilities
 #
 
 
@@ -4282,7 +4282,7 @@ def flat_divide(target, tiler: Tiler, *, loc=None, ip=None):
 
 
 #
-# Higher-level utilties
+# Higher-level utilities
 #
 
 
@@ -6563,7 +6563,7 @@ class struct:
             intA : cutlass.Int16
 
 
-        # Supports aligment for its elements:
+        # Supports alignment for its elements:
         @cute.struct
         class StorageB:
             a: cute.struct.Align[
@@ -6738,7 +6738,7 @@ class struct:
                 return new_obj
             else:
                 raise TypeError(
-                    "align only can be applied to sturct/MemRange/base_dsl scalar"
+                    "align only can be applied to struct/MemRange/base_dsl scalar"
                 )
 
     class Align(metaclass=_AlignMeta):
@@ -6814,10 +6814,10 @@ class struct:
                 offset = add_offset(object.__sizeof__())
             else:
                 raise TypeError(
-                    f"Struct element only support sturct/array/base_dsl scalar, "
+                    f"Struct element only support struct/array/base_dsl scalar, "
                     f"but got {object}"
                 )
-            # Total aligment determined by the strictest requirement
+            # Total alignment determined by the strictest requirement
             alignment = max(alignment, sub_align)
         # Total size determined by alignment
         self._align_of = alignment
@@ -6851,7 +6851,7 @@ class struct:
                 setattr(cls, name, new_obj)
             else:
                 raise TypeError(
-                    f"Struct element only support sturct/array/base_dsl scalar, "
+                    f"Struct element only support struct/array/base_dsl scalar, "
                     f"but got {obj}"
                 )
         return cls
