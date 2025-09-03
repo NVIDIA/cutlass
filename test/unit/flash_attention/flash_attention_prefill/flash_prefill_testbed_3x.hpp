@@ -44,6 +44,7 @@
 #include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
+#include "cutlass/util/mixed_dtype_utils.hpp"
 
 #include <cute/tensor.hpp>
 #include <random>
@@ -177,33 +178,6 @@ struct XE_Flash_Attention_Prefill {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
-
-/// Helper to initialize a block of device data
-template <class Element>
-bool initialize_block(
-        cutlass::DeviceAllocation<Element>& block,
-        uint64_t seed=2023) {
-
-  Element scope_max, scope_min;
-  int bits_input = cutlass::sizeof_bits<Element>::value;
-
-  if (bits_input == 1) {
-    scope_max = Element(2);
-    scope_min = Element(0);
-  } else if (bits_input <= 8) {
-    scope_max = Element(2);
-    scope_min = Element(-2);
-  } else {
-    scope_max = Element(8);
-    scope_min = Element(-8);
-  }
-
-  cutlass::reference::device::BlockFillRandomUniform(
-       block.get(), block.size(), seed, scope_max, scope_min, 0);
-
-  syclcompat::wait();
-  return true;
-}
 
 template <typename FlashAttention>
 struct TestbedImpl {
