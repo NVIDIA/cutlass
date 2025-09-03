@@ -131,7 +131,7 @@ __global__ void Conv2dFprop(
     for (int S = 0; S < problem_size.S; ++S) {
       for (int C = 0; C < problem_size.C; ++C) {
 
-        // Get group id of currnet channel
+        // Get group id of current channel
         int c_group_idx = C / c_per_group;
 
         // Load from activations tensor
