@@ -186,7 +186,7 @@ void fmha_mla_reference(
         shared_mem);
     if (cudaSuccess != result) {
       result = cudaGetLastError(); // to clear the error bit
-      throw std::runtime_error("couldn't perform smem optin");
+      throw std::runtime_error("couldn't perform smem option");
     }
   }
   fmha_mla_reference_kernel<<<grid, block, shared_mem>>>(

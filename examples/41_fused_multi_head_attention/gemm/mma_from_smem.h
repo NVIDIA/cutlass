@@ -167,7 +167,7 @@ class MmaBaseFromSharedMemory {
       Shape::kK / WarpGemm::kK>;
   using WarpCount1 = WarpCount;
 
-  /// Number of warp-level GEMM oeprations
+  /// Number of warp-level GEMM operations
   static int const kWarpGemmIterations =
       (WarpGemm::kK / Operator::Policy::MmaShape::kK);
   static int const kWarpGemmIterations1 = kWarpGemmIterations;

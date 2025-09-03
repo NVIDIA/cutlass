@@ -177,7 +177,7 @@ int main(int argc, char** argv)
   // Tile the tensor (m, n) ==> ((M, N), m', n') where (M, N) is the static tile
   // shape, and modes (m', n') correspond to the number of tiles.
   //
-  // These will be used to determine the CUDA kernel grid dimensinos.
+  // These will be used to determine the CUDA kernel grid dimensions.
   Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);        // ((M, N), m', n')
 
   // Describes the layout of threads which is then replicated to tile 'block_shape.'
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
 
   // Construct tiled copy, a tiling of copy atoms.
   //
-  // Note, this assumes the vector and thread layouts are aligned with contigous data
+  // Note, this assumes the vector and thread layouts are aligned with contiguous data
   // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
   // reads. Alternative value layouts are also possible, though incompatible layouts
   // will result in compile time errors.

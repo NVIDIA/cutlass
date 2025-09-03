@@ -180,7 +180,7 @@ struct Options {
       "  --alpha=<float>             GEMM alpha parameter\n"
       "  --beta=<float>              GEMM beta parameter\n"
       "  --iterations=<int>          Number of profiling iterations to perform.\n"
-      "  --check=<bool>              Validate results against a reference (unfused) imlementation"
+      "  --check=<bool>              Validate results against a reference (unfused) implementation"
       "  --verbose=<bool>            Enable verbose output"
       "\n"
       "Examples:\n"

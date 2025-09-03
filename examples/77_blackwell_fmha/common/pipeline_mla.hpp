@@ -224,7 +224,7 @@ private:
   static constexpr bool is_2sm_mma = size(AtomThrShape_MNK{}) > 1;
 
   // Consumer signalling Producer of completion
-  // Ensures all blocks in the Same Row and Column get notifed.
+  // Ensures all blocks in the Same Row and Column get notified.
   CUTLASS_DEVICE
   void consumer_release(uint32_t stage, uint32_t skip) {
     detail::pipeline_check_is_consumer(params_.role);

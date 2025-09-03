@@ -244,7 +244,7 @@
 
 * [58_ada_fp8_gemm](58_ada_fp8_gemm/)
 
-    Ada GEMM kernel targetting Ada FP8 tensor cores via the CUTLASS 2.x API.
+    Ada GEMM kernel targeting Ada FP8 tensor cores via the CUTLASS 2.x API.
 
 * [59_ampere_gather_scatter_conv](59_ampere_gather_scatter_conv/)
 
