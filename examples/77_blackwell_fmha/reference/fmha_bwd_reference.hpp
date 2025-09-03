@@ -59,9 +59,9 @@ void __global__ fmha_bwd_reference_dQ_kernel(
   using ElementAcc = typename TensorLSE::value_type;
   
   extern __shared__ char mS_mem[];
-  ElementAcc* mS = reinterpret_cast<ElementAcc*>(mS_mem);
+  Element* mS = reinterpret_cast<Element*>(mS_mem);
 
-  ElementAcc softmax_scale = 1.0 / sqrt(ElementAcc(size<2>(problem_shape_in)));
+  ElementAcc softmax_scale = 1.0f / sqrtf(size<2>(problem_shape_in));
 
   for (int idx_L = blockIdx.y; idx_L < size<4>(problem_shape_in); idx_L += gridDim.y) {
     auto [problem_shape, offset] = apply_variable_length_offset(
@@ -99,7 +99,7 @@ void __global__ fmha_bwd_reference_dQ_kernel(
         fusion.apply_mask(frag, make_tensor(id.data() + make_arithmetic_tuple(idx_Q, idx_K), id.layout()), problem_shape);
         acc_qk = frag(0);
 
-        mS[idx_K] = static_cast<ElementAcc>(exp(softmax_scale * acc_qk - mLSE(idx_Q, idx_L)) * softmax_scale * (acc_dov - acc_doo));
+        mS[idx_K] = static_cast<Element>(expf(softmax_scale * acc_qk - mLSE(idx_Q, idx_L)) * softmax_scale * (acc_dov - acc_doo));
       }  // for idx_K
 
       __syncthreads();
@@ -107,7 +107,9 @@ void __global__ fmha_bwd_reference_dQ_kernel(
       for (int idx_D = threadIdx.x; idx_D < size<2>(problem_shape); idx_D += blockDim.x) {
         ElementAcc acc = 0;
         for (int idx_K = 0; idx_K < size<1>(problem_shape); idx_K++) {
-          acc += mS[idx_K] * ElementAcc(mK(idx_K, idx_D, idx_L));
+          ElementAcc rK = mK(idx_K, idx_D, idx_L);
+          ElementAcc rDS = mS[idx_K];
+          acc += rDS * rK;
         }
         mDQ(idx_Q, idx_D, idx_L) = static_cast<typename TensorDQ::value_type>(acc);
       }  // for idx_D
@@ -138,9 +140,9 @@ void __global__ fmha_bwd_reference_dK_kernel(
   using ElementAcc = typename TensorLSE::value_type;
   
   extern __shared__ char mS_mem[];
-  ElementAcc* mS = reinterpret_cast<ElementAcc*>(mS_mem);
+  Element* mS = reinterpret_cast<Element*>(mS_mem);
 
-  ElementAcc softmax_scale = 1.0 / sqrt(ElementAcc(size<2>(problem_shape_in)));
+  ElementAcc softmax_scale = 1.0f / sqrtf(size<2>(problem_shape_in));
 
   auto [H, B] = get<4>(problem_shape_in);
   auto [H_R, H_K] = H;
@@ -189,7 +191,7 @@ void __global__ fmha_bwd_reference_dK_kernel(
           fusion.apply_mask(frag, make_tensor(id.data() + make_arithmetic_tuple(idx_Q, idx_K), id.layout()), problem_shape);
           acc_qk = frag(0);
 
-          mS[idx_Q] = expf(softmax_scale * acc_qk - mLSE(idx_Q, coord_HB)) * softmax_scale * (acc_dov - acc_doo);
+          mS[idx_Q] = static_cast<Element>(expf(softmax_scale * acc_qk - mLSE(idx_Q, coord_HB)) * softmax_scale * (acc_dov - acc_doo));
         }  // for idx_Q
 
         __syncthreads();
@@ -197,7 +199,9 @@ void __global__ fmha_bwd_reference_dK_kernel(
         int idx_D = threadIdx.x;
         if (idx_D < D) {
           for (int idx_Q = 0; idx_Q < Q; idx_Q++) {
-            acc_dk += mS[idx_Q] * ElementAcc(mQ(idx_Q, idx_D, coord_HB));
+            ElementAcc rQ = mQ(idx_Q, idx_D, coord_HB);
+            ElementAcc rDS = mS[idx_Q];
+            acc_dk += rDS * rQ;
           }
         }
         __syncthreads();
@@ -235,9 +239,9 @@ void __global__ fmha_bwd_reference_dV_kernel(
   using ElementAcc = typename TensorLSE::value_type;
   
   extern __shared__ char mS_mem[];
-  ElementAcc* mS = reinterpret_cast<ElementAcc*>(mS_mem);
+  Element* mS = reinterpret_cast<Element*>(mS_mem);
 
-  ElementAcc softmax_scale = 1.0 / sqrt(ElementAcc(size<2>(problem_shape_in)));
+  ElementAcc softmax_scale = 1.0f / sqrtf(size<2>(problem_shape_in));
 
   auto [H, B] = get<4>(problem_shape_in);
   auto [H_R, H_K] = H;
@@ -278,7 +282,7 @@ void __global__ fmha_bwd_reference_dV_kernel(
           fusion.apply_mask(frag, make_tensor(id.data() + make_arithmetic_tuple(idx_Q, idx_K), id.layout()), problem_shape);
           acc_qk = frag(0);
 
-          mS[idx_Q] = expf(softmax_scale * acc_qk - mLSE(idx_Q, coord_HB));
+          mS[idx_Q] = static_cast<Element>(expf(softmax_scale * acc_qk - mLSE(idx_Q, coord_HB)));
         }  // for idx_Q
 
         __syncthreads();
@@ -287,7 +291,8 @@ void __global__ fmha_bwd_reference_dV_kernel(
         if (idx_D_VO < D_VO) {
           for (int idx_Q = 0; idx_Q < Q; idx_Q++) {
             ElementAcc rDO = mDO(idx_Q, idx_D_VO, coord_HB);
-            acc_dv += mS[idx_Q] * rDO;
+            ElementAcc rP = mS[idx_Q];
+            acc_dv +=  rP * rDO;
           }
         }  // for idx_D
 
@@ -323,7 +328,7 @@ void fmha_bwd_reference_dQ(
 
   dim3 grid(size<0>(mDQ), size<2>(mDQ), 1);
   dim3 block(256);
-  int shared_mem = size<0>(mK) * sizeof(typename TensorLSE::value_type);
+  int shared_mem = size<0>(mK) * sizeof(typename TensorDQ::value_type);
   fmha_bwd_reference_dQ_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDQ, fusion);
 }
 
@@ -350,7 +355,7 @@ void fmha_bwd_reference_dK(
   auto [H_R, H_K] = H;
   dim3 grid(K, H_K * B, 1);
   dim3 block(std::max(D, 256));
-  int shared_mem = size<0>(mDO) * sizeof(typename TensorLSE::value_type);
+  int shared_mem = size<0>(mDO) * sizeof(typename TensorDK::value_type);
   fmha_bwd_reference_dK_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDK, fusion);
 }
 
@@ -377,7 +382,7 @@ void fmha_bwd_reference_dV(
   auto [H_R, H_K] = H;
   dim3 grid(K, H_K * B, 1);
   dim3 block(std::max(D_VO, 256));
-  int shared_mem = size<0>(mDO) * sizeof(typename TensorLSE::value_type);
+  int shared_mem = size<0>(mDO) * sizeof(typename TensorDV::value_type);
   fmha_bwd_reference_dV_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDV, fusion);
 }
 
