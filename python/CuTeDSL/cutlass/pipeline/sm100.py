@@ -400,7 +400,7 @@ class PipelineUmmaAsync(PipelineAsync):
             producer_mask = PipelineUmmaAsync._compute_tmem_sync_mask(cta_layout_vmnk)
 
         if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1:
-            # Set mask to None if not using 2CTA intructions
+            # Set mask to None if not using 2CTA instructions
             consumer_mask = None
         else:
             consumer_mask = PipelineUmmaAsync._compute_peer_cta_rank()

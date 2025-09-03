@@ -413,7 +413,7 @@ def bool_cast(value):
     if executor._is_dynamic_expression(value):
         raise DSLRuntimeError(
             "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion = "Please explicitly convert to boolean with expressions like comparision."
+            suggestion = "Please explicitly convert to boolean with expressions like comparison."
         )
     return bool(value)
 

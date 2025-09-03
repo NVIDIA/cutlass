@@ -349,7 +349,7 @@ class ArtifactManager:
         cmd.extend(host_compilation_options.get_str().split(" "))
         cmd.extend(["-shared", "-o", temp_dst.name, temp_src.name, "-lcudart", "-lcuda"])
 
-        # Comile and load the library
+        # Compile and load the library
         compile_with_nvcc( cmd, source_buffer_host, error_file="./cutlass_python_compilation_host_error.txt")
         host_lib = ctypes.CDLL(temp_dst.name)
 
