@@ -208,11 +208,11 @@ struct TiledCopy : Copy_Atom
   // Tile a tensor or a layout from shape
   //   (M,N,...)
   // to shape
-  //   ((ThrV,ThrX),FrgV,(RestM,RestN,...))
+  //   (Thr,(FrgV,FrgX),(RestM,RestN,...))
   // where
-  //   ThrV:  The threads local to a COPY_ATOM Src.
-  //   ThrX:  The threads tiled across COPY_ATOMs Src.
+  //   Thr:   The logical threads within the tiled copy.
   //   FrgV:  The values local to a COPY_ATOM Src.
+  //   FrgX:  The values tiled across COPY_ATOMs Src.
   //   RestM: The values tiled in M.
   //   RestN: The values tiled in N.
   template <class STensor>
@@ -229,11 +229,11 @@ struct TiledCopy : Copy_Atom
   // Tile a tensor or a layout from shape
   //   (M,N,...)
   // to shape
-  //   ((ThrV,ThrX),FrgV,(RestM,RestN,...))
+  //   (Thr,(FrgV,FrgX),(RestM,RestN,...))
   // where
-  //   ThrV:  The threads local to a COPY_ATOM Dst.
-  //   ThrX:  The threads tiled across COPY_ATOMs Dst.
+  //   Thr:   The logical threads within the tiled copy.
   //   FrgV:  The values local to a COPY_ATOM Dst.
+  //   FrgX:  The values tiled across COPY_ATOMs Dst.
   //   RestM: The values tiled in M.
   //   RestN: The values tiled in N.
   template <class DTensor>
@@ -250,7 +250,7 @@ struct TiledCopy : Copy_Atom
   // Tile a tensor or a layout from shape
   //   ((TileM,TileN,...), (RestM,RestN,...))
   // to shape
-  //   ((ThrV,ThrX),FrgV,(RestM,RestN,...))
+  //   (Thr,(FrgV,FrgX),(RestM,RestN,...))
   template <class Tensor, class Ref2TrgLayout>
   CUTE_HOST_DEVICE constexpr static
   auto
