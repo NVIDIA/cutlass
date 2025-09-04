@@ -113,8 +113,6 @@ else()
 add_custom_target(cutlass_test_unit_gemm_device)
 add_custom_target(test_unit_gemm_device)
 
-
-
 ################################################################################
 
 function(cutlass_test_unit_gemm_device_add_deps NAME)
@@ -1252,7 +1250,6 @@ cutlass_test_unit_add_executable(
 )
 
 endif()
-endif()
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt_sm100
@@ -1283,3 +1280,4 @@ cutlass_test_unit_gemm_device_add_executable(
   sm100_gemm_f32_f32_f32_simt_align1_ptr_array.cu
 )
 
+endif()
