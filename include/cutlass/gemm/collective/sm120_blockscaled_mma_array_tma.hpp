@@ -45,7 +45,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -114,7 +113,7 @@ struct CollectiveMma<
   using ElementB = remove_cvref_t<decltype(get<0>(ElementPairB{}))>;
   using StrideB  = remove_cvref_t<decltype(get<0>(StridePairB{}))>;
   using InternalStrideB  = cute::remove_pointer_t<StrideB>;
-  
+
   // SFA and SFB
   using ElementSF = remove_cvref_t<decltype(get<1>(ElementPairA{}))>;
   using LayoutSFA = remove_cvref_t<decltype(get<1>(StridePairA{}))>;
@@ -353,13 +352,12 @@ struct CollectiveMma<
     (void) workspace;
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(typename ProblemShape::UnderlyingProblemShape{}, int32_t(1));
-    constexpr int tma_alignment_bits = 128;
-    auto init_M = tma_alignment_bits;
-    auto init_N = tma_alignment_bits;
-    auto init_K = tma_alignment_bits;
+    auto init_M = int32_t(size<0>(TileShape{}));
+    auto init_N = int32_t(size<1>(TileShape{}));
+    auto init_K = int32_t(size<2>(TileShape{}));
+    auto init_L = 1;
+
     // Batches/Groups are managed by using appropriate pointers to input matrices
-    const uint32_t init_L = 1;
     TmaInternalElementA const* ptr_A_first_batch = nullptr;
     TmaInternalElementB const* ptr_B_first_batch = nullptr;
     ElementSF const* ptr_SFA_first_batch = nullptr;
@@ -467,7 +465,7 @@ struct CollectiveMma<
     constexpr int tma_alignment_bits_B = cutlass::detail::get_input_alignment_bits<ElementB, IsF8F6F4>();
     constexpr int min_tma_aligned_elements_A = tma_alignment_bits_A / cutlass::sizeof_bits<ElementA>::value;
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits_B / cutlass::sizeof_bits<ElementB>::value;
-    
+
     bool implementable = true;
     if (problem_shapes.is_host_problem_shape_available()) {
       // Check alignment for all problem sizes
@@ -643,7 +641,7 @@ struct CollectiveMma<
     // Represent the full tensors -- get these from TMA
     Tensor mA_mkl = params.tma_load_a.get_tma_tensor(make_shape(M,K,init_L));                          // (m,k,l)
     Tensor mB_nkl = params.tma_load_b.get_tma_tensor(make_shape(N,K,init_L));                          // (n,k,l)
-    
+
     // Represent the full tensor of Scale factors
     InternalLayoutSFA layout_SFA{};
     InternalLayoutSFB layout_SFB{};
@@ -884,7 +882,7 @@ struct CollectiveMma<
     auto tCsB_stage   = tCsB(_,_,_,read_stage);
     auto tCsSFA_stage = tCsSFA(_,_,_,read_stage);
     auto tCsSFB_stage = tCsSFB(_,_,_,read_stage);
-    
+
     auto copy_kblock = [&](auto k_block) {
         // copy smem->rmem for A/B operand
       copy(smem_tiled_copy_A, tCsA_stage(_,_,k_block), tCrA_copy_view(_,_,k_block));
@@ -895,7 +893,7 @@ struct CollectiveMma<
       fp4_shift_A(MMAOp{}, tCrA_copy_view(_,_,k_block));
       fp4_shift_B(MMAOp{}, tCrB_copy_view(_,_,k_block));
 
-      
+
       // Copy smem->rmem for SFA/SFB operand
       copy(tCsSFA_stage(_,_,k_block), tCrSFA_copy_view(_,_,k_block));
       copy(tCsSFB_stage(_,_,k_block), tCrSFB_copy_view(_,_,k_block));
@@ -917,7 +915,7 @@ struct CollectiveMma<
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-        
+
         if (k_block == K_BLOCK_MAX - 1) {
           cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -944,7 +942,7 @@ struct CollectiveMma<
     for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
       auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-      
+
       if (k_block == K_BLOCK_MAX - 1) {
         cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -1058,11 +1056,11 @@ struct CollectiveMma<
 
     Tensor tensor_sfb = make_tensor(ptr_SF, mainloop_params.layout_SFB[next_group]);
 
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a,
                                              prob_shape_A, prob_stride_A);
     cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_sfa, tensor_sfa,
                                              prob_shape_SFA, prob_stride_SFA);
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b,
                                              prob_shape_B, prob_stride_B);
     cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_sfb, tensor_sfb,
                                              prob_shape_SFB, prob_stride_SFB);
@@ -1091,7 +1089,7 @@ struct CollectiveMma<
                                                             prob_stride_B);
     cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_SFB,
                                                             prob_shape_SFB,
-                                                            prob_stride_SFB);                                                   
+                                                            prob_stride_SFB);
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)
@@ -1122,6 +1120,10 @@ struct CollectiveMma<
   tensormaps_cp_fence_release (
       TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB> const& input_tensormaps) {
+    if (cute::elect_one_sync()) {
+      cute::tma_desc_commit_group();
+      cute::tma_desc_wait_group();
+    }
     // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
     tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);
@@ -1151,7 +1153,7 @@ struct CollectiveMma<
       [[maybe_unused]] int32_t next_batch) {
     return input_tensors;
   }
-  
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

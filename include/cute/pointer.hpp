@@ -33,9 +33,9 @@
 #include <cute/config.hpp>                     // CUTE_HOST_DEVICE
 #include <cute/pointer_base.hpp>               // cute::iter_adaptor
 #include <cute/pointer_sparse.hpp>
-#include <cute/container/array_subbyte.hpp>    // cute::subbyte_iterator
 #include <cute/numeric/integral_constant.hpp>  // cute::true_type, cute::false_type
 #include <cute/numeric/numeric_types.hpp>      // sizeof_bits
+#include <cute/container/array_subbyte.hpp>    // cute::subbyte_iterator
 
 namespace cute
 {
@@ -51,11 +51,13 @@ namespace cute
 //   Requires construction of a sparse_ptr that emulates access to the S logical elements.
 //
 
-template <class NewT>
+template <class NewT_, class T>
 CUTE_HOST_DEVICE constexpr
 auto
-recast_ptr(void* ptr)
+recast_ptr(T* ptr)
 {
+  using NewT = copy_cv_t<T, NewT_>;
+
   if constexpr (is_sparse<NewT>::value) {
     constexpr int sparsity = NewT::sparsity;
     NewT* p = reinterpret_cast<NewT*>(ptr);
@@ -65,24 +67,6 @@ recast_ptr(void* ptr)
     return subbyte_iterator<NewT>(ptr);
   } else {
     return reinterpret_cast<NewT*>(ptr);
-  }
-  CUTE_GCC_UNREACHABLE;
-}
-
-template <class NewT>
-CUTE_HOST_DEVICE constexpr
-auto
-recast_ptr(void const* ptr)
-{
-  if constexpr (is_sparse<NewT>::value) {
-    constexpr int sparsity = NewT::sparsity;
-    NewT const* p = reinterpret_cast<NewT const*>(ptr);
-    return make_sparse_ptr<sparsity>(p);
-  } else
-  if constexpr (cute::is_subbyte_v<NewT>) {
-    return subbyte_iterator<NewT const>(ptr);
-  } else {
-    return reinterpret_cast<NewT const*>(ptr);
   }
   CUTE_GCC_UNREACHABLE;
 }

@@ -506,13 +506,13 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  if (props.major < 8) {
-    std::cout << "This example requires an Ampere GPU or newer (CC >= 80)" << std::endl;
+  if (props.major != 9) {
+    std::cout << "This example requires NVIDIA's Hopper Architecture GPU with compute capability 90a" << std::endl;
     // Return 0 so tests pass if run on unsupported architectures or CUDA Toolkits.
     return 0;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM90A_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
   int m = 5120;
   if (argc >= 2)
@@ -604,7 +604,7 @@ int main(int argc, char** argv)
   printf("CUTE_GEMM:     [%6.1f]GFlop/s  (%6.4f)ms\n", gflops / cute_time, cute_time*1000);
 
 #else
-  std::cout << "CUTLASS_ARCH_MMA_SM90A_SUPPORTED must be enabled, but it is not. Test is waived \n" << std::endl;
+  std::cout << "CUTLASS_ARCH_MMA_SM90_SUPPORTED must be enabled, but it is not. Test is waived \n" << std::endl;
 #endif
 
   return 0;

@@ -104,7 +104,7 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM100_TMA_2SM_LOAD before calling .with()
@@ -135,6 +135,13 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_OP, NumBitsPerTMA>
   uint64_t*, // smem mbarrier
   uint64_t   // cache hint
   > const opargs_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -192,7 +199,7 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM100_TMA_2SM_LOAD_MULTICAST_OP before calling .with()
@@ -223,6 +230,13 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_MULTICAST_OP, NumBitsPerTMA>
   uint16_t,  // multicast mask
   uint64_t   // cache hint
   > const opargs_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 ////////////////////////////////////

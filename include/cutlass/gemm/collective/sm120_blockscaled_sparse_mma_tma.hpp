@@ -46,7 +46,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -154,13 +153,13 @@ struct CollectiveMma<
   // Asymmetric buffering
   // Tensor A/B could have different buffering, with TILEK, and STAGEs.
   //    It let AsymmetricKRatio equals TILEK_A / TILEK_B, to make sure A/B's
-  //    pipeline keep same steps when procude / consume data.
+  //    pipeline keep same steps when produce / consume data.
   // Currently, AsymmetricKRatio = {1, 2} is the only support.
   static constexpr int AsymmetricKRatio = DispatchPolicy::StagesA != DispatchPolicy::StagesB ? 2 : 1;
 
   // Construct TileShape for SFB load from GMEM to SMEM.
   // It is required to keep consistency with BlockScaled granularity defined in Sm1xxBlkScaledConfig.
-  // So that TileShape for scaling factor needs to be defined as a mutliple of Blk_MN.
+  // So that TileShape for scaling factor needs to be defined as a multiple of Blk_MN.
   using Blk_MN      = typename Sm1xxBlkScaledConfig::Blk_MN;
   using TileShapeSF = decltype(make_shape(ceil_div(size<0>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{},
                                            ceil_div(size<1>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{},
@@ -707,7 +706,7 @@ struct CollectiveMma<
         Tensor mSFB_tmp = mainloop_params.tma_load_sfb.get_tma_tensor(shape(mainloop_params.layout_SFB));
         auto x = stride<0,1>(mSFB_tmp);
         auto y = ceil_div(shape<0,1>(mSFB_tmp), _2{});
-        auto  new_shape =  make_shape (make_shape( shape<0,0>(mSFB_tmp), 
+        auto  new_shape =  make_shape (make_shape( shape<0,0>(mSFB_tmp),
                                        make_shape( make_shape(_2{}),   y)),  shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
         auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp),
                                       make_stride(make_stride(_0{}),   x)), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
@@ -964,10 +963,9 @@ struct CollectiveMma<
         Tensor tCcE = gmem_thr_copy_E.partition_S(cE_mk);                                            // (CPY,CPY_M,CPY_K)
         auto [atom, vec] = get_copy_atom_and_common_vec();
         // Coordinate comparison for out of bound (OOB) predication
-        Tensor tZcE = zipped_divide(tCcE, vec);
-        auto pred_fn = [&](auto coord){ return cute::elem_less(tZcE(Int<0>{}, coord), Shape_MK); };
+        Tensor tZpE = cute::lazy::transform(zipped_divide(tCcE, vec), [&](auto const& c){ return cute::elem_less(c, Shape_MK); });
         // Copy
-        cute::copy_if(atom, pred_fn, zipped_divide(tCgE, vec), zipped_divide(tCrE_copy_view, vec));
+        cute::copy_if(atom, tZpE, zipped_divide(tCgE, vec), zipped_divide(tCrE_copy_view, vec));
       }
       else {
         // Copy

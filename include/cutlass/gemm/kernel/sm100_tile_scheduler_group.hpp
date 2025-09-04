@@ -52,15 +52,14 @@ namespace cutlass::gemm::kernel::detail {
 // Therefore, we don't how many tiles there will be for the scheduler to hand out.
 // Hence, we have a SM90 style static group scheduler that launches the largest grid possible.
 // If we had access to host-side problem shapes, one could to use it to figure out the grid shape
-// and thereafter use CLC query (which can then be linearized and mapped to an approriate tile coord).
+// and thereafter use CLC query (which can then be linearized and mapped to an appropriate tile coord).
 
 template<class GroupProblemShape, int SchedulerPipelineStageCount>
 class PersistentTileSchedulerSm100Group {
 
 public:
   using UnderlyingScheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
-  using UnderlyingProblemShape = typename GroupProblemShape::UnderlyingProblemShape;
-  using Params = PersistentTileSchedulerSm100GroupParams<UnderlyingProblemShape>;
+  using Params = PersistentTileSchedulerSm100GroupParams<GroupProblemShape>;
   using WorkTileInfo = typename UnderlyingScheduler::WorkTileInfo;
   using Arguments = typename UnderlyingScheduler::Arguments;
   using RasterOrder = typename Params::RasterOrder;
@@ -89,12 +88,9 @@ public:
     static_assert(cute::is_static<TileShape>::value);
 
     auto selected_cluster_shape = cutlass::detail::select_cluster_shape(cluster_shape_mnk, hw_info.cluster_shape);
-    auto cta_shape = cute::conditional_return<not cute::is_static_v<ClusterShape>>(
-        shape_div(tile_shape_mnk, atom_thr_shape_mnk),      // Dynamic Cluster: For 2SM kernels, use CTA tile shape for the underlying scheduler
-        shape_div(tile_shape_mnk, selected_cluster_shape)); // Static Cluster: Blackwell builders expects TileShape to be Cluster's Tile Shape, Hopper doesn't
+    auto cta_shape = shape_div(tile_shape_mnk, atom_thr_shape_mnk); // For 2SM kernels, use CTA tile shape for the underlying scheduler
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
-      problem_shapes.groups(),
       problem_shapes,
       hw_info,
       cta_shape, selected_cluster_shape);
@@ -102,9 +98,7 @@ public:
     Params params;
     params.initialize(
       problem_blocks,
-      problem_shapes.groups(),
-      problem_shapes.problem_shapes,
-      problem_shapes.host_problem_shapes,
+      problem_shapes,
       to_gemm_coord(cta_shape),
       to_gemm_coord(selected_cluster_shape),
       hw_info,
@@ -144,8 +138,8 @@ public:
   template<class BlockShape, class ClusterShape>
   CUTLASS_HOST_DEVICE static
   dim3
-  get_tiled_cta_shape_mnl(int groups, GroupProblemShape problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
-    return UnderlyingScheduler::get_tiled_cta_shape_mnl(groups, problem_shapes, hw_info, cta_shape, cluster_shape);
+  get_tiled_cta_shape_mnl(GroupProblemShape const &problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
+    return UnderlyingScheduler::get_tiled_cta_shape_mnl(problem_shapes, hw_info, cta_shape, cluster_shape);
   }
 
   // Given the inputs, computes the physical grid we should launch.
@@ -154,13 +148,12 @@ public:
   static dim3
   get_grid_shape(
       Params const& params,
-      GroupProblemShape problem_shapes,
+      GroupProblemShape const& problem_shapes,
       BlockShape cta_shape,
       [[maybe_unused]] AtomThrShape atom_thr_shape,
       ClusterShape cluster_shape,
       KernelHardwareInfo hw_info) {
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
-      problem_shapes.groups(),
       problem_shapes,
       hw_info,
       cta_shape,

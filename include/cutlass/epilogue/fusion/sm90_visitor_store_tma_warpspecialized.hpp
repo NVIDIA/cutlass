@@ -412,17 +412,13 @@ struct Sm90AuxStore<
       constexpr auto MCL = decltype(max_common_layout(tC_gAux(_,_,_,_0{},_0{}), tC_rAux)){};
       constexpr int V = cute::min(Alignment, size(MCL));
 
-      Tensor tC_cAux_mn = tC_cAux(_,_,_,epi_m,epi_n);
-      Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux_mn), MCL.compose(Int<V>{})));
-
       Tensor tC_gAux_vec = recast<Array<Element, V>>(coalesce(tC_gAux(_,_,_,epi_m,epi_n)));
       Tensor tC_rAux_vec = recast<Array<Element, V>>(coalesce(tC_rAux));
 
-      auto pred_fn = [&] (auto const&... coords) {
-        return elem_less(tC_cAux_vec(coords...), problem_shape_mnl);
-      };
+      Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux(_,_,_,epi_m,epi_n)), MCL.compose(Int<V>{})));
+      Tensor tC_pAux_vec = cute::lazy::transform(tC_cAux_vec, [&](auto const& c){ return elem_less(c, problem_shape_mnl); });
 
-      copy_if(pred_fn, tC_rAux_vec, tC_gAux_vec);
+      copy_if(tC_pAux_vec, tC_rAux_vec, tC_gAux_vec);
     }
   };
 
@@ -1177,8 +1173,9 @@ public:
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     Layout ref_layout_MN = [&] () {
-      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
-      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+      auto mn_shape = shape(typename decltype(args.tiled_copy)::Tiler_MN{});
+      if constexpr (ReferenceSrc) { return right_inverse(args.tiled_copy.get_layoutS_TV()).with_shape(mn_shape); }
+      else                        { return right_inverse(args.tiled_copy.get_layoutD_TV()).with_shape(mn_shape); }
     }();                                                                                         // tile_mn -> tv_idx
 
     // Get the MN layout + coord of lanes to determine shuffle reduction iterations
@@ -1654,8 +1651,9 @@ public:
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     Layout ref_layout_MN = [&] () {
-      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
-      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+      auto mn_shape = shape(typename decltype(args.tiled_copy)::Tiler_MN{});
+      if constexpr (ReferenceSrc) { return right_inverse(args.tiled_copy.get_layoutS_TV()).with_shape(mn_shape); }
+      else                        { return right_inverse(args.tiled_copy.get_layoutD_TV()).with_shape(mn_shape); }
     }();                                                                                         // tile_mn -> tv_idx
 
     // Get the MN layout + coord of lanes to determine shuffle reduction iterations

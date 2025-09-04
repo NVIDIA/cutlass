@@ -36,7 +36,7 @@ Collection of builtin functions used for host reference in EVT
 
 import numpy as np
 
-from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_available, is_torch_tensor
+from cutlass_cppgen.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_available, is_torch_tensor
 
 if is_torch_available():
     import torch
@@ -72,6 +72,12 @@ def minimum(x, y):
         return np.minimum(x, y)
     elif is_torch_tensor(x):
         return torch.minimum(x, torch.tensor(y))
+
+def exp(x):
+    if is_numpy_tensor(x):
+        return np.exp(x)
+    elif is_torch_tensor(x):
+        return torch.exp(x)
 
 
 ##############################################################################

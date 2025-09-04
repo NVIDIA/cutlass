@@ -37,7 +37,7 @@ Tests for a successful installation of the CUTLASS Python interface
 import os
 import unittest
 
-import cutlass
+import cutlass_cppgen
 import cutlass_library
 
 
@@ -48,7 +48,7 @@ class InstallationTest(unittest.TestCase):
         """
         src_file = 'include/cutlass/cutlass.h'
         library_file = os.path.join(cutlass_library.source_path, src_file)
-        cutlass_file = os.path.join(cutlass.CUTLASS_PATH, src_file)
+        cutlass_file = os.path.join(cutlass_cppgen.CUTLASS_PATH, src_file)
         assert os.path.isfile(library_file), f"Unable to locate file {library_file}. Installation has not succeeded."
         assert os.path.isfile(cutlass_file), f"Unable to locate file {cutlass_file}. Installation has not succeeded."
 

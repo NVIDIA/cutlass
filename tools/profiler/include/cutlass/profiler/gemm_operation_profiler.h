@@ -103,8 +103,6 @@ public:
 
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     int swizzle_size{1};
-
-    
     cutlass::library::RuntimeDatatype runtime_input_datatype_a{};
     cutlass::library::RuntimeDatatype runtime_input_datatype_b{};
     
@@ -268,7 +266,8 @@ protected:
     std::array<int64_t, 3> const &preferred_cluster,
     std::array<int64_t, 3> const &fallback_cluster,
     cutlass::library::RasterOrder const &raster_order,
-    int swizzle_size);
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
 
   /// Update performance result configuration according to flexible user setups
   void update_result_(
@@ -279,7 +278,8 @@ protected:
     cutlass::library::RasterOrder const &raster_order,
     std::array<int64_t, 3> const &preferred_cluster,
     std::array<int64_t, 3> const &fallback_cluster,
-    int swizzle_size);
+    int swizzle_size,
+    bool is_dynamic_cluster_enabled);
 
   /// Initializes the performance result
   void initialize_result_(

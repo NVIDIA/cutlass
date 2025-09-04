@@ -8,7 +8,7 @@ What is an `ArithTuple`? Are those tensor strides? What do those mean? What is t
 
 This documentation intends to answer those questions and introduce some of the more advanced features of CuTe.
 
-# Introduction to TMA instructions
+## Introduction to TMA instructions
 
 The Tensor Memory Accelerator (TMA) is a set of instructions for copying possibly multidimensional arrays between global and shared memory.  TMA was introduced in the Hopper architecture.  A single TMA instruction can copy an entire tile of data all at once.  As a result, the hardware no longer needs to compute individual memory addresses and issue a separate copy instruction for each element of the tile.
 
@@ -53,9 +53,9 @@ That means that an ordinary CuTe Tensor that stores a GMEM pointer and computes 
 
 What do we do?
 
-# Building a TMA Tensor
+## Building a TMA Tensor
 
-## Implicit CuTe Tensors
+### Implicit CuTe Tensors
 
 All CuTe Tensors are compositions of Layouts and Iterators. An ordinary global memory tensor's iterator is its global memory pointer. However, a CuTe Tensor's iterator doesn't have to be a pointer; it can be any random-access iterator.
 
@@ -83,7 +83,7 @@ This tensor maps logical coordinates to on-the-fly computed integers. Because it
 But the TMA doesn't consume pointers or integers, it consumes coordinates. Can we make a tensor of implicit TMA
 coordinates for the TMA instruction to consume? If so, then we could presumably also tile and partition and slice that tensor of coordinates so that we would always have the right TMA coordinate to give to the instruction.
 
-## ArithTupleIterators and ArithTuples
+### ArithTupleIterators and ArithTuples
 
 First, we build a `counting_iterator` equivalent for TMA coordinates. It should support
 
@@ -110,7 +110,7 @@ In summary, one creates a TMA descriptor for the *whole global memory tensor*. T
 
 We can now track and offset TMA coordinates with this iterator, but how do we get CuTe Layouts to generate non-integer offsets?
 
-## Strides aren't just integers
+### Strides aren't just integers
 
 Ordinary tensors have a layout that maps
 a logical coordinate `(i,j)` into a 1-D linear index `k`.
@@ -122,7 +122,7 @@ to a TMA coordinate, rather than to a 1-D linear index.
 
 To do this, we can abstract what a stride is. Strides need not be integers, but rather any algebraic object that supports inner-product with the integers (the logical coordinate). The obvious choice is the `ArithmeticTuple` we used earlier since they can be added to each other, but this time additionally equipped with an `operator*` so it can also be scaled by an integer.
 
-### Aside: Integer-module strides
+#### Aside: Integer-module strides
 
 A group of objects that support addition between elements and product between elements and integers is called an integer-module.
 
@@ -133,18 +133,20 @@ Rank-R tuples of integers are an integer-module.
 
 In principle, layout strides may be any integer-module.
 
-### Basis elements
+#### Basis elements
 
 CuTe's basis elements live in the header file `cute/numeric/arithmetic_tuple.hpp`.
 To make it easy to create `ArithmeticTuple`s that can be used as strides, CuTe defines normalized basis elements using the `E` type alias. "Normalized" means that the scaling factor of the basis element is the compile-time integer 1.
 
-| C++ object | Description           | String representation |
-| ---        | ---                   | ---                   |
-| `E<>{}`    | `1`                   | `1`                   |
-| `E<0>{}`   | `(1,0,...)`           | `1@0`                 |
-| `E<1>{}`   | `(0,1,0,...)`         | `1@1`                 |
-| `E<0,1>{}` | `((0,1,0,...),0,...)` | `1@1@0`               |
-| `E<1,0>{}` | `(0,(1,0,...),0,...)` | `1@0@1`               |
+| C++ object | Description             | String representation |
+| ---        | ---                     | ---                   |
+| `E<>{}`    | `1`                     | `1`                   |
+| `E<0>{}`   | `(1,0,...)`             | `1@0`                 |
+| `E<1>{}`   | `(0,1,0,...)`           | `1@1`                 |
+| `E<0,0>{}` | `((1,0,...),0,...)`     | `1@0@0`               |
+| `E<0,1>{}` | `((0,1,0,...),0,...)`   | `1@1@0`               |
+| `E<1,0>{}` | `(0,(1,0,...),0,...)`   | `1@0@1`               |
+| `E<1,1>{}` | `(0,(0,1,0,...),0,...)` | `1@1@1`               |
 
 The "description" column in the above table
 interprets each basis element as an infinite tuple of integers,
@@ -155,7 +157,9 @@ For example, `E<1>{}` has a 1 in position 1: `(0,1,0,...)`.
 
 Basis elements can be *nested*.
 For instance, in the above table, `E<0,1>{}` means that
-in position 0 there is a `E<1>{}`: `((0,1,0,...),0,...)`.
+in position 0 there is a `E<1>{}`: `((0,1,0,...),0,...)`. Similarly,
+`1@1@0` means that `1` is lifted to position 1 to create `1@1`: `(0,1,0,...)`
+which is then lifted again to position 0.
 
 Basis elements can be *scaled*.
 That is, they can be multiplied by an integer *scaling factor*.
@@ -172,7 +176,7 @@ Intuitively, "compatible" means that
 the nested structure of the two basis elements
 matches well enough to add the two elements together.
 
-### Linear combinations of strides
+#### Linear combinations of strides
 
 Layouts work by taking the inner product
 of the natural coordinate with their strides.
@@ -200,7 +204,7 @@ and can be interpreted as the coordinate `((7,4),23)`.
 Thus, linear combinations of these strides can be used to generate TMA coordinates.
 These coordinates, in turn, can be used to offset TMA coordinate iterators.
 
-## Application to TMA Tensors
+### Application to TMA Tensors
 
 Now we can build CuTe Tensors like the one seen in the introduction.
 
@@ -230,7 +234,7 @@ ArithTuple(0,0) o (4,5):(_1@1,_1@0):
   (0,3)  (1,3)  (2,3)  (3,3)  (4,3)
 ```
 
-## Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

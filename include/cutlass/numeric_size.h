@@ -50,7 +50,13 @@ struct sizeof_bits {
 };
 
 template <typename T>
-struct sizeof_bits<T const>: sizeof_bits<T> {};
+struct sizeof_bits<T const> : sizeof_bits<T> {};
+
+template <typename T>
+struct sizeof_bits<T volatile> : sizeof_bits<T> {};
+
+template <typename T>
+struct sizeof_bits<T const volatile> : sizeof_bits<T> {};
 
 template <>
 struct sizeof_bits<void> {

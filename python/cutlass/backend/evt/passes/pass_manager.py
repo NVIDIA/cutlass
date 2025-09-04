@@ -38,8 +38,8 @@ from typing import Any
 
 import networkx as nx
 
-from cutlass.backend.evt.ir import DAGIR
-from cutlass.backend.evt.passes.util import cc_map
+from cutlass_cppgen.backend.evt.ir import DAGIR
+from cutlass_cppgen.backend.evt.passes.util import cc_map
 
 
 class EVTPassBase:

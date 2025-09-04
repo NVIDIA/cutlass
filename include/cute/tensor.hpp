@@ -56,3 +56,9 @@
 #include <cute/algorithm/cooperative_copy.hpp>
 #include <cute/algorithm/cooperative_gemm.hpp>
 
+//
+// Utilities
+//
+
+#include <cute/util/print_tensor.hpp>
+#include <cute/util/print_latex.hpp>

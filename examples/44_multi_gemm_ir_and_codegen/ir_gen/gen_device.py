@@ -153,7 +153,7 @@ class gen_device:
 
         warp_M_tile = 32
 
-        # Determine maxmimum N_tile
+        # Determine maximum N_tile
         Max_Ntile = 0
         for layer in self.fuse_gemm_info:
             n_tile = layer['mnk'][1]

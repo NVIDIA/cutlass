@@ -48,13 +48,11 @@ TMA::SmemSwizzleBits
 get_tma_swizzle_bits(Swizzle<B,M,S>)
 {
   if constexpr (M == 4) {
-    switch (B) {
-      default:  static_assert(0 <= B && B <= 3, "Expected B = 0,1,2, or 3 when M == 4. Unsupported layout swizzle.");
-      case 3:   return TMA::SmemSwizzleBits::B128;
-      case 2:   return TMA::SmemSwizzleBits::B64;
-      case 1:   return TMA::SmemSwizzleBits::B32;
-      case 0:   return TMA::SmemSwizzleBits::DISABLE;
-    }
+    static_assert(0 <= B && B <= 3, "Expected B = 0,1,2, or 3 when M == 4. Unsupported layout swizzle.");
+    if constexpr (B == 3) { return TMA::SmemSwizzleBits::B128; }
+    if constexpr (B == 2) { return TMA::SmemSwizzleBits::B64; }
+    if constexpr (B == 1) { return TMA::SmemSwizzleBits::B32; }
+    if constexpr (B == 0) { return TMA::SmemSwizzleBits::DISABLE; }
   } else
 
   if constexpr (M == 5 || M == 6) {

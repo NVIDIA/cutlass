@@ -101,7 +101,16 @@ struct Sm100FmhaMlaReductionKernel {
 
   CUTLASS_DEVICE void operator() (Params const& params, char* smem_raw) {
     if (params.split_kv <= 1) return;
+
     auto blk_coord = make_coord(blockIdx.x, _0{}, blockIdx.z);
+
+    auto dim_k = params.ptr_seq == nullptr ?  params.dim_k : params.ptr_seq[get<2>(blk_coord)];
+    auto local_split_kv = params.ptr_split_kv == nullptr ? params.split_kv : params.ptr_split_kv[get<2>(blk_coord)];
+    auto k_tile_total = ceil_div(dim_k, params.tile_shape_s);
+    auto k_tile_per_cta = ceil_div(k_tile_total, local_split_kv);
+    local_split_kv = ceil_div(k_tile_total, k_tile_per_cta);
+
+    if (local_split_kv == 1) return;
 
     __shared__ ElementAcc sLseScale[kMaxSplits];
     const size_t offset_lseaccum = get<0>(blk_coord) + kNumHeads * params.split_kv * get<2>(blk_coord);
@@ -112,12 +121,6 @@ struct Sm100FmhaMlaReductionKernel {
 
     Tensor gLSE = make_tensor(make_gmem_ptr(params.ptr_lse + offset_lse),
                               Shape<_1>{}, Stride<_1>{});
-
-    auto dim_k = params.ptr_seq == nullptr ?  params.dim_k : params.ptr_seq[get<2>(blk_coord)];
-    auto local_split_kv = params.ptr_split_kv == nullptr ? params.split_kv : params.ptr_split_kv[get<2>(blk_coord)];
-    auto k_tile_total = ceil_div(dim_k, params.tile_shape_s);
-    auto k_tile_per_cta = ceil_div(k_tile_total, local_split_kv);
-    local_split_kv = ceil_div(k_tile_total, k_tile_per_cta);
 
     int warp_idx = cutlass::canonical_warp_idx_sync();
     if (warp_idx == 0) {
@@ -130,23 +133,24 @@ struct Sm100FmhaMlaReductionKernel {
         const int split = i * 32 + threadIdx.x;
         local_lse[i] = split < local_split_kv ? gLSEaccum(split) : -std::numeric_limits<ElementAcc>::infinity();
       }
-    
+
       ElementAcc lse_max = -std::numeric_limits<ElementAcc>::infinity();
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < kNLsePerThread; ++i) {
-        lse_max = max(lse_max, local_lse[i]);
+        lse_max = fmax(local_lse[i], lse_max);
       }
+
       CUTLASS_PRAGMA_UNROLL
       for (int offset = 16; offset >= 1; offset /= 2) {
-        lse_max = max(lse_max, __shfl_xor_sync(0xffffffff, lse_max, offset));
+        lse_max = fmax(__shfl_xor_sync(0xffffffff, lse_max, offset), lse_max);
       }
-      lse_max = lse_max == -std::numeric_limits<ElementAcc>::infinity() ? 0.0f : lse_max;  // In case all local LSEs are -inf
+
       lse_max = __shfl_sync(0xffffffff, lse_max, 0);
 
       ElementAcc sum_lse = 0;
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < kNLsePerThread; ++i) {
-        sum_lse = sum_lse + expf(local_lse[i] - params.scale * lse_max);
+        sum_lse = sum_lse + expf(local_lse[i] - lse_max);
       }
     
       CUTLASS_PRAGMA_UNROLL
@@ -156,7 +160,7 @@ struct Sm100FmhaMlaReductionKernel {
 
       sum_lse = __shfl_sync(0xffffffff, sum_lse, 0);
 
-      ElementAcc global_lse = (sum_lse == 0.f || sum_lse != sum_lse) ? std::numeric_limits<ElementAcc>::infinity() : logf(sum_lse) + params.scale * lse_max;
+      ElementAcc global_lse = (sum_lse == 0.f || sum_lse != sum_lse) ? std::numeric_limits<ElementAcc>::infinity() : logf(sum_lse) + lse_max;
       if (threadIdx.x == 0 and params.ptr_lse != nullptr) {
         gLSE(0) = global_lse;
       }

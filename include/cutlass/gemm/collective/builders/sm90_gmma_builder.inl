@@ -260,7 +260,9 @@ struct CollectiveBuilder<
       GmmaMajorB, ElementBMma, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
  
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
-  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+  static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag>> ? 
+      sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage + SchedulerPipelineStorage);
   static constexpr int Sm90ReducedSmemCapacityBytes = detail::sm90_smem_capacity_bytes - KernelSmemCarveout;
 
   static constexpr int PipelineStages = detail::compute_stage_count_or_override<Sm90ReducedSmemCapacityBytes,
@@ -446,7 +448,9 @@ public:
 
   // Handle mixed dtype array GEMM's size of tensor map storage.
   static constexpr size_t TensorMapStorage = sizeof(cute::TmaDescriptor) * size_t(IsMixedInput) * 4;
-  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+  static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag_>> ? 
+      sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage + SchedulerPipelineStorage);
   static constexpr int Sm90ReducedSmemCapacityBytes = detail::sm90_smem_capacity_bytes - KernelSmemCarveout;
 
   static constexpr int PipelineStages = IsMixedInput ?
@@ -570,7 +574,9 @@ struct CollectiveBuilder<
       GmmaMajorB, ElementB, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
-  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+  static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag>> ? 
+      sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage + SchedulerPipelineStorage);
   static constexpr int Sm90ReducedSmemCapacityBytes = detail::sm90_smem_capacity_bytes - KernelSmemCarveout;
 
   static constexpr int PipelineStages = detail::compute_stage_count_or_override<Sm90ReducedSmemCapacityBytes,
@@ -1128,8 +1134,9 @@ struct CollectiveBuilder<
 
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
   // Reserve 128B for 8 stages of tile scheduling
-  static constexpr size_t TileSchedulerCarveout = IsArrayOfPointersGemm ? 128 : 0;
-  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage) + static_cast<int>(TileSchedulerCarveout);
+  static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag>> ? 
+      sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage + SchedulerPipelineStorage);
 
   static constexpr int ScaleMsPerTile = size<0>(TileShape_MNK{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape_MNK{}) / ScaleGranularityN;

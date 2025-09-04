@@ -34,9 +34,9 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if !defined(CUTLASS_ENABLE_SYCL)
-#include <cuda/std/cassert>
+#include CUDA_STD_HEADER(cassert)
 #endif
 
 #include "mma.h"

@@ -1,5 +1,14 @@
 # CUTLASS - Programming Examples
 
+> [!IMPORTANT]
+> ### ⚠️ **Not for Benchmarking!** ⚠️
+> 
+> These examples are designed **solely for demonstrating CUTLASS functionality** and may **NOT optimized for performance benchmarking**.
+> 
+> **For accurate performance measurements**, please use the **[CUTLASS Profiler](../tools/profiler/)** instead (recommended) or manually auto-tune the example, if unavailable via the profiler.
+> 
+
+
 * [00_basic_gemm](00_basic_gemm/)
     
     launches a basic GEMM with single precision inputs and outputs

@@ -37,12 +37,12 @@ Testbed classes of EVT
 import torch
 import unittest
 
-import cutlass
-from cutlass import Tensor
-import cutlass.backend.evt
-from cutlass.shape import GemmCoord
-from cutlass.utils.datatypes import torch_type
-from cutlass.utils.profiler import CUDAEventProfiler
+import cutlass_cppgen
+from cutlass_cppgen import Tensor
+import cutlass_cppgen.backend.evt
+from cutlass_cppgen.shape import GemmCoord
+from cutlass_cppgen.utils.datatypes import torch_type
+from cutlass_cppgen.utils.profiler import CUDAEventProfiler
 
 
 class EVTReferenceModule:
@@ -53,19 +53,19 @@ class EVTReferenceModule:
         self.epilogue_visitor = epilogue_visitor
 
     def run(self, A, B, C, problem_size, alpha, beta, batch=1):
-        if self.layout_A == cutlass.LayoutType.RowMajor:
+        if self.layout_A == cutlass_cppgen.LayoutType.RowMajor:
             A_row = A.view((batch, problem_size.m, problem_size.k))
         else:
             A_col = A.view((batch, problem_size.k, problem_size.m))
             A_row = torch.permute(A_col, (0, 2, 1))
 
-        if self.layout_B == cutlass.LayoutType.RowMajor:
+        if self.layout_B == cutlass_cppgen.LayoutType.RowMajor:
             B_row = B.view((batch, problem_size.k, problem_size.n))
         else:
             B_col = B.view((batch, problem_size.n, problem_size.k))
             B_row = torch.permute(B_col, (0, 2, 1))
 
-        if self.layout_C == cutlass.LayoutType.RowMajor:
+        if self.layout_C == cutlass_cppgen.LayoutType.RowMajor:
             C_row = C.view((batch, problem_size.m, problem_size.n))
         else:
             C_col = C.view((batch, problem_size.n, problem_size.m))
@@ -73,7 +73,7 @@ class EVTReferenceModule:
 
         out_row = torch.matmul(A_row, B_row) * alpha + C_row * beta
 
-        if self.layout_C == cutlass.LayoutType.ColumnMajor:
+        if self.layout_C == cutlass_cppgen.LayoutType.ColumnMajor:
             out = torch.permute(out_row, (0, 2, 1))
         else:
             out = out_row
@@ -102,11 +102,11 @@ class EVTTestBed:
     """
     def __init__(self, element, evt_fn, example_inputs, profile=False, **kwargs) -> None:
         self.element = element
-        layout = cutlass.LayoutType.RowMajor
+        layout = cutlass_cppgen.LayoutType.RowMajor
         self.example_inputs = example_inputs
         
         # Create the Gemm plan
-        self.plan = cutlass.op.Gemm(element=element, layout=layout, element_accumulator=torch.float32)
+        self.plan = cutlass_cppgen.op.Gemm(element=element, layout=layout, element_accumulator=torch.float32)
         
         if "tile_description" in kwargs:
             self.plan.tile_description = kwargs["tile_description"]
@@ -115,7 +115,7 @@ class EVTTestBed:
             self.plan.swizzling_functor = kwargs["swizzling_functor"]
         
         # Compile the epilogue visitor
-        epilogue_visitor = cutlass.epilogue.trace(evt_fn, example_inputs)
+        epilogue_visitor = cutlass_cppgen.epilogue.trace(evt_fn, example_inputs)
         if "epilogue_stages" in kwargs:
             epilogue_visitor.epilogue_stages = kwargs["epilogue_stages"]
         self.plan.epilogue_visitor = epilogue_visitor
@@ -185,7 +185,9 @@ class EVTTestBed:
         
         # Compare the results
         for result, ref in zip(result_keys, reference_results):
-            assert torch.equal(epilogue_args[result].flatten(), ref.flatten())
+            assert torch.equal(
+                epilogue_args[result].flatten(), 
+                ref.masked_fill(torch.isnan(ref), float('inf')).flatten())
         
         # Run profile
         if self.profile:
@@ -203,15 +205,18 @@ class EVTTestCaseBase(unittest.TestCase):
     def __init__(self, methodName: str = "runTest", lmnk=(6, 512, 256, 128)) -> None:
         super().__init__(methodName)
         
-        self.element = cutlass.DataType.f16
+        self.element = cutlass_cppgen.DataType.f16
         self.l, self.m, self.n, self.k = lmnk
         
         self.problem_size = (self.m, self.n, self.k)
         
         torch.random.manual_seed(42)
     
-    def fake_tensor(self, element, shape):
-        return Tensor(element=element, shape=shape, layout_tag=cutlass.LayoutType.RowMajor)
+    def fake_tensor(self, element, shape, stride=None):
+        if stride is None:
+            return Tensor(element=element, shape=shape, layout_tag=cutlass_cppgen.LayoutType.RowMajor)
+        else:
+            return Tensor(element=element, shape=shape, stride=stride)
     
     def get_problem_sizes(self, alignment, k=None, batch_count=[3,]):
         k = k if k else self.k

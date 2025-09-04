@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-
-
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -50,6 +48,7 @@
 #include "cutlass/gemm/kernel/sm100_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm100_tile_scheduler_group.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/detail/sm100_tmem_helper.hpp"
 
 #include "cute/tensor.hpp"
 #include "cute/arch/tmem_allocator_sm100.hpp"
@@ -190,7 +189,6 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    // Barriers should be allocated in lower 8KB of SMEM for SM100
     struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
@@ -206,7 +204,6 @@ public:
       alignas(16) AccumulatorPipelineStorage accumulator;
       alignas(16) CLCThrottlePipelineStorage clc_throttle;
       alignas(16) arch::ClusterBarrier tmem_dealloc;
-      alignas(16) arch::ClusterBarrier epilogue_throttle;
     } pipelines;
 
     alignas(16) typename TileScheduler::CLCResponse clc_response[SchedulerPipelineStageCount];
@@ -280,7 +277,12 @@ public:
     ProblemShape problem_shapes = args.problem_shape;
     // Get SM count if needed, otherwise use user supplied SM count
     int sm_count = args.hw_info.sm_count;
-    if (!IsGroupedGemmKernel && sm_count != 0) {
+    if (IsGroupedGemmKernel && sm_count <= 0) {
+      CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid SM count.\n"
+          "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
+      sm_count = KernelHardwareInfo::query_device_multiprocessor_count(args.hw_info.device_id);
+    }
+    else if (!IsGroupedGemmKernel && sm_count != 0) {
       CUTLASS_TRACE_HOST("  WARNING: SM100 tile scheduler does not allow for user specified SM counts.\n"
           "  To restrict a kernel's resource usage, consider using CUDA driver APIs instead (green contexts).");
     }
@@ -466,8 +468,7 @@ public:
     return grid_shape;
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
@@ -487,7 +488,7 @@ public:
                                                                                      : WarpCategory::Epilogue;
 
     uint32_t lane_predicate = cute::elect_one_sync();
-    auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, cute::cluster_shape());
+    auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{});
     int cluster_size = size(cluster_shape);
     uint32_t cta_rank_in_cluster = cute::block_rank_in_cluster();
     bool is_first_cta_in_cluster = IsSchedDynamicPersistent ? (cta_rank_in_cluster == 0) : true;
@@ -542,7 +543,7 @@ public:
     epi_load_pipeline_params.producer_arv_count = NumEpilogueLoadThreads;
     epi_load_pipeline_params.consumer_arv_count = NumEpilogueThreads;
     epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
-    epi_load_pipeline_params.initializing_warp = 4;
+    epi_load_pipeline_params.initializing_warp = 1;
     EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
 
     // Epilogue Store pipeline
@@ -554,12 +555,11 @@ public:
     typename LoadOrderBarrier::Params load_order_barrier_params;
     load_order_barrier_params.group_id = (warp_category == WarpCategory::MainloopLoad) ? 0 : 1;
     load_order_barrier_params.group_size = NumMainloopLoadThreads;
-    load_order_barrier_params.initializing_warp = 5;
+    load_order_barrier_params.initializing_warp = 3;
     LoadOrderBarrier load_order_barrier(shared_storage.pipelines.load_order, load_order_barrier_params);
 
     // CLC pipeline
     typename CLCPipeline::Params clc_pipeline_params;
-
     if (WarpCategory::Sched == warp_category) {
       clc_pipeline_params.role = IsSchedDynamicPersistent ? 
         CLCPipeline::ThreadCategory::ProducerConsumer :
@@ -568,8 +568,7 @@ public:
     else {
       clc_pipeline_params.role = CLCPipeline::ThreadCategory::Consumer;
     }
-
-    clc_pipeline_params.initializing_warp = 1;
+    clc_pipeline_params.initializing_warp = 4;
     clc_pipeline_params.producer_arv_count = 1;
 
     if constexpr (IsSchedDynamicPersistent) {
@@ -608,7 +607,7 @@ public:
     // Only one producer thread arrives on this barrier.
     accumulator_pipeline_params.producer_arv_count = 1;
     accumulator_pipeline_params.consumer_arv_count = size(AtomThrShapeMNK{}) * NumEpilogueThreads;
-    accumulator_pipeline_params.initializing_warp = 2;
+    accumulator_pipeline_params.initializing_warp = 5;
     AccumulatorPipeline accumulator_pipeline(shared_storage.pipelines.accumulator,
                                              accumulator_pipeline_params,
                                              cluster_shape,
@@ -641,28 +640,20 @@ public:
     // Sync deallocation status between MMA warps of peer CTAs
     arch::ClusterBarrier& tmem_deallocation_result_barrier = shared_storage.pipelines.tmem_dealloc;
     [[maybe_unused]] uint32_t dealloc_barrier_phase = 0;
-    if constexpr(!IsOverlappingAccum) {
-      if (WarpCategory::MMA == warp_category && has_mma_peer_cta && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumMMAThreads);
+    if (WarpCategory::MMA == warp_category) {
+      if constexpr(!IsOverlappingAccum) {
+        if (has_mma_peer_cta && lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumMMAThreads);
+        }
       }
-    }
-    else {
-      if (WarpCategory::MMA == warp_category && has_mma_peer_cta && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumEpilogueThreads*2);
+      else {
+        if (has_mma_peer_cta && lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumEpilogueThreads*2);
+        }
+        else if (lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumEpilogueThreads);
+        }
       }
-      else if (WarpCategory::MMA == warp_category && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumEpilogueThreads);
-      }
-    }
-
-
-    // Initialize smem barrier for prologue throttling. Epilogue warps are stalled until the prologue finishes.
-    arch::ClusterBarrier& epilogue_throttle_barrier = shared_storage.pipelines.epilogue_throttle;
-    if (WarpCategory::MMA == warp_category && lane_predicate) {
-      epilogue_throttle_barrier.init(                          NumMMAThreads +
-                                    (is_first_cta_in_cluster ? NumSchedThreads : 0) +
-                                                               NumMainloopLoadThreads +
-                                    (is_epi_load_needed      ? NumEpilogueLoadThreads : 0));
     }
 
     // We need this to guarantee that the Pipeline init is visible
@@ -689,22 +680,17 @@ public:
 
     // Calculate mask after cluster barrier arrival
     mainloop_pipeline.init_masks(cluster_shape, block_id_in_cluster);
-    accumulator_pipeline.init_masks(cluster_shape);
+    accumulator_pipeline.init_masks(cluster_shape, block_id_in_cluster);
 
     // TileID scheduler
     TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    auto work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
+    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
     
     //
     // TMEM "Allocation"
     //
-    // ((MMA_TILE_M,MMA_TILE_N),MMA_M,MMA_N,ACC_PIPE) where ACC_PIPE=2 so we can double buffer our accumulators for mainloop and epilogue.
-    TiledMma tiled_mma;
-    auto acc_shape = collective_mainloop.partition_accumulator_shape();
-    Tensor accumulators = cutlass::detail::make_sm100_accumulator<AccumulatorPipelineStageCount, IsOverlappingAccum>(
-        tiled_mma, acc_shape, EpilogueTile{});
-
+    auto tmem_storage = collective_mainloop.template init_tmem_tensors<EpilogueTile, IsOverlappingAccum>(EpilogueTile{});
     pipeline_init_wait(cluster_size);
 
     if constexpr (IsGroupedGemmKernel) {
@@ -719,16 +705,17 @@ public:
     auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
 
     if (is_participant.main_load) {
+    auto load_inputs = collective_mainloop.load_init(
+      problem_shape_MNKL, params.mainloop,
+      shared_storage.tensors.mainloop,
+      shared_storage.tensormaps.mainloop,
+      params.hw_info.sm_count, sm_id, work_tile_info.L_idx);
+
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
       cutlass::arch::wait_on_dependent_grids();
 
       bool do_load_order_arrive = is_epi_load_needed;
-      auto load_inputs = collective_mainloop.load_init(
-          problem_shape_MNKL, params.mainloop,
-          shared_storage.tensors.mainloop,
-          shared_storage.tensormaps.mainloop,
-          params.hw_info.sm_count, sm_id, work_tile_info.L_idx);
       Tensor gA_mkl = get<0>(load_inputs);
       // Fetch a copy of tensormaps for the CTA from Params
       auto input_tensormaps = get<rank(load_inputs) - 1>(load_inputs);
@@ -737,9 +724,6 @@ public:
       // Even the first tile for a CTA can be from any of the batches.
       // And during initialization of the first TMA descriptor on host, we don't initialize to the first batch due to that args value being device-only.
       bool did_batch_change = true;
-
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
       bool requires_clc_query = true;
 
       do {
@@ -824,18 +808,14 @@ public:
     }
 
     else if (is_participant.sched) {
-      if constexpr (IsSchedDynamicPersistent) {
-        cutlass::arch::wait_on_dependent_grids();
-      }
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
-
       // Grouped GEMM uses static tile scheduler
       if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
+
+        cutlass::arch::wait_on_dependent_grids();
 
         do {
           if (requires_clc_query) {
@@ -872,6 +852,9 @@ public:
         clc_pipeline.producer_tail(clc_pipe_producer_state);
       }
       else {
+
+        cutlass::arch::wait_on_dependent_grids();
+
         do {
           auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
           work_tile_info = next_work_tile_info;
@@ -889,18 +872,8 @@ public:
       syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
-      accumulators.data() = tmem_base_ptr;
-      int tmem_non_accumulator_base =  tmem_base_ptr + cutlass::detail::find_tmem_tensor_col_offset(accumulators);
-
-
-      auto mma_inputs = collective_mainloop.mma_init(
-        params.mainloop,
-        collective_mainloop.slice_accumulator(accumulators, 0),
-        shared_storage.tensors.mainloop,
-        tmem_non_accumulator_base /*Start SF TMEM allocation after the accumulator*/);
-
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
+      collective_mainloop.set_tmem_offsets(tmem_storage, tmem_base_ptr);
+      auto mma_inputs = collective_mainloop.mma_init(tmem_storage, shared_storage.tensors.mainloop);
 
       do {
 
@@ -915,30 +888,29 @@ public:
           ++clc_pipe_consumer_state;
         }
 
-        // Wait for tmem accumulator buffer to become empty with a flipped phase
-        if constexpr (!IsOverlappingAccum) {
-          if (is_mma_leader_cta) {
-            accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
-          }
-        }
-
         if constexpr (IsGroupedGemmKernel) {
           problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
         }
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
-        int acc_stage = (IsOverlappingAccum) ? (accumulator_pipe_producer_state.phase() ^ 1) : (accumulator_pipe_producer_state.index());
-        auto accumulator = collective_mainloop.slice_accumulator(accumulators, acc_stage);
+        // Accumulator stage slice
+        int acc_stage = [&] () {
+          if constexpr (IsOverlappingAccum) {
+            return accumulator_pipe_producer_state.phase() ^ 1;
+          }
+          else {
+            return accumulator_pipe_producer_state.index();
+          }
+        }();
+        auto accumulator = collective_mainloop.slice_accumulator(tmem_storage, acc_stage);
         if (is_mma_leader_cta) {
           mainloop_pipe_consumer_state = collective_mainloop.mma(
-            cute::make_tuple(
-              mainloop_pipeline, accumulator_pipeline),
-            cute::make_tuple(
-              mainloop_pipe_consumer_state, accumulator_pipe_producer_state),
+            cute::make_tuple(mainloop_pipeline, accumulator_pipeline),
+            cute::make_tuple(mainloop_pipe_consumer_state, accumulator_pipe_producer_state),
             accumulator,
             mma_inputs,
             cta_coord_mnkl,
             k_tile_count
-            );
+          );
           accumulator_pipeline.producer_commit(accumulator_pipe_producer_state);
         }
         ++accumulator_pipe_producer_state;
@@ -967,7 +939,6 @@ public:
           tmem_deallocation_result_barrier.wait(dealloc_barrier_phase);
           tmem_deallocation_result_barrier.arrive(mma_peer_cta_rank, is_mma_leader_cta);
         }
-
       }
       else {
         tmem_deallocation_result_barrier.wait(dealloc_barrier_phase);
@@ -994,9 +965,6 @@ public:
       // And during initialization of the first TMA descriptor on host, we don't initialize to the first batch due to that args value being device-only.
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = true;
-
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
 
       do {
         int32_t curr_batch = work_tile_info.L_idx;
@@ -1067,14 +1035,10 @@ public:
     }
 
     else if (is_participant.epilogue) {
-      // Throttle the epilogue warps to improve prologue performance
-      static constexpr int epilogue_throttle_phase_bit = 0;
-      epilogue_throttle_barrier.wait(epilogue_throttle_phase_bit);
-
       // Wait for tmem allocate here
       tmem_allocation_result_barrier.arrive_and_wait();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
-      accumulators.data() = tmem_base_ptr;
+      collective_mainloop.set_tmem_offsets(tmem_storage, tmem_base_ptr);
 
       auto warp_idx_in_epi = canonical_warp_idx_sync() - static_cast<int>(WarpCategory::Epilogue);
       bool do_tail_store = false;
@@ -1108,7 +1072,7 @@ public:
           ++clc_pipe_consumer_state;
         }
 
-        // Accumulator stage slice after making sure allocation has been performed
+        // Accumulator stage slice
         int acc_stage = [&] () {
           if constexpr (IsOverlappingAccum) {
             return accumulator_pipe_consumer_state.phase();
@@ -1117,6 +1081,7 @@ public:
             return accumulator_pipe_consumer_state.index();
           }
         }();
+        auto accumulator = collective_mainloop.slice_accumulator(tmem_storage, acc_stage);
 
         // Fusions may need problem shape for the current group
         if constexpr (IsGroupedGemmKernel) {
@@ -1137,7 +1102,7 @@ public:
           cta_coord_mnkl,
           TileShape{},
           TiledMma{},
-          collective_mainloop.slice_accumulator(accumulators, acc_stage),
+          accumulator,
           shared_storage.tensors.epilogue,
           cute::make_tuple(epi_store_tensormap, did_batch_change)
         );
@@ -1173,7 +1138,6 @@ public:
     }
 
     else {
-
     }
   }
 };

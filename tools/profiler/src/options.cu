@@ -141,7 +141,16 @@ Options::Device::Device(cutlass::CommandLine const &cmdline) {
       }
     }
 
+    // Permit overriding the sm_count
+    cmdline.get_cmd_line_argument("sm-count", sm_count, 0);
   }
+}
+
+int Options::Device::get_sm_count(int device_index) const {
+  if (sm_count <= 0) {
+    return properties[device_index].multiProcessorCount;
+  }
+  return sm_count;
 }
 
 void Options::Device::print_usage(std::ostream &out) const {
@@ -185,7 +194,12 @@ void Options::Device::print_usage(std::ostream &out) const {
     << "  --llc-capacity=<capacity in KiB>             "
     << "    Capacity of last-level cache in kilobytes. If this is non-zero," << end_of_line
     << "      profiling phases cycle through different input tensors to induce" << end_of_line
-    << "      capacity misses in the L2.\n\n";
+    << "      capacity misses in the L2.\n\n"
+
+     << "  --sm-count=<int>                             "
+     << "    Override the number of SMs. This is used to limit the number of " << end_of_line
+     << "      during profiling. If this is set, profiling attempts to limit the sm_count " << end_of_line
+     << "      to user-set value. This is not possible on all architectures and all kernel types. \n\n";
 
 }
 
@@ -536,6 +550,9 @@ void Options::Profiling::print_usage(std::ostream &out) const {
     << "  --profiling-enabled=<bool>                   "
     << "    If true, profiling is actually conducted.\n\n"
 
+    << "  --enable-best-kernel-for-fixed-shape=<bool>   "
+    << "    If true, iterate through common cluster sizes, raster orders, and swizzle sizes for each kernel.\n\n"
+
   ;
 }
 
@@ -578,6 +595,9 @@ Options::Verification::Verification(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("verification-enabled", enabled, true);
   if (enabled) {
     cmdline.get_cmd_line_argument("verification-required", required, false);
+  }
+  else {
+    required = false;
   }
 
   cmdline.get_cmd_line_argument("epsilon", epsilon, 0.05);
@@ -833,6 +853,52 @@ Options::Options(cutlass::CommandLine const &cmdline):
     for (std::string line; getline(input, line);) {
       operation_names.push_back(line);
     }
+  } else if (cmdline.check_cmd_line_flag("testlist-file")) {
+    // Problems file is a CSV, where the first column is the kernel name and the rest are the problem arguments
+    std::string filename;
+    cmdline.get_cmd_line_argument("testlist-file", filename, {});
+    std::ifstream input(filename);
+    if (!input.good()) {
+      throw std::runtime_error("failed to open: " + filename);
+    }
+
+    std::string line;
+    std::vector<std::string> col_names;
+    // Read header line
+    if (std::getline(input, line)) {
+      std::stringstream ss(line);
+      std::string header;
+      while (std::getline(ss, header, ',')) {
+        col_names.push_back(header);
+      }
+    }
+
+    // Read content lines
+    while (std::getline(input, line)) {
+      std::stringstream ss(line);
+      std::string item;
+
+      size_t colIdx = 0;
+      std::string operation_name;
+
+      std::unordered_map<std::string, std::string> arguments;
+
+      while (std::getline(ss, item, ',')) {
+        if (!colIdx) {
+          // First column is operation name
+          if (operation_problems.find(item) == operation_problems.end()) {
+            operation_names.push_back(item);
+          }
+          operation_name = item;
+        } else {
+          if (colIdx < col_names.size()) {
+            arguments[col_names[colIdx]] = item;
+          }
+        }
+        colIdx++;
+      }
+      operation_problems[operation_name].emplace_back(arguments);
+    }
   }
 
   if (cmdline.check_cmd_line_flag("ignore-kernels")) {
@@ -885,6 +951,10 @@ void Options::print_usage(std::ostream &out) const {
 
     << "  --ignore-kernels=<string_list>               "
     << "    Excludes kernels whose names match anything in this list.\n\n"
+
+    << "  --testlist-file=<filename>               "
+    << "    A CSV, where each row is a problem, where the first column is the kernel name and the rest are the problem arguments" << end_of_line
+	<< "    The column names should match cutlass_profiler cmd line arguments. \n\n"
     ;
 
   //

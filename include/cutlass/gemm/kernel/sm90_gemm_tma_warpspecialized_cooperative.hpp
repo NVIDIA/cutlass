@@ -342,9 +342,11 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
-#  define ENABLE_SM90_KERNEL_LEVEL 1
-#endif
+#  if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL) ||\
+      CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))
+#    define ENABLE_SM90_KERNEL_LEVEL 1
+#  endif
+
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
@@ -442,7 +444,8 @@ public:
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
     typename MainloopPipeline::Params mainloop_pipeline_params;
-    if (warp_group_role == WarpGroupRole::Producer && producer_warp_role == ProducerWarpRole::Mainloop) {
+    if (warp_group_role == WarpGroupRole::Producer && (producer_warp_role == ProducerWarpRole::Mainloop || 
+        producer_warp_role == ProducerWarpRole::MainloopAux)) {
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Producer;
     }
     if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
@@ -546,6 +549,8 @@ public:
         if constexpr (IsSchedDynamicPersistent) { 
           bool requires_clc_query = true;
           TileSchedulerPipelineState scheduler_pipe_producer_state = cutlass::make_producer_start_state<TileSchedulerPipeline>();
+
+          cutlass::arch::wait_on_dependent_grids();
           while (work_tile_info.is_valid()) {
 
             if (requires_clc_query) {

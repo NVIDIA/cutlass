@@ -59,7 +59,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Define the overal warp-level problem shape
+// Define the overall warp-level problem shape
 int const kM = 14;
 int const kN = 27;
 int const kK = 17;

@@ -40,10 +40,12 @@
 #pragma once
 
 #if !defined(CUTLASS_ENABLE_SYCL)
-#include <cuda/std/cassert>
+#include CUDA_STD_HEADER(cassert)
 #endif
 
 #include "cutlass/cutlass.h"
+
+
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
 #include "cutlass/layout/vector.h"

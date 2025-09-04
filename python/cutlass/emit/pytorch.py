@@ -39,9 +39,9 @@ Example usage with JIT compilation:
 .. highlight:: python
 .. code-block:: python
 
-    plan = cutlass.op.Gemm(element=torch.float32, layout=cutlass_library.LayoutType.RowMajor)
+    plan = cutlass_cppgen.op.Gemm(element=torch.float32, layout=cutlass_library.LayoutType.RowMajor)
     op = plan.construct()
-    mod = cutlass.emit.pytorch(op, 'cutlass_gemm', 80, jit=True)
+    mod = cutlass_cppgen.emit.pytorch(op, 'cutlass_gemm', 80, jit=True)
 
     # Generate inputs for the GEMM
     A, B, C = [torch.ones((512, 512)).to('cuda') for _ in range(3)]
@@ -55,9 +55,9 @@ Example usage without JIT compilation:
 .. highlight:: python
 .. code-block:: python
 
-    plan = cutlass.op.Gemm(element=torch.float32, layout=cutlass.LayoutType.RowMajor)
+    plan = cutlass_cppgen.op.Gemm(element=torch.float32, layout=cutlass_cppgen.LayoutType.RowMajor)
     op = plan.construct()
-    cutlass.emit.pytorch(op, 'cutlass_gemm', 80, jit=False, sourcedir='output')
+    cutlass_cppgen.emit.pytorch(op, 'cutlass_gemm', 80, jit=False, sourcedir='output')
 
 After this call, the directory ``output`` contains ``setup.py``,
 ``cutlass_gemm.cpp``, and ``cutlass_gemm_kernel.cu``. The module can be built from
@@ -83,12 +83,12 @@ import os
 
 from cutlass_library import ConvKind, ConvKindNames, DataType, SubstituteTemplate
 
-from cutlass import CUTLASS_PATH, logger, swizzle
-from cutlass.backend.gemm_operation import GemmOperationGrouped, GemmOperationUniversal
-from cutlass.backend.conv2d_operation import Conv2dOperation
-from cutlass.backend.library import ApiVersion
-from cutlass.emit import common
-from cutlass.utils.datatypes import is_torch_available
+from cutlass_cppgen import CUTLASS_PATH, logger, swizzle
+from cutlass_cppgen.backend.gemm_operation import GemmOperationGrouped, GemmOperationUniversal
+from cutlass_cppgen.backend.conv2d_operation import Conv2dOperation
+from cutlass_cppgen.backend.library import ApiVersion
+from cutlass_cppgen.emit import common
+from cutlass_cppgen.utils.datatypes import is_torch_available
 
 if is_torch_available():
     import torch

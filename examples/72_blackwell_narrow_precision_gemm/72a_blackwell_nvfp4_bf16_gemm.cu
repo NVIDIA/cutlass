@@ -40,10 +40,10 @@
 
     Similar to 70_blackwell_gemm, this kernel leverages:
     1. Per-SM memory called Tensor Memory (TMEM)  (Please refer to CUDA 12.8 docs on https://docs.nvidia.com/cuda/).
-    
-    2. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM 
-    which allows us to decouple the execution of MMA and epilogue into separate warps. 
-    
+
+    2. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM
+    which allows us to decouple the execution of MMA and epilogue into separate warps.
+
     3. A new SW controlled dynamic scheduler based on cluster launch control (See https://docs.nvidia.com/cuda/parallel-thread-execution).
 
     Usage:
@@ -116,10 +116,10 @@ using OperatorClass       = cutlass::arch::OpClassBlockScaledTensorOp;      // O
 
 // Kernel Perf config
 using MmaTileShape        = Shape<_256,_256,_256>;                          // MMA's tile size
-using ClusterShape        = Shape<_4,_4,_1>;                                // Shape of the threadblocks in a cluster
+using ClusterShape        = Shape<_2,_4,_1>;                                // Shape of the threadblocks in a cluster
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,                      
+    ArchTag, OperatorClass,
     MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -190,13 +190,7 @@ cutlass::HostTensor<ElementD, cutlass::layout::PackedVectorLayout> block_referen
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -329,7 +323,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -413,7 +407,7 @@ bool verify(const Options &options) {
 
   auto tensor_C = cute::make_tensor(make_iterator(block_C.host_data()), layout_C);
   auto tensor_D = cute::make_tensor(make_iterator(block_reference_D.host_data()), layout_D);
- 
+
   cutlass::reference::host::GettBlockScalingEpilogueParams<
       ElementAccumulator,                   // ElementScalar
       ElementAccumulator,                   // ElementAccumulator
@@ -514,13 +508,13 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
-  
+
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100)." << std::endl;
+
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
-  }
+  } 
 
   //
   // Parse options

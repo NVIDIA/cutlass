@@ -36,10 +36,10 @@ from cutlass_library import SubstituteTemplate
 import numpy as np
 
 from cutlass_library import DataType, DataTypeTag
-from cutlass.backend.c_types import MatrixCoord_, tuple_factory
-from cutlass.backend.frontend import NumpyFrontend
-from cutlass.backend.library import ActivationOp, ActivationOpTag
-from cutlass.utils.datatypes import is_numpy_tensor, is_torch_available, is_torch_tensor
+from cutlass_cppgen.backend.c_types import MatrixCoord_, tuple_factory
+from cutlass_cppgen.backend.frontend import NumpyFrontend
+from cutlass_cppgen.backend.library import ActivationOp, ActivationOpTag
+from cutlass_cppgen.utils.datatypes import is_numpy_tensor, is_torch_available, is_torch_tensor
 
 dtype2ctype = {
     DataType.f16: ctypes.c_uint16,

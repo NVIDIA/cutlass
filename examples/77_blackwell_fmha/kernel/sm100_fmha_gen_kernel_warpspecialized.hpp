@@ -365,7 +365,7 @@ struct Sm100FmhaGenKernelWarpspecialized {
       pipeline_corr_epi_params.role = CollectiveMainloop::PipelineE::ThreadCategory::Consumer;
     }
     pipeline_corr_epi_params.producer_arv_count = NumWarpsCorrection * cutlass::NumThreadsPerWarp;
-    pipeline_corr_epi_params.consumer_arv_count = NumWarpsEpilogue * cutlass::NumThreadsPerWarp;
+    pipeline_corr_epi_params.consumer_arv_count = cute::max(1, NumWarpsEpilogue * cutlass::NumThreadsPerWarp);
     typename CollectiveMainloop::PipelineE pipeline_corr_epi(
       shared_storage.pipelines.corr_epi,
       pipeline_corr_epi_params,

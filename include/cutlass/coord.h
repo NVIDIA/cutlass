@@ -33,14 +33,12 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
-
-#include "cutlass/cutlass.h"
 
 namespace cutlass {
 
@@ -418,7 +416,7 @@ Coord<Rank, Index> operator/(Coord<Rank, Index> coord, Index s) {
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Helper to make a 2-element coordinate
+/// Helper to make a 1-element coordinate
 template <typename T> 
 CUTLASS_HOST_DEVICE
 Coord<1, T> make_Coord(T _0) {

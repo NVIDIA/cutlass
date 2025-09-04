@@ -118,6 +118,7 @@ class FunctionalOp(enum.Enum):
     Multiplies = enum_auto()
     MultiplyAdd = enum_auto()
     Plus = enum_auto()
+    Exp = enum_auto()
 
 
 FunctionalOpTag = {
@@ -130,6 +131,7 @@ FunctionalOpTag = {
     FunctionalOp.Multiplies: "cutlass::multiplies",
     FunctionalOp.MultiplyAdd: "cutlass::multiply_add",
     FunctionalOp.Plus: "cutlass::plus",
+    FunctionalOp.Exp: "cutlass::fast_exp_op",
 }
 
 
@@ -415,7 +417,7 @@ def CalculateSmemUsagePerStage(operation):
     :param op: operation for which the maximum stages should be computed. If stages are
                set via the `op.tile_description.stages` parameter, this setting is ignored
                in the present calculation
-    :type op: cutlass.backend.Operation
+    :type op: cutlass_cppgen.backend.Operation
 
     :return: number of bytes of shared memory consumed by a single stage
     :rtype: int
@@ -440,7 +442,7 @@ def CalculateSmemUsage(operation):
     :param op: operation for which the maximum stages should be computed. If stages are
                set via the `op.tile_description.stages` parameter, this setting is ignored
                in the present calculation
-    :type op: cutlass.backend.Operation
+    :type op: cutlass_cppgen.backend.Operation
 
     :return: int
     """

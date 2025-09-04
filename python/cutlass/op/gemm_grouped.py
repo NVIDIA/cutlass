@@ -47,27 +47,27 @@
     .. code-block:: python
 
         # As, Bs, Cs, and Ds are torch/numpy/cupy tensor objects
-        plan = cutlass.op.GroupedGemm(element=cutlass.DataType.f16, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.GroupedGemm(element=cutlass_cppgen.DataType.f16, layout=cutlass_cppgen.LayoutType.RowMajor)
         plan.run([A0, A1], [B0, B1], [C0, C1], [D0, D1])
 """
 from __future__ import annotations
 from typing import Optional
 from cutlass_library import DataTypeSize
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
-from cutlass.backend.gemm_operation import (
+from cutlass_cppgen.backend.gemm_operation import (
     GemmGroupedArguments,
     GemmOperationGrouped,
 )
-from cutlass.backend.library import (
+from cutlass_cppgen.backend.library import (
     SchedulerMode,
     TensorDescription,
     TileDescription,
 )
-from cutlass.op.gemm import Gemm
-from cutlass.shape import GemmCoord
-from cutlass.utils import check, datatypes
+from cutlass_cppgen.op.gemm import Gemm
+from cutlass_cppgen.shape import GemmCoord
+from cutlass_cppgen.utils import check, datatypes
 
 
 class GroupedGemm(Gemm):
@@ -90,27 +90,27 @@ class GroupedGemm(Gemm):
     :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
     :param beta: scalar parameter beta from GEMM operation that scales operand C
     :param element_accumulator: data type to be used in accumulation of the product of operands A and B
-    :type element_accumulator: cutlass.DataType
+    :type element_accumulator: cutlass_cppgen.DataType
     :param element: generic data type to be used for operands A, B, C, D, as well as the accumulation data type
-    :type element: cutlass.DataType
+    :type element: cutlass_cppgen.DataType
     :param layout: generic layout type to be used for operands A, B, C, and D
-    :type layout: cutlass.LayoutType
+    :type layout: cutlass_cppgen.LayoutType
     :param element_A: data type to be used for operand A
-    :type element_A: cutlass.DataType
+    :type element_A: cutlass_cppgen.DataType
     :param element_B: data type to be used for operand B
-    :type element_B: cutlass.DataType
+    :type element_B: cutlass_cppgen.DataType
     :param element_C: data type to be used for operand C
-    :type element_C: cutlass.DataType
+    :type element_C: cutlass_cppgen.DataType
     :param element_D: data type to be used for operand D
-    :type element_D: cutlass.DataType
+    :type element_D: cutlass_cppgen.DataType
     :type layout_A: layout of operand A
-    :param layout_A: cutlass.LayoutType
+    :param layout_A: cutlass_cppgen.LayoutType
     :type layout_B: layout of operand B
-    :param layout_B: cutlass.LayoutType
+    :param layout_B: cutlass_cppgen.LayoutType
     :type layout_C: layout of operand C
-    :param layout_C: cutlass.LayoutType
+    :param layout_C: cutlass_cppgen.LayoutType
     :type layout_D: layout of operand D
-    :param layout_D: cutlass.LayoutType
+    :param layout_D: cutlass_cppgen.LayoutType
     """
 
     def __init__(
@@ -151,11 +151,11 @@ class GroupedGemm(Gemm):
                   alignment_B: int = None,
                   alignment_C: int = None) -> GemmOperationGrouped:
         """
-        Constructs a ``cutlass.backend.GemmOperationGrouped`` based on the input parameters and current
+        Constructs a ``cutlass_cppgen.backend.GemmOperationGrouped`` based on the input parameters and current
         kernel specification of the ``Gemm`` object.
 
         :param tile_description: tile description specifying shapes and operand types to use in the kernel
-        :type tile_description: cutlass.backend.TileDescription
+        :type tile_description: cutlass_cppgen.backend.TileDescription
         :param alignment_A: alignment of operand A
         :type alignment_A: int
         :param alignment_B: alignment of operand B
@@ -164,7 +164,7 @@ class GroupedGemm(Gemm):
         :type alignment_C: int
 
         :return: operation that was constructed
-        :rtype: cutlass.backend.GemmOperationGrouped
+        :rtype: cutlass_cppgen.backend.GemmOperationGrouped
         """
         alignment_A = check.alignment_or_default(alignment_A, max(self.possible_operations.alignments("A")))
         alignment_B = check.alignment_or_default(alignment_B, max(self.possible_operations.alignments("B")))
@@ -225,7 +225,7 @@ class GroupedGemm(Gemm):
         :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
-        :rtype: cutlass.backend.GemmGroupedArguments
+        :rtype: cutlass_cppgen.backend.GemmGroupedArguments
         """
         if not stream:
             stream = cuda.CUstream(0)

@@ -42,7 +42,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 #include "cutlass/detail/blockwise_scale_layout.hpp"
@@ -128,12 +127,19 @@ struct CollectiveMma<
 
   static constexpr int ScalePromotionInterval = ScaleGranularityK / size<2>(typename TiledMma::AtomShape_MNK{});
   static_assert(ScalePromotionInterval % 4 == 0, "ScalePromotionInterval must be a multiple of 4.");
+  static_assert(ScalePromotionInterval >= size<2>(TileShape{}) / tile_size<2>(TiledMma{}),
+    "ScalePromotionInterval must be greater than or equal to the number of stages of the MMA atom.");
+  static_assert(ScalePromotionInterval % (size<2>(TileShape{}) / tile_size<2>(TiledMma{})) == 0,
+    "ScalePromotionInterval must be a multiple of the number of stages of the MMA atom.");
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
+  static constexpr bool MMajorSFA = size<0,1>(LayoutSFA{}.stride()) == 1;
+  static constexpr bool NMajorSFB = size<0,1>(LayoutSFB{}.stride()) == 1;
+
   static constexpr int ScaleTmaThreshold = 32;
-  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold;
-  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold;
+  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold && MMajorSFA;
+  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold && NMajorSFB;
   // Two threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
   static constexpr int NumProducerThreadEvents = ((IsTmaLoadSFA && IsTmaLoadSFB)? 1 : 33);
 
@@ -148,7 +154,12 @@ struct CollectiveMma<
   static_assert((size<0>(TileShape{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
   static_assert((size<1>(TileShape{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
-  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<
+      ScaleGranularityM, 
+      ScaleGranularityN, 
+      ScaleGranularityK,
+      MMajorSFA ? cute::GMMA::Major::MN : cute::GMMA::Major::K,
+      NMajorSFB ? cute::GMMA::Major::MN : cute::GMMA::Major::K>;
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
   using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(TileShape{}));
 
@@ -162,13 +173,13 @@ struct CollectiveMma<
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
-  // Block scaling gmem-to-smem copy atom 
+  // Block scaling gmem-to-smem copy atom
   //  we can have partial tiles in M or N, so don't vectorize those loads
   using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
 
-  static constexpr int AlignmentSFA = 1;
-  static constexpr int AlignmentSFB = 1;
+  static constexpr int AlignmentSFA = IsTmaLoadSFA ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
+  static constexpr int AlignmentSFB = IsTmaLoadSFB ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
 
   // Block scaling smem layout
   using SmemLayoutSFA = decltype(make_layout(
@@ -213,7 +224,6 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
-    uint32_t mma_promotion_interval = 4;
     ElementBlockScale const* ptr_SFA;
     LayoutSFA layout_SFA;
     ElementBlockScale const* ptr_SFB;
@@ -380,16 +390,6 @@ struct CollectiveMma<
     if (IsTmaLoadSFB && !cutlass::detail::check_alignment<min_tma_aligned_elements_S>(args.layout_SFB)) {
       implementable = false;
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size doesn't meet the minimum alignment requirements for using TMA to load scale B.\n");
-    }
-
-    /* MMA promotion interval should be a multiple of 4, since each mainloop iteration would issue 4 MMA instructions. */
-    constexpr int pipe_k = size<2>(TileShape{}) / tile_size<2>(TiledMma{});
-    if (args.mma_promotion_interval % 4 != 0 ||
-        args.mma_promotion_interval != ScalePromotionInterval ||
-        args.mma_promotion_interval % pipe_k != 0 ||
-        pipe_k > args.mma_promotion_interval) {
-      implementable = false;
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Argument mma_promotion_interval is invalid.\n");
     }
 
     // We expect full tiles in K
@@ -677,7 +677,7 @@ struct CollectiveMma<
       Tensor tSFAcSFA_compact = filter_zeros(tSFAcSFA);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFApSFA); ++i) {
-        tSFApSFA(i) = load_sfa && elem_less(get<0>(tSFAcSFA_compact(i)), get<0>(SFA_shape));
+        tSFApSFA(i) = load_sfa && elem_less(tSFAcSFA_compact(i), SFA_shape);
       }
 
       bool load_sfb = thread_idx < ScaleNsPerTile;
@@ -685,7 +685,7 @@ struct CollectiveMma<
       Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFBpSFB); ++i) {
-        tSFBpSFB(i) = load_sfb && elem_less(get<0>(tSFBcSFB_compact(i)), get<0>(SFB_shape));
+        tSFBpSFB(i) = load_sfb && elem_less(tSFBcSFB_compact(i), SFB_shape);
       }
       int write_stage = smem_pipe_write.index();
       // Copy scale tensors from global memory to shared memory
@@ -809,14 +809,14 @@ struct CollectiveMma<
 
     // Layout of warp group to thread mapping
 
-    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and
                   stride<0>(typename TiledMma::BLayout{}) == 0 and
                   size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
-    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
                                                   Int<NumThreadsPerWarpGroup>{});
 
     int warp_group_idx = shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
@@ -1001,7 +1001,7 @@ struct CollectiveMma<
       // Advance smem_pipe_read and smem_pipe_release
       ++smem_pipe_release;
     }
-    if (k_tile_count == 1) {
+    if (k_tile_count) {
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //

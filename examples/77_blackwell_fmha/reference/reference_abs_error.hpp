@@ -75,6 +75,8 @@ struct DeviceAllocation {
 
   size_t size() const { return size_; }
 
+  size_t get_storage_size() const { return (size_ + offset_) * sizeof(T); }
+
   void copy_from_host(const T* ptr, size_t sz) {
     auto ret = cudaMemcpy(ptr_, ptr, sz * sizeof(T), cudaMemcpyDefault);
     assert(ret == cudaSuccess);
@@ -99,8 +101,12 @@ __global__ void reference_abs_diff_kernel(
     __shared__ double block_sum_diff;
 
     for (size_t i = threadIdx.x + blockIdx.x * blockDim.x; i < count; i += blockDim.x * gridDim.x) {
+      if (data[i] == data_ref[i]) {
+        continue;
+      }
+
       double diff = fabs(data[i] - data_ref[i]);
-      if (print_diff) if (diff != diff || diff > 0.01f) printf("difference at %lld: %f ... %f vs %f\n", static_cast<long long int>(i), diff, (double)data[i], (double)data_ref[i]);
+      if (print_diff) if (not isfinite(diff) || diff > 0.01f) printf("difference at %lld: %f ... %f vs %f\n", static_cast<long long int>(i), diff, (double)data[i], (double)data_ref[i]);
       thread_max_diff = fmax(diff, thread_max_diff);
       thread_sum_diff += diff;
     }
@@ -192,8 +198,11 @@ __global__ void reference_rel_diff_kernel(
     __shared__ double block_sum_diff;
 
     for (size_t i = threadIdx.x + blockIdx.x * blockDim.x; i < count; i += blockDim.x * gridDim.x) {
+      if (data[i] == data_ref[i]) {
+        continue;
+      }
       double diff = fabs(data[i] - data_ref[i]) / fabs(data_ref[i]);
-      if (print_diff) if (diff != diff || diff > 0.01f) printf("difference at %lld: %f ... %f vs %f\n", static_cast<long long int>(i), diff, (double)data[i], (double)data_ref[i]);
+      if (print_diff) if (not isfinite(diff) || diff > 0.01f) printf("difference at %lld: %f ... %f vs %f\n", static_cast<long long int>(i), diff, (double)data[i], (double)data_ref[i]);
       thread_max_diff = fmax(diff, thread_max_diff);
       thread_sum_diff += diff;
     }

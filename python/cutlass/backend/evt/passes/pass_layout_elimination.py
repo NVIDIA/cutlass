@@ -36,9 +36,9 @@ Eliminate layout manipulation nodes
 
 from copy import deepcopy
 
-from cutlass.backend.evt.ir import DAGIR, LayoutNode
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass_cppgen.backend.evt.ir import DAGIR, LayoutNode
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
 
 
 class PassLayoutManipulateElimination(EVTPassBase):

@@ -65,7 +65,7 @@
     The approach relies on two things:
     - The ability of CUTLASS 3 to naturally perform general tensor contractions (GETT) owing to the
     flexibility of CuTe's hierarchical layouts (see example 51_hopper_gett for more details).
-    - The harware capabilities of Hopper TMA units that allow for loading multidimensional tensors with
+    - The hardware capabilities of Hopper TMA units that allow for loading multidimensional tensors with
     (almost) arbitrary strides, which can be used to represent a permuted view of the data.
 
     In this example we reuse the permutation classes of examples 39_gemm_permute as operation tags.

@@ -129,6 +129,10 @@ struct Agnostic {
 
 #endif
 
+struct Sm103 {
+  static int const kMinComputeCapability = 103; 
+};
+
 /// Triggers a breakpoint on the device
 CUTLASS_DEVICE
 void device_breakpoint() {

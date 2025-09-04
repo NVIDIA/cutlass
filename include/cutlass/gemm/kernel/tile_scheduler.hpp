@@ -348,6 +348,66 @@ struct TileSchedulerSelector<
   using Scheduler = StaticPersistentTileScheduler100;
 };
 
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    PersistentScheduler,
+    arch::Sm103,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100<
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
+// Ptr-Array kernel may provide a specialized ArrayProblemShape type
+template <class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class ProblemShape>
+struct TileSchedulerSelector<
+    PersistentScheduler,
+    arch::Sm103,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    ProblemShape> {
+  using Scheduler = PersistentTileSchedulerSm100<
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
+// SM103 Group tile scheduler
+template <
+  class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class GroupProblemShape
+>
+struct TileSchedulerSelector<
+    GroupScheduler,
+    arch::Sm103,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    GroupProblemShape
+  > {
+  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape, SchedulerPipelineStageCount>;
+};
+
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    StreamKScheduler,
+    arch::Sm103,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100StreamK<
+                        TileShape,
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
 // Default (void) for Sm120 maps to PersistentTileSchedulerSm100
 template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
 struct TileSchedulerSelector<

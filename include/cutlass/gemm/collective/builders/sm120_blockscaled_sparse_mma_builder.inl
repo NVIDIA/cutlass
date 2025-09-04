@@ -271,7 +271,7 @@ struct CollectiveBuilder<
 
   // Construct TileShape for SFB load from GMEM to SMEM.
   // It is required to keep consistency with BlockScaled granularity defined in Sm1xxBlkScaledConfig.
-  // So that TileShape for scaling factor needs to be defined as a mutliple of Blk_MN.
+  // So that TileShape for scaling factor needs to be defined as a multiple of Blk_MN.
   using TileShapeSf_MNK = decltype(make_shape(ceil_div(size<0>(TileShape_MNK{}), Blk_MN{}) * Blk_MN{},
                                            ceil_div(size<1>(TileShape_MNK{}), Blk_MN{}) * Blk_MN{}, 
                                            shape<2>(TileShape_MNK{})));

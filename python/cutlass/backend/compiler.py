@@ -39,7 +39,7 @@ import subprocess
 import tempfile
 from functools import lru_cache
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart = lazy_import("cuda.cudart")
 nvrtc = lazy_import("cuda.nvrtc")
@@ -47,11 +47,11 @@ from cutlass_library import SubstituteTemplate
 
 import dpctl
 
-import cutlass
-from cutlass import CACHE_FILE, CUTLASS_PATH, cuda_install_path, logger
-from cutlass.backend.gemm_operation import GemmOperationUniversal
-from cutlass.backend.library import ApiVersion
-from cutlass.backend.utils.device import device_cc
+import cutlass_cppgen
+from cutlass_cppgen import CACHE_FILE, CUTLASS_PATH, cuda_install_path, logger
+from cutlass_cppgen.backend.gemm_operation import GemmOperationUniversal
+from cutlass_cppgen.backend.library import ApiVersion
+from cutlass_cppgen.backend.utils.device import device_cc
 
 IncludeTemplate = r"""#include "${include}"
 """
@@ -104,7 +104,7 @@ class CompilationOptions:
             arch_flag = f"-fsycl-targets={self.arch}"
         else:
             arch_flag = f"-arch=sm_{self.arch}"
-            if self.arch == 90 and int(cutlass.nvcc_version().split('.')[0]) >= 12:
+            if self.arch == 90 and int(cutlass_cppgen.nvcc_version().split('.')[0]) >= 12:
                 arch_flag += "a"
 
         opts.append(arch_flag)
@@ -467,7 +467,7 @@ class ArtifactManager:
         if not self._is_sycl():
             include_paths.append(cuda_install_path() + "/include")
 
-            cutlass.initialize_cuda_context()
+            cutlass_cppgen.initialize_cuda_context()
             arch = device_cc()
             host_compile_options = CompilationOptions(
                 self._nvcc_compile_options, arch, include_paths, False)

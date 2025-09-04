@@ -569,6 +569,114 @@ sm100_make_trivial_fastFP32_tiled_mma() {
   }
 }
 
+//Setting mma for Mixed input gemm. Here, ElementAMma should be TACompute
+template<
+  class ElementAMma,
+  class ElementBMma,
+  class ElementAccumulator,
+  class TileShape_MNK,
+  class ClusterShape_MNK,
+  UMMA::Major UmmaMajorA,
+  UMMA::Major UmmaMajorB,
+  class KernelScheduleType
+>
+constexpr auto
+sm100_make_trivial_mixed_input_tiled_mma() {
+  constexpr int M = cute::size<0>(TileShape_MNK{});
+  constexpr int N = cute::size<1>(TileShape_MNK{});
+  //MMA 1Sm requested
+  if constexpr (cute::is_base_of_v<KernelSchedule1Sm, KernelScheduleType> ) {
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K  && !cute::is_base_of_v<KernelTmaWarpSpecializedMixedInputSmemSm100, KernelScheduleType>) {
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::half_t> || cute::is_same_v<ElementBMma, cutlass::bfloat16_t>) {
+        return make_tiled_mma(cute::SM100_MMA_F16BF16_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB>{});
+      }
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::float_e4m3_t>) {
+        return make_tiled_mma(cute::SM100_MMA_F8F6F4_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB>{});
+      }
+    }
+    else { // If A needs to be transposed by MMA, fall back to SMEM from A MMA instructions
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::half_t> || cute::is_same_v<ElementBMma, cutlass::bfloat16_t>) {
+        return make_tiled_mma(cute::SM100_MMA_F16BF16_SS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB>{});
+      }
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::float_e4m3_t>) {
+        return make_tiled_mma(
+          cute::MMA_Traits<
+            cute::SM100_MMA_F8F6F4_SS,
+            ElementAMma,
+            ElementBMma, 
+            ElementAccumulator, 
+            cute::C<M>, 
+            cute::C<N>, 
+            cute::integral_constant<UMMA::Major, UmmaMajorA>,
+            cute::integral_constant<UMMA::Major, UmmaMajorB>,
+            cute::integral_constant<UMMA::ScaleIn, cute::UMMA::ScaleIn::One>,
+            cute::integral_constant<UMMA::ScaleIn, cute::UMMA::ScaleIn::One>>{});
+      }
+    }
+  }
+  //MMA 2Sm requested
+  else if constexpr (cute::is_base_of_v<KernelSchedule2Sm, KernelScheduleType>) {
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K  && !cute::is_base_of_v<KernelTmaWarpSpecializedMixedInputSmemSm100, KernelScheduleType>) {
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::half_t> || cute::is_same_v<ElementBMma, cutlass::bfloat16_t>) {
+        return make_tiled_mma(cute::SM100_MMA_F16BF16_2x1SM_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB>{});
+      }
+      if constexpr     (cute::is_same_v<ElementBMma, cutlass::float_e4m3_t>) {
+        return make_tiled_mma(cute::SM100_MMA_F8F6F4_2x1SM_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB>{});
+      }
+    }
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<TileShape_MNK> == 0,
+        "Unsupported policy for SM100 collective builder.");
+  }
+}
+
+template<
+  class CtaShape_MNK
+>
+constexpr auto
+sm100_simt_f32_warp_shape_mnk_selector() {
+  using namespace cute;
+
+  constexpr int CtaShape_M = cute::size<0>(CtaShape_MNK{});
+  constexpr int CtaShape_N = cute::size<1>(CtaShape_MNK{});
+  constexpr int CtaShape_K = cute::size<2>(CtaShape_MNK{});
+
+  // CTA tile shape M and N are supposed to be divisible by 32.
+  static_assert(CtaShape_M % 32 == 0, "CtaShape_M needs to be divisible by 32.");
+  static_assert(CtaShape_N % 32 == 0, "CtaShape_N needs to be divisible by 32.");
+
+  // WarpShape_MNK configuration
+  // We assume WarpShape_K is always 1 in our SM100 SIMT SGEMM implementation.
+  if constexpr (CtaShape_M >= CtaShape_N) {
+    if constexpr (CtaShape_M == 256 && CtaShape_N == 128) {
+      return cute::Shape<_4, _2, _1>{};
+    }
+    else if constexpr ((CtaShape_M == 64 || CtaShape_M == 32) && CtaShape_N == 32) {
+      return cute::Shape<_1, _2, _1>{};
+    }
+    else {
+      return cute::Shape<_2, _2, _1>{};
+    }
+  }
+  else {
+    if constexpr (CtaShape_M == 128 && CtaShape_N == 256) {
+      return cute::Shape<_2, _4, _1>{};
+    }
+    else if constexpr (CtaShape_M == 32 && CtaShape_N == 64) {
+      return cute::Shape<_1, _2, _1>{};
+    }
+    else {
+      return cute::Shape<_1, _4, _1>{};
+    }
+  }
+}
+
 
 template <
   class ElementPairA,

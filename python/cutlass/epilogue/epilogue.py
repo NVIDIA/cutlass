@@ -39,11 +39,11 @@ code like the following for GEMM:
 .. highlight:: python
 .. code-block:: python
 
-    plan = cutlass.op.Gemm(element=cutlass.DataType.f32, layout=cutlass.LayoutType.RowMajor)
-    plan.activation = cutlass.epilogue.relu
+    plan = cutlass_cppgen.op.Gemm(element=cutlass_cppgen.DataType.f32, layout=cutlass_cppgen.LayoutType.RowMajor)
+    plan.activation = cutlass_cppgen.epilogue.relu
 """
 
-from cutlass.backend import epilogue, device_cc
+from cutlass_cppgen.backend import epilogue, device_cc
 
 
 gelu = epilogue.gelu
@@ -111,7 +111,7 @@ def get_activation_epilogue(
 """
 Frontend for EVT that generates epilogue functor through tracing the input function
 """
-from cutlass.backend.evt.frontend import PythonASTFrontend
+from cutlass_cppgen.backend.evt.frontend import PythonASTFrontend
 
 
 def trace(fn, example_tensors, **kwargs):
@@ -124,8 +124,7 @@ def trace(fn, example_tensors, **kwargs):
 
     .. highlight:: python
     .. code-block:: python
-
-        import cutlass.backend.evt
+        import cutlass_cppgen.backend.evt
 
         # Define epilogue function as Python callable
         def example_fn(accum, C, alpha, beta, gamma):
@@ -143,7 +142,7 @@ def trace(fn, example_tensors, **kwargs):
         }
 
         # Generate the epilogue functor
-        epilogue_visitor = cutlass.epilogue.trace(example_fn, example_inputs)
+        epilogue_visitor = cutlass_cppgen.epilogue.trace(example_fn, example_inputs)
     """
     if callable(fn):
         class EpilogueFunctor(PythonASTFrontend):

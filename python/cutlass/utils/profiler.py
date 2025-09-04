@@ -37,16 +37,16 @@ Profiler based on the cuda events
 import re
 import subprocess
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart =  lazy_import("cuda.cudart")
 import numpy as np
 
-from cutlass import CUTLASS_PATH
-from cutlass.backend.library import DataTypeSize
-from cutlass.op.op import OperationBase
-from cutlass.shape import GemmCoord
-from cutlass.utils.datatypes import is_numpy_tensor
+from cutlass_cppgen import CUTLASS_PATH
+from cutlass_cppgen.backend.library import DataTypeSize
+from cutlass_cppgen.op.op import OperationBase
+from cutlass_cppgen.shape import GemmCoord
+from cutlass_cppgen.utils.datatypes import is_numpy_tensor
 
 
 class GpuTimer:
@@ -193,3 +193,4 @@ class CUDAEventProfiler:
             flops_ += m * n * batch_count * 2
 
         return flops_
+

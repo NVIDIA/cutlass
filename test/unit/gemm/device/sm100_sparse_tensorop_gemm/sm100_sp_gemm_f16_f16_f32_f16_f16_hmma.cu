@@ -47,7 +47,7 @@ using namespace cute;
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 
 // 1.
-namespace cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm {
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
             cutlass::arch::Sm100, cutlass::arch::OpClassSparseTensorOp,
@@ -88,7 +88,7 @@ namespace cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_f16_f16_128x64
 }
 
 // 2.
-namespace cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -130,7 +130,7 @@ namespace cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_f16_f16_128x1
 }
 
 // 3.
-namespace cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -172,7 +172,7 @@ namespace cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_f16_f16_128x1
 }
 
 // 4.
-namespace cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -214,7 +214,7 @@ namespace cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_f16_f16_128x2
 }
 
 // 5.
-namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -256,7 +256,7 @@ namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64
 }
 
 // 6.
-namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -298,7 +298,7 @@ namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64
 }
 
 // 7.
-namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -340,7 +340,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x1
 }
 
 // 8.
-namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -382,7 +382,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x1
 }
 
 // 9.
-namespace cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -424,7 +424,7 @@ namespace cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_f16_f16_256x1
 }
 
 // 10.
-namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -466,7 +466,7 @@ namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x2
 }
 
 // 11.
-namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -508,9 +508,9 @@ namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x2
 }
 
 // 1.
-TEST(cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x64x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -521,9 +521,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_f16_f16_128x64x64_1
 }
 
 // 2.
-TEST(cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x128x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -534,9 +534,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_f16_f16_128x128x64
 }
 
 // 3.
-TEST(cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x192x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -547,9 +547,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_f16_f16_128x192x64
 }
 
 // 4.
-TEST(cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_128x256x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -560,9 +560,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_f16_f16_128x256x64
 }
 
 // 5.
-TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -573,9 +573,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x64_2
 }
 
 //6.
-TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x64x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -586,9 +586,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_f16_f16_256x64x128_
 }
 
 // 7.
-TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -599,9 +599,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x64
 }
 
 // 8.
-TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x128x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -612,9 +612,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_f16_f16_256x128x12
 }
 
 // 9.
-TEST(cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x192x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -625,9 +625,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_f16_f16_256x192x64
 }
 
 // 10.
-TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -638,9 +638,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x64
 }
 
 // 11.
-TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_f16_f16_256x256x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
@@ -651,7 +651,7 @@ TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_f16_f16_256x256x12
 }
 
 // 1.
-namespace cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -693,7 +693,7 @@ namespace cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_void_f16_128x6
 }
 
 // 2.
-namespace cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -735,7 +735,7 @@ namespace cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_void_f16_128x
 }
 
 // 3.
-namespace cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -777,7 +777,7 @@ namespace cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_void_f16_128x
 }
 
 // 4.
-namespace cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -819,7 +819,7 @@ namespace cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_void_f16_128x
 }
 
 // 5.
-namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -861,7 +861,7 @@ namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x6
 }
 
 // 6.
-namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -903,7 +903,7 @@ namespace cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x6
 }
 
 // 7.
-namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -945,7 +945,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x
 }
 
 // 8.
-namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -987,7 +987,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x
 }
 
 // 9.
-namespace cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -1029,7 +1029,7 @@ namespace cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_void_f16_256x
 }
 
 // 10.
-namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -1071,7 +1071,7 @@ namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x
 }
 
 // 11.
-namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm {
+namespace cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm {
 
     using CollectiveEpilogue =
         typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -1113,9 +1113,9 @@ namespace cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x
 }
 
 // 1.
-TEST(cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x64x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1126,9 +1126,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x64x32spgemm_f16_f16_f32_void_f16_128x64x64_
 }
 
 // 2.
-TEST(cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x128x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1139,9 +1139,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x128x32spgemm_f16_f16_f32_void_f16_128x128x6
 }
 
 // 3.
-TEST(cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x192x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1152,9 +1152,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x192x32spgemm_f16_f16_f32_void_f16_128x192x6
 }
 
 // 4.
-TEST(cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_128x256x64_1x1x1_0_tnn_align16_1sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1165,9 +1165,9 @@ TEST(cutlass3x_sm100_sptensorop_s128x256x32spgemm_f16_f16_f32_void_f16_128x256x6
 }
 
 // 5.
-TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1178,9 +1178,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x64_
 }
 
 // 6.
-TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x64x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1191,9 +1191,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x64x32spgemm_f16_f16_f32_void_f16_256x64x128
 }
 
 // 7.
-TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1204,9 +1204,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x6
 }
 
 // 8.
-TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x128x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1217,9 +1217,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x32spgemm_f16_f16_f32_void_f16_256x128x1
 }
 
 // 9.
-TEST(cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x192x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1230,9 +1230,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x192x32spgemm_f16_f16_f32_void_f16_256x192x6
 }
 
 // 10.
-TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x64_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
@@ -1243,9 +1243,9 @@ TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x6
 }
 
 // 11.
-TEST(cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm, func_check)
+TEST(cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm, func_check)
 {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x32spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm;
+  namespace gemm = cutlass3x_sm100_sptensorop_spgemm_f16_f16_f32_void_f16_256x256x128_2x1x1_0_tnn_align16_2sm;
 
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,

@@ -45,7 +45,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -129,15 +128,15 @@ struct CollectiveMma<
 
   using RuntimeDataTypeA = void*;
   using RuntimeDataTypeB = void*;
-  
+
   static constexpr int ThreadCount = size(TiledMma{});
   static constexpr int ElementAMmaSparsity = ElementAMma::sparsity;
   static constexpr int ElementEMmaSparsity = ElementEMma::sparsity;
 
   // Asymmetric buffering
-  // Tensor A/B could have different buffering, with TILEK, and STAGEs. 
-  //    It let AsymmetricKRatio equals TILEK_A / TILEK_B, to make sure A/B's  
-  //    pipeline keep same steps when procude / consume data.
+  // Tensor A/B could have different buffering, with TILEK, and STAGEs.
+  //    It let AsymmetricKRatio equals TILEK_A / TILEK_B, to make sure A/B's
+  //    pipeline keep same steps when produce / consume data.
   static constexpr int AsymmetricKRatio = DispatchPolicy::StagesA != DispatchPolicy::StagesB ? 2 : 1;
 
   using TileShapeB = decltype(make_shape(size<0>(TileShape{}),
@@ -418,7 +417,7 @@ struct CollectiveMma<
                               make_tile(make_layout(size<1>(thr_layout_vmnk)),
                                         make_layout(size<3>(thr_layout_vmnk))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);                  // ((ThrV,(ThrM,ThrK)),(FrgV,(RestM,RestK)))
-    
+
     // Fragment layout
     return thr_tensor;
   }
@@ -694,16 +693,15 @@ struct CollectiveMma<
       if constexpr (IsELoadPred) {
         // Get predication based on logical element coordinates.
         Tensor cE_mk = local_tile(
-                make_identity_tensor(Shape_MK), 
-                make_shape(get<0>(TileShape{}), get<2>(TileShape{})), 
+                make_identity_tensor(Shape_MK),
+                make_shape(get<0>(TileShape{}), get<2>(TileShape{})),
                 make_shape(m_coord, k_coord));                                                          // (BLK_M, BLK_K)
         Tensor tCcE = gmem_thr_copy_E.partition_S(cE_mk);                                            // (CPY,CPY_M,CPY_K)
         auto [atom, vec] = get_copy_atom_and_common_vec();
         // Coordinate comparison for out of bound (OOB) predication
-        Tensor tZcE = zipped_divide(tCcE, vec);
-        auto pred_fn = [&](auto coord){ return cute::elem_less(tZcE(Int<0>{}, coord), Shape_MK); };
+        Tensor tZpE = cute::lazy::transform(zipped_divide(tCcE, vec), [&](auto const& c){ return cute::elem_less(c, Shape_MK); });
         // Copy
-        cute::copy_if(atom, pred_fn, zipped_divide(tCgE, vec), zipped_divide(tCrE_copy_view, vec));
+        cute::copy_if(atom, tZpE, zipped_divide(tCgE, vec), zipped_divide(tCrE_copy_view, vec));
       }
       else {
         // Copy
@@ -712,7 +710,7 @@ struct CollectiveMma<
     }
     return tCrE;
   }
-  
+
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Consumer Perspective
   template <
@@ -849,7 +847,7 @@ struct CollectiveMma<
     // Copy E from SMEM to register
     auto copy_E = [&](auto m_block, auto k_block) CUTLASS_LAMBDA_FUNC_INLINE {
       // copy smem->rmem for E operand
-      copy( recast<RegisterE>(tCsE(_,m_block,k_block,smem_pipe_read_mk.index())), 
+      copy( recast<RegisterE>(tCsE(_,m_block,k_block,smem_pipe_read_mk.index())),
             recast<RegisterE>(tCrE_copy_view(_,m_block,k_block)));
     };
 
@@ -877,8 +875,8 @@ struct CollectiveMma<
             copy_E(m_block, k_block);
 
             // Gemm
-            cute::gemm(tiled_mma, 
-                      make_zip_tensor(tCrA(_,m_block,k_block), tCrE(_,m_block,k_block)), 
+            cute::gemm(tiled_mma,
+                      make_zip_tensor(tCrA(_,m_block,k_block), tCrE(_,m_block,k_block)),
                       tCrB(_,n_block,k_block),
                       accum(_,m_block,n_block));
           });
@@ -914,8 +912,8 @@ struct CollectiveMma<
             copy_transform_A(m_block, k_block);
 
             // Gemm
-            cute::gemm(tiled_mma, 
-                      make_zip_tensor(tCrA(_,m_block,k_block), tCrE(_,m_block,k_block)), 
+            cute::gemm(tiled_mma,
+                      make_zip_tensor(tCrA(_,m_block,k_block), tCrE(_,m_block,k_block)),
                       tCrB(_,n_block,k_block),
                       accum(_,m_block,n_block));
           });
@@ -941,8 +939,8 @@ struct CollectiveMma<
             copy_transform_A(m_block, k_block_a);
 
             // Gemm
-            cute::gemm(tiled_mma, 
-                      make_zip_tensor(tCrA(_,m_block,k_block_a), tCrE(_,m_block,k_block_a)), 
+            cute::gemm(tiled_mma,
+                      make_zip_tensor(tCrA(_,m_block,k_block_a), tCrE(_,m_block,k_block_a)),
                       tCrB(_,n_block,k_block),
                       accum(_,m_block,n_block));
           });
@@ -970,7 +968,7 @@ struct CollectiveMma<
         gemm_loop_with_SmemE();
       }
       // Case when A/B with different stages, and keep E in GMEM.
-      else {  
+      else {
         gemm_loop_with_GmemE();
       } // end if
 

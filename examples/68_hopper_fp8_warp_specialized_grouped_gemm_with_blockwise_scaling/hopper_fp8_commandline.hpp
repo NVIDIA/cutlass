@@ -30,10 +30,9 @@
  **************************************************************************************************/
 
 // Command line options parsing
-template<typename _RasterOrderOptions, typename _ProblemShape>
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
+template<typename _ProblemShape>
 struct Options {
-
-  using RasterOrderOptions = _RasterOrderOptions;
   using ProblemShape = _ProblemShape;
 
   bool help = false;
@@ -50,7 +49,7 @@ struct Options {
   int const m_alignment = 128;
   int const n_alignment = 128;
 
-  RasterOrderOptions raster;
+  RasterOrderOptions raster_order;
   int swizzle;
 
   // Parses the command line
@@ -74,13 +73,13 @@ struct Options {
     cmd.get_cmd_line_argument("raster", raster_char);
 
     if (raster_char == 'N' || raster_char == 'n') {
-      raster = RasterOrderOptions::AlongN;
+      raster_order = RasterOrderOptions::AlongN;
     }
     else if (raster_char == 'M' || raster_char == 'm') {
-      raster = RasterOrderOptions::AlongM;
+      raster_order = RasterOrderOptions::AlongM;
     }
     else if (raster_char == 'H' || raster_char == 'h') {
-      raster = RasterOrderOptions::Heuristic;
+      raster_order = RasterOrderOptions::Heuristic;
     }
 
     cmd.get_cmd_line_argument("swizzle", swizzle, 1);

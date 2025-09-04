@@ -449,9 +449,9 @@ if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MIN
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
-  
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100)." << std::endl;
+
+  if (props.major != 10 || props.minor != 0) {
+    std::cerr << "This example requires a GPU with compute capability 100a)." << std::endl;
     return 0;
   }
 

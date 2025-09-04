@@ -104,7 +104,7 @@ Array<float, 2> top_2_reduce(Array<float, 2> a, Array<float, 2> b) {
       "  setp.gtu.f32 p, %2, %4;\n"         // a0 > b0
       "  selp.f32 %1, mx.x, mx.y, p;\n"     // a0 > b0 ? max(a1, b0) : max(a0, b1)
       "  selp.f32 %0, %2, %4, p;\n"         // a0 > b0 ? a0 : b0
-      "}\n" : "=f"(out[0]), "=f"(out[1]) : 
+      "}\n" : "=f"(out[0]), "=f"(out[1]) :
       "f"(a[0]), "f"(a[1]), "f"(b[0]), "f"(b[1]));
 #endif
   return out;
@@ -130,8 +130,8 @@ Array<float, 4> top_4_reduce_scalar(Array<float, 4> a, float scalar) {
       "  selp.f32 %1, %5, %8, p1;\n"        // a0 = a1 > b ? a1 : b
       "  selp.f32 %1, %1, %4, p0;\n"        // a0 > b ? max(a1, b) : a0 == a0 > b ? a0 : old_a0
       "  selp.f32 %0, %4, %8, p0;\n"        // a0 = a0 > b ? a0 : b
-      "}\n" : 
-      "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) : 
+      "}\n" :
+      "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) :
       "f"(a[0]), "f"(a[1]), "f"(a[2]), "f"(a[3]), "f"(scalar));
 #endif
   return out;
@@ -202,8 +202,8 @@ Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
       "  selp.f32 %3, mxa2b1, %3, pa1b1;\n"            // a3 = a1 > b1 ? max(a2, b1) ** second most likely case
       "  selp.f32 %3, mxa3b0, %3, pa2b0;\n"            // a0 > a1 > a2 > b0
       "  selp.f32 %3, mxa0b3, %3, pb2a0;\n"            // b0 > b1 > b2 > a0
-      "}\n" : 
-      "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) : 
+      "}\n" :
+      "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) :
       "f"(a[0]), "f"(a[1]), "f"(a[2]), "f"(a[3]),
       "f"(b[0]), "f"(b[1]), "f"(b[2]), "f"(b[3]));
 #endif
@@ -369,7 +369,7 @@ private:
   //   we can track logsumexp instead of tracking two variables (sum of exps and the max).
   //   In addition, subtracting logsumexp from any element and taking its exp is equivalent to
   //   computing its softmax.
-  //   
+  //
   //   The overlap between softmax and top-K is that we don't need to reduce logsumexp along the
   //   way at all, because any element not in the top-K is going to be masked out and set to 0.
   //   Therefore, we only reduce the top-K elements, and when done, compute their logsumexp and
@@ -388,7 +388,7 @@ private:
     ReductionResult() { }
 
     CUTLASS_DEVICE
-    ReductionResult(ElementCompute min, ElementCompute logsumexp): 
+    ReductionResult(ElementCompute min, ElementCompute logsumexp):
       logsumexp_(logsumexp), min_(min) { }
 
     // Warp shuffle broadcast
@@ -562,7 +562,7 @@ public:
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
           Array<ElementInput, FragmentSize> const& frg_input) {
 
-      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol, 
+      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol,
               lane_layout_MN, lane_mn,
               residue_cCol, residue_tCcCol] = args_tuple;
       Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
@@ -587,7 +587,7 @@ public:
     CUTLASS_DEVICE void
     reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
 
-      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol, 
+      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol,
               lane_layout_MN, lane_mn,
               residue_cCol, residue_tCcCol] = args_tuple;
 
@@ -689,7 +689,7 @@ public:
 
     CUTLASS_DEVICE void
     end_loop(int epi_m, int epi_n) {
-      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol, 
+      auto& [tCrTopK, tCrSoftmax, tCcCol, cCol,
               lane_layout_MN, lane_mn,
               residue_cCol, residue_tCcCol] = args_tuple;
 
@@ -711,8 +711,9 @@ public:
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     Layout ref_layout_MN = [&] () {
-      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
-      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+      auto mn_shape = shape(typename decltype(args.tiled_copy)::Tiler_MN{});
+      if constexpr (ReferenceSrc) { return right_inverse(args.tiled_copy.get_layoutS_TV()).with_shape(mn_shape); }
+      else                        { return right_inverse(args.tiled_copy.get_layoutD_TV()).with_shape(mn_shape); }
     }();                                                                                         // tile_mn -> tv_idx
 
     // Get the MN layout + coord of lanes to determine shuffle reduction iterations
@@ -760,7 +761,7 @@ public:
     Tensor tRS_rSoftmax = thread_r2s.retile_S(tCrColReduce);                               // ((R2S,R2S_V),MMA_M,MMA_N)
     auto tCrC_layout = args.tCrC.layout();                                                         // (R2S,R2S_M,R2S_N)
 
-    // Compose the new accumulator R2S layout with the expected tCrC layout to get final 
+    // Compose the new accumulator R2S layout with the expected tCrC layout to get final
     // reduction tensor layout.
     auto tCrSoftmax_layout = take<0, 3>(tRS_rSoftmax.layout()).compose(tCrC_layout); // (R2S,R2S_V) o (R2S,R2S_M,R2S_N)
 

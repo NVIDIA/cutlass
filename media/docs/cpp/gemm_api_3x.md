@@ -19,7 +19,7 @@ Device, Kernel, and Collective.
 It also briefly discusses the Tiled MMA/Copy and Atom level,
 and then refers readers to CuTe's tutorial for more information.
 
-# CUTLASS GEMM Model
+## CUTLASS GEMM Model
 
 CUTLASS implements algorithms that express
 the classical "triply nested loop" GEMM algorithm
@@ -80,7 +80,7 @@ and computes MMAs.
 These tiled copy and tiled mma iterations are generally
 fully static and get fully unrolled.
 
-# CUTLASS GEMM Components
+## CUTLASS GEMM Components
 
 CUTLASS expresses the above loop nest
 with the following components which are specialized for
@@ -146,7 +146,7 @@ using GemmHandle = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 Towards the end, we also briefly cover CuTe's tiled mma and copy as well as the atom layer APIs,
 before redirecting users to CuTe-specific documentation for further details.
 
-## Collective API
+### Collective API
 
 A Collective is "the largest collection of threads
 onto which mma atoms and copy atoms are tiled."
@@ -670,7 +670,7 @@ please refer to CuTe's tutorial, e.g., the sections on
 
 * [a GEMM example](./cute/0x_gemm_tutorial.md).
 
-# Copyright
+### Copyright
 
 Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

@@ -461,7 +461,7 @@ int main(int argc, char** argv)
     return 0;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM90A_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
   int m = 512;
   if (argc >= 2)
@@ -553,7 +553,7 @@ int main(int argc, char** argv)
   printf("CUTE_GEMM:     [%6.1f]GFlop/s  (%6.4f)ms\n", gflops / cute_time, cute_time*1000);
 
 #else
-  std::cout << "CUTLASS_ARCH_MMA_SM90A_SUPPORTED must be enabled, but it is not. Test is waived \n" << std::endl;
+  std::cout << "CUTLASS_ARCH_MMA_SM90_SUPPORTED must be enabled, but it is not. Test is waived \n" << std::endl;
 #endif
 
  return 0;

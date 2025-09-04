@@ -513,7 +513,7 @@ struct ThreadblockSwizzleStreamK {
       // - More than three peers working on an SK tile.  (This occurs when the ratio of
       //   SK-blocks to SK-tiles > 2, as a single tile may be covered by four SK-blocks,
       //   e.g.:[partial-block | block | block | partial-block] ).  With three or
-      //   less peers, the two non-finishing SK-blocks are not expexted to contend.
+      //   less peers, the two non-finishing SK-blocks are not expected to contend.
       if ((kReductionStrategy == kMixed) &&
           (sk_waves < sm_occupancy) &&
           (sk_blocks > 2 * sk_tiles))

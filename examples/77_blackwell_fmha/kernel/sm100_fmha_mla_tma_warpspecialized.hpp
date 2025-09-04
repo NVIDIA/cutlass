@@ -36,6 +36,7 @@
 
 #include "cute/tensor.hpp"
 #include "cute/arch/simd_sm100.hpp"
+#include "cutlass/barrier.h"
 
 #include "cutlass/arch/arch.h"
 #include "cutlass/arch/memory_sm80.h"
@@ -44,6 +45,7 @@
 
 #include "gather_tensor.hpp"  // from examples/common
 #include "common/pow_2.hpp"
+#include "sm100_mla_tile_scheduler.hpp"
 
 namespace cutlass::fmha::kernel {
 
@@ -87,8 +89,8 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
   using TileShapeR = tuple_element_t<1, TileShapeD>;
   static_assert(TileShapeL{} % TileShapeR{} == 0, "Rope head dim must divide latent head dim");
 
-  using ProblemShape = Shape<TileShapeH, int, TileShapeD, int>;
-  using TensorStride   = Stride<int64_t, _1, int64_t>;
+  using ProblemShape  = Shape<TileShapeH, int, TileShapeD, int>;
+  using TensorStride  = Stride<int64_t, _1, int64_t>;
   using TmemAllocator = cute::conditional_t<kIs2Sm, cute::TMEM::Allocator2Sm, cute::TMEM::Allocator1Sm>;
 
   static_assert(TileShapeH{} == 128);
@@ -181,10 +183,13 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
   using SmemLayoutKC = typename CollectiveMmaQK::SmemLayoutB;
   using SmemLayoutVC = typename CollectiveMmaPV::SmemLayoutB;
   using SmemLayoutP = decltype(unstageSmemLayout(typename CollectiveMmaPV::SmemLayoutA{}, make_shape(Int<IterationsPV_K>{}, _2{})));
+  using SmemLayoutOut = decltype(take<0,2>(typename CollectiveMmaQK::CtaShape_MNK{}));
+  using TileShapeAcc = decltype(take<0,2>(typename CollectiveMmaPV::CtaShape_MNK{}));
 
   static const int kBytesLoadQ  = size(AtomThrShapeMNK{}) * cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutQ{})) * cute::sizeof_bits_v<Element>);
   static const int kBytesLoadKC = size(AtomThrShapeMNK{}) * cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutKC{})) * cute::sizeof_bits_v<Element>);
   static const int kBytesLoadVC = size(AtomThrShapeMNK{}) * cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutVC{})) * cute::sizeof_bits_v<Element>);
+
   // pre-condition for overlapped smem staging
   static_assert(kBytesLoadKC == kBytesLoadVC);
   static_assert(StagesQK == StagesPV);
@@ -226,7 +231,10 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       alignas(2048) cute::array<Element, cute::cosize_v<SmemLayoutKC>> smem_kc;
       alignas(2048) cute::array<Element, cute::cosize_v<SmemLayoutVC>> smem_vc;
     };
-    alignas(2048) cute::array<Element, cute::cosize_v<SmemLayoutP>> smem_p;
+    union {
+      alignas(2048) cute::array<Element, cute::cosize_v<SmemLayoutP>> smem_p;
+      alignas(2048) cute::array<ElementOut, size(TileShapeAcc{})> smem_acc;
+    };
   };
 
   struct SharedStorage {
@@ -280,6 +288,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     KernelHardwareInfo hw_info;
     int split_kv = -1;
     int* ptr_split_kv = nullptr;
+    bool is_fused_reduction = false;
   };
   
   using TmaLoadQLatent = typename CollectiveMmaQK::Params::TMA_A;
@@ -287,6 +296,12 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
   using TmaLoadCLatent = typename CollectiveMmaQK::Params::TMA_B;
   using TmaLoadKRope = typename CollectiveMmaQK::Params::TMA_B;
   using TmaLoadCLatentTranspose = typename CollectiveMmaPV::Params::TMA_B;
+
+  using GmemLayout = decltype(make_layout(Shape<int,int,int>{}, Stride<int64_t, _1, int64_t>{}));
+  using SmemLayout = decltype(make_layout(TileShapeAcc{}, LayoutRight{}));
+
+  using TmaReduceSum = decltype(make_tma_copy(SM90_TMA_REDUCE_ADD{}, 
+		  make_tensor(recast_ptr<ElementOut>(nullptr), GmemLayout{}), SmemLayout{}));
 
   struct MainloopParams {
     TmaLoadQLatent tma_load_q_latent;
@@ -306,6 +321,10 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     Stride<_1, int> stride_lse;
     Stride<_1, int> stride_lse_acc;
     ElementAcc output_scale = 1.0f;
+    ElementLSE* ptr_lse_exchange_buff = nullptr;
+    int* ptr_lse_max_exchange_buff = nullptr;
+    int* ptr_lock = nullptr;    // semaphore
+    TmaReduceSum tma_reduce_sum;		       
   };
 
   struct Params {
@@ -316,6 +335,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     typename TileScheduler::Params tile_scheduler;
     int split_kv = -1;
     int* ptr_split_kv = nullptr;
+    bool is_fused_reduction = false;
   };
 
   static Params to_underlying_arguments(Arguments const& args, void* workspace) {
@@ -380,11 +400,12 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     epilogue_params.ptr_o = args.epilogue.ptr_o;
     epilogue_params.stride_o = args.epilogue.stride_o;
-    epilogue_params.ptr_lse = args.epilogue.ptr_lse; 
+    epilogue_params.ptr_lse = args.epilogue.ptr_lse;
     epilogue_params.stride_lse = args.epilogue.stride_lse;
     epilogue_params.output_scale = args.epilogue.output_scale;
+    epilogue_params.tma_reduce_sum = make_tma_copy(SM90_TMA_REDUCE_ADD{}, make_tensor(recast_ptr<ElementOut>(args.epilogue.ptr_o), make_layout(make_shape(H, L, B), args.epilogue.stride_o)), SmemLayout{});
 
-    if (args.split_kv > 1) {
+    if (!args.is_fused_reduction && args.split_kv > 1) {
       ElementAcc* ptr_o_acc   = reinterpret_cast<ElementAcc*>(workspace);
       ElementLSE* ptr_lse_acc = reinterpret_cast<ElementLSE*>(ptr_o_acc + H * L * args.split_kv * B);
       epilogue_params.ptr_o_acc   = ptr_o_acc;
@@ -392,10 +413,18 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
       epilogue_params.stride_o_acc = make_tuple(static_cast<int64_t>(0 + L) * args.split_kv, _1{}, static_cast<int64_t>(0 + H * L) * args.split_kv);
       epilogue_params.stride_lse_acc = make_tuple(_1{}, (0 + H) * args.split_kv);
+    } else if (args.is_fused_reduction && args.split_kv > 1) {
+      ElementLSE* ptr_lse_exchange_buff = reinterpret_cast<ElementLSE*>(workspace);
+      epilogue_params.ptr_lse_exchange_buff = ptr_lse_exchange_buff;
+      int* ptr_lse_max_exchange_buff = reinterpret_cast<int*>(ptr_lse_exchange_buff + H * B);
+      epilogue_params.ptr_lse_max_exchange_buff = ptr_lse_max_exchange_buff;
+      int* ptr_lock = ptr_lse_max_exchange_buff + H * B;
+      epilogue_params.ptr_lock = ptr_lock;
     }
 
     return {args.problem_shape, args.mainloop, epilogue_params, mainloop_params,
-            TileScheduler::to_underlying_arguments(args.problem_shape, args.hw_info, ClusterShape{}, args.split_kv), args.split_kv, args.ptr_split_kv};
+            TileScheduler::to_underlying_arguments(args.problem_shape, args.hw_info, ClusterShape{}, args.split_kv), 
+	    args.split_kv, args.ptr_split_kv, args.is_fused_reduction};
   }
 
   static size_t get_workspace_size(Arguments const& args) { 
@@ -403,10 +432,29 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto [H, K, D, B] = problem_shape;
     auto [D_latent, D_rope] = D;
     auto split_kv = args.split_kv;
-    return (sizeof(ElementAcc) * D_latent + sizeof(ElementLSE)) * H * split_kv * B;
+    size_t workspace_size {0};
+    if (args.is_fused_reduction && args.split_kv > 1) {
+      //  one exchange buffer for LSE max and another buffer for total LSE 
+      //  two locks per batch, frist lock is for CTA0 / H=0..63 and the second is for CTA1 / H=64..127
+      workspace_size = H * B * (sizeof(int) + sizeof(ElementLSE)) + 2 * B * sizeof(int);
+    } else if (!args.is_fused_reduction && args.split_kv > 1) {
+      workspace_size = (sizeof(ElementAcc) * D_latent + sizeof(ElementLSE)) * H * split_kv * B;
+    }
+    return workspace_size;
   }
   static Status initialize_workspace(
-      Arguments const& /*args*/, void* /*ws*/, cudaStream_t /*stream*/) {
+      Arguments const& args, void* ws, cudaStream_t stream) {
+    auto workspace_size = get_workspace_size(args);
+    if (args.is_fused_reduction && args.split_kv > 1) {
+      auto result = cudaMemsetAsync(ws, 0, workspace_size);
+      if (cudaSuccess != result) {
+        result = cudaGetLastError(); // to clear the error bit
+        CUTLASS_TRACE_HOST(
+        "  cudaMemsetAsync() returned error: "
+        << cudaGetErrorString(result));
+        return Status::kErrorInternal;;
+      }
+    }
     return Status::kSuccess;
   }
 
@@ -422,25 +470,37 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
   static bool can_implement(Arguments const& args) {
     if (kIsCpAsync) {
       if ((args.mainloop.page_size & (args.mainloop.page_size - 1)) != 0) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): cpasync page size pow2\n";
         return false;
       }
       if (args.mainloop.page_size > TileShapeS{}) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): cpasync page size too big\n";
         return false;
       }
     }
     else {
       if (args.mainloop.ptr_page_table != nullptr && args.mainloop.page_size != TileShapeS{}) {
+        std::cerr << __FILE__ << "(" << __LINE__ << "): tma page size off\n";
         return false;
       }
     }
     if (get<0>(args.problem_shape) != 128) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): heads off\n";
       return false;
     }
     if (get<1>(args.problem_shape) <= 0) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): heads off\n";
       return false;
     }
     if (args.split_kv <= 0) {
+      std::cerr << __FILE__ << "(" << __LINE__ << "): split-k off\n";
       return false;
+    }
+    if (args.is_fused_reduction && args.split_kv > 1) {
+      if (2 * args.split_kv > args.hw_info.sm_count || 
+      std::is_same_v<TileScheduler, Sm100MlaIndividualTileScheduler>) {
+        return false;
+      }
     }
     return true;
   }
@@ -740,7 +800,8 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
           pipeline_mma_s, pipeline_mma_s_consumer_state,
           pipeline_p_mma, pipeline_p_mma_producer_state,
           pipeline_mma_o, pipeline_mma_o_consumer_state,
-	  local_split_kv
+	  local_split_kv,
+	  params.is_fused_reduction
         );
       }
 
@@ -784,7 +845,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto pages_per_tile = Pow2{TileShapeS{} / page_size};
     int thread_idx = threadIdx.x % cutlass::NumThreadsPerWarp;
 
-#if 1
     for (; k_tile_count > 0; ++k_index, --k_tile_count) {
       pipeline_page_table.producer_acquire(pipeline_pt_producer_state);
     
@@ -805,7 +865,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       pipeline_page_table.producer_commit(pipeline_pt_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_pt_producer_state;
     }
-#endif
   }
 
 
@@ -1639,7 +1698,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       row_max_new = cutlass::max(row_max_new, shared_tensors.smem_exchange[peer_index]);
     }
 
-#ifndef B2B
     // find correction factor
     ElementAcc softmax_scale_log2 = mainloop_args.softmax_scale * static_cast<ElementAcc>(M_LOG2E);
     correction_factor = ::exp2f(softmax_scale_log2 * (row_max - row_max_new));
@@ -1651,7 +1709,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     for (int i = 0; i < size(tTR_rAcc); i++) {
       tTR_rAcc(i) = ::exp2f(softmax_scale_log2 * tTR_rAcc(i) - row_max_scale_log2);
     }
-#endif
 
     // quantize
     cutlass::NumericArrayConverter<Element, ElementAcc, AlignmentS> epilogue_op;
@@ -1705,7 +1762,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       uint32_t tmem_o) {
 
     // for b2b gemm, do nothing
-#ifndef B2B
     auto load_op = cute::SM100_TMEM_LOAD_32dp32b32x{};
     auto store_op = TMEM::tmem_load_to_store(load_op);
 
@@ -1748,7 +1804,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     // store o
     copy(tiled_r2t, tTR_rAcc, tTR_tAcc);
-#endif
  }
 
 
@@ -1777,7 +1832,8 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     auto [H, K, D, B] = problem_shape;
     auto [D_latent, D_rope] = D;
-    if (epilogue_args.ptr_o_acc != nullptr) { 
+
+    if (split_kv > 1) { 
       using ElementOutAcc = ElementAcc;
       constexpr auto AlignmentOutAcc = 128 / cute::sizeof_bits_v<ElementOutAcc>;
       Tensor mO = make_tensor(make_gmem_ptr(epilogue_args.ptr_o_acc + get<3>(cta_coord) * D_latent), make_shape(H, D_latent, B), epilogue_args.stride_o_acc);
@@ -1806,20 +1862,21 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
       copy(tTR_rO_src, tR2G_rO_dst);
 
-#ifndef B2B
+      if (get<1>(cta_coord) == 0) {
+	if (epilogue_args.ptr_lse != nullptr) {
+          // compute LSE
+          ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
 
-      // compute LSE
-      ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
-
-      // store LSE
-      Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse_acc + H * get<3>(cta_coord)), make_shape(H, B), epilogue_args.stride_lse_acc);
-      Tensor gLSE = local_tile(mLSE, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
-      // for 2x2 dp, this must be conditional and the index is wrong
-      if (! kIs2Sm || (threadIdx.x < 64))
-      {
-          gLSE(threadIdx.x) = lse;
+          // store LSE
+          Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse_acc + H * get<3>(cta_coord)), make_shape(H, B), epilogue_args.stride_lse_acc);
+          Tensor gLSE = local_tile(mLSE, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
+          // for 2x2 dp, this must be conditional and the index is wrong
+          if (! kIs2Sm || (threadIdx.x < 64))
+          {
+            gLSE(threadIdx.x) = lse;
+          }
+	}
       }
- #endif
     }
     else {
       Tensor mO = make_tensor(make_gmem_ptr(epilogue_args.ptr_o), make_shape(H, D_latent, B), epilogue_args.stride_o);
@@ -1848,25 +1905,165 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
       copy(tTR_rO_src, tR2G_rO_dst);
 
-#ifndef B2B
-      if (epilogue_args.ptr_lse != nullptr) {
-        // compute LSE
-        ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
+      if (get<1>(cta_coord) == 0) {
+        if (epilogue_args.ptr_lse != nullptr) {
+          // compute LSE
+          ElementAcc lse = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
 
-        // store LSE
-        Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse), make_shape(H, B), epilogue_args.stride_lse);
-        Tensor gLSE = local_tile(mLSE, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
+          // store LSE
+          Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse), make_shape(H, B), epilogue_args.stride_lse);
+          Tensor gLSE = local_tile(mLSE, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
 
-        // for 2x2 dp, this must be conditional and the index is wrong
-        if (! kIs2Sm || (threadIdx.x < 64))
-        {
-          gLSE(threadIdx.x) = lse;
+          // for 2x2 dp, this must be conditional and the index is wrong
+          if (! kIs2Sm || (threadIdx.x < 64))
+          {
+            gLSE(threadIdx.x) = lse;
+          }
         }
       }
-#endif
     }
   }
 
+  template<class BlkCoord>
+  CUTLASS_DEVICE ElementLSE epilogue_lse_reduction(
+      ElementAcc& row_max,
+      ElementAcc& row_sum,
+      BlkCoord const& cta_coord,
+      ProblemShape const& problem_shape,
+      MainloopArguments const& mainloop_args,
+      EpilogueParams const& epilogue_args,
+      int const& local_split_kv) {
+
+    auto [H, K, D, B] = problem_shape;
+    auto [D_latent, D_rope] = D;
+    auto cta_tiler_pv = take<0,2>(typename CollectiveMmaPV::CtaShape_MNK{});
+
+    constexpr int kNumThreads = kNumComputeWarps * NumThreadsPerWarp;
+    using Sync = cutlass::detail::NamedBarrierSync<kNumThreads, kNamedBarrierExchange>;
+
+    auto wait = [](int* lock, int count) {
+      __threadfence();
+      if (threadIdx.x == 0) {
+        atomicAdd(lock, 1);
+        while (atomicCAS(lock, count, count) != count) {};
+      }
+      __threadfence();
+      Sync::sync();
+    };
+
+    const ElementLSE lse  = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
+    Tensor mLSE_max_buff = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse_max_exchange_buff), make_shape(H, B), epilogue_args.stride_lse);
+    Tensor gLSE_max_buff = local_tile(mLSE_max_buff, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
+
+    int* local_lock = epilogue_args.ptr_lock + get<0>(cta_coord) + 2 * get<2>(cta_coord);
+
+    if (! kIs2Sm || (threadIdx.x < 64)) {
+      atomicMax(&(gLSE_max_buff(threadIdx.x)), __float2int_rn(lse));
+    }
+    wait(local_lock, local_split_kv);
+
+    auto global_lse_max = static_cast<ElementLSE>(gLSE_max_buff(kIs2Sm ? threadIdx.x % 64 : threadIdx.x));
+
+    Tensor mLSE_buff = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse_exchange_buff), make_shape(H, B), epilogue_args.stride_lse);
+    Tensor gLSE_buff = local_tile(mLSE_buff, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
+
+    if (! kIs2Sm || (threadIdx.x < 64)) {
+      atomicAdd(&(gLSE_buff(threadIdx.x)), expf(lse - global_lse_max));
+    }
+    wait(local_lock, 2*local_split_kv);
+
+    const auto sum_lse = gLSE_buff(kIs2Sm ? threadIdx.x % 64 : threadIdx.x);
+    const auto global_lse = (sum_lse == 0.f || sum_lse != sum_lse) ? std::numeric_limits<ElementLSE>::infinity() : 
+	       cutlass::fast_log(sum_lse) + global_lse_max;
+    const auto lse_scale = expf(lse - global_lse);
+
+    if (epilogue_args.ptr_lse != nullptr) {
+      Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_args.ptr_lse), make_shape(H, B), epilogue_args.stride_lse);
+      Tensor gLSE = local_tile(mLSE, append<3>(cta_tiler_pv, _1{}), take<0,3>(cta_coord), Step<_1, Underscore, _1>{});
+
+      // write out the global LSE
+      if (! kIs2Sm || (threadIdx.x < 64)) {
+        gLSE(threadIdx.x) = global_lse;
+      }
+    }
+    return lse_scale;
+  }
+
+
+  template<class BlkCoord>
+  CUTLASS_DEVICE void epilogue_reduction(
+      ElementAcc& row_max,
+      ElementAcc& row_sum,
+      BlkCoord const& blk_coord,
+      ProblemShape const& problem_shape,
+      MainloopArguments const& mainloop_args,
+      EpilogueParams const& epilogue_args,
+      TensorStorage& shared_tensors,
+      int const& local_split_kv,
+      ElementLSE const& lse_scale) {
+
+    constexpr int kNumThreads = kNumComputeWarps * NumThreadsPerWarp;
+    using Sync = cutlass::detail::NamedBarrierSync<kNumThreads, kNamedBarrierExchange>;
+
+    auto [H, K, D, B] = problem_shape;
+    auto [D_latent, D_rope] = D;
+
+    auto load_op = cute::SM100_TMEM_LOAD_32dp32b32x{};
+
+    TiledMmaPV tiled_mma_pv;
+    Tensor tOtO = TiledMmaPV::make_fragment_C(partition_shape_C(TiledMmaPV{}, take<0, 2>(TileShapePV{})));
+
+    CUTE_STATIC_ASSERT_V(shape<1>(tOtO) == _1{});
+    CUTE_STATIC_ASSERT_V(shape<2>(tOtO) == _1{});
+
+    using EpilogueLinearCombination = cutlass::epilogue::thread::LinearCombination<ElementOut, 1, ElementAcc, ElementAcc, cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling>;
+    EpilogueLinearCombination epilogue_op({epilogue_args.output_scale / row_sum * lse_scale});
+
+    CUTLASS_PRAGMA_UNROLL
+    for(int k = 0; k < IterationsPV_N; ++k) {
+      auto cta_coord = replace<1>(blk_coord, k);
+
+      uint32_t tmem_o = uint32_t(TmemAllocation::kO0) + k * uint32_t(TmemAllocation::kSizeAccO);
+      tOtO.data() = tmem_o;
+
+      Tensor tAcc = tOtO(make_coord(_,_),_0{},_0{});
+
+      Tensor mO = make_tensor(make_gmem_ptr(epilogue_args.ptr_o), make_shape(H, D_latent, B), epilogue_args.stride_o);
+      Tensor gO = local_tile(mO, TileShapeAcc{}, take<0,3>(cta_coord));
+      
+      auto tiled_t2r = make_tmem_copy(load_op, tAcc);
+      auto thread_idx = threadIdx.x % size(tiled_t2r);
+
+      auto thread_t2r = tiled_t2r.get_slice(thread_idx);
+      Tensor tTR_gO   = thread_t2r.partition_D(gO);
+      Tensor tTR_rAcc = make_tensor<ElementAcc>(shape(tTR_gO));
+      Tensor tTR_tAcc = thread_t2r.partition_S(tAcc);
+
+      copy(tiled_t2r, tTR_tAcc, tTR_rAcc);
+
+      Tensor sO = make_tensor(make_smem_ptr(reinterpret_cast<ElementOut*>(shared_tensors.smem_acc.begin())), SmemLayout{});
+      Tensor tTR_sO = thread_t2r.partition_D(sO);
+
+      Sync::sync();
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(tTR_rAcc); i++) {
+        tTR_sO(i) = epilogue_op(tTR_rAcc(i));
+      }
+      tma_store_fence();
+      Sync::sync();
+
+      auto tma_reduce_sum_per_cta = epilogue_args.tma_reduce_sum.get_slice(_0{});
+      auto gmem_tensor_coord = epilogue_args.tma_reduce_sum.get_tma_tensor(shape(mO));
+      auto gmem_tensor_coord_per_cta = local_tile(gmem_tensor_coord, TileShapeAcc{}, take<0,3>(cta_coord));
+      if (threadIdx.x % kNumThreads == 0) {
+        copy(epilogue_args.tma_reduce_sum,
+           tma_reduce_sum_per_cta.partition_S(sO),
+           tma_reduce_sum_per_cta.partition_D(gmem_tensor_coord_per_cta));
+	tma_store_arrive();
+      }
+      tma_store_wait<0>();
+    }
+  }
 
   template<class CtaCoord>
   CUTLASS_DEVICE void compute(
@@ -1881,7 +2078,8 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       typename PipelineP::PipelineState& pipeline_p_mma_producer_state,
       PipelineO& pipeline_mma_o,
       typename PipelineO::PipelineState& pipeline_mma_o_consumer_state,
-      int const& split_kv) {
+      int const& split_kv,
+      bool const& is_fused_reduction) {
 
     auto [H, K, D, B] = problem_shape;
 
@@ -1980,9 +2178,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     pipeline_mma_o.consumer_wait(pipeline_mma_o_consumer_state);
 
-#ifdef B2B
-    row_sum = 1;
-#else
     if constexpr (kWarpsInN > 1) {
       // reduce row_sum if needed (for 2x2 dp)
       shared_tensors.smem_exchange[threadIdx.x] = row_sum;
@@ -1991,21 +2186,41 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       int peer_index = (threadIdx.x + 64) % 128;
       row_sum += shared_tensors.smem_exchange[peer_index];
     }
-#endif
 
     cutlass::arch::NamedBarrier((kNumComputeWarps + kNumLoadWarps) * NumThreadsPerWarp, kNamedBarrierEpilogue).arrive();
 
-    // epilogue
-    CUTLASS_PRAGMA_UNROLL
-    for (int j = 0; j < IterationsPV_N; j++) {
-      epilogue(
-          row_max, row_sum,
-          replace<1>(cta_coord, j), problem_shape,
-          mainloop_args, epilogue_args, shared_tensors,
-          uint32_t(TmemAllocation::kO0) + j * uint32_t(TmemAllocation::kSizeAccO), split_kv
+    const int actual_split_kv = ceil_div(k_tile_total, k_tile_per_cta);
+    if (!is_fused_reduction || actual_split_kv == 1) {
+      // epilogue
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < IterationsPV_N; j++) {
+        epilogue(
+            row_max, row_sum,
+            replace<1>(cta_coord, j), problem_shape,
+            mainloop_args, epilogue_args, shared_tensors,
+            uint32_t(TmemAllocation::kO0) + j * uint32_t(TmemAllocation::kSizeAccO),
+	    actual_split_kv
+    	);
+      }
+    } else {
+      const ElementLSE lse_scale =
+        epilogue_lse_reduction(
+            row_max, row_sum,
+	    cta_coord,
+            problem_shape,
+            mainloop_args, epilogue_args,
+            actual_split_kv
+        );
+     
+      epilogue_reduction(row_max, row_sum,
+            cta_coord, 
+	    problem_shape,
+            mainloop_args, epilogue_args,
+	    shared_tensors,
+	    actual_split_kv,
+            lse_scale
       );
     }
-
     cutlass::arch::fence_view_async_tmem_load();
     pipeline_mma_o.consumer_release(pipeline_mma_o_consumer_state);
     ++pipeline_mma_o_consumer_state;

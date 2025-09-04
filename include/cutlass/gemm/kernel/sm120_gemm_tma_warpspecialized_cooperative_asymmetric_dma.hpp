@@ -120,7 +120,7 @@ public:
   // Tensor A/B could have different buffering, with number of KBLOCK, aka TILEK,
   //    and STAGEs. It let AsymmetricKRatio, equals KBLOCK_A / KBLOCK_B, to control
   //    the balance of A/B loading, make sure A/B's pipeline keep same cadence
-  //    when procude / consume data.
+  //    when produce / consume data.
   // Currently, AsymmetricKRatio = {1, 2} is the only support.
   static constexpr bool isAsymmetric = DispatchPolicy::Schedule::isAsymmetric;
   static constexpr uint32_t AsymmetricKRatio = isAsymmetric ? 2 : 1;
@@ -552,12 +552,11 @@ public:
         work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
         if constexpr (IsSchedDynamicPersistent) {
-          cutlass::arch::wait_on_dependent_grids();
-        }
-
-        if constexpr (IsSchedDynamicPersistent) {
           bool requires_clc_query = true;
           TileSchedulerPipelineState scheduler_pipe_producer_state = cutlass::make_producer_start_state<TileSchedulerPipeline>();
+
+          cutlass::arch::wait_on_dependent_grids();
+
           while (work_tile_info.is_valid()) {
             if (requires_clc_query) {
               // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.

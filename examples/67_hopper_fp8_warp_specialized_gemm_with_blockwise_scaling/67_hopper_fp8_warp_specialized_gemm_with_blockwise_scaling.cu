@@ -205,7 +205,6 @@ cutlass::HostTensor<ElementA  , LayoutA  > tensor_A;
 cutlass::HostTensor<ElementB  , LayoutB  > tensor_B;
 cutlass::HostTensor<ElementC  , LayoutC  > tensor_C;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_D;
-uint32_t mma_promotion_interval;
 cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_A;
 cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_B;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_ref_D;
@@ -359,7 +358,7 @@ void initialize(const Options<RasterOrderOptions> &options) {
   // Layout SFA and SFB represent logically broadcasting data in CuTe.
   // E.g., if Layout SFA has shape ((ScaleGranularityM, M / ScaleGranularityM), (ScaleGraunularityK, K / ScaleGranularityK))
   // and strides ((0, 1), (0, M / ScaleGraunuarlityM)), then each collection of ScaleGranularityM x ScaleGranularityK
-  // indecies in the tensor map to the same offset.
+  // indices in the tensor map to the same offset.
 
   layout_SFA = ScaleConfig::tile_atom_to_shape_SFA(make_shape(options.m, options.n, options.k, options.l));
   layout_SFB = ScaleConfig::tile_atom_to_shape_SFB(make_shape(options.m, options.n, options.k, options.l));
@@ -404,12 +403,6 @@ void initialize(const Options<RasterOrderOptions> &options) {
   tensor_D.sync_device();
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
-
-  // Note : This value has to match the KernelSchedule::ScalePromotionInterval
-  // Else kernel will fail can_implement() check
-  // Deprecation Notice : We plan to remove this params member in an upcoming release
-  // Users can safely delete this line from their code, since the default is already 4
-  mma_promotion_interval = 4;
 
   if (options.save_aux) {
     tensor_aux.resize(c_coord);
@@ -470,7 +463,6 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
      stride_A,
      tensor_B.device_data(),
      stride_B,
-     mma_promotion_interval,
      blockscale_tensor_A.device_data(),
      layout_SFA,
      blockscale_tensor_B.device_data(),

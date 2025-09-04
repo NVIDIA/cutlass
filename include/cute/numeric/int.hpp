@@ -29,9 +29,9 @@
  *
  **************************************************************************************************/
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
@@ -47,8 +47,9 @@ namespace cute
 // Signed integers
 //
 
-using int2_t  = cutlass::int2b_t;
-using int4_t  = cutlass::int4b_t;
+using int2_t = cutlass::int2b_t;
+using int4_t = cutlass::int4b_t;
+using int6_t = cutlass::int6b_t;
 using CUTE_STL_NAMESPACE::int8_t;
 using CUTE_STL_NAMESPACE::int16_t;
 using CUTE_STL_NAMESPACE::int32_t;
@@ -75,25 +76,29 @@ using int_byte_t = typename int_byte<N>::type;
 // Unsigned integers
 //
 
-using uint1_t   = cutlass::uint1b_t;
-using uint2_t   = cutlass::uint2b_t;
-using uint4_t   = cutlass::uint4b_t;
-using uint6_t   = cutlass::uint6b_t; 
+using uint1_t = cutlass::uint1b_t;
+using uint2_t = cutlass::uint2b_t;
+using uint4_t = cutlass::uint4b_t;
+using uint6_t = cutlass::uint6b_t;
 using CUTE_STL_NAMESPACE::uint8_t;
 using CUTE_STL_NAMESPACE::uint16_t;
 using CUTE_STL_NAMESPACE::uint32_t;
 using CUTE_STL_NAMESPACE::uint64_t;
 using cutlass::uint128_t;
+using cutlass::uint256_t;
+
 template <int N> struct uint_bit;
 template <> struct uint_bit<  1> { using type = uint1_t; };
 template <> struct uint_bit<  2> { using type = uint2_t; };
 template <> struct uint_bit<  4> { using type = uint4_t; };
-template <> struct uint_bit<  6> { using type = uint6_t; }; 
+template <> struct uint_bit<  6> { using type = uint6_t; };
 template <> struct uint_bit<  8> { using type = uint8_t;  };
 template <> struct uint_bit< 16> { using type = uint16_t; };
 template <> struct uint_bit< 32> { using type = uint32_t; };
 template <> struct uint_bit< 64> { using type = uint64_t; };
 template <> struct uint_bit<128> { using type = cutlass::uint128_t; };
+template <> struct uint_bit<256> { using type = cutlass::uint256_t; };
+
 template <int N>
 using uint_bit_t = typename uint_bit<N>::type;
 

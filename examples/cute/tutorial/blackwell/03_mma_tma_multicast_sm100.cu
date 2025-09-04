@@ -333,7 +333,7 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
 
   // Step 2: The Mainloop.
 
-  // Set mma accumlate option to zero so that the first MMA instruction will clear the TMEM accumulator.
+  // Set mma accumulate option to zero so that the first MMA instruction will clear the TMEM accumulator.
   tiled_mma.accumulate_ = UMMA::ScaleOut::Zero;
 
   // Execute a MmaTile_M x MmaTile_N x GEMM_K GEMM
@@ -471,7 +471,7 @@ void gemm_host_f16xf16_f32_f32_tnt(TypeA const* device_ptr_A, LayoutA layout_A,
   // In SM100, the MMAs are Cluster-local and perform CTA-level partitioning.
   // Thus, SM90 uses a cta_tiler to extract portions of the Problem for the CTA
   //  and SM100 uses a mma_tiler to extract portions of the Problem for the MMA.
-  //  The MMA's partitioning then yeilds the CTA-local work.
+  //  The MMA's partitioning then yields the CTA-local work.
 
   if (not evenly_divides(shape(mma_tiler), tile_shape(tiled_mma))) {
     std::cerr << "The MMA Shape should evenly divide the MMA Tiler." << std::endl;
@@ -567,8 +567,8 @@ void gemm_host_f16xf16_f32_f32_tnt(TypeA const* device_ptr_A, LayoutA layout_A,
 
   dim3 dimBlock(128);
   dim3 dimCluster(size<0>(cluster_shape), size<1>(cluster_shape), size<2>(cluster_shape));
-  dim3 dimGrid(round_up(size(ceil_div(Gemm_M, bM)), dimCluster.x),
-               round_up(size(ceil_div(Gemm_N, bN)), dimCluster.y));
+  dim3 dimGrid(size(ceil_div(Gemm_M, bM * size<1>(cluster_layout_vmnk))) * dimCluster.x,
+               size(ceil_div(Gemm_N, bN * size<2>(cluster_layout_vmnk))) * dimCluster.y);
   int  smemBytes = sizeof(SMEMStorage);
 
   auto* kernel_ptr = &gemm_device<SMEMStorage,

@@ -405,6 +405,7 @@ public:
       [[maybe_unused]] dim3 fallback_cluster = dim3{0,0,0};
       if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
                     || GemmKernel::ArchTag::kMinComputeCapability == 101
+                    || GemmKernel::ArchTag::kMinComputeCapability == 103
                     ) {
         if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
           fallback_cluster = params.hw_info.cluster_shape_fallback;
@@ -485,6 +486,7 @@ public:
           if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100
                         || GemmKernel::ArchTag::kMinComputeCapability == 101
                         || GemmKernel::ArchTag::kMinComputeCapability == 120
+                        || GemmKernel::ArchTag::kMinComputeCapability == 103
                        ) {
             if constexpr (is_static_1x1x1) {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
@@ -753,7 +755,7 @@ public:
   /// Constructs the GEMM.
   GemmUniversalAdapter() { }
 
-  /// Helper to construct a transposed equivalent for the underying GEMM operator
+  /// Helper to construct a transposed equivalent for the underlying GEMM operator
   static Arguments to_underlying_arguments(Arguments const &args) {
     if (kInternalTranspose) {
       return args.transposed_problem();

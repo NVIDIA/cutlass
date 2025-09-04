@@ -37,13 +37,19 @@ There are three kernels to compute backwards:
 
 `Sm100FmhaBwdKernelTmaWarpSpecialized` is the main point of this sample, as it demonstrates how to use tensor cores to achieve a high performance fused kernel.
 
+## MLA Blackwell Backward
+
+The sample also provides the feature of MLA backward(d=192, d_vo=128). To enable MLA backward, please specify `--d=192 --d_vo=128` when running the bwd sample. 
+
+`Sm100FmhaBwdMlaKernelTmaWarpSpecialized`is the main point for MLA backward. The MLA approach is slightly different from the original one to enable high performance with the MLA shape. 
+
 # MLA Inference for Blackwell
 
 This sample provides code for fused multi-head latent attention inference in
 the weight-absorbed regime, i.e. for latent head dim 512, and rope head dim 64.
 It supports fp16, bf16, and fp8 input and output types.
 
-To accomodate the large output accumulator due to the large latent head dimension,
+To accommodate the large output accumulator due to the large latent head dimension,
 the sample demonstrates how to leverage 2Sm Blackwell tensor cores.
 
 Loading can be done via TMA (either without paging or with page size 128), or using `cp.async`
@@ -54,6 +60,12 @@ The approach of this implementation is to reuse the selection logic of the colle
 
 The example builds six binaries, showcasing TMA and `cp.async` usage, as well as a back-to-back gemm (essentially turning the softmax into a no-op) for fp8 and fp16.
 For detailed information on how to invoke them, check out either the tests in `CMakeLists.txt` or the `--help` for them.
+
+# Changes
+
+* 4.1.0: Enhanced testing of variable sequence length; disabled B2B mode in MLA
+  to simplify the sample, clarified that `fmha_gen`  sample only supports head
+  dim 128.
 
 # Copyright
 

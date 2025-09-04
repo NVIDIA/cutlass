@@ -39,8 +39,8 @@ from re import sub
 
 from cutlass_library import LayoutType
 
-from cutlass.backend.evt.ir.layout_algorithm import _list_to_tuple, _reverse_tuple
-from cutlass.backend.evt.ir.tensor import Tensor
+from cutlass_cppgen.backend.evt.ir.layout_algorithm import _list_to_tuple, _reverse_tuple
+from cutlass_cppgen.backend.evt.ir.tensor import Tensor
 
 
 class ImplBase:
@@ -170,7 +170,7 @@ class NodeBase:
     @property
     def tensor(self) -> Tensor:
         """
-        Return the output tensor (concept: cutlass.backend.evt.ir.tensor)
+        Return the output tensor (concept: cutlass_cppgen.backend.evt.ir.tensor)
         """
         return self._tensor
 

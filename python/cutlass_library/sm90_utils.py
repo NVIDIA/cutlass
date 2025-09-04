@@ -375,6 +375,13 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
     mma_multipliers, cluster_sizes = get_mma_multipliers(level), get_cluster_sizes(level, is_aligned)
     for math_inst, mma_mul, cluster_size in product(math_instructions, mma_multipliers, cluster_sizes):
 
+        # generator can stamp out duplicate kernels, because it doesn't explicitly set instruction
+        # shape for SM90 kernels, and the 3.X collective API doesn't directly expose them when using
+        # the auto kernel schedule.
+
+        math_inst_stub = copy.deepcopy(math_inst)
+        math_inst_stub.instruction_shape = [0, 0, 0]
+
         tile_desc = TileDescription(
             threadblock_shape=[
                 math_inst.instruction_shape[0] * mma_mul[0],
@@ -383,7 +390,7 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
             ],
             stages=0,
             warp_count=[4, 1, 1],
-            math_instruction=math_inst,
+            math_instruction=math_inst_stub,
             min_compute=90,
             max_compute=90,
             cluster_shape=cluster_size)
@@ -400,7 +407,7 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
 
 def is_tile_desc_compatible_with_cooperative(tile_description):
     # Cooperative kernels require a minimum CTA-M of 128
-    return tile_description.threadblock_shape[0] >= 128
+    return tile_description.threadblock_shape[0] % 128 == 0
 
 
 def can_tile_desc_use_shmem_in_epilogue(tile_description, data_types):
@@ -551,6 +558,7 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     b_type_size = DataTypeSize[data_types["b_type"]]
     if a_type_size != b_type_size and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         schedules = []
+        stream_k_schedules = []
         epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
         if a_type_size > b_type_size:
             epilogue_schedule = EpilogueScheduleType.EpilogueTransposed
@@ -579,7 +587,11 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
                     KernelScheduleType.TmaWarpSpecializedCooperative,
                     epilogue_schedule
                 ])
-        return schedules, []
+                stream_k_schedules.append([
+                    KernelScheduleType.TmaWarpSpecializedCooperative,
+                    epilogue_schedule
+                ])
+        return schedules, stream_k_schedules
 
     if not is_aligned and not is_blockwise(gemm_kind):
         schedules = [[KernelScheduleType.CpAsyncWarpSpecialized,
