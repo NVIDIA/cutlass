@@ -43,6 +43,18 @@ namespace cute {
 template <typename SrcType, typename DstType>
 struct Xe_Reorder<ReorderKind::UU, SrcType, DstType> : Universal_Reorder_UU<SrcType, DstType> {};
 
+template <typename T>
+struct Xe_Reorder<ReorderKind::UU, T, T> {
+  using StorageT = conditional_t<(sizeof_bits_v<T> >= 8), T, uint8_t>;
+  using SRegisters = StorageT[1];
+  using DRegisters = StorageT[1];
+
+  CUTE_HOST_DEVICE static void
+  reorder(StorageT const& src0, StorageT& dst0) {
+    dst0 = src0;
+  }
+};
+
 template <>
 struct Xe_Reorder<ReorderKind::UU, uint8_t, half_t>
 {

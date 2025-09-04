@@ -76,7 +76,7 @@ template <class Op, class XMode, class YMode, typename ValType, typename TiledSt
 struct Xe2DTraitsBase
 {
   using Traits = Copy_Traits<Op, XMode, YMode, ValType, TiledStrides>;
-  using ThrID = Layout<_16>;
+  using ThrID = Layout<intel::_SGSize>;
 
   static constexpr int ValBits = is_void_v<ValType> ? Op::CopyBits
                                                     : int(sizeof_bits_v<ValType>);
@@ -263,7 +263,7 @@ struct XeInterleavedLayoutHelper {
   // Res:  ((_2, _8), (_16, _2, _8)):((_16, _256), (_1, _2048, _32))  (T,V) -> (xbit,y)
 };
 
-template <typename Layout, int CopyBits, int ValBits, int Threads = 16>
+template <typename Layout, int CopyBits, int ValBits, int Threads = intel::sg_size>
 using XeInterleavedLayout = typename XeInterleavedLayoutHelper<Layout, CopyBits, ValBits, Threads>::Result;
 
 // Block 2D load traits.
@@ -282,7 +282,7 @@ struct Copy_Traits<XE_LOAD_2D<CopyBits, Height, Width, BlockWidth>, XMode, YMode
                                         sizeof_bits_v<ValType>>;
 
   using RefLayout = DstLayout;
-  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<_16>, Stride<_0>>{}));
+  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<intel::_SGSize>, Stride<_0>>{}));
 };
 
 // Block 2D VNNI load traits.
@@ -303,7 +303,7 @@ struct Copy_Traits<XE_LOAD_2D_VNNI<CopyBits, Height, Width, BlockWidth>, XMode, 
                                         sizeof_bits_v<ValType>>;
 
   using RefLayout = DstLayout;
-  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<_16>, Stride<_0>>{}));
+  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<intel::_SGSize>, Stride<_0>>{}));
 };
 
 // Block 2D transposed load traits.
@@ -322,7 +322,7 @@ struct Copy_Traits<XE_LOAD_2D_TRANSPOSE<CopyBits, Height, Width>, XMode, YMode, 
                                         sizeof_bits_v<ValType>>;
 
   using RefLayout = DstLayout;
-  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<_16>, Stride<_0>>{}));
+  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<intel::_SGSize>, Stride<_0>>{}));
 };
 
 // Block 2D store traits.
@@ -337,7 +337,7 @@ struct Copy_Traits<XE_STORE_2D<CopyBits, Height, Width>, XMode, YMode, ValType, 
                                         sizeof_bits_v<ValType>>;
 
   using RefLayout = SrcLayout;
-  using DstLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<_16>, Stride<_0>>{}));
+  using DstLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<intel::_SGSize>, Stride<_0>>{}));
 
   using Op = XE_STORE_2D<CopyBits, Height, Width>;
   using Super = Xe2DTraitsBase<Op, XMode, YMode, ValType, TiledStrides>;
@@ -386,7 +386,7 @@ struct Copy_Traits<XE_PREFETCH_2D<CopyBits, Height, Width, BlockWidth>, XMode, Y
                                         sizeof_bits_v<ValType>>;
 
   using RefLayout = DstLayout;
-  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<_16>, Stride<_0>>{}));
+  using SrcLayout = decltype(replace<0>(RefLayout{}, Layout<Shape<intel::_SGSize>, Stride<_0>>{}));
 
   using Op = XE_PREFETCH_2D<CopyBits, Height, Width, BlockWidth>;
   using Super = Xe2DTraitsBase<Op, XMode, YMode, ValType, TiledStrides>;
@@ -564,15 +564,34 @@ get_block_size(InLayout const&) {
     return get<N>(atuple_coshape(layout));
 }
 
-// Remove VNNI modes from a layout, if present.
+// Remove subbyte packing modes from a layout, if present.
+template <int Bits, class InLayout>
+CUTE_HOST_DEVICE
+constexpr auto
+strip_subbyte(InLayout const& layout)
+{
+  using namespace cute::intel;
+  if constexpr (Bits >= 8)
+    return layout;
+  else {
+    static_assert(is_static_v<InLayout>, "Layout must be static");
+    constexpr auto values = size(InLayout{}) / sg_size;
+    constexpr auto per_byte = 8 / Bits;
+    static_assert(values % per_byte == 0, "Partially-occupied bytes in layout");
+    return coalesce(composition(layout, Layout<Shape<C<per_byte>, _SGSize, C<values/per_byte>>,
+                                               Stride<_SGSize,         _1, C<sg_size*per_byte>>>{}));
+  }
+}
+
+// Remove VNNI and subbyte packing modes from a layout, if present.
 // Returns a std::pair<Layout, bool> = (layout_out, has_vnni)
 template <int Bits, class InLayout>
 CUTE_HOST_DEVICE
 constexpr auto
-strip_vnni(InLayout const&)
+strip_vnni_subbyte(InLayout const&)
 {
-  constexpr InLayout layout{};
-  constexpr int R = rank(InLayout{});
+  constexpr auto layout = strip_subbyte<Bits>(InLayout{});
+  constexpr int R = rank(layout);
   constexpr bool vnni = (R >= 2)
                      && (Bits < 32)
                      && is_constant_v<32 / Bits, decltype(size<0>(layout))>;
@@ -606,7 +625,7 @@ block_2d_transform_selector(DesiredCoordLayout const& layout,
       return Block2DTransform::N;
 
   // Check if copy's consumer wants VNNI layout.
-  constexpr auto result = strip_vnni<RegBits>(DesiredCoordLayout{});
+  constexpr auto result = strip_vnni_subbyte<RegBits>(DesiredCoordLayout{});
   constexpr auto slayout = get<0>(result);
   constexpr bool vnni = get<1>(result);
   constexpr bool transpose = !is_constant_v<1, decltype(basis_get(stride<0>(slayout), gstride))>;
@@ -648,12 +667,12 @@ block_2d_selector(CoordLayout const&, GlobalStride const&)
   constexpr auto kind = block_2d_transform_selector<MemBits, RegBits, Store>(layout, gstride);
 
   // Strip off VNNI mode if present.
-  constexpr auto slayout = get<0>(strip_vnni<RegBits>(layout));
+  constexpr auto slayout = get<0>(strip_vnni_subbyte<RegBits>(layout));
 
   constexpr auto x_mode = find_x_mode(gstride);
   constexpr auto y_mode = find_y_mode(gstride);
 
-  constexpr int grf_elems = 512 / RegBits;
+  constexpr int min_large_block = cute::min(256 / RegBits, 16);
   constexpr bool resize = (MemBits != RegBits);
 
   auto shape = atuple_coshape(layout);
@@ -666,7 +685,7 @@ block_2d_selector(CoordLayout const&, GlobalStride const&)
     //   Block width = highest power of 2 divisor (up to 64b)
     //   Width = highest power of 2 divisor of full tile's width, up to 64b and 4x block width
     constexpr int max_w = 64 * 8 / MemBits;
-    constexpr int x_stride = get_block_size<x_mode(), grf_elems / 2>(slayout);
+    constexpr int x_stride = get_block_size<x_mode(), min_large_block>(slayout);
     constexpr int block_width = cute::gcd(max_w, x_stride);
     constexpr int load_width = cute::gcd(cute::min(max_w, 4 * block_width),
                                           get<x_mode()>(shape));
@@ -692,7 +711,7 @@ block_2d_selector(CoordLayout const&, GlobalStride const&)
     // Similar process for transposing copies, but with width/height reversed.
     constexpr int CopyBits = cute::max(32, cute::min(64, MemBits));
 
-    constexpr int y_stride = get_block_size<y_mode(), grf_elems / 2>(slayout);
+    constexpr int y_stride = get_block_size<y_mode(), min_large_block>(slayout);
     constexpr int height = cute::gcd(32, y_stride);
 
     constexpr int max_w = 32 * 8 / MemBits;

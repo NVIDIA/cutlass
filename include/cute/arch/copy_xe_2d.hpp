@@ -77,7 +77,8 @@ struct XE_LOAD_2D : XE_Copy_Op_2D_Base<Bits, Height, Width, Width/BlockWidth>
   template <typename T>
   CUTE_HOST_DEVICE static void copy(const int *payload, T *dst) {
 #ifdef CUTE_ARCH_COPY_XE_ENABLED
-    auto &dv = *reinterpret_cast<intel::storage_vector_t<T, Width * Height * Bits / 16>*>(dst);
+    using namespace intel;
+    auto &dv = *reinterpret_cast<storage_vector_t<T, Width * Height * Bits / sg_size>*>(dst);
     asm (
       "lsc_load_block2d.ugm (M1, 1)  %0:d%2.%3x%4x%5nn flat[%1+(0,0)]"
         : "=rw"(dv)
@@ -99,7 +100,8 @@ struct XE_LOAD_2D_VNNI : XE_Copy_Op_2D_Base<Bits, Height, Width, Width/BlockWidt
   template <typename T>
   CUTE_HOST_DEVICE static void copy(const int *payload, T *dst) {
 #ifdef CUTE_ARCH_COPY_XE_ENABLED
-    auto &dv = *reinterpret_cast<intel::storage_vector_t<T, Width * Height * Bits / 16>*>(dst);
+    using namespace intel;
+    auto &dv = *reinterpret_cast<storage_vector_t<T, Width * Height * Bits / sg_size>*>(dst);
     asm (
       "lsc_load_block2d.ugm (M1, 1)  %0:d%2.%3x%4x%5nt flat[%1+(0,0)]"
         : "=rw"(dv)
@@ -123,7 +125,8 @@ struct XE_LOAD_2D_TRANSPOSE : XE_Copy_Op_2D_Base<Bits, Height, Width, 1, true>
   template <typename T>
   CUTE_HOST_DEVICE static void copy(const int *payload, T *dst) {
 #ifdef CUTE_ARCH_COPY_XE_ENABLED
-    auto &dv = *reinterpret_cast<intel::storage_vector_t<T, Width * Height * Bits / 16>*>(dst);
+    using namespace intel;
+    auto &dv = *reinterpret_cast<storage_vector_t<T, Width * Height * Bits / sg_size>*>(dst);
     asm (
       "lsc_load_block2d.ugm (M1, 1)  %0:d%2.%3x%4tn flat[%1+(0,0)]"
         : "=rw"(dv)
@@ -162,7 +165,8 @@ struct XE_STORE_2D : XE_Copy_Op_2D_Base<Bits, Height, Width>
   template <typename T>
   CUTE_HOST_DEVICE static void copy(const int *payload, const T *src) {
 #ifdef CUTE_ARCH_COPY_XE_ENABLED
-    auto &sv = *reinterpret_cast<const intel::storage_vector_t<T, Width * Height * Bits / 16>*>(src); \
+  using namespace intel;
+    auto &sv = *reinterpret_cast<const storage_vector_t<T, Width * Height * Bits / sg_size>*>(src); \
     asm (
       "lsc_store_block2d.ugm (M1, 1) flat[%1+(0,0)] %0:d%2.%3x%4nn"
         :: "rw"(sv), "rw.u"(payload), "P"(Bits), "P"(Width), "P"(Height)

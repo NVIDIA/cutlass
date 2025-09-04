@@ -150,6 +150,24 @@ CUTE_DECLARE_XE_DPAS_TT(d,   u8,   s8,   d)
 CUTE_DECLARE_XE_DPAS_TT(d,   s8,   u8,   d)
 CUTE_DECLARE_XE_DPAS_TT(d,   s8,   s8,   d)
 
+CUTE_DECLARE_XE_DPAS_TT(ud,  u8,   u4,   ud)
+CUTE_DECLARE_XE_DPAS_TT(d,   u8,   u4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   u8,   s4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s8,   u4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s8,   s4,   d)
+
+CUTE_DECLARE_XE_DPAS_TT(ud,  u4,   u8,   ud)
+CUTE_DECLARE_XE_DPAS_TT(d,   u4,   u8,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   u4,   s8,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s4,   u8,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s4,   s8,   d)
+
+CUTE_DECLARE_XE_DPAS_TT(ud,  u4,   u4,   ud)
+CUTE_DECLARE_XE_DPAS_TT(d,   u4,   u4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   u4,   s4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s4,   u4,   d)
+CUTE_DECLARE_XE_DPAS_TT(d,   s4,   s4,   d)
+
 #undef CUTE_DECLARE_XE_DPAS_TT
 
 } //namespace cute

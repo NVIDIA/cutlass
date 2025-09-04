@@ -42,14 +42,20 @@ constexpr int sg_size = 16;
 using _SGSize = Int<sg_size>;
 
 #ifdef __SYCL_DEVICE_ONLY__
-template <class T> struct vector_element_helper        { using type = T; };
+template <class T> struct vector_element_helper {
+  using type = conditional_t<(sizeof_bits_v<T> < 8), uint8_t, T>;
+};
 template <> struct vector_element_helper<tfloat32_t>   { using type = uint32_t; };
 template <> struct vector_element_helper<bfloat16_t>   { using type = uint16_t; };
 template <> struct vector_element_helper<half_t>       { using type = uint16_t; };
 template <> struct vector_element_helper<float_e5m2_t> { using type = uint8_t;  };
 template <> struct vector_element_helper<float_e4m3_t> { using type = uint8_t;  };
 
-template <class T, int N> using vector_t = typename vector_element_helper<T>::type __attribute__((ext_vector_type(N)));
+template <class T, int N> struct vector_helper {
+    using U = typename vector_element_helper<T>::type;
+    using type = U __attribute__((ext_vector_type(ceil_div(N * sizeof_bits_v<T>, sizeof_bits_v<U>))));
+};
+template <class T, int N> using vector_t = typename vector_helper<T, N>::type;
 #else
 template <class T, int N> using vector_t = sycl::marray<T, N>;
 #endif
