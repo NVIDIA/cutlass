@@ -262,7 +262,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     //
 
     // Wait on all cp.async -- optimize by pipelining to overlap GMEM reads
-    cp_async_wait<0>();
+    cp_async_wait<1>();
 
     warpgroup_fence_operand(tCrC);
     warpgroup_arrive();
