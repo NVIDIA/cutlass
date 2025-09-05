@@ -467,7 +467,7 @@ struct XeSubgroup2DBlockPrefetch<1, 32, 8, 1> {
   operator()(const void *srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
              cute::intel::coord_t coordinate) {
     __builtin_IB_subgroup_block_read_prefetch_u8_m8k32v1(
-      reinterpret_cast<intptr_t>(srcBasePointer), memoryWidth, memoryHeight, memoryPitch, coordinate,
+      reinterpret_cast<intptr_t>(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate,
       CacheControl::kL1C_L3C);
   }
 };
