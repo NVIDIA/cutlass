@@ -2732,6 +2732,11 @@ struct TestbedImpl {
   static constexpr uint64_t kDefaultSeed = 4096;
   static constexpr uint32_t mma_promotion_interval = 4;
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+#if defined(SYCL_INTEL_TARGET)
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+#else
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+#endif
 
   HostCollectiveMainloopType collective_mma_inputs;
   CollectiveEpilogue collective_epilogue;
@@ -3164,6 +3169,11 @@ struct Testbed3x {
   using ElementScalar        = typename TestBedImpl::ElementScalar;
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+#if defined(SYCL_INTEL_TARGET)
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+#else
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+#endif
   // Detail Implementation
   TestBedImpl impl_;
 
@@ -4054,7 +4064,7 @@ bool TestXe(
   Testbed3x<Gemm, ActivationFunctor, false,
     typename Gemm::GemmKernel::ElementA,
     typename Gemm::GemmKernel::ElementB,
-    void*, void*, DecompositionMode> testbed(
+    void*, void*> testbed(
       check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
 
   // For M & N we test a small and a big size

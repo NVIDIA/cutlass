@@ -348,7 +348,11 @@ public:
     auto m_sg = get_sub_group_id() / ATOM_N;
     auto n_sg = get_sub_group_id() % ATOM_N;
 
-    using EpilogueTile = decltype(get<0>(params.xe_store_d.get_layoutS_MN()).shape());
+    // Get the layout and reconstruct the MN mapping equivalent to the old get_layoutS_MN()
+    auto layoutS_TV = params.xe_store_d.get_layoutS_TV();
+    auto mn_shape = shape(typename decltype(params.xe_store_d)::Tiler_MN{});
+    auto layoutS_MN = right_inverse(layoutS_TV).with_shape(mn_shape);
+    using EpilogueTile = decltype(layoutS_MN.shape());
 
     auto sg_local_m_coord = get_sub_group_id() / ATOM_N;
     auto sg_local_n_coord = get_sub_group_id() % ATOM_N;
@@ -386,7 +390,7 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
-    Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+    Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
     // Get the fusion callbacks
     // Arguments passed here relate to sub-group tiles, rather than CTA (work-group) tiles

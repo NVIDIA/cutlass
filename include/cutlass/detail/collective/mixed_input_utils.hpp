@@ -1022,101 +1022,103 @@ public:
     Tensor<EngineOut, LayoutOut>& tArACompute,
     cute::tuple<Ts...> const& partitioned_extra_info,
     int const k_block) {
+    #if !defined(CUTLASS_ENABLE_SYCL)
+      static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+      static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+      static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+      static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+      static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+      using SrcType = typename EngineIn::value_type;
+      using DstType = typename EngineOut::value_type;
 
-    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
-    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
-    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
-    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
-    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
-    using SrcType = typename EngineIn::value_type;
-    using DstType = typename EngineOut::value_type;
+      auto src = tArA(_, _, _, k_block);
+      auto dst = tArACompute(_, _, _, k_block);
+      constexpr int num_elements = decltype(size(src))::value;
 
-    auto src = tArA(_, _, _, k_block);
-    auto dst = tArACompute(_, _, _, k_block);
-    constexpr int num_elements = decltype(size(src))::value;
+      constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+      using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+      using SrcArray = cutlass::Array<SrcType, pack>;
+      using DstArray = cutlass::Array<DstType, pack>;
+      constexpr int DstElementsPerReg = 32 / sizeof_bits_v<DstType>;
+      using RegArray = cutlass::AlignedArray<uint32_t, pack / DstElementsPerReg, sizeof(DstArray)>;
 
-    constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
-    using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
-    using SrcArray = cutlass::Array<SrcType, pack>;
-    using DstArray = cutlass::Array<DstType, pack>;
-    constexpr int DstElementsPerReg = 32 / sizeof_bits_v<DstType>;
-    using RegArray = cutlass::AlignedArray<uint32_t, pack / DstElementsPerReg, sizeof(DstArray)>;
+      auto src_arr = recast<SrcArray>(src);
+      auto dst_arr = recast<DstArray>(dst);
 
-    auto src_arr = recast<SrcArray>(src);
-    auto dst_arr = recast<DstArray>(dst);
+      Tensor src_vm = cute::group_modes<1,-1>(cute::zipped_divide(src, pack));
+      Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
 
-    Tensor src_vm = cute::group_modes<1,-1>(cute::zipped_divide(src, pack));
-    Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
+      cute::transform(src_arr, dst_arr, Converter::convert);
+      
+      if constexpr (ModeHasScales) {
 
-    cute::transform(src_arr, dst_arr, Converter::convert);
-    
-    if constexpr (ModeHasScales) {
+        auto const& scales = cute::get<1>(partitioned_extra_info)(_,_,_,k_block);
 
-      auto const& scales = cute::get<1>(partitioned_extra_info)(_,_,_,k_block);
+        CUTE_STATIC_ASSERT_V(size(src) == size(scales));
 
-      CUTE_STATIC_ASSERT_V(size(src) == size(scales));
+        if constexpr (is_same_v<DstType, ElementScale>) {
 
-      if constexpr (is_same_v<DstType, ElementScale>) {
+          using ScaleArray = cutlass::Array<ElementScale, pack>;
+          auto scale_arr = recast<ScaleArray>(filter_zeros(scales));
 
-        using ScaleArray = cutlass::Array<ElementScale, pack>;
-        auto scale_arr = recast<ScaleArray>(filter_zeros(scales));
+          if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
+            Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
+            Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
 
-        if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
-          Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
-          Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
-
-          for (int i = 0; i < size<1>(dst_vm); ++i){
-            auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
-            auto&& scale_reg = cute::recast<RegArray>(scales_vm(_,i))(0);
-            CUTLASS_PRAGMA_UNROLL
-            for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
-              __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
-              bf16x2_val = __hmul2(bf16x2_val,
-                                  reinterpret_cast<const __nv_bfloat162&>(scale_reg[ii]));
+            for (int i = 0; i < size<1>(dst_vm); ++i){
+              auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
+              auto&& scale_reg = cute::recast<RegArray>(scales_vm(_,i))(0);
+              CUTLASS_PRAGMA_UNROLL
+              for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
+                __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+                bf16x2_val = __hmul2(bf16x2_val,
+                                    reinterpret_cast<const __nv_bfloat162&>(scale_reg[ii]));
+              }
             }
           }
-        }
-        else{
-          cute::transform(dst_arr, scale_arr, dst_arr, cute::multiplies{});
-        }
-      }
-      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
-         // Do Nothing
-      }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-        static_assert(is_same_v<ElementScale, ElementZero>, "ElementScale and ElementZero must be the same.");
-
-        auto const& zeros = cute::get<3>(partitioned_extra_info)(_,_,_,k_block);
-        CUTE_STATIC_ASSERT_V(size(src) == size(zeros));
-
-        if constexpr (is_same_v<DstType, ElementZero>) {
-          using ZeroArray = cutlass::Array<ElementZero, pack>;
-          auto zero_arr = recast<ZeroArray>(filter_zeros(zeros));
-
-        if constexpr (is_same_v<DstType, cutlass::bfloat16_t>) {
-          Tensor zeros_vm = cute::group_modes<1,-1>(cute::zipped_divide(zeros, pack));
-
-          for (int i = 0; i < size<1>(dst_vm); ++i){
-            auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
-            auto&& zero_reg = cute::recast<RegArray>(zeros_vm(_,i))(0);
-            CUTLASS_PRAGMA_UNROLL
-            for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
-              __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
-              bf16x2_val = __hadd2(bf16x2_val,
-                                  reinterpret_cast<const __nv_bfloat162&>(zero_reg[ii]));
-            }
+          else{
+            cute::transform(dst_arr, scale_arr, dst_arr, cute::multiplies{});
           }
         }
-        else{
-          cute::transform(dst_arr, zero_arr, dst_arr, cute::plus{});
-         }
-       }
-     }
-     else {
-        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for input partitioning.");
-     }
+        if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+          // Do Nothing
+        }
+        else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+          static_assert(is_same_v<ElementScale, ElementZero>, "ElementScale and ElementZero must be the same.");
+
+          auto const& zeros = cute::get<3>(partitioned_extra_info)(_,_,_,k_block);
+          CUTE_STATIC_ASSERT_V(size(src) == size(zeros));
+
+          if constexpr (is_same_v<DstType, ElementZero>) {
+            using ZeroArray = cutlass::Array<ElementZero, pack>;
+            auto zero_arr = recast<ZeroArray>(filter_zeros(zeros));
+
+          if constexpr (is_same_v<DstType, cutlass::bfloat16_t>) {
+            Tensor zeros_vm = cute::group_modes<1,-1>(cute::zipped_divide(zeros, pack));
+
+            for (int i = 0; i < size<1>(dst_vm); ++i){
+              auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
+              auto&& zero_reg = cute::recast<RegArray>(zeros_vm(_,i))(0);
+              CUTLASS_PRAGMA_UNROLL
+              for (size_t ii = 0; ii < RegArray::kElements; ++ii) {
+                __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+                bf16x2_val = __hadd2(bf16x2_val,
+                                    reinterpret_cast<const __nv_bfloat162&>(zero_reg[ii]));
+              }
+            }
+          }
+          else{
+            cute::transform(dst_arr, zero_arr, dst_arr, cute::plus{});
+          }
+        }
+      }
+      else {
+          static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for input partitioning.");
+      }
+    #else
+      CUTE_INVALID_CONTROL_PATH("Unimplemented");
+    #endif // !defined(CUTLASS_ENABLE_SYCL)
   }
-}
 
 
   /// Utilities for any additional inputs inside of the TMA load
@@ -1230,8 +1232,8 @@ public:
       return cute::make_tuple();
     }
     else if constexpr (ModeHasScales) {
-      ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
-      auto smem_thr_copy_S = smem_tiled_copy_S.get_slice(threadIdx.x % 128);
+      ThrMMA cta_mma = TiledMma{}.get_slice(BlockIdxX() % size(typename TiledMma::AtomThrID{}));
+      auto smem_thr_copy_S = smem_tiled_copy_S.get_slice(ThreadIdxX() % 128);
 
       Tensor sS = make_tensor(make_smem_ptr(shared_storage.input.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_SCALE_K,PIPE)
       Tensor tCsS = cta_mma.partition_A(sS);

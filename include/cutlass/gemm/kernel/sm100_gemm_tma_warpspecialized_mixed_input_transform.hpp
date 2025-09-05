@@ -411,7 +411,7 @@ public:
                                : warp_idx < static_cast<int>(WarpCategory::MainloopLoadB)  ? WarpCategory::Transformation
                                : WarpCategory::MainloopLoadB;   
 
-    int thread_idx          = int(threadIdx.x);
+    int thread_idx          = int(ThreadIdxX());
     int thread_idx_in_warp  = thread_idx % 32;
     uint32_t lane_predicate = cute::elect_one_sync();
     int cta_rank_in_cluster = cute::block_rank_in_cluster();
@@ -750,7 +750,7 @@ public:
         }
         
         // Sync warp to prevent non-participating threads entering next wave early
-        __syncwarp();
+        syncwarp();
 
         // Fetch next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
@@ -875,7 +875,7 @@ public:
 
       // Tmem allocation sequence
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
-      __syncwarp();
+      syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
 

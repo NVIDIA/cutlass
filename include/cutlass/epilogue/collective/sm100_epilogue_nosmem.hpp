@@ -725,7 +725,7 @@ public:
               }
               else {
                 auto tiled_g2r = make_tiled_copy_D(Copy_Atom<SM100_LOAD_256bit_CACHE_NOALLOCATION, ElementC>{}, tiled_t2r);
-                auto thr_g2r = tiled_g2r.get_slice(threadIdx.x);
+                auto thr_g2r = tiled_g2r.get_slice(ThreadIdxX());
                 Tensor c_src = thr_g2r.retile_S(tTR_gC(_,_,_,epi_m,epi_n));
                 Tensor c_dst = thr_g2r.retile_D(tCrC);
                 Tensor c_prd = thr_g2r.retile_D(tTR_pCD_mn);
@@ -770,7 +770,7 @@ public:
           }
           else {
             auto tiled_r2g = make_tiled_copy_D(Copy_Atom<SM100_STORE_256bit_CACHE_NOALLOCATION, ElementD>{}, tiled_t2r);
-            auto thr_r2g = tiled_r2g.get_slice(threadIdx.x);
+            auto thr_r2g = tiled_r2g.get_slice(ThreadIdxX());
             Tensor src = thr_r2g.retile_S(tTR_rD);
             Tensor dst = thr_r2g.retile_D(tTR_gD(_,_,_,epi_m,epi_n));
             Tensor prd = thr_r2g.retile_D(tTR_pCD_mn);

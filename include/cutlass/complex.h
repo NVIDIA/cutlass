@@ -43,6 +43,7 @@
 #else
 #include <cstdint>
 #endif
+#endif
 #include "cutlass/functional.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/real.h"

@@ -593,7 +593,7 @@ struct CollectiveMma<
         // Advance smem_pipe_write
         ++smem_pipe_write;
       }
-    __syncwarp();
+    syncwarp();
   }
 
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
@@ -866,7 +866,7 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(sA_tensormap));
       copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
     }
-    __syncwarp();
+    syncwarp();
     return cute::make_tuple(tma_desc_a, tma_desc_b);
   }
 

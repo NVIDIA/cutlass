@@ -248,7 +248,7 @@ public:
 
     // Partition source and destination tiles according to tmem copy T2R partitioning (tTR_)
     auto tiled_t2r = make_tmem_copy(CopyOpT2R{}, tensor<0>(accumulators));
-    auto thread_idx = threadIdx.x % size(tiled_t2r);
+    auto thread_idx = ThreadIdxX() % size(tiled_t2r);
 
     auto thread_t2r = tiled_t2r.get_slice(thread_idx);
     Tensor tTR_gC   = thread_t2r.partition_D(gC);                                                  // (T2R,T2R_M,T2R_N)
@@ -655,7 +655,7 @@ public:
       ptr_C_l = params.ptr_C[l_coord];
     }
 
-    int thread_idx = threadIdx.x % ThreadCount;
+    int thread_idx = ThreadIdxX() % ThreadCount;
 
     Tensor tAcc = accumulators(make_coord(_,_),_0{},_0{});                                             // (CTA_M,CTA_N)
     Tensor tAcc_epi = flat_divide(tAcc, EpilogueTile{});                         // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
@@ -769,7 +769,7 @@ public:
             }
             else {
               auto tiled_g2r = make_tiled_copy_D(Copy_Atom<SM100_LOAD_256bit_CACHE_NOALLOCATION, ElementC>{}, tiled_t2r);
-              auto thr_g2r = tiled_g2r.get_slice(threadIdx.x);
+              auto thr_g2r = tiled_g2r.get_slice(ThreadIdxX());
               Tensor c_src = thr_g2r.retile_S(tTR_gC(_,_,_,epi_m,epi_n));
               Tensor c_dst = thr_g2r.retile_D(tCrC);
               Tensor c_prd = thr_g2r.retile_D(tTR_pCD_mn);
@@ -814,7 +814,7 @@ public:
         }
         else {
           auto tiled_r2g = make_tiled_copy_D(Copy_Atom<SM100_STORE_256bit_CACHE_NOALLOCATION, ElementD>{}, tiled_t2r);
-          auto thr_r2g = tiled_r2g.get_slice(threadIdx.x);
+          auto thr_r2g = tiled_r2g.get_slice(ThreadIdxX());
           Tensor src = thr_r2g.retile_S(tTR_rD);
           Tensor dst = thr_r2g.retile_D(tTR_gD(_,_,_,epi_m,epi_n));
           Tensor prd = thr_r2g.retile_D(tTR_pCD_mn);

@@ -559,7 +559,7 @@ public:
         mainloop_pipe_producer_state = mainloop_producer_state_next;
 
         // Sync warp to prevent non-participating threads entering next wave early
-        __syncwarp();
+        syncwarp();
         work_tile_info = next_work_tile_info;
 
         if (increment_pipe) {
@@ -618,7 +618,7 @@ public:
 
       // Tmem allocation sequence
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
-      __syncwarp();
+      syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
       bulk_tmem.data() = tmem_base_ptr;

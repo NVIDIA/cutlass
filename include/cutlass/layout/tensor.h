@@ -41,11 +41,10 @@
 #pragma once
 
 #if !defined(CUTLASS_ENABLE_SYCL)
-#include <cuda/std/cassert>
+#include CUDA_STD_HEADER(cassert)
 #endif
 
 #include "cutlass/cutlass.h"
-#include CUDA_STD_HEADER(cassert)
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"

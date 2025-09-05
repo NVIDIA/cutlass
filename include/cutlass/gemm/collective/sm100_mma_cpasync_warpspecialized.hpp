@@ -331,7 +331,7 @@ struct CollectiveMma<
     GmemTiledCopyA gmem_to_smem_a_tiled_copy;
     GmemTiledCopyB gmem_to_smem_b_tiled_copy;
 
-    int thread_idx = threadIdx.x % NumLoadThreads;
+    int thread_idx = ThreadIdxX() % NumLoadThreads;
     auto thr_copy_a = gmem_to_smem_a_tiled_copy.get_slice(thread_idx);
     auto thr_copy_b = gmem_to_smem_b_tiled_copy.get_slice(thread_idx);
 

@@ -342,7 +342,7 @@ struct CollectiveMma<
     if (K_BLOCK_MAX > 1) {
       // Wait until our first prefetched tile is loaded in
       cp_async_wait<DispatchPolicy::Stages-2>();
-      __syncthreads();
+      syncthreads();
 
       // Prefetch the first rmem from the first k-tile
       copy(smem_tiled_copy_A, tCsA_p(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
@@ -365,7 +365,7 @@ struct CollectiveMma<
 
           // Commit the smem for smem_pipe_read
           cp_async_wait<DispatchPolicy::Stages-2>();
-          __syncthreads();
+          syncthreads();
         }
 
         // Load A, B shmem->regs for k_block+1
@@ -401,7 +401,7 @@ struct CollectiveMma<
     }
 
     cp_async_wait<0>();
-    __syncthreads();
+    syncthreads();
   }
 };
 

@@ -927,8 +927,8 @@ struct CollectiveMma<
     Tensor sSFA_compact = filter_zeros(sSFA);                                               // (BLK_M_CPT, BLK_K_CPT, P)
     Tensor sSFB_compact = filter_zeros(sSFB);                                               // (BLK_N_CPT, BLK_K_CPT, P)
 
-    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x % size(scale_copy_a));
-    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x % size(scale_copy_b));
+    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(ThreadIdxX() % size(scale_copy_a));
+    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(ThreadIdxX() % size(scale_copy_b));
 
     Tensor tSFAgSFA_k_compact = thr_scale_copy_a.partition_S(gSFA_k_compact);                  // (CPY, BLK_M, BLK_K, k)
     Tensor tSFAIdentSFA_k_compact = thr_scale_copy_a.partition_S(identSFA_k_compact);          // (CPY, BLK_M, BLK_K, k)
@@ -952,14 +952,14 @@ struct CollectiveMma<
       for (int i = 0; i < size(thr_tile_pSFA); ++i) {
         Tensor tSFAIdentSFA_compact = tSFAIdentSFA_k_compact(_0{},_,_,*k_tile_iter);
         thr_tile_pSFA(i) = elem_less(tSFAIdentSFA_compact(i), 
-            shape(filter_zeros(layout_SFA))) && threadIdx.x % 32 < size(scale_copy_a);
+            shape(filter_zeros(layout_SFA))) && ThreadIdxX() % 32 < size(scale_copy_a);
       }
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFB); ++i) {
         Tensor tSFBIdentSFB_compact = tSFBIdentSFB_k_compact(_0{},_,_,*k_tile_iter);
         thr_tile_pSFB(i) = elem_less(tSFBIdentSFB_compact(i), 
-            shape(filter_zeros(layout_SFB))) && threadIdx.x % 32 < size(scale_copy_b);
+            shape(filter_zeros(layout_SFB))) && ThreadIdxX() % 32 < size(scale_copy_b);
       }
 
       copy_if(scale_copy_a, thr_tile_pSFA, tSFAgSFA_k_compact(_,_,_,*k_tile_iter), 

@@ -758,7 +758,7 @@ public:
         return;
       }
       // In case user wants to engage less SMs than available on device
-      sm_id = blockIdx.x + (blockIdx.y * gridDim.x);
+      sm_id = BlockIdxX() + (BlockIdxY() * GridDimX());
     }
 
     auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
@@ -844,7 +844,7 @@ public:
         mainloop_ab_pipe_producer_state = mainloop_producer_state_next_;
 
         // Sync warp to prevent non-participating threads entering next wave early
-        __syncwarp();
+        syncwarp();
 
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
           work_tile_info,
@@ -999,7 +999,7 @@ public:
         mainloop_sf_pipe_producer_state = mainloop_producer_state_next_;
 
         // Sync warp to prevent non-participating threads entering next wave early
-        __syncwarp();
+        syncwarp();
 
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
           work_tile_info,
@@ -1025,7 +1025,7 @@ public:
       set_warpgroup_reg_dealloc();
       // Tmem allocation sequence
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
-      __syncwarp();
+      syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
       accumulators.data() = tmem_base_ptr;

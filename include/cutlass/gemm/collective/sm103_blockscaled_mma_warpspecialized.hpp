@@ -605,7 +605,7 @@ struct CollectiveMma<
     Tensor gB_nkl = local_tile(mB_nkl, replace<2>(TileShape{}, _384{}), make_coord(_,_,_), Step< X,_1,_1>{});    // (BLK_N, BLK_K, n, k, l)
 
     // Partition for this CTA
-    ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
+    ThrMMA cta_mma = TiledMma{}.get_slice(BlockIdxX() % size(typename TiledMma::AtomThrID{}));
 
     Tensor tCgA_mkl_tmp = cta_mma.partition_A(gA_mkl);                                       // ((CTA_MMA_M,96),Rest_MMA_M,Rest_MMA_K, m, k, l)
     Tensor cta_tCgA = make_tensor(tCgA_mkl_tmp.data(), make_layout(coalesce(make_layout(cute::layout<0,0>(tCgA_mkl_tmp), cute::layout<1>(tCgA_mkl_tmp))),

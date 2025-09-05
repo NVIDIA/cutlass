@@ -718,7 +718,7 @@ struct CollectiveMma<
     Tensor gB_nkl = local_tile(mB_nkl, replace<2>(TileShape{}, _384{}), make_coord(_,_,_), Step< X,_1,_1>{});    // (BLK_N, BLK_K, n, k, l)
 
     // Partition for this CTA
-    ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
+    ThrMMA cta_mma = TiledMma{}.get_slice(BlockIdxX() % size(typename TiledMma::AtomThrID{}));
 
     Tensor tCgA_mkl_tmp = cta_mma.partition_A(gA_mkl);                                       // ((CTA_MMA_M,96),Rest_MMA_M,Rest_MMA_K, m, k, l)
     Tensor cta_tCgA = make_tensor(tCgA_mkl_tmp.data(), make_layout(coalesce(make_layout(cute::layout<0,0>(tCgA_mkl_tmp), cute::layout<1>(tCgA_mkl_tmp))),
@@ -1429,7 +1429,7 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
 
     }
-    __syncwarp();
+    syncwarp();
 
     return cute::make_tuple(tma_desc_a, tma_desc_b);
   }
@@ -1515,7 +1515,7 @@ struct CollectiveMma<
       }
     }
     // Ensure warp is converged before issuing tensormap fence release
-    __syncwarp();
+    syncwarp();
     // Entire warp must do this (ie its aligned)
     tensormaps_cp_fence_release_ab(shared_tensormaps, input_ab_tensormaps);
   }
@@ -1558,7 +1558,7 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pSFA_tensormap), recast<uint128_t>(sSFA_tensormap));
       copy(recast<uint128_t>(pSFB_tensormap), recast<uint128_t>(sSFB_tensormap));
     }
-    __syncwarp();
+    syncwarp();
 
     return cute::make_tuple(tma_desc_sfa, tma_desc_sfb);
   }
@@ -1644,7 +1644,7 @@ struct CollectiveMma<
       }
     }
     // Ensure warp is converged before issuing tensormap fence release
-    __syncwarp();
+    syncwarp();
     // Entire warp must do this (ie its aligned)
     tensormaps_cp_fence_release_sf(shared_tensormaps, input_tensormaps_sf);
   }
