@@ -113,7 +113,7 @@ from cutlass_cppgen.shape import GemmCoord, MatrixCoord
 
 def leading_dimension(layout: LayoutType, shape: MatrixCoord) -> int:
     """
-    Returns the leading dimenson of a tensor with layout ``layout`` and shape ``shape``.
+    Returns the leading dimension of a tensor with layout ``layout`` and shape ``shape``.
 
     :param layout: layout of the tensor
     :type layout: cutlass_cppgen.shape.LayoutType
@@ -1510,7 +1510,7 @@ class GemmOperationBase:
 
         # Optionally swap the TensorDescriptions for operands A and B and transpose their
         # layouts. This is needed to mimic the transpose performed by device::GemmUniversal.
-        # The code below uses deep copy to avoid overwritting the original TensorDescription
+        # The code below uses deep copy to avoid overwriting the original TensorDescription
         self.switched = (self.api != ApiVersion.v3x and
                          self.emission_type == EmissionType.Kernel and
                          C.layout == LayoutType.ColumnMajor)
@@ -1775,7 +1775,7 @@ class GemmOperationGrouped(GemmOperationBase):
         epilogue_functor, swizzling_functor=SwizzlingFunctor.Identity1, **kwargs):
         super(GemmOperationGrouped, self).__init__(GemmKind.Grouped, arch, tile_description,
                                                    A, B, C, epilogue_functor, swizzling_functor, **kwargs)
-        assert "precompute_mode" in kwargs.keys(), "missing keyword arguement 'precompute_mode'."
+        assert "precompute_mode" in kwargs.keys(), "missing keyword argument 'precompute_mode'."
         self.precompute_mode = kwargs["precompute_mode"]
         self.rt_module = GemmRTGrouped(self)
         self.argument_type = self.rt_module.argument_type

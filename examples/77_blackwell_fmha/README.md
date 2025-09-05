@@ -8,7 +8,7 @@ For generation usage, use an M-blocking (Num-Groups) of 128 (although the limit 
 
 Context loads are done via TMA, whereas generation usage utilized `cp.async` and is thus more amenable to complex load patterns.
 
-For variable sequence lenght, the code requires a batch of valid (but never used) padding memory ahead of the first input batch. This is achieved with least overhead by leaving one batch free and then arranging QKV consecutively.
+For variable sequence length, the code requires a batch of valid (but never used) padding memory ahead of the first input batch. This is achieved with least overhead by leaving one batch free and then arranging QKV consecutively.
 
 The approach of this implementation is to reuse the selection logic of the collective gemm builder and recombine the result into an FMHA kernel.
 The kernel and collective layer are then formulated to be fmha-specific.

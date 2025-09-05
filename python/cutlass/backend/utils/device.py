@@ -93,7 +93,7 @@ def device_sm_count(device: int = -1):
     )
     if err != cuda.CUresult.CUDA_SUCCESS:
         raise Exception(
-            "Failed to retireve SM count. "
+            "Failed to retrieve SM count. "
             f"cuDeviceGetAttribute() failed with error: {cuda.cuGetErrorString(err)[1]}"
         )
 

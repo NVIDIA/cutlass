@@ -189,7 +189,7 @@ class Gemm(OperationBase):
     :param B: tensor representing data type and layout of operand B
     :param C: tensor representing data type and layout of operand C
     :param D: tensor representing data type and layout of operand D
-    :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
+    :param alpha: scalar parameter alpha from GEMM computation that scales the product of operands A and B
     :param beta: scalar parameter beta from GEMM operation that scales operand C
     :param element_accumulator: data type to be used in accumulation of the product of operands A and B
     :type element_accumulator: cutlass_cppgen.DataType
@@ -635,14 +635,14 @@ class Gemm(OperationBase):
 
         By default, this call returns only once the kernel has completed. To launch the kernel
         and immediately return, set ``sync=False``. In this case, it is the responsibility of the
-        caller to syncrhonize the results of the kernel before attempting to access outputs
+        caller to synchronize the results of the kernel before attempting to access outputs
         by calling ``sync()`` on the arguments returned from this call.
 
         :param A: tensor representing data type and layout of operand A
         :param B: tensor representing data type and layout of operand B
         :param C: tensor representing data type and layout of operand C
         :param D: tensor representing data type and layout of operand D
-        :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
+        :param alpha: scalar parameter alpha from GEMM computation that scales the product of operands A and B
         :param beta: scalar parameter beta from GEMM operation that scales operand C
         :param sync: whether the call should wait for the kernel to complete before returning
         :type sync: bool

@@ -349,7 +349,7 @@ bool initialize_tensor(
     cutlass::reference::host::TensorFill(view, Element(1));
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;
@@ -390,7 +390,7 @@ bool initialize_scale_tensor(
     cutlass::reference::host::TensorFill(view, Element(1));
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;

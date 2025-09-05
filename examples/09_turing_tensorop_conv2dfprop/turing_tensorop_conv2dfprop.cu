@@ -47,7 +47,7 @@ composed from lower level ones. Multiple thread-tiles (tile size each thread com
 to form warp-tiles (tile size each warp computes) and multiple warp tiles can be used to compute
 threadblock-tile (tile size computed by a threadblock).
 
-In thie example, we split variable initialization into
+In this example, we split variable initialization into
 1. Setting up data properties : describes how tensors are laid out in the memory and how the kernel
 can view them (logical to physical mapping)
 2. Setting up computation properties : describes how the above set tensors will be used to compute

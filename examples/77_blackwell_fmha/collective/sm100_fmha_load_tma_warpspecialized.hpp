@@ -101,7 +101,7 @@ struct Sm100FmhaLoadTmaWarpspecialized {
       auto cumulative_length_q = get<0>(problem_shape).cumulative_length;
       if (cumulative_length_q != nullptr) {
           int max_length_q = get<0>(problem_shape).max_length;
-          // for variable sequence lenght, the batch is in units of row_stride
+          // for variable sequence length, the batch is in units of row_stride
           get<2,1>(dQ) = get<0>(dQ);
           get<3,1>(problem_shape_qk) = std::max(get<3,1>(problem_shape_qk), max_length_q * (1 + get<3,1>(problem_shape)));
           // offset ptr by the amount we add back in later
@@ -113,7 +113,7 @@ struct Sm100FmhaLoadTmaWarpspecialized {
       auto cumulative_length_kv = get<1>(problem_shape).cumulative_length;
       if (cumulative_length_kv != nullptr) {
           int max_length_kv = get<1>(problem_shape).max_length;
-          // for variable sequence lenght, the batch is in units of row_stride
+          // for variable sequence length, the batch is in units of row_stride
           get<2,1>(dK) = get<0>(dK);
           get<2,1>(dV) = get<0>(dV);
           get<3,1>(problem_shape_qk) = std::max(get<3,1>(problem_shape_qk), max_length_kv * (1 + get<3,1>(problem_shape)));

@@ -185,7 +185,7 @@ void Rank2KComplex(
             }
           }
           
-          /* Zeoring out accum for second HERK */
+          /* Zeroing out accum for second HERK */
           for (int j = 0; j < Nblock; j++) {
             for (int i = 0; i < Mblock; i++) {
               accum[i][j] = initial_accum;
