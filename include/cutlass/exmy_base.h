@@ -401,7 +401,7 @@ public:
   using Storage = StorageType;
 
 #if (CUTLASS_CXX17_OR_LATER)
-  static_assert(cutlass::platform::is_unsigned_v<Storage>, "Use an unsigned integer for StorageType");
+  static_assert(CUTLASS_STL_NAMESPACE::is_unsigned<Storage>::value, "Use an unsigned integer for StorageType");
 #endif
   static constexpr bool IS_SIGNED = IsSigned;
   // Canonical NaN is always represented as exponent=11...11 and mantissa=11...11, if it exists
