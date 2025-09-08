@@ -52,6 +52,7 @@
 
 #if defined(SYCL_NVIDIA_TARGET)
   #define CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 1
+  #define CUTE_ARCH_NVCC_SUPPORTS_MOVM_SM75 1
 #endif
 
 #if ! defined(CUTE_ARCH_LDSM_SM75_SUPPORTED)
@@ -75,7 +76,8 @@
   #define CUTE_ARCH_MOVM_SM75_ENABLED (CUTE_ARCH_MOVM_SM75_SUPPORTED)
 #endif
 
-#if (CUTE_ARCH_MOVM_SM75_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
+#if (CUTE_ARCH_MOVM_SM75_ENABLED) && \
+  ((defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750) || (defined(__SYCL_CUDA_ARCH__) && __SYCL_CUDA_ARCH__ >= 750))
   #define CUTE_ARCH_MOVM_SM75_ACTIVATED 1
 #endif
 
