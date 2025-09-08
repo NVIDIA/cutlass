@@ -40,6 +40,31 @@
 
 using namespace cute;
 
+#ifdef CUTLASS_ENABLE_SYCL
+namespace sc = syclcompat;
+namespace sc_exp = syclcompat::experimental;
+namespace sycl_ext = sycl::ext::oneapi::experimental;
+#endif
+
+#ifdef CUTLASS_ENABLE_SYCL
+CUTLASS_GLOBAL void
+movm_test_device(uint16_t* g_in, uint16_t* g_out)
+{
+  int tid = ThreadIdxX();
+
+  // load input gmem -> register
+  uint32_t reg = reinterpret_cast<uint32_t*>(g_in)[tid];
+
+  // do two movmatrix calls (transpose twice => identity)
+  uint32_t tmp = 0;
+  uint32_t dst = 0;
+  SM75_U32x1_MOVM_T::copy(reg, tmp);
+  SM75_U32x1_MOVM_T::copy(tmp, dst);
+
+  // store result
+  reinterpret_cast<uint32_t*>(g_out)[tid] = dst;
+}
+#else
 __global__ void
 movm_test_device(uint16_t* g_in, uint16_t* g_out)
 {
@@ -57,8 +82,49 @@ movm_test_device(uint16_t* g_in, uint16_t* g_out)
   // store result
   reinterpret_cast<uint32_t*>(g_out)[tid] = dst;
 }
+#endif
 
 template <class TiledCopy, class GmemLayout>
+#ifdef CUTLASS_ENABLE_SYCL
+CUTLASS_GLOBAL void
+movm_test_device_cute(uint16_t* g_in, uint16_t* g_out,
+                      TiledCopy tiled_copy, GmemLayout gmem_layout)
+{
+  using namespace cute;
+
+  auto t_g_in  = make_tensor(make_gmem_ptr(reinterpret_cast<uint32_t*>(g_in)),  gmem_layout);
+  auto t_g_out = make_tensor(make_gmem_ptr(reinterpret_cast<uint32_t*>(g_out)), gmem_layout);
+
+  int tid = ThreadIdxX();
+
+  auto thr_copy = tiled_copy.get_thread_slice(tid);
+
+  auto tXgS = thr_copy.partition_S(t_g_in);
+  auto tXgD = thr_copy.partition_D(t_g_out);
+
+  // Register tensors for intermediate and output data
+  auto tXrS = make_tensor<uint32_t>(shape(tXgS)); // src
+  auto tXrT = make_tensor<uint32_t>(shape(tXgS)); // tmp
+  auto tXrD = make_tensor<uint32_t>(shape(tXgD)); // dst
+  clear(tXrS);
+  clear(tXrT);
+  clear(tXrD);
+
+  // Load gmem -> registers
+  for (int i = 0; i < size(tXrS); ++i) {
+    tXrS(i) = tXgS(i);
+  }
+
+  // do two movmatrix calls for identity
+  copy(tiled_copy, tXrS, tXrT);
+  copy(tiled_copy, tXrT, tXrD);
+
+  // Store registers -> gmem
+  for (int i = 0; i < size(tXrD); ++i) {
+    tXgD(i) = tXrD(i);
+  }
+}
+#else
 __global__ void
 movm_test_device_cute(uint16_t* g_in, uint16_t* g_out,
                       TiledCopy tiled_copy, GmemLayout gmem_layout)
@@ -97,27 +163,44 @@ movm_test_device_cute(uint16_t* g_in, uint16_t* g_out,
     tXgD(i) = tXrD(i);
   }
 }
+#endif
 
 TEST(SM75_CuTe_Turing, Movm)
 {
   constexpr int count = 1024;
 
+  #ifdef CUTLASS_ENABLE_SYCL
+  host_vector<uint16_t> h_in(count);
+  #else
   thrust::host_vector<uint16_t> h_in(count);
+  #endif
   for (int i = 0; i < count; ++i) {
     h_in[i] = uint16_t(i);
   } 
+  #ifdef CUTLASS_ENABLE_SYCL
+  device_vector<uint16_t> d_in(h_in);
+  #else
   thrust::device_vector<uint16_t> d_in = h_in;
+  #endif
 
   //
   // Direct MOVM
   //
 
   {
+  #ifdef CUTLASS_ENABLE_SYCL
+  device_vector<uint16_t> d_out(count);
+  sc_exp::launch<movm_test_device>(sc_exp::launch_policy{sc::dim3(1), sc::dim3(32)},
+                                   d_in.data(), d_out.data());
+  sc::wait_and_throw();
+  host_vector<uint16_t> h_out(d_out);
+  #else
   thrust::device_vector<uint16_t> d_out(count);
   movm_test_device<<<1, 32>>>(
     thrust::raw_pointer_cast(d_in.data()),
     thrust::raw_pointer_cast(d_out.data()));
   thrust::host_vector<uint16_t> h_out = d_out;
+  #endif
   // applied movmatrix twice so result should equal input
   for (int i = 0; i < 64; ++i) {
     EXPECT_EQ(h_out[i], h_in[i]);
@@ -130,7 +213,11 @@ TEST(SM75_CuTe_Turing, Movm)
   //
 
   {
+  #ifdef CUTLASS_ENABLE_SYCL
+  device_vector<uint16_t> d_out(count);
+  #else
   thrust::device_vector<uint16_t> d_out(count);
+  #endif
 
   auto gmem_layout = Layout<Shape <_32, _1>, 
                             Stride< _1,_32>>{};
@@ -138,12 +225,21 @@ TEST(SM75_CuTe_Turing, Movm)
                                     Layout<Shape<_32, _1>>{}, 
                                     Layout<Shape< _1, _1>>{});
 
+  #ifdef CUTLASS_ENABLE_SYCL
+  sc_exp::launch<movm_test_device_cute<decltype(tiled_copy), decltype(gmem_layout)>>(
+    sc_exp::launch_policy{sc::dim3(1), sc::dim3(int(size(tiled_copy)))},
+    d_in.data(), d_out.data(),
+    tiled_copy, gmem_layout);
+  sc::wait_and_throw();
+  host_vector<uint16_t> h_out(d_out);
+  #else
   movm_test_device_cute<<<1, int(size(tiled_copy))>>>(                              
     thrust::raw_pointer_cast(d_in.data()),
     thrust::raw_pointer_cast(d_out.data()),
     tiled_copy,
     gmem_layout);
   thrust::host_vector<uint16_t> h_out = d_out;
+  #endif
   for (int i = 0; i < (size(gmem_layout)*2); ++i) {
     EXPECT_EQ(h_out[i], h_in[i]);
   }
