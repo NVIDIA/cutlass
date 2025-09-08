@@ -54,15 +54,15 @@ SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL
 namespace cute
 {
 
-// scope = 3 is for subgroup, scop = 2 is for workgroup
-CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = 0, int emory_semantics = 0) { 
+// scope = 3 is for subgroup, scope = 2 is for workgroup
+CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = 0, int memory_semantics = 0) { 
 #ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, emory_semantics); 
+  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, memory_semantics); 
 #endif
 }
-CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = 0, int emory_semantics = 0) { 
+CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = 0, int memory_semantics = 0) { 
 #ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, emory_semantics); 
+  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, memory_semantics); 
 #endif
 }
 
