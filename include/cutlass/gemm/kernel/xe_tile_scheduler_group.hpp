@@ -133,7 +133,6 @@ public:
       tile_shape, cluster_shape);
 
     Params params;
-    // TODO: Resolve extra params error due to updated implementation in NV CUTLASS
     params.initialize(
       problem_blocks,
       problem_shapes,
