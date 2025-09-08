@@ -30,7 +30,9 @@
  **************************************************************************************************/
 
 #pragma once
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_bf16.h>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/gemm.h"
@@ -888,7 +890,7 @@ public:
       TensorStorage& shared_storage) const {
     auto [gA_mkl, gB_nkl] = tile_input_tensors(params, problem_shape_MNKL);
 
-    ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
+    ThrMMA cta_mma = TiledMma{}.get_slice(BlockIdxX() % size(typename TiledMma::AtomThrID{}));
 
     Tensor tCgA_mkl = cta_mma.partition_A(gA_mkl);          // (MMA, MMA_M, MMA_K, m, k, l)
     Tensor tCgB_nkl = cta_mma.partition_B(gB_nkl);          // (MMA, MMA_N, MMA_K, n, k, l)
@@ -1106,7 +1108,7 @@ public:
         fragment_compute.data() = accumulators.data().get() + cutlass::detail::find_tmem_tensor_col_offset(accumulators);
         // If operand comes from TMEM, create the TMEM_STORE based copy
         auto r2t_tiled_copy = make_tmem_copy(compute_copy_atom, fragment_compute(_,_,_,0));
-        auto thr_r2t_tiled_copy = r2t_tiled_copy.get_slice(threadIdx.x % NumTransformationThreads);
+        auto thr_r2t_tiled_copy = r2t_tiled_copy.get_slice(ThreadIdxX() % NumTransformationThreads);
         auto partitioned_tensor_input = thr_r2t_tiled_copy.partition_S(tensor_input2x); //(TMEM_STORE, TMEM_STORE_M, TMEM_STORE_N)
         auto partitioned_tensor_compute = thr_r2t_tiled_copy.partition_D(fragment_compute); //(TMEM_STORE, TMEM_STORE_M, TMEM_STORE_N)
 
@@ -1120,7 +1122,7 @@ public:
                                                      tensor_compute(_,_,_,0).layout());
 
         auto smem2reg_tiled_copy = make_tiled_copy_S(input_copy_atom, r2s_tiled_copy);
-        auto thr_r2s_tiled_copy = r2s_tiled_copy.get_slice(threadIdx.x % NumTransformationThreads);
+        auto thr_r2s_tiled_copy = r2s_tiled_copy.get_slice(ThreadIdxX() % NumTransformationThreads);
         auto partitioned_tensor_input = thr_r2s_tiled_copy.partition_S(tensor_input); //(SMEM_STORE, SMEM_STORE_M, SMEM_STORE_N)
 
         auto partitioned_tensor_compute = thr_r2s_tiled_copy.partition_D(tensor_compute_ind_sw);//(SMEM_STORE, SMEM_STORE_M, SMEM_STORE_N)

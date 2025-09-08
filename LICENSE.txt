@@ -25,10 +25,3 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Certain files within this repository are subject to separate licensing terms:
-
-- The files located in the `python/CuTeDSL` directory are licensed under the
-  NVIDIA End User License Agreement (EULA). Please refer to
-  https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
-  for the full terms.
