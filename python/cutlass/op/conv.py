@@ -47,7 +47,7 @@
     .. code-block:: python
 
         # A, B, C, and D are torch/numpy/cupy tensor objects
-        plan = cutlass.op.Conv(A, B, C, D)
+        plan = cutlass_cppgen.op.Conv(A, B, C, D)
         plan.run(stride=(1, 1), padding=(0, 0), dilation=(1, 1))
 
     One can also use the interface by specifying data types of operands at construction
@@ -57,11 +57,11 @@
     .. code-block:: python
 
         # The following is shorthand for:
-        #        cutlass.op.Conv2d(kind="fprop",
+        #        cutlass_cppgen.op.Conv2d(kind="fprop",
         #                          element_A=torch.float32, element_B=torch.float32,
         #                          element_C=torch.float32, element_D=torch.float32,
         #                          element_accumulator=torch.float32)
-        plan = cutlass.op.Conv2d(kind="fprop", element=torch.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=torch.float32)
 
         A0 = torch.rand((128, 256), dtype=torch.float32, device='cuda')
         B0 = torch.rand((256, 64), dtype=torch.float32, device='cuda')
@@ -81,7 +81,7 @@
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Conv2d(kind="fprop", element=np.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=np.float32)
 
         # Do other work...
 
@@ -96,15 +96,15 @@
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Conv2d(kind="fprop", element=np.float32)
-        plan.activation = cutlass.epilogue.relu
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=np.float32)
+        plan.activation = cutlass_cppgen.epilogue.relu
 
     Operations can also be run asynchronously:
 
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Conv2d(kind="fprop", element=np.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=np.float32)
         args = plan.run()
 
         # Do other work...
@@ -114,7 +114,7 @@
 
 from __future__ import annotations
 from typing import Optional
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart =  lazy_import("cuda.cudart")
 from cutlass_library import (
@@ -127,15 +127,15 @@ from cutlass_library import (
     StrideSupport,
 )
 
-import cutlass
-from cutlass import epilogue
-from cutlass.backend import compiler
-from cutlass.backend.conv2d_operation import Conv2dArguments, Conv2dOperation
-from cutlass.backend.reduction_operation import ReductionOperation, ReductionArguments
-from cutlass.backend.library import TensorDescription, TileDescription
-from cutlass.op.op import OperationBase
-from cutlass.shape import Conv2DProblemSize, MatrixCoord
-from cutlass.utils import check, datatypes
+import cutlass_cppgen
+from cutlass_cppgen import epilogue
+from cutlass_cppgen.backend import compiler
+from cutlass_cppgen.backend.conv2d_operation import Conv2dArguments, Conv2dOperation
+from cutlass_cppgen.backend.reduction_operation import ReductionOperation, ReductionArguments
+from cutlass_cppgen.backend.library import TensorDescription, TileDescription
+from cutlass_cppgen.op.op import OperationBase
+from cutlass_cppgen.shape import Conv2DProblemSize, MatrixCoord
+from cutlass_cppgen.utils import check, datatypes
 
 
 class Conv2d(OperationBase):
@@ -155,11 +155,11 @@ class Conv2d(OperationBase):
         # Use F32 for A, B, C, D, and accumulation in fprop
 
         # Use the generic ``element`` parameter to concisely set all data types for operands to the same values.
-        Conv2d(kind="fprop", element=cutlass.DataType.f32)
+        Conv2d(kind="fprop", element=cutlass_cppgen.DataType.f32)
 
         # Explicitly specify the data types to use for A, B, C, and D.
-        Conv2d(kind="fprop", element_A=cutlass.DataType.f32, element_B=cutlass.DataType.f32,
-            element_C=cutlass.DataType.f32, element_D=cutlass.DataType.f32)
+        Conv2d(kind="fprop", element_A=cutlass_cppgen.DataType.f32, element_B=cutlass_cppgen.DataType.f32,
+            element_C=cutlass_cppgen.DataType.f32, element_D=cutlass_cppgen.DataType.f32)
 
         # Set the data types and elements from existing tensors. Note that one can use different tensors when
         # executing GEMM via the ``run()`` method than passed in here (though those passed in to ``run()`` must
@@ -169,8 +169,8 @@ class Conv2d(OperationBase):
 
         # Explicitly specify the data type for only some of A, B, C, and D. Unspecified data types will inherit
         # those passed in via the generic ``element``
-        Conv2d(kind="fprop", element_A=cutlass.DataType.f32, element_accumulator=cutlass.DataType.f32,
-            element=cutlass.DataType.f32)
+        Conv2d(kind="fprop", element_A=cutlass_cppgen.DataType.f32, element_accumulator=cutlass_cppgen.DataType.f32,
+            element=cutlass_cppgen.DataType.f32)
 
     The order of precedence for the setting of the data type for a given operand/output is as follows:
         1) If the tensor type is specified (e.g., ``A``), use the data type inferred from this tensor
@@ -186,17 +186,17 @@ class Conv2d(OperationBase):
     :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
     :param beta: scalar parameter beta from GEMM operation that scales operand C
     :param element: generic data type to be used for operands A, B, C, D, as well as the accumulation data type
-    :type element: cutlass.DataType
+    :type element: cutlass_cppgen.DataType
     :param element_A: data type to be used for operand A
-    :type element_A: cutlass.DataType
+    :type element_A: cutlass_cppgen.DataType
     :param element_B: data type to be used for operand B
-    :type element_B: cutlass.DataType
+    :type element_B: cutlass_cppgen.DataType
     :param element_C: data type to be used for operand C
-    :type element_C: cutlass.DataType
+    :type element_C: cutlass_cppgen.DataType
     :param element_D: data type to be used for operand D
-    :type element_D: cutlass.DataType
+    :type element_D: cutlass_cppgen.DataType
     :param element_accumulator: data type to be used in accumulation of the product of operands A and B
-    :type element_accumulator: cutlass.DataType
+    :type element_accumulator: cutlass_cppgen.DataType
     :param cc: compute capability of device for which kernels should be compiled. For example, if running on H100, this should be set to 90
     :type cc: int
     :param kernel_cc: compute capability of kernels to generate. For example, if running on SM90, but desiring to use a CUTLASS 2.x-style Ampere kernel, this should be set to 80
@@ -215,7 +215,7 @@ class Conv2d(OperationBase):
         if self.current_cc == 90:
             # The Conv2d kernel on Hopper (SM90) is currently unsupported
             # Revert to use SM80-tagged kernels
-            cutlass.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
+            cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
             self.specified_kernel_cc = 80
             self._reset_options(80)
 
@@ -250,7 +250,7 @@ class Conv2d(OperationBase):
             assert elt_to_set is not None
 
             # Currently we only support layout TensorNHWC
-            lay_to_set = cutlass.LayoutType.TensorNHWC
+            lay_to_set = cutlass_cppgen.LayoutType.TensorNHWC
             elements.append(datatypes.library_type(elt_to_set))
             layouts.append(lay_to_set)
 
@@ -301,10 +301,10 @@ class Conv2d(OperationBase):
             self._layout_a, self._layout_b, self._math_operation
         )
 
-        if cutlass.OpcodeClass.TensorOp in self.possible_op_classes:
-            self.opclass = cutlass.OpcodeClass.TensorOp
-        elif cutlass.OpcodeClass.Simt in self.possible_op_classes:
-            self.opclass = cutlass.OpcodeClass.Simt
+        if cutlass_cppgen.OpcodeClass.TensorOp in self.possible_op_classes:
+            self.opclass = cutlass_cppgen.OpcodeClass.TensorOp
+        elif cutlass_cppgen.OpcodeClass.Simt in self.possible_op_classes:
+            self.opclass = cutlass_cppgen.OpcodeClass.Simt
         else:
             if self._math_operation is not None:
                 math_op_str = f' and math operation {self._math_operation}'
@@ -342,7 +342,7 @@ class Conv2d(OperationBase):
         Set the tile description
 
         :param td: tile description
-        :type td: cutlass.backend.TileDescription, or a dict with keys
+        :type td: cutlass_cppgen.backend.TileDescription, or a dict with keys
                   {
                       "threadblock_shape": [int, int, int],
                       "warp_count": [int, int, int],
@@ -359,7 +359,7 @@ class Conv2d(OperationBase):
                 self._tile_description = datatypes.td_from_profiler_op(op)
             if "cluster_shape" in td.keys():
                 if td["cluster_shape"] != [1, 1, 1]:
-                    cutlass.logger.warning("Conv2d currently only support 'cluster_shape'=[1, 1, 1]'.")
+                    cutlass_cppgen.logger.warning("Conv2d currently only support 'cluster_shape'=[1, 1, 1]'.")
                     td["cluster_shape"] = [1, 1, 1]
             td = self._tile_description.clone_and_update(td)
 
@@ -381,7 +381,7 @@ class Conv2d(OperationBase):
         - Is the kernel schedule being used supported on the architecture in question?
 
         :param td: tile description to validate
-        :type td: cutlass.backend.TileDescription
+        :type td: cutlass_cppgen.backend.TileDescription
         :return: tuple in which the first element is a bool indicating that the tile description is valid
                  and the second element is a string providing an optional error message.
         :rtype: tuple
@@ -445,9 +445,9 @@ class Conv2d(OperationBase):
         """
         if self.conv_kind == ConvKind.Dgrad:
             if stride[0] != 1 or stride[1] != 1:
-                return getattr(cutlass.swizzle, f"StridedDgradIdentitySwizzle{self._swizzling_stride}")
+                return getattr(cutlass_cppgen.swizzle, f"StridedDgradIdentitySwizzle{self._swizzling_stride}")
 
-        return getattr(cutlass.swizzle, f"IdentitySwizzle{self._swizzling_stride}")
+        return getattr(cutlass_cppgen.swizzle, f"IdentitySwizzle{self._swizzling_stride}")
 
     #
     # Iterator Algorithm Related
@@ -546,14 +546,14 @@ class Conv2d(OperationBase):
         self, tile_description: TileDescription = None,
         alignment_A: int = None, alignment_B: int = None, alignment_C: int = None,
         iterator_algorithm: IteratorAlgorithm = None,
-        stride_support = None, swizzling_functor: cutlass.swizzle = None,
-        epilogue_functor=None) -> cutlass.backend.Conv2dOperation:
+        stride_support = None, swizzling_functor: cutlass_cppgen.swizzle = None,
+        epilogue_functor=None) -> cutlass_cppgen.backend.Conv2dOperation:
         """
-        Constructs a ``cutlass.backend.Conv2dOperation`` based on the input parameters and current
+        Constructs a ``cutlass_cppgen.backend.Conv2dOperation`` based on the input parameters and current
         kernel specification of the ``Conv2d`` object.
 
         :param tile_description: tile description specifying shapes and operand types to use in the kernel
-        :type tile_description: cutlass.backend.TileDescription
+        :type tile_description: cutlass_cppgen.backend.TileDescription
         :param alignment_A: alignment of operand A
         :type alignment_A: int
         :param alignment_B: alignment of operand B
@@ -565,11 +565,11 @@ class Conv2d(OperationBase):
         :param stride_support: the stride support of dgrad
         :type stride_support: cutlass_library.library.StrideSupport
         :param swizzling_functor: the swizzling functor
-        :type swizzling_functor: cutlass.swizzle
+        :type swizzling_functor: cutlass_cppgen.swizzle
         :param epilogue_functor: the epilogue functor
 
         :return: operation that was constructed
-        :rtype: cutlass.backend.Conv2dOperation
+        :rtype: cutlass_cppgen.backend.Conv2dOperation
         """
         # Get alignment
         alignment_A = check.alignment_or_default(alignment_A, self.alignment_pref_A)
@@ -637,8 +637,8 @@ class Conv2d(OperationBase):
     def compile(self, tile_description: TileDescription = None,
                 alignment_A: int = None, alignment_B: int = None, alignment_C: int = None,
                 iterator_algorithm: IteratorAlgorithm = None,
-                stride_support = None, swizzling_functor: cutlass.swizzle = None,
-                epilogue_functor = None, print_module: bool = False) -> cutlass.backend.Conv2dOperation:
+                stride_support = None, swizzling_functor: cutlass_cppgen.swizzle = None,
+                epilogue_functor = None, print_module: bool = False) -> cutlass_cppgen.backend.Conv2dOperation:
         """
         Emits and compiles the kernel currently specified. If ``tile_description`` and any
         of the ``alignment`` parameters are set, the kernel will be chosen using this
@@ -646,7 +646,7 @@ class Conv2d(OperationBase):
         will be used.
 
         ::param tile_description: tile description specifying shapes and operand types to use in the kernel
-        :type tile_description: cutlass.backend.TileDescription
+        :type tile_description: cutlass_cppgen.backend.TileDescription
         :param alignment_A: alignment of operand A
         :type alignment_A: int
         :param alignment_B: alignment of operand B
@@ -658,11 +658,11 @@ class Conv2d(OperationBase):
         :param stride_support: the stride support of dgrad
         :type stride_support: cutlass_library.library.StrideSupport
         :param swizzling_functor: the swizzling functor
-        :type swizzling_functor: cutlass.swizzle
+        :type swizzling_functor: cutlass_cppgen.swizzle
         :param epilogue_functor: the epilogue functor
 
         :return: operation that was compiled
-        :rtype: cutlass.backend.Conv2dOperation
+        :rtype: cutlass_cppgen.backend.Conv2dOperation
         """
 
         self.operation = self.construct(
@@ -770,7 +770,7 @@ class Conv2d(OperationBase):
         :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
-        :rtype: cutlass.backend.Conv2dArguments
+        :rtype: cutlass_cppgen.backend.Conv2dArguments
         """
         if not stream:
             stream = cuda.CUstream(0)

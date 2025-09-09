@@ -391,9 +391,9 @@ cute::array<T,N> reverse(cute::array<T,N> const& t)
 //
 // Specialize tuple-related functionality for cute::array
 //
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/tuple>
+#include CUDA_STD_HEADER(tuple)
 #else
 #include <tuple>
 #endif

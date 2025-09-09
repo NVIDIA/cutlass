@@ -77,9 +77,9 @@ find(type_list<T...> const&) noexcept {
 //
 // Specialize tuple-related functionality for cute::type_list
 //
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/tuple>
+#include CUDA_STD_HEADER(tuple)
 #else
 #include <tuple>
 #endif

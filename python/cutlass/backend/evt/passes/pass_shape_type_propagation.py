@@ -34,9 +34,9 @@
 Shape and type propagation pass
 """
 
-from cutlass.backend.evt.ir.node import NodeBase
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
-from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
+from cutlass_cppgen.backend.evt.ir.node import NodeBase
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
 
 
 class PassShapeTypePropagation(EVTPassBase):

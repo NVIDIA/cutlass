@@ -47,11 +47,11 @@ from cutlass_library import (
     SwizzlingFunctor
 )
 
-from cutlass.backend import compiler
-from cutlass.backend.gemm_operation import GemmArguments, GemmOperationUniversal
-from cutlass.backend.reduction_operation import ReductionArguments, ReductionOperation
-from cutlass.shape import GemmCoord, MatrixCoord
-from cutlass.utils.datatypes import torch_type
+from cutlass_cppgen.backend import compiler
+from cutlass_cppgen.backend.gemm_operation import GemmArguments, GemmOperationUniversal
+from cutlass_cppgen.backend.reduction_operation import ReductionArguments, ReductionOperation
+from cutlass_cppgen.shape import GemmCoord, MatrixCoord
+from cutlass_cppgen.utils.datatypes import torch_type
 
 
 class GemmUniversalLauncher:
@@ -153,7 +153,7 @@ class GemmUniversalLauncher:
         else:
             data_cutlass = data_ref.transpose(-1, -2).contiguous()
 
-        data_cutlass = data_cutlass.to("cuda")
+        data_cutlass = data_cutlass_cppgen.to("cuda")
 
         # As of this writing, few operations in PyTorch are supported with FP8 data.
         # Thus, we perform computation in FP32 for FP8 reference checks.

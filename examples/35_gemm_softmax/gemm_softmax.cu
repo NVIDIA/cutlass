@@ -659,7 +659,7 @@ struct Testbed {
     }
 
     int64_t flops = int64_t(options.problem_size.m()) * options.problem_size.n() * options.problem_size.k() * 2;
-    int64_t bytes = cutlass::bits_to_bytes(
+    int64_t bytes = cutlass::bits_to_bytes<int64_t>(
       (cutlass::sizeof_bits<ElementD>::value * 2 + cutlass::sizeof_bits<ElementSoftmax>::value) *
       options.problem_size.m() * options.problem_size.n());
 

@@ -38,8 +38,8 @@ This pass fuses these into a single store node, and then replaces all uses of th
 current node with the new store node.
 """
 
-from cutlass.backend.evt.ir import ComputeNode, StoreNode
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.ir import ComputeNode, StoreNode
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
 
 
 class PassPreprocessRed(EVTPassBase):

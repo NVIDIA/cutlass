@@ -37,10 +37,10 @@ Test the EVT interface
 import numpy as np
 import unittest
 
-import cutlass
-from cutlass import LayoutType, Tensor
-from cutlass.backend.utils.device import device_cc
-from cutlass.epilogue import reshape, permute
+import cutlass_cppgen
+from cutlass_cppgen import LayoutType, Tensor
+from cutlass_cppgen.backend.utils.device import device_cc
+from cutlass_cppgen.epilogue import reshape, permute
 
 from utils import ExpectException
 
@@ -69,7 +69,7 @@ class EVTErrorTests(unittest.TestCase):
             "SyntaxError: Sm90 EVT requires the epilogue to have a returned tensor D, "
             "but the variable 'D' is not found in the return values.", True):
             
-            cutlass.epilogue.trace(evt_root_not_d, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_root_not_d, example_tensors)
 
     def test_no_accum(self):
         """
@@ -86,7 +86,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "SyntaxError: Cannot find 'accum' in the argument list.", True):
-            cutlass.epilogue.trace(evt_no_accum, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_no_accum, example_tensors)
     
     @unittest.skipIf(device_cc() != 90, "Only Sm90 EVT has concern on smem size")
     def test_too_much_shared_memory(self):
@@ -124,10 +124,10 @@ class EVTErrorTests(unittest.TestCase):
             "D": self.fake_tensor(np.float16, (6, 512, 512))
         }
         
-        epilogue_visitor = cutlass.epilogue.trace(evt_too_much_shared_memory, example_tensors)
+        epilogue_visitor = cutlass_cppgen.epilogue.trace(evt_too_much_shared_memory, example_tensors)
         
-        plan = cutlass.op.Gemm(
-            element=np.float16, layout=cutlass.LayoutType.RowMajor,
+        plan = cutlass_cppgen.op.Gemm(
+            element=np.float16, layout=cutlass_cppgen.LayoutType.RowMajor,
             element_accumulator=np.float32
         )
         
@@ -155,7 +155,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "SyntaxError: Variable 'F' cannot be defined twice.", True):
-            cutlass.epilogue.trace(evt_redefine, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_redefine, example_tensors)
 
         def evt_undefine(accum, alpha):
             F = accum + C
@@ -170,7 +170,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "SyntaxError: Variable 'C' is undefined.", True):
-            cutlass.epilogue.trace(evt_undefine, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_undefine, example_tensors)
     
     def test_missing_example_tensor(self):
         """
@@ -186,7 +186,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "RuntimeError: Example input for D is not provided.", True):
-            cutlass.epilogue.trace(evt_missing_example_tensor, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_missing_example_tensor, example_tensors)
         
         example_tensors = {
             "accum": self.fake_tensor(np.float16, (6, 512, 512)),
@@ -194,7 +194,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "RuntimeError: Example input for C is not provided.", True):
-            cutlass.epilogue.trace(evt_missing_example_tensor, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_missing_example_tensor, example_tensors)
         
     def test_return_expression(self):
         """
@@ -209,7 +209,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "SyntaxError: Return value cannot be an expression", True):
-            cutlass.epilogue.trace(evt_return_expr, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_return_expr, example_tensors)
     
     def test_incompatible_shape(self):
         """
@@ -227,7 +227,7 @@ class EVTErrorTests(unittest.TestCase):
         
         with ExpectException(True, 
             "RuntimeError: Dimension mismatch between accum(6, 256, 512), C(6, 512, 512).", True):
-            cutlass.epilogue.trace(evt_incompatible_shape, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_incompatible_shape, example_tensors)
     
     def test_no_matching_impl(self):
         def evt_no_matching_impl(accum, bias):
@@ -241,7 +241,7 @@ class EVTErrorTests(unittest.TestCase):
         }
         
         with ExpectException(True, "NotImplementedError: No matching op for node bias with stride (0, (1, 32), 0).", True):
-            cutlass.epilogue.trace(evt_no_matching_impl, example_tensors)
+            cutlass_cppgen.epilogue.trace(evt_no_matching_impl, example_tensors)
     #
     # Helper functions
     #

@@ -116,21 +116,21 @@ void BlockwiseGemmOperationProfiler::print_examples(std::ostream &out) const {
     << "  $ cutlass_profiler --operation=blockwise_gemm --m=1024:4096:256 --n=1024:4096:256 --k=128:8192:128 --beta=0,1,2.5\n\n"
 
     << "For column major, use column, col, or n. For row major use, row or t:\n"
-    << "  $ cutlass_profiler --operation=Gemm --A=f16:column --B=*:row\n\n"
+    << "  $ cutlass_profiler --operation=blockwise_gemm --A=f16:column --B=*:row\n\n"
 
     << "Profile a particular problem size with split K and parallel reduction:\n"
-    << "  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128\n\n"
+    << "  $ cutlass_profiler --operation=blockwise_gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128\n\n"
 
     << "Using various input value distribution:\n"
-    << "  $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3\n"
-    << "  $ cutlass_profiler --operation=Gemm --dist=gaussian,mean:0,stddev:3\n"
-    << "  $ cutlass_profiler --operation=Gemm --dist=sequential,start:0,delta:1\n\n"
+    << "  $ cutlass_profiler --operation=blockwise_gemm --dist=uniform,min:0,max:3\n"
+    << "  $ cutlass_profiler --operation=blockwise_gemm --dist=gaussian,mean:0,stddev:3\n"
+    << "  $ cutlass_profiler --operation=blockwise_gemm --dist=sequential,start:0,delta:1\n\n"
 
     << "Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect (note that --cta-tile::k=32 is default cta-tile size):\n"
-    << " $ cutlass_profiler --operation=Gemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect\n\n"
+    << " $ cutlass_profiler --operation=blockwise_gemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect\n\n"
 
     << "Test your changes to gemm kernels with a quick functional test and save results in functional-test.csv:\n"
-    << " $ cutlass_profiler  --operation=Gemm \\ \n"
+    << " $ cutlass_profiler  --operation=blockwise_gemm \\ \n"
     << "   --m=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \\ \n"
     << "   --n=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \\ \n"
     << "   --k=8,16,32,64,128,256,288,384,504,512,520 \\ \n"
@@ -194,7 +194,7 @@ Status BlockwiseGemmOperationProfiler::GemmProblem::parse(
   
   if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
     // default value
-    this->cluster_m = 1;
+    this->cluster_m = std::string(operation_desc.name).find("_2sm") != std::string::npos ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n, "cluster_n", problem_space, problem)) {
@@ -209,17 +209,17 @@ Status BlockwiseGemmOperationProfiler::GemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
     // default value
-    this->cluster_m_fallback = 0;
+    this->cluster_m_fallback = (this->cluster_m % 2 == 0) ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
     // default value
-    this->cluster_n_fallback = 0;
+    this->cluster_n_fallback = 1;
   }
 
   if (!arg_as_int(this->cluster_k_fallback, "cluster_k_fallback", problem_space, problem)) {
     // default value
-    this->cluster_k_fallback = 0;
+    this->cluster_k_fallback = 1;
   }
   
 
@@ -331,33 +331,80 @@ Status BlockwiseGemmOperationProfiler::GemmProblem::parse(
   this->ldc = DeviceAllocation::get_packed_layout(
     operation_desc.C.layout, {int(this->m), int(this->n)}).front();
 
+  // instantiation
+  int num_sizes = 8;
+  this->problem_sizes.resize(num_sizes);
+  this->leading_dims.resize(num_sizes, {0, 0, 0});
+    
+  int m0 = 1024;
+  int n0 = 1024;
+  int k0 = 1024;
+  for (int i = 0; i < num_sizes; i++) {
+    auto m = m0 * (i + 1);
+    auto n = n0 * (i + 1);
+    auto k = k0 * (i + 1);
+    this->problem_sizes[i] = {m, n, k};
+    this->leading_dims[i] = {
+      DeviceAllocation::get_packed_layout(operation_desc.A.layout, {int(m), int(k)}).front(),
+      DeviceAllocation::get_packed_layout(operation_desc.B.layout, {int(k), int(n)}).front(),
+      DeviceAllocation::get_packed_layout(operation_desc.C.layout, {int(m), int(n)}).front()
+    };
+
+  }
+
+  this->swizzle_sizes = {1, 2, 4, 8};
+
+  this->preferred_clusters = {
+    {1, 1, 1}, {2, 1, 1}, {2, 2, 1}, {4, 1, 1}, {4, 2, 1}, {4, 4, 1}, {8, 2, 1}
+  };
+
+  this->fallback_clusters = {
+    {1, 1, 1}, {2, 1, 1}, {2, 2, 1}
+  };
+
+  this->raster_orders = {
+    cutlass::library::RasterOrder::kAlongN,
+    cutlass::library::RasterOrder::kAlongM
+  };
+
   return Status::kSuccess;
 }
 
-/// Total number of bytes loaded
-int64_t BlockwiseGemmOperationProfiler::GemmProblem::bytes(library::BlockwiseGemmDescription const &operation_desc) const {
-  // Input bytes read and Output bytes written for the gemm problem
+int64_t BlockwiseGemmOperationProfiler::GemmProblem::bytes_with_problem_shape(
+  library::BlockwiseGemmDescription const &operation_desc,
+  gemm::GemmCoord const &problem_shape) const {
+
   int64_t bytes =
-    int64_t(library::sizeof_bits(operation_desc.A.element) * m / 8) * k +
-    int64_t(library::sizeof_bits(operation_desc.B.element) * n / 8) * k +
-    int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+    int64_t(library::sizeof_bits(operation_desc.A.element) * problem_shape.m() / 8) * problem_shape.k() +
+    int64_t(library::sizeof_bits(operation_desc.B.element) * problem_shape.n() / 8) * problem_shape.k() +
+    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n() + 
+    int64_t(library::sizeof_bits(operation_desc.SFA.element) * problem_shape.m() / operation_desc.SFMVecSize / 8) * problem_shape.k() / operation_desc.SFKVecSize +
+    int64_t(library::sizeof_bits(operation_desc.SFB.element) * problem_shape.n() / operation_desc.SFNVecSize / 8) * problem_shape.k() / operation_desc.SFKVecSize;
 
   // Set is_beta_zero true if beta is zero
   bool is_beta_zero = std::all_of(beta.begin(), beta.end(), [](uint8_t i) { return i==0; });
 
   // Output bytes read for the gemm problem for non-zero beta values
   if (!is_beta_zero) {
-    bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+    bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n();
   }
 
   bytes *= batch_count;
 
   return bytes;
+
+}
+
+/// Total number of bytes loaded
+int64_t BlockwiseGemmOperationProfiler::GemmProblem::bytes(library::BlockwiseGemmDescription const &operation_desc) const {
+  return bytes_with_problem_shape(operation_desc, {int(m), int(n), int(k)});
 }
 
 /// Total number of flops computed
-int64_t BlockwiseGemmOperationProfiler::GemmProblem::flops(library::BlockwiseGemmDescription const &operation_desc) const {
-  int64_t flops_ = (int64_t(m) * n * k + m * n) * 2 * batch_count;
+int64_t BlockwiseGemmOperationProfiler::GemmProblem::flops_with_problem_shape(
+  library::BlockwiseGemmDescription const &operation_desc,
+  gemm::GemmCoord const &problem_shape) const {
+  int64_t flops_ = (int64_t(problem_shape.m()) * problem_shape.n() * problem_shape.k() + problem_shape.m() * problem_shape.n()) * 2 * batch_count;
 
   // complex-valued support
   switch (operation_desc.tile_description.math_instruction.math_operation) {
@@ -379,6 +426,10 @@ int64_t BlockwiseGemmOperationProfiler::GemmProblem::flops(library::BlockwiseGem
   return flops_;
 }
 
+/// Total number of flops computed
+int64_t BlockwiseGemmOperationProfiler::GemmProblem::flops(library::BlockwiseGemmDescription const &operation_desc) const {
+  return flops_with_problem_shape(operation_desc, {int(m), int(n), int(k)});
+}
 
 /// Initializes a performance result
 void BlockwiseGemmOperationProfiler::GemmProblem::initialize_result(
@@ -1185,42 +1236,249 @@ bool BlockwiseGemmOperationProfiler::profile(
 
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
-    // Initialize structure containing GEMM arguments
-    gemm_workspace_.arguments.A = gemm_workspace_.A->data();
-    gemm_workspace_.arguments.B = gemm_workspace_.B->data();
-    gemm_workspace_.arguments.SFA = gemm_workspace_.SFA->data();
-    gemm_workspace_.arguments.SFB = gemm_workspace_.SFB->data();
-    gemm_workspace_.arguments.C = gemm_workspace_.C->data();
-    gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
-    gemm_workspace_.arguments.alpha = problem_.alpha.data();
-    gemm_workspace_.arguments.beta = problem_.beta.data();
-    gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+    // Case when we either screen the best performance number of kernels with or without a fixed problem shape fed in.
+    if (options.profiling.enable_kernel_performance_search || options.profiling.enable_best_kernel_for_fixed_shape) {
+      library::BlockwiseGemmDescription const &operation_desc =
+        static_cast<library::BlockwiseGemmDescription const &>(operation->description());
 
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
-      gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+      auto cluster_shape = operation_desc.tile_description.cluster_shape;
+      bool is_dynamic_cluster_enabled = cluster_shape.m() == 0 || cluster_shape.n() == 0 || cluster_shape.k() == 0;
 
-      gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
-      gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
-      gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
-      gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
-      gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+      // Helper function wrapping up performance test with flexible parameters.
+      auto initialize_and_profile = [&](
+        PerformanceResult const &result,
+        gemm::GemmCoord const &problem_shape,
+        std::array<int64_t, 3> const &leading_dim,
+        std::array<int64_t, 3> const &preferred_cluster,
+        std::array<int64_t, 3> const &fallback_cluster,
+        cutlass::library::RasterOrder const &raster_order,
+        int swizzle_size) -> std::optional<PerformanceResult> {
+
+        // Initialize structure containing GEMM arguments
+        gemm_workspace_.arguments.A = gemm_workspace_.A->data();
+        gemm_workspace_.arguments.B = gemm_workspace_.B->data();
+        gemm_workspace_.arguments.SFA = gemm_workspace_.SFA->data();
+        gemm_workspace_.arguments.SFB = gemm_workspace_.SFB->data();
+        gemm_workspace_.arguments.C = gemm_workspace_.C->data();
+        gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
+        gemm_workspace_.arguments.alpha = problem_.alpha.data();
+        gemm_workspace_.arguments.beta = problem_.beta.data();
+        gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+        gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+        gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+        gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+        gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+
+        if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+          gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
+          gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
+          gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+
+          gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
+          gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
+          gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
+          gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
+          gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
+          gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+        }
+
+        gemm_workspace_.arguments.problem_size.m() = problem_shape.m();
+        gemm_workspace_.arguments.problem_size.n() = problem_shape.n();
+        gemm_workspace_.arguments.problem_size.k() = problem_shape.k();
+
+        gemm_workspace_.arguments.lda = leading_dim[0];
+        gemm_workspace_.arguments.ldb = leading_dim[1];
+        gemm_workspace_.arguments.ldc = leading_dim[2];
+
+        gemm_workspace_.arguments.swizzle_size = swizzle_size;
+        gemm_workspace_.arguments.raster_order = raster_order;
+
+        if (is_dynamic_cluster_enabled) {
+          gemm_workspace_.arguments.cluster_shape = {int(preferred_cluster[0]), int(preferred_cluster[1]), int(preferred_cluster[2])};
+          gemm_workspace_.arguments.cluster_shape_fallback = {int(fallback_cluster[0]), int(fallback_cluster[1]), int(fallback_cluster[2])};
+          gemm_workspace_.configuration.cluster_shape = {int(preferred_cluster[0]), int(preferred_cluster[1]), int(preferred_cluster[2])};
+          gemm_workspace_.configuration.cluster_shape_fallback = {int(fallback_cluster[0]), int(fallback_cluster[1]), int(fallback_cluster[2])};
+        }
+
+        gemm_workspace_.configuration.problem_size.m() = problem_shape.m();
+        gemm_workspace_.configuration.problem_size.n() = problem_shape.n();
+        gemm_workspace_.configuration.problem_size.k() = problem_shape.k();
+
+        gemm_workspace_.configuration.lda = leading_dim[0];
+        gemm_workspace_.configuration.ldb = leading_dim[1];
+        gemm_workspace_.configuration.ldc = leading_dim[2];
+
+        const auto can_implement = operation->can_implement(&gemm_workspace_.configuration, &gemm_workspace_.arguments);
+        if (can_implement != Status::kSuccess) {
+          return std::nullopt;  // Return nullopt to indicate failure
+        }
+        library::Operation const* underlying_operation = operation;
+        uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
+        gemm_workspace_.host_workspace.resize(workspace_size, 0);
+
+        workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
+                                                              &gemm_workspace_.arguments);
+
+        gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
+
+        Status status = underlying_operation->initialize(
+          &gemm_workspace_.configuration,
+          gemm_workspace_.host_workspace.data(),
+          gemm_workspace_.device_workspace.data(),
+          nullptr);
+
+        if (status != Status::kSuccess) {
+          return std::nullopt;  // Return nullopt to indicate failure
+        }
+
+
+        PerformanceResult curr_result(result);
+        curr_result.bytes = problem_.bytes_with_problem_shape(operation_desc, problem_shape);
+        curr_result.flops = problem_.flops_with_problem_shape(operation_desc, problem_shape);
+
+        set_argument(curr_result, "m", problem_space, problem_shape.m());
+        set_argument(curr_result, "n", problem_space, problem_shape.n());
+        set_argument(curr_result, "k", problem_space, problem_shape.k());
+
+        set_argument(curr_result, "raster_order", problem_space, library::to_string(raster_order));
+        set_argument(curr_result, "swizzle_size", problem_space, swizzle_size);
+
+        if (is_dynamic_cluster_enabled) {
+          set_argument(curr_result, "cluster_m", problem_space, preferred_cluster[0]);
+          set_argument(curr_result, "cluster_n", problem_space, preferred_cluster[1]);
+          set_argument(curr_result, "cluster_k", problem_space, preferred_cluster[2]);
+          set_argument(curr_result, "cluster_m_fallback", problem_space, fallback_cluster[0]);
+          set_argument(curr_result, "cluster_n_fallback", problem_space, fallback_cluster[1]);
+          set_argument(curr_result, "cluster_k_fallback", problem_space, fallback_cluster[2]);
+        }
+
+
+        curr_result.status = profile_cutlass_(
+           curr_result,
+           options,
+           operation,
+           &gemm_workspace_.arguments,
+           gemm_workspace_.host_workspace.data(),
+           gemm_workspace_.device_workspace.data()
+         );
+
+        return curr_result;
+      };
+
+      // Helper function to test validity of fallback cluster shapes and preferred cluster shapes.
+      auto is_valid_dynamic_cluster_shape = [](const std::array<int64_t, 3>& preferred_cluster, const std::array<int64_t, 3>& fallback_cluster) {
+        for (size_t i = 0; i < 3; ++i) {
+          if (preferred_cluster[i] % fallback_cluster[i] != 0) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+      // Helper function to select the best performance number among a list.
+      auto select_best_candidate = [&](std::vector<PerformanceResult> &candidates) {
+        assert(!candidates.empty() && "Candidates vector should not be empty");
+        auto best_iter = std::max_element(
+          candidates.begin(), candidates.end(),
+          [](PerformanceResult const &a, PerformanceResult const &b) {
+            return a.gflops_per_sec() < b.gflops_per_sec();
+          }
+        );
+        assert(best_iter != candidates.end() && "No candidate found despite non-empty candidates vector");
+        results_.push_back(std::move(*best_iter));
+      };
+
+      std::vector<PerformanceResult> candidates;
+      PerformanceResult result_base = results_.back();
+      results_.pop_back();
+
+      std::vector<std::array<int64_t, 3>> preferred_clusters;
+      std::vector<std::array<int64_t, 3>> fallback_clusters;
+
+      // Only loop over built-in cluster shape lists for dynamic cluster kernels
+      // and for kernels that can leverage the dynamic cluster feature.
+      if (is_dynamic_cluster_enabled) {
+        preferred_clusters = this->problem_.preferred_clusters;
+        fallback_clusters = this->problem_.fallback_clusters;
+      } 
+      else {
+        preferred_clusters = {{int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}};
+        fallback_clusters = {{int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}};
+      }
+
+      for (auto preferred_cluster : preferred_clusters) {
+        for (auto fallback_cluster : fallback_clusters) {
+          if (is_dynamic_cluster_enabled && !is_valid_dynamic_cluster_shape(preferred_cluster, fallback_cluster)) {
+            continue;
+          }
+          for (auto swizzle_size : this->problem_.swizzle_sizes) {
+            for (auto raster_order : this->problem_.raster_orders) {
+              // With the fixed shape option turned on, only a specific problem shape is tested.
+              if (options.profiling.enable_best_kernel_for_fixed_shape) {
+                this->problem_.problem_sizes = {{int(this->problem_.m), int(this->problem_.n), int(this->problem_.k)}};
+                this->problem_.leading_dims = {{this->problem_.lda, this->problem_.ldb, this->problem_.ldc}};
+              }
+
+              for (int i = 0; i < int(this->problem_.problem_sizes.size()); i++) {
+                gemm::GemmCoord problem_shape = problem_.problem_sizes[i];
+                std::array<int64_t, 3> leading_dim = problem_.leading_dims[i];
+                auto result_opt = initialize_and_profile(result_base, problem_shape, leading_dim, preferred_cluster, fallback_cluster, raster_order, swizzle_size);
+                  
+                if (result_opt) {  // Only add valid results
+                  candidates.push_back(*result_opt);
+                }
+
+              }
+
+            }// for raster_order
+          }// for swizzle_size
+        }// for fallback_cluster
+      }// for swizzle_size
+
+      if (candidates.empty()) {
+        return false;
+      }
+
+      select_best_candidate(candidates);
     }
+    else {
+      // Initialize structure containing GEMM arguments
+      gemm_workspace_.arguments.A = gemm_workspace_.A->data();
+      gemm_workspace_.arguments.B = gemm_workspace_.B->data();
+      gemm_workspace_.arguments.SFA = gemm_workspace_.SFA->data();
+      gemm_workspace_.arguments.SFB = gemm_workspace_.SFB->data();
+      gemm_workspace_.arguments.C = gemm_workspace_.C->data();
+      gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
+      gemm_workspace_.arguments.alpha = problem_.alpha.data();
+      gemm_workspace_.arguments.beta = problem_.beta.data();
+      gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+      gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+      gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+      gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+      gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
 
-    results_.back().status = profile_cutlass_(
-      results_.back(),
-      options,
-      operation,
-      &gemm_workspace_.arguments,
-      gemm_workspace_.host_workspace.data(),
-      gemm_workspace_.device_workspace.data()
-    );
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
+        gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
+        gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+
+        gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
+        gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
+        gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
+        gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
+        gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
+        gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+      }
+
+      results_.back().status = profile_cutlass_(
+        results_.back(),
+        options,
+        operation,
+        &gemm_workspace_.arguments,
+        gemm_workspace_.host_workspace.data(),
+        gemm_workspace_.device_workspace.data()
+      );
+    }
   }
   return true;
 }

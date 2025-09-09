@@ -31,8 +31,9 @@
 
 #pragma once
 
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
+#include CUDA_STD_HEADER(type_traits)
 #else
 #include <type_traits>
 #endif

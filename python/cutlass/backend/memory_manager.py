@@ -32,11 +32,11 @@
 
 import numpy as np
 
-import cutlass
-from cutlass.utils.datatypes import is_numpy_tensor
-from cutlass.utils.lazy_import import lazy_import
+import cutlass_cppgen
+from cutlass_cppgen.utils.datatypes import is_numpy_tensor
+from cutlass_cppgen.utils.lazy_import import lazy_import
 
-if cutlass.use_rmm:
+if cutlass_cppgen.use_rmm:
     import rmm
 else:
     cudart = lazy_import("cuda.cudart")
@@ -73,7 +73,7 @@ def _todevice(host_data):
     """
     Helper for transferring host data to device memory
     """
-    if cutlass.use_rmm:
+    if cutlass_cppgen.use_rmm:
         return rmm.DeviceBuffer.to_device(host_data.tobytes())
     else:
         nbytes = len(host_data.tobytes())
@@ -100,7 +100,7 @@ def todevice(host_data, dtype=np.float32):
 
 
 def device_mem_alloc(size):
-    if cutlass.use_rmm:
+    if cutlass_cppgen.use_rmm:
         return rmm.DeviceBuffer(size=size)
     else:
         err, ptr = cudart.cudaMalloc(size)
@@ -114,7 +114,7 @@ def align_size(size, alignment=256):
 
 
 def create_memory_pool(init_pool_size=0, max_pool_size=2 ** 34):
-    if cutlass.use_rmm:
+    if cutlass_cppgen.use_rmm:
         memory_pool = PoolMemoryManager(init_pool_size=init_pool_size, max_pool_size=max_pool_size)
         return memory_pool
     else:

@@ -1220,6 +1220,33 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedCooperative
 };
 
 //
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_,
+                                                                                      AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> : public
+       HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> {
+  using Base = HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                                      Gemm, ElementA_, ElementB_>;
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = Base::kDefaultSeed,
+    typename Base::LayoutTagA::Stride stride_factor_A_ = typename Base::LayoutTagA::Stride(),
+    typename Base::LayoutTagB::Stride stride_factor_B_ = typename Base::LayoutTagB::Stride()
+  ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
+};
+
+//
 // Block Scaled Structured Sparse Gemm Input Operands : A_compressed, B, metadata, scalefactorA, scalefactorB
 //
 template<

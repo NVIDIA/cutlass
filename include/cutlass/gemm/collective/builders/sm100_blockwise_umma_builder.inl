@@ -132,7 +132,7 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
       return make_tiled_copy(
           SmemScalingCopyAtomA{}, 
           Layout<Shape<_32>>{},  // 32 threads
-          Layout<Shape<Shape<Int<ScaleGranularityM>, Int<ElementsPerSFACopy>>>, Stride<Stride<_0, _1>>>{});
+          Layout<Shape<Int<ElementsPerSFACopy>>>{});
     } 
     else {
       using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
@@ -166,7 +166,7 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
       return make_tiled_copy(
           SmemScalingCopyAtomB{}, 
           Layout<Shape<_32>>{},  // 32 threads
-          Layout<Shape<Shape<Int<ScaleGranularityN>, Int<ElementsPerSFBCopy>>>, Stride<Stride<_0, _1>>>{});
+          Layout<Shape<Int<ElementsPerSFBCopy>>>{});
     } 
     else {
       using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;

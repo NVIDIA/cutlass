@@ -138,8 +138,7 @@ using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor
 
 // Core kernel configurations
 using ArchTag             = cutlass::arch::Sm100;                           // Tag indicating the minimum SM that supports the intended feature
-using EpilogueOperatorClass = cutlass::arch::OpClassTensorOp;               // Epilogue Operator class tag
-using MainloopOperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;    // Mainloop Operator class tag
+using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;            // Operator class tag
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
 
 // Runtime Cluster Shape
@@ -159,7 +158,7 @@ struct MMA2SMConfig {
 };
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, EpilogueOperatorClass,
+    ArchTag, OperatorClass,
     typename MMA1SMConfig::MmaTileShape, ClusterShape,
     Shape<_128,_64>,
     ElementAccumulator, ElementAccumulator,
@@ -169,7 +168,7 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     // , FusionOperation  // Enable for SF Output
 >::CollectiveOp;
 using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-  ArchTag, MainloopOperatorClass,
+  ArchTag, OperatorClass,
   ElementA, LayoutA *, AlignmentA,
   ElementB, LayoutB *, AlignmentB,
   ElementAccumulator,
@@ -187,7 +186,7 @@ using Gemm1SM = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 using Gemm = Gemm1SM;
 
 using CollectiveEpilogue2SM = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, EpilogueOperatorClass,
+    ArchTag, OperatorClass,
     typename MMA2SMConfig::MmaTileShape, ClusterShape,
     Shape<_128,_64>,
     ElementAccumulator, ElementAccumulator,
@@ -197,13 +196,13 @@ using CollectiveEpilogue2SM = typename cutlass::epilogue::collective::Collective
     // , FusionOperation  // Enable for SF Output
 >::CollectiveOp;
 using CollectiveMainloop2SM = typename cutlass::gemm::collective::CollectiveBuilder<
-  ArchTag, MainloopOperatorClass,
+  ArchTag, OperatorClass,
   ElementA, LayoutA *, AlignmentA,
   ElementB, LayoutB *, AlignmentB,
   ElementAccumulator,
     typename MMA2SMConfig::MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
-      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      static_cast<int>(sizeof(typename CollectiveEpilogue2SM::SharedStorage))>,
     typename MMA2SMConfig::KernelSchedule
 >::CollectiveOp;
 using GemmKernel2SM = cutlass::gemm::kernel::GemmUniversal<
@@ -233,7 +232,7 @@ using LayoutSFD = typename Sm1xxBlockScaledOutputConfig::LayoutSF;
 std::vector<StrideA> stride_A_host;
 std::vector<StrideB> stride_B_host;
 std::vector<LayoutSFA> layout_SFA_host;
-std::vector<LayoutSFA> layout_SFB_host;
+std::vector<LayoutSFB> layout_SFB_host;
 std::vector<StrideC> stride_C_host;
 std::vector<StrideD> stride_D_host;
 
@@ -897,9 +896,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 100a).\n";
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 

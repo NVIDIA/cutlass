@@ -37,12 +37,10 @@
 */
 
 #pragma once
-
-#include <cuda/std/cassert>
-
+#include "cutlass/array.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
-#include "cutlass/array.h"
 #include "cutlass/layout/vector.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/tensor_coord.h"

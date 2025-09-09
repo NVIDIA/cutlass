@@ -36,7 +36,7 @@ High-level class for tensor
 
 from cutlass_library import LayoutType
 
-from cutlass.backend.evt.ir.layout_algorithm import (
+from cutlass_cppgen.backend.evt.ir.layout_algorithm import (
     Layout,
     broadcast,
     canonicalization,
@@ -44,7 +44,7 @@ from cutlass.backend.evt.ir.layout_algorithm import (
     reshape,
     _reverse_tuple
 )
-from cutlass.utils.datatypes import get_datatype_and_layout, get_tensor_shape, library_type
+from cutlass_cppgen.utils.datatypes import get_datatype_and_layout, get_tensor_shape, library_type
 
 
 class Tensor:

@@ -163,7 +163,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
-	    TEST_MLA_SEP_REDUCTION
+	TEST_MLA_SEP_REDUCTION
         TEST_MLA_FUSE_REDUCTION
         )
     target_include_directories(77_blackwell_mla_2sm_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -175,8 +175,8 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
-	    TEST_MLA_SEP_REDUCTION
-	    TEST_MLA_FUSE_REDUCTION
+	TEST_MLA_SEP_REDUCTION
+	TEST_MLA_FUSE_REDUCTION
         )
     target_include_directories(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${PREC_MACRO} CPASYNC)

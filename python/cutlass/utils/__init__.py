@@ -30,7 +30,7 @@
 #
 #################################################################################################
 
-from cutlass.utils.check import (
+from cutlass_cppgen.utils.check import (
     alignment_or_default,
     calculate_smem_usage,
     calculate_smem_usage_per_stage,

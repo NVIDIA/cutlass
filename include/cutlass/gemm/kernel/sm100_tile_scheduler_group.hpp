@@ -88,9 +88,7 @@ public:
     static_assert(cute::is_static<TileShape>::value);
 
     auto selected_cluster_shape = cutlass::detail::select_cluster_shape(cluster_shape_mnk, hw_info.cluster_shape);
-    auto cta_shape = cute::conditional_return<not cute::is_static_v<ClusterShape>>(
-        shape_div(tile_shape_mnk, atom_thr_shape_mnk),      // Dynamic Cluster: For 2SM kernels, use CTA tile shape for the underlying scheduler
-        shape_div(tile_shape_mnk, selected_cluster_shape)); // Static Cluster: Blackwell builders expects TileShape to be Cluster's Tile Shape, Hopper doesn't
+    auto cta_shape = shape_div(tile_shape_mnk, atom_thr_shape_mnk); // For 2SM kernels, use CTA tile shape for the underlying scheduler
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes,

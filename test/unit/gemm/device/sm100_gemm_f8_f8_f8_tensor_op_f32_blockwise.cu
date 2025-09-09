@@ -303,6 +303,7 @@ TEST(SM100_Device_Gemm_e4m3t_e4m3n_e4m3t_tensorop_2sm_f32_align16_blockwise, 256
 
 }
 
+
 TEST(SM100_Device_Gemm_e4m3t_e4m3n_e4m3t_tensorop_2sm_f32_align16_blockwise, 256x128x128_2x1x1_64x64x64_scale) {
 
   bool passed = groupwise_test<UMMA::Major::MN, UMMA::Major::MN>(
@@ -315,6 +316,7 @@ TEST(SM100_Device_Gemm_e4m3t_e4m3n_e4m3t_tensorop_2sm_f32_align16_blockwise, 256
   EXPECT_TRUE(passed);
 
 }
+
 
 
 #endif // #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)

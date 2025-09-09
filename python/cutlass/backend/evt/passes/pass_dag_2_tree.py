@@ -37,10 +37,10 @@ by the topological visitor, while the rest of the graph will be implemented with
 
 from copy import deepcopy
 
-from cutlass.backend.evt.ir import DAGIR, TopoVisitorNode
-from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_manager import EVTPassBase
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass_cppgen.backend.evt.ir import DAGIR, TopoVisitorNode
+from cutlass_cppgen.backend.evt.passes.pass_get_impl import PassGetImpl
+from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
+from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
 
 
 class PassDAG2Tree(EVTPassBase):

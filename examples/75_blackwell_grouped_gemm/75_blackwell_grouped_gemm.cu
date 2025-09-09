@@ -762,9 +762,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 100a).\n";
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 

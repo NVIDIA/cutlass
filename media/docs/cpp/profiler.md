@@ -93,6 +93,12 @@ An instantiation level `500`, which is padded to `0500`, thus indicates:
 - **Cluster Sizes**: At level 5, allowing for clusters with 1, 2, 4, 8, or 16 CTAs.
 - **Schedule Pruning**: At level 0, where pruning is applied according to the existing `generator.py` behavior.
 
+## Instantiating more MMA shapes with Hopper
+
+When instantiating more tile shapes, specially non-power-of-2 Tile-N shapes, make sure to enable `CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES`. 
+This may lead to some increase in per-kernel compilation times.
+When `CUTLASS_LIBRARY_INSTANTIATION_LEVEL` is set, then `CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES` is enabled by default. 
+
 ## Mixed input data type kernels for Hopper
 
 With Hopper (SM90), the kernel generator will generate the following combinations of mixed input data types ("mixed dtype"):

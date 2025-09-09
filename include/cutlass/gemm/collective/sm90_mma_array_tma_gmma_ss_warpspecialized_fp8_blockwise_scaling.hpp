@@ -153,7 +153,15 @@ struct CollectiveMma<
   static_assert((size<0>(TileShape{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
   static_assert((size<1>(TileShape{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
-  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+  static constexpr bool MMajorSFA = size<0,1>(InternalLayoutSFA{}.stride()) == 1;
+  static constexpr bool NMajorSFB = size<0,1>(InternalLayoutSFB{}.stride()) == 1;
+
+  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<
+      ScaleGranularityM, 
+      ScaleGranularityN, 
+      ScaleGranularityK, 
+      MMajorSFA ? cute::GMMA::Major::MN : cute::GMMA::Major::K, 
+      NMajorSFB ? cute::GMMA::Major::MN : cute::GMMA::Major::K>;
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
   using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(TileShape{}));
 

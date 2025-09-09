@@ -34,13 +34,13 @@
 Utility functions for converting between frontend datatypes and CUTLASS datatypes
 """
 
-import cutlass
+import cutlass_cppgen
 from cutlass_library import (
     DataTypeSize,
     MathOperation,
     MathInstruction
 )
-from cutlass.backend.library import (
+from cutlass_cppgen.backend.library import (
     TileDescription,
 )
 
@@ -62,11 +62,11 @@ def is_numpy_available():
 
             numpy_available = True
             _library_to_numpy_dict = {
-                cutlass.DataType.f16: np.float16,
-                cutlass.DataType.f32: np.float32,
-                cutlass.DataType.f64: np.float64,
-                cutlass.DataType.s8: np.int8,
-                cutlass.DataType.s32: np.int32,
+                cutlass_cppgen.DataType.f16: np.float16,
+                cutlass_cppgen.DataType.f32: np.float32,
+                cutlass_cppgen.DataType.f64: np.float64,
+                cutlass_cppgen.DataType.s8: np.int8,
+                cutlass_cppgen.DataType.s32: np.int32,
             }
         except ImportError:
             numpy_available = False
@@ -81,19 +81,19 @@ def is_numpy_tensor(inp) -> bool:
     return False
 
 
-def numpy_library_type(inp) -> cutlass.DataType:
+def numpy_library_type(inp) -> cutlass_cppgen.DataType:
     if is_numpy_available():
         import numpy as np
         if inp == np.float16:
-            return cutlass.DataType.f16
+            return cutlass_cppgen.DataType.f16
         elif inp == np.float32:
-            return cutlass.DataType.f32
+            return cutlass_cppgen.DataType.f32
         elif inp == np.float64:
-            return cutlass.DataType.f64
+            return cutlass_cppgen.DataType.f64
         elif inp == np.int8:
-            return cutlass.DataType.s8
+            return cutlass_cppgen.DataType.s8
         elif inp == np.int32:
-            return cutlass.DataType.s32
+            return cutlass_cppgen.DataType.s32
     return None
 
 
@@ -109,11 +109,11 @@ def is_cupy_available():
 
             cupy_available = True
             _library_to_cupy_dict = {
-                cutlass.DataType.f16: cp.float16,
-                cutlass.DataType.f32: cp.float32,
-                cutlass.DataType.f64: cp.float64,
-                cutlass.DataType.s8: cp.int8,
-                cutlass.DataType.s32: cp.int32,
+                cutlass_cppgen.DataType.f16: cp.float16,
+                cutlass_cppgen.DataType.f32: cp.float32,
+                cutlass_cppgen.DataType.f64: cp.float64,
+                cutlass_cppgen.DataType.s8: cp.int8,
+                cutlass_cppgen.DataType.s32: cp.int32,
             }
         except ImportError:
             cupy_available = False
@@ -128,15 +128,15 @@ def is_cupy_tensor(inp) -> bool:
     return False
 
 
-def cupy_library_type(inp) -> cutlass.DataType:
+def cupy_library_type(inp) -> cutlass_cppgen.DataType:
     if is_cupy_available():
         import cupy as cp
         if inp == cp.float16:
-            return cutlass.DataType.f16
+            return cutlass_cppgen.DataType.f16
         elif inp == cp.float32:
-            return cutlass.DataType.f32
+            return cutlass_cppgen.DataType.f32
         elif inp == cp.float64:
-            return cutlass.DataType.f64
+            return cutlass_cppgen.DataType.f64
     return None
 
 
@@ -152,29 +152,29 @@ def is_torch_available():
 
             torch_available = True
             _torch_to_library_dict = {
-                torch.half: cutlass.DataType.f16,
-                torch.float16: cutlass.DataType.f16,
-                torch.bfloat16: cutlass.DataType.bf16,
-                torch.float: cutlass.DataType.f32,
-                torch.float32: cutlass.DataType.f32,
-                torch.double: cutlass.DataType.f64,
-                torch.float64: cutlass.DataType.f64,
-                torch.int8: cutlass.DataType.s8,
-                torch.int32: cutlass.DataType.s32,
-                torch.uint8: cutlass.DataType.u8,
+                torch.half: cutlass_cppgen.DataType.f16,
+                torch.float16: cutlass_cppgen.DataType.f16,
+                torch.bfloat16: cutlass_cppgen.DataType.bf16,
+                torch.float: cutlass_cppgen.DataType.f32,
+                torch.float32: cutlass_cppgen.DataType.f32,
+                torch.double: cutlass_cppgen.DataType.f64,
+                torch.float64: cutlass_cppgen.DataType.f64,
+                torch.int8: cutlass_cppgen.DataType.s8,
+                torch.int32: cutlass_cppgen.DataType.s32,
+                torch.uint8: cutlass_cppgen.DataType.u8,
             }
 
             _library_to_torch_dict = {
-                cutlass.DataType.f16: torch.half,
-                cutlass.DataType.f16: torch.float16,
-                cutlass.DataType.bf16: torch.bfloat16,
-                cutlass.DataType.f32: torch.float,
-                cutlass.DataType.f32: torch.float32,
-                cutlass.DataType.f64: torch.double,
-                cutlass.DataType.f64: torch.float64,
-                cutlass.DataType.s8: torch.int8,
-                cutlass.DataType.s32: torch.int32,
-                cutlass.DataType.u8: torch.uint8,
+                cutlass_cppgen.DataType.f16: torch.half,
+                cutlass_cppgen.DataType.f16: torch.float16,
+                cutlass_cppgen.DataType.bf16: torch.bfloat16,
+                cutlass_cppgen.DataType.f32: torch.float,
+                cutlass_cppgen.DataType.f32: torch.float32,
+                cutlass_cppgen.DataType.f64: torch.double,
+                cutlass_cppgen.DataType.f64: torch.float64,
+                cutlass_cppgen.DataType.s8: torch.int8,
+                cutlass_cppgen.DataType.s32: torch.int32,
+                cutlass_cppgen.DataType.u8: torch.uint8,
             }
 
             def possibly_add_type(torch_type_name, cutlass_type):
@@ -184,8 +184,8 @@ def is_torch_available():
                     _torch_to_library_dict[torch_type] = cutlass_type
                     _library_to_torch_dict[cutlass_type] = torch_type
 
-            possibly_add_type("float8_e4m3fn", cutlass.DataType.e4m3)
-            possibly_add_type("float8_e5m2", cutlass.DataType.e5m2)
+            possibly_add_type("float8_e4m3fn", cutlass_cppgen.DataType.e4m3)
+            possibly_add_type("float8_e5m2", cutlass_cppgen.DataType.e5m2)
 
         except ImportError:
             torch_available = False
@@ -201,7 +201,7 @@ def is_torch_tensor(inp) -> bool:
     return False
 
 
-def torch_library_type(inp) -> cutlass.DataType:
+def torch_library_type(inp) -> cutlass_cppgen.DataType:
     return _torch_to_library_dict.get(inp, None)
 
 
@@ -222,17 +222,17 @@ def is_bfloat16_available():
     return bfloat16_available
 
 
-def bfloat16_library_type(inp) -> cutlass.DataType:
+def bfloat16_library_type(inp) -> cutlass_cppgen.DataType:
     if is_bfloat16_available():
         import bfloat16
         if inp == bfloat16.bfloat16:
-            return cutlass.DataType.bf16
+            return cutlass_cppgen.DataType.bf16
 
 
 def bfloat16_type(inp):
     if is_bfloat16_available():
         import bfloat16
-        if inp == cutlass.DataType.bf16:
+        if inp == cutlass_cppgen.DataType.bf16:
             return bfloat16.bfloat16
 
 
@@ -256,15 +256,15 @@ def library_type(inp):
 def _tensor_from_numpy(np_tensor):
     dtype = library_type(np_tensor.dtype)
     if np_tensor.flags.c_contiguous:
-        layout = cutlass.LayoutType.RowMajor
+        layout = cutlass_cppgen.LayoutType.RowMajor
     elif np_tensor.flags.f_contiguous:
-        layout = cutlass.LayoutType.ColumnMajor
+        layout = cutlass_cppgen.LayoutType.ColumnMajor
     return (dtype, layout)
 
 
 def _tensor_from_torch(pt_tensor):
     dtype = library_type(pt_tensor.dtype)
-    return (dtype, cutlass.LayoutType.RowMajor)
+    return (dtype, cutlass_cppgen.LayoutType.RowMajor)
 
 
 def get_datatype_and_layout(tensor):
@@ -273,7 +273,7 @@ def get_datatype_and_layout(tensor):
     elif is_torch_tensor(tensor):
         return _tensor_from_torch(tensor)
     elif isinstance(tensor, float) or isinstance(tensor, int):
-        return (cutlass.DataType.f32, cutlass.LayoutType.RowMajor)
+        return (cutlass_cppgen.DataType.f32, cutlass_cppgen.LayoutType.RowMajor)
     else:
         raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
@@ -303,10 +303,10 @@ def backend_math_operation(math_op: MathOperation):
     return _math_operation_value_map[math_op.value]
 
 
-def construct_backend_td(td: cutlass.TileDescription,
-                         kernel_schedule: cutlass.KernelScheduleType,
-                         epilogue_schedule: cutlass.EpilogueScheduleType,
-                         tile_scheduler: cutlass.TileSchedulerType) -> TileDescription:
+def construct_backend_td(td: cutlass_cppgen.TileDescription,
+                         kernel_schedule: cutlass_cppgen.KernelScheduleType,
+                         epilogue_schedule: cutlass_cppgen.EpilogueScheduleType,
+                         tile_scheduler: cutlass_cppgen.TileSchedulerType) -> TileDescription:
     mi = td.math_instruction
     backend_mi = MathInstruction(
         mi.instruction_shape,
@@ -328,7 +328,7 @@ def td_from_profiler_op(op) -> TileDescription:
     :param op: profiler Operation
 
     :returns: backend TileDescription
-    :rtype: cutlass.backend.TileDescription
+    :rtype: cutlass_cppgen.backend.TileDescription
     """
     kschedule = op.kernel_schedule if hasattr(op, 'kernel_schedule') else None
     eschedule = op.epilogue_schedule if hasattr(op, 'epilogue_schedule') else None
@@ -341,10 +341,10 @@ def td_from_profiler_td(td: TileDescription) -> TileDescription:
     Converts the profiler's TileDescription into the backend TileDescription
 
     :param td: profiler TileDescription
-    :type td: cutlass.TileDescription
+    :type td: cutlass_cppgen.TileDescription
 
     :returns: backend TileDescription
-    :rtype: cutlass.backend.TileDescription
+    :rtype: cutlass_cppgen.backend.TileDescription
     """
     return construct_backend_td(td, kernel_schedule=None, epilogue_schedule=None, tile_scheduler=None)
 

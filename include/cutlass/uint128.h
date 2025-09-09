@@ -33,9 +33,9 @@
   \brief Defines an unsigned 128b integer with several operators to support 64-bit integer division.
 */
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #include <cstdlib>
@@ -44,7 +44,6 @@
 #include <stdexcept>
 #endif
 
-#include "cutlass/cutlass.h"
 
 /// Optionally enable GCC's built-in type
 #if (defined(__x86_64) || defined (__aarch64__)) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)

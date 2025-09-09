@@ -31,12 +31,12 @@
 #################################################################################################
 from __future__ import annotations
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 import numpy as np
 
-from cutlass.backend.memory_manager import device_mem_alloc, todevice
-from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
+from cutlass_cppgen.backend.memory_manager import device_mem_alloc, todevice
+from cutlass_cppgen.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
 
 
 class NumpyFrontend:
