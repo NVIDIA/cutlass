@@ -161,8 +161,8 @@ struct CollectiveBuilder<
   KernelScheduleType,
   cute::enable_if_t<
     cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelXe, KernelXeCooperative, KernelXePtrArrayCooperative> &&
-    cute::is_any_of_v<ElementA, bfloat16_t, half_t, cute::int8_t> &&
-    cute::is_any_of_v<ElementB, bfloat16_t, half_t, cute::int8_t, cute::uint4_t>
+    cute::is_any_of_v<ElementA, bfloat16_t, half_t, cute::float_e5m2_t, cute::float_e4m3_t, cute::int8_t> &&
+    cute::is_any_of_v<ElementB, bfloat16_t, half_t, cute::float_e5m2_t, cute::float_e4m3_t, cute::int8_t, cute::uint4_t>
   >
     >{
 
