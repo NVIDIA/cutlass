@@ -1100,7 +1100,7 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
   ConvDescription const &conv_desc =
     static_cast<ConvDescription const &>(operation->description());
 
-  // if the curren conv operation accumulator and output data type match return operation
+  // if the current conv operation accumulator and output data type match return operation
   if(conv_desc.tile_description.math_instruction.element_accumulator == conv_desc.C.element) {
     return operation;
   }
@@ -1145,7 +1145,7 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
     return nullptr;
   }
 
-  // return matching conv opertion (same tile sizes and instruction)
+  // return matching conv operation (same tile sizes and instruction)
   for (auto op : it->second) {
     if (op->description().tile_description == operation->description().tile_description) {
       return op;
@@ -1163,7 +1163,7 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
   GemmDescription const &gemm_desc =
     static_cast<GemmDescription const &>(operation->description());
 
-  // if the curren gemm operation accumulator and output data type match return operation
+  // if the current gemm operation accumulator and output data type match return operation
   if(gemm_desc.tile_description.math_instruction.element_accumulator == gemm_desc.D.element) {
     return operation;
   }
@@ -1214,7 +1214,7 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
     return nullptr;
   }
 
-  // return matching gemm opertion (same tile shape, stages, warp count, and instruction)
+  // return matching gemm operation (same tile shape, stages, warp count, and instruction)
   for (auto op : it->second) {
     if (op->description().tile_description == operation->description().tile_description) {
       return op;

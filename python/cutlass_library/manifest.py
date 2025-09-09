@@ -31,7 +31,7 @@
 #################################################################################################
 
 """
-Utilities for filtering CUTLASS library kernels and emitting library intitialization
+Utilities for filtering CUTLASS library kernels and emitting library initialization
 and building code
 """
 

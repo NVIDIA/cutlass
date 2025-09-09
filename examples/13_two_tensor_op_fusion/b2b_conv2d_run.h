@@ -560,7 +560,7 @@ public:
     
     if(status != cutlass::Status::kSuccess) {
         std::cout << "Problem sizes not supported.\n"
-                << "Requirments:\n"
+                << "Requirements:\n"
                 << "    problem_size_0.N*P*Q = problem_size_1.N*P*Q\n"
                 << "    problem_size_0.K = problem_size_1.C\n"
                 << "    problem_size_1.R = problem_size_1.S = 1\n"

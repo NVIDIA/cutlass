@@ -602,7 +602,7 @@ class HopperWgmmaGemmKernel:
         mainloop_pipeline_producer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread
         )
-        # Each warp will constribute to the arrive count with the number of mcast size
+        # Each warp will contribute to the arrive count with the number of mcast size
         mcast_size = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
         num_warps = self.threads_per_cta // 32
         consumer_arrive_cnt = mcast_size * num_warps
