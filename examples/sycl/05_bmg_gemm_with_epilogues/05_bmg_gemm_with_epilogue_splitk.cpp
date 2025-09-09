@@ -318,9 +318,9 @@ struct ExampleRunner {
     block_D2.reset(M * NUM_HEAD * ROPE_DIM * L);
     block_ref_D.reset(M * N * L);
 
-    random_fill(block_A.get(), seed + 2023, block_A.size(), -1.0, 1.0);
-    random_fill(block_B.get(), seed + 2022, block_B.size(), -1.0, 1.0);
-    random_fill(block_C.get(), seed + 2021, block_C.size(), -1.0, 1.0);
+    initialize_block(block_A, seed + 2023, -1.0, 1.0);
+    initialize_block(block_B, seed + 2022, -1.0, 1.0);
+    initialize_block(block_C, seed + 2021, -1.0, 1.0);
   }
 
   cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {

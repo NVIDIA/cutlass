@@ -42,7 +42,7 @@
 #include "library_internal.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "cutlass/util/mixed_dtype_utils.hpp"
+#include "cutlass/util/initialize_block.hpp"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_compare.h"

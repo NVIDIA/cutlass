@@ -44,7 +44,7 @@
 #include "flash_attention_v2/collective/xe_flash_attn_decode_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
-#include "cutlass/util/mixed_dtype_utils.hpp"
+#include "cutlass/util/initialize_block.hpp"
 
 #include <cute/tensor.hpp>
 #include <random>
