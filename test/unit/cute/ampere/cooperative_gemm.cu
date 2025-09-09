@@ -608,3 +608,79 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e5m2f32_MMA) {
 
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
+
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+
+TEST(SM89_CuTe_Ada, CooperativeGemm_e4m3e4m3f16_MMA) {
+  using TA = cutlass::float_e4m3_t;
+  using TB = cutlass::float_e4m3_t;
+  using TC = cute::half_t;
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+
+  auto shape_mnk = Shape<_64, _64, _64>{};
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM89_16x8x32_F16E4M3E4M3F16_TN>,
+        Layout<Shape<_2, _2, _1>>
+      >{};
+
+  test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
+}
+
+TEST(SM89_CuTe_Ada, CooperativeGemm_e4m3e5m2f16_MMA) {
+  using TA = cutlass::float_e4m3_t;
+  using TB = cutlass::float_e5m2_t;
+  using TC = cute::half_t;
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+
+  auto shape_mnk = Shape<_64, _64, _64>{};
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM89_16x8x32_F16E4M3E5M2F16_TN>,
+        Layout<Shape<_2, _2, _1>>
+      >{};
+
+  test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
+}
+
+TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e4m3f16_MMA) {
+  using TA = cutlass::float_e5m2_t;
+  using TB = cutlass::float_e4m3_t;
+  using TC = cute::half_t;
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+
+  auto shape_mnk = Shape<_64, _64, _64>{};
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM89_16x8x32_F16E5M2E4M3F16_TN>,
+        Layout<Shape<_2, _2, _1>>
+      >{};
+
+  test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
+}
+
+TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e5m2f16_MMA) {
+  using TA = cutlass::float_e5m2_t;
+  using TB = cutlass::float_e5m2_t;
+  using TC = cute::half_t;
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+
+  auto shape_mnk = Shape<_64, _64, _64>{};
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM89_16x8x32_F16E5M2E5M2F16_TN>,
+        Layout<Shape<_2, _2, _1>>
+      >{};
+
+  test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
+}
+
+#endif

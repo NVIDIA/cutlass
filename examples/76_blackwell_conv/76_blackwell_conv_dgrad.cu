@@ -36,7 +36,7 @@
     APIs on NVIDIA Blackwell SM100 architecture.
 
     The basic computation logic of dgrad convolution kernel is, take 3D convolution as an example:
-        Xformed Actication (NZPQK) * Weight/Filter (KTRSC) = Activation (NDHWC)
+        Xformed Activation (NZPQK) * Weight/Filter (KTRSC) = Activation (NDHWC)
 
     where in terms of GEMM perspective,
         Matrix A = Xformed Activation, Matrix B = Weight/Filter, Matrix C = Activation
@@ -490,7 +490,7 @@ int run(Options &options)
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
+  // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
   // and must have compute capability at least 90.
   if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)) {
     std::cerr << "This example requires CUDA 12.8 or newer." << std::endl;
@@ -503,11 +503,20 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 10 && (props.minor != 0 || props.minor != 1)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 101)." << std::endl;
-    return 0;
-  } 
-  
+
+  if (__CUDACC_VER_MAJOR__ < 13) {
+    if (props.major != 10 && (props.minor != 0 || props.minor != 1)) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 101)." << std::endl;
+      return 0;
+    }
+  }
+  else {
+    if ((props.major != 10 || props.major != 11) && props.minor != 0) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 110)." << std::endl;
+      return 0;
+    }
+  }
+
   //
   // Parse options
   //

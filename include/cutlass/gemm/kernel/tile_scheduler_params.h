@@ -59,6 +59,14 @@ get_max_cta_occupancy(int max_sm_per_gpc, GemmCoord cluster_shape, int sm_count)
   int const min_num_gpc = sm_count < max_sm_per_gpc ? 1 : sm_count / max_sm_per_gpc;
   int const max_cta_occupancy_per_gpc = max_sm_per_gpc - (max_sm_per_gpc % cluster_size);
   int cta_per_device = min_num_gpc * max_cta_occupancy_per_gpc;
+  // Suppose max_sm_per_gpc = 20, cluster_size = 8, sm_count = 148
+  // min_num_gpc = 148 / 20 = 7
+  // max_cta_occupancy_per_gpc = 20 - (20 % 8) = 16
+  // cta_per_device = 7 * 16 = 112
+  // num_gpc_residual = 148 % 20 = 8
+  // max_cta_occupancy_per_residual_gpc = 8 - (8 % 8) = 8
+  // cta_per_device += 8 = 120
+  // cta_per_device = 120 < 148 ? 148 : 120 = 148
 
   // The calculation below allows for larger grid size launch for different GPUs.
   int const num_gpc_residual = sm_count < max_sm_per_gpc ? 0 : sm_count % max_sm_per_gpc;
@@ -401,7 +409,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
   FastDivmodU64 divmod_clusters_mnl_{};
 
   // We divide up the number of stream-K tiles amongst G groups of stream-K units.
-  // The stream-K units within a group collaborate to comptue over the `sk_tiles / G`
+  // The stream-K units within a group collaborate to compute over the `sk_tiles / G`
   // tiles assigned to that group. Non-unit group sizes can help to preserve L2 locality of
   // partial chunks computed by stream-K units -- units 0 in each group will compute identical K extents
   // of tiles that would be assigned in the same wave according to the rasterization order of the
@@ -658,7 +666,6 @@ struct PersistentTileSchedulerSm90StreamKParams {
     // number of K tiles per stream-K unit remains above min_iters_per_sk_unit_
 
     uint32_t groups = platform::min(max_groups_problem, uint32_t(max_sk_groups_));
-
     // Grouping is disabled when separate reduction is used because grouping is primarily an attempt
     // to improve L2 locality, and L2-locality optimizations are unnecessary when the the kernel
     // is a single wave (which is the case for separate reduction).
@@ -925,7 +932,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     }
   }
 
-  // Given decomposition mode output from heuristic, set all feilds of params.
+  // Given decomposition mode output from heuristic, set all fields of params.
   void set_params(
     DecompositionMode heuristic_mode,
     uint32_t groups,
@@ -947,7 +954,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     , uint32_t ktile_start_alignment_count 
     ) {
     // The highest priority when customers set as splitk mode, may set
-    // with a adpated splits value rather than the original splits
+    // with a adapted splits value rather than the original splits
     // even it does not make sense
     if (splits > 1 && heuristic_mode == DecompositionMode::SplitK) {
       set_params_basic(
@@ -1616,19 +1623,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Parameters for SM90 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm90GroupParams {
-
-  enum class RasterOrder {
-    AlongM,
-    AlongN
-  };
-
-  enum class RasterOrderOptions {
-    Heuristic,
-    AlongM,
-    AlongN
-  };
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   FastDivmodU64Pow2 divmod_cluster_shape_major_{};
   FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
@@ -1640,8 +1638,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
-  int32_t groups_ = 0;
-  ProblemShape* problem_shapes_ = nullptr;
+  GroupProblemShape problem_shapes_;
   GemmCoord cta_shape_;
   GemmCoord cluster_shape_;
 
@@ -1651,9 +1648,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shapes,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -1677,13 +1672,12 @@ struct PersistentTileSchedulerSm90GroupParams {
     //
     // Set members
     //
-    groups_ = groups;
     problem_shapes_ = problem_shapes;
     cta_shape_ = cta_shape;
     cluster_shape_ = cluster_shape;
 
     blocks_across_problem_ = problem_blocks.x * problem_blocks.y * problem_blocks.z;
-    pre_processed_problem_shapes = (host_problem_shapes == nullptr) ? false : true;
+    pre_processed_problem_shapes = problem_shapes.is_host_problem_shape_available();
     log_swizzle_size_ = log_swizzle_size;
     raster_order_ = raster_order;
 
@@ -2442,12 +2436,12 @@ struct PersistentTileSchedulerSm100StreamKParams {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parameters for SM100 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm100GroupParams {
 
-  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<ProblemShape>;
-  using RasterOrder = typename UnderlyingSm90Params::RasterOrder;
-  using RasterOrderOptions = typename UnderlyingSm90Params::RasterOrderOptions;
+  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<GroupProblemShape>;
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   UnderlyingSm90Params params_sm90_{};
 
@@ -2457,9 +2451,7 @@ struct PersistentTileSchedulerSm100GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shapes,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -2469,9 +2461,7 @@ struct PersistentTileSchedulerSm100GroupParams {
 
     params_sm90_.initialize(
       problem_blocks,
-      groups,
       problem_shapes,
-      host_problem_shapes,
       cta_shape,
       cluster_shape,
       hw_info,

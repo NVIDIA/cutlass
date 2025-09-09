@@ -69,7 +69,6 @@ class GemmUniversal<
   cute::enable_if_t<cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, typename CollectiveMainloop_::DispatchPolicy::Schedule>>
 >
 {
-
   // Get the type of the scheduler response.
   template<typename TileScheduler, typename = void>
   struct TileSchedulerResponseGetter {
@@ -144,7 +143,6 @@ public:
     >,
     TileScheduler_
   >;
-
 
   using TileScheduler = typename detail::TileSchedulerSelector<
     SchedulerTag,
@@ -425,9 +423,11 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
-#  define ENABLE_SM90_KERNEL_LEVEL 1
-#endif
+#  if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL) ||\
+      CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))
+#    define ENABLE_SM90_KERNEL_LEVEL 1
+#  endif
+
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
@@ -646,6 +646,8 @@ public:
       cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
 
       if (producer_warp_role == ProducerWarpRole::Scheduler) {
+        // GroupScheduler requires a producer warp to iterate over the group infos and push
+        // the work tile infos to the downstream pipelines.
         if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
           do {
             auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(tile_scheduler_pipeline, tile_scheduler_pipe_producer_state);
@@ -684,7 +686,8 @@ public:
         bool did_batch_change = true;
         do {
           if (!TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
-            auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
+            auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+                work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
             work_tile_info = next_work_tile_info;
             if (increment_pipe) {
               ++tile_scheduler_pipe_consumer_state;
@@ -719,9 +722,8 @@ public:
             block_rank_in_cluster,
             shared_storage.tensors.mainloop
           );
-          // Update starting pipeline state for the next tile
-          // Wait for the last TMA stage to complete loading, before issuing tensormap updates
-          mainloop_pipe_producer_state.advance(work_k_tile_count - 1);
+          // Pipeline state is only advanced if there are K tiles to compute
+          mainloop_pipe_producer_state.advance(work_k_tile_count);
 
           // Signal for the epilogue load warp to begin
           if (do_load_order_arrive) {
@@ -742,11 +744,6 @@ public:
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
             }
-            // Purpose of this pipeline state is to make sure TMA loads have finished before doing descriptor updates
-            // Since this state is waiting for loads to finish, it must start in the inverted phase.
-            typename CollectiveMainloop::PipelineState mainloop_pipe_tma_consumer_state =
-              {mainloop_pipe_producer_state.index(), !mainloop_pipe_producer_state.phase(), mainloop_pipe_producer_state.count()};
-            mainloop_pipeline.consumer_wait(mainloop_pipe_tma_consumer_state);
             collective_mainloop.tensormaps_perform_update(
               shared_storage.tensormaps.mainloop,
               params.mainloop,
@@ -759,8 +756,6 @@ public:
             // Entire warp must do this (i.e. it's aligned)
             collective_mainloop.tensormaps_cp_fence_release(shared_storage.tensormaps.mainloop, input_tensormaps);
           }
-          // Advance the producer state for the last remaining stage that was being waited for above
-          mainloop_pipe_producer_state.advance(1);
         } while (work_tile_info.is_valid()); // Scheduler work fetch loop
 
         // Make sure all Consumer Warp Groups have been waited upon

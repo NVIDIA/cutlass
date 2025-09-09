@@ -30,6 +30,8 @@ add_custom_target(
   cutlass_test_unit_conv_dgrad_device
   DEPENDS
   cutlass_test_unit_conv_dgrad_device_tensorop_sm90
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100_fusion
 )
 
 cutlass_test_unit_add_executable(
@@ -47,3 +49,43 @@ cutlass_test_unit_add_executable(
   sm90_conv3d_dgrad_implicit_gemm_f16_f16_f32_tensorop_f32.cu
 )
 
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+
+set(cutlass_test_unit_conv_dgrad_device_tensorop_sm100_kernels
+  sm100_conv2d_dgrad_implicit_gemm_f8_f8_f8_tensorop_f32.cu
+  sm100_conv2d_dgrad_implicit_gemm_f8_f8_bf16_tensorop_f32.cu
+  sm100_conv2d_dgrad_implicit_gemm_f8_f8_f16_tensorop_f32.cu
+  sm100_conv2d_dgrad_implicit_gemm_f8_f8_f32_tensorop_f32.cu
+
+  sm100_conv3d_dgrad_implicit_gemm_f8_f8_f8_tensorop_f32.cu
+  sm100_conv3d_dgrad_implicit_gemm_f8_f8_bf16_tensorop_f32.cu
+  sm100_conv3d_dgrad_implicit_gemm_f8_f8_f16_tensorop_f32.cu
+  sm100_conv3d_dgrad_implicit_gemm_f8_f8_f32_tensorop_f32.cu
+
+  sm100_conv1d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+  sm100_conv2d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+  sm100_conv3d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+
+  sm100_conv1d_dgrad_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+  sm100_conv2d_dgrad_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+  sm100_conv3d_dgrad_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+)
+
+# Add the executable
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100
+  ${cutlass_test_unit_conv_dgrad_device_tensorop_sm100_kernels}
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100_fusion
+
+  sm100_conv2d_dgrad_implicit_gemm_f8_f8_f16_tensorop_f32_with_fusion.cu
+  sm100_conv3d_dgrad_implicit_gemm_f8_f8_f16_tensorop_f32_with_fusion.cu
+
+  sm100_conv1d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+  sm100_conv2d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+  sm100_conv3d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+)
+
+endif()

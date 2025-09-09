@@ -36,10 +36,10 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/epilogue/collective/builders/sm90_common.inl"
 #include "cutlass/epilogue/collective/builders/sm120_common.inl"
-
+#include "cutlass/cutlass.h"
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
+#include CUDA_STD_HEADER(type_traits)
 #else
 #include <type_traits>
 #endif
@@ -284,6 +284,46 @@ struct CallbacksBuilder<
   >;
 };
 
+// Overload CallbacksBuilder to pick the correct copy atoms for PtrArray epilogue fusions
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpgroups,
+  class FusionOp,
+  class TileShape_MNK,
+  class EpilogueTile_MN,
+  class AccLoadOp,
+  class ElementAccumulator
+>
+struct CallbacksBuilder<
+  Sm120PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpgroups>,
+  FusionOp,
+  TileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  AccLoadOp,
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+> {
+  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+
+  using CopyOpR2S = decltype(detail::sm120_get_smem_store_op_for_accumulator<GmemStrideTypeAux, typename FusionOp::ElementAux>());
+
+  using CopyOpS2R = decltype(detail::sm120_get_smem_load_op_for_source<GmemStrideTypeAux, typename FusionOp::ElementAux>());
+  
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+
+  using Callbacks = fusion::FusionCallbacks<
+    Sm120PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpgroups>,
+    FusionOp, TileShape_MNK, EpilogueTile_MN,
+    SmemLayoutAtomAux, SmemCopyOpAux
+  >;
+};
 
 // Helper for building TMA warp-specialized collective epilogues, specialized by
 // the fusion operation performed and the dispatch policy to use.

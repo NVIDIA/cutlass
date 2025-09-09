@@ -237,7 +237,7 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
@@ -354,19 +354,9 @@ struct Options {
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
 
       for (int i = 0; i < int(tokens.size()); ++i) {
-        int x = std::atoi(tokens.at(i).c_str());
-
-        // round up
-        if (x % alignment) {
-          x += (alignment - (x % alignment));
-        }
-
-        extent.at(i) = x;
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
-
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
     groups = static_cast<int>(problem_sizes_host.size());
 
@@ -745,7 +735,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;
@@ -772,9 +762,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 100a).\n";
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 

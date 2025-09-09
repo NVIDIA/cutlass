@@ -111,11 +111,9 @@ void __global__ fmha_mla_reference_kernel(
 
       __syncthreads();
 
-#ifndef B2B
       for (int idx_K = threadIdx.x; idx_K < K; idx_K += blockDim.x) {
         mS[idx_K] = expf(softmax_scale * (mS[idx_K] - maxS));
       }
-#endif
 
       __syncthreads();
 
@@ -125,9 +123,6 @@ void __global__ fmha_mla_reference_kernel(
       }
 
       ElementAcc o_scale = 1.0f / sum;
-#ifdef B2B
-      o_scale = 1.0;
-#endif
 
       for (int idx_D = threadIdx.x; idx_D < D_latent; idx_D += blockDim.x) {
         ElementAcc acc = 0;

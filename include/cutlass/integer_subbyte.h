@@ -35,14 +35,13 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
 
-#include "cutlass/cutlass.h"
 #include "cutlass/numeric_size.h"
 #include "cutlass/platform/platform.h"
 
@@ -198,6 +197,9 @@ struct integer_subbyte {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// 1-bit binary type
+using bin1_t = bool;
+
 /// 1-bit Unsigned integer type
 using uint1b_t = integer_subbyte<1, false>;
 
@@ -207,19 +209,23 @@ using int2b_t = integer_subbyte<2, true>;
 /// 2-bit Unsigned integer type
 using uint2b_t = integer_subbyte<2, false>;
 
+/// 3-bit Integer type
+using int3b_t = integer_subbyte<3, true>;
+
+/// 3-bit Unsigned integer type
+using uint3b_t = integer_subbyte<3, false>;
+
 /// 4-bit Integer type
 using int4b_t = integer_subbyte<4, true>;
 
 /// 4-bit Unsigned integer type
 using uint4b_t = integer_subbyte<4, false>;
 
+/// 6-bit integer type
+using int6b_t = integer_subbyte<6, true>;
 
 /// 6-bit unsigned integer type
 using uint6b_t = integer_subbyte<6, false>;
-
-
-/// 1-bit binary type
-using bin1_t = bool;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

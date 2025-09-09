@@ -47,7 +47,7 @@
     .. code-block:: python
 
         # A, B, C, and D are torch/numpy/cupy tensor objects
-        plan = cutlass.op.Gemm(A, B, C, D)
+        plan = cutlass_cppgen.op.Gemm(A, B, C, D)
         plan.run()
 
 
@@ -58,11 +58,11 @@
     .. code-block:: python
 
         # The following is shorthand for:
-        #        cutlass.op.Gemm(element_A=torch.float32, element_B=torch.float32,
+        #        cutlass_cppgen.op.Gemm(element_A=torch.float32, element_B=torch.float32,
         #                        element_C=torch.float32, element_D=torch.float32,
         #                        element_accumulator=torch.float32,
-        #                        layout=cutlass.LayoutType.RowMajor)
-        plan = cutlass.op.Gemm(element=torch.float32, layout=cutlass.LayoutType.RowMajor)
+        #                        layout=cutlass_cppgen.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(element=torch.float32, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         A0 = torch.rand((128, 256), device='cuda')
         B0 = torch.rand((256, 64), device='cuda')
@@ -82,7 +82,7 @@
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Gemm(element=np.float32, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(element=np.float32, layout=cutlass_cppgen.LayoutType.RowMajor)
         plan.compile()
 
         # Do other work...
@@ -98,15 +98,15 @@
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Gemm(element=np.float32, layout=cutlass.LayoutType.RowMajor)
-        plan.activation = cutlass.epilogue.relu
+        plan = cutlass_cppgen.op.Gemm(element=np.float32, layout=cutlass_cppgen.LayoutType.RowMajor)
+        plan.activation = cutlass_cppgen.epilogue.relu
 
     Operations can also be run asynchronously:
 
     .. highlight:: python
     .. code-block:: python
 
-        plan = cutlass.op.Gemm(element=np.float32, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(element=np.float32, layout=cutlass_cppgen.LayoutType.RowMajor)
         args = plan.run()
 
         # Do other work...
@@ -117,7 +117,7 @@ from __future__ import annotations
 from typing import Optional
 from math import prod
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 from cutlass_library import (
     DataType,
@@ -125,16 +125,16 @@ from cutlass_library import (
     GemmUniversalMode,
 )
 
-import cutlass
-from cutlass import epilogue, swizzle
-from cutlass.backend import compiler
-from cutlass.backend.evt import EpilogueFunctorVisitor
-from cutlass.backend.gemm_operation import GemmArguments, GemmOperationUniversal
-from cutlass.backend.library import TensorDescription, TileDescription
+import cutlass_cppgen
+from cutlass_cppgen import epilogue, swizzle
+from cutlass_cppgen.backend import compiler
+from cutlass_cppgen.backend.evt import EpilogueFunctorVisitor
+from cutlass_cppgen.backend.gemm_operation import GemmArguments, GemmOperationUniversal
+from cutlass_cppgen.backend.library import TensorDescription, TileDescription
 from cutlass.backend.utils.device import default_stream
-from cutlass.op.op import OperationBase
-from cutlass.shape import GemmCoord
-from cutlass.utils import check, datatypes
+from cutlass_cppgen.op.op import OperationBase
+from cutlass_cppgen.shape import GemmCoord
+from cutlass_cppgen.utils import check, datatypes
 
 
 class Gemm(OperationBase):
@@ -155,11 +155,11 @@ class Gemm(OperationBase):
 
         # Use the generic ``element`` and ``layout`` parameters to concisely set all data types and layouts
         # for operands to the same values.
-        Gemm(element=cutlass.DataType.f32, layout=cutlass.LayoutType.RowMajor)
+        Gemm(element=cutlass_cppgen.DataType.f32, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         # Explicitly specify the data types to use for A, B, C, and D. Use the generic ``layout``.
-        Gemm(element_A=cutlass.DataType.f32, element_B=cutlass.DataType.f32, element_C=cutlass.DataType.f32,
-            element_D=cutlass.DataType.f32, layout=cutlass.LayoutType.RowMajor)
+        Gemm(element_A=cutlass_cppgen.DataType.f32, element_B=cutlass_cppgen.DataType.f32, element_C=cutlass_cppgen.DataType.f32,
+            element_D=cutlass_cppgen.DataType.f32, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         # Set the data types and elements from existing tensors. Note that one can use different tensors when
         # executing GEMM via the ``run()`` method than passed in here (though those passed in to ``run()`` must
@@ -169,13 +169,13 @@ class Gemm(OperationBase):
 
         # Use the generic ``element`` and explicitly specify the layouts to use for A, B, and C (layout of D is
         # the same as that for D, at present)
-        Gemm(element=cutlass.DataType.f32, layout_A=cutlass.LayoutType.RowMajor,
-            layout_B=cutlass.LayoutType.RowMajor, layout_C=cutlass.LayoutType.RowMajor)
+        Gemm(element=cutlass_cppgen.DataType.f32, layout_A=cutlass_cppgen.LayoutType.RowMajor,
+            layout_B=cutlass_cppgen.LayoutType.RowMajor, layout_C=cutlass_cppgen.LayoutType.RowMajor)
 
         # Explicitly specify the data type and layout for only some of A, B, C, and D. Unspecified data types
         # and layouts will inherit those passed in via the generic ``element`` and ``layout``
-        Gemm(element_A=cutlass.DataType.f32, layout_B=cutlass.LayoutType.RowMajor,
-            element=cutlass.DataType.f32, layout=cutlass.LayoutType.RowMajor)
+        Gemm(element_A=cutlass_cppgen.DataType.f32, layout_B=cutlass_cppgen.LayoutType.RowMajor,
+            element=cutlass_cppgen.DataType.f32, layout=cutlass_cppgen.LayoutType.RowMajor)
 
     The order of precedence for the setting of the data type and layout for a given operand/output is as follows:
         1) If the tensor type is specified (e.g., ``A``), use the data type and layout inferred from this tensor
@@ -193,27 +193,27 @@ class Gemm(OperationBase):
     :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
     :param beta: scalar parameter beta from GEMM operation that scales operand C
     :param element_accumulator: data type to be used in accumulation of the product of operands A and B
-    :type element_accumulator: cutlass.DataType
+    :type element_accumulator: cutlass_cppgen.DataType
     :param element: generic data type to be used for operands A, B, C, D, as well as the accumulation data type
-    :type element: cutlass.DataType
+    :type element: cutlass_cppgen.DataType
     :param layout: generic layout type to be used for operands A, B, C, and D
-    :type layout: cutlass.LayoutType
+    :type layout: cutlass_cppgen.LayoutType
     :param element_A: data type to be used for operand A
-    :type element_A: cutlass.DataType
+    :type element_A: cutlass_cppgen.DataType
     :param element_B: data type to be used for operand B
-    :type element_B: cutlass.DataType
+    :type element_B: cutlass_cppgen.DataType
     :param element_C: data type to be used for operand C
-    :type element_C: cutlass.DataType
+    :type element_C: cutlass_cppgen.DataType
     :param element_D: data type to be used for operand D
-    :type element_D: cutlass.DataType
+    :type element_D: cutlass_cppgen.DataType
     :param layout_A: layout of operand A
-    :type layout_A: cutlass.LayoutType
+    :type layout_A: cutlass_cppgen.LayoutType
     :param layout_B: layout of operand B
-    :type layout_B: cutlass.LayoutType
+    :type layout_B: cutlass_cppgen.LayoutType
     :param layout_C: layout of operand C
-    :type layout_C: cutlass.LayoutType
+    :type layout_C: cutlass_cppgen.LayoutType
     :param layout_D: layout of operand D
-    :type layout_D: cutlass.LayoutType
+    :type layout_D: cutlass_cppgen.LayoutType
     """
 
     def __init__(
@@ -279,7 +279,7 @@ class Gemm(OperationBase):
 
         self._reset_operations()
 
-        self._swizzling_functor = cutlass.swizzle.IdentitySwizzle1
+        self._swizzling_functor = cutlass_cppgen.swizzle.IdentitySwizzle1
 
     def _reset_operations(self, reset_epilogue: bool = True):
         # Set the default op class
@@ -290,10 +290,10 @@ class Gemm(OperationBase):
             self._element_a, self._element_b, self._element_accumulator,
             self._layout_a, self._layout_b, self._math_operation)
 
-        if cutlass.OpcodeClass.TensorOp in self.possible_op_classes:
-            self.opclass = cutlass.OpcodeClass.TensorOp
-        elif cutlass.OpcodeClass.Simt in self.possible_op_classes:
-            self.opclass = cutlass.OpcodeClass.Simt
+        if cutlass_cppgen.OpcodeClass.TensorOp in self.possible_op_classes:
+            self.opclass = cutlass_cppgen.OpcodeClass.TensorOp
+        elif cutlass_cppgen.OpcodeClass.Simt in self.possible_op_classes:
+            self.opclass = cutlass_cppgen.OpcodeClass.Simt
         else:
             if self._math_operation is not None:
                 math_op_str = f' and math operation {self._math_operation}'
@@ -304,7 +304,7 @@ class Gemm(OperationBase):
                             f'combination {datatype_comb}x{layout_comb}{math_op_str}')
 
         if reset_epilogue:
-            self._reset_epilogue_functor_activation(cutlass.epilogue.identity)
+            self._reset_epilogue_functor_activation(cutlass_cppgen.epilogue.identity)
 
     @property
     def swizzling_functor(self):
@@ -320,8 +320,8 @@ class Gemm(OperationBase):
         """
         Sets the swizzling functor to the type specified by `swizzling_functor`
         """
-        if swizzling_functor == cutlass.swizzle.ThreadblockSwizzleStreamK:
-            if self.op_class == cutlass.OpcodeClass.Simt:
+        if swizzling_functor == cutlass_cppgen.swizzle.ThreadblockSwizzleStreamK:
+            if self.op_class == cutlass_cppgen.OpcodeClass.Simt:
                 raise Exception('ThreadblockSwizzleStreamK is currently only supported with opcode class TensorOp')
 
             if self.current_cc == 90:
@@ -346,7 +346,7 @@ class Gemm(OperationBase):
         Set the tile description
 
         :param td: tile description
-        :type td: cutlass.backend.TileDescription, or a dict with keys
+        :type td: cutlass_cppgen.backend.TileDescription, or a dict with keys
                   {
                       "threadblock_shape": [int, int, int],
                       "warp_count": [int, int, int],
@@ -381,7 +381,7 @@ class Gemm(OperationBase):
         - Is the kernel schedule being used supported on the architecture in question?
 
         :param td: tile description to validate
-        :type td: cutlass.backend.TileDescription
+        :type td: cutlass_cppgen.backend.TileDescription
         :return: tuple in which the first element is a bool indicating that the tile description is valid
                  and the second element is a string providing an optional error message.
         :rtype: tuple
@@ -413,11 +413,11 @@ class Gemm(OperationBase):
         self, tile_description: TileDescription = None,
         alignment_A: int = None, alignment_B: int = None, alignment_C: int = None) -> GemmOperationUniversal:
         """
-        Constructs a ``cutlass.backend.GemmUniversalOperation`` based on the input parameters and current
+        Constructs a ``cutlass_cppgen.backend.GemmUniversalOperation`` based on the input parameters and current
         kernel specification of the ``Gemm`` object.
 
         :param tile_description: tile description specifying shapes and operand types to use in the kernel
-        :type tile_description: cutlass.backend.TileDescription
+        :type tile_description: cutlass_cppgen.backend.TileDescription
         :param alignment_A: alignment of operand A
         :type alignment_A: int
         :param alignment_B: alignment of operand B
@@ -426,7 +426,7 @@ class Gemm(OperationBase):
         :type alignment_C: int
 
         :return: operation that was constructed
-        :rtype: cutlass.backend.GemmOperationUniversal
+        :rtype: cutlass_cppgen.backend.GemmOperationUniversal
         """
         alignment_pref_A = min(128 // DataTypeSize[self._element_a], max(self.possible_operations.alignments("A")))
         alignment_pref_B = min(128 // DataTypeSize[self._element_b], max(self.possible_operations.alignments("B")))
@@ -472,7 +472,7 @@ class Gemm(OperationBase):
 
     def compile(self, tile_description: TileDescription = None,
                 alignment_A: int = None, alignment_B: int = None, alignment_C: int = None,
-                print_module: bool = False) -> cutlass.backend.GemmOperationUniversal:
+                print_module: bool = False) -> cutlass_cppgen.backend.GemmOperationUniversal:
         """
         Emits and compiles the kernel currently specified. If ``tile_description`` and any
         of the ``alignment`` parameters are set, the kernel will be chosen using this
@@ -480,7 +480,7 @@ class Gemm(OperationBase):
         will be used.
 
         :param tile_description: tile description specifying shapes and operand types to use in the kernel
-        :type tile_description: cutlass.backend.TileDescription
+        :type tile_description: cutlass_cppgen.backend.TileDescription
         :param alignment_A: alignment of operand A
         :type alignment_A: int
         :param alignment_B: alignment of operand B
@@ -491,7 +491,7 @@ class Gemm(OperationBase):
         :type print_module: bool
 
         :return: operation that was compiled
-        :rtype: cutlass.backend.GemmOperationUniversal
+        :rtype: cutlass_cppgen.backend.GemmOperationUniversal
         """
         self.operation = self.construct(tile_description, alignment_A, alignment_B, alignment_C)
 
@@ -567,7 +567,7 @@ class Gemm(OperationBase):
         :param D: tensor D
         :type D: numpy/cupy/torch array/tensor object
 
-        :return: tuple containing the problem size (cutlass.shape.GemmCoord), the GEMM mode (cutlass.GemmUniversalMode), and the batch count (int)
+        :return: tuple containing the problem size (cutlass_cppgen.shape.GemmCoord), the GEMM mode (cutlass_cppgen.GemmUniversalMode), and the batch count (int)
         :rtype: tuple
         """
         M, K = A.shape[-2:]
@@ -583,9 +583,9 @@ class Gemm(OperationBase):
         # and C are row major. A similar operation can be performed if only B has a nonzero
         # batch dimension
         if batch_count > 1:
-            A_row = self._layout_a == cutlass.LayoutType.RowMajor
-            B_row = self._layout_b == cutlass.LayoutType.RowMajor
-            C_row = self._layout_c == cutlass.LayoutType.RowMajor
+            A_row = self._layout_a == cutlass_cppgen.LayoutType.RowMajor
+            B_row = self._layout_b == cutlass_cppgen.LayoutType.RowMajor
+            C_row = self._layout_c == cutlass_cppgen.LayoutType.RowMajor
 
             # Consider a Tensor to be batched if its rank is > 2 and
             # the product of the modes beyond rank 2 equals our pre-determined batch size.
@@ -653,7 +653,7 @@ class Gemm(OperationBase):
         :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
-        :rtype: cutlass.backend.GemmArguments
+        :rtype: cutlass_cppgen.backend.GemmArguments
         """
         if not stream:
             stream = cuda.CUstream(0)

@@ -47,7 +47,6 @@
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -123,7 +122,7 @@ struct CollectiveMma<
                        "Static cluster shape used: TileShape should be evenly divided by TiledMma");
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
-  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or 
+  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or
       shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
       "Cta N should be one of 64/128/192/256");
 
@@ -726,9 +725,9 @@ struct CollectiveMma<
       }
       else if constexpr (IsCtaN64) {
         Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB_));
-        auto new_shape = make_shape(make_shape(shape<0,0>(mSFB_tmp), 
+        auto new_shape = make_shape(make_shape(shape<0,0>(mSFB_tmp),
                                     make_shape(_2{} , shape<0,1>(mSFB_tmp))), shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
-        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp), 
+        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp),
                                       make_stride(_0{}, stride<0,1>(mSFB_tmp))), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
         return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
       }

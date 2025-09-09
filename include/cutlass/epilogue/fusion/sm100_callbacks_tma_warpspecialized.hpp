@@ -1280,6 +1280,39 @@ struct FusionCallbacks<
 };
 
 
+// --------------------------------------------------------------------
+//  Sm100PtrArrayNoSmemWarpSpecialized  (direct-store, grouped GEMM)
+// --------------------------------------------------------------------
+template <
+    class Operation,
+    class CtaTile_MNK,
+    class EpilogueTile_MN,
+    class... Args
+>
+struct FusionCallbacks<
+        epilogue::Sm100PtrArrayNoSmemWarpSpecialized,
+        Operation,
+        CtaTile_MNK,
+        EpilogueTile_MN,
+        Args...>
+  : FusionCallbacks<
+        // reuse the ptr-array *TMA* callbacks with 0 stages
+        epilogue::Sm100PtrArrayTmaWarpSpecialized<0,0,0,false,false>,
+        Operation,
+        CtaTile_MNK,
+        EpilogueTile_MN,
+        Args...> {
+
+  using Base = FusionCallbacks<
+      epilogue::Sm100PtrArrayTmaWarpSpecialized<0,0,0,false,false>,
+      Operation,
+      CtaTile_MNK,
+      EpilogueTile_MN,
+      Args...>;
+
+  // bring ctors into scope
+  using Base::Base;
+};
 
 } // namespace cutlass::epilogue::fusion
 

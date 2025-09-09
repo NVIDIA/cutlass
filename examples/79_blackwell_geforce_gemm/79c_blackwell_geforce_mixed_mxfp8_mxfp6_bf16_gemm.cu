@@ -36,7 +36,7 @@
     This kernel is optimized for the GeForce RTX 50 series GPUs.
 
     The Blackwell SM120 CUTLASS kernel uses the new Block Scaled Tensor Core MMA Instructions (mma.sync.aligned.block_scale).
-    MXFP8 MMA has 2x throughput compared to Ada Tensor Core FP8 MMA. 
+    MXFP8 MMA has 2x throughput compared to Ada Tensor Core FP8 MMA.
     (See https://docs.nvidia.com/cuda/parallel-thread-execution).
 
     Similar to 79a_blackwell_geforce_nvfp4_bf16_gemm, this kernel leverages:
@@ -48,7 +48,7 @@
     Note that GeForce RTX 50 series GPUs do not support:
     1. Multicast feature of TMA load. Cluster shape has to be 1x1x1.
     2. Dynamic datatypes.
-    
+
     Usage:
 
       $ ./examples/79_blackwell_geforce_gemm/79c_blackwell_geforce_mixed_mxfp8_bf16_gemm --m=2048 --n=2048 --k=2048
@@ -88,7 +88,7 @@
 
 using namespace cute;
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -122,7 +122,7 @@ using ThreadBlockShape    = Shape<_128,_128,_128>;                          // T
 using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,                      
+    ArchTag, OperatorClass,
     ThreadBlockShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -189,17 +189,11 @@ cutlass::HostTensor<ElementC, cutlass::layout::PackedVectorLayout> block_C;
 cutlass::HostTensor<ElementD, cutlass::layout::PackedVectorLayout> block_D;
 // Reference Output Tensor
 cutlass::HostTensor<ElementD, cutlass::layout::PackedVectorLayout> block_reference_D;
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -289,7 +283,7 @@ struct Result
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -328,7 +322,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -411,7 +405,7 @@ bool verify(const Options &options) {
 
   auto tensor_C = cute::make_tensor(make_iterator(block_C.host_data()), layout_C);
   auto tensor_D = cute::make_tensor(make_iterator(block_reference_D.host_data()), layout_D);
- 
+
   cutlass::reference::host::GettBlockScalingEpilogueParams<
       ElementAccumulator,                   // ElementScalar
       ElementAccumulator,                   // ElementAccumulator
@@ -495,28 +489,37 @@ int run(Options &options)
   return 0;
 }
 
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.8 or higher Toolkit to run this example
-  // and must have compute capability at least 100.
+  // CUTLASS must be compiled with CUDA 12.8 or higher Toolkit for SM120 support,
+  // or CUDA 12.9 or higher for SM121 support.
+  // Must have compute capability at least 120.
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
   if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)) {
-    std::cerr << "This example requires CUDA 12.8 or newer." << std::endl;
+    std::cerr << "This example requires CUDA 12.8 or newer for SM120 support." << std::endl;
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
+#elif defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 9)) {
+    std::cerr << "This example requires CUDA 12.9 or newer for SM121 support." << std::endl;
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    return 0;
+  }
+#endif
 
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
-  
+
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  
-  if (!(props.major == 12 && props.minor == 0)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 120)." << std::endl;
+
+  if (!(props.major == 12 && (props.minor == 0 || props.minor == 1))) {
+    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 120 or 121)." << std::endl;
     return 0;
   }
 
@@ -536,9 +539,9 @@ int main(int argc, char const **args) {
   //
   // Evaluate CUTLASS kernels
   //
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
   run<Gemm>(options);
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
   return 0;
 }

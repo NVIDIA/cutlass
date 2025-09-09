@@ -1306,6 +1306,114 @@ struct FusionCallbacks<
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// D = activation(per-col alpha * acc + per-column bias) + per-col beta * C
+template<
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  int AlignmentScalar = 128 / sizeof_bits_v<ElementScalar>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90PerColResAddPerColBiasEltAct =
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + activation(alpha * acc + bias)
+    Sm90RowBroadcast<0, CtaTileShapeMNK, ElementScalar, ElementCompute, Stride<_0,bool,int64_t>, AlignmentScalar>, // beta, dynamic scalar/vector broadcast
+    Sm90SrcFetch<ElementSource>, // C
+    Sm90EVT<Sm90Compute<ActivationFn, ElementCompute, ElementCompute, RoundStyle>, // activation(alpha * acc + bias)
+      Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
+        Sm90RowBroadcast<0, CtaTileShapeMNK, ElementScalar, ElementCompute, Stride<_0,bool,int64_t>, AlignmentScalar>, // alpha, dynamic scalar/vector broadcast
+        Sm90AccFetch, // acc
+        Sm90RowBroadcast<0, CtaTileShapeMNK, ElementBias, ElementCompute, Stride<_0,_1,int64_t>, AlignmentBias> // bias
+      >
+    >
+  >;
+
+  template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBias,
+  class ElementSource,
+  class ElementScalar,
+  int AlignmentBias,
+  int AlignmentScalar,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::PerColResAddPerColBiasEltAct<
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm90PerColResAddPerColBiasEltAct<
+      CtaTileShapeMNK, EpilogueTile, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+    > {
+
+  using Impl =
+    Sm90PerColResAddPerColBiasEltAct<
+      CtaTileShapeMNK, EpilogueTile, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+    >;
+  using Operation =
+    fusion::PerColResAddPerColBiasEltAct<
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,bool,int64_t>;
+    using StrideBeta  = Stride<_0,bool,int64_t>;
+    StrideAlpha dAlpha = {_0{}, bool(1), 0};
+    StrideBeta  dBeta  = {_0{}, bool(1), 0};
+
+    using StrideBias = Stride<_0,_1,int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // ternary op : beta * C + activation(alpha * acc + bias)
+          {beta_ptr, beta, dBeta}, // leaf args : beta
+          {},                      // leaf args : C
+          {                        // unary op : activation(alpha * acc + bias)
+            {                          // ternary op : alpha * acc + bias
+              {alpha_ptr, alpha, dAlpha},        // leaf args : alpha
+              {},                                // leaf args : acc
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+              {}                       // ternary args : multiply_add
+            },                         // end ternary op
+            activation             // unary args : activation
+          },                       // end unary op
+          {} // ternary args : multiply_add
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace detail {
 
 template <typename T>

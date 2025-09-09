@@ -514,12 +514,12 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // Q1 * K1  , Q2 * K1  , S11 * V1 , Q1 * K2  , S21 * V1  , Q2 * K2 , S12 * V2 , Q1 * K3  , S22 * K2 , ...
   }
 
-  template<bool need_apply_mask, class Stage, class BlkCoord, class CountingTensor, class ProblemShape>
+  template<bool need_apply_mask, class Stage, class BlkCoord, class CoordTensor, class ProblemShape>
   CUTLASS_DEVICE auto
   softmax_step(
       float& row_max, float& row_sum,
       Stage stage, bool final_call,
-      BlkCoord const& blk_coord, CountingTensor const& cS,
+      BlkCoord const& blk_coord, CoordTensor const& cS,
       Params const& params, ProblemShape const& problem_shape,
       PipelineS& pipeline_s, typename PipelineS::PipelineState& pipeline_s_consumer_state,
       PipelineC& pipeline_c, typename PipelineC::PipelineState& pipeline_c_producer_state,
@@ -831,7 +831,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // loop:
     //   TMEM_LOAD, TMEM_LOAD, FMUL2, FFMA2, STG
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 128 / kCorrectionTileSize; i++) {
+    for (int i = 0; i < get<2>(TileShape{}) / kCorrectionTileSize; i++) {
       Tensor tTMEM_LOADtO0_i = tTMEM_LOADtO0;
       tTMEM_LOADtO0_i.data() = tTMEM_LOADtO0_i.data().get() + uint32_t(i * kCorrectionTileSize);
       Tensor tTMEM_LOADtO1_i = tTMEM_LOADtO1;
@@ -917,7 +917,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     float2 scale_f32x2 = make_float2(scale, scale);
 
-    Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<128 / kCorrectionTileSize>{}));
+    Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<get<2>(TileShape{}) / kCorrectionTileSize>{}));
     
     auto copy_in = [&](int i) {
       Tensor tTMEM_LOADtO_i = tTMEM_LOADtO;

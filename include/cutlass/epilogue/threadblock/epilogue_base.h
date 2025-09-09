@@ -37,17 +37,15 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if !defined(__CUDACC_RTC__)
 #include <type_traits>
 #include <utility>
 #endif
-
 #if !defined(CUTLASS_ENABLE_SYCL)
-#include <cuda/std/cassert>
+#include CUDA_STD_HEADER(cassert)
 #endif
 
-#include "cutlass/cutlass.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"

@@ -140,6 +140,8 @@ public:
     int warp_idx = canonical_warp_idx_sync();
     if (warp_idx == params.initializing_warp) {
       // Barrier FULL and EMPTY init
+      CUTLASS_ASSERT(params.producer_arv_count > 0 && "Producer arrival count must be non-zero");
+      CUTLASS_ASSERT(params.consumer_arv_count > 0 && "Consumer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, params.producer_arv_count, params.consumer_arv_count);
     }
@@ -320,6 +322,24 @@ public:
     }
   }
 
+  template<class ClusterShape, class InitBarriers = cute::true_type, class InitMasks = cute::true_type>
+  CUTLASS_DEVICE
+  PipelineTmaTransformAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, McastDirection mcast_direction, InitBarriers = {}, InitMasks = {})
+      : impl_(storage, params, cluster_shape, cute::false_type{}, cute::false_type{})
+      , params_(params)
+      , empty_barrier_ptr_(&storage.empty_barrier_[0])
+      , full_barrier_ptr_(&storage.full_barrier_[0]) {
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params_, cluster_shape, mcast_direction);
+    }
+
+    static_assert(cute::is_same_v<InitMasks, cute::true_type> || cute::is_same_v<InitMasks, cute::false_type>);
+    if constexpr (cute::is_same_v<InitMasks, cute::true_type>) {
+      init_masks(cluster_shape, mcast_direction);
+    }
+  }
+
   // Helper function to initialize barriers
   template <class ClusterShape>
   static
@@ -334,9 +354,11 @@ public:
       static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
       static_assert(IsDynamicCluster or ((cute::size<0>(cluster_shape) % cute::size<0>(atom_thr_shape) == 0) &&
                     (cute::size<1>(cluster_shape) % cute::size<1>(atom_thr_shape) == 0)));
-      uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
-                                     (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1;
-
+      uint32_t const num_consumer_per_cluster = cute::ceil_div(params.num_consumers, static_cast<uint32_t>(NumThreadsPerWarpGroup));
+      uint32_t const multicast_consumer_arrival_count = ((cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
+                                     (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1) * num_consumer_per_cluster;
+      CUTLASS_ASSERT(multicast_consumer_arrival_count > 0 && "Multicast consumer arrival count must be non-zero");
+      CUTLASS_ASSERT(producer_arv_cnt > 0 && "Producer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
@@ -344,8 +366,31 @@ public:
   }
 
   template <class ClusterShape>
+  static
   CUTLASS_DEVICE
-  void init_masks(ClusterShape cluster_shape, dim3 block_id_in_cluster = cute::block_id_in_cluster()) {
+  void
+  init_barriers(SharedStorage& storage, Params params, ClusterShape cluster_shape, McastDirection mcast_direction) {
+    auto atom_thr_shape = AtomThrShape_MNK{};
+
+    int warp_idx = canonical_warp_idx_sync();
+    if (warp_idx == params.initializing_warp) {
+      // Barrier FULL and EMPTY init
+      constexpr int producer_arv_cnt = 1;
+      uint32_t const num_consumer_per_cluster = params.num_consumers / NumThreadsPerWarpGroup;
+      uint32_t const multicast_consumer_arrival_count = (mcast_direction == McastDirection::kRow) ?
+        (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) * num_consumer_per_cluster : // Mcast with row ctas
+        (cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) * num_consumer_per_cluster;  // Mcast with col ctas
+
+      cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
+          storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
+
+    }
+    cutlass::arch::fence_barrier_init();
+  }
+
+  template <class ClusterShape>
+  CUTLASS_DEVICE
+  void init_masks(ClusterShape cluster_shape, dim3 block_id_in_cluster = cute::block_id_in_cluster(), McastDirection mcast_dir = McastDirection::kRowCol) {
     // Calculate consumer mask
     if (params_.role == ThreadCategory::Consumer) {
       // Logic to optimally schedule Empty Arrives
@@ -374,8 +419,23 @@ public:
 
       // STEP 2: Find if this dst block-id needs an arrival for this problem
       is_signaling_thread_ &= dst_blockid_ < cluster_size;
-      is_signaling_thread_ &= is_same_row_or_col(dst_blockid_, block_id_in_cluster, cluster_shape);
+      if(mcast_dir == McastDirection::kRowCol){
+        is_signaling_thread_ &= is_same_row_or_col(dst_blockid_, block_id_in_cluster, cluster_shape);
+      }
+      if(mcast_dir == McastDirection::kRow){
+        is_signaling_thread_ &= is_same_row(dst_blockid_, block_id_in_cluster, cluster_shape);
+      }
     }
+  }
+
+  template <class ClusterShape>
+  CUTLASS_DEVICE
+  bool is_same_row(int dst_block_id, dim3 block_id, ClusterShape cluster_shape) {
+    return (((dst_block_id % cute::size<0>(cluster_shape)) == block_id.x) 
+              // If we are in the same cluster column and using 2CTA MMA, only odd or only even CTAs sync with each other
+                 && ((dst_block_id % cute::size<0>(cluster_shape)) % cute::size<0>(AtomThrShape_MNK{}) ==
+                      block_id.x % cute::size<0>(AtomThrShape_MNK{}))
+            );
   }
 
   template <class ClusterShape>
@@ -504,7 +564,8 @@ public:
       auto atom_thr_shape = AtomThrShape_MNK{};
       uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
                                      (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1;
-
+      CUTLASS_ASSERT(multicast_consumer_arrival_count > 0 && "Multicast consumer arrival count must be non-zero");
+      CUTLASS_ASSERT(producer_arv_cnt > 0 && "Producer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
@@ -525,6 +586,8 @@ public:
         cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape) : // Mcast with row ctas
         cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape);  // Mcast with col ctas
 
+      CUTLASS_ASSERT(multicast_consumer_arrival_count > 0 && "Multicast consumer arrival count must be non-zero");
+      CUTLASS_ASSERT(producer_arv_cnt > 0 && "Producer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
@@ -893,6 +956,8 @@ public:
     int warp_idx = canonical_warp_idx_sync();
     if (warp_idx == params.initializing_warp) {
       // Barrier FULL and EMPTY init
+      CUTLASS_ASSERT(params.producer_arv_count > 0 && "Producer arrival count must be non-zero");
+      CUTLASS_ASSERT(params.consumer_arv_count > 0 && "Consumer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(full_barrier_ptr_), decltype(empty_barrier_ptr_), Stages>(
           full_barrier_ptr_, empty_barrier_ptr_, params_.producer_arv_count, params_.consumer_arv_count);
     }
@@ -910,6 +975,8 @@ public:
     int warp_idx = canonical_warp_idx_sync();
     if (warp_idx == params.initializing_warp) {
       // Barrier FULL and EMPTY init
+      CUTLASS_ASSERT(params.producer_arv_count > 0 && "Producer arrival count must be non-zero");
+      CUTLASS_ASSERT(params.consumer_arv_count > 0 && "Consumer arrival count must be non-zero");
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(full_barrier_ptr_), decltype(empty_barrier_ptr_), Stages>(
           full_barrier_ptr_, empty_barrier_ptr_, params_.producer_arv_count, params_.consumer_arv_count);
     }
@@ -1102,7 +1169,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // TMA (producer - consumer) Async Pipeline classes for Blackwell Sparse UMMA
-// This is designed for the parttern that kernel has two different staged tensors. (AB and metadata)
+// This is designed for the pattern that kernel has two different staged tensors. (AB and metadata)
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

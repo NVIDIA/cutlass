@@ -30,4 +30,4 @@
 #
 ################################################################################
 
-from cutlass.backend.utils.device import check_cuda_errors, device_cc
+from cutlass_cppgen.backend.utils.device import check_cuda_errors, device_cc

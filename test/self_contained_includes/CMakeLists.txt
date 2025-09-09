@@ -52,7 +52,6 @@ set(header_files_to_check
     cute/swizzle_layout.hpp
     cute/tensor.hpp
     cute/tensor_impl.hpp
-    cute/tensor_predicate.hpp
     cute/underscore.hpp
     # cute/algorithm
     cute/algorithm/axpby.hpp

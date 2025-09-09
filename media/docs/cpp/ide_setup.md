@@ -118,7 +118,7 @@ This is usually a convenient way to configure projects, but it's not as simple f
 clang doesn't understand many of the compiler flags used by nvcc. Hence, for now, we don't recommend using
 `compile_commands.json` to configure your CUDA project.
 
-## Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

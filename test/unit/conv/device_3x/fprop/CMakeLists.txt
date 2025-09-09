@@ -32,6 +32,8 @@ add_custom_target(
   cutlass_test_unit_conv1d_fprop_device_tensorop_sm90
   cutlass_test_unit_conv2d_fprop_device_tensorop_sm90
   cutlass_test_unit_conv3d_fprop_device_tensorop_sm90
+  cutlass_test_unit_conv_fprop_device_tensorop_sm100
+  cutlass_test_unit_conv_fprop_device_tensorop_sm100_fusion
 )
 
 cutlass_test_unit_add_executable(
@@ -73,3 +75,50 @@ cutlass_test_unit_add_executable(
   sm90_conv3d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32.cu
 )
 
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_fprop_device_tensorop_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_conv1d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32.cu
+  sm100_conv2d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32.cu
+  sm100_conv3d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32.cu
+
+  sm100_conv1d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+  sm100_conv2d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+  sm100_conv3d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16.cu
+
+  sm100_conv1d_fprop_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+  sm100_conv2d_fprop_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+  sm100_conv3d_fprop_implicit_gemm_f16_f16_f32_tensorop_f32.cu
+
+  sm100_conv1d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32.cu
+  sm100_conv2d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32.cu
+  sm100_conv3d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_fprop_device_tensorop_sm100_fusion
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_conv1d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32_with_fusion.cu
+  sm100_conv2d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32_with_fusion.cu
+  sm100_conv3d_fprop_implicit_gemm_s8_s8_s32_tensorop_s32_with_fusion.cu
+
+  sm100_conv1d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+  sm100_conv2d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+  sm100_conv3d_fprop_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+
+  sm100_conv1d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32_with_fusion.cu
+  sm100_conv2d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32_with_fusion.cu
+  sm100_conv3d_fprop_implicit_gemm_tf32_tf32_f32_tensorop_f32_with_fusion.cu
+)
+
+endif()

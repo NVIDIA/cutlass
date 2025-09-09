@@ -32,7 +32,6 @@
 
 #include "cutlass/cutlass.h"
 
-#include "cute/tensor_predicate.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
 #include "cute/atom/mma_atom.hpp"
@@ -103,7 +102,7 @@ struct CollectiveConv<
 
   using PipelineParams = typename MainloopPipeline::Params;
   using PipelineState  = typename cutlass::PipelineState<DispatchPolicy::Stages>;
-  
+
   using ProblemShape = ConvProblemShape<ConvOp, NumSpatialDimensions>;
 
   static_assert(rank(SmemLayoutA{}) == 3, "SmemLayout must be rank 3 (M/N, K, PIPE)");
@@ -332,7 +331,7 @@ public:
       TmaTransactionBytes
     };
   }
-  
+
   template <class ProblemShape>
   static bool
   can_implement(
@@ -409,7 +408,7 @@ public:
     if constexpr (ConvOp == conv::Operator::kWgrad) {
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       std::ostringstream os;
-#endif        
+#endif
       const auto & input_shape  = problem_shape.shape_A;
       const auto & input_stride  = problem_shape.stride_A;
 
@@ -431,11 +430,11 @@ public:
            << "\n    input_shape: " << input_shape
            << "\n    input_stride: " << input_stride
            << "\n";
-#endif        
+#endif
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed input strides.\n");
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST(os.str());
-#endif        
+#endif
         return false;
       }
 
@@ -464,7 +463,7 @@ public:
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed output strides.\n");
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST(os.str());
-#endif        
+#endif
         return false;
       }
     }
@@ -516,8 +515,8 @@ public:
   /// gA_mk - The tma tensor, A after a local tile so it has shape  (BLK_M,BLK_K,m,k)
   /// gB_nk - The tma tensor, B after a local tile so it has shape  (BLK_N,BLK_K,n,k)
   /// The rest of the tensors can be specified as needed by this collective.
-  /// The dimensions of gA_mk and gA_nk do not contain L to maintain consistency with 
-  /// StrideA and StrideB set up for TMA 
+  /// The dimensions of gA_mk and gA_nk do not contain L to maintain consistency with
+  /// StrideA and StrideB set up for TMA
   template <class ProblemShapeMNKL>
   CUTLASS_DEVICE auto
   load_init(ProblemShapeMNKL const& problem_shape_MNKL, Params const& mainloop_params){

@@ -172,7 +172,11 @@ struct ConvTestbed {
 
   static constexpr bool IsBiasEnabled = cutlass::epilogue::collective::detail::IsThreadEpilogueOpWithBias<FusionOp>::value &&
                                         !cute::is_same_v<BiasType, void>;
+  static constexpr bool IsPerChannelScaleEnabled = cutlass::epilogue::collective::detail::IsThreadEpilogueOpWithPerChannelScaled<FusionOp>::value;
+
   static constexpr bool DisableSource = cute::is_void_v<typename FusionOp::ElementSource>;
+
+  static constexpr bool IsResidualEnabled = cutlass::epilogue::collective::detail::IsThreadEpilogueOpWithResidualAdd<FusionOp>::value;
 
   using StrideC  = typename Conv::ConvKernel::StrideC;
   using StrideD  = typename Conv::ConvKernel::StrideD;
@@ -213,10 +217,24 @@ struct ConvTestbed {
     tensor_D_computed.resize(sizeof(ElementD) * problem_shape.size_C());
     tensor_D_reference.resize(sizeof(ElementD) * problem_shape.size_C());
     tensor_bias.resize(sizeof(ElementBias) * cute::size(cute::get<0>(problem_shape.get_shape_B())));
+    if constexpr (IsPerChannelScaleEnabled) {
+      tensor_alpha.resize(sizeof(ElementScalar) * cute::size(cute::get<0>(problem_shape.get_shape_B())));
+      tensor_beta.resize(sizeof(ElementScalar) * cute::size(cute::get<0>(problem_shape.get_shape_B())));
+    }
     initialize_values(tensor_A, init_A, seed);
     initialize_values(tensor_B, init_B, seed * 11);
     initialize_values(tensor_C, init_C, seed * 17);
     initialize_values(tensor_bias, init_bias, seed * 19);
+    if constexpr (IsPerChannelScaleEnabled) {
+      initialize_values(tensor_alpha, init_bias, seed * 23);
+      if constexpr (DisableSource) {
+        initialize_values(tensor_beta, init_disable, seed * 27);
+      }
+      else {
+        initialize_values(tensor_beta, init_bias, seed * 27);
+      }
+    }
+
     bool flag = true;
     if constexpr (isSparseEnabled) {
       flag &= params.initialize(problem_shape, tensor_B, static_cast<int>(seed + 2023));
@@ -314,8 +332,9 @@ struct ConvTestbed {
   bool run(
     ProblemShape const& problem_shape,
     ElementScalar alpha = ElementScalar(1),
-    ElementScalar beta = ElementScalar(0)
-    ,
+    ElementScalar beta = ElementScalar(0),
+    dim3 cluster_shape = dim3(0, 0, 0),
+    dim3 cluster_shape_fallback = dim3(0, 0, 0),
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
     MaxSwizzleSize max_swizzle = MaxSwizzleSize{},
     Splits splits = Splits{},
@@ -340,6 +359,9 @@ struct ConvTestbed {
     cutlass::KernelHardwareInfo hw_info;
     cudaGetDevice(&hw_info.device_id);
     hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
+
+    hw_info.cluster_shape = cluster_shape;
+    hw_info.cluster_shape_fallback = cluster_shape_fallback;
 
     // configure the operator
     Conv conv_op;
@@ -391,6 +413,11 @@ struct ConvTestbed {
 
     fusion_args.alpha = alpha;
     fusion_args.beta = beta;
+
+    if constexpr (IsPerChannelScaleEnabled) {
+      fusion_args.alpha_ptr = tensor_alpha.data().get();
+      fusion_args.beta_ptr = tensor_beta.data().get();
+    }
 
     if constexpr (IsBiasEnabled) {
       fusion_args.bias_ptr = tensor_bias.data().get();
@@ -469,6 +496,7 @@ struct ConvTestbed {
       ElementCompute,
       ElementC,
       ElementD,
+      IsResidualEnabled,
       decltype(mAlpha),
       decltype(mBeta),
       decltype(mBias),
@@ -477,6 +505,11 @@ struct ConvTestbed {
 
     epilogue_fusion_params.alpha = alpha;
     epilogue_fusion_params.beta = beta;
+
+    if constexpr (IsPerChannelScaleEnabled) {
+      epilogue_fusion_params.tensor_alpha = mAlpha;
+      epilogue_fusion_params.tensor_beta = mBeta;
+    }
 
     if constexpr (IsBiasEnabled) {
       epilogue_fusion_params.tensor_bias = mBias;
@@ -638,6 +671,16 @@ struct ConvTestbed {
       for (size_t i = 0; i < size_t(size(B)); ++i) {
         printf("[%llu]: B = %f\n", static_cast<unsigned long long>(i), float(B(i)));
       }
+      if constexpr (IsPerChannelScaleEnabled) {
+        for (size_t i = 0; i < size_t(size(tensor_alpha)); ++i) {
+          printf("[%llu]: alpha = %f\n", static_cast<unsigned long long>(i),
+            float(tensor_alpha(i)));
+        }
+        for (size_t i = 0; i < size_t(size(tensor_beta)); ++i) {
+          printf("[%llu]: beta = %f\n", static_cast<unsigned long long>(i),
+            float(tensor_beta(i)));
+        }
+      }
       if constexpr (IsBiasEnabled) {
         for (size_t i = 0; i < size_t(size(tensor_bias)); ++i) {
           printf("[%llu]: bias = %f\n", static_cast<unsigned long long>(i),
@@ -657,7 +700,9 @@ struct ConvTestbed {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Conv, bool SupportStrides = (Conv::DispatchPolicy::ConvOp != cutlass::conv::Operator::kDgrad)>
-bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
+bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f,
+                 dim3 cluster_shape = dim3(0, 0, 0),
+                 dim3 cluster_shape_fallback = dim3(0, 0, 0)
                  ) {
   using ElementScalar = typename Conv::EpilogueOutputOp::ElementScalar;
 
@@ -697,8 +742,10 @@ bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
         passed = testbed.run(
           conv_problem,
           cutlass::from_real<ElementScalar>(alpha),
-          cutlass::from_real<ElementScalar>(beta)
-          ,RasterOrderOptions::Heuristic, // raster_order
+          cutlass::from_real<ElementScalar>(beta),
+          cluster_shape,
+          cluster_shape_fallback,
+          RasterOrderOptions::Heuristic, // raster_order
           MaxSwizzleSize(1),
           splits,
           decomp_mode

@@ -555,9 +555,9 @@ void fill(array_subbyte<T,N>& a, T const& value)
 //
 // Specialize tuple-related functionality for cute::array_subbyte
 //
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/tuple>
+#include CUDA_STD_HEADER(tuple)
 #else
 #include <tuple>
 #endif

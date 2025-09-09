@@ -39,10 +39,10 @@
     1. Blockscaled tcgen05.mma instructions.
 
     2. Per-SM memory called Tensor Memory (TMEM)
-    
-    3. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM 
-    which allows us to decouple the execution of MMA and epilogue into separate warps. 
-    
+
+    3. The extended warp-specialized kernel design introduced in Hopper enabled by use of TMEM
+    which allows us to decouple the execution of MMA and epilogue into separate warps.
+
     4. A new SW controlled dynamic scheduler based on cluster launch control (See https://docs.nvidia.com/cuda/parallel-thread-execution).
 
     Usage:
@@ -129,13 +129,13 @@ constexpr int OutputSFVectorSize = InputSFVectorSize;
 //      With BlockScaleFactor generation.
 using FusionOperation = cutlass::epilogue::fusion::LinCombBlockScaleFactor<
     OutputSFVectorSize,
-    ElementD, 
-    ElementCompute, 
+    ElementD,
+    ElementCompute,
     ElementSFD, LayoutSFDTag,
     ElementC>;
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,                     
+    ArchTag, OperatorClass,
     MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -219,13 +219,7 @@ cutlass::HostTensor<ElementCompute, cutlass::layout::PackedVectorLayout> block_N
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -358,7 +352,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -456,7 +450,7 @@ bool verify(const Options &options) {
       decltype(tensor_B),                   // TensorB
       decltype(tensor_SFB)                  // TensorSfB
     > mainloop_params{tensor_A, tensor_SFA, tensor_B, tensor_SFB};
-  
+
   Tensor tensor_C = cute::make_tensor(make_iterator(block_C.host_data()), layout_C);
   Tensor tensor_D = cute::make_tensor(make_iterator(block_reference_D.host_data()), layout_D);
   Tensor tensor_SFD = make_tensor(block_reference_SFD.host_data(), layout_SFD);
@@ -569,11 +563,11 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
-  
+
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100)." << std::endl;
+
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 

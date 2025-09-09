@@ -105,10 +105,8 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-
 // SM101 and SM101a
-#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
   #define CUTLASS_ARCH_MMA_SM101_SUPPORTED 1
   #if (!defined(CUTLASS_ARCH_MMA_SM101_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1010)
     #define CUTLASS_ARCH_MMA_SM101_ENABLED 1
@@ -118,12 +116,35 @@
     #endif
 
     // SM101f
-    #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+    #if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
     #define CUTLASS_ARCH_MMA_SM101F_SUPPORTED 1
     #endif
 
     #if (!defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) && CUDA_ARCH_FAMILY(1010))
       #define CUTLASS_ARCH_MMA_SM101F_ENABLED CUTLASS_ARCH_MMA_SM101F_SUPPORTED
+    #endif
+  #endif
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// SM110 and SM110a only on 13.0 and above
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 0))
+  #define CUTLASS_ARCH_MMA_SM110_SUPPORTED 1
+  #if (!defined(CUTLASS_ARCH_MMA_SM110_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1100)
+    #define CUTLASS_ARCH_MMA_SM110_ENABLED 1
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) && defined(__CUDA_ARCH_FEAT_SM110_ALL))
+      #define CUTLASS_ARCH_MMA_SM110A_ENABLED 1
+    #endif
+
+    // SM110f
+    #if (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 0))
+    #define CUTLASS_ARCH_MMA_SM110F_SUPPORTED 1
+    #endif
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) && CUDA_ARCH_FAMILY(1100))
+      #define CUTLASS_ARCH_MMA_SM110F_ENABLED CUTLASS_ARCH_MMA_SM110F_SUPPORTED
     #endif
   #endif
 #endif
@@ -151,10 +172,56 @@
   #endif
 #endif
 
+// SM103 and SM103a
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+  #define CUTLASS_ARCH_MMA_SM103_SUPPORTED 1
+  #if (!defined(CUTLASS_ARCH_MMA_SM103_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1030)
+    #define CUTLASS_ARCH_MMA_SM103_ENABLED 1
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) && defined(__CUDA_ARCH_FEAT_SM103_ALL))
+      #define CUTLASS_ARCH_MMA_SM103A_ENABLED 1
+    #endif
+
+    // SM103f
+    #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+    #define CUTLASS_ARCH_MMA_SM103F_SUPPORTED 1
+    #endif
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) && CUDA_ARCH_FAMILY(1030))
+      #define CUTLASS_ARCH_MMA_SM103F_ENABLED CUTLASS_ARCH_MMA_SM103F_SUPPORTED
+    #endif
+  #endif
+#endif
+
+// SM121 and SM121a
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+  #define CUTLASS_ARCH_MMA_SM121_SUPPORTED 1
+  #if (!defined(CUTLASS_ARCH_MMA_SM121_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1210)
+    #define CUTLASS_ARCH_MMA_SM121_ENABLED 1
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM121A_ENABLED) &&\
+         (defined(__CUDA_ARCH_FEAT_SM121_ALL) || CUDA_ARCH_CONDITIONAL(1210)))
+      #define CUTLASS_ARCH_MMA_SM121A_ENABLED 1
+    #endif
+
+    // SM121f
+    #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+    #define CUTLASS_ARCH_MMA_SM121F_SUPPORTED 1
+    #endif
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM121F_ENABLED) && CUDA_ARCH_FAMILY(1210))
+      #define CUTLASS_ARCH_MMA_SM121F_ENABLED CUTLASS_ARCH_MMA_SM121F_SUPPORTED
+    #endif
+  #endif
+#endif
+
 
 #if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) ||\
      defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120F_ENABLED))
+     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM121A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121F_ENABLED))
 #  define CUTLASS_ARCH_CLC_ENABLED
 #endif
 

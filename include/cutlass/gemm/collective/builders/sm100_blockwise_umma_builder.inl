@@ -129,7 +129,10 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
       using ScaleCopyTypeA = cute::uint_byte_t<Alignment>; 
       using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeA>, Element>;
       constexpr int ElementsPerSFACopy = static_cast<int>(sizeof(ScaleCopyTypeA) / sizeof(Element));
-      return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFACopy>>>{});
+      return make_tiled_copy(
+          SmemScalingCopyAtomA{}, 
+          Layout<Shape<_32>>{},  // 32 threads
+          Layout<Shape<Int<ElementsPerSFACopy>>>{});
     } 
     else {
       using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
@@ -138,9 +141,8 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
   } 
   else {
     // we expect scale Ks per tile to be small
-    constexpr int LeadingScalesPerTileSFA = ScaleKsPerTile;
     using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFA>>>{}, Layout<Shape<_1,_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
   }
 }
 
@@ -161,7 +163,10 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
       using ScaleCopyTypeB = cute::uint_byte_t<Alignment>; 
       using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeB>, Element>;
       constexpr int ElementsPerSFBCopy = static_cast<int>(sizeof(ScaleCopyTypeB) / sizeof(Element));
-      return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFBCopy>>>{});
+      return make_tiled_copy(
+          SmemScalingCopyAtomB{}, 
+          Layout<Shape<_32>>{},  // 32 threads
+          Layout<Shape<Int<ElementsPerSFBCopy>>>{});
     } 
     else {
       using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
@@ -170,9 +175,8 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
   } 
   else {
     // we expect scale Ks per tile to be small
-    constexpr int LeadingScalesPerTileSFB = ScaleKsPerTile;
     using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFB>>>{}, Layout<Shape<_1,_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
   }
 }
 

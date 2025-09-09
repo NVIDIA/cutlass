@@ -38,11 +38,11 @@ import ctypes
 
 from cutlass_library import DataType
 
-from cutlass.backend.c_types import tuple_factory
-from cutlass.backend.epilogue import dtype2ctype, to_ctype_value
-from cutlass.backend.evt.ir.node import NodeBase, ImplBase, NoOpImpl
-from cutlass.backend.evt.ir.tensor import Tensor
-from cutlass.backend.library import FloatRoundStyle, FunctionalOp
+from cutlass_cppgen.backend.c_types import tuple_factory
+from cutlass_cppgen.backend.epilogue import dtype2ctype, to_ctype_value
+from cutlass_cppgen.backend.evt.ir.node import NodeBase, ImplBase, NoOpImpl
+from cutlass_cppgen.backend.evt.ir.tensor import Tensor
+from cutlass_cppgen.backend.library import FloatRoundStyle, FunctionalOp
 
 
 class StoreImplBase(ImplBase):
@@ -249,7 +249,7 @@ class StoreNode(NodeBase):
     @property
     def store_tensor(self) -> Tensor:
         """
-        Return the output tensor (concept: cutlass.backend.evt.ir.tensor)
+        Return the output tensor (concept: cutlass_cppgen.backend.evt.ir.tensor)
         """
         return self._store_tensor
 

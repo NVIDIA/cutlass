@@ -32,7 +32,7 @@
 
 
 /*! \file
-    \brief Block Wise Scale configs specific for SM100 Blockwise/Groupwise MMA
+    \brief Blockwise Scale configs specific for Blockwise/Groupwise MMA
 */
 
 #pragma once
@@ -41,6 +41,7 @@
 
 #include "cute/int_tuple.hpp"
 #include "cute/atom/mma_traits_sm100.hpp"
+#include "cute/arch/mma_sm90.hpp"
 
 namespace cutlass::detail{
 
@@ -48,7 +49,7 @@ namespace cutlass::detail{
 using namespace cute;
 
 template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, UMMA::Major majorSFA = UMMA::Major::MN, UMMA::Major majorSFB = UMMA::Major::MN>
-struct Sm100BlockwiseScaleConfig {
+struct Sm1xxBlockwiseScaleConfig {
 
   using ShapeSFA = Shape<Shape<Int<SFVecSizeM>, int32_t>, Shape<Int<SFVecSizeK>, int32_t>, int32_t>;
   using ShapeSFB = Shape<Shape<Int<SFVecSizeN>, int32_t>, Shape<Int<SFVecSizeK>, int32_t>, int32_t>;
@@ -270,8 +271,24 @@ struct RuntimeBlockwiseScaleConfig {
 };
 
 // Sm90 only supports MN major for SFA and SFB for now
-template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK>
-using Sm90BlockwiseScaleConfig = Sm100BlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK>;
+template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, cute::GMMA::Major majorSFA = cute::GMMA::Major::MN, cute::GMMA::Major majorSFB = cute::GMMA::Major::MN>
+using Sm90BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<
+    SFVecSizeM, 
+    SFVecSizeN, 
+    SFVecSizeK, 
+    majorSFA == cute::GMMA::Major::MN ? UMMA::Major::MN : UMMA::Major::K, 
+    majorSFB == cute::GMMA::Major::MN ? UMMA::Major::MN : UMMA::Major::K>;
+
+template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, UMMA::Major majorSFA = UMMA::Major::MN, UMMA::Major majorSFB = UMMA::Major::MN>
+using Sm100BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK, majorSFA, majorSFB>;
+
+template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, UMMA::Major majorSFA = UMMA::Major::MN, UMMA::Major majorSFB = UMMA::Major::MN>
+using Sm120BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK, majorSFA, majorSFB>;
+
+template<class MmaTileShape_MNK>
+constexpr auto sm90_trivial_blockwise_scale_config(MmaTileShape_MNK) {
+  return Sm90BlockwiseScaleConfig<size<0>(MmaTileShape_MNK{}), size<1>(MmaTileShape_MNK{}), size<2>(MmaTileShape_MNK{})>{};
+}
 
 template<class MmaTileShape_MNK>
 constexpr auto sm100_trivial_blockwise_scale_config(MmaTileShape_MNK) {
@@ -279,8 +296,8 @@ constexpr auto sm100_trivial_blockwise_scale_config(MmaTileShape_MNK) {
 }
 
 template<class MmaTileShape_MNK>
-constexpr auto sm90_trivial_blockwise_scale_config(MmaTileShape_MNK) {
-  return Sm90BlockwiseScaleConfig<size<0>(MmaTileShape_MNK{}), size<1>(MmaTileShape_MNK{}), size<2>(MmaTileShape_MNK{})>{};
+constexpr auto sm120_trivial_blockwise_scale_config(MmaTileShape_MNK) {
+  return Sm120BlockwiseScaleConfig<size<0>(MmaTileShape_MNK{}), size<1>(MmaTileShape_MNK{}), size<2>(MmaTileShape_MNK{})>{};
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

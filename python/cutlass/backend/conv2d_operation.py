@@ -34,7 +34,7 @@ from __future__ import annotations
 import ctypes
 from typing import Union
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 from cutlass_library import SubstituteTemplate
 import numpy as np
@@ -65,17 +65,17 @@ from cutlass_library import (
     get_complex_from_real,
 )
 
-from cutlass.backend.arguments import ArgumentBase
-from cutlass.backend.c_types import dim3_, get_conv2d_arguments
-from cutlass.backend.library import (
+from cutlass_cppgen.backend.arguments import ArgumentBase
+from cutlass_cppgen.backend.c_types import dim3_, get_conv2d_arguments
+from cutlass_cppgen.backend.library import (
     EmissionType,
     TensorDescription,
     TileDescription,
 )
-from cutlass.backend.memory_manager import device_mem_alloc
-from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
-from cutlass.backend.utils.device import to_device_ptr
-from cutlass.shape import GemmCoord
+from cutlass_cppgen.backend.memory_manager import device_mem_alloc
+from cutlass_cppgen.backend.operation import ExecutableOperation, LaunchConfiguration
+from cutlass_cppgen.backend.utils.device import to_device_ptr
+from cutlass_cppgen.shape import GemmCoord
 
 
 class Conv2dArguments(ArgumentBase):
@@ -84,9 +84,9 @@ class Conv2dArguments(ArgumentBase):
     user-provide tensors into the kernel's argument.
 
     :param operation: the Conv2d operation to take the argument
-    :type operation: :class:`cutlass.backend.Conv2dOperation`
+    :type operation: :class:`cutlass_cppgen.backend.Conv2dOperation`
     :param problem_size: the Conv2d problem size
-    :type problem_size: :class:`cutlass.shape.Conv2dProblemSize`
+    :type problem_size: :class:`cutlass_cppgen.shape.Conv2dProblemSize`
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
     :param B: tensor B
@@ -98,7 +98,7 @@ class Conv2dArguments(ArgumentBase):
     :param split_k_mode: conv2d split K mode, defaults to cutlass_library.library.SplitKMode.Serial
     :type split_k_mode: cutlass_library.library.SplitKMode, optional
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
     :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
     :type stream: :class:`cuda.cuda.CUstream`
     """
@@ -380,19 +380,19 @@ class Conv2dOperation:
     :type arch: int
 
     :param tile_description: tile description
-    :type tile_description: :class:`cutlass.backend.TileDescription`
+    :type tile_description: :class:`cutlass_cppgen.backend.TileDescription`
 
     :param A: tensor A description
-    :type A: :class:`cutlass.backend.TensorDescription`
+    :type A: :class:`cutlass_cppgen.backend.TensorDescription`
 
     :param B: tensor B description
-    :type B: :class:`cutlass.backend.TensorDescription`
+    :type B: :class:`cutlass_cppgen.backend.TensorDescription`
 
     :param C: tensor C description
-    :type C: :class:`cutlass.backend.TensorDescription`
+    :type C: :class:`cutlass_cppgen.backend.TensorDescription`
 
     :param D: tensor D description
-    :type D: :class:`cutlass.backend.TensorDescription`
+    :type D: :class:`cutlass_cppgen.backend.TensorDescription`
 
     :param element_epilogue: element type for computation in epilogue \
     :type element_epilogue: cutlass_library.library.DataType
@@ -444,7 +444,7 @@ class Conv2dOperation:
         Launch the cuda kernel with input arguments
 
         :param arguments: conv2d arguments
-        :type arguments: :class:`cutlass.backend.Conv2dArguments`
+        :type arguments: :class:`cutlass_cppgen.backend.Conv2dArguments`
         """
 
         # launch the kernel

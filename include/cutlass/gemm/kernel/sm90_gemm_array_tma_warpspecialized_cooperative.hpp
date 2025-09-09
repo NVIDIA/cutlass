@@ -153,11 +153,11 @@ public:
     cute::conditional_t<cute::is_same_v<SchedulerTag, void>, void, ProblemShape> // Use void for default scheduler.
   >::Scheduler;
 
-  static constexpr auto TileSchedulerStages = 8;
-
   using TileSchedulerArguments = typename TileScheduler::Arguments;
   using TileSchedulerParams = typename TileScheduler::Params;
   using TileSchedulerResponse = typename TileSchedulerResponseGetter<TileScheduler>::Type;
+
+  static constexpr auto TileSchedulerStages = 8;
 
   static constexpr uint32_t NumLoadWarpGroups = 1;
   static constexpr uint32_t NumMmaThreads = size(TiledMma{});
@@ -378,7 +378,6 @@ public:
     if (status != Status::kSuccess) {
       return status;
     }
-
     return status;
   }
 
@@ -412,9 +411,11 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
-#  define ENABLE_SM90_KERNEL_LEVEL 1
-#endif
+#  if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL) ||\
+      CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))
+#    define ENABLE_SM90_KERNEL_LEVEL 1
+#  endif
+
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
@@ -461,6 +462,7 @@ public:
         return TileScheduler{params.scheduler};
       }
     } ();
+
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
@@ -484,7 +486,7 @@ public:
     typename TileSchedulerPipeline::Params tile_scheduler_pipeline_params;
     if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
       if (warp_group_role == WarpGroupRole::Producer
-       && producer_warp_role == ProducerWarpRole::Scheduler) {
+        && producer_warp_role == ProducerWarpRole::Scheduler) {
         tile_scheduler_pipeline_params.role = TileSchedulerPipeline::ThreadCategory::Producer;
       }
       else {
@@ -499,7 +501,6 @@ public:
       tile_scheduler_pipeline_params.producer_arv_count = 1;
     }
     TileSchedulerPipeline tile_scheduler_pipeline(shared_storage.pipelines.scheduler, tile_scheduler_pipeline_params);
-
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
     typename MainloopPipeline::Params mainloop_pipeline_params;
@@ -683,9 +684,8 @@ public:
             block_rank_in_cluster,
             shared_storage.tensors.mainloop
           );
-          // Update starting pipeline state for the next tile
-          // Wait for the last TMA stage to complete loading, before issuing tensormap updates
-          mainloop_pipe_producer_state.advance(work_k_tile_count - 1);
+          // Pipeline state is only advanced if there are K tiles to compute
+          mainloop_pipe_producer_state.advance(work_k_tile_count);
 
           // Signal for the epilogue load warp to begin
           if (do_load_order_arrive) {
@@ -706,11 +706,6 @@ public:
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
             }
-            // Purpose of this pipeline state is to make sure TMA loads have finished before doing descriptor updates
-            // Since this state is waiting for loads to finish, it must start in the inverted phase.
-            typename CollectiveMainloop::PipelineState mainloop_pipe_tma_consumer_state =
-              {mainloop_pipe_producer_state.index(), !mainloop_pipe_producer_state.phase(), mainloop_pipe_producer_state.count()};
-            mainloop_pipeline.consumer_wait(mainloop_pipe_tma_consumer_state);
             collective_mainloop.tensormaps_perform_update(
               shared_storage.tensormaps.mainloop,
               params.mainloop,
@@ -723,8 +718,6 @@ public:
             // Entire warp must do this (i.e. it's aligned)
             collective_mainloop.tensormaps_cp_fence_release(shared_storage.tensormaps.mainloop, input_tensormaps);
           }
-          // Advance the producer state for the last remaining stage that was being waited for above
-          mainloop_pipe_producer_state.advance(1);
         } while (work_tile_info.is_valid()); // Scheduler work fetch loop
 
         // Make sure all Consumer Warp Groups have been waited upon
@@ -771,8 +764,8 @@ public:
               block_rank_in_cluster,
               shared_storage.tensors.mainloop
             );
+
             // Update starting pipeline state for the next tile
-            // Wait for the last TMA stage to complete loading, before issuing tensormap updates
             mainloop_pipe_producer_state.advance(work_k_tile_count);
 
             // Get next work tile
@@ -790,8 +783,8 @@ public:
               }
             }
           } while (work_tile_info.is_valid()); // Scheduler work fetch loop
-        }
-      }
+        } // End of auxiliary load needed check
+      } // Mainloop Auxiliary Load Producer Warp End
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
@@ -854,6 +847,7 @@ public:
               wait
             );
           }
+
           work_tile_info = next_work_tile_info;
           if (increment_pipe) {
             ++tile_scheduler_pipe_consumer_state;
@@ -916,7 +910,7 @@ public:
         );
 
         // Converge before issuing tensormap fence release since fence is aligned
-        syncwarp();
+        __syncwarp();
         collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                     epi_store_tensormap,
                                                                     consumer_warp_group_idx);
@@ -1021,7 +1015,7 @@ public:
 
             // Converge before issuing tensormap fence release since fence is aligned
             __syncwarp();
-            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, 
+            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                        epi_store_tensormap,
                                                                        consumer_warp_group_idx);
           }

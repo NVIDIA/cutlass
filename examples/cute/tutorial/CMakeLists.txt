@@ -52,6 +52,11 @@ if (NOT CUTLASS_ENABLE_SYCL)
     cute_tutorial_tiled_copy
     tiled_copy.cu
   )
+
+  cutlass_example_add_executable(
+    cute_tutorial_tiled_copy_if
+    tiled_copy_if.cu
+  )
 else()
   cutlass_example_add_executable(
     cute_tutorial_sgemm_1
@@ -68,12 +73,12 @@ else()
     tiled_copy_sycl.cpp
   )
 
-if (SYCL_INTEL_TARGET)
-  cutlass_example_add_executable(
-    cute_tutorial_bmg
-    sgemm_bmg.cpp
-  )
-endif()
+  if (SYCL_INTEL_TARGET)
+    cutlass_example_add_executable(
+      cute_tutorial_bmg
+      sgemm_bmg.cpp
+    )
+  endif()
   if (SYCL_NVIDIA_TARGET)
     cutlass_example_add_executable(
       cute_tutorial_sgemm_sm70

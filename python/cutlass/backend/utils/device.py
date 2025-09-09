@@ -35,13 +35,13 @@ Utility functions for interacting with the device
 """
 from __future__ import annotations
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart =  lazy_import("cuda.cudart")
 import dpctl
 
-import cutlass
-from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
+import cutlass_cppgen
+from cutlass_cppgen.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
 
 
 def check_cuda_errors(result: list):
@@ -78,7 +78,7 @@ def device_cc(device: int = -1) -> int:
     :rtype: int
     """
     if device == -1:
-        device = cutlass.device_id()
+        device = cutlass_cppgen.device_id()
 
     if cutlass._use_sycl:
         # Using '11' to encode Intel PVC as an integer in the expected format.
@@ -92,7 +92,7 @@ def device_cc(device: int = -1) -> int:
 
 def device_sm_count(device: int = -1):
     if device == -1:
-        device = cutlass.device_id()
+        device = cutlass_cppgen.device_id()
 
     if cutlass._use_sycl:
         return cutlass._sycl_device.max_compute_units

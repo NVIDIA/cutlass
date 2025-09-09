@@ -61,8 +61,12 @@ struct PtrArrayTmaWarpSpecializedCooperative { static constexpr int NumEpilogueW
 // Blackwell direct store schedules
 struct NoSmemWarpSpecialized1Sm {};
 struct NoSmemWarpSpecialized2Sm {};
+struct FastF32NoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
+struct FastF32NoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
 struct PtrArrayNoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
 struct PtrArrayNoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
+struct PtrArrayFastF32NoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1Sm {};
+struct PtrArrayFastF32NoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
 // Blackwell TMA schedules 
 struct TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2Sm {};
@@ -234,12 +238,29 @@ struct Sm100PtrArrayTmaWarpSpecialized {
   static_assert(StagesD >= 1, "StagesD must be >= 1");
 };
 
-// default elementwise operator epilogue without smem
-struct Sm100NoSmem {};
-struct Sm100NoSmemWarpSpecialized {};
-struct Sm100PtrArrayNoSmem {};
-struct Sm100PtrArrayNoSmemWarpSpecialized {};
+struct Sm100NoSmem {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
 
+struct Sm100NoSmemWarpSpecialized {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+
+struct Sm100PtrArrayNoSmem {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+
+struct Sm100PtrArrayNoSmemWarpSpecialized {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
 template<
   int StagesC_,
   int StagesD_,

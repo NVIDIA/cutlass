@@ -392,14 +392,14 @@ struct XE_2D_LD_Unpack {
                  raw_pointer_cast(&((&*dst.data())[0])));
   }
 
-  template <class... CA_Args, class TS, class SLayout>
+  template <class CopyType, class TS, class SLayout>
   CUTE_HOST_DEVICE friend constexpr void
-  prefetch(Copy_Atom<Traits_LD_t, CA_Args...> const &atom,
-           Tensor<TS, SLayout> const &src) {
-    using dtype = typename Copy_Atom<Traits_LD_t, CA_Args...>::ValType;
+  prefetch(Copy_Atom<Copy_Traits<CopyOp, StrideOrTensor>, CopyType> const& atom,
+           Tensor<TS, SLayout> const& src) {
+    using dtype = typename Copy_Atom<Copy_Traits<CopyOp, StrideOrTensor>, CopyType>::ValType;
 
     static_assert(detail::has_prefetch<CopyOp>);
-    static_assert(size(SLayout{}) * sizeof_bits_v<dtype> == size<1>(typename Traits_LD_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * sizeof_bits_v<dtype> == size<1>(typename Copy_Atom<Copy_Traits<CopyOp, StrideOrTensor>, CopyType>::SrcLayout{}),
                   "Src tensor size does not match copy atom for prefetch size");
 
     dtype *base_addr = (dtype *)atom.base_ptr;
@@ -2687,7 +2687,7 @@ template <class GShape>
 CUTE_HOST_DEVICE constexpr
 auto
 get_xe_tensor(GShape const& g_shape) {
-  return make_counting_tensor(make_identity_layout(g_shape));
+  return make_coord_tensor(make_identity_layout(g_shape));
 }
 
 } // end namespace cute

@@ -30,7 +30,7 @@
 #
 #################################################################################################
 
-from cutlass.epilogue.epilogue import (
+from cutlass_cppgen.epilogue.epilogue import (
     get_activations,
     get_activation_epilogue,
     gelu,
@@ -44,7 +44,7 @@ from cutlass.epilogue.epilogue import (
     trace
 )
 
-from cutlass.epilogue.evt_ops import (
+from cutlass_cppgen.epilogue.evt_ops import (
     max,
     multiply_add,
     sum,
@@ -52,4 +52,5 @@ from cutlass.epilogue.evt_ops import (
     reshape,
     maximum,
     minimum,
+    exp
 )

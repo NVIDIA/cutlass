@@ -184,10 +184,7 @@ class GemmOperation:
       math_op = self.tile_description.math_instruction.math_operation
       math_op_string = math_operations_map[math_op] if math_op in math_operations_map.keys() else ''
 
-      if self.is_3x:
-        inst_shape = "{0}x{1}x{2}".format(*tuple(self.tile_description.math_instruction.instruction_shape))
-      else:
-        inst_shape = "{0}{1}{2}".format(*tuple(self.tile_description.math_instruction.instruction_shape))
+      inst_shape = "{0}{1}{2}".format(*tuple(self.tile_description.math_instruction.instruction_shape)) if not self.is_3x else ""
 
       inst_shape += math_op_string
 
@@ -195,7 +192,9 @@ class GemmOperation:
         self.tile_description.math_instruction.element_a != self.tile_description.math_instruction.element_accumulator:
         intermediate_type = DataTypeNames[self.tile_description.math_instruction.element_a]
 
-    return "%s%s%s%s" % (self.short_math_name(), inst_shape, intermediate_type, GemmKindNames[self.gemm_kind])
+    short_math_name = self.short_math_name() if not self.is_3x else ""
+
+    return "%s%s%s%s" % (short_math_name, inst_shape, intermediate_type, GemmKindNames[self.gemm_kind])
 
   # Generates a string representing the MMA instruction.
   def extended_name(self):
@@ -338,18 +337,40 @@ class GemmOperation:
   def opcode_class_name(self):
     return OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
 
+  def get_collective_tile_shape(self):
+    """
+    Get the tile shape passed to the collective builder.
+    On Blackwell, this is different than the operation.tile_description.tile_shape.
+    """
+    is_sm100_kernel = (self.arch == 100 or self.arch == 103)
+    if not is_sm100_kernel:
+      return self.tile_description.tile_shape
+
+    opcode_class_main = self.tile_description.math_instruction.opcode_class
+    instruction_shape = self.tile_description.math_instruction.instruction_shape
+    tile_shape_m, tile_shape_n, tile_shape_k = self.tile_description.tile_shape
+    if opcode_class_main in [OpcodeClass.TensorOp, OpcodeClass.BlockScaledTensorOp, OpcodeClass.SparseTensorOp]:
+      tile_shape_m = instruction_shape[0]
+      tile_shape_n = instruction_shape[1]
+    return (tile_shape_m, tile_shape_n, tile_shape_k)
+
   # Generates the full kernel function name
   def procedural_name(self):
+    return self._procedural_name
+
+  @functools.cached_property
+  def _procedural_name(self):
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
       kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}"
+      tile_shape = self.get_collective_tile_shape()
       return kernel_name_template.format(
           p = self.prefix,
           ar = self.arch,
           op = opcode_class_name,
           ex = self.extended_name_3x(),
-          ct = '_' + 'x'.join([str(i) for i in self.tile_description.tile_shape]) if self.tile_description.tile_shape[0] > 0 else "",
+          ct = '_' + 'x'.join([str(i) for i in tile_shape]) if tile_shape[0] > 0 else "",
           cs = '_' + 'x'.join([str(i) for i in self.tile_description.cluster_shape]),
           l = self.tile_description.stages,
           s = self.layout_name_3x(),
@@ -931,28 +952,8 @@ ${compile_guard_end}
     instruction_shape = operation.tile_description.math_instruction.instruction_shape
     cluster_m = operation.tile_description.cluster_shape[0]
     cluster_n = operation.tile_description.cluster_shape[1]
-
-    tile_shape_m, tile_shape_n, tile_shape_k = tile_shape
-
-    # account for static/dynamic cluster shapes
-    cta_m = tile_shape[0] // cluster_m if cluster_m > 0 else tile_shape[0]
     cta_n = tile_shape[1] // cluster_n if cluster_n > 0 else tile_shape[1]
-
-    
-    # Shape passed to epilogue builder
-    is_sm100_kernel = (operation.arch == 100)
-    if is_sm100_kernel:
-      cta_m_per_mma_instruction = 2 if "2sm" in operation.procedural_name() else 1
-      if cluster_m <= 0: 
-        cta_m = cta_m // cta_m_per_mma_instruction
-
-      if opcode_class_main in [OpcodeClass.TensorOp 
-                               , OpcodeClass.BlockScaledTensorOp 
-                               , OpcodeClass.SparseTensorOp
-                              ]:
-        tile_shape_m = instruction_shape[0]
-        tile_shape_n = instruction_shape[1]
-    
+    tile_shape_m, tile_shape_n, tile_shape_k = operation.get_collective_tile_shape()
  
     # stage count set to zero indicates builder automatic stage selection
     if operation.tile_description.stages > 0:
@@ -1007,9 +1008,33 @@ ${compile_guard_end}
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
         if not is_no_smem_epilogue:
           epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized2Sm, grouped)]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs16Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs16Sm103:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
 
+    alignment_c = get_tma_alignment(operation.C.element) \
+                  if is_tma_epilogue(operation.epilogue_schedule) and opcode_class_epi != OpcodeClass.Simt \
+                  else operation.C.alignment
+    alignment_d = get_tma_alignment(operation.D.element) \
+                  if is_tma_epilogue(operation.epilogue_schedule) and opcode_class_epi != OpcodeClass.Simt \
+                  else operation.D.alignment
 
     operation_name_str = operation.procedural_name()
     layout_a_str = LayoutTag[instance_layout_A]
@@ -1119,8 +1144,8 @@ using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig
       'stages': stage_count_string,
       'align_a': str(operation.A.alignment),
       'align_b': str(operation.B.alignment),
-      'align_c': str(operation.C.alignment),
-      'align_d': str(operation.C.alignment),
+      'align_c': str(alignment_c),
+      'align_d': str(alignment_d),
       'transform_a': ComplexTransformTag[operation.A.complex_transform],
       'transform_b': ComplexTransformTag[operation.B.complex_transform],
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],

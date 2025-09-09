@@ -50,9 +50,10 @@
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/operations.hpp" // detail::is_sfd_epilogue_v
 #include "cutlass/epilogue/fusion/sm100_callbacks_tma_warpspecialized.hpp"
+#include "cutlass/cutlass.h"
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
+#include CUDA_STD_HEADER(type_traits)
 #else
 #include <type_traits>
 #endif
@@ -981,6 +982,9 @@ private:
   static constexpr bool Is2SmMma = is_base_of_v<TmaWarpSpecialized2Sm, Schedule>;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
+  // C/D should meet TMA alignment requirement if not void
+  static_assert(detail::is_aligned<ElementC_, AlignmentC, ElementD_, AlignmentD>(),
+                "C/D Should meet TMA alignment requirement\n");
 
   static constexpr bool DisableDestination = cute::is_void_v<ElementD_>;
   using ElementD = cute::conditional_t<DisableDestination,fusion::get_element_aux_t<FusionOpOrCallbacks>,ElementD_>; // prevents void ref breakages
@@ -1269,6 +1273,13 @@ private:
 
   static constexpr bool Is1SmMma = is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType>;
   static constexpr bool Is2SmMma = is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  static constexpr bool IsInterleavedComplex = is_complex<ElementAccumulator>::value;
+  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
+                                    is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  // Input transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
+  static constexpr bool IsInputTransformSchedule = IsInterleavedComplex || IsFastF32Schedule;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
 
@@ -1312,7 +1323,9 @@ private:
       static_assert(is_tuple_v<EpilogueTileType>, "Shape or Tile");
       return EpilogueTileType{};
     }
-    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp>) { // perf specialized case
+    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp> || not IsInputTransformSchedule) {
+      // Save register usage for sm103 blockscaled kernels and sm100 cpasync kernels
+      // to avoid register spilling.
       constexpr int EpiM = size<0>(CtaTileShape_MNK{});
       constexpr int EpiN = cute::min(_64{}, size<1>(CtaTileShape_MNK{}));
       return Shape<Int<EpiM>, Int<EpiN>>{};
@@ -1330,8 +1343,8 @@ private:
 
   static constexpr auto
   dispatch_policy() {
-    if constexpr (is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized1Sm> ||
-                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized2Sm>) {
+    if constexpr (std::is_base_of_v<PtrArrayNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                  std::is_base_of_v<PtrArrayNoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
       return Sm100PtrArrayNoSmemWarpSpecialized{};
     }
     else {
@@ -1344,7 +1357,12 @@ private:
   fusion_callbacks() {
     constexpr thread::ScaleType::Kind ScaleType =
       DisableSource ? thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
-    if constexpr (IsDefaultFusionOp<FusionOp>::value && not is_same_v<OpClass,arch::OpClassBlockScaledTensorOp>) {
+    if constexpr (IsDefaultFusionOp<FusionOp>::value &&\
+                  not is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && \
+                 (IsInputTransformSchedule || \
+                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized1Sm> || \
+                  is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized2Sm>)
+                 ) {
       // Legacy codepath using thread::LinearCombination, do not expect this to be stable
       return thread::LinearCombination<
                 ElementD, 1, ElementAccumulator, ElementCompute, ScaleType, FusionOp::RoundStyle, ElementC>({});
@@ -1516,6 +1534,105 @@ public:
     >::CollectiveOp;
 };
 
+template <
+  class MmaTileShape_MNK,
+  class ClusterShape_MNK,
+  class ElementAccumulator,
+  class ElementCompute,
+  class ElementC_,
+  class GmemLayoutTagC_,
+  int AlignmentC,
+  class ElementD,
+  class GmemLayoutTagD,
+  int AlignmentD,
+  class EpilogueScheduleType,
+  class FusionOp
+>
+struct CollectiveBuilder<
+    arch::Sm100,
+    arch::OpClassSimt,
+    MmaTileShape_MNK,
+    ClusterShape_MNK,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator,
+    ElementCompute,
+    ElementC_,
+    GmemLayoutTagC_,
+    AlignmentC,
+    ElementD,
+    GmemLayoutTagD,
+    AlignmentD,
+    EpilogueScheduleType,
+    FusionOp,
+    cute::enable_if_t<
+      cute::is_same_v<EpilogueScheduleType, EpilogueSimtVectorized> ||
+      cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized> ||
+      cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto> >> {
+  using CtaTileShape_MNK = MmaTileShape_MNK; // cluster MMA not supported
+
+  // Passing void C disables source load
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      ElementD, ElementC_>; // prevents void ref breakages
+  using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      GmemLayoutTagD, GmemLayoutTagC_>;
+  static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
+      thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
+
+  using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
+  using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
+
+  using ThreadOp = cute::conditional_t<
+    IsDefaultFusionOp<FusionOp>::value,
+    thread::LinearCombination<
+      ElementD, AlignmentD, ElementAccumulator, ElementCompute,
+      ScaleType, FloatRoundStyle::round_to_nearest, ElementC>
+    ,
+    thread::LinearCombinationBiasElementwise<
+      ElementC, ElementAccumulator, ElementCompute, ElementD, ElementD, AlignmentD,
+      typename FusionOp::ActivationFn, cutlass::plus<ElementCompute>,
+      false, typename FusionOp::ElementBias>
+  >;
+  static_assert(not (cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized> && not IsDefaultFusionOp<FusionOp>::value), "unsupported schedule + fusion");
+
+  using WarpShape_MNK = decltype(cutlass::gemm::collective::detail::sm100_simt_f32_warp_shape_mnk_selector<CtaTileShape_MNK>());
+  static constexpr int ThreadCount = cute::size(WarpShape_MNK{}) * NumThreadsPerWarp;
+  static constexpr int WarpShape_M = cute::size<0>(WarpShape_MNK{});
+  static constexpr int WarpShape_N = cute::size<1>(WarpShape_MNK{});
+
+  // For 32 threads in 1 warp, we use [8 x 4] thread layouts and each thread will hold [4 x 4] accumulator value layouts.
+  // Then totally each warp will hold [32 x 16] accumulator value layouts.
+  // We separate the whole epilogue calculation to multi steps,
+  // each step will calculate 1x [32 x 16] for each warp to reduce register pressure (mainly for C register allocation for beta 1!= 0 case).
+  // So EpiTileM = WarpShape_M * 32 and EpiTileN = WarpShape_N * 16.
+  using EpiTileM = Int<WarpShape_M * 32>;
+  using EpiTileN = Int<WarpShape_N * 16>;
+
+  using SmemLayout = cute::conditional_t<cutlass::detail::is_major<0>(GmemStrideTypeD{}),
+                                         cute::Layout<cute::Shape<EpiTileM, EpiTileN>, cute::Stride<_1, EpiTileM>>,
+                                         cute::Layout<cute::Shape<EpiTileM, EpiTileN>, cute::Stride<EpiTileN, _1>>>;
+
+  using CopyAtomR2S = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<128>, ElementAccumulator>;
+
+  using CopyAtomS2R = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<AlignmentD * sizeof_bits_v<ElementAccumulator>>, ElementAccumulator>;
+
+  using TiledCopyS2R = decltype(
+        cutlass::gemm::collective::detail::make_simt_gmem_tiled_copy<
+          CopyAtomS2R, ThreadCount, AlignmentD, GmemStrideTypeD, EpiTileM, EpiTileN>());
+
+  using Schedule = cute::conditional_t<is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>,
+                                       EpilogueSimtVectorized,
+                                       EpilogueScheduleType>;
+  using CopyAtomR2G = Copy_Atom<cute::AutoVectorizingCopyWithAssumedAlignment<AlignmentD * sizeof_bits_v<ElementD>>, ElementD>;
+  using CollectiveOp = cutlass::epilogue::collective::Epilogue<
+      GmemStrideTypeC,
+      GmemStrideTypeD,
+      ThreadOp,
+      SmemLayout,
+      CopyAtomR2S,
+      TiledCopyS2R,
+      CopyAtomR2G,
+      Schedule>;
+};
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective

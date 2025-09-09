@@ -285,12 +285,34 @@ file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOU
 set(CUTLASS_GENERATOR_CUDA_COMPILER_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
 set(CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated_kernels.txt CACHE STRING "Generated kernel listing file")
 
+set(CUTLASS_LIBRARY_HEURISTICS_TESTLIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/heuristics.csv CACHE STRING "Generated heuristics configs CSV")
+set(CUTLASS_LIBRARY_HEURISTICS_GPU "" CACHE STRING "GPU to use for GEMM heuristics")
+set(CUTLASS_LIBRARY_HEURISTICS_RESTRICT_KERNELS OFF CACHE BOOL
+  "Restrict heuristics kernels to only the default set of kernels emitted by generator.py")
+
+
+if(CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
+  set(HEURISTICS_ARGS
+    --heuristics-problems-file "${CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE}"
+    --heuristics-testlist-file "${CUTLASS_LIBRARY_HEURISTICS_TESTLIST_FILE}"
+    --heuristics-configs-per-problem "${CUTLASS_LIBRARY_HEURISTICS_CONFIGS_PER_PROBLEM}"
+  )
+
+  if(CUTLASS_LIBRARY_HEURISTICS_RESTRICT_KERNELS)
+    list(APPEND HEURISTICS_ARGS --heuristics-restrict-kernels)
+  endif()
+
+  if(CUTLASS_LIBRARY_HEURISTICS_GPU)
+    list(APPEND HEURISTICS_ARGS --heuristics-gpu "${CUTLASS_LIBRARY_HEURISTICS_GPU}")
+  endif()
+endif()
+
 # --log-level is set to DEBUG to enable printing information about which kernels were excluded
 # from generation in /python/cutlass_library/manifest.py. To avoid having this information appear
 # in ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log, set this parameter to INFO
 execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../python/cutlass_library
-  COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${CUTLASS_LIBRARY_PACKAGE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${CUTLASS_LIBRARY_PACKAGE_DIR}:${CUTLASS_NVMMH_PY_DIR}
     ${Python3_EXECUTABLE} ${CUTLASS_SOURCE_DIR}/python/cutlass_library/generator.py
     --operations "${CUTLASS_LIBRARY_OPERATIONS}" 
     --build-dir ${PROJECT_BINARY_DIR}
@@ -306,6 +328,7 @@ execute_process(
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
     --log-level INFO
     --disable-cutlass-package-imports
+    ${HEURISTICS_ARGS}
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log

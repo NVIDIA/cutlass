@@ -39,6 +39,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/detail/helper_macros.hpp"
+#include "cutlass/conv/convnd_problem_shape.hpp"
+#include "cutlass/conv/detail.hpp"
 
 #include "cute/tensor.hpp"
 #include "cute/numeric/numeric_types.hpp"
@@ -57,7 +59,7 @@ struct IsDefaultFusionOp {
 };
 
 template<
-  class ElementD, class ElementCompute, 
+  class ElementD, class ElementCompute,
   class ElementC, FloatRoundStyle RoundStyle
 >
 struct IsDefaultFusionOp<
@@ -69,7 +71,7 @@ struct IsDefaultFusionOp<
 
 template<
   class ElementOutput, int Count, class ElementAccumulator,
-  class ElementCompute, epilogue::thread::ScaleType::Kind Scale, 
+  class ElementCompute, epilogue::thread::ScaleType::Kind Scale,
   FloatRoundStyle Round, class ElementSource
 >
 struct IsDefaultFusionOp<
@@ -133,7 +135,8 @@ public:
   constexpr static int ThreadCount = 128;
   constexpr static int kOutputAlignment = ThreadEpilogueOp::kCount;
   constexpr static bool isEpilogueBiasSupported = detail::IsThreadEpilogueOpWithBias<ThreadEpilogueOp>::value;
-  
+  constexpr static bool isSourceNeeded = not cute::is_void_v<ElementC>;
+
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
   constexpr static uint32_t TmaTransactionBytes = 0;
 
@@ -173,12 +176,27 @@ public:
     return cutlass::Status::kSuccess;
   }
 
+  template <conv::Operator ConvOp, int NumDims>
+  static bool
+  can_implement(cutlass::conv::ConvProblemShape<ConvOp,NumDims> const& problem_shape, Arguments const& args) {
+    return can_implement(cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape), args);
+  }
+
   template <class ProblemShape>
   static bool
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
-    return true;
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+    auto shape = cute::make_shape(M,N,L);
+
+    bool implementable = true;
+    implementable = implementable && cutlass::detail::check_alignment<AlignmentD{}>(shape, StrideD{});
+    if constexpr (isSourceNeeded) {
+      implementable = implementable && cutlass::detail::check_alignment<AlignmentC{}>(shape, StrideC{});
+    }
+    return implementable;  
   }
 
   //
@@ -240,7 +258,7 @@ public:
     Tensor tTR_rAcc = make_tensor<ElementAccumulator>(shape(tTR_gD));                              // (T2R,T2R_M,T2R_N)
 
     Tensor tTR_rC = make_tensor<GmemElementC>(shape(tTR_gC));                                          // (T2R,T2R_M,T2R_N)
-  
+
     Tensor coordCD = make_identity_tensor(problem_shape_mnl);                                     // (M,N,L) -> (m,n,l)
     Tensor cCD = local_tile(coordCD, cta_tiler, cta_coord_mnl);                             // (CTA_M,CTA_N) -> (m,n,l)
     Tensor tTR_cCD = thread_t2r.partition_D(cCD);                                       // (T2R,T2R_M,T2R_N) -> (m,n,l)
@@ -250,7 +268,7 @@ public:
     Tensor tTR_rD_frag = make_tensor<ElementD>(shape(tTR_rAcc));
     Tensor tTR_rD_src = recast<Array<ElementD, VD>>(coalesce(tTR_rD_frag));
     Tensor tR2G_rD_dst = recast<Array<ElementD, VD>>(coalesce(tTR_gD));
-    
+
     Tensor tTR_cD_mn_frg = tensor<1>(zipped_divide(coalesce(tTR_cCD), mclD.compose(Int<VD>{})));
     Tensor tDpD = make_tensor<bool>(shape(tR2G_rD_dst));
 
@@ -325,8 +343,7 @@ public:
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
     // source is not needed, avoid load
-    else 
-    {
+    else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tTR_rAcc); i++) {
         tTR_rD_frag(i) = epilogue_op(tTR_rAcc(i));
@@ -382,7 +399,7 @@ public:
     auto thread_t2r = tiled_t2r.get_slice(ThreadIdxX() % size(tiled_t2r));
     Tensor tTR_gC   = thread_t2r.partition_D(gC);                                                  // (T2R,T2R_M,T2R_N)
     Tensor tTR_gD   = thread_t2r.partition_D(gD);                                                  // (T2R,T2R_M,T2R_N)
- 
+
 
     Tensor coordCD = make_identity_tensor(problem_shape_mnl);                                     // (M,N,L) -> (m,n,l)
     Tensor cCD = local_tile(coordCD, cta_tiler, cta_coord_mnl);                             // (CTA_M,CTA_N) -> (m,n,l)
@@ -498,7 +515,7 @@ public:
   // Constructor and Data Members
   //
   CUTLASS_DEVICE
-  CollectiveEpilogue(Params const& params_, SharedStorage& shared_tensors) 
+  CollectiveEpilogue(Params const& params_, SharedStorage& shared_tensors)
   : fusion_callbacks(params_.thread, shared_tensors.thread)
   , smem_buffer_ptr(shared_tensors.buffer.data())
   , params(params_) {};
@@ -506,7 +523,7 @@ public:
 protected:
   FusionCallbacks fusion_callbacks;
   uint8_t* smem_buffer_ptr;
-  Params const& params;  
+  Params const& params;
 
 public:
 
@@ -543,7 +560,7 @@ public:
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
-    
+
     bool fusion_implementable = FusionCallbacks::can_implement(problem_shape, args.thread);
     if (!fusion_implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum requirements for FusionCallbacks.\n");
@@ -569,8 +586,8 @@ public:
       CtaTileMNK cta_tile_mnk,
       CtaCoordMNKL cta_coord_mnkl,
       cute::Tensor<AccEngine,AccLayout> accumulators,
-      [[maybe_unused]]SharedStorage&
-      ) {
+      [[maybe_unused]] SharedStorage&
+  ) {
     using ElementAccumulator = typename AccEngine::value_type;
     using ElementCompute_ = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::ElementCompute;
     using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
@@ -606,8 +623,8 @@ public:
     // Construct the EVT consumer callbacks
     auto residue_cD = make_coord(M,N) - cD(_0{});
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD(_0{});
-    Tensor cD_ = make_counting_tensor(cD.layout());
-    Tensor tTR_cD_ = make_counting_tensor(tTR_cD.layout());
+    Tensor cD_ = make_coord_tensor(cD.layout());
+    Tensor tTR_cD_ = make_coord_tensor(tTR_cD.layout());
     constexpr bool RefSrc = false;
 
     Tensor mC = make_tensor(make_gmem_ptr<GmemElementC>(params.ptr_C), make_shape(M,N,L), params.dC);
@@ -636,7 +653,7 @@ public:
     Tensor tTR_rD_frg = recast<Array<ElementD, FragmentSize>>(coalesce(tTR_rD));
 
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
-      problem_shape_mnkl, 
+      problem_shape_mnkl,
       cta_tile_mnk,
       cta_coord_mnkl,
       int(0),
@@ -693,20 +710,27 @@ public:
           }
 
           Tensor tTR_cCD_mn = tTR_cCD(_,_,_,epi_m,epi_n);
+          Tensor tTR_pCD_mn = cute::lazy::transform(tTR_cCD_mn, [&] (auto const& c) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(c, problem_shape_mnl); });
           cst_callbacks.begin_loop(epi_m, epi_n);
 
           if constexpr (not cute::is_void_v<ElementC>) {
             if (is_C_load_needed) {
               using CVecType = uint_bit_t<VC * sizeof_bits_v<ElementC>>;
-              Tensor tTR_cC_frag = tensor<1>(zipped_divide(coalesce(tTR_cCD_mn), mclC.compose(Int<VC>{})));
 
-              auto pred_fn_C = [&] (auto const&... coords) CUTLASS_LAMBDA_FUNC_INLINE {
-                return elem_less(tTR_cC_frag(coords...), problem_shape_mnl);
-              };
-
+              if constexpr (!is_same_v<CVecType, uint256_t>) {
                 Tensor tTR_gC_frg = recast<CVecType>(coalesce(tTR_gC(_,_,_,epi_m,epi_n)));
                 Tensor tTR_rC_frg = recast<CVecType>(coalesce(tCrC));
-                copy_if(pred_fn_C, tTR_gC_frg, tTR_rC_frg);
+                Tensor tTR_pC_frg = tensor<1>(zipped_divide(coalesce(tTR_pCD_mn), mclC.compose(Int<VC>{})));
+                copy_if(tTR_pC_frg, tTR_gC_frg, tTR_rC_frg);
+              }
+              else {
+                auto tiled_g2r = make_tiled_copy_D(Copy_Atom<SM100_LOAD_256bit_CACHE_NOALLOCATION, ElementC>{}, tiled_t2r);
+                auto thr_g2r = tiled_g2r.get_slice(ThreadIdxX());
+                Tensor c_src = thr_g2r.retile_S(tTR_gC(_,_,_,epi_m,epi_n));
+                Tensor c_dst = thr_g2r.retile_D(tCrC);
+                Tensor c_prd = thr_g2r.retile_D(tTR_pCD_mn);
+                copy_if(tiled_g2r, c_prd, c_src, c_dst);
+              }
             }
           }
 
@@ -717,7 +741,7 @@ public:
           Tensor tTR_rAcc_frg = recast<Array<ElementAccumulator, FragmentSize>>(coalesce(tTR_rAcc));
 
           copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
-          
+
           // After the last tmem load, signal that tmem buffer is consumed and empty
           if (do_acc_release) {
             cutlass::arch::fence_view_async_tmem_load();
@@ -737,16 +761,22 @@ public:
 
           cst_callbacks.end_loop(epi_m, epi_n);
 
-          
-          Tensor tTR_cD_frag = tensor<1>(zipped_divide(coalesce(tTR_cCD_mn), mclD.compose(Int<VD>{})));
-          auto pred_fn_D = [&] (auto const&... coords) CUTLASS_LAMBDA_FUNC_INLINE {
-            return elem_less(tTR_cD_frag(coords...), problem_shape_mnl);
-          };
-
           using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
+          if constexpr (!is_same_v<VecType, uint256_t>) {
             Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
             Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
-            copy_if(pred_fn_D, tTR_rD_frg, tTR_gD_frg);
+            Tensor tTR_pD_frg = tensor<1>(zipped_divide(coalesce(tTR_pCD_mn), mclD.compose(Int<VD>{})));
+            copy_if(tTR_pD_frg, tTR_rD_frg, tTR_gD_frg);
+          }
+          else {
+            auto tiled_r2g = make_tiled_copy_D(Copy_Atom<SM100_STORE_256bit_CACHE_NOALLOCATION, ElementD>{}, tiled_t2r);
+            auto thr_r2g = tiled_r2g.get_slice(ThreadIdxX());
+            Tensor src = thr_r2g.retile_S(tTR_rD);
+            Tensor dst = thr_r2g.retile_D(tTR_gD(_,_,_,epi_m,epi_n));
+            Tensor prd = thr_r2g.retile_D(tTR_pCD_mn);
+            copy_if(tiled_r2g, prd, src, dst);
+          }
+
         } // for epi_m
       } // for epi_n
 

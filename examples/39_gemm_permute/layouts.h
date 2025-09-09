@@ -33,8 +33,8 @@
     computing reference permutations of 4/5D tensors when source data is column-major.
 */
 #pragma once
-#include <cuda/std/cassert>
 #include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/coord.h"

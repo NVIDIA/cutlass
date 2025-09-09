@@ -74,7 +74,7 @@ struct GroupProblemShape {
 
   CUTLASS_HOST_DEVICE
   bool
-  is_host_problem_shape_available() {
+  is_host_problem_shape_available() const {
     return host_problem_shapes != nullptr;
   }
 };
@@ -113,7 +113,7 @@ public:
 
   CUTLASS_HOST_DEVICE
   bool
-  is_host_problem_shape_available() {
+  is_host_problem_shape_available() const {
     return true;
   }
 private:

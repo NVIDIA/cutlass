@@ -142,7 +142,7 @@ static constexpr int ScaleGranularityK = 128;
 static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
 static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
-using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK, cute::GMMA::Major::MN, cute::GMMA::Major::K>;
 
 using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout type for SFA matrix operand
 using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout type for SFB matrix operand
@@ -252,8 +252,6 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90GroupParams<Shape<int,int,int>>::RasterOrderOptions;
 
 /// Result structure
 struct Result
@@ -523,7 +521,7 @@ GemmArguments args_from_options(const OptionType &options, bool host_problem_sha
     fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
   }
 
-  arguments.scheduler.raster_order = options.raster;
+  arguments.scheduler.raster_order = options.raster_order;
   // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8)
   arguments.scheduler.max_swizzle_size = options.swizzle;
 
@@ -699,10 +697,10 @@ int run(OptionType &options, bool host_problem_shapes_available = true)
 
     std::string raster = "Heuristic";
 
-    if (options.raster == RasterOrderOptions::AlongN) {
+    if (options.raster_order == RasterOrderOptions::AlongN) {
       raster = "Along N";
     }
-    else if (options.raster == RasterOrderOptions::AlongM) {
+    else if (options.raster_order == RasterOrderOptions::AlongM) {
       raster = "Along M";
     }
 
@@ -755,7 +753,7 @@ int main(int argc, char const **args) {
   // Parse options
   //
 
-  Options<RasterOrderOptions, ProblemShape> options;
+  Options<ProblemShape> options;
 
   options.parse(argc, args);
 

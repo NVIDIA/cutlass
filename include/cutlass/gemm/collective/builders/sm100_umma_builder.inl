@@ -184,6 +184,7 @@ struct CollectiveBuilder<
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
       // Dense Gemm / PtrArrayDenseGemm
       (
+       (not cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
        (cute::is_base_of_v<KernelScheduleSm100DenseGemm, BuilderScheduleTag> ||
         cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)) &&
       // Alignment check
@@ -267,7 +268,7 @@ struct CollectiveBuilder<
   static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayDenseGemm, BuilderScheduleTag>);
   // Grouped GEMM(where Stride type is Stride*) uses specific static tile scheduler.
   static constexpr bool IsGroupGemm = !cute::is_same_v<StrideA, InternalStrideA>;
-  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm>(8, 1);
+  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm>(8, 2);
   
   static constexpr uint32_t KernelSmemCarveout = detail::Sm100DenseGemmTmaUmmaCarveout<
       ClusterShape_MNK,

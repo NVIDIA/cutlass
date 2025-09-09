@@ -39,13 +39,13 @@ import logging
 from math import prod
 import unittest
 
-import cutlass
-from cutlass.backend.utils.device import device_cc
+import cutlass_cppgen
+from cutlass_cppgen.backend.utils.device import device_cc
 import torch
 
 from utils import LayoutCombination
 
-cutlass.set_log_level(logging.WARNING)
+cutlass_cppgen.set_log_level(logging.WARNING)
 
 torch.manual_seed(2023)
 
@@ -102,7 +102,7 @@ class GemmF16Batched(unittest.TestCase):
         C = initialize(M, N, batch_count if batch_C else (1,))
         D = initialize(M, N, batch_count)
 
-        plan = cutlass.op.Gemm(A=A, B=B, C=C, D=D, element_accumulator=cutlass.DataType.f32)
+        plan = cutlass_cppgen.op.Gemm(A=A, B=B, C=C, D=D, element_accumulator=cutlass_cppgen.DataType.f32)
         plan.run(A, B, C, D, alpha, beta)
         reference = pytorch_reference(A, B, C, alpha, beta)
         assert reference.equal(D)

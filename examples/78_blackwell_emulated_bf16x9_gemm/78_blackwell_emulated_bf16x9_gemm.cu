@@ -117,7 +117,7 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC, AlignmentC,
     ElementC, LayoutC, AlignmentC,
-    cutlass::epilogue::NoSmemWarpSpecialized2Sm
+    cutlass::epilogue::FastF32NoSmemWarpSpecialized2Sm
   >::CollectiveOp;
 
 // Build the mainloop

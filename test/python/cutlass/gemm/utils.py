@@ -32,7 +32,7 @@
 
 from cutlass_library import SubstituteTemplate
 
-import cutlass
+import cutlass_cppgen
 from cutlass_library import (
     DataTypeNames,
     EpilogueScheduleSuffixes,
@@ -42,7 +42,7 @@ from cutlass_library import (
     ShortDataTypeNames,
     ShortLayoutTypeNames
 )
-from cutlass.backend import library
+from cutlass_cppgen.backend import library
 
 from gemm_testbed import test_all_gemm
 
@@ -107,11 +107,11 @@ def get_name(
     :param arch: compute capability of kernel being generated
     :type arch: int
     :param opclass: class of operation being performed (e.g., SIMT, Tensor Core)
-    :type opclass: cutlass.OpcodeClass
+    :type opclass: cutlass_cppgen.OpcodeClass
     :param kernel_schedule: kernel_schedule type
-    :type kernel_schedule: cutlass.KernelScheduleType
+    :type kernel_schedule: cutlass_cppgen.KernelScheduleType
     :param epilogue_schedule: epilogue_schedule type
-    :type epilogue_schedule: cutlass.EpilogueScheduleType
+    :type epilogue_schedule: cutlass_cppgen.EpilogueScheduleType
     :param suffix: additional string to add to the suffix of the name
     :type suffix: str
 
@@ -175,15 +175,15 @@ def add_test_gemm(
     :param cc: compute capability to compile for
     :type cc: int
     :param element: data type of A and B operands
-    :type element: cutlass.DataType.f16
+    :type element: cutlass_cppgen.DataType.f16
     :param layouts: layouts of A, B, and C operands
     :type layouts: list or tuple
     :param alignments: alingments of A, B, and C operands
     :type alignments: list or tuple
     :param element_output: data type of the output element
-    :type element_output: cutlass.DataType
+    :type element_output: cutlass_cppgen.DataType
     :param element_accumulator: data type used in accumulation
-    :type element_accumulator: cutlass.DataType
+    :type element_accumulator: cutlass_cppgen.DataType
     :param cluster_shape: dimensions of clusters
     :type cluster_shape: list or tuple
     :param threadblock_shape: dimensions of threadblock tiles
@@ -193,20 +193,20 @@ def add_test_gemm(
     :param stages: number of pipeline stages to use in the kernel
     :type stages: int
     :param opclass: class of operation being performed (e.g., SIMT, Tensor Core)
-    :type opclass: cutlass.OpcodeClass
+    :type opclass: cutlass_cppgen.OpcodeClass
     :param swizzle: threadblock swizzling functor
     :param kernel_schedule: kernel schedule to use
-    :type kernel_schedule: cutlass.KernelScheduleType
+    :type kernel_schedule: cutlass_cppgen.KernelScheduleType
     :param epilogue_schedule: epilogue schedule to use
-    :type epilogue_schedule: cutlass.EpilogueScheduleType
+    :type epilogue_schedule: cutlass_cppgen.EpilogueScheduleType
     :param compilation_modes: list of compilers to used in testing the kernel (options: 'nvrtc', 'nvcc')
     :type compilation_modes: list,
     :param element_A: data type of operand A. If set, overrides ``element``
-    :type element_A: cutlass.DataType
+    :type element_A: cutlass_cppgen.DataType
     :param element_B: data type of operand B. If set, overrides ``element``
-    :type element_B: cutlass.DataType
+    :type element_B: cutlass_cppgen.DataType
     :param element_C: data type of operand C. If set, overrides ``element``
-    :type element_C: cutlass.DataType
+    :type element_C: cutlass_cppgen.DataType
     """
 
     if element_A is None:
@@ -230,7 +230,7 @@ def add_test_gemm(
             layout_A, layout_B, layout_C = layouts
             alignment_A, alignment_B, alignment_C = alignments
 
-            plan = cutlass.op.Gemm(element_A=element_A, element_B=element_B,
+            plan = cutlass_cppgen.op.Gemm(element_A=element_A, element_B=element_B,
                                 element_C=element_C, element_D=element_output,
                                 layout_A=layout_A, layout_B=layout_B, layout_C=layout_C,
                                 element_accumulator=element_accumulator,

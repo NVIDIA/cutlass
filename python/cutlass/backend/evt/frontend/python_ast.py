@@ -40,10 +40,10 @@ import textwrap
 
 from cutlass_library import DataType
 
-import cutlass
-from cutlass.backend.evt.frontend.frontend_base import EVTFrontendBase
-from cutlass.backend.epilogue import relu
-from cutlass.backend.library import FunctionalOp
+import cutlass_cppgen
+from cutlass_cppgen.backend.evt.frontend.frontend_base import EVTFrontendBase
+from cutlass_cppgen.backend.epilogue import identity, relu, tanh, sigmoid, silu, hardswish, gelu
+from cutlass_cppgen.backend.library import FunctionalOp
 
 
 class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
@@ -72,10 +72,17 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
             ast.Div: FunctionalOp.Divides,
             "maximum": FunctionalOp.Maximum,
             "minimum": FunctionalOp.Minimum,
+            "identity": identity.binding_type,
             "relu": relu.binding_type,
+            "tanh": tanh.binding_type,
+            "sigmoid": sigmoid.binding_type,
+            "silu": silu.binding_type,
+            "hardswish": hardswish.binding_type,
+            "gelu": gelu.binding_type,
             "multiply_add": FunctionalOp.MultiplyAdd,
             "sum": (FunctionalOp.Plus, FunctionalOp.AtomicAdd),
-            "max": (FunctionalOp.Maximum, FunctionalOp.AtomicMaximum)
+            "max": (FunctionalOp.Maximum, FunctionalOp.AtomicMaximum),
+            "exp": FunctionalOp.Exp
         }
         return mapping[op]
 

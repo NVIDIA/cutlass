@@ -390,8 +390,7 @@ public:
         params.hw_info);
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
@@ -769,10 +768,6 @@ public:
       // Register reconfiguration
       arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
 
-      if constexpr (IsSchedDynamicPersistent) {
-        cutlass::arch::wait_on_dependent_grids();
-      }
-
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
 
@@ -782,6 +777,8 @@ public:
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
+
+        cutlass::arch::wait_on_dependent_grids();
 
         do {
           if (requires_clc_query) {

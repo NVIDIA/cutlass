@@ -33,8 +33,8 @@
 */
 
 #pragma once
-
-#include <cuda/std/cassert>
+#include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/layout/matrix.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,7 +123,7 @@ struct Wmma<
       nvcuda::wmma::mma_sync(D, A, B, C);
   }
 #else
-    static_assert(false, "wmma.mma.sync for floating point multiplicands is avialable only for SM70 and beyond");
+    static_assert(false, "wmma.mma.sync for floating point multiplicands is available only for SM70 and beyond");
 #endif
 
 };

@@ -177,7 +177,7 @@ struct WmmaToCutlassDataType<__nv_bfloat16> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // WMMA template structure defines nvcuda::wmma::fragments and static assertion chaeks
-// for a specific template paramterized data type (Element[A|B|C]), layout (Layout[A|B|C]), 
+// for a specific template parameterized data type (Element[A|B|C]), layout (Layout[A|B|C]), 
 // and native wmma size (Shape)
 /////////////////////////////////////////////////////////////////////////////////////////////////
 template <  

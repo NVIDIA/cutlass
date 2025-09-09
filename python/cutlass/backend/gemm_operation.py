@@ -35,7 +35,7 @@ import copy
 import ctypes
 import enum
 
-from cutlass.utils.lazy_import import lazy_import
+from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart = lazy_import("cuda.cudart")
 from cutlass_library import SubstituteTemplate
@@ -76,8 +76,8 @@ from cutlass_library import (
     TileSchedulerType,
     get_complex_from_real
 )
-from cutlass.backend.arguments import ArgumentBase
-from cutlass.backend.c_types import (
+from cutlass_cppgen.backend.arguments import ArgumentBase
+from cutlass_cppgen.backend.c_types import (
     GemmCoord_,
     GemmCoordBatched_,
     GenericMainloopArguments3x_,
@@ -90,7 +90,7 @@ from cutlass.backend.c_types import (
     get_mainloop_arguments_3x,
     get_tile_scheduler_arguments_3x,
 )
-from cutlass.backend.library import (
+from cutlass_cppgen.backend.library import (
     ApiVersion,
     EmissionType,
     SchedulerMode,
@@ -99,11 +99,11 @@ from cutlass.backend.library import (
     TileDescription,
     api_version,
 )
-from cutlass.backend.memory_manager import device_mem_alloc, todevice
-from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
-from cutlass.backend.type_hint import GemmOperation, Tensor
-from cutlass.backend.utils.device import device_sm_count
-from cutlass.shape import GemmCoord, MatrixCoord
+from cutlass_cppgen.backend.memory_manager import device_mem_alloc, todevice
+from cutlass_cppgen.backend.operation import ExecutableOperation, LaunchConfiguration
+from cutlass_cppgen.backend.type_hint import GemmOperation, Tensor
+from cutlass_cppgen.backend.utils.device import device_sm_count
+from cutlass_cppgen.shape import GemmCoord, MatrixCoord
 
 
 ################################################################################
@@ -118,9 +118,9 @@ def leading_dimension(layout: LayoutType, shape: MatrixCoord) -> int:
     Returns the leading dimenson of a tensor with layout ``layout`` and shape ``shape``.
 
     :param layout: layout of the tensor
-    :type layout: cutlass.shape.LayoutType
+    :type layout: cutlass_cppgen.shape.LayoutType
     :param shape: shape of the tensor
-    :type shape: cutlass.shape.MatrixCoord
+    :type shape: cutlass_cppgen.shape.MatrixCoord
 
     :return: leading dimension of the tensor
     :rtype: int
@@ -146,11 +146,11 @@ class GemmArguments2x(ArgumentBase):
     user-provide tensors into the kernel's argument
 
     :param operation: the GEMM operation to take the argument
-    :type operation: :class:`cutlass.backend.GemmOperationUniversal` |
-     :class:`cutlass.backend.GemmOperationGrouped`
+    :type operation: :class:`cutlass_cppgen.backend.GemmOperationUniversal` |
+     :class:`cutlass_cppgen.backend.GemmOperationGrouped`
 
     :param problem_size: GEMM problem size gemm(M, N, K)
-    :type operation: :class:`cutlass.shape.GemmCoord`
+    :type operation: :class:`cutlass_cppgen.shape.GemmCoord`
 
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
@@ -168,7 +168,7 @@ class GemmArguments2x(ArgumentBase):
     :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
 
     :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
     :type stream: :class:`cuda.cuda.CUstream`
@@ -373,11 +373,11 @@ class GemmArguments2xStreamK(GemmArguments2x):
     user-provide tensors into the kernel's argument
 
     :param operation: the GEMM operation to take the argument
-    :type operation: :class:`cutlass.backend.GemmOperationUniversal` |
-     :class:`cutlass.backend.GemmOperationGrouped`
+    :type operation: :class:`cutlass_cppgen.backend.GemmOperationUniversal` |
+     :class:`cutlass_cppgen.backend.GemmOperationGrouped`
 
     :param problem_size: GEMM problem size gemm(M, N, K)
-    :type operation: :class:`cutlass.shape.GemmCoord`
+    :type operation: :class:`cutlass_cppgen.shape.GemmCoord`
 
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
@@ -395,7 +395,7 @@ class GemmArguments2xStreamK(GemmArguments2x):
     :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
     """
 
     def __init__(self, operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMode.Gemm, **kwargs):
@@ -485,11 +485,11 @@ class GemmArguments3x(GemmArguments2x):
     user-provide tensors into the kernel's argument
 
     :param operation: the GEMM operation to take the argument
-    :type operation: :class:`cutlass.backend.GemmOperationUniversal` |
-     :class:`cutlass.backend.GemmOperationGrouped`
+    :type operation: :class:`cutlass_cppgen.backend.GemmOperationUniversal` |
+     :class:`cutlass_cppgen.backend.GemmOperationGrouped`
 
     :param problem_size: GEMM problem size gemm(M, N, K)
-    :type operation: :class:`cutlass.shape.GemmCoord`
+    :type operation: :class:`cutlass_cppgen.shape.GemmCoord`
 
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
@@ -507,7 +507,7 @@ class GemmArguments3x(GemmArguments2x):
     :type gemm_mode: GemmUniversalMode
 
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
     """
 
     def __init__(self, operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMode.Gemm, **kwargs):
@@ -635,11 +635,11 @@ def GemmArguments(operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMo
     or 3x arguments depending on the `arch` field specified in `operation`.
 
     :param operation: the GEMM operation to take the argument
-    :type operation: :class:`cutlass.backend.GemmOperationUniversal` |
-     :class:`cutlass.backend.GemmOperationGrouped`
+    :type operation: :class:`cutlass_cppgen.backend.GemmOperationUniversal` |
+     :class:`cutlass_cppgen.backend.GemmOperationGrouped`
 
     :param problem_size: GEMM problem size gemm(M, N, K)
-    :type operation: :class:`cutlass.shape.GemmCoord`
+    :type operation: :class:`cutlass_cppgen.shape.GemmCoord`
 
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
@@ -657,7 +657,7 @@ def GemmArguments(operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMo
     :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
     """
     if operation.swizzling_functor == SwizzlingFunctor.StreamK:
         if operation.api == ApiVersion.v3x:
@@ -674,10 +674,10 @@ class GemmGroupedArguments:
     user-provide tensors into the kernel's argument
 
     :param operation: the GEMM Grouped operation to take the argument
-    :type operation: :class:`cutlass.backend.GemmOperationGrouped`
+    :type operation: :class:`cutlass_cppgen.backend.GemmOperationGrouped`
 
     :param problem_size: list of GEMM problem size gemm(M, N, K)
-    :type operation: list[:class:`cutlass.shape.GemmCoord`]
+    :type operation: list[:class:`cutlass_cppgen.shape.GemmCoord`]
 
     :param A: list of tensor A
     :type A: list[cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray]
@@ -692,7 +692,7 @@ class GemmGroupedArguments:
     :type D: list[cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray]
 
     :param output_op: output operator, optional
-    :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :type output_op: :class:`cutlass_cppgen.backend.LinearCombinationFunctorArguments`
 
     :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
     :type stream: :class:`cuda.cuda.CUstream`

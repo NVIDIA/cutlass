@@ -54,6 +54,7 @@ struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::U
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/gemm/kernel/sm70_gemm.hpp"
+#include "cutlass/gemm/kernel/sm70_gemm_array.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_warpspecialized_pingpong.hpp"
@@ -67,9 +68,13 @@ struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::U
 #include "cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized_mma_transform.hpp"
 #include "cutlass/gemm/kernel/sm100_gemm_array_tma_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized_input_transform.hpp"
+#include "cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized_mixed_input_transform.hpp"
 #include "cutlass/gemm/kernel/sm100_gemm_array_tma_warpspecialized_input_transform.hpp"
 #include "cutlass/gemm/kernel/sm100_gemm_array_tma_warpspecialized_mma_transform.hpp"
 #include "cutlass/gemm/kernel/sm100_sparse_gemm_tma_warpspecialized.hpp"
+#include "cutlass/gemm/kernel/sm100_gemm_cpasync_warpspecialized.hpp"
+#include "cutlass/gemm/kernel/sm103_blockscaled_gemm_tma_warpspecialized.hpp"
+#include "cutlass/gemm/kernel/sm103_blockscaled_gemm_array_tma_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm120_gemm_tma_warpspecialized_cooperative_asymmetric_dma.hpp"
 
 #if defined(SYCL_INTEL_TARGET)
@@ -77,5 +82,6 @@ struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::U
 #include "cutlass/gemm/kernel/xe_gemm_cooperative.hpp"
 #include "cutlass/gemm/kernel/xe_gemm_array_cooperative.hpp"
 #endif
+
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -609,7 +609,43 @@ void initialize_blockwise_gemm_reference_operations_given_C_and_D(Manifest &mani
   make_blockwise_gemm<
     float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
     ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 1, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
   >(manifest, 128, 128, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 1, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 128, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 32, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 32, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 64, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 64, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 256, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 256, 128);
 
 
   make_blockwise_gemm<
@@ -623,7 +659,43 @@ void initialize_blockwise_gemm_reference_operations_given_C_and_D(Manifest &mani
   make_blockwise_gemm<
     float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
     ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 1, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
   >(manifest, 128, 128, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 1 , 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 128, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 32, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 32, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 64, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 64, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 256, 128);
+  make_blockwise_gemm<
+    float_e4m3_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 256, 128);
 
   make_blockwise_gemm<
     float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
@@ -636,8 +708,43 @@ void initialize_blockwise_gemm_reference_operations_given_C_and_D(Manifest &mani
   make_blockwise_gemm<
     float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
     ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 1, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
   >(manifest, 128, 128, 128);
-
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 1, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 128, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 32, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 32, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 64, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 64, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 256, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e4m3_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 256, 128);
 
   make_blockwise_gemm<
     float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
@@ -650,7 +757,43 @@ void initialize_blockwise_gemm_reference_operations_given_C_and_D(Manifest &mani
   make_blockwise_gemm<
     float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
     ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 1, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
   >(manifest, 128, 128, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 1 , 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 64, 128, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 32, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 32, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 64, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 64, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 128, 256, 128);
+  make_blockwise_gemm<
+    float_e5m2_t /*A*/, float /*SFA*/, float_e5m2_t /*B*/, float /*SFB*/,
+    ElementC /*D*/, float /*Compute*/, float /*Accum*/, ElementD /*D*/
+  >(manifest, 1, 256, 128);
 
 }
 

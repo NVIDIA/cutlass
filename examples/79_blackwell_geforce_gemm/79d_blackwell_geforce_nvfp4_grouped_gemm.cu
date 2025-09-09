@@ -97,7 +97,7 @@ using namespace cute;
 using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
 using ElementInput = cutlass::float_e2m1_t;                                // Element type for Input matrix operands
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -137,8 +137,8 @@ constexpr int OutputSFVectorSize = 16;
 // With BlockScaleFactor generation.
 using FusionOperation = cutlass::epilogue::fusion::LinCombBlockScaleFactor<
     OutputSFVectorSize,
-    ElementD, 
-    ElementCompute, 
+    ElementD,
+    ElementCompute,
     ElementSFD, LayoutCTag,
     ElementC>;
 
@@ -201,7 +201,7 @@ using LayoutSFA = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutS
 using LayoutSFB = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFB;
 using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
-                                        OutputSFVectorSize, 
+                                        OutputSFVectorSize,
                                         cute::is_same_v<typename FusionOperation::GmemLayoutTagScalefactor,
                                             cutlass::layout::RowMajor> ? cute::UMMA::Major::K : cute::UMMA::Major::MN
                                      >;
@@ -263,24 +263,18 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 // NormConst is a single device-side constant value, its not per-batch or per-group
 cutlass::DeviceAllocation<ElementAccumulator> norm_constant_device;
 
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 template <typename T>
 auto make_iterator(T* ptr) {
-  using namespace cute;
-  if constexpr (cute::is_subbyte_v<T>) {
-    return subbyte_iterator<T>(ptr);
-  }
-  else {
-    return ptr;
-  }
+  return cute::recast_ptr<T>(ptr);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
@@ -472,7 +466,7 @@ struct Result
   bool passed = false;
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -511,7 +505,7 @@ bool initialize_block(
   }
   cutlass::reference::host::TensorFillRandomUniform(
     view, seed, scope_max, scope_min, 0);
-  
+
   return true;
 }
 
@@ -760,9 +754,9 @@ bool verify(const Options &options) {
         decltype(tensor_SFA),
         decltype(tensor_B),
         decltype(tensor_SFB)
-      > 
+      >
     mainloop_params{tensor_A, tensor_SFA, tensor_B, tensor_SFB};
-  
+
     auto tensor_C = cute::make_tensor(make_iterator(block_C.at(i).host_data()), layout_C);
     auto tensor_ref_D = cute::make_tensor(make_iterator(block_ref_D.at(i).host_data()), layout_D);
     auto tensor_ref_SFD = cute::make_tensor(make_iterator(block_ref_SFD.at(i).host_data()), layout_SFD);
@@ -777,7 +771,7 @@ bool verify(const Options &options) {
         cute::Int<OutputSFVectorSize>,
         cutlass::reference::host::SfStrategy::SfDGen
       > epilogue_params {alpha_host.at(i), beta_host.at(i), tensor_C, tensor_ref_D, tensor_ref_SFD, options.norm_constant};
-    
+
     cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
 
     // Comparison
@@ -841,8 +835,8 @@ int run(Options &options, bool host_problem_shapes_available = true)
     }
   }
   else {
-    std::cout << "  Verfication is turned off for this run." << std::endl;
-  } 
+    std::cout << "  Verification is turned off for this run." << std::endl;
+  }
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -861,36 +855,45 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;
 }
 
-#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
+  // CUTLASS must be compiled with CUDA 12.8 or higher Toolkit for SM120 support,
+  // or CUDA 12.9 or higher for SM121 support.
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
   if (__CUDACC_VER_MAJOR__ < 12 ||
        ((__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)
        )
      ) {
-    std::cerr << "This example requires CUDA 12.8 or newer.\n";
+    std::cerr << "This example requires CUDA 12.8 or newer for SM120 support.\n";
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
+#elif defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 9)) {
+    std::cerr << "This example requires CUDA 12.9 or newer for SM121 support.\n";
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    return 0;
+  }
+#endif
 
   cudaDeviceProp props;
   int current_device_id;
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 12 && props.minor == 0)) {
+  if (!(props.major == 12 && (props.minor == 0 || props.minor == 1))) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 120a).\n";
+      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 120 or 121).\n";
     return 0;
   }
 
@@ -907,7 +910,7 @@ int main(int argc, char const **args) {
     return 0;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
   allocate(options);
   initialize(options);
 
@@ -918,7 +921,7 @@ int main(int argc, char const **args) {
   std::cout << "Running kernel with Cooperative kernel schedule:" << std::endl;
   run<Gemm>(options, false /*host_problem_shapes_available*/);
   std::cout << "Running kernel with Pingpong kernel schedule:" << std::endl;
-  run<GemmPingpong>(options, false /*host_problem_shapes_available*/); 
+  run<GemmPingpong>(options, false /*host_problem_shapes_available*/);
 #endif
 
   return 0;

@@ -50,17 +50,17 @@ setup_pycute.perform_setup()
 
 
 setup(
-    name='cutlass',
-    version='3.4.0',
+    name='cutlass_cppgen',
+    version='4.0.0',
     description='CUTLASS Pythonic Interface',
     package_dir={'': '.'},
     packages=[
-        'cutlass',
-        'cutlass.emit',
-        'cutlass.op',
-        'cutlass.utils',
-        'cutlass.backend',
-        'cutlass.backend.utils'
+        'cutlass_cppgen',
+        'cutlass_cppgen.emit',
+        'cutlass_cppgen.op',
+        'cutlass_cppgen.utils',
+        'cutlass_cppgen.backend',
+        'cutlass_cppgen.backend.utils'
         ],
     setup_requires=['pybind11'],
     install_requires=[

@@ -33,8 +33,8 @@
 */
 
 #pragma once
-
-#include <cuda/std/cassert>
+#include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/layout/matrix.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,7 +115,7 @@ struct Wmma<
   }
 
 #else
-    static_assert(false, "wmma.mma.sync interger type multiplicands is avialable only for SM75 and beyond");
+    static_assert(false, "wmma.mma.sync integer type multiplicands is available only for SM75 and beyond");
 #endif
 
 };
@@ -194,7 +194,7 @@ struct Wmma<
   }
 
 #else
-    static_assert(false, "wmma.mma.sync interger type multiplicands is avialable only for SM75 and beyond");
+    static_assert(false, "wmma.mma.sync integer type multiplicands is available only for SM75 and beyond");
 #endif
 
 };

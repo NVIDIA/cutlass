@@ -36,7 +36,7 @@
     APIs on NVIDIA Blackwell SM100 architecture.
 
     The basic computation logic of wgrad convolution kernel is, take 3D convolution as an example:
-        Xformed Actication (NZPQK) * Activation (NDHWC) = Weight/Filter (KTRSC)
+        Xformed Activation (NZPQK) * Activation (NDHWC) = Weight/Filter (KTRSC)
 
     where in terms of GEMM perspective,
         Matrix A = Xformed Activation, Matrix B = Activation, Matrix C = Weight/Filter
@@ -499,11 +499,20 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 10 && (props.minor != 0 || props.minor != 1)) {
-    std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 101)." << std::endl;
-    return 0;
-  } 
   
+  if (__CUDACC_VER_MAJOR__ < 13) {
+    if (props.major != 10 && (props.minor != 0 || props.minor != 1)) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 101)." << std::endl;
+      return 0;
+    } 
+  }
+  else {
+    if ((props.major != 10 || props.major != 11) && props.minor != 0) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 110)." << std::endl;
+      return 0;
+    }
+  }
+
   //
   // Parse options
   //

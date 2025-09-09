@@ -41,6 +41,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime.h>
@@ -115,6 +116,16 @@ struct CommandLine {
 
     if(err){
       throw std::runtime_error("Unused arguments!");
+    }
+  }
+
+  /**
+   * Constructor to represent a command line from a map of [argument] -> [value]
+   */
+  CommandLine(std::unordered_map<std::string, std::string>& arg_map) {
+    for (const auto& [key, value] : arg_map) {
+      keys.push_back(key);
+      values.push_back(value);
     }
   }
 

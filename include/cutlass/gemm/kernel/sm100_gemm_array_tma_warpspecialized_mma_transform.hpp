@@ -289,7 +289,12 @@ public:
     ProblemShape problem_shapes = args.problem_shape;
     // Get SM count if needed, otherwise use user supplied SM count
     int sm_count = args.hw_info.sm_count;
-    if (!IsGroupedGemmKernel && sm_count != 0) {
+    if (IsGroupedGemmKernel && sm_count <= 0) {
+      CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid SM count.\n"
+          "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
+      sm_count = KernelHardwareInfo::query_device_multiprocessor_count(args.hw_info.device_id);
+    }
+    else if (!IsGroupedGemmKernel && sm_count != 0) {
       CUTLASS_TRACE_HOST("  WARNING: SM100 tile scheduler does not allow for user specified SM counts.\n"
           "  To restrict a kernel's resource usage, consider using CUDA driver APIs instead (green contexts).");
     }
@@ -941,6 +946,8 @@ public:
         // why this variable is needed.
         bool requires_clc_query = true;
 
+        cutlass::arch::wait_on_dependent_grids();
+
         do {
           if (requires_clc_query) {
             // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.
@@ -976,6 +983,7 @@ public:
         clc_pipeline.producer_tail(clc_pipe_producer_state);
       }
       else {
+        cutlass::arch::wait_on_dependent_grids();
         do {
           auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
           work_tile_info = next_work_tile_info;

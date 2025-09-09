@@ -498,13 +498,29 @@ template <>
 struct HardSwish<float> {
   using T = float;
   static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
 
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
     minimum<T> mn;
     maximum<T> mx;
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
-    return x * relu6 * 0.16666667f;
+    return x * relu6 * kOneSixth;
+  }
+};
+
+template <>
+struct HardSwish<cutlass::half_t> {
+  using T = cutlass::half_t;
+  static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 * T(kOneSixth);
   }
 };
 
@@ -530,6 +546,7 @@ template <int N>
 struct HardSwish<Array<half_t, N> > {
   using T = half_t;
   static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
@@ -538,7 +555,7 @@ struct HardSwish<Array<half_t, N> > {
     multiplies<Array<T, N> > mul;
     plus<Array<T, N> > add;
 
-    return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(0.16666667f));
+    return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(kOneSixth));
   }
 };
 

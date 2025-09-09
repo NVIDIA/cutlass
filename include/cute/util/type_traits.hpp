@@ -29,13 +29,13 @@
  *
  **************************************************************************************************/
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
-#include <cuda/std/utility>
-#include <cuda/std/cstddef>
-#include <cuda/std/cstdint>
-#include <cuda/std/limits>
+#include CUDA_STD_HEADER(type_traits)
+#include CUDA_STD_HEADER(utility)
+#include CUDA_STD_HEADER(cstddef)
+#include CUDA_STD_HEADER(cstdint)
+#include CUDA_STD_HEADER(limits)
 #else
 #include <type_traits>
 #include <utility>      // tuple_size, tuple_element
@@ -91,6 +91,29 @@ using CUTE_STL_NAMESPACE::add_const_t;
 using CUTE_STL_NAMESPACE::remove_const_t;
 using CUTE_STL_NAMESPACE::remove_cv_t;
 using CUTE_STL_NAMESPACE::remove_reference_t;
+
+template <class Src, class Dst>
+struct copy_cv {
+  using type = Dst;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src const, Dst> {
+  using type = Dst const;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src volatile, Dst> {
+  using type = Dst volatile;
+};
+
+template <class Src, class Dst>
+struct copy_cv<Src const volatile, Dst> {
+  using type = Dst const volatile;
+};
+
+template <class Src, class Dst>
+using copy_cv_t = typename copy_cv<Src,Dst>::type;
 
 using CUTE_STL_NAMESPACE::extent;
 using CUTE_STL_NAMESPACE::remove_extent;

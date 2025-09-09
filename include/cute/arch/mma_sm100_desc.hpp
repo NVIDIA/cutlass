@@ -459,7 +459,7 @@ union InstrDescriptorBlockScaled
              scale_format_  : 1,  // bit [23,24) : 0=E4M3, 1=E8M0
              m_dim_         : 5,  // bit [24,29) : 4 LSBs not included. Valid values are: 4 (M=64), 8 (M=128), 16 (M=256)
              a_sf_id_       : 2,  // bit [29,31) : Matrix A Scale Factor ID
-                            : 1;  //
+             k_size_        : 1;  // bit [31,32) : MMA-K Dim. MXF8F6F4Format: 0=[dense: K32, sparse: K64]. S8Format: 0=[dense: K32, sparse: invalid]. MXF4Format: 0=[dense: K64, sparse: K128], 1=[dense: K96, sparse: invalid].
   };
 
   // Decay to a uint32_t

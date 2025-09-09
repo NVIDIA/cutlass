@@ -14,8 +14,8 @@ cmake $PATH -DCUTLASS_NVCC_ARCHS="100a" -DCUTLASS_ENABLE_GDC_FOR_SM100=1
 ### Minimum software
 
 Like all other CUTLASS examples, the NVIDIA driver, runtime, and CUDA Toolkit are required.
-This example specifically requires CUDA Toolkit 12.6 or newer, due to some of the necessary
-CUDA graph APIs.
+This example specifically requires CUDA Toolkit 12.8 or newer, since that is the first version
+supporting the Blackwell architecture.
 
 ### Hardware / driver settings
 
