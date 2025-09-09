@@ -79,6 +79,7 @@ if(CUTLASS_ENABLE_SYCL)
       xe_gemm_fp16_s8_fp32_tensor_op_fp32_group_gemm.cpp
       xe_gemm_bf16_u4_fp32_tensor_op_fp32_group_gemm.cpp
       xe_gemm_fp16_u4_fp32_tensor_op_fp32_group_gemm.cpp
+      xe_gemm_fp16_fp8_fp32_tensor_op_fp32_group_gemm.cpp
     )
 
     add_custom_target(

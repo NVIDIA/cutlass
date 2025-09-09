@@ -71,8 +71,8 @@ struct DefaultGemmGroupConfiguration<
     ElementOutput>
 {
 
-  static_assert(cute::is_any_of_v<ElementA, bfloat16_t, half_t, int8_t>, "ElementA needs to be of 16 or 8 bit type");
-  static_assert(cute::is_any_of_v<ElementB, bfloat16_t, half_t, int8_t, uint4_t>, "ElementB needs to be of 16, 8 or 4 bit type");
+  static_assert(cute::is_any_of_v<ElementA, bfloat16_t, half_t, int8_t, float_e5m2_t, float_e4m3_t>, "ElementA needs to be of 16 or 8 bit type");
+  static_assert(cute::is_any_of_v<ElementB, bfloat16_t, half_t, int8_t, float_e5m2_t, float_e4m3_t, uint4_t>, "ElementB needs to be of 16, 8 or 4 bit type");
   using TileShape = Shape<_256, _256, _32>;
 
   using CollectiveMainloop = typename gemm::collective::CollectiveBuilder<
