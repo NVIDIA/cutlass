@@ -46,18 +46,18 @@ struct FmhaKernelBwdConvert {
     ProblemShape problem_shape;
 
     const ElementAcc* ptr_src_dQ;
-    tuple<int, _1, tuple<int, int>> stride_src_dQ;
+    tuple<int, _1, tuple<tuple<int, int>, int>> stride_src_dQ;
     const ElementAcc* ptr_src_dK;
-    tuple<int, _1, tuple<int, int>> stride_src_dK;
+    tuple<int, _1, tuple<tuple<_0, int>, int>> stride_src_dK;
     const ElementAcc* ptr_src_dV;
-    tuple<int, _1, tuple<int, int>> stride_src_dV;
+    tuple<int, _1, tuple<tuple<_0, int>, int>> stride_src_dV;
     
     Element* ptr_dest_dQ;
-    tuple<int, _1, tuple<int, int>> stride_dest_dQ;
+    tuple<int, _1, tuple<tuple<int, int>, int>> stride_dest_dQ;
     Element* ptr_dest_dK;
-    tuple<int, _1, tuple<int, int>> stride_dest_dK;
+    tuple<int, _1, tuple<tuple<_0, int>, int>> stride_dest_dK;
     Element* ptr_dest_dV;
-    tuple<int, _1, tuple<int, int>> stride_dest_dV;
+    tuple<int, _1, tuple<tuple<_0, int>, int>> stride_dest_dV;
 
     ElementAcc scale = 1.0;
   };
@@ -104,8 +104,8 @@ struct FmhaKernelBwdConvert {
 
   template<class StrideSrc, class StrideDest, class Count>
   CUTLASS_DEVICE void copy(Params const& params, const ElementAcc* ptr_src, StrideSrc const& stride_src, Element* ptr_dest, StrideDest const& stride_dest, Count const& count, int d_dim) {
-    auto ptr_src_bh = ptr_src + get<2,0>(stride_src) * blockIdx.x + get<2,1>(stride_src) * blockIdx.y;
-    auto ptr_dest_bh = ptr_dest + get<2,0>(stride_dest) * blockIdx.x + get<2,1>(stride_dest) * blockIdx.y;
+    auto ptr_src_bh = ptr_src + get<2,0,0>(stride_src) * blockIdx.x + get<2,1>(stride_src) * blockIdx.y;
+    auto ptr_dest_bh = ptr_dest + get<2,0,0>(stride_dest) * blockIdx.x + get<2,1>(stride_dest) * blockIdx.y;
 
     int seqlen = count;
     if constexpr (is_variable_length_v<decltype(count)>) {

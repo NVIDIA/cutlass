@@ -119,13 +119,15 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static constexpr int Alignment = 128 / sizeof_bits_v<Element>;
   static constexpr int kStages = 2;
 
-  using TensorStrideContiguousK = Stride<int, _1, Stride<int, int>>;
-  using TensorStrideContiguousMN = Stride<_1, int, Stride<int, int>>;
+  using TensorStrideContiguousK = Stride<int, _1, Stride<Stride<int,int>, int>>;
+  using TensorStrideContiguousMN = Stride<_1, int, Stride<Stride<int,int>, int>>;
+  using TensorStrideContiguousK_GQA = Stride<int, _1, Stride<Stride<_0,int>, int>>;
+  using TensorStrideContiguousMN_GQA = Stride<_1, int, Stride<Stride<_0,int>, int>>;
 
   // compute S
   using CollectiveMmaKQ = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      Element, TensorStrideContiguousK, Alignment,
+      Element, TensorStrideContiguousK_GQA, Alignment,
       Element, TensorStrideContiguousK, Alignment,
       ElementAcc,
       Shape<TileShapeK, TileShapeQ, TileShapeDQK>,
@@ -137,7 +139,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   // compute dP
   using CollectiveMmaVDO = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      Element, TensorStrideContiguousK, Alignment,
+      Element, TensorStrideContiguousK_GQA, Alignment,
       Element, TensorStrideContiguousK, Alignment,
       ElementAcc,
       Shape<TileShapeK, TileShapeQ, TileShapeDVO>,
@@ -177,7 +179,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
       // somewhat arbitrary since we dump to smem, need to agree with the previous one
       Element, TensorStrideContiguousMN, Alignment,
-      Element, TensorStrideContiguousMN, Alignment,
+      Element, TensorStrideContiguousMN_GQA, Alignment,
       ElementAcc,
       Shape<TileShapeQ, TileShapeDQK, TileShapeK>,
       ClusterShape, cutlass::gemm::collective::StageCount<kStages>,
@@ -278,15 +280,16 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "using too much smem");
 
   using TensorStride = TensorStrideContiguousK;  // S D (H B)
-  using RowTensorStride = Stride<_1, Stride<int, int>>;    // S (H B)
+  using TensorStride_GQA = TensorStrideContiguousK_GQA;
+  using RowTensorStride = Stride<_1, Stride<Stride<int, int>, int>>;    // S (H B)
 
   struct MainloopArguments {
     const Element* ptr_q;
     TensorStride stride_q;
     const Element* ptr_k;
-    TensorStride stride_k;
+    TensorStride_GQA stride_k;
     const Element* ptr_v;
-    TensorStride stride_v;
+    TensorStride_GQA stride_v;
     const Element* ptr_do;
     TensorStride stride_do;
 
@@ -308,7 +311,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   using TMA_DO = typename CollectiveMmaVDO::Params::TMA_B;
 
   using TMA_DQ = decltype(make_tma_copy(SM90_TMA_REDUCE_ADD{},
-      make_tensor((const ElementAcc*)nullptr, make_shape(1, 1, make_shape(1, 1)), TensorStride{}),
+      make_tensor((const ElementAcc*)nullptr, make_shape(1, 1, make_shape(make_shape(1,1), 1)), TensorStride{}),
       SmemLayoutDQ{}(_, _, _0{})
   ));
 
@@ -322,9 +325,9 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
   struct EpilogueArguments {
     Element* ptr_dk;
-    TensorStride stride_dk;
+    TensorStride_GQA stride_dk;
     Element* ptr_dv;
-    TensorStride stride_dv;
+    TensorStride_GQA stride_dv;
   };
 
   struct Arguments {
@@ -346,7 +349,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static bool can_implement(Arguments const& args) {
     auto [Q, K, D, D_VO, HB] = args.problem_shape;
     auto [H, B] = HB;
-    if (Q <= 0 || K <= 0 || D <= 0 || D_VO <= 0 || H <= 0 || B <= 0) {
+    auto [H_R, H_K] = H;
+    if (Q <= 0 || K <= 0 || D <= 0 || D_VO <= 0 || H_R <= 0 || H_K <= 0 || B <= 0) {
       return false;
     }
     if (D % Alignment != 0 || D_VO % Alignment != 0) {
@@ -432,7 +436,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       BlkCoord const& blk_coord,
       BlkOffset const& blk_offset,
       ProblemShape_ const& problem_shape,
-      int iter_index,
+      int iter_start,
+      int iter_end,
       int iter_count,
       MainloopArguments const& mainloop_args,
       MainloopParams const& mainloop_params,
@@ -447,6 +452,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       typename PipelineLoadComputeSumOdO::PipelineState& pipeline_load_compute_sum_odo_producer_state) {
 
     auto [Q, K, D, D_VO, HB] = problem_shape;
+    int iter_index = iter_start;
 
     using X = Underscore;
 
@@ -590,6 +596,11 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     iter_index += 1;
 
     while (iter_count > 0) {
+      if (iter_index == iter_end) {
+        iter_index = iter_start;
+        get<0,0>(blk_coord_batch) += 1;
+      }
+
       pipeline_load_mma_q.producer_acquire(pipeline_load_mma_q_producer_state);
       tma_barrier = pipeline_load_mma_q.producer_get_barrier(pipeline_load_mma_q_producer_state);
 
@@ -660,7 +671,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   CUTLASS_DEVICE void mma(
       BlkCoord const& blk_coord,
       ProblemShape_ const& problem_shape,
-      int iter_index,
+      int iter_start,
+      int iter_end,
       int iter_count,
       MainloopArguments const& mainloop_args,
       TensorStorage& shared_tensors,
@@ -1119,7 +1131,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       BlkCoord const& blk_coord,
       BlkOffset const& blk_offset,
       ProblemShape_ const& problem_shape,
-      int iter_index,
+      int iter_start,
+      int iter_end,
       int iter_count,
       MainloopArguments const& mainloop_args,
       EpilogueArguments const& epilogue_args,
@@ -1141,6 +1154,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
 
     auto [Q, K, D, D_VO, HB] = problem_shape;
+    int iter_index = iter_start;
 
     // in tmem, S & P overlap
     // and dP and dQ overlap
@@ -1224,8 +1238,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     auto tRT_cST_p = thread_r2t.partition_S(tDVcST);
     auto tRT_cST = split_wg(tRT_cST_p);
 
-    bool is_residual_k = get<1>(blk_coord) * TileShapeK{} + TileShapeK{} >= get<1>(problem_shape);
-    int last_iter = iter_count - 1 + iter_index;
+    bool is_residual_k = get<1>(blk_coord) * TileShapeK{} + TileShapeK{} > get<1>(problem_shape);
 
     CUTLASS_PRAGMA_NO_UNROLL
     while (iter_count > 0) {
@@ -1246,7 +1259,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
       bool leading_causal_masking = false;
       if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask<true>, Mask>) {
-        leading_causal_masking = warp_uniform(iter_index == get<1>(blk_coord));
+        leading_causal_masking = warp_uniform(iter_index == iter_start);
       } else if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask<false>, Mask>) {
         int offset = get<1>(problem_shape) - get<0>(problem_shape);
         int kv_left = get<1>(blk_coord) * TileShapeK{};
@@ -1258,7 +1271,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       }
       bool trailing_residual_masking = false;
       if constexpr (std::is_base_of_v<cutlass::fmha::collective::ResidualMaskForBackward, Mask>) {
-        trailing_residual_masking = warp_uniform((iter_index == last_iter) || is_residual_k);
+        trailing_residual_masking = warp_uniform((iter_index == iter_end - 1) || is_residual_k);
       }
 
       dispatch_bool(leading_causal_masking || trailing_residual_masking, [&](auto is_masked_tile) {
@@ -1379,6 +1392,9 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
       iter_count -= 1;
       iter_index += 1;
+      if (iter_index == iter_end) {
+        iter_index = iter_start;
+      }
     }
 
     epilogue(
@@ -1391,7 +1407,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   CUTLASS_DEVICE void reduce(
       BlkCoord const& blk_coord,
       ProblemShape_ const& problem_shape,
-      int iter_index,
+      int iter_start,
+      int iter_end,
       int iter_count,
       MainloopArguments const& mainloop_args,
       MainloopParams const& mainloop_params,
@@ -1404,6 +1421,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     using X = Underscore;
 
     auto [Q, K, D, D_VO, HB] = problem_shape;
+    int iter_index = iter_start;
 
     auto [blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_dv, blk_coord_batch] = blk_coord;
 
@@ -1415,7 +1433,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     Tensor mDQ = mainloop_params.tma_red_dq.get_tma_tensor(make_shape(Q, D, HB));
     auto gDQ = local_tile(mDQ, TileShapeKQ{}, make_coord(_,_,_), Step<X, _1, _1>{})
-        (_, _, _, _0{}, blk_coord_batch);
+        (_, _, _, _0{}, _);
 
     Tensor cDQ = make_identity_tensor(take<0,2>(TileShapeDSK{}));
 
@@ -1426,7 +1444,6 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     auto thread_t2r = tiled_t2r.get_slice(thread_idx);
 
     Tensor tTR_cDQ   = thread_t2r.partition_D(cDQ);
-    Tensor tTR_gDQ   = thread_t2r.partition_D(gDQ);
     Tensor tTR_sDQ   = thread_t2r.partition_D(sDQ);
     Tensor tTR_tDQ = thread_t2r.partition_S(tDQtDQ);
 
@@ -1472,7 +1489,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
         ).arrive_and_wait();
         if (lane_predicate) {
           // launch tma store
-          copy(mainloop_params.tma_red_dq, tDQsDQ(_,_,_0{}, pipeline_reduce_tma_store_producer_state.index()), tDQgDQ(_,_,i,iter_index));
+          copy(mainloop_params.tma_red_dq, tDQsDQ(_,_,_0{}, pipeline_reduce_tma_store_producer_state.index()), tDQgDQ(_,_,i,iter_index,blk_coord_batch));
           pipeline_reduce_tma_store.producer_commit(pipeline_reduce_tma_store_producer_state);
         }
 
@@ -1481,6 +1498,10 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
       iter_count -= 1;
       iter_index += 1;
+      if (iter_index == iter_end) {
+        iter_index = iter_start;
+        get<0,0>(blk_coord_batch) += 1;
+      }
     }
   }
 
@@ -1683,12 +1704,12 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
     pipeline_init_wait(size(ClusterShape{}));
 
-    auto blk_coord = make_coord(_0{}, blockIdx.x, _0{}, _0{}, make_coord(blockIdx.y, blockIdx.z));
+    auto blk_coord = make_coord(_0{}, blockIdx.x, _0{}, _0{}, make_coord(make_coord(0, blockIdx.y), blockIdx.z));
     auto [problem_shape, blk_offset] = apply_variable_length_offset(
         params.problem_shape,
         blk_coord
     );
-    int iter_count = ceil_div(get<0>(problem_shape), TileShapeQ{});
+    int iter_end = ceil_div(get<0>(problem_shape), TileShapeQ{});
     int iter_start = 0;
     if constexpr (std::is_base_of_v<cutlass::fmha::collective::CausalMask<true>, Mask>) {
       iter_start = (get<1>(blk_coord) * TileShapeK{}) / TileShapeQ{};
@@ -1699,7 +1720,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     if (get<1>(blk_coord) * TileShapeK{} >= get<1>(problem_shape)) {
       return;
     }
-    iter_count -= iter_start;
+    int iter_count = (iter_end - iter_start) * get<4,0,0>(problem_shape);
 
     if (iter_count <= 0) {
       epilogue_clear(
@@ -1720,6 +1741,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           blk_offset,
           problem_shape,
           iter_start,
+          iter_end,
           iter_count,
           params.mainloop,
           params.mainloop_params,
@@ -1741,6 +1763,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           blk_coord,
           problem_shape,
           iter_start,
+          iter_end,
           iter_count,
           params.mainloop,
           shared_storage.tensors,
@@ -1763,6 +1786,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           blk_offset,
           problem_shape,
           iter_start,
+          iter_end,
           iter_count,
           params.mainloop,
           params.epilogue,
@@ -1794,6 +1818,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           blk_coord,
           problem_shape,
           iter_start,
+          iter_end,
           iter_count,
           params.mainloop,
           params.mainloop_params,
@@ -1820,7 +1845,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static dim3 get_grid_shape(Params const& params) {
     auto [Q, K, D, D_VO, HB] = params.problem_shape;
     auto [H, B] = HB;
-    dim3 grid(ceil_div(K, TileShapeK{}), H, B);
+    auto [H_R, H_K] = H;
+    dim3 grid(ceil_div(K, TileShapeK{}), H_K, B);
     return grid;
   }
 };
