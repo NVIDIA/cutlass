@@ -168,6 +168,34 @@ void BlockFillRandomUniform(
   BlockForEach<Element, RandomFunc>(ptr, capacity, params);
 }
 
+/// This function generates random values on the host and then copies them to the device.
+template <typename Element>
+void BlockFillRandomUniformCopyFromHost(
+  Element *ptr,
+  size_t capacity,
+  uint64_t seed,                          ///< seed for RNG
+  typename RealType<Element>::Type max,   ///< upper bound of distribution
+  typename RealType<Element>::Type min    ///< lower bound for distribution
+  ) {
+  
+  if constexpr(std::is_same_v<Element, float> || 
+               std::is_same_v<Element, cute::bfloat16_t> || 
+               std::is_same_v<Element, cute::half_t>) {
+    std::random_device rd;
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<float> dis(min, max);
+    auto buff = std::vector<Element>(capacity);
+
+    for (size_t i = 0; i < capacity; ++i) {
+      buff[i] = (Element)(dis(gen));
+    }
+    syclcompat::memcpy<Element>(ptr, buff.data(), capacity);
+    syclcompat::wait();
+  } else {
+    assert(false && "Not supported dtype");
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {

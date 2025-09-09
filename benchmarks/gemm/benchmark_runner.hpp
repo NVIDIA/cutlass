@@ -49,7 +49,7 @@
 #include "cutlass/util/reference/device/tensor_compare.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_silu.h"
-#include "cutlass/util/mixed_dtype_utils.hpp"
+#include "cutlass/util/initialize_block.hpp"
 
 #include "../common.hpp"
 
