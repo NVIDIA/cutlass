@@ -35,5 +35,6 @@ cutlass_example_add_executable(
   TEST_GROUPS
 )
 # TODO(codeplay): Remove these once IGC VectorAliasThreshold issue is fixed
-set_target_properties( 09_bmg_grouped_gemm_f8 PROPERTIES CXX_COMPILER_LAUNCHER "IGC_VectorAliasBBThreshold=10000" )
-set_target_properties( 09_bmg_grouped_gemm_f8 PROPERTIES CXX_LINKER_LAUNCHER "IGC_VectorAliasBBThreshold=10000" )
+if(NOT DPCPP_SYCL_TARGET STREQUAL "spir64")
+  target_link_options( 09_bmg_grouped_gemm_f8 PRIVATE -Xs "-options \"-igc_opts 'VectorAliasBBThreshold=10000'\"" )
+endif()
