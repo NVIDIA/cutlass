@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Utilities for mixed input data type kernels.
+    \brief Initialize a block of device data
 */
 
 #pragma once
