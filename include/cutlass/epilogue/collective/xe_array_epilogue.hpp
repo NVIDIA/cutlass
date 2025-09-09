@@ -348,11 +348,7 @@ public:
     auto m_sg = get_sub_group_id() / ATOM_N;
     auto n_sg = get_sub_group_id() % ATOM_N;
 
-    // Get the layout and reconstruct the MN mapping equivalent to the old get_layoutS_MN()
-    auto layoutS_TV = params.xe_store_d.get_layoutS_TV();
     auto mn_shape = shape(typename decltype(params.xe_store_d)::Tiler_MN{});
-    auto layoutS_MN = right_inverse(layoutS_TV).with_shape(mn_shape);
-    using EpilogueTile = decltype(layoutS_MN.shape());
 
     auto sg_local_m_coord = get_sub_group_id() / ATOM_N;
     auto sg_local_n_coord = get_sub_group_id() % ATOM_N;
@@ -388,7 +384,7 @@ public:
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
     Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(sg_m_coord, sg_n_coord));
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
-    Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+    Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, mn_shape));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
     Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
@@ -401,7 +397,7 @@ public:
                       SubgroupTileShape{},
                       sg_coord,
                       tiled_mma,
-                      EpilogueTile{},
+                      mn_shape,
                       params.xe_store_d,
                       cD,
                       residue_mn,

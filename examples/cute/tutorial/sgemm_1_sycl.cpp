@@ -234,7 +234,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // TUTORIAL: The above call to axpby(alpha, tCrC, beta, tCgC) is equivalent to
   //   CUTE_UNROLL
-  //   for (int i = 0; i < size(tCsA); ++i) {
+  //   for (int i = 0; i < size(tCrC); ++i) {
   //     tCgC(i) = alpha * tCrC(i) + beta * tCgC(i);
   //   }
 }
