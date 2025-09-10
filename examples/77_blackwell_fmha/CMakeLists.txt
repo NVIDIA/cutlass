@@ -39,7 +39,8 @@ set_property(
 )
 
 set(TEST_BASIC --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=no)
-set(TEST_CAUSAL --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=causal)
+set(TEST_CAUSAL_00 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=causal)
+set(TEST_CAUSAL_01 --verify --iterations=0 --b=1 --h=1 --h_k=1 --q=1013 --k=1024 --d=128 --mask=causal --causal-type=qend)
 set(TEST_VARLEN --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=residual --varlen)
 set(TEST_HDIM64 --b=2 --h=4 --q=512 --k=512 --d=64 --verify)
 set(TEST_GQA --b=2 --h=4 --h_k=2 --q=512 --k=512 --d=64 --verify)
@@ -115,7 +116,8 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_fmha.cu
         TEST_COMMAND_OPTIONS
         TEST_BASIC
-        TEST_CAUSAL
+        TEST_CAUSAL_00
+        TEST_CAUSAL_01
         TEST_VARLEN
         TEST_HDIM64
         TEST_GQA
@@ -216,7 +218,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla_fwd.cu
         TEST_COMMAND_OPTIONS
         TEST_BASIC
-        TEST_CAUSAL
+        TEST_CAUSAL_00
         TEST_VARLEN
         TEST_HDIM64
         TEST_GQA
