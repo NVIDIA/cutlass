@@ -1,5 +1,5 @@
-
 # Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -90,107 +90,36 @@ function(cutlass_example_add_executable NAME)
 
 endfunction()
 
-if (NOT CUTLASS_ENABLE_SYCL)
-foreach(EXAMPLE
-  00_basic_gemm
-  01_cutlass_utilities
-  02_dump_reg_shmem
-  03_visualize_layout
-  04_tile_iterator
-  05_batched_gemm
-  06_splitK_gemm
-  07_volta_tensorop_gemm
-  08_turing_tensorop_gemm
-  09_turing_tensorop_conv2dfprop
-  10_planar_complex
-  11_planar_complex_array
-  12_gemm_bias_relu
-  13_two_tensor_op_fusion
-  14_ampere_tf32_tensorop_gemm
-  15_ampere_sparse_tensorop_gemm
-  16_ampere_tensorop_conv2dfprop
-  17_fprop_per_channel_bias
-  18_ampere_fp64_tensorop_affine2_gemm
-  19_tensorop_canonical
-  20_simt_canonical
-  21_quaternion_gemm
-  22_quaternion_conv
-  23_ampere_gemm_operand_reduction_fusion
-  24_gemm_grouped
-  25_ampere_fprop_mainloop_fusion
-  26_ampere_wgrad_mainloop_fusion
-  27_ampere_3xtf32_fast_accurate_tensorop_gemm
-  28_ampere_3xtf32_fast_accurate_tensorop_fprop
-  29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
-  30_wgrad_split_k
-  31_basic_syrk
-  32_basic_trmm
-  33_ampere_3xtf32_tensorop_symm
-  34_transposed_conv2d
-  35_gemm_softmax
-  36_gather_scatter_fusion
-  37_gemm_layernorm_gemm_fusion
-  38_syr2k_grouped
-  cute
-  39_gemm_permute
-  41_fused_multi_head_attention
-  42_ampere_tensorop_group_conv
-  43_ell_block_sparse_gemm
-  45_dual_gemm
-  46_depthwise_simt_conv2dfprop
-  47_ampere_gemm_universal_streamk
-  48_hopper_warp_specialized_gemm
-  49_hopper_gemm_with_collective_builder
-  50_hopper_gemm_with_epilogue_swizzle
-  51_hopper_gett
-  52_hopper_gather_scatter_fusion
-  53_hopper_gemm_permute
-  54_hopper_fp8_warp_specialized_gemm
-  55_hopper_mixed_dtype_gemm
-  56_hopper_ptr_array_batched_gemm
-  57_hopper_grouped_gemm
-  58_ada_fp8_gemm
-  59_ampere_gather_scatter_conv
-  61_hopper_gemm_with_topk_and_softmax
-  62_hopper_sparse_gemm
-  63_hopper_gemm_with_weight_prefetch
-  64_ada_fp8_gemm_grouped
-  65_distributed_gemm
-  67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
-  68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling
-  69_hopper_mixed_dtype_grouped_gemm
-  70_blackwell_gemm                             
-  71_blackwell_gemm_with_collective_builder     
-  72_blackwell_narrow_precision_gemm            
-  73_blackwell_gemm_preferred_cluster           
-  74_blackwell_gemm_streamk                     
-  75_blackwell_grouped_gemm                     
-  76_blackwell_conv                             
-  77_blackwell_fmha                             
-  78_blackwell_emulated_bf16x9_gemm             
-  79_blackwell_geforce_gemm
-  80_blackwell_geforce_sparse_gemm
-  81_blackwell_gemm_blockwise 
-  82_blackwell_distributed_gemm
-  83_blackwell_sparse_gemm
-  84_blackwell_narrow_precision_sparse_gemm
-  86_blackwell_mixed_dtype_gemm                 
-  87_blackwell_geforce_gemm_blockwise
-  88_hopper_fmha
-  89_sm103_fp4_ultra_gemm
-  90_sm103_fp4_ultra_grouped_gemm
-  91_fp4_gemv
-  )
-    add_subdirectory(${EXAMPLE})
-  endforeach()
+# =============================================================================
+# CUTLASS SYCL Examples
+# =============================================================================
+# This CMakeLists.txt builds SYCL-based examples for CUTLASS.
+
+if(CUTLASS_ENABLE_SYCL)
+  message(STATUS "Building CUTLASS SYCL Examples")
+  if(SYCL_INTEL_TARGET)
+    message(STATUS "Building examples for Intel GPU targets")
+    foreach(EXAMPLE
+      00_bmg_gemm
+      01_bmg_gemm_with_collective_builder
+      02_bmg_gemm_mixed_dtype
+      03_bmg_gemm_streamk
+      04_bmg_grouped_gemm
+      05_bmg_gemm_with_epilogues
+      06_bmg_flash_attention
+      07_bmg_dual_gemm
+      08_bmg_gemm_f8
+      09_bmg_grouped_gemm_f8
+      10_bmg_grouped_gemm_mixed_dtype
+      )
+      add_subdirectory(${EXAMPLE})
+    endforeach()
+  endif()
+  add_subdirectory(generics)
+  add_subdirectory(nv_sycl)
+  add_subdirectory(cute)
 else()
-  foreach(EXAMPLE
-    14_ampere_tf32_tensorop_gemm
-    35_gemm_softmax
-    cute
-    sycl
-    )
-    add_subdirectory(${EXAMPLE})
-  endforeach()
+  message(STATUS "CUTLASS_ENABLE_SYCL is OFF - no examples will be built")
+  message(STATUS "Enable SYCL support to build CUTLASS examples")
 endif()
 
