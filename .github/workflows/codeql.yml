@@ -2,9 +2,9 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   schedule:
     - cron: '23 5 * * 5'
 
@@ -79,3 +79,10 @@ jobs:
       uses: github/codeql-action/analyze@2e230e8fe0ad3a14a340ad0815ddb96d599d2aff # v3.25.8
       with:
         category: "/language:${{matrix.language}}"
+    
+    - name: Upload Sarif Artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: codeql-results-${{ matrix.language }}
+        path: ./results/${{ matrix.language }}.sarif
+        retention-days: 7
