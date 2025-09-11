@@ -836,6 +836,7 @@ if __name__ == "__main__":
     parser.add_argument("--b_major", choices=["k", "n"], default="k")
     parser.add_argument("--c_major", choices=["n", "m"], default="n")
     parser.add_argument("--warmup_iterations", default=2, type=int)
+    parser.add_argument("--static_shape", action="store_true")
     parser.add_argument("--iterations", default=100, type=int)
     parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument(
