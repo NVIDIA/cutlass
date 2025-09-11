@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
 
 if(CUTLASS_ENABLE_SYCL)
   foreach(EXAMPLE
-    00_ampere_tf32_tensorop_gemm
-    01_gemm_softmax
+    14_ampere_tf32_tensorop_gemm
+    35_gemm_softmax
     )
     add_subdirectory(${EXAMPLE})
   endforeach()
