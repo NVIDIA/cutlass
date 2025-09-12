@@ -844,6 +844,7 @@ if __name__ == "__main__":
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
+    parser.add_argument("--static_shape", action="store_true")
 
     args = parser.parse_args()
     print("Running SIMT GEMM example:")
