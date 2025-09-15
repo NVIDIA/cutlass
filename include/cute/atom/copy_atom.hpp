@@ -426,6 +426,22 @@ struct ThrCopy
   partition_fragment_D(DTensor&& dtensor) const {
     return make_fragment_like<typename TiledCopy::ValType>(partition_D(dtensor));
   }
+
+  template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_sg_fragment_S(STensor&& stensor) const {
+    return make_subgroup_tensor(partition_fragment_S(stensor),
+                                layout(atom_partition_S(stensor)));
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_sg_fragment_D(DTensor&& dtensor) const {
+    return make_subgroup_tensor(partition_fragment_D(dtensor),
+                                layout(atom_partition_D(dtensor)));
+  }
 };
 
 
