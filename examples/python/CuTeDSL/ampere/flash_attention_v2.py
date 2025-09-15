@@ -327,7 +327,6 @@ class FlashAttentionForwardAmpere:
         ).launch(
             grid=grid_dim,
             block=[self._num_threads, 1, 1],
-            smem=SharedStorage.size_in_bytes(),
             stream=stream,
         )
 
@@ -1014,13 +1013,10 @@ class FlashAttentionForwardAmpere:
                 )
 
             # compute exp(x - max) using exp2(x * log_2(e) - max * log_2(e))
-            acc_S_row_exp = cute.TensorSSA(
-                self._exp2f(
-                    acc_S_row * softmax_params.softmax_scale_log2
-                    - row_max_cur_row * softmax_params.softmax_scale_log2
-                ),
-                tuple(acc_S_row.shape),
-                cutlass.Float32,
+            acc_S_row_exp = cute.math.exp2(
+                acc_S_row * softmax_params.softmax_scale_log2
+                - row_max_cur_row * softmax_params.softmax_scale_log2,
+                fastmath=True,
             )
             # acc_S_row_sum => f32
             acc_S_row_sum = acc_S_row_exp.reduce(
@@ -1028,9 +1024,10 @@ class FlashAttentionForwardAmpere:
             )
             # if it is not the first tile, load the row r of previous row_max and minus row_max_cur_row to update row_sum.
             if cutlass.const_expr(not is_first_n_block):
-                prev_minus_cur_exp = self._exp2f(
+                prev_minus_cur_exp = cute.math.exp2(
                     row_max_prev_row * softmax_params.softmax_scale_log2
-                    - row_max_cur_row * softmax_params.softmax_scale_log2
+                    - row_max_cur_row * softmax_params.softmax_scale_log2,
+                    fastmath=True,
                 )
                 acc_S_row_sum = (
                     acc_S_row_sum + softmax_params.row_sum[r] * prev_minus_cur_exp
@@ -1140,26 +1137,6 @@ class FlashAttentionForwardAmpere:
         :rtype: cutlass.Float32
         """
         return self._threadquad_reduce(val, lambda x, y: x + y)
-
-    def _exp2f(
-        self, x: Union[cute.TensorSSA, cutlass.Float32]
-    ) -> Union[cute.TensorSSA, cutlass.Float32]:
-        """exp2f calculation for both vector and scalar.
-
-        :param x: input value
-        :type x: cute.TensorSSA or cutlass.Float32
-        :return: exp2 value
-        :rtype: cute.TensorSSA or cutlass.Float32
-        """
-        if isinstance(x, cute.TensorSSA):
-            res = cute.make_fragment(x.shape, cutlass.Float32)
-            res.store(x)
-
-            for i in range(cute.size(x.shape)):
-                res[i] = self._exp2f(res[i])
-
-            return res.load()
-        return cute.arch.exp2(x)
 
 
 def run(

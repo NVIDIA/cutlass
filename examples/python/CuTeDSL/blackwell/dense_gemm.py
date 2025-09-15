@@ -486,7 +486,6 @@ class DenseGemmKernel:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=(*self.cluster_shape_mn, 1),
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
         )
         return
@@ -660,7 +659,7 @@ class DenseGemmKernel:
         gC_mnl = cute.local_tile(
             mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
         )
-        k_block_cnt = cute.size(gA_mkl, mode=[3])
+        k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
         #
         # Partition global tensor for TiledMMA_A/B/C
@@ -788,19 +787,19 @@ class DenseGemmKernel:
         #
         # Pipelining TMA load A/B and MMA mainloop
         #
-        prefetch_k_block_cnt = cutlass.min(self.num_ab_stage - 2, k_block_cnt)
+        prefetch_k_tile_cnt = cutlass.min(self.num_ab_stage - 2, k_tile_cnt)
 
         if warp_idx == 0:
-            # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt
+            # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
             peek_ab_empty_status = cutlass.Boolean(1)
-            if ab_producer_state.count < k_block_cnt:
+            if ab_producer_state.count < k_tile_cnt:
                 peek_ab_empty_status = ab_pipeline.producer_try_acquire(
                     ab_producer_state
                 )
             #
             # Prefetch TMA load A/B
             #
-            for prefetch_idx in cutlass.range(prefetch_k_block_cnt, unroll=1):
+            for prefetch_idx in cutlass.range(prefetch_k_tile_cnt, unroll=1):
                 # Conditionally wait for AB buffer empty
                 ab_pipeline.producer_acquire(ab_producer_state, peek_ab_empty_status)
 
@@ -820,27 +819,27 @@ class DenseGemmKernel:
                     mcast_mask=b_full_mcast_mask,
                 )
 
-                # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt + k_block + 1
+                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
                 ab_producer_state.advance()
                 peek_ab_empty_status = cutlass.Boolean(1)
-                if ab_producer_state.count < k_block_cnt:
+                if ab_producer_state.count < k_tile_cnt:
                     peek_ab_empty_status = ab_pipeline.producer_try_acquire(
                         ab_producer_state
                     )
 
-            # Peek (try_wait) AB buffer full for k_block = 0
+            # Peek (try_wait) AB buffer full for k_tile = 0
             peek_ab_full_status = cutlass.Boolean(1)
-            if ab_consumer_state.count < k_block_cnt and is_leader_cta:
+            if ab_consumer_state.count < k_tile_cnt and is_leader_cta:
                 peek_ab_full_status = ab_pipeline.consumer_try_wait(ab_consumer_state)
 
             #
             # MMA mainloop
             #
-            for k_block in range(k_block_cnt):
+            for k_tile in range(k_tile_cnt):
                 # Conditionally wait for AB buffer empty
                 ab_pipeline.producer_acquire(ab_producer_state, peek_ab_empty_status)
 
-                if ab_producer_state.count < k_block_cnt:
+                if ab_producer_state.count < k_tile_cnt:
                     # TMA load A/B
                     cute.copy(
                         tma_atom_a,
@@ -862,35 +861,35 @@ class DenseGemmKernel:
                     ab_pipeline.consumer_wait(ab_consumer_state, peek_ab_full_status)
 
                     # tCtAcc += tCrA * tCrB
-                    num_kphases = cute.size(tCrA, mode=[2])
-                    for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
-                        kphase_coord = (None, None, kphase_idx, ab_consumer_state.index)
+                    num_kblocks = cute.size(tCrA, mode=[2])
+                    for kblock_idx in cutlass.range(num_kblocks, unroll_full=True):
+                        kblock_coord = (None, None, kblock_idx, ab_consumer_state.index)
 
                         cute.gemm(
                             tiled_mma,
                             tCtAcc,
-                            tCrA[kphase_coord],
-                            tCrB[kphase_coord],
+                            tCrA[kblock_coord],
+                            tCrB[kblock_coord],
                             tCtAcc,
                         )
-                        # Enable accumulate on tCtAcc after first kphase
+                        # Enable accumulate on tCtAcc after first kblock
                         tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
 
                     # Async arrive AB buffer empty
                     ab_pipeline.consumer_release(ab_consumer_state)
 
-                # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt + k_block + 1
+                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
                 ab_producer_state.advance()
                 peek_ab_empty_status = cutlass.Boolean(1)
-                if ab_producer_state.count < k_block_cnt:
+                if ab_producer_state.count < k_tile_cnt:
                     peek_ab_empty_status = ab_pipeline.producer_try_acquire(
                         ab_producer_state
                     )
 
-                # Peek (try_wait) AB buffer full for k_block = k_block + 1
+                # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
                 ab_consumer_state.advance()
                 peek_ab_full_status = cutlass.Boolean(1)
-                if ab_consumer_state.count < k_block_cnt:
+                if ab_consumer_state.count < k_tile_cnt:
                     if is_leader_cta:
                         peek_ab_full_status = ab_pipeline.consumer_try_wait(
                             ab_consumer_state
@@ -1009,8 +1008,8 @@ class DenseGemmKernel:
         # Wait A/B buffer empty
         #
         if warp_idx == 0:
-            # Reverse prefetch_k_block_cnt times to next available buffer
-            for i in range(prefetch_k_block_cnt):
+            # Reverse prefetch_k_tile_cnt times to next available buffer
+            for i in range(prefetch_k_tile_cnt):
                 ab_producer_state.reverse()
             ab_pipeline.producer_tail(ab_producer_state)
         return

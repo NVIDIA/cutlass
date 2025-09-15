@@ -253,6 +253,11 @@ class MaskType(enum.Enum):
     RESIDUAL_MASK = enum.auto()
     CAUSAL_MASK = enum.auto()
 
+
+def make_thread_cooperative_group(size: int):
+    return pipeline.CooperativeGroup(pipeline.Agent.Thread, size, size)
+
+
 class BlackwellFusedMultiHeadAttentionForward:
     def __init__(
         self,
@@ -662,7 +667,6 @@ class BlackwellFusedMultiHeadAttentionForward:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=self.cluster_shape_mnk,
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
             min_blocks_per_mp=1,
         )
@@ -760,32 +764,85 @@ class BlackwellFusedMultiHeadAttentionForward:
         smem = utils.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
-        load_q_pipeline = self.make_and_init_load_q_pipeline(
-            storage.load_q_mbar_ptr.data_ptr()
-        )
-        load_kv_pipeline = self.make_and_init_load_kv_pipeline(
-            storage.load_kv_mbar_ptr.data_ptr()
-        )
-        mma_s0_pipeline = self.make_and_init_mma_si_pipeline(
-            storage.mma_s0_mbar_ptr.data_ptr()
-        )
-        mma_s1_pipeline = self.make_and_init_mma_si_pipeline(
-            storage.mma_s1_mbar_ptr.data_ptr()
-        )
-        s0_corr_pipeline = self.make_and_init_si_corr_pipeline(
-            storage.s0_corr_mbar_ptr.data_ptr()
-        )
-        s1_corr_pipeline = self.make_and_init_si_corr_pipeline(
-            storage.s1_corr_mbar_ptr.data_ptr()
-        )
-        corr_epi_pipeline = self.make_and_init_corr_epi_pipeline(
-            storage.corr_epi_mbar_ptr.data_ptr()
-        )
-        mma_corr_pipeline = self.make_and_init_mma_corr_pipeline(
-            storage.mma_corr_mbar_ptr.data_ptr()
-        )
-        s0_s1_sequence_pipeline = self.make_and_init_si_sequence_pipeline(
-            storage.s0_s1_sequence_mbar_ptr.data_ptr()
+        load_q_producer, load_q_consumer = pipeline.PipelineTmaUmma.create(
+            num_stages=self.q_stage,
+            producer_group=make_thread_cooperative_group(len([self.load_warp_id])),
+            consumer_group=make_thread_cooperative_group(len([self.mma_warp_id])),
+            tx_count=self.tma_copy_q_bytes,
+            barrier_storage=storage.load_q_mbar_ptr.data_ptr(),
+        ).make_participants()
+        load_kv_producer, load_kv_consumer = pipeline.PipelineTmaUmma.create(
+            num_stages=self.kv_stage,
+            producer_group=make_thread_cooperative_group(len([self.load_warp_id])),
+            consumer_group=make_thread_cooperative_group(len([self.mma_warp_id])),
+            tx_count=self.tma_copy_kv_bytes,
+            barrier_storage=storage.load_kv_mbar_ptr.data_ptr(),
+        ).make_participants()
+        mma_s0_producer, mma_s0_consumer = pipeline.PipelineUmmaAsync.create(
+            num_stages=self.mma_softmax_stage,
+            producer_group=make_thread_cooperative_group(len([self.mma_warp_id])),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.softmax0_warp_ids)
+            ),
+            barrier_storage=storage.mma_s0_mbar_ptr.data_ptr(),
+        ).make_participants()
+        mma_s1_producer, mma_s1_consumer = pipeline.PipelineUmmaAsync.create(
+            num_stages=self.mma_softmax_stage,
+            producer_group=make_thread_cooperative_group(len([self.mma_warp_id])),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.softmax1_warp_ids)
+            ),
+            barrier_storage=storage.mma_s1_mbar_ptr.data_ptr(),
+        ).make_participants()
+        s0_corr_producer, s0_corr_consumer = pipeline.PipelineAsync.create(
+            num_stages=self.softmax_corr_stage,
+            producer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.softmax0_warp_ids)
+            ),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.correction_warp_ids)
+            ),
+            barrier_storage=storage.s0_corr_mbar_ptr.data_ptr(),
+        ).make_participants()
+        s1_corr_producer, s1_corr_consumer = pipeline.PipelineAsync.create(
+            num_stages=self.softmax_corr_stage,
+            producer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.softmax1_warp_ids)
+            ),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.correction_warp_ids)
+            ),
+            barrier_storage=storage.s1_corr_mbar_ptr.data_ptr(),
+        ).make_participants()
+        corr_epi_producer, corr_epi_consumer = pipeline.PipelineAsync.create(
+            num_stages=self.epi_stage,
+            producer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.correction_warp_ids)
+            ),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len([self.epilogue_warp_id])
+            ),
+            barrier_storage=storage.corr_epi_mbar_ptr.data_ptr(),
+        ).make_participants()
+        mma_corr_producer, mma_corr_consumer = pipeline.PipelineUmmaAsync.create(
+            num_stages=self.mma_corr_stage,
+            producer_group=make_thread_cooperative_group(len([self.mma_warp_id])),
+            consumer_group=make_thread_cooperative_group(
+                self.threads_per_warp * len(self.correction_warp_ids)
+            ),
+            barrier_storage=storage.mma_corr_mbar_ptr.data_ptr(),
+        ).make_participants()
+        s0_s1_sequence_producer, s0_s1_sequence_consumer = (
+            pipeline.PipelineAsync.create(
+                num_stages=1,
+                producer_group=make_thread_cooperative_group(
+                    self.threads_per_warp * len(self.softmax0_warp_ids)
+                ),
+                consumer_group=make_thread_cooperative_group(
+                    self.threads_per_warp * len(self.softmax1_warp_ids)
+                ),
+                barrier_storage=storage.s0_s1_sequence_mbar_ptr.data_ptr(),
+            ).make_participants()
         )
         tmem_dealloc_mbar_ptr = storage.tmem_dealloc_mbar_ptr.data_ptr()
 
@@ -802,7 +859,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                     )
                 ),
             )
-
         cute.arch.mbarrier_init_fence()
 
         #  Generate smem tensor Q/K/V/O
@@ -818,22 +874,18 @@ class BlackwellFusedMultiHeadAttentionForward:
         # Strip swizzle info to reuse smem
         sV_ptr = cute.recast_ptr(sK.iterator, v_smem_layout_staged.inner)
         sV = cute.make_tensor(sV_ptr, v_smem_layout_staged.outer)
-
         sO = storage.sO.get_tensor(
             o_smem_layout_staged.outer, swizzle=o_smem_layout_staged.inner
         )
         qk_thr_mma = qk_tiled_mma.get_slice(0)  # default 1sm
         pv_thr_mma = pv_tiled_mma.get_slice(0)  # default 1sm
-
         tSrQ = qk_thr_mma.make_fragment_A(sQ)
         tSrK = qk_thr_mma.make_fragment_B(sK)
         tOrV = pv_thr_mma.make_fragment_B(sV)
-
         qk_acc_shape = qk_thr_mma.partition_shape_C(
             (self.qk_mma_tiler[0], self.qk_mma_tiler[1])
         )
         tStS = qk_thr_mma.make_fragment_C(qk_acc_shape)
-
         pv_acc_shape = pv_thr_mma.partition_shape_C(
             (self.pv_mma_tiler[0], self.pv_mma_tiler[1])
         )
@@ -841,13 +893,11 @@ class BlackwellFusedMultiHeadAttentionForward:
 
         tStS0 = cute.make_tensor(tStS.iterator + self.tmem_s0_offset, tStS.layout)
         tStS1 = cute.make_tensor(tStS.iterator + self.tmem_s1_offset, tStS.layout)
-
         tOtO0 = cute.make_tensor(tOtO.iterator + self.tmem_o0_offset, tOtO.layout)
         tOtO1 = cute.make_tensor(tOtO.iterator + self.tmem_o1_offset, tOtO.layout)
 
         tP = cute.make_tensor(tStS.iterator, p_tmem_layout_staged.outer)
         tOrP = pv_thr_mma.make_fragment_A(tP)[None, None, None, 0]
-
         tOrP0 = cute.make_tensor(
             tOrP.iterator
             + self.qk_acc_dtype.width // self.q_dtype.width * self.tmem_p0_offset,
@@ -858,12 +908,10 @@ class BlackwellFusedMultiHeadAttentionForward:
             + self.qk_acc_dtype.width // self.q_dtype.width * self.tmem_p1_offset,
             tOrP.layout,
         )
-
         cute.arch.barrier(
             barrier_id=self.cta_sync_bar_id,
             number_of_threads=self.threads_per_cta,
         )
-
         # ///////////////////////////////////////////////////////////////////////////////
         #  EMPTY
         # ///////////////////////////////////////////////////////////////////////////////
@@ -876,13 +924,6 @@ class BlackwellFusedMultiHeadAttentionForward:
         if warp_idx == self.load_warp_id:
             cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
 
-            q_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.q_stage
-            )
-            kv_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.kv_stage
-            )
-
             tile_sched = create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -894,7 +935,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                 continue_cond = False
                 cuseqlen_q = Int32(0)
                 seqlen_q = mQ_qdl.shape[0]
-
                 if cutlass.const_expr(cum_seqlen_q is not None):
                     cuseqlen_q = cum_seqlen_q[batch_coord]
                     seqlen_q = cum_seqlen_q[batch_coord + 1] - cuseqlen_q
@@ -905,7 +945,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                             seqlen_q,
                         )
                     )
-
                 if not continue_cond:
                     mQ_qdl_ = mQ_qdl
                     mK_kdl_ = mK_kdl
@@ -991,85 +1030,62 @@ class BlackwellFusedMultiHeadAttentionForward:
 
                     # Q0
                     q0_coord = 2 * curr_block_coord_q[0]
-                    load_q_pipeline.producer_acquire(q_producer_state)
+                    q0_handle = load_q_producer.acquire_and_advance()
                     cute.copy(
                         tma_atom_q,
                         tQgQ[None, q0_coord],
-                        tQsQ[None, q_producer_state.index],
-                        tma_bar_ptr=load_q_pipeline.producer_get_barrier(
-                            q_producer_state
-                        ),
+                        tQsQ[None, q0_handle.index],
+                        tma_bar_ptr=q0_handle.barrier,
                     )
-                    q_producer_state.advance()
-
                     # K0
                     kv_coord = 0  # seqlen_kv_loop
-                    load_kv_pipeline.producer_acquire(kv_producer_state)
+                    k_handle = load_kv_producer.acquire_and_advance()
                     cute.copy(
                         tma_atom_k,
                         tKgK[None, kv_coord],
-                        tKsK[None, kv_producer_state.index],
-                        tma_bar_ptr=load_kv_pipeline.producer_get_barrier(
-                            kv_producer_state
-                        ),
+                        tKsK[None, k_handle.index],
+                        tma_bar_ptr=k_handle.barrier,
                     )
-                    kv_producer_state.advance()
-
                     # Q1
                     q1_coord = q0_coord + 1
-                    load_q_pipeline.producer_acquire(q_producer_state)
+                    q1_handle = load_q_producer.acquire_and_advance()
                     cute.copy(
                         tma_atom_q,
                         tQgQ[None, q1_coord],
-                        tQsQ[None, q_producer_state.index],
-                        tma_bar_ptr=load_q_pipeline.producer_get_barrier(
-                            q_producer_state
-                        ),
+                        tQsQ[None, q1_handle.index],
+                        tma_bar_ptr=q1_handle.barrier,
                     )
-                    q_producer_state.advance()
-
                     # V0
-                    load_kv_pipeline.producer_acquire(kv_producer_state)
+                    v_handle = load_kv_producer.acquire_and_advance()
                     cute.copy(
                         tma_atom_v,
                         tVgV[None, kv_coord],
-                        tVsV[None, kv_producer_state.index],
-                        tma_bar_ptr=load_kv_pipeline.producer_get_barrier(
-                            kv_producer_state
-                        ),
+                        tVsV[None, v_handle.index],
+                        tma_bar_ptr=v_handle.barrier,
                     )
-                    kv_producer_state.advance()
                     kv_coord += 1
 
                     seqlen_kv_loop_steps = (
                         self.get_trip_count(curr_block_coord, self.cta_tiler, seqlen_k)
                         - 1
                     )
-
                     for i in cutlass.range(0, seqlen_kv_loop_steps, 1, unroll=1):
                         # Ki
-                        load_kv_pipeline.producer_acquire(kv_producer_state)
+                        k_handle = load_kv_producer.acquire_and_advance()
                         cute.copy(
                             tma_atom_k,
                             tKgK[None, kv_coord],
-                            tKsK[None, kv_producer_state.index],
-                            tma_bar_ptr=load_kv_pipeline.producer_get_barrier(
-                                kv_producer_state
-                            ),
+                            tKsK[None, k_handle.index],
+                            tma_bar_ptr=k_handle.barrier,
                         )
-                        kv_producer_state.advance()
                         # Vi
-                        load_kv_pipeline.producer_acquire(kv_producer_state)
-
+                        v_handle = load_kv_producer.acquire_and_advance()
                         cute.copy(
                             tma_atom_v,
                             tVgV[None, kv_coord],
-                            tVsV[None, kv_producer_state.index],
-                            tma_bar_ptr=load_kv_pipeline.producer_get_barrier(
-                                kv_producer_state
-                            ),
+                            tVsV[None, v_handle.index],
+                            tma_bar_ptr=v_handle.barrier,
                         )
-                        kv_producer_state.advance()
                         kv_coord += 1
                     # End of seqlen_kv loop
 
@@ -1089,23 +1105,6 @@ class BlackwellFusedMultiHeadAttentionForward:
             cute.arch.barrier(
                 barrier_id=self.tmem_alloc_sync_bar_id,
                 number_of_threads=self.threads_per_warp,
-            )
-            mma_q_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.q_stage
-            )
-            mma_kv_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.kv_stage
-            )
-            mma_q_release_state = mma_q_consumer_state.clone()
-            mma_kv_release_state = mma_kv_consumer_state.clone()
-            mma_s0_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.mma_softmax_stage
-            )
-            mma_s1_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.mma_softmax_stage
-            )
-            mma_corr_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.mma_corr_stage
             )
             tile_sched = create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -1135,15 +1134,13 @@ class BlackwellFusedMultiHeadAttentionForward:
 
                     # GEMM_QK00 (Q0 * K0 -> S0)
                     # 1. wait for Q0
-                    load_q_pipeline.consumer_wait(mma_q_consumer_state)
-                    tSrQ0 = tSrQ[None, None, None, mma_q_consumer_state.index]
-                    mma_q_consumer_state.advance()
+                    q0_handle = load_q_consumer.wait_and_advance()
+                    tSrQ0 = tSrQ[None, None, None, q0_handle.index]
                     # 2. wait for K0
-                    load_kv_pipeline.consumer_wait(mma_kv_consumer_state)
-                    tSrK0 = tSrK[None, None, None, mma_kv_consumer_state.index]
-                    mma_kv_consumer_state.advance()
+                    k_handle = load_kv_consumer.wait_and_advance()
+                    tSrK0 = tSrK[None, None, None, k_handle.index]
                     # 3. acquire empty S0 buffer
-                    mma_s0_pipeline.producer_acquire(mma_s0_producer_state)
+                    s0_handle = mma_s0_producer.acquire_and_advance()
                     # 4. gemm
                     num_kphases = cute.size(tSrQ0, mode=[2])
                     for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
@@ -1157,17 +1154,15 @@ class BlackwellFusedMultiHeadAttentionForward:
                             tStS0,
                         )
                     # 5. release S0
-                    mma_s0_pipeline.producer_commit(mma_s0_producer_state)
-                    mma_s0_producer_state.advance()
+                    s0_handle.commit()
                     # End of GEMM (Q0 * K0 -> S0)
 
                     # GEMM_QK10 (Q1 * K0 -> S1), K0 is ready in GEMM_QK00
                     # 1. wait for Q1
-                    load_q_pipeline.consumer_wait(mma_q_consumer_state)
-                    tSrQ1 = tSrQ[None, None, None, mma_q_consumer_state.index]
-                    mma_q_consumer_state.advance()
+                    q1_handle = load_q_consumer.wait_and_advance()
+                    tSrQ1 = tSrQ[None, None, None, q1_handle.index]
                     # 2. acquire empty S1
-                    mma_s1_pipeline.producer_acquire(mma_s1_producer_state)
+                    s1_handle = mma_s1_producer.acquire_and_advance()
                     # 3. gemm
                     num_kphases = cute.size(tSrQ1, mode=[2])
                     for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
@@ -1181,28 +1176,25 @@ class BlackwellFusedMultiHeadAttentionForward:
                             tStS1,
                         )
                     # 4. release S1
-                    mma_s1_pipeline.producer_commit(mma_s1_producer_state)
-                    mma_s1_producer_state.advance()
+                    s1_handle.commit()
                     # 5. release K0
-                    load_kv_pipeline.consumer_release(mma_kv_release_state)
-                    mma_kv_release_state.advance()
+                    k_handle.release()
                     # End of GEMM (Q1 * K0 -> S1)
                     # Note: Q0 & Q1 are still needed in the seqlen_kv loop
                     # so we need to release them after the seqlen_kv loop
 
                     # GEMM_PV00 (P0 * V0 -> O0_partial), O0 needs to be accumulated in the seqlen_kv loop
                     # 1. wait for V0
-                    load_kv_pipeline.consumer_wait(mma_kv_consumer_state)
-                    tOrVi = tOrV[None, None, None, mma_kv_consumer_state.index]
-                    mma_kv_consumer_state.advance()
+                    v_handle = load_kv_consumer.wait_and_advance()
+                    tOrVi = tOrV[None, None, None, v_handle.index]
                     # 2. acquire corrected O0_partial
                     # Note: acquire corr first to take it out of the critical
                     # path since softmax takes longer
-                    mma_corr_pipeline.producer_acquire(mma_corr_producer_state)
+                    o0_handle = mma_corr_producer.acquire_and_advance()
                     # 3. acquire P0
                     # this acquire returns the ownership of all of S0 to the mma warp
                     # including the P0 part (inplaced in S0)
-                    mma_s0_pipeline.producer_acquire(mma_s0_producer_state)
+                    s0_handle = mma_s0_producer.acquire_and_advance()
                     # 4. gemm
                     num_kphases = cute.size(tOrP0, mode=[2])
                     for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
@@ -1216,22 +1208,21 @@ class BlackwellFusedMultiHeadAttentionForward:
                             tOtO0,
                         )
                     # 5. release accumulated O0_partial
-                    mma_corr_pipeline.producer_commit(mma_corr_producer_state)
-                    mma_corr_producer_state.advance()
+                    o0_handle.commit()
                     # End of GEMM_PV00 (P0 * V0 -> O0_partial)
 
                     seqlen_kv_loop_steps = (
                         self.get_trip_count(curr_block_coord, self.cta_tiler, seqlen_k)
                         - 1
                     )
+
                     # O1 hasn't been accumulated yet, its first MMA calculation doesn't need to accumulate
                     pv_whether_acc = False
                     for i in cutlass.range(0, seqlen_kv_loop_steps, 1, unroll=1):
                         # GEMM_QK0i (Q0 * Ki -> S0)
                         # 1. wait for Ki
-                        load_kv_pipeline.consumer_wait(mma_kv_consumer_state)
-                        tSrKi = tSrK[None, None, None, mma_kv_consumer_state.index]
-                        mma_kv_consumer_state.advance()
+                        k_handle = load_kv_consumer.wait_and_advance()
+                        tSrKi = tSrK[None, None, None, k_handle.index]
                         # 2. gemm
                         inner_num_kphases = cute.size(tSrQ0, mode=[2])
                         for kphase_idx in cutlass.range(
@@ -1247,15 +1238,14 @@ class BlackwellFusedMultiHeadAttentionForward:
                                 tStS0,
                             )
                         # 3. release S0
-                        mma_s0_pipeline.producer_commit(mma_s0_producer_state)
-                        mma_s0_producer_state.advance()
+                        s0_handle.commit()
                         # End of GEMM_QK0i (Q0 * Ki -> S0)
 
                         # GEMM_PV1(i-1) (P1 * V(i-1) -> O1_partial), V(i-1) is ready in GEMM_PV0(i-1)
                         # 1. acquire corrected O1_partial
-                        mma_corr_pipeline.producer_acquire(mma_corr_producer_state)
+                        o1_handle = mma_corr_producer.acquire_and_advance()
                         # 2. acquire P1
-                        mma_s1_pipeline.producer_acquire(mma_s1_producer_state)
+                        s1_handle = mma_s1_producer.acquire_and_advance()
                         # 3. gemm
                         inner_num_kphases = cute.size(tOrP0, mode=[2])
                         for kphase_idx in cutlass.range(
@@ -1272,11 +1262,9 @@ class BlackwellFusedMultiHeadAttentionForward:
                             )
                             pv_whether_acc = True
                         # 4. release accumulated O1_partial
-                        mma_corr_pipeline.producer_commit(mma_corr_producer_state)
-                        mma_corr_producer_state.advance()
+                        o1_handle.commit()
                         # 5. release V(i-1)
-                        load_kv_pipeline.consumer_release(mma_kv_release_state)
-                        mma_kv_release_state.advance()
+                        v_handle.release()
                         # End of GEMM_PV1(i-1) (P1 * V(i-1) -> O1_partial)
 
                         # GEMM_QK1i (Q1 * Ki -> S1), Q1 is ready in GEMM_QK10; Ki is ready in GEMM_QK0i
@@ -1294,22 +1282,19 @@ class BlackwellFusedMultiHeadAttentionForward:
                                 tSrKi[kphase_coord_5],
                                 tStS1,
                             )
-                        mma_s1_pipeline.producer_commit(mma_s1_producer_state)
-                        mma_s1_producer_state.advance()
+                        s1_handle.commit()
                         # 2. release Ki
-                        load_kv_pipeline.consumer_release(mma_kv_release_state)
-                        mma_kv_release_state.advance()
+                        k_handle.release()
                         # End of GEMM_QK1i (Q1 * Ki -> S1)
 
                         # GEMM_PV0i (P0 * Vi -> O0_partial)
                         # 1. wait for Vi
-                        load_kv_pipeline.consumer_wait(mma_kv_consumer_state)
-                        tOrVi = tOrV[None, None, None, mma_kv_consumer_state.index]
-                        mma_kv_consumer_state.advance()
+                        v_handle = load_kv_consumer.wait_and_advance()
+                        tOrVi = tOrV[None, None, None, v_handle.index]
                         # 2. acquire corrected O0_partial
-                        mma_corr_pipeline.producer_acquire(mma_corr_producer_state)
+                        o0_handle = mma_corr_producer.acquire_and_advance()
                         # 3. acquire P0
-                        mma_s0_pipeline.producer_acquire(mma_s0_producer_state)
+                        s0_handle = mma_s0_producer.acquire_and_advance()
                         # 4. gemm
                         inner_num_kphases = cute.size(tOrP0, mode=[2])
                         for kphase_idx in cutlass.range(
@@ -1325,22 +1310,19 @@ class BlackwellFusedMultiHeadAttentionForward:
                                 tOtO0,
                             )
                         # 5. release accumulated O0_partial
-                        mma_corr_pipeline.producer_commit(mma_corr_producer_state)
-                        mma_corr_producer_state.advance()
+                        o0_handle.commit()
                         # End of GEMM_PV0i (P0 * Vi -> O0_partial)
                     # End of seqlen_kv loop
 
                     # release Q0 & Q1
-                    load_q_pipeline.consumer_release(mma_q_release_state)
-                    mma_q_release_state.advance()
-                    load_q_pipeline.consumer_release(mma_q_release_state)
-                    mma_q_release_state.advance()
+                    q0_handle.release()
+                    q1_handle.release()
 
                     # GEMM_PV1(i_end) (P1 * Vi_end -> O1)
                     # 1. acquire corrected O1_partial
-                    mma_corr_pipeline.producer_acquire(mma_corr_producer_state)
+                    o1_handle = mma_corr_producer.acquire_and_advance()
                     # 2. acquire P1
-                    mma_s1_pipeline.producer_acquire(mma_s1_producer_state)
+                    s1_handle = mma_s1_producer.acquire_and_advance()
                     # 3. gemm
                     num_kphases = cute.size(tOrP1, mode=[2])
                     for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
@@ -1354,18 +1336,14 @@ class BlackwellFusedMultiHeadAttentionForward:
                             tOtO1,
                         )
                     # 4. commit accumulated O1
-                    mma_corr_pipeline.producer_commit(mma_corr_producer_state)
-                    mma_corr_producer_state.advance()
+                    o1_handle.commit()
                     # 5. release Vi_end
-                    load_kv_pipeline.consumer_release(mma_kv_release_state)
-                    mma_kv_release_state.advance()
+                    v_handle.release()
                     # End of GEMM_PV1(i_end) (P1 * Vi_end -> O1)
 
                     # Commit S0 and S1
-                    mma_s0_pipeline.producer_commit(mma_s0_producer_state)
-                    mma_s0_producer_state.advance()
-                    mma_s1_pipeline.producer_commit(mma_s1_producer_state)
-                    mma_s1_producer_state.advance()
+                    s0_handle.commit()
+                    s1_handle.commit()
 
                 # Advance to next tile
                 tile_sched.advance_to_next_work()
@@ -1382,7 +1360,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                 alignment=16,
                 ptr_to_buffer_holding_addr=storage.tmem_holding_buf,
             )
-
             cute.arch.dealloc_tmem(tmem_ptr, tmem_alloc_cols)
 
         # ///////////////////////////////////////////////////////////////////////////////
@@ -1390,12 +1367,6 @@ class BlackwellFusedMultiHeadAttentionForward:
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.epilogue_warp_id:
             cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
-
-            corr_epi_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.epi_stage
-            )
-            corr_epi_release_state = corr_epi_consumer_state.clone()
-
             tile_sched = create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -1418,7 +1389,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                             seqlen_q,
                         )
                     )
-
                 if not continue_cond:
                     curr_block_coord_o = curr_block_coord
                     mO_qdl_ = mO_qdl
@@ -1453,27 +1423,23 @@ class BlackwellFusedMultiHeadAttentionForward:
                     # wait from corr, issue tma store on smem
                     # O0
                     # 1. wait for O0 final
-                    corr_epi_pipeline.consumer_wait(corr_epi_consumer_state)
-                    corr_epi_consumer_state.advance()
+                    o0_handle = corr_epi_consumer.wait_and_advance()
                     # 2. copy O0 to gmem
                     cute.copy(tma_atom_o, tOsO[None, 0], tOgO[None, o0_coord])
                     cute.arch.cp_async_bulk_commit_group()
                     # O1
                     # 1. wait for O1 final
-                    corr_epi_pipeline.consumer_wait(corr_epi_consumer_state)
-                    corr_epi_consumer_state.advance()
+                    o1_handle = corr_epi_consumer.wait_and_advance()
                     # 2. copy O1 to gmem
                     cute.copy(tma_atom_o, tOsO[None, 1], tOgO[None, o1_coord])
                     cute.arch.cp_async_bulk_commit_group()
 
                     # Ensure O0 buffer is ready to be released
                     cute.arch.cp_async_bulk_wait_group(1, read=True)
-                    corr_epi_pipeline.consumer_release(corr_epi_release_state)
-                    corr_epi_release_state.advance()
+                    o0_handle.release()
                     # Ensure O1 buffer is ready to be released
                     cute.arch.cp_async_bulk_wait_group(0, read=True)
-                    corr_epi_pipeline.consumer_release(corr_epi_release_state)
-                    corr_epi_release_state.advance()
+                    o1_handle.release()
 
                 # Advance to next tile
                 tile_sched.advance_to_next_work()
@@ -1496,9 +1462,10 @@ class BlackwellFusedMultiHeadAttentionForward:
                 qk_thr_mma=qk_thr_mma,
                 tStS=tStS,
                 tStSi=tStS0,
-                mma_si_pipeline=mma_s0_pipeline,
-                si_corr_pipeline=s0_corr_pipeline,
-                s0_s1_sequence_pipeline=s0_s1_sequence_pipeline,
+                mma_si_consumer=mma_s0_consumer,
+                si_corr_producer=s0_corr_producer,
+                s0_s1_sequence_consumer=s0_s1_sequence_consumer,
+                s0_s1_sequence_producer=s0_s1_sequence_producer,
                 tile_sched_params=tile_sched_params,
             )
             cute.arch.mbarrier_arrive(tmem_dealloc_mbar_ptr)
@@ -1522,9 +1489,10 @@ class BlackwellFusedMultiHeadAttentionForward:
                 qk_thr_mma=qk_thr_mma,
                 tStS=tStS,
                 tStSi=tStS1,
-                mma_si_pipeline=mma_s1_pipeline,
-                si_corr_pipeline=s1_corr_pipeline,
-                s0_s1_sequence_pipeline=s0_s1_sequence_pipeline,
+                mma_si_consumer=mma_s1_consumer,
+                si_corr_producer=s1_corr_producer,
+                s0_s1_sequence_consumer=s0_s1_sequence_consumer,
+                s0_s1_sequence_producer=s0_s1_sequence_producer,
                 tile_sched_params=tile_sched_params,
             )
             cute.arch.mbarrier_arrive(tmem_dealloc_mbar_ptr)
@@ -1534,19 +1502,6 @@ class BlackwellFusedMultiHeadAttentionForward:
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx >= self.correction_warp_ids[0] and warp_idx < self.mma_warp_id:
             cute.arch.warpgroup_reg_dealloc(self.num_regs_correction)
-
-            s0_corr_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.softmax_corr_stage
-            )
-            s1_corr_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.softmax_corr_stage
-            )
-            o_corr_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.mma_corr_stage
-            )
-            corr_epi_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.epi_stage
-            )
 
             cS = cute.make_identity_tensor((self.qk_mma_tiler[0], self.qk_mma_tiler[1]))
             tScS = qk_thr_mma.partition_C(cS)
@@ -1602,127 +1557,93 @@ class BlackwellFusedMultiHeadAttentionForward:
                     if cutlass.const_expr(cum_seqlen_k is not None):
                         cuseqlen_k = cum_seqlen_k[batch_coord]
                         seqlen_k = cum_seqlen_k[batch_coord + 1] - cuseqlen_k
-
                     # Ignore first signal from softmax as no correction is required
-                    s0_corr_pipeline.consumer_wait(s0_corr_consumer_state)
-                    s0_corr_pipeline.consumer_release(s0_corr_consumer_state)
-                    s0_corr_consumer_state.advance()
-
-                    s1_corr_pipeline.consumer_wait(s1_corr_consumer_state)
-
+                    vec0_handle = s0_corr_consumer.wait_and_advance()
+                    vec0_handle.release()
+                    vec1_handle = s1_corr_consumer.wait_and_advance()
                     seqlen_kv_loop_steps = (
                         self.get_trip_count(curr_block_coord, self.cta_tiler, seqlen_k)
                         - 1
                     )
                     for i in cutlass.range(0, seqlen_kv_loop_steps, 1, unroll=1):
-                        # wait for S0
-                        s0_corr_pipeline.consumer_wait(s0_corr_consumer_state)
+                        # wait for vec0 (row_wise current max & previous max)
+                        vec0_handle = s0_corr_consumer.wait_and_advance()
                         tTMEM_LOAD_VECrS = cute.make_fragment(
                             tTMEM_LOAD_VECcS.shape, self.qk_acc_dtype
                         )
-                        # read row_wise new global max
                         cute.copy(
                             tiled_tmem_load_vec, tTMEM_LOAD_VECtS0, tTMEM_LOAD_VECrS
                         )
-
                         scale_ = scale_softmax_log2 * (
                             tTMEM_LOAD_VECrS[0] - tTMEM_LOAD_VECrS[1]
                         )
-                        scale = cute.arch.exp2(scale_)
-
-                        mma_corr_pipeline.consumer_wait(o_corr_consumer_state)
+                        scale = cute.math.exp2(scale_, fastmath=True)
+                        # wait for o0
+                        o0_handle = mma_corr_consumer.wait_and_advance()
                         self.correction_rescale(pv_thr_mma, tOtO0, scale)
-
-                        s1_corr_pipeline.consumer_release(s1_corr_consumer_state)
-                        s1_corr_consumer_state.advance()
-
+                        # release vec1 & o0
+                        vec1_handle.release()
                         cute.arch.fence_view_async_tmem_store()
+                        o0_handle.release()
 
-                        mma_corr_pipeline.consumer_release(o_corr_consumer_state)
-                        o_corr_consumer_state.advance()
-
-                        s1_corr_pipeline.consumer_wait(s1_corr_consumer_state)
-
+                        # wait for vec1 (row_wise current max & previous max)
+                        vec1_handle = s1_corr_consumer.wait_and_advance()
                         cute.copy(
                             tiled_tmem_load_vec, tTMEM_LOAD_VECtS1, tTMEM_LOAD_VECrS
                         )
-
                         scale_ = scale_softmax_log2 * (
                             tTMEM_LOAD_VECrS[0] - tTMEM_LOAD_VECrS[1]
                         )
-                        scale = cute.arch.exp2(scale_)
-
-                        mma_corr_pipeline.consumer_wait(o_corr_consumer_state)
+                        scale = cute.math.exp2(scale_, fastmath=True)
+                        o1_handle = mma_corr_consumer.wait_and_advance()
                         self.correction_rescale(pv_thr_mma, tOtO1, scale)
-
-                        s0_corr_pipeline.consumer_release(s0_corr_consumer_state)
-                        s0_corr_consumer_state.advance()
-
+                        vec0_handle.release()
                         cute.arch.fence_view_async_tmem_store()
-                        mma_corr_pipeline.consumer_release(o_corr_consumer_state)
-                        o_corr_consumer_state.advance()
+                        o1_handle.release()
                     # End of seqlen_corr_loop_steps
+                    vec1_handle.release()
 
-                    s1_corr_pipeline.consumer_release(s1_corr_consumer_state)
-                    s1_corr_consumer_state.advance()
-
-                    s0_corr_pipeline.consumer_wait(s0_corr_consumer_state)
-
+                    # wait for vec0 (row_wise global sum)
+                    vec0_handle = s0_corr_consumer.wait_and_advance()
                     tTMEM_LOAD_VECrS = cute.make_fragment(
                         tTMEM_LOAD_VECcS.shape, self.qk_acc_dtype
                     )
                     cute.copy(tiled_tmem_load_vec, tTMEM_LOAD_VECtS0, tTMEM_LOAD_VECrS)
                     cute.arch.fence_view_async_tmem_load()
-
-                    s0_corr_pipeline.consumer_release(s0_corr_consumer_state)
-                    s0_corr_consumer_state.advance()
-
-                    mma_corr_pipeline.consumer_wait(o_corr_consumer_state)
-                    corr_epi_pipeline.producer_acquire(corr_epi_producer_state)
-
+                    vec0_handle.release()
+                    # wait for o0
+                    o0_handle = mma_corr_consumer.wait_and_advance()
+                    o0_final_handle = corr_epi_producer.acquire_and_advance()
                     self.correction_epilog(
                         pv_thr_mma,
                         tOtO0,
                         scale_output / tTMEM_LOAD_VECrS[0],
                         sO[None, None, 0],
                     )
+                    o0_handle.release()
+                    o0_final_handle.commit()
 
-                    mma_corr_pipeline.consumer_release(o_corr_consumer_state)
-                    o_corr_consumer_state.advance()
-
-                    corr_epi_pipeline.producer_commit(corr_epi_producer_state)
-                    corr_epi_producer_state.advance()
-
-                    s1_corr_pipeline.consumer_wait(s1_corr_consumer_state)
-                    # load from V1
+                    # wait for vec1 (row_wise global sum)
+                    vec1_handle = s1_corr_consumer.wait_and_advance()
                     cute.copy(tiled_tmem_load_vec, tTMEM_LOAD_VECtS1, tTMEM_LOAD_VECrS)
                     cute.arch.fence_view_async_tmem_load()
-
-                    s1_corr_pipeline.consumer_release(s1_corr_consumer_state)
-                    s1_corr_consumer_state.advance()
-
-                    mma_corr_pipeline.consumer_wait(o_corr_consumer_state)
-
-                    corr_epi_pipeline.producer_acquire(corr_epi_producer_state)
+                    vec1_handle.release()
+                    # wait for o1
+                    o1_handle = mma_corr_consumer.wait_and_advance()
+                    o1_final_handle = corr_epi_producer.acquire_and_advance()
                     self.correction_epilog(
                         pv_thr_mma,
                         tOtO1,
                         scale_output / tTMEM_LOAD_VECrS[0],
                         sO[None, None, 1],
                     )
-                    mma_corr_pipeline.consumer_release(o_corr_consumer_state)
-                    o_corr_consumer_state.advance()
-
-                    corr_epi_pipeline.producer_commit(corr_epi_producer_state)
-                    corr_epi_producer_state.advance()
-
+                    o1_handle.release()
+                    o1_final_handle.commit()
                 # Advance to next tile
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
             # End of persistent scheduler loop
-
             cute.arch.mbarrier_arrive(tmem_dealloc_mbar_ptr)
-
         return
 
     @cute.jit
@@ -1730,33 +1651,19 @@ class BlackwellFusedMultiHeadAttentionForward:
         self,
         stage: int,
         need_apply_mask: bool,
-        seqlen_k: Int32,
-        row_max: Float32,
-        row_sum: Float32,
-        mma_si_consumer_state: pipeline.PipelineState,
-        si_corr_producer_state: pipeline.PipelineState,
-        s0_s1_sequence_state: pipeline.PipelineState,
-        mma_si_pipeline: pipeline.PipelineAsync,
-        si_corr_pipeline: pipeline.PipelineAsync,
-        s0_s1_sequence_pipeline: pipeline.PipelineAsync,
-        scale_softmax_log2: Float32,
-        cS: cute.Tensor,
-        qk_thr_mma: cute.core.ThrMma,
-        tiled_tmem_load: cute.TiledCopy,
-        tiled_tmem_store: cute.TiledCopy,
-        tiled_tmem_store_vec: cute.TiledCopy,
-        thr_tmem_load: cute.CopyAtom,
-        thr_tmem_store: cute.CopyAtom,
-        thr_tmem_store_vec: cute.CopyAtom,
-        tTMEM_LOADtS: cute.Tensor,
-        tTMEM_STORE_VECtS: cute.Tensor,
-        tTMEM_STOREtS_x4: cute.Tensor,
+        iter_args: tuple,
+        value_args: tuple,
+        pipeline_args: tuple,
+        atom_args: tuple,
+        tensor_args: tuple,
     ) -> Tuple[
         Float32,
         Float32,
-        pipeline.PipelineState,
-        pipeline.PipelineState,
-        pipeline.PipelineState,
+        pipeline.PipelineProducer.ImmutableResourceHandle,
+        pipeline.PipelineConsumer,
+        pipeline.PipelineProducer,
+        pipeline.PipelineConsumer,
+        pipeline.PipelineProducer,
     ]:
         """Perform a single step of the softmax computation on a block of attention scores.
 
@@ -1777,49 +1684,42 @@ class BlackwellFusedMultiHeadAttentionForward:
         :type stage: int
         :param need_apply_mask: Whether to apply attention masking
         :type need_apply_mask: bool
-        :param row_max: Current maximum value for the row
-        :type row_max: cute.core.Tensor
-        :param row_sum: Current sum value for the row
-        :type row_sum: cute.core.Tensor
-        :param mma_si_consumer_state: Pipeline state for MMA consumer operations
-        :type mma_si_consumer_state: pipeline.PipelineState
-        :param si_corr_producer_state: Pipeline state for correction producer operations
-        :type si_corr_producer_state: pipeline.PipelineState
-        :param s0_s1_sequence_state: Pipeline state for sequence synchronization
-        :type s0_s1_sequence_state: pipeline.PipelineState
-        :param mma_si_pipeline: Pipeline for MMA operations
-        :type mma_si_pipeline: pipeline.PipelineAsync
-        :param si_corr_pipeline: Pipeline for correction operations
-        :type si_corr_pipeline: pipeline.PipelineAsync
-        :param s0_s1_sequence_pipeline: Pipeline for sequence synchronization
-        :type s0_s1_sequence_pipeline: pipeline.PipelineAsync
-        :param scale_softmax_log2: Log2 scale factor for softmax computation
-        :type scale_softmax_log2: Float32
-        :param cS: Current slice of attention matrix
-        :type cS: cute.Tensor
-        :param qk_thr_mma: Thread MMA operation
-        :type qk_thr_mma: cute.core.ThrMma
-        :param tiled_tmem_load: Tiled copy operation for loading from tensor memory
-        :type tiled_tmem_load: cute.TiledCopy
-        :param tiled_tmem_store: Tiled copy operation for storing to tensor memory
-        :type tiled_tmem_store: cute.TiledCopy
-        :param tiled_tmem_store_vec: Tiled copy operation for storing vector data
-        :type tiled_tmem_store_vec: cute.TiledCopy
-        :param thr_tmem_load: Thread copy operation for loading
-        :type thr_tmem_load: cute.CopyAtom
-        :param thr_tmem_store: Thread copy operation for storing
-        :type thr_tmem_store: cute.CopyAtom
-        :param thr_tmem_store_vec: Thread copy operation for storing vector data
-        :type thr_tmem_store_vec: cute.CopyAtom
-        :param tTMEM_LOADtS: Tensor for loading from tensor memory
-        :type tTMEM_LOADtS: cute.Tensor
-        :param tTMEM_STORE_VECtS: Tensor for storing vector data
-        :type tTMEM_STORE_VECtS: cute.Tensor
-        :param tTMEM_STOREtS_x4: Tensor for storing processed data
-        :type tTMEM_STOREtS_x4: cute.Tensor
-        :return: Updated state values (row_max, row_sum, and pipeline states)
+        :param iter_args: Tuple containing the counting tensor, row_max, row_sum, and vector buffer's handle for current iteration
+        :type iter_args: tuple
+        :param value_args: Tuple containing seqlen_k and scale_softmax_log2
+        :type value_args: tuple
+        :param pipeline_args: Tuple containing pipeline related arguments for MMA, correction, and sequence synchronization
+        :type pipeline_args: tuple
+        :param atom_args: Tuple containing mma & copy atoms
+        :type atom_args: tuple
+        :param tensor_args: Tuple containing softmax related tensors
+        :type tensor_args: tuple
+        :return: Updated state values (row_max, row_sum, and pipeline related arguments)
         :rtype: tuple
         """
+        cS, row_max, row_sum, vec_i_handle = iter_args
+        seqlen_k, scale_softmax_log2 = value_args
+        (
+            mma_si_consumer,
+            si_corr_producer,
+            s0_s1_sequence_consumer,
+            s0_s1_sequence_producer,
+        ) = pipeline_args
+        (
+            qk_thr_mma,
+            tiled_tmem_load,
+            tiled_tmem_store,
+            tiled_tmem_store_vec,
+            thr_tmem_load,
+            thr_tmem_store,
+            thr_tmem_store_vec,
+        ) = atom_args
+        (
+            tTMEM_LOADtS,
+            tTMEM_STORE_VECtS,
+            tTMEM_STOREtS_x4,
+        ) = tensor_args
+
         tilePlikeFP32 = self.qk_mma_tiler[1] // Float32.width * self.o_dtype.width
         tScS = qk_thr_mma.partition_C(cS)
         tScS_vec_layout = cute.composition(tScS.layout, cute.make_layout((128, 2)))
@@ -1834,10 +1734,9 @@ class BlackwellFusedMultiHeadAttentionForward:
         tTMEM_STOREcS = thr_tmem_store.partition_S(tScS_P)
 
         # Wait for Si
-        mma_si_pipeline.consumer_wait(mma_si_consumer_state)
+        si_handle = mma_si_consumer.wait_and_advance()
         tTMEM_LOADrS = cute.make_fragment(tTMEM_LOADcS.shape, self.qk_acc_dtype)
         cute.copy(tiled_tmem_load, tTMEM_LOADtS, tTMEM_LOADrS)
-
         if need_apply_mask:
             self.apply_mask(tTMEM_LOADrS, tTMEM_LOADcS, seqlen_k)
 
@@ -1846,7 +1745,6 @@ class BlackwellFusedMultiHeadAttentionForward:
         row_max_safe = row_max
         if row_max == -cutlass.Float32.inf:
             row_max_safe = 0.0
-
         tTMEM_STORE_VECrS = cute.make_fragment(
             tTMEM_STORE_VECcS.shape, self.qk_acc_dtype
         )
@@ -1855,8 +1753,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         cute.copy(tiled_tmem_store_vec, tTMEM_STORE_VECrS, tTMEM_STORE_VECtS)
         cute.arch.fence_view_async_tmem_store()
         # Notify correction wg that row_max is ready
-        si_corr_pipeline.producer_commit(si_corr_producer_state)
-        si_corr_producer_state.advance()
+        vec_i_handle.commit()
 
         tTMEM_STORErS_x4 = cute.make_fragment(tTMEM_STOREcS.shape, self.qk_acc_dtype)
         tTMEM_STORErS_x4_e = cute.make_tensor(
@@ -1868,11 +1765,10 @@ class BlackwellFusedMultiHeadAttentionForward:
         minus_row_max_scale = (0.0 - row_max_safe) * scale
 
         # Sequence barrier wait
-        if stage == 0:
-            s0_s1_sequence_pipeline.producer_acquire(s0_s1_sequence_state)
+        if cutlass.const_expr(stage == 0):
+            sequence_producer_handle = s0_s1_sequence_producer.acquire_and_advance()
         else:
-            s0_s1_sequence_pipeline.consumer_wait(s0_s1_sequence_state)
-
+            sequence_consumer_handle = s0_s1_sequence_consumer.wait_and_advance()
         frg_cnt = 4
         frg_tile = cute.size(tTMEM_LOADrS) // frg_cnt
         tTMEM_LOADrS_frg = cute.logical_divide(tTMEM_LOADrS, cute.make_layout(frg_tile))
@@ -1888,29 +1784,27 @@ class BlackwellFusedMultiHeadAttentionForward:
                         (minus_row_max_scale, minus_row_max_scale),
                     )
                 )
-                tTMEM_LOADrS_frg[k, j] = cute.arch.exp2(tTMEM_LOADrS_frg[k, j])
-                tTMEM_LOADrS_frg[k + 1, j] = cute.arch.exp2(tTMEM_LOADrS_frg[k + 1, j])
+                tTMEM_LOADrS_frg[k, j] = cute.math.exp2(
+                    tTMEM_LOADrS_frg[k, j], fastmath=True
+                )
+                tTMEM_LOADrS_frg[k + 1, j] = cute.math.exp2(
+                    tTMEM_LOADrS_frg[k + 1, j], fastmath=True
+                )
             s_vec = tTMEM_LOADrS_frg[None, j].load()
             tTMEM_STORErS_x4_e_frg[None, j].store(s_vec.to(self.q_dtype))
-
         # Sequence barrier arrive
-        if stage == 0:
-            s0_s1_sequence_pipeline.producer_commit(s0_s1_sequence_state)
+        if cutlass.const_expr(stage == 0):
+            sequence_producer_handle.commit()
         else:
-            s0_s1_sequence_pipeline.consumer_release(s0_s1_sequence_state)
-        s0_s1_sequence_state.advance()
-
+            sequence_consumer_handle.release()
         cute.copy(tiled_tmem_store, tTMEM_STORErS_x4, tTMEM_STOREtS_x4)
         cute.arch.fence_view_async_tmem_store()
+        # Notify tensor core warp that softmax(S->P) is ready
+        si_handle.release()
 
-        # Notify tensor core warp that P is ready
-        mma_si_pipeline.consumer_release(mma_si_consumer_state)
-        mma_si_consumer_state.advance()
-
-        si_corr_pipeline.producer_acquire(si_corr_producer_state)
-
+        vec_i_handle = si_corr_producer.acquire_and_advance()
         acc_scale_ = scale * (old_row_max - row_max_safe)
-        acc_scale = cute.arch.exp2(acc_scale_) * 0.5
+        acc_scale = cute.math.exp2(acc_scale_, fastmath=True) * 0.5
         row_sum *= acc_scale
         local_row_sum_0 = (row_sum, row_sum)
         local_row_sum_1 = (0.0, 0.0)
@@ -1943,12 +1837,14 @@ class BlackwellFusedMultiHeadAttentionForward:
         return (
             row_max,
             row_sum,
-            mma_si_consumer_state,
-            si_corr_producer_state,
-            s0_s1_sequence_state,
+            vec_i_handle,
+            mma_si_consumer,
+            si_corr_producer,
+            s0_s1_sequence_consumer,
+            s0_s1_sequence_producer,
         )
 
-    # for both softmax0 and softmax1 warp group
+    # For both softmax0 and softmax1 warp group
     @cute.jit
     def softmax(
         self,
@@ -1960,9 +1856,10 @@ class BlackwellFusedMultiHeadAttentionForward:
         qk_thr_mma: cute.core.ThrMma,
         tStS: cute.Tensor,
         tStSi: cute.Tensor,
-        mma_si_pipeline: pipeline.PipelineAsync,
-        si_corr_pipeline: pipeline.PipelineAsync,
-        s0_s1_sequence_pipeline: pipeline.PipelineAsync,
+        mma_si_consumer: pipeline.PipelineConsumer,
+        si_corr_producer: pipeline.PipelineProducer,
+        s0_s1_sequence_consumer: pipeline.PipelineConsumer,
+        s0_s1_sequence_producer: pipeline.PipelineProducer,
         tile_sched_params: FmhaStaticTileSchedulerParams,
     ):
         """Compute softmax on attention scores from QK matrix multiplication.
@@ -2008,29 +1905,22 @@ class BlackwellFusedMultiHeadAttentionForward:
         cS_base = cute.make_identity_tensor(
             (self.qk_mma_tiler[0], self.qk_mma_tiler[1])
         )
-
         tilePlikeFP32 = self.qk_mma_tiler[1] // 32 * self.o_dtype.width
-
         tScS = qk_thr_mma.partition_C(cS_base)
-
         tStS_vec_layout = cute.composition(tStS.layout, cute.make_layout((128, 2)))
         tmem_vec_offset = self.tmem_vec0_offset if stage == 0 else self.tmem_vec1_offset
         tStS_vec = cute.make_tensor(tStS.iterator + tmem_vec_offset, tStS_vec_layout)
-
         tScS_vec_layout = cute.composition(tScS.layout, cute.make_layout((128, 2)))
         tScS_vec = cute.make_tensor(tScS.iterator, tScS_vec_layout)
-
         tStS_P_layout = cute.composition(
             tStS.layout, cute.make_layout((128, tilePlikeFP32))
         )
         tmem_p_offset = self.tmem_p0_offset if stage == 0 else self.tmem_p1_offset
         tStS_P = cute.make_tensor(tStS.iterator + tmem_p_offset, tStS_P_layout)
-
         tmem_load_atom = cute.make_copy_atom(
             tcgen05.copy.Ld32x32bOp(tcgen05.copy.Repetition(32)),
             self.qk_acc_dtype,
         )
-
         tiled_tmem_load = tcgen05.make_tmem_copy(tmem_load_atom, tStSi)
         thread_idx = tidx % (
             self.threads_per_warp
@@ -2042,14 +1932,12 @@ class BlackwellFusedMultiHeadAttentionForward:
         )
         thr_tmem_load = tiled_tmem_load.get_slice(thread_idx)
         tTMEM_LOADtS = thr_tmem_load.partition_S(tStSi)
-
         tmem_store_vec_atom = cute.make_copy_atom(
             tcgen05.copy.St32x32bOp(tcgen05.copy.Repetition(2)),
             self.qk_acc_dtype,
         )
         tiled_tmem_store_vec = tcgen05.make_tmem_copy(tmem_store_vec_atom, tStS_vec)
         thr_tmem_store_vec = tiled_tmem_store_vec.get_slice(thread_idx)
-
         tTMEM_STORE_VECtS = thr_tmem_store_vec.partition_D(tStS_vec)
         tTMEM_STORE_VECcS = thr_tmem_store_vec.partition_S(tScS_vec)
         tmem_store_atom = cute.make_copy_atom(
@@ -2059,21 +1947,6 @@ class BlackwellFusedMultiHeadAttentionForward:
         tiled_tmem_store = tcgen05.make_tmem_copy(tmem_store_atom, tStS_P)
         thr_tmem_store = tiled_tmem_store.get_slice(thread_idx)
         tTMEM_STOREtS_x4 = thr_tmem_store.partition_D(tStS_P)
-
-        mma_si_consumer_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Consumer, self.mma_softmax_stage
-        )
-        si_corr_producer_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Producer, self.softmax_corr_stage
-        )
-        s0_s1_sequence_state = pipeline.make_pipeline_state(
-            (
-                pipeline.PipelineUserType.Producer
-                if stage == 0
-                else pipeline.PipelineUserType.Consumer
-            ),
-            1,
-        )
 
         tile_sched = create_fmha_static_tile_scheduler(
             tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -2101,59 +1974,62 @@ class BlackwellFusedMultiHeadAttentionForward:
                 if cutlass.const_expr(cum_seqlen_k is not None):
                     cuseqlen_k = cum_seqlen_k[batch_coord]
                     seqlen_k_ = cum_seqlen_k[batch_coord + 1] - cuseqlen_k
+                row_max = -Float32.inf
+                row_sum = 0.0
+                value_args = (seqlen_k_, scale_softmax_log2)
+                atom_args = (
+                    qk_thr_mma,
+                    tiled_tmem_load,
+                    tiled_tmem_store,
+                    tiled_tmem_store_vec,
+                    thr_tmem_load,
+                    thr_tmem_store,
+                    thr_tmem_store_vec,
+                )
+                tensor_args = (
+                    tTMEM_LOADtS,
+                    tTMEM_STORE_VECtS,
+                    tTMEM_STOREtS_x4,
+                )
 
                 logical_offset = (
                     curr_block_coord[0] * self.cta_tiler[0]
                     + stage * self.qk_mma_tiler[0],
                     0,
                 )
-
                 cS = cute.domain_offset(logical_offset, cS_base)
-                si_corr_pipeline.producer_acquire(si_corr_producer_state)
-
+                vec_i_handle = si_corr_producer.acquire_and_advance()
                 unmask_count = self.get_unmasked_trip_count(
                     curr_block_coord,
                     self.cta_tiler,
                     seqlen_k_,
                 )
-
-                row_max = -Float32.inf
-                row_sum = 0.0
-
                 for i in cutlass.range(0, unmask_count, 1, unroll=1):
                     cS_iter = cute.domain_offset((0, i * self.qk_mma_tiler[1]), cS)
+                    iter_args = (cS_iter, row_max, row_sum, vec_i_handle)
+                    pipeline_args = (
+                        mma_si_consumer,
+                        si_corr_producer,
+                        s0_s1_sequence_consumer,
+                        s0_s1_sequence_producer,
+                    )
                     (
                         row_max,
                         row_sum,
-                        mma_si_consumer_state,
-                        si_corr_producer_state,
-                        s0_s1_sequence_state,
+                        vec_i_handle,
+                        mma_si_consumer,
+                        si_corr_producer,
+                        s0_s1_sequence_consumer,
+                        s0_s1_sequence_producer,
                     ) = self.softmax_step(
                         stage,
                         False,
-                        seqlen_k_,
-                        row_max,
-                        row_sum,
-                        mma_si_consumer_state,
-                        si_corr_producer_state,
-                        s0_s1_sequence_state,
-                        mma_si_pipeline,
-                        si_corr_pipeline,
-                        s0_s1_sequence_pipeline,
-                        scale_softmax_log2,
-                        cS_iter,
-                        qk_thr_mma,
-                        tiled_tmem_load,
-                        tiled_tmem_store,
-                        tiled_tmem_store_vec,
-                        thr_tmem_load,
-                        thr_tmem_store,
-                        thr_tmem_store_vec,
-                        tTMEM_LOADtS,
-                        tTMEM_STORE_VECtS,
-                        tTMEM_STOREtS_x4,
+                        iter_args,
+                        value_args,
+                        pipeline_args,
+                        atom_args,
+                        tensor_args,
                     )
-
                 mask_count = self.get_masked_trip_count(
                     curr_block_coord,
                     self.cta_tiler,
@@ -2164,40 +2040,31 @@ class BlackwellFusedMultiHeadAttentionForward:
                     unmask_count, unmask_count + mask_count, 1, unroll=1
                 ):
                     cS_iter = cute.domain_offset((0, i * self.qk_mma_tiler[1]), cS)
+                    iter_args = (cS_iter, row_max, row_sum, vec_i_handle)
+                    pipeline_args = (
+                        mma_si_consumer,
+                        si_corr_producer,
+                        s0_s1_sequence_consumer,
+                        s0_s1_sequence_producer,
+                    )
                     (
                         row_max,
                         row_sum,
-                        mma_si_consumer_state,
-                        si_corr_producer_state,
-                        s0_s1_sequence_state,
+                        vec_i_handle,
+                        mma_si_consumer,
+                        si_corr_producer,
+                        s0_s1_sequence_consumer,
+                        s0_s1_sequence_producer,
                     ) = self.softmax_step(
                         stage,
                         True,
-                        seqlen_k_,
-                        row_max,
-                        row_sum,
-                        mma_si_consumer_state,
-                        si_corr_producer_state,
-                        s0_s1_sequence_state,
-                        mma_si_pipeline,
-                        si_corr_pipeline,
-                        s0_s1_sequence_pipeline,
-                        scale_softmax_log2,
-                        cS_iter,
-                        qk_thr_mma,
-                        tiled_tmem_load,
-                        tiled_tmem_store,
-                        tiled_tmem_store_vec,
-                        thr_tmem_load,
-                        thr_tmem_store,
-                        thr_tmem_store_vec,
-                        tTMEM_LOADtS,
-                        tTMEM_STORE_VECtS,
-                        tTMEM_STOREtS_x4,
+                        iter_args,
+                        value_args,
+                        pipeline_args,
+                        atom_args,
+                        tensor_args,
                     )
-
-                mma_si_pipeline.consumer_wait(mma_si_consumer_state)
-
+                si_handle = mma_si_consumer.wait_and_advance()
                 tTMEM_STORE_VECrS = cute.make_fragment(
                     tTMEM_STORE_VECcS.shape, self.qk_acc_dtype
                 )
@@ -2205,15 +2072,10 @@ class BlackwellFusedMultiHeadAttentionForward:
                 tTMEM_STORE_VECrS[1] = row_max
                 cute.copy(tiled_tmem_store_vec, tTMEM_STORE_VECrS, tTMEM_STORE_VECtS)
                 cute.arch.fence_view_async_tmem_store()
-
-                si_corr_pipeline.producer_commit(si_corr_producer_state)
-                si_corr_producer_state.advance()
-
-                si_corr_pipeline.producer_acquire(si_corr_producer_state)
-
+                vec_i_handle.commit()
+                si_corr_producer.acquire()
                 # Empty step to sync against pipe s
-                mma_si_pipeline.consumer_release(mma_si_consumer_state)
-                mma_si_consumer_state.advance()
+                si_handle.release()
 
             # Advance to next tile
             tile_sched.advance_to_next_work()
@@ -2439,7 +2301,11 @@ class BlackwellFusedMultiHeadAttentionForward:
             else:
                 result = 0
         elif self.mask_type == MaskType.CAUSAL_MASK:
-            result = cute.ceil_div(tile_shape[0], tile_shape[1])
+            trip_count = self.get_trip_count(blk_coord, tile_shape, seqlen_k)
+            result = cutlass.min(
+                trip_count,
+                cute.ceil_div(tile_shape[0], tile_shape[1]),
+            )
         return result
 
     @cute.jit
@@ -2481,122 +2347,6 @@ class BlackwellFusedMultiHeadAttentionForward:
                 if pos[0] < pos[1] or pos[1] >= seqlen_k:
                     acc_qk[i] = -Float32.inf
 
-    def make_and_init_load_q_pipeline(self, load_q_mbar_ptr):
-        load_q_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.load_warp_id])
-        )
-        load_q_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.mma_warp_id])
-        )
-        return pipeline.PipelineTmaUmma.create(
-            num_stages=self.q_stage,
-            producer_group=load_q_producer_group,
-            consumer_group=load_q_consumer_group,
-            tx_count=self.tma_copy_q_bytes,
-            barrier_storage=load_q_mbar_ptr,
-        )
-
-    def make_and_init_load_kv_pipeline(self, load_kv_mbar_ptr):
-        load_kv_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.load_warp_id])
-        )
-        load_kv_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.mma_warp_id])
-        )
-        return pipeline.PipelineTmaUmma.create(
-            num_stages=self.kv_stage,
-            producer_group=load_kv_producer_group,
-            consumer_group=load_kv_consumer_group,
-            tx_count=self.tma_copy_kv_bytes,
-            barrier_storage=load_kv_mbar_ptr,
-        )
-
-    def make_and_init_mma_si_pipeline(self, mma_si_mbar_ptr):
-        mma_si_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.mma_warp_id])
-        )
-        mma_si_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-        )
-        return pipeline.PipelineUmmaAsync.create(
-            num_stages=self.mma_softmax_stage,
-            producer_group=mma_si_producer_group,
-            consumer_group=mma_si_consumer_group,
-            barrier_storage=mma_si_mbar_ptr,
-        )
-
-    def make_and_init_si_corr_pipeline(self, si_corr_mbar_ptr):
-        si_corr_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-        )
-        si_corr_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.correction_warp_ids),
-            self.threads_per_warp * len(self.correction_warp_ids),
-        )
-        return pipeline.PipelineAsync.create(
-            num_stages=self.softmax_corr_stage,
-            producer_group=si_corr_producer_group,
-            consumer_group=si_corr_consumer_group,
-            barrier_storage=si_corr_mbar_ptr,
-        )
-
-    def make_and_init_corr_epi_pipeline(self, corr_epi_mbar_ptr):
-        corr_epi_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.correction_warp_ids),
-            self.threads_per_warp * len(self.correction_warp_ids),
-        )
-        corr_epi_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len([self.epilogue_warp_id]),
-            self.threads_per_warp * len([self.epilogue_warp_id]),
-        )
-        return pipeline.PipelineAsync.create(
-            num_stages=self.epi_stage,
-            producer_group=corr_epi_producer_group,
-            consumer_group=corr_epi_consumer_group,
-            barrier_storage=corr_epi_mbar_ptr,
-        )
-
-    def make_and_init_mma_corr_pipeline(self, mma_corr_mbar_ptr):
-        mma_corr_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, len([self.mma_warp_id])
-        )
-        mma_corr_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.correction_warp_ids),
-            self.threads_per_warp * len(self.correction_warp_ids),
-        )
-        return pipeline.PipelineUmmaAsync.create(
-            num_stages=self.mma_corr_stage,
-            producer_group=mma_corr_producer_group,
-            consumer_group=mma_corr_consumer_group,
-            barrier_storage=mma_corr_mbar_ptr,
-        )
-
-    def make_and_init_si_sequence_pipeline(self, si_sequence_mbar_ptr):
-        s0_sequence_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-            self.threads_per_warp * len(self.softmax0_warp_ids),
-        )
-        s1_sequence_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            self.threads_per_warp * len(self.softmax1_warp_ids),
-            self.threads_per_warp * len(self.softmax1_warp_ids),
-        )
-        return pipeline.PipelineAsync.create(
-            num_stages=1,
-            producer_group=s0_sequence_group,
-            consumer_group=s1_sequence_group,
-            barrier_storage=si_sequence_mbar_ptr,
-        )
-
     @staticmethod
     def _compute_grid(
         o_shape: cute.Shape,
@@ -2612,7 +2362,6 @@ class BlackwellFusedMultiHeadAttentionForward:
             ),
         )
         grid = FmhaStaticTileScheduler.get_grid_shape(tile_sched_params)
-
         return tile_sched_params, grid
 
 

@@ -689,10 +689,10 @@ def _jit(name: str, cc: int, cpp_file: str, cuda_file: str):
     from torch.utils.cpp_extension import load
 
     extra_cuda_cflags = ["-std=c++17"]
-    if cc == 90:
+    if cc in [90, 100, 101, 103]:
         # PyTorch does not currently add the sm_90a target when compute capability
         # 9.0 is set within TORCH_CUDA_ARCH_LIST. Thus, we manually add the sm_90a target.
-        extra_cuda_cflags.append("-gencode=arch=compute_90a,code=sm_90a")
+        extra_cuda_cflags.append(f"-gencode=arch=compute_{cc}a,code=sm_{cc}a")
 
     with _ArchListSetter(cc):
         jitmodule = load(
@@ -768,8 +768,8 @@ def _pytorch_gemm(op, name: str, cc: int, jit: bool = False, sourcedir: str = ""
         outfile.write(cpp_source)
 
     extra_compile_args = ""
-    if cc == 90:
-        extra_compile_args = "'--generate-code=arch=compute_90a,code=[sm_90a]'"
+    if cc in [90, 100, 101, 103]:
+        extra_compile_args = f"'--generate-code=arch=compute_{cc}a,code=[sm_{cc}a]'"
     _generate_setup(name, sourcedir, extra_compile_args)
 
     if jit:

@@ -207,7 +207,7 @@ def int_to_int(a, dst_elem_type, *, loc=None, ip=None):
 
     if dst_width == src_width:
         return a
-    elif src_signed and not dst_signed:
+    elif src_signed != False and not dst_signed:
         # Signed -> Unsigned
         if dst_width > src_width:
             return arith.extui(dst_mlir_type, a, loc=loc, ip=ip)
@@ -216,7 +216,7 @@ def int_to_int(a, dst_elem_type, *, loc=None, ip=None):
     elif src_signed == dst_signed:
         # Same signedness
         if dst_width > src_width:
-            if src_signed and src_width > 1:
+            if src_signed != False and src_width > 1:
                 return arith.extsi(dst_mlir_type, a, loc=loc, ip=ip)
             else:
                 return arith.extui(dst_mlir_type, a, loc=loc, ip=ip)
@@ -479,7 +479,7 @@ class ArithValue(ir.Value):
         if self.is_float:
             q = arith.divf(self, other, loc=loc, ip=ip)
             return math.floor(q, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.floordivsi(self, other, loc=loc, ip=ip)
         else:
             return arith.divui(self, other, loc=loc, ip=ip)
@@ -489,7 +489,7 @@ class ArithValue(ir.Value):
     def __mod__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float:
             return arith.remf(self, other, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.remsi(self, other, loc=loc, ip=ip)
         else:
             return arith.remui(self, other, loc=loc, ip=ip)
@@ -524,7 +524,7 @@ class ArithValue(ir.Value):
     def __lt__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float:
             return arith.cmpf(arith.CmpFPredicate.OLT, self, other, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.cmpi(arith.CmpIPredicate.slt, self, other, loc=loc, ip=ip)
         else:
             return arith.cmpi(arith.CmpIPredicate.ult, self, other, loc=loc, ip=ip)
@@ -534,7 +534,7 @@ class ArithValue(ir.Value):
     def __le__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float:
             return arith.cmpf(arith.CmpFPredicate.OLE, self, other, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.cmpi(arith.CmpIPredicate.sle, self, other, loc=loc, ip=ip)
         else:
             return arith.cmpi(arith.CmpIPredicate.ule, self, other, loc=loc, ip=ip)
@@ -561,7 +561,7 @@ class ArithValue(ir.Value):
     def __gt__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float:
             return arith.cmpf(arith.CmpFPredicate.OGT, self, other, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.cmpi(arith.CmpIPredicate.sgt, self, other, loc=loc, ip=ip)
         else:
             return arith.cmpi(arith.CmpIPredicate.ugt, self, other, loc=loc, ip=ip)
@@ -571,7 +571,7 @@ class ArithValue(ir.Value):
     def __ge__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float:
             return arith.cmpf(arith.CmpFPredicate.OGE, self, other, loc=loc, ip=ip)
-        elif self.signed:
+        elif self.signed != False:
             return arith.cmpi(arith.CmpIPredicate.sge, self, other, loc=loc, ip=ip)
         else:
             return arith.cmpi(arith.CmpIPredicate.uge, self, other, loc=loc, ip=ip)
@@ -599,7 +599,7 @@ class ArithValue(ir.Value):
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __rshift__(self, other, *, loc=None, ip=None) -> "ArithValue":
-        if self.signed:
+        if self.signed != False:
             return arith.shrsi(self, other, loc=loc, ip=ip)
         else:
             return arith.shrui(self, other, loc=loc, ip=ip)
@@ -633,7 +633,7 @@ class ArithValue(ir.Value):
         return super().__hash__()
 
     def __str__(self):
-        return super().__str__().replace(ir.Value.__name__, ArithValue.__name__)
+        return "?"
 
     def __repr__(self):
         return self.__str__()
@@ -657,7 +657,7 @@ def _min(lhs, rhs, *, loc=None, ip=None):
             rhs = arith.constant(lhs.type, rhs, loc=loc, ip=ip)
 
     if arith._is_integer_like_type(lhs.type):
-        if lhs.signed:
+        if lhs.signed != False:
             return arith.minsi(lhs, rhs, loc=loc, ip=ip)
         else:
             return arith.minui(lhs, rhs, loc=loc, ip=ip)
@@ -683,7 +683,7 @@ def _max(lhs, rhs, *, loc=None, ip=None):
             rhs = arith.constant(lhs.type, rhs, loc=loc, ip=ip)
 
     if arith._is_integer_like_type(lhs.type):
-        if lhs.signed:
+        if lhs.signed != False:
             return arith.maxsi(lhs, rhs, loc=loc, ip=ip)
         else:
             return arith.maxui(lhs, rhs, loc=loc, ip=ip)

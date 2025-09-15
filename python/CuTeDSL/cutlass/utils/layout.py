@@ -34,18 +34,6 @@ class LayoutEnum(Enum):
             else warpgroup.OperandMajorMode.MN
         )
 
-    def is_k_major_a(self):
-        return self == LayoutEnum.ROW_MAJOR
-
-    def is_m_major_a(self):
-        return self == LayoutEnum.COL_MAJOR
-
-    def is_k_major_b(self):
-        return self == LayoutEnum.COL_MAJOR
-
-    def is_n_major_b(self):
-        return self == LayoutEnum.ROW_MAJOR
-
     def is_n_major_c(self):
         return self == LayoutEnum.ROW_MAJOR
 

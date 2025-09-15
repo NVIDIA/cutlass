@@ -14,16 +14,12 @@ This module provides a runtime utility functions that are needed for
 the DSL.
 """
 
-from . import device_tensor
 from . import dlpack_types
 from . import cuda
-from . import tensor_descriptor
 from . import jit_arg_adapters
 
 __all__ = [
-    "device_tensor",
     "dlpack_types",
     "cuda",
-    "tensor_descriptor",
     "jit_arg_adapters",
 ]

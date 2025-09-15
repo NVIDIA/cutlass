@@ -118,7 +118,7 @@ def trace(fn, example_tensors, **kwargs):
     """
     Trace `fn(**example_tensors)` and generates epilogue visitor
 
-    :param fn: Python callables
+    :param fn or str: Python callable or string of the epilogue function
     :param example_tensors: example inputs for fn
     :type example_tensors: dict
 
@@ -152,6 +152,22 @@ def trace(fn, example_tensors, **kwargs):
                 super().__init__(cc, **kwargs)
             pass
         setattr(EpilogueFunctor, "__call__", staticmethod(fn))
+
+        epilogue_functor = EpilogueFunctor(**kwargs)
+        epilogue_functor.trace(example_tensors)
+        return epilogue_functor
+    elif isinstance(fn, str):
+        class EpilogueFunctor(PythonASTFrontend):
+            def __init__(self, cc=None, **kwargs):
+                self.source = textwrap.dedent(fn)
+                if not cc:
+                    cc = device_cc()
+                super().__init__(cc, **kwargs)
+
+            def parse(self, example_inputs) -> None:
+                self.example_inputs = example_inputs
+                self.ast = ast.parse(self.source)
+                self.visit(self.ast)
 
         epilogue_functor = EpilogueFunctor(**kwargs)
         epilogue_functor.trace(example_tensors)

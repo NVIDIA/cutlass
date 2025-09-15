@@ -248,7 +248,7 @@ public:
 
   using Load2MmaPipeline = cutlass::PipelineTmaUmmaAsync<
                              DispatchPolicy::Load2TransformPipelineStageCount,
-	                         ClusterShape,
+                             ClusterShape,
                              AtomThrShapeMNK>;
   using Load2MmaPipelineState = typename Load2MmaPipeline::PipelineState;
 
@@ -316,7 +316,7 @@ public:
 
   using SmemLayoutACompute = decltype(UMMA::tile_to_mma_shape(
       SmemLayoutAtomACompute{},
-      append(CtaShapeA_MK{}, Int<DispatchPolicy::Load2TransformPipelineStageCount>{}),
+      append(CtaShapeA_MK{}, Int<DispatchPolicy::Transform2MmaPipelineStageCount>{}),
              (cute::conditional_t<cutlass::gemm::detail::is_mn_major<StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{})));
 
   using SmemLayoutB = decltype(UMMA::tile_to_mma_shape(
@@ -385,7 +385,7 @@ public:
 
       struct TensorStorageUntransformed {
         alignas(512) cute::ArrayEngine<ElementA, cute::cosize_v<SmemLayoutA>> smem_A;
-        cute::ArrayEngine<ElementB, cute::cosize_v<SmemLayoutB>> smem_B;
+        alignas(1024) cute::ArrayEngine<ElementB, cute::cosize_v<SmemLayoutB>> smem_B;
         cute::ArrayEngine<NonVoidElementScale, scale_elements> smem_scale;
         cute::ArrayEngine<NonVoidElementZero, zero_elements> smem_zero;
       };

@@ -105,7 +105,7 @@ class PassDAG2Tree(EVTPassBase):
                 
                 output_node = None
                 if (self.dag_ir.cc >= 90):
-                    # For SM90, the lca should be the input node of D
+                    # For SM90+, the lca should be the input node of D
                     if (not self.dag_ir.has_node("D")):
                         raise RuntimeError(f"D is not a node in the DAG IR.")
                     output_node = "D"

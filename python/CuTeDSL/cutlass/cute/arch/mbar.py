@@ -315,3 +315,35 @@ def mbarrier_arrive(
         loc=loc,
         ip=ip,
     )
+
+
+@dsl_user_op
+def cp_async_mbarrier_arrive_noinc(mbar_ptr: Pointer, *, loc=None, ip=None) -> None:
+    """
+    Arrives on an mbarrier for async load **without incrementing** the arrival count
+    (`cp.async.mbarrier.arrive.shared ..., noinc=1`).
+    Used in the warp-specialized kernel when the non-TMA load warp(producer) is not the same
+    as the math/epilogue warp(consumer).
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    """
+    arch = CuTeDSL._get_dsl().envar.arch
+    check_value_in(
+        arch,
+        [
+            "sm_90",
+            "sm_90a",
+            "sm_100a",
+            "sm_100f",
+        ],
+        "arch",
+    )
+
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
+    nvvm.cp_async_mbarrier_arrive_shared(
+        mbar_llvm_ptr,
+        noinc=True,
+        loc=loc,
+        ip=ip,
+    )

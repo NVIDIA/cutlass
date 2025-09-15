@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import List, Set, Dict, Any, Callable, Optional
 from types import ModuleType
 from collections import OrderedDict
+from copy import deepcopy
 
 from .common import *
 from .utils.logger import log
@@ -86,6 +87,16 @@ class OrderedSet:
                     result.add(key)
                     break
         return result
+
+
+@dataclass
+class ImportInfo:
+    """
+    Information about an import expression.
+    """
+    module_path: str
+    attr_name: Optional[str]
+    alias_name: str
 
 
 @dataclass
@@ -139,7 +150,7 @@ class DSLPreprocessor(ast.NodeTransformer):
     ANY_EXECUTOR = "any_executor"
     ALL_EXECUTOR = "all_executor"
 
-    def __init__(self):
+    def __init__(self, client_module_name):
         super().__init__()
         self.counter = 0  # Unique function names for multiple loops
         self.scope_manager = ScopeManager.create()
@@ -151,10 +162,39 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.function_depth = 0
         self.local_closures = set()
         self.function_globals = None
+        self.client_module_name = client_module_name
+        self.import_top_module = False
+
+    def _create_module_attribute(
+        self,
+        func_name,
+        *,
+        top_module_name="_dsl_",
+        submodule_name="ast_helpers",
+        lineno=None,
+        col_offset=None,
+    ):
+        # If we simply copy location from origin node, it contains a way to wide range, which cause location in traceback to be wrong.
+        def set_location(node, lineno, col_offset):
+            if lineno and col_offset:
+                node.lineno = lineno
+                node.end_lineno = lineno
+                node.col_offset = col_offset
+                node.end_col_offset = col_offset
+
+        base = ast.Name(id=top_module_name, ctx=ast.Load())
+        set_location(base, lineno, col_offset)
+        if submodule_name:
+            base = ast.Attribute(value=base, attr=submodule_name, ctx=ast.Load())
+            set_location(base, lineno, col_offset)
+        node = ast.Attribute(value=base, attr=func_name, ctx=ast.Load())
+        set_location(node, lineno, col_offset)
+        return node
 
     def _get_module_imports(self, decorated_func):
         """Extract imports from the module containing the decorated function"""
-        imports = OrderedDict()
+        imports = []
+
         # Get the module containing the decorated function
         if module := inspect.getmodule(decorated_func):
             try:
@@ -167,7 +207,13 @@ class DSLPreprocessor(ast.NodeTransformer):
                 for node in ast.walk(module_ast):
                     if isinstance(node, ast.Import):
                         for name in node.names:
-                            imports[(name.name, None)] = alias(name)
+                            imports.append(
+                                ImportInfo(
+                                    module_path=name.name,
+                                    attr_name=None,
+                                    alias_name=alias(name),
+                                )
+                            )
                     elif isinstance(node, ast.ImportFrom):
                         module_name = node.module
                         if node.level > 0:
@@ -177,7 +223,13 @@ class DSLPreprocessor(ast.NodeTransformer):
                             )[0]
                             module_name = f"{package_name}.{module_name}"
                         for name in node.names:
-                            imports[(module_name, name.name)] = alias(name)
+                            imports.append(
+                                ImportInfo(
+                                    module_path=module_name,
+                                    attr_name=name.name,
+                                    alias_name=alias(name),
+                                )
+                            )
             except (IOError, TypeError):
                 pass
 
@@ -188,7 +240,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         module_imports = self._get_module_imports(original_function)
 
         # Import all required modules
-        for (module_path, attr_name), alias_name in module_imports.items():
+        for import_info in module_imports:
+            module_path, attr_name, alias_name = (
+                import_info.module_path,
+                import_info.attr_name,
+                import_info.alias_name,
+            )
             try:
                 module = importlib.import_module(module_path)
                 if attr_name:
@@ -267,10 +324,24 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Step 2. Transform the function
         transformed_tree = self.visit(tree)
+
+        # Step 3. Import cutlass and base_dsl
+        top_module_name = ".".join(self.client_module_name)
+        import_stmts = []
+        if self.import_top_module:
+            import_stmts.append(ast.Import(names=[ast.alias(name=top_module_name)]))
+        import_stmts.append(
+            ast.Import(
+                names=[ast.alias(name=f"{top_module_name}.base_dsl", asname="_dsl_")]
+            )
+        )
+        transformed_tree.body = import_stmts + transformed_tree.body
+
+        # Step 4. Import cutlass and base_dsl
         ast.fix_missing_locations(transformed_tree)
         combined_body = transformed_tree.body
 
-        # Step 3. Return the transformed tree
+        # Step 5. Return the transformed tree
         return combined_body
 
     def check_early_exit(self, tree, kind):
@@ -395,22 +466,44 @@ class DSLPreprocessor(ast.NodeTransformer):
         """
 
         # we need orderedset to keep the insertion order the same. otherwise generated IR is different each time
-        read_args = OrderedSet()
         write_args = OrderedSet()
+        invoked_args = OrderedSet()
         local_closure = self.local_closures
         file_name = self.file_name
         region_node = node
 
         class RegionAnalyzer(ast.NodeVisitor):
+            force_store = False
 
             def visit_Name(self, node):
                 """
-                Mark every load as read, and every store as write.
+                Mark every store as write.
                 """
-                if isinstance(node.ctx, ast.Load):
-                    read_args.add(node.id)
-                elif isinstance(node.ctx, ast.Store):
+                if isinstance(node.ctx, ast.Store) or self.force_store:
                     write_args.add(node.id)
+
+            def visit_Subscript(self, node):
+                # When subscript occurs on the lhs of an assignment, the `Name` is still a load, but `Subscript` is marked as `Store`.
+                # We need to force the store for the `Name` to be marked as write.
+                if isinstance(node.ctx, ast.Store):
+                    self.force_store = True
+                    self.visit(node.value)
+                    self.force_store = False
+                    self.visit(node.slice)
+                else:
+                    self.generic_visit(node)
+
+            def visit_Assign(self, node):
+                self.force_store = True
+                [self.visit(target) for target in node.targets]
+                self.force_store = False
+                self.visit(node.value)
+
+            def visit_AugAssign(self, node):
+                self.force_store = True
+                self.visit(node.target)
+                self.force_store = False
+                self.visit(node.value)
 
             @staticmethod
             def get_call_base(func_node):
@@ -454,21 +547,20 @@ class DSLPreprocessor(ast.NodeTransformer):
                 # Classes are mutable by default. Mark them as write. If they are
                 # dataclass(frozen=True), treat them as read in runtime.
                 if base_name is not None and base_name not in ("self"):
-                    write_args.add(base_name)
+                    invoked_args.add(base_name)
 
                 self.generic_visit(node)
 
         analyzer = RegionAnalyzer()
         analyzer.visit(ast.Module(body=node))
 
-        # Argument can be Load and Store. We should just mark it as Store.
-        read_args = read_args - write_args
+        # If arg is both write and invoke, remove from invoked_args
+        invoked_args = invoked_args - write_args
 
-        used_args = read_args.intersections(active_symbols)
-        iter_args = write_args.intersections(active_symbols)
-        flattend_args = used_args | iter_args
+        write_args = list(write_args.intersections(active_symbols))
+        invoked_args = list(invoked_args.intersections(active_symbols))
 
-        return list(used_args), list(iter_args), list(flattend_args)
+        return write_args + invoked_args, len(write_args)
 
     def extract_range_args(self, iter_node):
         args = iter_node.args
@@ -500,9 +592,24 @@ class DSLPreprocessor(ast.NodeTransformer):
             keywords.get("unroll_full", ast.Constant(value=False)),
         )
 
-    def extract_pipelining_args(self, iter_node):
+    def issue_deprecation_warning(self, *, message, category, filename, lineno):
+        warnings.simplefilter("always", category)  # turn off filter
+        warnings.warn_explicit(
+            message, category=category, filename=filename, lineno=lineno
+        )
+        warnings.simplefilter("default", category)  # reset filter
+
+    def extract_prefetch_stages_args(self, iter_node):
         keywords = {kw.arg: kw.value for kw in iter_node.keywords}
-        return keywords.get("pipelining", ast.Constant(value=None))
+        if "pipelining" in keywords:
+            self.issue_deprecation_warning(
+                message="pipelining is deprecated, use prefetch_stages instead",
+                category=DeprecationWarning,
+                filename=self.file_name,
+                lineno=iter_node.lineno,
+            )
+            return keywords.get("pipelining", ast.Constant(value=None))
+        return keywords.get("prefetch_stages", ast.Constant(value=None))
 
     def create_loop_function(
         self,
@@ -513,17 +620,16 @@ class DSLPreprocessor(ast.NodeTransformer):
         step,
         unroll,
         unroll_full,
-        pipelining,
-        used_args,
-        iter_args,
-        flattened_args,
+        prefetch_stages,
+        write_args,
+        full_write_args_count,
     ):
         """
         Creates a loop body function with the `loop_selector` decorator.
         """
 
         func_args = [ast.arg(arg=node.target.id, annotation=None)]
-        func_args += [ast.arg(arg=var, annotation=None) for var in flattened_args]
+        func_args += [ast.arg(arg=var, annotation=None) for var in write_args]
 
         # Create the loop body
         transformed_body = []
@@ -535,13 +641,13 @@ class DSLPreprocessor(ast.NodeTransformer):
                 transformed_body.append(transformed_stmt)
 
         # Handle the return for a single iterated argument correctly
-        if len(iter_args) == 0:
+        if len(write_args) == 0:
             transformed_body.append(ast.Return())
         else:
             transformed_body.append(
                 ast.Return(
                     value=ast.List(
-                        elts=[ast.Name(id=var, ctx=ast.Load()) for var in iter_args],
+                        elts=[ast.Name(id=var, ctx=ast.Load()) for var in write_args],
                         ctx=ast.Load(),
                     )
                 )
@@ -550,30 +656,33 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Define the decorator with parameters
         decorator = ast.copy_location(
             ast.Call(
-                func=ast.Name(id=self.DECORATOR_FOR_STATEMENT, ctx=ast.Load()),
+                func=self._create_module_attribute(
+                    self.DECORATOR_FOR_STATEMENT,
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
                 args=[start, stop, step],
                 keywords=[
                     ast.keyword(arg="unroll", value=unroll),
                     ast.keyword(arg="unroll_full", value=unroll_full),
-                    ast.keyword(arg="pipelining", value=pipelining),
+                    ast.keyword(arg="prefetch_stages", value=prefetch_stages),
                     ast.keyword(
-                    arg="used_args",
-                    value=ast.List(
-                        elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in used_args],
-                        ctx=ast.Load(),
-                    ),
-                ),
-                ast.keyword(
-                    arg="iter_args",
-                    value=ast.List(
-                        elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in iter_args],
-                        ctx=ast.Load(),
+                        arg="write_args",
+                        value=ast.List(
+                            elts=[
+                                ast.Name(id=arg, ctx=ast.Load()) for arg in write_args
+                            ],
+                            ctx=ast.Load(),
                         ),
                     ),
                     ast.keyword(
-                        arg="iter_arg_names",
+                        arg="full_write_args_count",
+                        value=ast.Constant(value=full_write_args_count),
+                    ),
+                    ast.keyword(
+                        arg="write_args_names",
                         value=ast.List(
-                            elts=[ast.Constant(value=arg) for arg in iter_args],
+                            elts=[ast.Constant(value=arg) for arg in write_args],
                             ctx=ast.Load(),
                         ),
                     ),
@@ -635,7 +744,14 @@ class DSLPreprocessor(ast.NodeTransformer):
             # else
             #     return and_(lhs, rhs)
             short_circuit_value = ast.Constant(value=False)
-            helper_func = ast.Name(id="and_", ctx=ast.Load())
+            helper_func = self._create_module_attribute(
+                "and_",
+                top_module_name="cutlass",
+                submodule_name=None,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+            self.import_top_module = True
         # Transform "or" to "or_"
         elif isinstance(node.op, ast.Or):
             # Create an if-else statement in AST form
@@ -644,7 +760,14 @@ class DSLPreprocessor(ast.NodeTransformer):
             # else
             #     return or_(lhs, rhs)
             short_circuit_value = ast.Constant(value=True)
-            helper_func = ast.Name(id="or_", ctx=ast.Load())
+            helper_func = self._create_module_attribute(
+                "or_",
+                top_module_name="cutlass",
+                submodule_name=None,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+            self.import_top_module = True
         else:
             # BoolOp should be either And or Or
             raise DSLAstPreprocessorError(
@@ -696,22 +819,30 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Transform "not" to "~" as we overload __invert__
         if isinstance(node.op, ast.Not):
-            func_name = ast.Name(id="not_", ctx=ast.Load())
+            func_name = self._create_module_attribute(
+                "not_",
+                top_module_name="cutlass",
+                submodule_name=None,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+            self.import_top_module = True
             return ast.copy_location(
                 ast.Call(func=func_name, args=[node.operand], keywords=[]), node
             )
 
         return node
 
-    @staticmethod
-    def _insert_range_value_check(node):
+    def _insert_range_value_check(self, node):
         """
         Insert a check for range arguments
         """
         range_inputs = node.iter.args
         check_call = ast.copy_location(
             ast.Call(
-                func=ast.Name(id="range_value_check", ctx=ast.Load()),
+                func=self._create_module_attribute(
+                    "range_value_check", lineno=node.lineno, col_offset=node.col_offset
+                ),
                 args=range_inputs,
                 keywords=[],
             ),
@@ -726,40 +857,60 @@ class DSLPreprocessor(ast.NodeTransformer):
             node.iter,
         )
 
+    def _insert_cf_symbol_check(self, func):
+        """
+        Insert a check for range symbol
+        """
+        check_call = ast.copy_location(
+            ast.Call(
+                func=self._create_module_attribute(
+                    "cf_symbol_check", lineno=func.lineno, col_offset=func.col_offset
+                ),
+                args=[deepcopy(func)],
+                keywords=[],
+            ),
+            func,
+        )
+        return ast.Expr(check_call)
+
     def visit_For(self, node):
+        # For static for loop (for with range_constexpr or not range based for), preprocessor keeps the loop.
+        range_kind, is_builtin_range, has_keyword = self._get_range_kind(node.iter)
+        if range_kind == "range_constexpr" or range_kind == None:
+            self.generic_visit(node)
+            if range_kind == "range_constexpr":
+                check_call = self._insert_cf_symbol_check(node.iter.func)
+                # Rewrite range_constexpr to range
+                node.iter.func = ast.Name(id="range", ctx=ast.Load())
+                self._insert_range_value_check(node)
+                return [check_call, node]
+            return node
+
         active_symbols = self.scope_manager.get_active_symbols()
 
         with self.scope_manager:
             if isinstance(node.target, ast.Name):
                 self.scope_manager.add_to_scope(node.target.id)
 
-            # For static for loop (for with range_constexpr or not range based for), preprocessor keeps the loop.
-            range_kind, is_builtin_range, has_keyword = self._get_range_kind(node.iter)
-            if range_kind == "range_constexpr" or range_kind == None:
-                self.generic_visit(node)
-                if range_kind == "range_constexpr":
-                    # Rewrite range_constexpr to range
-                    node.iter.func.id = "range"
-                    self._insert_range_value_check(node)
-                return node
-
             if range_kind == "range_dynamic":
                 # Generate a warning
-                warnings.simplefilter("always", DeprecationWarning)  # turn off filter
-                warnings.warn_explicit(
-                    "range_dynamic is deprecated and will be removed in the future, please remove it.",
+                self.issue_deprecation_warning(
+                    message="range_dynamic is deprecated and will be removed in the future, please remove it.",
                     category=DeprecationWarning,
                     filename=self.file_name,
                     lineno=node.iter.lineno,
                 )
-                warnings.simplefilter("default", DeprecationWarning)  # reset filter
 
             warning_call = None
             if range_kind == "range" and is_builtin_range and not has_keyword:
                 # Warn about possible performance regression due to behavior change
                 warning_call = ast.Expr(
                     ast.Call(
-                        func=ast.Name(id="range_perf_warning", ctx=ast.Load()),
+                        func=self._create_module_attribute(
+                            "range_perf_warning",
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
+                        ),
                         args=[
                             ast.Constant(value=self.file_name),
                             ast.Constant(value=node.iter.lineno),
@@ -770,7 +921,19 @@ class DSLPreprocessor(ast.NodeTransformer):
                 )
                 ast.copy_location(warning_call, node.iter)
 
+            is_prefixed_range = range_kind == "range" and not is_builtin_range
+            check_call = None
+            if range_kind == "range_dynamic" or is_prefixed_range:
+                # Insert a check for range symbol
+                if not is_prefixed_range:
+                    check_call = self._insert_cf_symbol_check(node.iter.func)
+                else:
+                    # Get toplevel module
+                    check_call = self._insert_cf_symbol_check(node.iter.func.value)
+
             new_for_node = self.transform_for_loop(node, active_symbols)
+            if check_call is not None:
+                new_for_node = [check_call] + new_for_node
 
         return new_for_node if warning_call is None else [warning_call] + new_for_node
 
@@ -946,12 +1109,12 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         start_expr, stop_expr, step_expr, has_step = self.extract_range_args(node.iter)
         unroll, unroll_full = self.extract_unroll_args(node.iter)
-        pipelining = self.extract_pipelining_args(node.iter)
-        used_args, iter_args, flat_args = self.analyze_region_variables(
+        prefetch_stages = self.extract_prefetch_stages_args(node.iter)
+        write_args, full_write_args_count = self.analyze_region_variables(
             node, active_symbols
         )
 
-        if has_step:
+        if has_step and self.client_module_name[0] == "cutlass":
             start, stop, step, exprs = self._handle_negative_step(
                 node, start_expr, stop_expr, step_expr
             )
@@ -972,13 +1135,12 @@ class DSLPreprocessor(ast.NodeTransformer):
             step,
             unroll,
             unroll_full,
-            pipelining,
-            used_args,
-            iter_args,
-            flat_args,
+            prefetch_stages,
+            write_args,
+            full_write_args_count,
         )
 
-        assign = ast.copy_location(self.create_loop_call(func_name, iter_args), node)
+        assign = ast.copy_location(self.create_loop_call(func_name, write_args), node)
 
         # This should work fine as it modifies the AST structure
         exprs = exprs + [func_def, assign]
@@ -997,10 +1159,6 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         return exprs
 
-    def visit_Name(self, node):
-        self.generic_visit(node)
-        return node
-
     def visit_Assert(self, node):
         test = self.visit(node.test)
 
@@ -1012,7 +1170,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Rewrite to assert_executor(test, msg)
         new_node = ast.Expr(
             ast.Call(
-                func=ast.Name(id=self.ASSERT_EXECUTOR, ctx=ast.Load()),
+                func=self._create_module_attribute(
+                    self.ASSERT_EXECUTOR, lineno=node.lineno, col_offset=node.col_offset
+                ),
                 args=[],
                 keywords=args,
             )
@@ -1024,7 +1184,9 @@ class DSLPreprocessor(ast.NodeTransformer):
 
     def visit_Call(self, node):
         func = node.func
-        self.generic_visit(node)
+        # Visit args and kwargs
+        node.args = [self.visit(arg) for arg in node.args]
+        node.keywords = [self.visit(kwarg) for kwarg in node.keywords]
 
         # Rewrite call to some built-in functions
         if isinstance(func, ast.Name):
@@ -1032,7 +1194,11 @@ class DSLPreprocessor(ast.NodeTransformer):
             if func.id == "bool":
                 return ast.copy_location(
                     ast.Call(
-                        func=ast.Name(id=self.BOOL_CAST, ctx=ast.Load()),
+                        func=self._create_module_attribute(
+                            self.BOOL_CAST,
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
+                        ),
                         args=[node.args[0]],
                         keywords=[],
                     ),
@@ -1044,8 +1210,25 @@ class DSLPreprocessor(ast.NodeTransformer):
                 )
                 return ast.copy_location(
                     ast.Call(
-                        func=ast.Name(id=helper_func, ctx=ast.Load()),
+                        func=self._create_module_attribute(
+                            helper_func, lineno=node.lineno, col_offset=node.col_offset
+                        ),
                         args=[node.args[0]],
+                        keywords=[],
+                    ),
+                    node,
+                )
+            elif func.id in ["min", "max"]:
+                return ast.copy_location(
+                    ast.Call(
+                        func=self._create_module_attribute(
+                            func.id,
+                            top_module_name="cutlass",
+                            submodule_name=None,
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
+                        ),
+                        args=[node.args[0], node.args[1]],
                         keywords=[],
                     ),
                     node,
@@ -1054,8 +1237,11 @@ class DSLPreprocessor(ast.NodeTransformer):
             def create_downcast_call(arg):
                 return ast.copy_location(
                     ast.Call(
-                        func=ast.Name(
-                            id=self.IMPLICIT_DOWNCAST_NUMERIC_TYPE, ctx=ast.Load()
+                        func=self._create_module_attribute(
+                            self.IMPLICIT_DOWNCAST_NUMERIC_TYPE,
+                            submodule_name="typing",
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
                         ),
                         args=[arg],
                         keywords=[],
@@ -1084,6 +1270,8 @@ class DSLPreprocessor(ast.NodeTransformer):
                 return ast.copy_location(
                     ast.Call(func=func, args=args, keywords=kwargs), node
                 )
+        else:
+            node.func = self.visit(node.func)
 
         return node
 
@@ -1113,9 +1301,24 @@ class DSLPreprocessor(ast.NodeTransformer):
         return node
 
     def visit_Name(self, node):
-        self.generic_visit(node)
-        if node.id == "_" and isinstance(node.ctx, ast.Load):
+        isLoad = isinstance(node.ctx, ast.Load)
+        if node.id in ["max", "min", "any", "all"] and isLoad:
+            return ast.copy_location(
+                ast.Call(
+                    func=self._create_module_attribute(
+                        "redirect_builtin_function",
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
+                    ),
+                    args=[node],
+                    keywords=[],
+                ),
+                node,
+            )
+        elif node.id == "_" and isLoad:
             raise DSLAstPreprocessorError("Read '_' is not allowed")
+        else:
+            self.generic_visit(node)
         return node
 
     def check_decorator(self, node: ast.AST) -> bool:
@@ -1205,28 +1408,29 @@ class DSLPreprocessor(ast.NodeTransformer):
         return node
 
     def visit_While(self, node):
-        active_symbols = self.scope_manager.get_active_symbols()
-        # print(active_symbols)
-        with self.scope_manager:
-            # Constexpr doesn't get preprocessed
-            if self.is_node_constexpr(node):
-                self.generic_visit(node)
-                return node
+        # Constexpr doesn't get preprocessed
+        if self.is_node_constexpr(node):
+            self.generic_visit(node)
+            check = self._insert_cf_symbol_check(node.test.func)
+            return [check, node]
 
+        active_symbols = self.scope_manager.get_active_symbols()
+
+        with self.scope_manager:
             # Check for early exit and raise exception
             self.check_early_exit(node, "while")
 
-            used_args, yield_args, flat_args = self.analyze_region_variables(
+            write_args, full_write_args_count = self.analyze_region_variables(
                 node, active_symbols
             )
             func_name = f"while_region_{self.counter}"
             self.counter += 1
 
             func_def = self.create_while_function(
-                func_name, node, used_args, yield_args, flat_args
+                func_name, node, write_args, full_write_args_count
             )
             assign = ast.copy_location(
-                self.create_loop_call(func_name, yield_args), node
+                self.create_loop_call(func_name, write_args), node
             )
 
         return [func_def, assign]
@@ -1243,7 +1447,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             self.generic_visit(node)
         return node
 
-    def create_if_call(self, func_name, yield_args, flat_args):
+    def create_if_call(self, func_name, yield_args):
         """Creates the assignment statement for the if function call"""
         if not yield_args:
             return ast.Expr(value=ast.Name(id=func_name, ctx=ast.Load()))
@@ -1272,6 +1476,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Emit
         # node if type(pred) == bool else select_(pred, body, orelse)
         # so if pred is a python bool, use python to short-circuit and avoid emit arith.select
+        self.import_top_module = True
         return ast.copy_location(
             ast.IfExp(
                 test=ast.Compare(
@@ -1285,7 +1490,9 @@ class DSLPreprocessor(ast.NodeTransformer):
                 ),
                 body=node,  # Original ternary expression
                 orelse=ast.Call(
-                    func=ast.Name(id="select_", ctx=ast.Load()),
+                    func=self._create_module_attribute(
+                        "select_", top_module_name="cutlass", submodule_name=None
+                    ),
                     args=[
                         node.test,
                         node.body,
@@ -1330,7 +1537,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         call = ast.copy_location(
             ast.Call(
-                func=ast.Name(id=self.COMPARE_EXECUTOR, ctx=ast.Load()),
+                func=self._create_module_attribute(self.COMPARE_EXECUTOR),
                 args=[],
                 keywords=keywords,
             ),
@@ -1340,41 +1547,36 @@ class DSLPreprocessor(ast.NodeTransformer):
         return call
 
     def visit_If(self, node):
+        # const_expr doesn't get preprocessed
+        if self.is_node_constexpr(node):
+            self.generic_visit(node)
+            check = self._insert_cf_symbol_check(node.test.func)
+            return [check, node]
+
         active_symbols = self.scope_manager.get_active_symbols()
         with self.scope_manager:
-            # non-dynamic expr doesn't get preprocessed
-            if self.is_node_constexpr(node):
-                self.generic_visit(node)
-                return node
-
             # Check for early exit and raise exception
             self.check_early_exit(node, "if")
 
-            used_args, yield_args, flat_args = self.analyze_region_variables(
+            yield_args, full_write_args_count = self.analyze_region_variables(
                 node, active_symbols
             )
             func_name = f"if_region_{self.counter}"
             self.counter += 1
 
             func_def = self.create_if_function(
-                func_name, node, used_args, yield_args, flat_args
+                func_name, node, yield_args, full_write_args_count
             )
-            assign = ast.copy_location(
-                self.create_if_call(func_name, yield_args, flat_args), node
-            )
+            assign = ast.copy_location(self.create_if_call(func_name, yield_args), node)
 
         return [func_def, assign]
 
-    def create_if_function(
-        self, func_name, node, used_args, yield_args, flattened_args
-    ):
+    def create_if_function(self, func_name, node, write_args, full_write_args_count):
         test_expr = self.visit(node.test)
-        pred_name = self.make_func_param_name("pred", flattened_args)
+        pred_name = self.make_func_param_name("pred", write_args)
         func_args = [ast.arg(arg=pred_name, annotation=None)]
-        func_args += [ast.arg(arg=var, annotation=None) for var in flattened_args]
-        func_args_then_else = [
-            ast.arg(arg=var, annotation=None) for var in flattened_args
-        ]
+        func_args += [ast.arg(arg=var, annotation=None) for var in write_args]
+        func_args_then_else = [ast.arg(arg=var, annotation=None) for var in write_args]
 
         then_body = []
         for stmt in node.body:
@@ -1386,7 +1588,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Create common return list for all blocks
         return_list = ast.List(
-            elts=[ast.Name(id=var, ctx=ast.Load()) for var in yield_args],
+            elts=[ast.Name(id=var, ctx=ast.Load()) for var in write_args],
             ctx=ast.Load(),
         )
 
@@ -1424,16 +1626,9 @@ class DSLPreprocessor(ast.NodeTransformer):
                 arg="pred", value=test_expr
             ),  # ast.Name(id="pred", ctx=ast.Load())
             ast.keyword(
-                arg="used_args",
+                arg="write_args",
                 value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in used_args],
-                    ctx=ast.Load(),
-                ),
-            ),
-            ast.keyword(
-                arg="yield_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in yield_args],
+                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
@@ -1442,7 +1637,11 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Create decorator
         decorator = ast.copy_location(
             ast.Call(
-                func=ast.Name(id=self.DECORATOR_IF_STATEMENT, ctx=ast.Load()),
+                func=self._create_module_attribute(
+                    self.DECORATOR_IF_STATEMENT,
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
                 args=[],
                 keywords=decorator_keywords,
             ),
@@ -1453,23 +1652,20 @@ class DSLPreprocessor(ast.NodeTransformer):
         execute_keywords = [
             ast.keyword(arg="pred", value=ast.Name(id=pred_name, ctx=ast.Load())),
             ast.keyword(
-                arg="used_args",
+                arg="write_args",
                 value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in used_args],
+                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
             ast.keyword(
-                arg="yield_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in yield_args],
-                    ctx=ast.Load(),
-                ),
+                arg="full_write_args_count",
+                value=ast.Constant(value=full_write_args_count),
             ),
             ast.keyword(
-                arg="yield_arg_names",
+                arg="write_args_names",
                 value=ast.List(
-                    elts=[ast.Constant(value=arg) for arg in yield_args],
+                    elts=[ast.Constant(value=arg) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
@@ -1479,12 +1675,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         ]
 
         # Handle different cases
-        if not yield_args and node.orelse == []:
-            # No yield_args case - only then_block needed
+        if not write_args and node.orelse == []:
+            # No write_args case - only then_block needed
             execute_call = ast.copy_location(
                 ast.Call(
-                    func=ast.copy_location(
-                        ast.Name(id=self.IF_EXECUTOR, ctx=ast.Load()), node
+                    func=self._create_module_attribute(
+                        self.IF_EXECUTOR, lineno=node.lineno, col_offset=node.col_offset
                     ),
                     args=[],
                     keywords=execute_keywords,
@@ -1501,7 +1697,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     nested_if_name = elif_region_name
                     # Recursion for nested elif
                     nested_if = self.create_if_function(
-                        nested_if_name, elif_node, used_args, yield_args, flattened_args
+                        nested_if_name, elif_node, write_args, full_write_args_count
                     )
                     else_block = ast.FunctionDef(
                         name=else_block_name,
@@ -1551,7 +1747,9 @@ class DSLPreprocessor(ast.NodeTransformer):
 
             execute_call = ast.copy_location(
                 ast.Call(
-                    func=ast.Name(id=self.IF_EXECUTOR, ctx=ast.Load()),
+                    func=self._create_module_attribute(
+                        self.IF_EXECUTOR, lineno=node.lineno, col_offset=node.col_offset
+                    ),
                     args=[],
                     keywords=execute_keywords,
                 ),
@@ -1573,66 +1771,61 @@ class DSLPreprocessor(ast.NodeTransformer):
             node,
         )
 
-    def create_while_function(
-        self, func_name, node, used_args, yield_args, flattened_args
-    ):
+    def create_while_function(self, func_name, node, write_args, full_write_args_count):
         """Create a while function that looks like:
 
-        @while_selector(pred, used_args=[], yield_args=[])
-        def while_region(pred, flattened_args):
-            def while_before_block(*used_args, *yield_args):
+        @while_selector(pred, write_args=[])
+        def while_region(pred, write_args):
+            def while_before_block(*write_args):
                 # Note that during eval of pred can possibly alter yield_args
-                return *pred, yield_args
-            def while_after_block(*used_args, yield_args):
+                return *pred, write_args
+            def while_after_block(*write_args):
                 ...loop_body_transformed...
-                return yield_args
-            return self.while_executor(pred, used_args, yield_args,
+                return write_args
+            return self.while_executor(pred, write_args,
                 while_before_block, while_after_block, constexpr)
-        yield_args = while_region(pred, flattened_args)
+        write_args = while_region(pred, write_args)
 
         Which will later be executed as psuedo-code:
 
         # Dynamic mode:
-        scf.WhileOp(types(yield_args), yield_args)
+        scf.WhileOp(types(write_args), write_args)
         with InsertionPoint(before_block):
-            cond, yield_args = while_before_block(*flattened_args)
-            scf.ConditionOp(cond, yield_args)
+            cond, write_args = while_before_block(*write_args)
+            scf.ConditionOp(cond, write_args)
         with InsertionPoint(after_block):
-            yield_args = while_after_block(yield_args)
-            scf.YieldOp(yield_args)
+            write_args = while_after_block(write_args)
+            scf.YieldOp(write_args)
         return while_op.results_
 
         # Const mode:
-        cond, yield_args = while_before_block(yield_args)
+        cond, write_args = while_before_block(write_args)
         while pred:
-            yield_args = body_block(yield_args)
-            cond, yield_args = while_before_block(yield_args)
-        return yield_args
+            write_args = body_block(write_args)
+            cond, write_args = while_before_block(write_args)
+        return write_args
         """
         test_expr = self.visit(node.test)
-        pred_name = self.make_func_param_name("pred", flattened_args)
+        pred_name = self.make_func_param_name("pred", write_args)
 
         # Section: decorator construction
         decorator_keywords = [
             ast.keyword(arg="pred", value=test_expr),
             ast.keyword(
-                arg="used_args",
+                arg="write_args",
                 value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in used_args],
-                    ctx=ast.Load(),
-                ),
-            ),
-            ast.keyword(
-                arg="yield_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in yield_args],
+                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
         ]
         decorator = ast.copy_location(
             ast.Call(
-                func=ast.Name(id=self.DECORATOR_WHILE_STATEMENT, ctx=ast.Load()),
+                func=self._create_module_attribute(
+                    self.DECORATOR_WHILE_STATEMENT,
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
                 args=[],
                 keywords=decorator_keywords,
             ),
@@ -1643,8 +1836,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         while_before_block_name = f"while_before_block_{self.counter}"
         while_after_block_name = f"while_after_block_{self.counter}"
         self.counter += 1
-        block_args_args = [ast.arg(arg=var, annotation=None) for var in used_args]
-        block_args_args += [ast.arg(arg=var, annotation=None) for var in yield_args]
+        block_args_args = [ast.arg(arg=var, annotation=None) for var in write_args]
         block_args = ast.arguments(
             posonlyargs=[],
             args=block_args_args,
@@ -1654,7 +1846,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
 
         yield_args_ast_name_list = ast.List(
-            elts=[ast.Name(id=var, ctx=ast.Load()) for var in yield_args],
+            elts=[ast.Name(id=var, ctx=ast.Load()) for var in write_args],
             ctx=ast.Load(),
         )
 
@@ -1698,18 +1890,15 @@ class DSLPreprocessor(ast.NodeTransformer):
         execute_keywords = [
             ast.keyword(arg="pred", value=ast.Name(id=pred_name, ctx=ast.Load())),
             ast.keyword(
-                arg="used_args",
+                arg="write_args",
                 value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in used_args],
+                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
             ast.keyword(
-                arg="yield_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in yield_args],
-                    ctx=ast.Load(),
-                ),
+                arg="full_write_args_count",
+                value=ast.Constant(value=full_write_args_count),
             ),
             ast.keyword(
                 arg="while_before_block",
@@ -1720,23 +1909,25 @@ class DSLPreprocessor(ast.NodeTransformer):
                 value=ast.Name(id=while_after_block_name, ctx=ast.Load()),
             ),
             ast.keyword(
-                arg="yield_arg_names",
+                arg="write_args_names",
                 value=ast.List(
-                    elts=[ast.Constant(value=arg) for arg in yield_args],
+                    elts=[ast.Constant(value=arg) for arg in write_args],
                     ctx=ast.Load(),
                 ),
             ),
         ]
 
         execute_call = ast.Call(
-            func=ast.Name(id=self.WHILE_EXECUTOR, ctx=ast.Load()),
+            func=self._create_module_attribute(
+                self.WHILE_EXECUTOR, lineno=node.lineno, col_offset=node.col_offset
+            ),
             args=[],
             keywords=execute_keywords,
         )
 
         # Putting everything together, FunctionDef for while_region
         func_args_args = [ast.arg(arg=pred_name, annotation=None)]
-        func_args_args += [ast.arg(arg=var, annotation=None) for var in flattened_args]
+        func_args_args += [ast.arg(arg=var, annotation=None) for var in write_args]
         func_args = ast.arguments(
             posonlyargs=[],
             args=func_args_args,

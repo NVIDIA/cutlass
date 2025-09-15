@@ -47,6 +47,7 @@ from cutlass_library import (
 import cutlass_cppgen
 from cutlass_cppgen import get_option_registry
 from cutlass_cppgen.backend.evt import EpilogueFunctorVisitor
+from cutlass_cppgen.backend.evt.passes.util import cc_map
 from cutlass_cppgen.backend.utils.device import device_cc
 from cutlass_cppgen.epilogue import get_activations, get_activation_epilogue, identity
 from cutlass_cppgen.library_defaults import KernelsForDataType, _generator_ccs
@@ -251,13 +252,13 @@ class OperationBase:
             mo = datatypes.getattr_enum(cutlass_cppgen.MathOperation, mo)
 
         if not self.specified_kernel_cc:
-            if self.current_cc == 90:
+            if self.current_cc in [90, 100, 101, 103]:
                 # CUTLASS 3.0 kernels do not use different math operations. If one is specified, we
                 # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
                 cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
                 self._reset_options(80)
                 self._reset_operations(reset_epilogue=False)
-        elif self.current_cc == 90:
+        elif self.current_cc in [90, 100, 101, 103]:
             raise Exception("CUTLASS 3.0 kernels do not use different math operations. "
                 "To use 2.x kernels with a specific math operation, do not set the `kernel_cc`"
                 "parameter when constructing the plan.")
@@ -283,7 +284,7 @@ class OperationBase:
             elements_per_access = self.epilogue_functor.epilogue_vector_length
 
         if not self.specified_kernel_cc:
-            if self.current_cc == 90 and activation != identity:
+            if self.current_cc in [90, 100, 101, 103] and activation != identity:
                 # CUTLASS 3.0 kernels in Python currently only support identity activation. If one requests a non-identity activation,
                 # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
                 cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
@@ -291,13 +292,13 @@ class OperationBase:
                     raise Exception("CUTLASS 2.x kernels require element C to be the same as element D")
                 self._reset_options(80)
                 self._reset_operations(reset_epilogue=False)
-            elif (self.cc == 90 and self.current_cc != 90 and activation == identity and self._math_operation is None):
+            elif (self.cc in [90, 100, 101, 103] and self.current_cc not in [90, 100, 101, 103] and activation == identity and self._math_operation is None):
                 # SM80 fallback kernels are currently used. Since an identity activation is requested,
                 # we can switch back to using SM90 kernels.
-                self._reset_options(90)
+                self._reset_options(self.cc)
                 self._reset_operations(reset_epilogue=False)
         else:
-            if self.current_cc == 90 and activation != identity:
+            if self.current_cc in [90, 100, 101, 103] and activation != identity:
                 raise Exception("Epilogues with elementwise fusion are not currently supported "
                                 "in the Python interface for 3.x kernels. To use 2.x kernels "
                                 "with fused elementwise epilogues, do not set the `kernel_cc` "
@@ -385,12 +386,12 @@ class OperationBase:
         """
         Create the epilogue visitor
         """
-        self.epilogue_functor = EpilogueFunctorVisitor(self.cc, visitor)
+        self.epilogue_functor = EpilogueFunctorVisitor(cc_map[self.cc], visitor)
 
         # The epilogue_functor may consume too much shared memory
         # Reset the possible operations
-        if self.cc != 90:
-            # The shared memory is only a concern for sm90 epilogue
+        if self.cc not in [90, 100, 101, 103]:
+            # The shared memory is only a concern for sm90+ epilogue
             # In sm80, the epilogue and mainloop share the shared memory
             return
 
@@ -400,7 +401,7 @@ class OperationBase:
         for operation in self.possible_operations.all_operations:
             td = datatypes.td_from_profiler_op(operation)
             # Filter invalid epilogue schedules
-            if td.epilogue_schedule not in [
+            if cc_map[self.cc] == 90 and td.epilogue_schedule not in [
                 cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized,
                 cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecializedCooperative]:
                 continue

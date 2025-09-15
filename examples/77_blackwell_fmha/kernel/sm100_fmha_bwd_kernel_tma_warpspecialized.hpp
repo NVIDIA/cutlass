@@ -1215,6 +1215,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     Tensor tTR_cST_p = thread_t2r.partition_D(cST);
     Tensor tTR_cST   = split_wg(tTR_cST_p);
     Tensor tTR_rST = make_tensor<ElementAcc>(shape(tTR_cST));
+    // Tensor tTR_tST_p = thread_t2r.partition_S(tSTtST);
     Tensor tTR_tST = split_wg(thread_t2r.partition_S(tSTtST));
 
     Tensor tTR_cDPT_p = thread_t2r.partition_D(cDPT);
@@ -1507,6 +1508,9 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
 
 
   CUTLASS_DEVICE void operator()(Params const& params, char* smem) {
+#if (! defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && ! defined(CUTLASS_ARCH_MMA_SM100F_ENABLED))
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
     int warp_idx = cutlass::canonical_warp_idx_sync();
     auto role = warp_idx_to_role(warp_idx);
     uint32_t lane_predicate = cute::elect_one_sync();
@@ -1835,6 +1839,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       /* no-op */
 
     }
+#endif
   }
 
   static dim3 get_block_shape() {

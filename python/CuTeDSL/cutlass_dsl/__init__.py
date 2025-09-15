@@ -17,6 +17,7 @@ from ..base_dsl.ast_helpers import (
     if_executor,
     while_selector,
     while_executor,
+    range,
     range_constexpr,
     range_dynamic,
     const_expr,
@@ -28,6 +29,8 @@ from ..base_dsl.ast_helpers import (
     all_executor,
     range_value_check,
     range_perf_warning,
+    cf_symbol_check,
+    redirect_builtin_function,
 )
 
 from ..base_dsl import *
@@ -38,5 +41,4 @@ from ..base_dsl._mlir_helpers.op import dsl_user_op
 from ..base_dsl.runtime import *
 from ..base_dsl.runtime import cuda as cuda_helpers
 from ..base_dsl.compiler import compile
-from ..base_dsl.runtime.dlpack_runtime import *
 from ..base_dsl.runtime.jit_arg_adapters import *

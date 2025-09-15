@@ -212,7 +212,7 @@ class Conv2d(OperationBase):
     ):
         super().__init__(cc=cc, kernel_cc=kernel_cc, operation_kind=OperationKind.Conv2d)
         # Verify the kernel cc
-        if self.current_cc == 90:
+        if self.current_cc in [90, 100, 101, 103]:
             # The Conv2d kernel on Hopper (SM90) is currently unsupported
             # Revert to use SM80-tagged kernels
             cutlass_cppgen.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")

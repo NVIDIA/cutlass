@@ -32,13 +32,14 @@ import hashlib
 from functools import lru_cache, wraps
 from collections import namedtuple
 from abc import ABC, abstractmethod
-from typing import Any, Union, Tuple, get_origin, get_args
-from types import FunctionType
+from typing import Any, Union, Tuple, get_origin, get_args, List
+from types import FunctionType, SimpleNamespace
 import warnings
 
 from . import typing as t
 from .env_manager import EnvironmentVarManager
 from .compiler import CompileOptions
+from .ast_helpers import DSLOptimizationWarning
 
 # =============================================================================
 # CUDA Python
@@ -56,7 +57,7 @@ from .utils.timer import timer
 from .utils.logger import setup_log, log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
 from .runtime.jit_arg_adapters import is_argument_constexpr, JitArgAdapterRegistry
-from .runtime.tensor_descriptor import TensorDescriptor
+
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
 from .typing import (
@@ -72,12 +73,6 @@ from .._mlir import ir
 from .._mlir import runtime as rt
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, math, func
-
-# =============================================================================
-# cutlass.dlpack_runtime
-# =============================================================================
-
-from .runtime.dlpack_runtime import dlpack_to_tensor_desc, mark_layout_dynamic
 
 # =============================================================================
 # Global Variables
@@ -177,6 +172,7 @@ def is_dynamic_expression(value):
         return True
     return False
 
+
 def extract_mlir_values(obj):
     """
     Given the `obj`, recursively go through it to extract all contained IR values as list of MLIR values
@@ -186,6 +182,10 @@ def extract_mlir_values(obj):
         res = obj.__extract_mlir_values__()
     elif isinstance(obj, (tuple, list)):
         res = sum((extract_mlir_values(x) for x in obj), [])
+    elif isinstance(obj, SimpleNamespace):
+        res = []
+        for k, v in obj.__dict__.items():
+            res.extend(extract_mlir_values(v))
     # Can't call is_dynamic_expression as _is_dynamic_expression depends on extract_mlir_values
     elif isinstance(obj, set):
         raise DSLRuntimeError(
@@ -215,6 +215,13 @@ def new_from_mlir_values(obj, values):
             values = values[n_items:]
         obj_ty = type(obj)
         return obj_ty(res)
+    elif isinstance(obj, SimpleNamespace):
+        res = SimpleNamespace()
+        for k, v in obj.__dict__.items():
+            n_items = len(get_mlir_types(v))
+            res.__dict__[k] = new_from_mlir_values(v, values[:n_items])
+            values = values[n_items:]
+        return res
     elif isinstance(obj, set):
         raise DSLRuntimeError(
             "Sets are not supported in new_from_mlir_values to ensure order preservation",
@@ -249,8 +256,6 @@ class DSLCallable:
 
     Methods:
         __call__(*args, **kwargs): Calls the wrapped function and clears it.
-        get_arg_spec(): Returns the argument specification of the function.
-        get_signature(): Returns the signature of the function.
     """
 
     def __init__(self, func):
@@ -267,14 +272,12 @@ class DSLCallable:
         return self.func
 
     @property
+    def __signature__(self):
+        return inspect.signature(self.__func__)
+
+    @property
     def __name__(self):
         return self.__func__.__name__
-
-    def get_arg_spec(self):
-        return inspect.getfullargspec(self.__func__)
-
-    def get_signature(self):
-        return inspect.signature(self.__func__)
 
 
 class BaseDSL:
@@ -282,7 +285,9 @@ class BaseDSL:
 
     def __init__(
         self,
+        *,
         name: str,
+        dsl_package_name: List[str],
         compiler_provider: Any,
         pass_sm_arch_name: str,
         device_compilation_only=False,
@@ -293,6 +298,7 @@ class BaseDSL:
 
         Parameters:
         - name (str): Name of DSL, used for environment variables and logging.
+        - package_name (str): Name of the package, used for the preprocessor.
         - compiler_provider (MLIR dialect): Provider for compiler.
         - pass_sm_arch_name (str): The keyword name of the SM.
         - device_compilation_only (bool) : Only device code, and call it via cuda driver
@@ -330,6 +336,9 @@ class BaseDSL:
         self.device_jit_decorator_name = f"@{BaseDSL.kernel.__name__}"
 
         # set warning
+        if not self.envar.enable_optimization_warnings:
+            # By default, optimization warnings are disabled
+            warnings.filterwarnings("ignore", category=DSLOptimizationWarning)
         if self.envar.warnings_as_errors:
             warnings.filterwarnings("error")
         if self.envar.warnings_ignore:
@@ -355,7 +364,7 @@ class BaseDSL:
         self.compile_options = CompileOptions()
 
         if preprocess:
-            self.preprocessor = DSLPreprocessor()
+            self.preprocessor = DSLPreprocessor(dsl_package_name)
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
 
@@ -656,7 +665,7 @@ class BaseDSL:
         return ir_args, ir_kwargs
 
     @abstractmethod
-    def _generate_mlir_type_for_tensor_descriptor(self, tensor: TensorDescriptor):
+    def _generate_mlir_type_for_tensor_descriptor(self, tensor):
         """
         Generate MLIR type for the tensor descriptor.
         """
@@ -668,13 +677,6 @@ class BaseDSL:
     ):
         """
         Generates executable value for the given tensor descriptor.
-        """
-        pass
-
-    @abstractmethod
-    def _get_module_globals(self):
-        """
-        Get the module's globals.
         """
         pass
 
@@ -690,43 +692,21 @@ class BaseDSL:
         AST preprocessor generates a new python code, so the resulting globals
         dictionary is used to execute the python code.
         """
-        all_globals = self._get_module_globals().copy()
+        all_globals = {}
         if self.frame:
             all_globals.update(self.frame.f_globals)
             all_globals.update(self.frame.f_locals)
         return all_globals
 
+    @abstractmethod
     def _is_tensor_descriptor(self, maybe_tensor_descriptor) -> bool:
-        return isinstance(
-            maybe_tensor_descriptor, TensorDescriptor
-        ) or TensorDescriptor.can_transformed_to_dlpack(maybe_tensor_descriptor)
+        pass
 
+    @abstractmethod
     def _handle_tensor_descriptor(
         self, maybe_tensor, arg_name: str, need_gpu_memory: bool
-    ) -> TensorDescriptor:
-        if self._is_tensor_descriptor(maybe_tensor):
-            tensor = (
-                maybe_tensor
-                if isinstance(maybe_tensor, TensorDescriptor)
-                else TensorDescriptor(maybe_tensor)
-            )
-            if need_gpu_memory and not tensor.is_in_device:
-                log().info(
-                    "FAIL name=[%s] tensor=[%s] in_gpu=[%s]",
-                    arg_name,
-                    tensor,
-                    tensor.is_in_device,
-                )
-                raise DSLRuntimeError(
-                    f'Tensor "{arg_name}" is tensor "{tensor}" '
-                    "is not in the GPU memory. "
-                )
-
-            return tensor
-
-        raise DSLRuntimeError(
-            f"Argument {arg_name} could not be transformed into a TensorDescriptor."
-        )
+    ) -> Any:
+        pass
 
     def _validate_arg(self, arg, arg_index, arg_name, arg_spec):
         """
@@ -882,16 +862,21 @@ class BaseDSL:
         cluster: list = None
         grid: list = field(default_factory=lambda: [1, 1, 1])
         block: list = field(default_factory=lambda: [1, 1, 1])
-        smem: int = 0
+        smem: int = None
         async_deps: list = field(default_factory=list)
         has_cluster: bool = False
         min_blocks_per_mp: int = 0
+        auto_smem: bool = False
 
         def __post_init__(self):
             if len(self.grid) != 3:
                 raise DSLRuntimeError(f"Expect 3d grid!")
             if len(self.block) != 3:
                 raise DSLRuntimeError(f"Expect 3d block!")
+
+            if self.smem is None:
+                self.smem = 0
+                self.auto_smem = True
 
             self.has_cluster = self.cluster is not None
             if self.cluster is None:
@@ -1116,8 +1101,6 @@ class BaseDSL:
                     try:
                         result = funcBody(*ir_args, **ir_kwargs)
                         func.ReturnOp([])
-                    except DSLAstPreprocessorError as pp_error:
-                        raise pp_error
                     except NameError as name_error:
                         raise DSLRuntimeError(
                             f"💥💥💥 Error during runtime code generation for function `{funcBody.__name__}` 💥💥💥",
@@ -1127,11 +1110,6 @@ class BaseDSL:
                     except DSLRuntimeError as dsl_error:
                         # Throw it's already a DSL error
                         raise dsl_error
-                    except Exception as general_e:
-                        # Transform internal error to a DSL error
-                        raise DSLRuntimeError(
-                            f"💥💥💥 Error during runtime code generation for function `{funcBody.__name__}` 💥💥💥"
-                        ) from general_e
             return module, result
 
         # Build IR module
@@ -1328,10 +1306,8 @@ class BaseDSL:
             raise DSLRuntimeError("Function body is not set.")
 
         # Pass the actual function object to inspect.signature to get the signature.
-        if isinstance(self.funcBody, DSLCallable):
-            sig = self.funcBody.get_signature()
-        else:
-            sig = inspect.signature(self.funcBody)
+        sig = inspect.signature(self.funcBody)
+
         function_name = self.funcBody.__name__
 
         bound_args = self._get_function_bound_args(sig, function_name, *args, **kwargs)
@@ -1382,10 +1358,7 @@ class BaseDSL:
         # Check the number of arguments
         sig = self._check_arg_count(*args, **kwargs)
 
-        if isinstance(funcBody, DSLCallable):
-            args_spec = funcBody.get_arg_spec()
-        else:
-            args_spec = inspect.getfullargspec(funcBody)
+        args_spec = inspect.getfullargspec(funcBody)
 
         # Canonicalize the input arguments
         canonicalized_args, canonicalized_kwargs = self._canonicalize_args(
@@ -1447,7 +1420,7 @@ class BaseDSL:
         return cuda_helpers.stream_create()
 
     def _execute_cuda(
-        self, fname_cubin, kernel_name, grid_size, block_size, stream=None
+        self, fname_cubin, kernel_name, grid_size, block_size, smem_size, stream=None
     ):
         """
         Executes a specified CUDA kernel from a cubin file, handling module loading,
@@ -1471,7 +1444,7 @@ class BaseDSL:
             grid_size,
             block_size,
             stream,
-            smem_size=16000,
+            smem_size=smem_size,
             kernel_args=self.exe_args,
         )
 
@@ -1480,7 +1453,13 @@ class BaseDSL:
             cuda_helpers.stream_sync(stream)
 
     def _execute_by_cuda_driver(
-        self, kernel_generator, generate_cubin, grid_size, block_size, stream=None
+        self,
+        kernel_generator,
+        generate_cubin,
+        grid_size,
+        block_size,
+        smem_size,
+        stream=None,
     ):
         """
         This function builds IR and execute the module using cuda driver.
@@ -1511,10 +1490,9 @@ class BaseDSL:
         fname_cubin = generate_cubin(module, kernel_name)
 
         # Execute a cuda kernel from cubin
-        if block_size is None:
-            # The TileIR driver should set this automatically.
-            block_size = self.block_size
-        self._execute_cuda(fname_cubin, kernel_name, grid_size, block_size, stream)
+        self._execute_cuda(
+            fname_cubin, kernel_name, grid_size, block_size, smem_size, stream
+        )
 
         return ret
 
@@ -1587,10 +1565,7 @@ class BaseDSL:
                 kernelGenHelper = dkwargs.get("kernelGenHelper", None)
 
                 kernel_name = funcBody.__name__
-                if isinstance(funcBody, DSLCallable):
-                    args_spec = funcBody.get_arg_spec()
-                else:
-                    args_spec = inspect.getfullargspec(funcBody)
+                args_spec = inspect.getfullargspec(funcBody)
                 self.funcBody = funcBody
 
                 # Give each kernel a unique name. (The same kernel may be

@@ -205,6 +205,8 @@ class CompileOptions:
         self._parser.add_argument(
             "--enable-device-assertions", action="store_true", default=False
         )
+        self._parser.add_argument("--link-libraries", type=str, default="")
+
         try:
             self._options = self._parser.parse_args(options.split())
         except SystemExit as e:

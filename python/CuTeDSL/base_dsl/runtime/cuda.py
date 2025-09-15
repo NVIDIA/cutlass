@@ -309,7 +309,7 @@ def get_kernel_function(module, kernel_name):
     return kernel
 
 
-def launch_kernel(kernel, grid_dims, block_dims, stream, smem_size=0, kernel_args=None):
+def launch_kernel(kernel, grid_dims, block_dims, stream, smem_size, kernel_args=None):
     """
     Launches the CUDA kernel.
     """

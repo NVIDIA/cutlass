@@ -226,15 +226,15 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
     print(f"c: {c.shape}, dtype: {c.dtype}\n")
 
     buffer_a = BufferWithLayout(
-        make_ptr(ab_dtype, a.data_ptr(), cute.AddressSpace.gmem),
+        make_ptr(ab_dtype, a.data_ptr(), cute.AddressSpace.gmem, assumed_align=32),
         (2, 1, 0),
     )
     buffer_b = BufferWithLayout(
-        make_ptr(ab_dtype, b.data_ptr(), cute.AddressSpace.gmem),
+        make_ptr(ab_dtype, b.data_ptr(), cute.AddressSpace.gmem, assumed_align=32),
         (2, 1, 0),
     )
     buffer_c = BufferWithLayout(
-        make_ptr(c_dtype, c.data_ptr(), cute.AddressSpace.gmem),
+        make_ptr(c_dtype, c.data_ptr(), cute.AddressSpace.gmem, assumed_align=32),
         (2, 1, 0),
     )
 

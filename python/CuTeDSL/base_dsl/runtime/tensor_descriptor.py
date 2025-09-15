@@ -183,6 +183,13 @@ class TensorDescriptor:
         """
         return self.device_type == _dpack.DLDeviceType.kDLGPU
 
+    @staticmethod
+    def is_compatible(maybe_tensor_descriptor) -> bool:
+        """Check if the object is a TensorDescriptor or can be converted to one."""
+        return isinstance(
+            maybe_tensor_descriptor, TensorDescriptor
+        ) or TensorDescriptor.can_transformed_to_dlpack(maybe_tensor_descriptor)
+
 
 def from_tensor(tensor) -> TensorDescriptor:
     """Create a TensorDescriptor from a tensor object."""
@@ -192,10 +199,3 @@ def from_tensor(tensor) -> TensorDescriptor:
 def to_tensor(tensor_descriptor: TensorDescriptor):
     """Return tensor object from tensor descriptor."""
     return tensor_descriptor.tensor
-
-
-def is_tensor_descriptor(maybe_tensor_descriptor) -> bool:
-    """Check if the object is a TensorDescriptor."""
-    return isinstance(
-        maybe_tensor_descriptor, TensorDescriptor
-    ) or TensorDescriptor.can_transformed_to_dlpack(maybe_tensor_descriptor)
