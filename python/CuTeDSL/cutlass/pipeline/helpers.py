@@ -89,6 +89,8 @@ class PipelineOp(enum.Enum):
     TmaStore = enum.auto()
     # Composite of multiple PipelineOps
     Composite = enum.auto()
+    # Async load without TMA
+    AsyncLoad = enum.auto()
 
 
 def _get_pipeline_op(type_str):
@@ -226,6 +228,8 @@ class MbarrierArray(SyncObject):
             self.arrive_tcgen05mma(index, dst, cta_group)
         elif self.op_type in [PipelineOp.TmaLoad]:
             self.arrive_and_expect_tx(index, self.tx_count)
+        elif self.op_type is PipelineOp.AsyncLoad:
+            self.arrive_cp_async_mbarrier(index)
         else:
             assert (
                 False
@@ -236,6 +240,9 @@ class MbarrierArray(SyncObject):
             cute.arch.mbarrier_arrive(self.get_barrier(index))
         else:
             cute.arch.mbarrier_arrive(self.get_barrier(index), dst_rank)
+
+    def arrive_cp_async_mbarrier(self, index: int):
+        cute.arch.cp_async_mbarrier_arrive_noinc(self.get_barrier(index))
 
     def arrive_tcgen05mma(
         self, index: int, mask: Optional[int], cta_group: cute.nvgpu.tcgen05.CtaGroup

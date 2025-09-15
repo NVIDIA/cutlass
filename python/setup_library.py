@@ -36,7 +36,7 @@ from setuptools import setup
 def perform_setup():
     setup(
         name='cutlass_library',
-        version='4.1.0',
+        version='4.2.0',
         description='CUTLASS library generation scripts',
         packages=['cutlass_library']
     )

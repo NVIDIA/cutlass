@@ -17,11 +17,15 @@ The preprocessor read through python's ast and changes the input code.
 from typing import Callable, Iterator, Optional, overload
 from typing_extensions import deprecated
 import warnings
+import inspect
+from types import BuiltinFunctionType
+from functools import lru_cache
 
 from .utils.logger import log
 from .common import *
 
 from ._mlir_helpers.arith import ArithValue
+
 
 class Executor:
     """
@@ -45,9 +49,11 @@ class Executor:
         self._compare_executor = None
         self._any_executor = None
         self._all_executor = None
+        self._builtin_redirector = None
 
     def set_functions(
         self,
+        *,
         is_dynamic_expression: Callable,
         loop_execute_range_dynamic: Callable,
         if_dynamic: Callable,
@@ -55,6 +61,7 @@ class Executor:
         compare_executor: Callable,
         any_executor: Callable = None,
         all_executor: Callable = None,
+        builtin_redirector: Callable = None,
     ):
         self._is_dynamic_expression = is_dynamic_expression
         self._loop_execute_range_dynamic = loop_execute_range_dynamic
@@ -63,6 +70,7 @@ class Executor:
         self._compare_executor = compare_executor
         self._any_executor = any_executor
         self._all_executor = all_executor
+        self._builtin_redirector = builtin_redirector
 
     @staticmethod
     def convert_to_list(x):
@@ -90,42 +98,18 @@ class Executor:
             return res[0]
         return res
 
-    @staticmethod
-    def for_constexpr(
-        func: Callable,
-        start: int,
-        stop: int,
-        step: int,
-        used_args: list,
-        iter_args: list,
-    ):
-        log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
-        loop_results = iter_args
-        log().debug("iter_args [%s]", iter_args)
-        for i in range(start, stop, step):
-            log().debug("i  [%s] iter_args  [%s]", i, iter_args)
-            loop_results = func(i, *used_args, *loop_results)
-            log().debug("loop_results  [%s]", loop_results)
-            if loop_results is None:
-                loop_results = []
-            if not isinstance(loop_results, list):
-                loop_results = [loop_results]
-
-        log().debug("done loop_results [%s]", loop_results)
-        return Executor.converge_ret_val(loop_results)
-
     def for_execute(
         self,
         func,
         start,
         stop,
         step,
-        used_args=[],
-        iter_args=[],
-        iter_arg_names=[],
+        write_args=[],
+        full_write_args_count=0,
+        write_args_names=[],
         unroll=-1,
         unroll_full=False,
-        pipelining=None,
+        prefetch_stages=None,
     ):
         assert (
             self._loop_execute_range_dynamic
@@ -137,12 +121,12 @@ class Executor:
             start,
             stop,
             step,
-            used_args,
-            iter_args,
-            iter_arg_names,
+            write_args,
+            full_write_args_count,
+            write_args_names,
             unroll,
             unroll_full,
-            pipelining,
+            prefetch_stages,
         )
 
     def if_execute(
@@ -150,15 +134,20 @@ class Executor:
         pred,
         then_block: Callable,
         else_block: Optional[Callable] = None,
-        used_args=[],
-        yield_args=[],
-        yield_arg_names=[],
+        write_args=[],
+        full_write_args_count=0,
+        write_args_names=[],
     ):
         assert self._if_dynamic, "Functions must be set before execution."
 
         # MLIR generation
         return self._if_dynamic(
-            pred, then_block, else_block, used_args, yield_args, yield_arg_names
+            pred,
+            then_block,
+            else_block,
+            write_args,
+            full_write_args_count,
+            write_args_names,
         )
 
     def while_execute(
@@ -166,9 +155,9 @@ class Executor:
         pred,
         while_before_block: Callable,
         while_after_block: Callable,
-        used_args=[],
-        yield_args=[],
-        yield_arg_names=[],
+        write_args=[],
+        full_write_args_count=0,
+        write_args_names=[],
     ):
         assert self._while_dynamic, "Functions must be set before execution."
 
@@ -176,9 +165,9 @@ class Executor:
         return self._while_dynamic(
             while_before_block,
             while_after_block,
-            used_args,
-            yield_args,
-            yield_arg_names,
+            write_args,
+            full_write_args_count,
+            write_args_names,
         )
 
 
@@ -194,23 +183,24 @@ def loop_selector(
     stop,
     step,
     *,
-    used_args=[],
-    iter_args=[],
-    iter_arg_names=[],
+    write_args=[],
+    full_write_args_count=0,
+    write_args_names=[],
     unroll=-1,
     unroll_full=False,
-    pipelining=None,
+    prefetch_stages=None,
 ):
     log().debug(
-        "start [%s] stop [%s] step [%s] used_args [%s] iter_args [%s] unroll [%s] unroll_full [%s] pipelining [%s]",
+        "start [%s] stop [%s] step [%s] write_args [%s] full_write_args_count [%s] write_args_names [%s] unroll [%s] unroll_full [%s] prefetch_stages [%s]",
         start,
         stop,
         step,
-        used_args,
-        iter_args,
+        write_args,
+        full_write_args_count,
+        write_args_names,
         unroll,
         unroll_full,
-        pipelining,
+        prefetch_stages,
     )
     from .typing import Integer, Numeric
 
@@ -230,19 +220,19 @@ def loop_selector(
             start,
             stop,
             step,
-            used_args,
-            iter_args,
-            iter_arg_names,
+            write_args,
+            full_write_args_count,
+            write_args_names,
             unroll,
             unroll_full,
-            pipelining,
+            prefetch_stages,
         )
 
     return ir_loop
 
 
-def if_selector(pred, used_args=[], yield_args=[]):
-    log().debug("pred [%s] used_args [%s] yield_args [%s]", pred, used_args, yield_args)
+def if_selector(pred, write_args=[]):
+    log().debug("pred [%s] write_args [%s]", pred, write_args)
     # Handle Numeric types here?
 
     from .typing import Numeric
@@ -251,14 +241,14 @@ def if_selector(pred, used_args=[], yield_args=[]):
         pred = pred.value
 
     def ir_loop(func):
-        return func(pred, *used_args, *yield_args)
+        return func(pred, *write_args)
 
     return ir_loop
 
 
-def while_selector(pred, used_args=[], yield_args=[]):
+def while_selector(pred, write_args=[]):
     def ir_while_loop(func):
-        return func(pred, *used_args, *yield_args)
+        return func(pred, *write_args)
 
     return ir_while_loop
 
@@ -267,17 +257,17 @@ def while_executor(
     pred,
     while_before_block: Callable,
     while_after_block: Callable,
-    used_args=[],
-    yield_args=[],
-    yield_arg_names=[],
+    write_args=[],
+    full_write_args_count=0,
+    write_args_names=[],
 ):
     return executor.while_execute(
         pred,
         while_before_block,
         while_after_block,
-        used_args,
-        yield_args,
-        yield_arg_names,
+        write_args,
+        full_write_args_count,
+        write_args_names,
     )
 
 
@@ -285,12 +275,17 @@ def if_executor(
     pred,
     then_block: Callable,
     else_block: Optional[Callable] = None,
-    used_args=[],
-    yield_args=[],
-    yield_arg_names=[],
+    write_args=[],
+    full_write_args_count=0,
+    write_args_names=[],
 ):
     return executor.if_execute(
-        pred, then_block, else_block, used_args, yield_args, yield_arg_names
+        pred,
+        then_block,
+        else_block,
+        write_args,
+        full_write_args_count,
+        write_args_names,
     )
 
 
@@ -313,14 +308,17 @@ class range:
 
     - unroll: Number of iterations to unroll (0 or 1 = no unrolling)
     - unroll_full: Whether to fully unroll the loop
-    - pipelining: Compiler generated pipeline configuration
+    - prefetch_stages: Number of prefetch stages to generate
     """
+
     @overload
-    def __new__(cls, stop, unroll=0, unroll_full=False, pipelining=None):
+    def __new__(cls, stop, unroll=0, unroll_full=False, prefetch_stages=None):
         pass
 
     @overload
-    def __new__(cls, start, stop, step, unroll=0, unroll_full=False, pipelining=None):
+    def __new__(
+        cls, start, stop, step, unroll=0, unroll_full=False, prefetch_stages=None
+    ):
         pass
 
     def __new__(cls, *args, **kwargs):
@@ -339,6 +337,7 @@ def range_dynamic(*args, **kwargs):
 
 def range_constexpr(*args):
     raise DSLRuntimeError("range_constexpr should be preprocessed by preprocessor.")
+
 
 # =============================================================================
 # If expressions
@@ -405,7 +404,7 @@ def assert_executor(test, msg=None):
     else:
         raise DSLRuntimeError(
             "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion = "Please replace with runtime assert."
+            suggestion="Please replace with runtime assert.",
         )
 
 
@@ -413,9 +412,10 @@ def bool_cast(value):
     if executor._is_dynamic_expression(value):
         raise DSLRuntimeError(
             "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion = "Please explicitly convert to boolean with expressions like comparision."
+            suggestion="Please explicitly convert to boolean with expressions like comparision.",
         )
     return bool(value)
+
 
 def compare_executor(left, comparators, ops):
     """
@@ -470,6 +470,19 @@ def all_executor(iterable):
 # =============================================================================
 # Control flow checks
 # =============================================================================
+class DSLOptimizationWarning(Warning):
+    """
+    This warning is used to warn the user about the optimization related issues in DSL.
+    """
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__()
+
+    def __str__(self):
+        return self.message
+
+
 def range_value_check(*args):
     """
     Ensure all `range_constexpr` bounds are compile-time constants (Python ints).
@@ -495,7 +508,7 @@ def range_value_check(*args):
         if range_length >= 64:
             warnings.warn(
                 f"This static loop has {range_length} iterations, which may be very slow to compile, consider using `cutlass.range(..., unroll_full=True)` instead.",
-                category=UserWarning,
+                category=DSLOptimizationWarning,
                 stacklevel=2,
             )
 
@@ -519,7 +532,50 @@ def range_perf_warning(filename, lineno, *args):
                 "This loop is no longer unrolled and may cause performance regression. "
                 "Use `range(..., unroll_full=True)` for full unrolling, or switch to `range_constexpr` when bounds are compile-time constants."
             ),
-            category=UserWarning,
+            category=DSLOptimizationWarning,
             filename=filename,
             lineno=lineno,
         )
+
+
+@lru_cache(maxsize=1)
+def _get_self_module():
+    """
+    This function is used to get the owning module of this function.
+    """
+    return inspect.getmodule(_get_self_module)
+
+
+def cf_symbol_check(symbol):
+    """
+    Check if the symbol is control flow symbol from current module.
+    """
+
+    failed = False
+    name = symbol.__name__
+    self_module = _get_self_module()
+    if inspect.ismodule(symbol):
+        name = "range"
+        if not self_module.__name__.startswith(symbol.__name__):
+            failed = True
+    else:
+        owning_module = inspect.getmodule(symbol)
+        if owning_module != self_module:
+            failed = True
+
+    if failed:
+        raise DSLRuntimeError(
+            f"Incorrect {symbol.__name__} is used.",
+            suggestion=f"Please avoid overriding `{symbol.__name__}` from DSL package.",
+        )
+
+
+def redirect_builtin_function(fcn):
+    """
+    This function is used to redirect built-in function call
+    to the function defined in DSL package.
+    """
+    # Only redirect if it's a built-in
+    if isinstance(fcn, BuiltinFunctionType) and executor._builtin_redirector:
+        return executor._builtin_redirector(fcn)
+    return fcn

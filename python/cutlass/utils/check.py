@@ -36,7 +36,7 @@ Utility functions for checking constraints on kernels and calculating kernel att
 
 import ctypes
 
-from cutlass_library import DataTypeSize, OperationKind, SharedMemPerCC
+from cutlass_library import DataTypeSize, KernelScheduleSuffixes, OperationKind, SharedMemPerCC
 
 import cutlass_cppgen
 from cutlass_cppgen.backend.library import TileDescription
@@ -54,7 +54,9 @@ def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: Operatio
     :return: number of bytes of shared memory consumed by a single stage
     :rtype: int
     """
-    m, n, k = td.threadblock_shape
+    m, n, k = td.blackwell_threadblock_shape
+    if td.is_2sm:
+        m //= 2
 
     if operation_kind == OperationKind.Gemm:
         stage_barrier_bytes = 32
@@ -106,7 +108,7 @@ def valid_stage_count(
              valid for the provided device and the second element being an error message
     :rtype: tuple
     """
-    if kernel_cc == 90:
+    if kernel_cc in [90, 100, 101, 103]:
         if (td.stages is None or td.stages == 0):
             # Stage count of None or 0 for SM90 indicates that the CollectiveBuilder automatically
             # determines the stage count to use. Thus, all settings are valid in these scenarios.
@@ -157,10 +159,10 @@ def valid_cluster_shape(cc: int, cluster_shape: list) -> tuple:
     :rtype: tuple
     """
 
-    if cc < 90:
+    if cc < 90 or cc in [120, 121]:
         if cluster_shape != [1, 1, 1]:
             return (False,
-                    f"Cluster shape for pre-SM90 architectures must be [1, 1, 1]. Received cluster shape of "
+                    f"Cluster shape for pre-SM90 architectures and SM 120 and 121 must be [1, 1, 1]. Received cluster shape of "
                     f"{cluster_shape} for SM{cc}.")
         else:
             return (True, "")
@@ -174,15 +176,6 @@ def valid_cluster_shape(cc: int, cluster_shape: list) -> tuple:
                 "CUTLASS kernels currently require the third dimension of cluster shape to be 1. "
                 f"Received cluster shape of {cluster_shape}.")
 
-    # The CUDA programming guide currently defines a maximum of 8 thread blocks per cluster
-    # as being portably supported (https://docs.nvidia.com/cuda/cuda-c-programming-guide/#thread-block-clusters).
-    # Current CUTLASS kernels only have non-unit cluster dimensions within the first two dimensions,
-    # so we check that the first two dimensions of the cluster shape do not exceed 8 thread blocks in total.
-    blocks_in_2d = cluster_shape[0] * cluster_shape[1]
-    if blocks_in_2d > 8:
-        return (False,
-            f"Thread block clusters with more than 8 thread blocks are currently unsupported on SM{cc}. "
-            f"Received cluster shape {cluster_shape}, which has {blocks_in_2d} thread blocks.")
     return (True, "")
 
 
@@ -211,16 +204,16 @@ def valid_schedule(
     kernel_auto = (kernel_schedule == cutlass_cppgen.KernelScheduleType.ScheduleAuto)
     epilogue_auto = (epilogue_schedule == cutlass_cppgen.EpilogueScheduleType.ScheduleAuto)
     tile_scheduler_default = (tile_scheduler == cutlass_cppgen.TileSchedulerType.Default)
-    if cc < 90 and not (kernel_auto and epilogue_auto and tile_scheduler_default):
-        return (False, "Non-default schedules are only supported on SM90 and beyond")
+    if (cc < 90 or cc in [120, 121]) and not (kernel_auto and epilogue_auto and tile_scheduler_default):
+        return (False, "Non-default schedules are only supported on SM90 and beyond (excluding SM120 and SM121)")
 
-    if (kernel_auto and not epilogue_auto) or (not kernel_auto and epilogue_auto):
+    if cc == 90 and ((kernel_auto and not epilogue_auto) or (not kernel_auto and epilogue_auto)):
         return (False, "Kernel and epilogue schedules must either both be auto or neither be auto")
 
     if not tile_scheduler_default:
         cooperative_kernels = [cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedCooperative, 
                                cutlass_cppgen.KernelScheduleType.CpAsyncWarpSpecializedCooperative]
-        if (tile_scheduler == cutlass_cppgen.TileSchedulerType.StreamK) and (kernel_schedule not in cooperative_kernels):
+        if cc == 90 and (tile_scheduler == cutlass_cppgen.TileSchedulerType.StreamK) and (kernel_schedule not in cooperative_kernels):
             return (False, "Stream-K tile scheduler is currently only supported with the cooperative kernel schedule")
     return (True, "")
 

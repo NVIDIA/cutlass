@@ -471,7 +471,7 @@ class TensorOpGemm:
             cute.arch.sync_threads()
             # Start async loads for the first k-tile. Here we take care of the k residue
             # via if/else check along the k dimension. Because we shifted the identity tensor
-            # by the residue_k and because the identity tensor is a counting tensor, the
+            # by the residue_k and because the identity tensor is a coord tensor, the
             # values of any identity tensor element that is poison is less than -1
             num_smem_stages = cute.size(tAsA, mode=[3])
             k_tile_count = cute.size(tAgA, mode=[3])
@@ -683,7 +683,7 @@ class TensorOpGemm:
             # Copy results of D back to shared memory
             cute.autovec_copy(tCrD, tCsC)
 
-            # Create counting tensor for C
+            # Create coord tensor for C
             ceilM, ceilN, _ = cute.ceil_div(mC.shape, (self.bM, self.bN, 1))
             mcC = cute.make_identity_tensor(
                 (

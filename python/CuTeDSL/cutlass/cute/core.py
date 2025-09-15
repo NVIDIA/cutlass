@@ -31,7 +31,6 @@ from typing import (
     Optional,
 )
 from enum import Enum, auto
-from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import (
     const,
@@ -1662,7 +1661,9 @@ class _Tensor(Tensor):
 
 
 @dsl_user_op
-def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
+def print_tensor(
+    tensor: Union[Tensor, "TensorSSA"], *, verbose: bool = False, loc=None, ip=None
+):
     """Print content of the tensor in human readable format.
 
     Outputs the tensor data in a structured format showing both metadata
@@ -1693,6 +1694,11 @@ def print_tensor(tensor: Tensor, *, verbose: bool = False, loc=None, ip=None):
                 [ 0.9159,  0.7577,  0.6918,  0.0754,  0.0591],
                 [ 0.6551,  0.1626,  0.1189,  0.0292,  0.8655]])
     """
+    if isinstance(tensor, TensorSSA):
+        tmp = make_fragment(tensor.shape, tensor.dtype)
+        tmp.store(tensor)
+        tensor = tmp
+
     if not isinstance(tensor.type, _cute_ir.MemRefType):
         raise NotImplementedError(
             f"printing {tensor} is not supported because it doesn't support trivial dereferencing. "
@@ -1769,7 +1775,7 @@ def is_static(x: Union[ir.Type, ir.Value, XTuple]) -> bool:
         return False
     elif is_dynamic_expression(x):
         return _cute_ir.is_static(x.type)
-    elif isinstance(x, int) or x is None:
+    elif isinstance(x, (bool, int, float)) or x is None:
         return True
     elif isinstance(x, ScaledBasis):
         return x.is_static()
@@ -2241,7 +2247,7 @@ def is_weakly_congruent(
     * X is a non-tuple value, OR
     * X and Y are both tuples of the same rank AND all corresponding elements are weakly congruent.
 
-    Weak congruence allows scalar values to match with tuples, making it useful 
+    Weak congruence allows scalar values to match with tuples, making it useful
     for determining whether an object has a hierarchical structure "up to" another.
 
     :param a: First object to compare
@@ -2921,33 +2927,46 @@ def flatten_to_tuple(a: Union[IntTuple, Coord, Shape, Stride]) -> tuple:
         return tuple(chain.from_iterable(tuple(flatten_to_tuple(x) for x in a)))
 
 
-def flatten(a: Union[IntTuple, Coord, Shape, Stride, Layout, Tensor]) -> tuple:
+@overload
+def flatten(a: Union[IntTuple, Coord, Shape, Stride]) -> IntTuple: ...
+@overload
+def flatten(a: Tensor) -> Tensor: ...
+@overload
+def flatten(a: Layout) -> Layout: ...
+
+
+def flatten(a):
     """Flattens a CuTe data structure into a simpler form.
 
     For tuples, this function flattens the structure into a single-level tuple.
-    For non-tuple types, it returns the input unchanged.
+    For layouts, it returns a new layout with flattened shape and stride.
+    For tensors, it returns a new tensor with flattened layout.
+    For other types, it returns the input unchanged.
 
     :param a: The structure to flatten
     :type a: Union[IntTuple, Coord, Shape, Stride, Layout, Tensor]
     :return: The flattened structure
     :rtype: Union[tuple, Any]
-    :raises NotImplementedError: If input is a Layout or Tensor
 
     **Examples:**
 
     .. code-block:: python
 
-        flatten((1, 2, 3))           # Returns (1, 2, 3)
-        flatten(((1, 2), (3, 4)))    # Returns (1, 2, 3, 4)
-        flatten(5)                   # Returns 5
-    """
-    if isinstance(a, (Layout, Tensor)):
-        raise NotImplementedError("flatten layout and tensor is not supported")
+        flatten((1, 2, 3))                      # Returns (1, 2, 3)
+        flatten(((1, 2), (3, 4)))               # Returns (1, 2, 3, 4)
+        flatten(5)                              # Returns 5
+        flatten(Layout(shape, stride))          # Returns Layout(flatten(shape), flatten(stride))
+        flatten(Tensor(layout))                 # Returns Tensor(flatten(layout))
 
-    if not isinstance(a, tuple):
-        return a
-    else:
+    """
+    if isinstance(a, Tensor):
+        return make_tensor(a.iterator, flatten(a.layout))
+    elif isinstance(a, Layout):
+        return make_layout(flatten(a.shape), stride=flatten(a.stride))
+    elif isinstance(a, tuple):
         return flatten_to_tuple(a)
+    else:
+        return a
 
 
 def unflatten(
@@ -4120,14 +4139,14 @@ def complement(
 @dsl_user_op
 def right_inverse(input: Layout, *, loc=None, ip=None) -> Layout:
     if not isinstance(input, Layout):
-        raise TypeError(f"expects input of type Layout, but got {type(Layout)}")
+        raise TypeError(f"expects input of type Layout, but got {type(input)}")
     return _cute_ir.right_inverse(input=input, loc=loc, ip=ip)
 
 
 @dsl_user_op
 def left_inverse(input: Layout, *, loc=None, ip=None) -> Layout:
     if not isinstance(input, Layout):
-        raise TypeError(f"expects input of type Layout, but got {type(Layout)}")
+        raise TypeError(f"expects input of type Layout, but got {type(input)}")
     return _cute_ir.left_inverse(input=input, loc=loc, ip=ip)
 
 
@@ -5156,7 +5175,6 @@ def _make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
     return TiledCopy(atom.op, trait)
 
 
-@deprecated("Use make_tiled_copy_tv instead")
 def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
     """Create a tiled type given a TV partitioner and tiler.
 
@@ -5434,6 +5452,14 @@ def gemm(
     For MMA Atoms that require single-threaded execution, the gemm op automatically handles thread
     election internally. Manual thread selection is not required in such cases.
 
+    Following dispatch rules are supported:
+
+    - Dispatch [1]: (V) x (V) => (V)          => (V,1,1) x (V,1,1) => (V,1,1)
+    - Dispatch [2]: (M) x (N) => (M,N)        => (1,M,1) x (1,N,1) => (1,M,N)
+    - Dispatch [3]: (M,K) x (N,K) => (M,N)    => (1,M,K) x (1,N,K) => (1,M,N)
+    - Dispatch [4]: (V,M) x (V,N) => (V,M,N)  => (V,M,1) x (V,N,1) => (V,M,N)
+    - Dispatch [5]: (V,M,K) x (V,N,K) => (V,M,N)
+
     :param atom: MMA atom
     :type atom: MmaAtom
     :param d: Destination tensor
@@ -5453,6 +5479,27 @@ def gemm(
     :return: None
     :rtype: None
     """
+
+    a_rank = rank(a.shape)
+    b_rank = rank(b.shape)
+    c_rank = rank(c.shape)
+    d_rank = rank(d.shape)
+
+    if a_rank != b_rank:
+        raise ValueError("`a` and `b` must have the same rank")
+
+    if c_rank != d_rank:
+        raise ValueError("`c` and `d` must have the same rank")
+
+    if a_rank == 1:
+        if c_rank > 2:
+            raise ValueError("`c` must have rank <= 2 when `a` has rank 1")
+    elif a_rank == 2:
+        if c_rank not in (2, 3):
+            raise ValueError("`c` must have rank 2 or 3 when `a` has rank 2")
+    elif a_rank == 3:
+        if c_rank != 3:
+            raise ValueError("`c` must have rank 3 when `a` has rank 3")
 
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     return _cute_ir.gemm(value, d.value, a.value, b.value, c.value, loc=loc, ip=ip)
@@ -5645,6 +5692,76 @@ def copy(
     return _cute_ir.copy(value, src.value, dst.value, pred=pred, loc=loc, ip=ip)
 
 
+@dsl_user_op
+def copy_atom_call(
+    atom: CopyAtom,
+    src: Tensor,
+    dst: Tensor,
+    *,
+    pred: Optional[Tensor] = None,
+    loc=None,
+    ip=None,
+    **kwargs,
+) -> None:
+    """
+    Execute a single copy atom operation.
+
+    The copy_atom_call operation executes a copy atom with the given operands.
+    Following src/dst layout of atom are valid:
+    * ((atom_v))
+    * (atom_v)
+
+    Note: The format ((atom_v, rest_v)) is NOT valid for copy_atom_call since it would
+    require multiple atom operations, which contradicts the definition of a single copy atom call.
+
+    Examples:
+
+    .. code-block:: python
+
+        # Call a copy atom operation
+        cute.copy_atom_call(copy_atom, src_tensor, dst_tensor)
+
+    An additional predication tensor can be provided. If the partitioned tensors have the following
+    logical profile ``((ATOM_V,ATOM_REST),REST_M,...)``, the predication tensor must have a profile
+    consistent with ``(ATOM_REST,REST_M,...)``.
+    """
+    if isinstance(src.type, _cute_ir.MemRefType) and isinstance(
+        dst.type, _cute_ir.MemRefType
+    ):
+        if src.element_type.width != dst.element_type.width:
+            raise TypeError(
+                "`copy_atom_call` currently only supports equal source and destination "
+                "element type bit width"
+            )
+
+    value = atom._unpack(loc=loc, ip=ip, **kwargs)
+    if isinstance(pred, Tensor):
+        pred = pred.value
+    return _cute_ir.copy_atom_call(
+        value, src.value, dst.value, pred=pred, loc=loc, ip=ip
+    )
+
+
+def prefetch(atom: CopyAtom, src: Tensor, *, loc=None, ip=None) -> None:
+    """
+    The Prefetch algorithm.
+
+    The "prefetch" expects source tensors to be partitioned according to the provided Copy Atom.
+    Prefetch is used for loading tensors from global memory to L2.
+
+    Prefetch accepts Copy Atom but not all are allowed. Currently, only support for tma load tensor prefetch.
+
+    .. code-block:: python
+
+        cute.prefetch(tma_atom, src)
+
+    For Copy Atoms that require single-threaded execution, the copy op automatically handles thread
+    election internally. Manual thread selection is not required in such cases.
+    """
+    dummy_tma_bar_ptr = make_ptr(Int64, 0, AddressSpace.smem, loc=loc, ip=ip)
+    value = atom._unpack(loc=loc, ip=ip, tma_bar_ptr=dummy_tma_bar_ptr)
+    return _cute_ir.prefetch(value, src.value, loc=loc, ip=ip)
+
 ####################################################################################################
 #
 # TensorSSA class (experimental)
@@ -5657,6 +5774,11 @@ class ReductionOp(Enum):
     MUL = auto()
     MAX = auto()
     MIN = auto()
+    INC = auto()
+    DEC = auto()
+    AND = auto()
+    OR = auto()
+    XOR = auto()
 
     def __str__(self):
         return self.name.lower()
@@ -5697,6 +5819,7 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         self._shape = shape
         self._dtype = dtype
+        self._layout = None
 
     @property
     def dtype(self) -> Type[Numeric]:
@@ -5776,13 +5899,26 @@ class TensorSSA(cutlass_arith.ArithValue):
         ):
             res_type = Boolean
 
-        if lhs.shape != rhs.shape:
-            raise ValueError(
-                f"lhs and rhs must have the same shape type, but got {lhs.shape} and {rhs.shape}"
-            )
+        assert isinstance(rhs, TensorSSA), f"rhs must be TensorSSA but got {rhs}"
 
-        if not isinstance(rhs, TensorSSA):
-            raise TypeError(f"rhs must be TensorSSA but got {rhs}")
+        def _broadcast(s, t):
+            if s == 1:
+                return t
+            elif t == 1:
+                return s
+            elif s == t:
+                return s
+            else:
+                raise ValueError(f"cannot broadcast {s} and {t}")
+
+        max_rank = max(rank(lhs.shape), rank(rhs.shape))
+        lhs_shape = append(lhs.shape, 1, up_to_rank=max_rank)
+        rhs_shape = append(rhs.shape, 1, up_to_rank=max_rank)
+        res_shape = transform_leaf(_broadcast, lhs_shape, rhs_shape)
+
+        # broadcast to the same shape
+        lhs = lhs.broadcast_to(res_shape)
+        rhs = rhs.broadcast_to(res_shape)
 
         if (
             op in (operator.add, operator.sub)
@@ -5806,6 +5942,38 @@ class TensorSSA(cutlass_arith.ArithValue):
             res = TensorSSA(res_vect, lhs._shape, res_type)
 
         return res
+
+    def broadcast_to(self, target_shape: Shape, *, loc=None, ip=None) -> "TensorSSA":
+        """
+        Broadcast the tensor to the target shape.
+        """
+        # pad source shape to the same rank
+        shape = append(self.shape, 1, up_to_rank=rank(target_shape))
+        if shape == target_shape:
+            return self
+
+        def _check_broadcast(s, t):
+            if s != t and s != 1:
+                raise ValueError(
+                    f"src_shape and target_shape must be the same when src_shape is not 1, but got {s} and {t}"
+                )
+
+        transform_leaf(_check_broadcast, shape, target_shape)
+
+        # reshape to flatten N-D vector
+        flat_shp = flatten_to_tuple(shape)
+        temp_ty = ir.VectorType.get(list(flat_shp), self.dtype.mlir_type)
+        temp_vect = vector.shape_cast(temp_ty, self, loc=loc, ip=ip)
+
+        # broadcast to result N-D vector
+        flat_tgt_shp = flatten_to_tuple(target_shape)
+        temp_tgt_ty = ir.VectorType.get(list(flat_tgt_shp), self.dtype.mlir_type)
+        temp_tgt_vect = vector.broadcast(temp_tgt_ty, temp_vect, loc=loc, ip=ip)
+
+        res_1d_ty = ir.VectorType.get([size(target_shape)], self.dtype.mlir_type)  # type: ignore
+        res_1d_vect = vector.shape_cast(res_1d_ty, temp_tgt_vect, loc=loc, ip=ip)
+
+        return TensorSSA(res_1d_vect, target_shape, self.dtype)
 
     def __pow__(self, other, *, loc=None, ip=None) -> "TensorSSA":
         """
@@ -6093,6 +6261,16 @@ class TensorSSA(cutlass_arith.ArithValue):
         """
         return self._apply_op(operator.and_, other, flip=True, loc=loc, ip=ip)
 
+    def __neg__(self, *, loc=None, ip=None) -> "TensorSSA":
+        """
+        Returns the negation of the tensor.
+
+        :return: The element-wise negation of the tensor
+        :rtype: TensorSSA
+        """
+
+        return self._apply_op(operator.sub, 0, flip=True, loc=loc, ip=ip)
+
     def _flatten_shape_and_coord(self, crd, *, loc=None, ip=None):
         # Coalesce and flatten source layout at terminal of coordinate
         # (N_0,(N_1,...), ...) -> (N_0,N_1,N_2,...)
@@ -6158,17 +6336,13 @@ class TensorSSA(cutlass_arith.ArithValue):
         if crd is None:
             return self
 
-        if not has_underscore(crd) or depth(crd) == 0:
-            idx = crd2idx(crd, make_layout(self._shape))
-            if is_static(idx):
-                res = vector.extract(
-                    self, dynamic_position=[], static_position=[idx], loc=loc, ip=ip
-                )
-            else:
-                res = vector.extract(
-                    self, dynamic_position=[crd], static_position=[], loc=loc, ip=ip
-                )
-            return self.dtype(res)
+        if not has_underscore(crd):
+            if self._layout is None:
+                self._layout = make_layout(self._shape, loc=loc, ip=ip)
+            idx = crd2idx(crd, self._layout, loc=loc, ip=ip)
+            idx_val = as_numeric(idx).ir_value(loc=loc, ip=ip)
+            res_val = vector.extractelement(self, position=idx_val, loc=loc, ip=ip)
+            return self.dtype(res_val)
 
         if not is_static(crd):
             raise ValueError("dynamic coordinate is not supported")
@@ -6274,7 +6448,7 @@ class TensorSSA(cutlass_arith.ArithValue):
         :type op: operator
         :param init_val: The initial value for the reduction
         :type init_val: numeric
-        :param reduction_profile: Specifies which dimensions to reduce. Dimensions marked with '_' are kept.
+        :param reduction_profile: Specifies which dimensions to reduce. Dimensions marked with `None` are kept.
         :type reduction_profile: Coord
 
         :return: The reduced tensor
@@ -6289,9 +6463,9 @@ class TensorSSA(cutlass_arith.ArithValue):
 
             reduce(f32 o (4, 5))
               => f32
-            reduce(f32 o (4, (5, 4)), reduction_profile=(_, 1))
+            reduce(f32 o (4, (5, 4)), reduction_profile=(None, 1))
               => f32 o (4,)
-            reduce(f32 o (4, (5, 4)), reduction_profile=(_, (_, 1)))
+            reduce(f32 o (4, (5, 4)), reduction_profile=(None, (None, 1)))
               => f32 o (4, (5,))
         """
         # short-cut to no-op
@@ -6354,21 +6528,6 @@ class TensorSSA(cutlass_arith.ArithValue):
         return self._build_result(res_vect, res_shp, loc=loc, ip=ip)
 
 
-def _get_attr_for_type(ty, value):
-    if isinstance(ty, ir.IntegerType):
-        return ir.IntegerAttr.get(ty, value.to(int))
-    elif isinstance(ty, ir.FloatType):
-        return ir.FloatAttr.get(ty, value.to(float))
-    else:
-        raise TypeError(f"unsupported type: {ty}")
-
-
-def _splat(res_ty, fill_value):
-    elem_attr = _get_attr_for_type(res_ty.element_type, fill_value)
-    vect_attr = ir.DenseElementsAttr.get_splat(res_ty, elem_attr)
-    return arith.constant(res_ty, vect_attr)
-
-
 @dsl_user_op
 def full(shape, fill_value, dtype: Type[Numeric], *, loc=None, ip=None) -> TensorSSA:
     """
@@ -6389,9 +6548,14 @@ def full(shape, fill_value, dtype: Type[Numeric], *, loc=None, ip=None) -> Tenso
 
     if isinstance(fill_value, (ir.Value, int, float, bool)):
         fill_value = dtype(fill_value)
+    elif isinstance(fill_value, Numeric):
+        fill_value = fill_value.to(dtype, loc=loc, ip=ip)
+    else:
+        raise ValueError(f"Expected fill_value be numeric type, but got {fill_value}")
 
-    res_mlir_type = T.vector(size, dtype.mlir_type)
-    return TensorSSA(_splat(res_mlir_type, fill_value), shape, dtype)
+    res_ty = T.vector(size, dtype.mlir_type)
+    res_val = vector.splat(res_ty, fill_value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    return TensorSSA(res_val, shape, dtype)
 
 
 def full_like(
@@ -6547,7 +6711,7 @@ class struct:
 
     **Usage:**
 
-    .. code-block::
+    .. code-block:: python
 
         # Supports base_dsl scalar int/float elements, array and nested struct:
         @cute.struct
@@ -6661,7 +6825,8 @@ class struct:
             Initializes a new memory range.
 
             :param dtype: The data type.
-            :param size: The size of the memory range in bytes.
+            :param size: Size of the memory range in bytes. A size of **0** is accepted, but in that
+                         case the range can only be used for its address (e.g. as a partition marker).
             :param base: The base address of the memory range.
             """
             self._dtype = dtype
@@ -6673,9 +6838,9 @@ class struct:
             Returns start pointer to the data in this memory range.
 
             :return: A pointer to the start of the memory range.
-            :raises AssertionError: If the size of the memory range is not greater than zero.
+            :raises AssertionError: If the size of the memory range is negative.
             """
-            assert self._size > 0
+            assert self._size >= 0
             return recast_ptr(self._base, dtype=self._dtype)
 
         def get_tensor(self, layout, swizzle=None, dtype=None):
@@ -6716,30 +6881,47 @@ class struct:
 
         :param v: The object to align. Must be a struct, MemRange, or a scalar type.
         :param align: The alignment value to set.
-        :return: A copy of the object with the specified alignment.
         :raises TypeError: If the object is not a struct, MemRange, or a scalar type.
+
+        :ivar _dtype: The data type to be aligned.
+        :ivar _align: The alignment of the data type.
         """
+
+        _dtype = None
+        _align = None
 
         def __new__(cls, name, bases, dct):
             return super().__new__(cls, name, bases, dct)
 
         def __getitem__(cls, params) -> Any:
             if len(params) == 2:
-                obj, align = params
+                dtype, align = params
+                assert align > 0
             else:
                 raise TypeError("Invalid struct.Align Arguments")
 
-            # make a copy of type and mark alignment
-            if struct._is_scalar_type(obj) or isinstance(
-                obj, (struct, struct._MemRangeMeta)
+            if not struct._is_scalar_type(dtype) and not isinstance(
+                dtype, (struct, struct._MemRangeMeta)
             ):
-                new_obj = py_copy.copy(obj)
-                setattr(new_obj, "_struct_alignment_", align)
-                return new_obj
-            else:
                 raise TypeError(
-                    "align only can be applied to sturct/MemRange/base_dsl scalar"
+                    "align only can be applied to struct/MemRange/base_dsl scalar"
                 )
+
+            # Create new class with alignment
+            new_cls = type(
+                f"struct.Align[{dtype.__name__}, {align}]",
+                (struct.Align,),
+                {"_dtype": dtype, "_align": align},
+            )
+            return new_cls
+
+        @property
+        def dtype(cls):
+            return cls._dtype
+
+        @property
+        def align(cls):
+            return cls._align
 
     class Align(metaclass=_AlignMeta):
         """
@@ -6768,6 +6950,7 @@ class struct:
         :raises TypeError: If the struct is empty.
         """
         self._cls = cls
+        self.__name__ = f"struct::{cls.__name__}"
         # Get the class annotations
         self._annotations = cls.__annotations__
         # Create a dictionary to store the offsets
@@ -6780,12 +6963,10 @@ class struct:
             raise TypeError("Empty struct is not supported!")
         for name, object in self._annotations.items():
             # get alignment of object
-            def alignof(object, default: int = 1):
-                return getattr(object, "_struct_alignment_", default)
-
-            # alignment for the next offset
-            def align_offset(offset, align):
-                return (offset + (align - 1)) & ~(align - 1)
+            sub_align = 1
+            if isinstance(object, struct._AlignMeta):
+                sub_align = object.align
+                object = object.dtype
 
             # switch addition order to support dynamic size
             def add_offset(val):
@@ -6793,35 +6974,37 @@ class struct:
 
             # size of scalar
             if struct._is_scalar_type(object):
-                dtype_size = object.width // 8
-                sub_align = alignof(object, dtype_size)
-                offset = align_offset(offset, sub_align)
+                dtype_size = max(1, object.width // 8)
+                sub_align = max(dtype_size, sub_align)
+                offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
                 offset = add_offset(dtype_size)
             # size of array is size_in_bytes, alignment is elem_size
             elif isinstance(object, struct._MemRangeMeta):
-                if object.size == 0:
-                    continue  # skip empty array
-                sub_align = alignof(object, max(1, object.elem_width // 8))
-                offset = align_offset(offset, sub_align)
+                # Allow empty array as a free marker-only struct member.
+                # Use max(sub_align, ) because we might have in the future some
+                # object.elem_width less than 8, such as fp4, bit and others,
+                # and align_offset() does not support an alignment of 0.
+                sub_align = max(object.elem_width // 8, sub_align)
+                offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
                 offset = add_offset(object.size_in_bytes)
             # size of struct
             elif isinstance(object, struct):
-                sub_align = max(object.__alignof__(), alignof(object))
-                offset = align_offset(offset, sub_align)
+                sub_align = max(object.__alignof__(), sub_align)
+                offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
                 offset = add_offset(object.__sizeof__())
             else:
                 raise TypeError(
-                    f"Struct element only support sturct/array/base_dsl scalar, "
+                    f"Struct element only support struct/array/base_dsl scalar, "
                     f"but got {object}"
                 )
             # Total aligment determined by the strictest requirement
             alignment = max(alignment, sub_align)
         # Total size determined by alignment
         self._align_of = alignment
-        self._size_of = align_offset(offset, alignment)
+        self._size_of = self.align_offset(offset, alignment)
 
     # create the __init__ method for decorated struct
     def __call__(self, base: Any) -> None:
@@ -6840,6 +7023,8 @@ class struct:
         setattr(cls, "_base", base)
         for name, off in self._offsets.items():
             obj = self._annotations[name]
+            if isinstance(obj, struct._AlignMeta):
+                obj = obj.dtype
             if struct._is_scalar_type(obj):
                 new_obj = recast_ptr(base + off, dtype=obj)
                 setattr(cls, name, new_obj)
@@ -6851,7 +7036,7 @@ class struct:
                 setattr(cls, name, new_obj)
             else:
                 raise TypeError(
-                    f"Struct element only support sturct/array/base_dsl scalar, "
+                    f"Struct element only support struct/array/base_dsl scalar, "
                     f"but got {obj}"
                 )
         return cls
@@ -6872,3 +7057,14 @@ class struct:
     # get alignment
     def __alignof__(self) -> int:
         return self._align_of
+
+    # util func for aligning offset
+    @staticmethod
+    def align_offset(offset, align):
+        """
+        Return the round-up offset up to the next multiple of align.
+        """
+        assert align > 0 and not (
+            align & (align - 1)
+        ), "align should be a strictly positive power of 2."
+        return (offset + (align - 1)) & ~(align - 1)

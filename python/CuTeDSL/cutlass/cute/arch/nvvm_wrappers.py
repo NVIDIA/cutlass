@@ -11,6 +11,7 @@
 
 from functools import partial
 from typing import Optional, Tuple, Union, Callable
+from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import T, dsl_user_op
 
@@ -642,6 +643,9 @@ def rcp_approx(a: Union[float, Float32], *, loc=None, ip=None):
 
 
 @dsl_user_op
+@deprecated(
+    "cute.arch.exp2 is deprecated, use cute.math.exp2 with `fastmath=True` instead"
+)
 def exp2(a: Union[float, Float32], *, loc=None, ip=None) -> Float32:
     return Float32(
         llvm.inline_asm(
@@ -656,15 +660,19 @@ def exp2(a: Union[float, Float32], *, loc=None, ip=None) -> Float32:
     )
 
 
-# TODO: add `fastmath` flag for this op
 @dsl_user_op
+@deprecated(
+    "cute.arch.exp is deprecated, use cute.math.exp with `fastmath=True` instead"
+)
 def exp(a: Union[float, Float32], *, loc=None, ip=None) -> Float32:
     LOG2_E = 1.4426950408889634
     return exp2(a * LOG2_E, loc=loc, ip=ip)
 
 
-# TODO: add `fastmath` flag for this op
 @dsl_user_op
+@deprecated(
+    "cute.arch.exp_packed_f32x2 is deprecated, use cute.arch.mul_packed_f32x2 and cute.math.exp2 with `fastmath=True` instead"
+)
 def exp_packed_f32x2(
     a: Tuple[Float32, Float32], *, loc=None, ip=None
 ) -> Tuple[Float32, Float32]:

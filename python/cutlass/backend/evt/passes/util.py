@@ -36,8 +36,11 @@ Utilities for passes
 
 # Map from the CC of the kernel to the EVT implementation that the CC targets
 cc_map = {
-    80: 80,
-    86: 80,
-    89: 80,
-    90: 90,
+    80:   80,
+    86:   80,
+    89:   80,
+    90:   90,
+    100: 100,
+    101: 100,
+    103: 100,
 }

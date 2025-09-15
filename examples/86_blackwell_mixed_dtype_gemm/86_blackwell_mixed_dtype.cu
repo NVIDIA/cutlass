@@ -331,11 +331,13 @@ bool verify(MixedDtypeOptions const& options) {
   //
   // Compute reference output
   //
-
+  
+  constexpr int AlignmentBdq = 128 / cutlass::sizeof_bits<MmaType>::value; 
+  
   using CollectiveMainloopRef = typename cutlass::gemm::collective::CollectiveBuilder<
       ArchTag, OperatorClass,
       MmaType, LayoutA, AlignmentA,
-      MmaType, LayoutB, AlignmentB,
+      MmaType, LayoutB, AlignmentBdq,
       ElementAccumulator,
       MmaTileShape, ClusterShape,
       cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,

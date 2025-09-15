@@ -539,7 +539,8 @@ make_cotiled_copy(Copy_Atom<Args...> const& copy_atom,
   auto layout_tv_data = composition(inv_data_layout, atom_tv_layout);
 
   // Check validity
-  CUTE_STATIC_ASSERT_V(coalesce(composition(data_layout, layout<1>(layout_tv_data))) == coalesce(layout<1>(atom_tv_layout)),
+  // Append 1:0 to data_layout so that OOB coordinates get the stride-0
+  CUTE_STATIC_ASSERT_V(coalesce(composition(make_layout(data_layout, Layout<_1,_0>{}), layout<1>(layout_tv_data))) == coalesce(layout<1>(atom_tv_layout)),
                        "The memory pointed to by AtomTVLayout does not exist in the DataLayout.");
   //
   // Tiler -- Find the active elements in the DATA tensor and generate a tiler to extract them

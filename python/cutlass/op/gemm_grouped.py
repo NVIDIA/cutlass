@@ -133,7 +133,7 @@ class GroupedGemm(Gemm):
         )
 
         # Grouped GEMM specializations for SM90 are currently unavailable. Revert to using SM80
-        if self.current_cc == 90:
+        if self.current_cc in [90, 100, 101, 103]:
             self._reset_options(80)
             self._reset_operations(reset_epilogue=False)
 

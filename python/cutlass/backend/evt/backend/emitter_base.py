@@ -52,6 +52,7 @@ class FusionCallbacks:
         self.dag_ir = dag_ir
         self.emit_CD = emit_CD
         self.cc = cc
+        self.evt_cc = 90 if cc >= 90 else cc
         if self.cc < 90:
             self.namespace = "threadblock"
         else:
@@ -103,7 +104,7 @@ class FusionCallbacks:
             return ""
 
         evt_tmp = f"""
-using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.cc}EVT<
+using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}EVT<
     {node.name_camel},
 """
         sorted_children = self.dag_ir.get_all_inputs(node.name)
@@ -140,7 +141,7 @@ using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.cc}EVT
         dag_nodes = ",\n".join(dag_node_strs)
 
         return f"""
-using {node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.cc}TopologicalVisitor<
+using {node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}TopologicalVisitor<
     {DataTypeTag[node.subgraph.element_compute]},
     {edge_tuples},
 {dag_nodes}

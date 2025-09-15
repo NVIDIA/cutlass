@@ -111,14 +111,14 @@ struct Options {
       int m = cmd_line_m;
       int n = cmd_line_n;
       int k = cmd_line_k;
-      if (m < 1) {
-        m = m_alignment * ((rand() % (64 * alignment / m_alignment)) + 1);
+      if (m < 0) {
+        m = m_alignment * (rand() % (64 * alignment / m_alignment));
       }
-      if (n < 1) {
-        n = n_alignment * ((rand() % (64 * alignment / n_alignment)) + 1);
+      if (n < 0) {
+        n = n_alignment * (rand() % (64 * alignment / n_alignment));
       }
-      if (k < 1) {
-        k = k_alignment * ((rand() % (32 * alignment / k_alignment)) + 1);
+      if (k < 0) {
+        k = k_alignment * (rand() % (32 * alignment / k_alignment));
       }
       problem_sizes_after_alignment_host.push_back({m, n, k});
       problem_sizes_host.push_back({m, n, k});

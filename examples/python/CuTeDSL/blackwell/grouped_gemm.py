@@ -475,7 +475,6 @@ class GroupedGemmKernel:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=(*self.cluster_shape_mn, 1),
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
         )
         return
@@ -785,7 +784,7 @@ class GroupedGemmKernel:
             )
             tensormap_init_done = cutlass.Boolean(False)
             # tile count we have searched
-            total_k_block_cnt = cutlass.Int32(0)
+            total_k_tile_cnt = cutlass.Int32(0)
             # group index of last tile
             last_group_idx = cutlass.Int32(-1)
             work_tile = tile_sched.initial_work_tile_info()
@@ -795,7 +794,7 @@ class GroupedGemmKernel:
                     cur_tile_coord,
                     problem_sizes_mnkl,
                 )
-                cur_k_block_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
+                cur_k_tile_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
                 cur_group_idx = grouped_gemm_cta_tile_info.group_idx
                 is_group_changed = cur_group_idx != last_group_idx
                 # skip tensormap update if we're working on the same group
@@ -861,17 +860,17 @@ class GroupedGemmKernel:
                     (None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])
                 ]
 
-                num_prev_k_blk = total_k_block_cnt
-                total_k_block_cnt += cur_k_block_cnt
+                num_prev_k_blk = total_k_tile_cnt
+                total_k_tile_cnt += cur_k_tile_cnt
 
-                # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt
-                tma_wr_k_block = cutlass.Int32(0)
-                smem_wr_buffer = (num_prev_k_blk + tma_wr_k_block) % self.num_ab_stage
+                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
+                tma_wr_k_tile = cutlass.Int32(0)
+                smem_wr_buffer = (num_prev_k_blk + tma_wr_k_tile) % self.num_ab_stage
                 tma_wr_ab_empty_phase = (
-                    num_prev_k_blk + tma_wr_k_block
+                    num_prev_k_blk + tma_wr_k_tile
                 ) // self.num_ab_stage % 2 ^ 1
                 peek_ab_empty_status = cute.arch.mbarrier_conditional_try_wait(
-                    tma_wr_k_block < cur_k_block_cnt,
+                    tma_wr_k_tile < cur_k_tile_cnt,
                     ab_empty_mbar_ptr + smem_wr_buffer,
                     tma_wr_ab_empty_phase,
                 )
@@ -882,10 +881,10 @@ class GroupedGemmKernel:
                 #
                 # Tma load loop
                 #
-                for k_block in cutlass.range(0, cur_k_block_cnt, 1, unroll=1):
-                    tma_wr_k_block_next = tma_wr_k_block + 1
+                for k_tile in cutlass.range(0, cur_k_tile_cnt, 1, unroll=1):
+                    tma_wr_k_tile_next = tma_wr_k_tile + 1
                     smem_wr_buffer_next = (
-                        num_prev_k_blk + tma_wr_k_block_next
+                        num_prev_k_blk + tma_wr_k_tile_next
                     ) % self.num_ab_stage
                     tma_wr_ab_empty_phase_next = (
                         tma_wr_ab_empty_phase ^ 1
@@ -911,7 +910,7 @@ class GroupedGemmKernel:
                     # Load A/B with TMA
                     cute.copy(
                         tma_atom_a,
-                        tAgA_slice[(None, tma_wr_k_block)],
+                        tAgA_slice[(None, tma_wr_k_tile)],
                         tAsA[(None, smem_wr_buffer)],
                         tma_bar_ptr=smem_full_mbar_ptr,
                         mcast_mask=a_full_mcast_mask,
@@ -922,7 +921,7 @@ class GroupedGemmKernel:
                     )
                     cute.copy(
                         tma_atom_b,
-                        tBgB_slice[(None, tma_wr_k_block)],
+                        tBgB_slice[(None, tma_wr_k_tile)],
                         tBsB[(None, smem_wr_buffer)],
                         tma_bar_ptr=smem_full_mbar_ptr,
                         mcast_mask=b_full_mcast_mask,
@@ -932,14 +931,14 @@ class GroupedGemmKernel:
                         ),
                     )
 
-                    # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt + k_block + 1
+                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
                     peek_ab_empty_status = cute.arch.mbarrier_conditional_try_wait(
-                        tma_wr_k_block_next < cur_k_block_cnt,
+                        tma_wr_k_tile_next < cur_k_tile_cnt,
                         ab_empty_mbar_ptr + smem_wr_buffer_next,
                         tma_wr_ab_empty_phase_next,
                     )
 
-                    tma_wr_k_block = tma_wr_k_block_next
+                    tma_wr_k_tile = tma_wr_k_tile_next
                     smem_wr_buffer = smem_wr_buffer_next
                     tma_wr_ab_empty_phase = tma_wr_ab_empty_phase_next
 
@@ -998,12 +997,12 @@ class GroupedGemmKernel:
 
             work_tile = tile_sched.initial_work_tile_info()
             # tile count we have searched
-            total_k_block_cnt = cutlass.Int32(0)
+            total_k_tile_cnt = cutlass.Int32(0)
             while work_tile.is_valid_tile:
                 cur_tile_coord = work_tile.tile_idx
                 # MMA warp is only interested in number of tiles along K dimension
                 (
-                    cur_k_block_cnt,
+                    cur_k_tile_cnt,
                     cur_group_idx,
                 ) = group_gemm_ts_helper.search_cluster_tile_count_k(
                     cur_tile_coord,
@@ -1014,17 +1013,17 @@ class GroupedGemmKernel:
                 # (MMA, MMA_M, MMA_N)
                 tCtAcc = tCtAcc_base[(None, None, None, acc_buf_idx)]
 
-                num_prev_k_blk = total_k_block_cnt
-                total_k_block_cnt += cur_k_block_cnt
+                num_prev_k_blk = total_k_tile_cnt
+                total_k_tile_cnt += cur_k_tile_cnt
 
-                # Peek (try_wait) AB buffer full for k_block = 0
-                mma_rd_k_block = cutlass.Int32(0)
-                smem_rd_buffer = (num_prev_k_blk + mma_rd_k_block) % self.num_ab_stage
+                # Peek (try_wait) AB buffer full for k_tile = 0
+                mma_rd_k_tile = cutlass.Int32(0)
+                smem_rd_buffer = (num_prev_k_blk + mma_rd_k_tile) % self.num_ab_stage
                 need_check_rd_buffer_full = (
-                    mma_rd_k_block < cur_k_block_cnt and is_leader_cta
+                    mma_rd_k_tile < cur_k_tile_cnt and is_leader_cta
                 )
                 mma_rd_ab_full_phase = (
-                    (num_prev_k_blk + mma_rd_k_block) // self.num_ab_stage % 2
+                    (num_prev_k_blk + mma_rd_k_tile) // self.num_ab_stage % 2
                 )
                 peek_ab_full_status = cute.arch.mbarrier_conditional_try_wait(
                     need_check_rd_buffer_full,
@@ -1051,10 +1050,10 @@ class GroupedGemmKernel:
                 #
                 # Mma mainloop
                 #
-                for k_block in range(cur_k_block_cnt):
-                    mma_rd_k_block_next = cutlass.Int32(k_block + 1)
+                for k_tile in range(cur_k_tile_cnt):
+                    mma_rd_k_tile_next = cutlass.Int32(k_tile + 1)
                     smem_rd_buffer_next = (
-                        num_prev_k_blk + mma_rd_k_block_next
+                        num_prev_k_blk + mma_rd_k_tile_next
                     ) % self.num_ab_stage
                     mma_rd_ab_full_phase_next = (
                         mma_rd_ab_full_phase ^ 1
@@ -1069,18 +1068,18 @@ class GroupedGemmKernel:
                             )
 
                         # tCtAcc += tCrA * tCrB
-                        num_kphases = cute.size(tCrA, mode=[2])
-                        for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
-                            kphase_coord = (None, None, kphase_idx, smem_rd_buffer)
+                        num_kblocks = cute.size(tCrA, mode=[2])
+                        for kblock_idx in cutlass.range(num_kblocks, unroll_full=True):
+                            kblock_coord = (None, None, kblock_idx, smem_rd_buffer)
 
                             cute.gemm(
                                 tiled_mma,
                                 tCtAcc,
-                                tCrA[kphase_coord],
-                                tCrB[kphase_coord],
+                                tCrA[kblock_coord],
+                                tCrB[kblock_coord],
                                 tCtAcc,
                             )
-                            # Enable accumulate on tCtAcc after first kphase
+                            # Enable accumulate on tCtAcc after first kblock
                             tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
 
                         # Async arrive AB buffer empty
@@ -1091,9 +1090,9 @@ class GroupedGemmKernel:
                                 self.cta_group,
                             )
 
-                    # Peek (try_wait) AB buffer full for k_block = k_block + 1
+                    # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
                     need_check_rd_buffer_full = (
-                        mma_rd_k_block_next < cur_k_block_cnt and is_leader_cta
+                        mma_rd_k_tile_next < cur_k_tile_cnt and is_leader_cta
                     )
 
                     peek_ab_full_status = cute.arch.mbarrier_conditional_try_wait(
@@ -1102,7 +1101,7 @@ class GroupedGemmKernel:
                         mma_rd_ab_full_phase_next,
                     )
 
-                    mma_rd_k_block = mma_rd_k_block_next
+                    mma_rd_k_tile = mma_rd_k_tile_next
                     smem_rd_buffer = smem_rd_buffer_next
                     mma_rd_ab_full_phase = mma_rd_ab_full_phase_next
 
@@ -1201,7 +1200,7 @@ class GroupedGemmKernel:
             # wait tensormap initialization complete before update
             tensormap_manager.fence_tensormap_initialization()
             # tile count we have searched
-            total_k_block_cnt = cutlass.Int32(0)
+            total_k_tile_cnt = cutlass.Int32(0)
             # group index of last tile
             last_group_idx = cutlass.Int32(-1)
             while work_tile.is_valid_tile:
@@ -1240,8 +1239,8 @@ class GroupedGemmKernel:
                     grouped_gemm_cta_tile_info.cta_tile_idx_n,
                     0,
                 )
-                cur_k_block_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
-                total_k_block_cnt += cur_k_block_cnt
+                cur_k_tile_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
+                total_k_tile_cnt += cur_k_tile_cnt
 
                 #
                 # Slice to per mma tile index
@@ -1370,8 +1369,8 @@ class GroupedGemmKernel:
             #
             if warp_idx == self.epilog_warp_id[0]:
                 cute.arch.mbarrier_wait(
-                    (ab_empty_mbar_ptr + ((total_k_block_cnt - 1) % self.num_ab_stage)),
-                    (((total_k_block_cnt - 1) // self.num_ab_stage) % 2),
+                    (ab_empty_mbar_ptr + ((total_k_tile_cnt - 1) % self.num_ab_stage)),
+                    (((total_k_tile_cnt - 1) // self.num_ab_stage) % 2),
                 )
 
     @cute.jit

@@ -23,6 +23,7 @@ __all__ = [
     "CopyBulkTensorTileG2SOp",
     "CopyBulkTensorTileG2SMulticastOp",
     "CopyBulkTensorTileS2GOp",
+    "CopyReduceBulkTensorTileS2GOp",
     #
     # helpers.py
     #

@@ -2,19 +2,46 @@
 
 # CUTLASS 4.x
 
-## [4.2.0](https://github.com/NVIDIA/cutlass/tree/main) (2025-08-21)
+## [4.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.0) (2025-09-15)
 
 ### CuTe DSL
-* We will likely be skipping 4.2.dev release and directly target 4.2.
-* CuTeDSL version remains at 4.1.0 till then.
+* More Python versions are now supported for both x86-64 and aarch64, including
+    - Python 3.10, 3.11, 3.12, and 3.13
+* Added new example and updated notebook to get started with CuTe DSL
+    - [Call kernels with dlpack bypassed](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/ampere/call_bypass_dlpack.py)
+    - Updates on [TensorSSA demonstration](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/notebooks/tensorssa.ipynb)
+      + Added a section for introducing the broadcast
+* API updates
+    - Please refer to [DSL API changelog](https://docs.nvidia.com/cutlass/media/docs/pythonDSL/cute_dsl_api/changelog.html) for details
+* Bug fixings and improvements
+    - Fixed ``cute.print_tensor`` for coordinate tensor
+    - Fixed `cute.print` for tuple of layouts
+    - Fixed frozen object is not properly updated after fully assigned in dynamic control flow
+    - Fixed assign tuple/list element in a dynamic control flow may cause compilation failure
+    - Improved error message when CUDA context is not initialized
+    - Improved docstring of congruent and weakly_congruent
 
 ### CUTLASS C++
 * Add K major scale factor support for Hopper SM90 blockwise kernels.
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
     - Add fused reduction kernel support for cutlass MLA.
+    - Add softmax skip correction.
+    - Support for GQA in FMHA backward kernel.
     - Fix an issue where `get_unmasked_trip_count` may return a negative value.
     - Fix an issue where mbarriers are initialized with a zero arrival count.
+    - Fix a corner case issue where the sequence length of q is not a multiple of tile_q.
+    - Remove tma padding for forward kernel inputs.
 * Add Blackwell SM120 blockwise gemm kernel example: [example 87](https://github.com/NVIDIA/cutlass/tree/main/87_blackwell_geforce_gemm_blockwise/).
+* Add Blackwell SM100 kernel example of MoE gemm using TMA+CPASYNC to load input matrices: [example 92](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm/).
+* Support for Blackwell SM103 kernels for B300 GPUs.
+    - Collective mainloop codes: [Blockscaled datatypes with support for dense GEMM mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm103_blockscaled_mma_warpspecialized.hpp)
+    - New [GEMM](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/dispatch_policy.hpp) and [epilogue](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/dispatch_policy.hpp) dispatch policies for collectives, kernel layers, and builders.
+    - Kernel codes: [Blockscaled datatypes with support for dense GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm103_blockscaled_gemm_tma_warpspecialized.hpp).
+* Set of examples that demonstrate the usage of the 3.x API for targeting Blackwell SM103 architecture:
+    - [Blockscaled ultra fp4 dense GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/89_sm103_fp4_ultra_gemm/).
+    - [Blockscaled ultra fp4 dense grouped GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/90_sm103_fp4_ultra_grouped_gemm).
+* Set of unit tests that demonstrate the usage of Blackwell SM103 blockscaled GEMM
+    - Unit test files with prefix name of `sm103_` under [GEMM device unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/).
 * Support for Blackwell SM100 cpasync kernel.
     - Collective mainloop codes: [cpasync mainloop](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/sm100_mma_cpasync_warpspecialized.hpp).
     - Kernel codes: [cpasync kernel](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm100_gemm_cpasync_warpspecialized.hpp).
@@ -41,9 +68,24 @@
 * Add support for heuristics-based kernel filtering and autotuning using `nvidia-matmul-heuristics`.
     - Details please refer to [heuristics doc](https://github.com/NVIDIA/cutlass/tree/main/media/docs/cpp/heuristics.md).
 * Rename legacy Python API package from `cutlass` to `cutlass_cppgen`.
+* Add Blackwell EVT support to legacy Python interface.
+    - Restructuring the C++ Blackwell SM100 Collective Epilogue Builder to work with the Python interface's `EpilogueDescriptors`.
+    - Added Blackwell SM100 EVT Emitter on the Python side and routed most emission through Hopper SM90 Emitter.
+    - Added some support for running SM100 kernels via the Python interface.
+* Instantiating more Blackwell kernels in profiler.
+    - Blackwell SM100 and SM103 kernels support `CUTLASS_LIBRARY_INSTANTIATION_LEVEL` to instantiate all possible combinations.
+    - To use this feature, `CUTLASS_LIBRARY_KERNELS` must be non-empty. Profiler will combine `CUTLASS_LIBRARY_KERNELS` and `CUTLASS_LIBRARY_INSTANTIATION_LEVEL` to instantiate specific kernels.
+    - Details please check [Profiler Doc](https://github.com/NVIDIA/cutlass/tree/main/media/docs/cpp/profiler.md).
 * Fix some profiler issues:
     - Modify default cluster callback values to none 0 to avoid profiler failure when these values are not set in command line.
     - Fix some no output and timeout issues.
+    - Fix Pingpong Blockwise Hopper library generation.
+* Fix some kernel issues:
+    - Fix Hopper SM90 group gemm kernel to only use the commit group and wait group instead of also waiting on mbarriers.
+    - Support Blackwell SM120 mixed input blockscaled grouped GEMM.
+    - Fix a tiny bug when K is large for Blackwell SM103 fp4 grouped GEMM kernel.
+    - Fix an issue in [example 68](https://github.com/NVIDIA/cutlass/tree/main/examples/68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling/) where problem size has value of 0.
+    - Relax k dimension constraints for blockwise gemm on Hopper in [example 68](https://github.com/NVIDIA/cutlass/tree/main/examples/68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling/).
 * Add following unit tests:
     - [fp16 accmulator for sm89 fp8 mma](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/ampere/cooperative_gemm.cu)
     - [movmatrix test](https://github.com/NVIDIA/cutlass/tree/main/test/unit/cute/turing/movm.cu)

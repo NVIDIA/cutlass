@@ -15,12 +15,14 @@ regarding to that dialect.
 """
 
 # Local module imports
-from typing import Callable, Union, Type, List, Union, Sequence, ForwardRef
-from inspect import isclass
+from itertools import chain
+from types import GenericAlias, SimpleNamespace, UnionType
+from typing import Callable, Union, Type, List, Union, Sequence, ForwardRef, Any
 import functools
 import pkgutil
-from dataclasses import is_dataclass
+from dataclasses import is_dataclass, fields
 from collections.abc import Sequence
+import builtins
 
 from ..base_dsl import *
 from ..base_dsl import compiler
@@ -51,20 +53,15 @@ from ..base_dsl.ast_helpers import (
     while_selector,
     while_executor,
     assert_executor,
+    const_expr,
+    dynamic_expr,
     bool_cast,
     compare_executor,
     any_executor,
     all_executor,
     range_value_check,
     range_perf_warning,
-)
-from ..base_dsl.runtime.dlpack_runtime import (
-    get_cute_tensor_c_pointer,
-    get_tensor_desc_shape_all,
-    get_tensor_desc_stride_all,
-    get_tensor_desc_element_type,
-    get_tensor_desc_is_in_device,
-    get_tensor_desc_assumed_align,
+    cf_symbol_check,
 )
 
 from .cutlass_ast_decorators import (
@@ -72,6 +69,16 @@ from .cutlass_ast_decorators import (
     _if_execute_dynamic,
     _while_execute_dynamic,
 )
+
+from .tree_utils import (
+    is_constexpr_field,
+    tree_flatten,
+    tree_unflatten,
+    PyTreeDef,
+    is_frozen_dataclass,
+    DSLTreeFlattenError,
+)
+from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 
 
 # =============================================================================
@@ -125,6 +132,46 @@ def is_cute_algebra_type(arg_spec):
     return False
 
 
+def _get_c_pointers_cutlass(obj):
+    """
+    This is an extended version of `get_c_pointers` that supports dataclasses, SimpleNamespace, and dict.
+    """
+    if hasattr(obj, "__c_pointers__"):
+        return obj.__c_pointers__()
+    elif isinstance(obj, (tuple, list)):
+        return list(chain.from_iterable(_get_c_pointers_cutlass(x) for x in obj))
+    elif isinstance(obj, SimpleNamespace):
+        return list(
+            chain.from_iterable(
+                _get_c_pointers_cutlass(x) for x in obj.__dict__.values()
+            )
+        )
+    elif isinstance(obj, dict):
+        return list(
+            chain.from_iterable(_get_c_pointers_cutlass(x) for x in obj.values())
+        )
+    elif is_dataclass(obj):
+        return list(
+            chain.from_iterable(
+                _get_c_pointers_cutlass(getattr(obj, f.name))
+                for f in fields(obj)
+                if not is_constexpr_field(f)
+            )
+        )
+    elif isinstance(obj, set):
+        raise DSLRuntimeError(
+            "Sets are not supported in get_c_pointers to ensure order preservation",
+            context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
+            suggestion="Consider using a list or tuple instead",
+        )
+    else:
+        # Try get adapter
+        adapter = JitArgAdapterRegistry.get_registered_adapter(type(obj))
+        if adapter is not None:
+            return _get_c_pointers_cutlass(adapter(obj))
+    return []
+
+
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
@@ -137,14 +184,23 @@ class CutlassBaseDSL(BaseDSL):
         preprocess: bool = False,
     ):
         super().__init__(
-            name,
-            compiler_provider,
-            pass_sm_arch_name,
-            device_compilation_only,
-            preprocess,
+            name=name,
+            dsl_package_name=["cutlass"],
+            compiler_provider=compiler_provider,
+            pass_sm_arch_name=pass_sm_arch_name,
+            device_compilation_only=device_compilation_only,
+            preprocess=preprocess,
         )
+        self._smem_usage_tracker: tuple = None
 
+    # this method is not useful for cutlass_dsl, so we only provide a dummy implementation.
     def _is_tensor_descriptor(self, maybe_tensor_descriptor) -> bool:
+        return False
+
+    # this method is not useful for cutlass_dsl, so we only provide a dummy implementation.
+    def _handle_tensor_descriptor(
+        self, maybe_tensor, arg_name: str, need_gpu_memory: bool
+    ) -> Any:
         return False
 
     def _build_gpu_module(self, attrs):
@@ -229,8 +285,43 @@ class CutlassBaseDSL(BaseDSL):
 
         return version_hash
 
+    @staticmethod
+    def track_smem_allocator(allocator, callback):
+        """
+        Tracks shared memory usage for kernel functions.
+        Find and set allocator to its parent dsl object.
+        """
+        frame = inspect.currentframe().f_back
+        while frame:
+            obj = frame.f_locals.get("self", None)
+            if obj and isinstance(obj, CutlassBaseDSL):
+                obj._set_smem_tracking(allocator, callback)
+                return
+            frame = frame.f_back
+        warnings.warn("Cannot find parent dsl for allocator!", UserWarning)
+
+    def _set_smem_tracking(self, allocator, callback):
+        # Registers an allocator and callback for current dsl
+        self._smem_usage_tracker = (allocator, callback)
+
+    def _reset_smem_tracking(self):
+        # Clear an allocator and callback for current dsl
+        self._smem_usage_tracker = None
+
+    def _get_smem_usage(self) -> int:
+        # Treat final allocated bytes of allocator as smem usage
+        if not self._smem_usage_tracker:
+            return 0
+        allocator, callback = self._smem_usage_tracker
+        return callback(allocator)
+
     def _kernel_helper(self, funcBody, *args, **kwargs):
         class _CutlassIrKernelGenHelper(BaseDSL._KernelGenHelper):
+            def __init__(self, dsl: CutlassBaseDSL):
+                super().__init__()
+                self.dsl = dsl
+                self.dsl._reset_smem_tracking()
+
             def generate_func_op(self, arg_types, arg_attrs, kernel_name, loc=None):
                 super().generate_func_op(arg_types, arg_attrs, kernel_name)
                 self.func_op = func.FuncOp(
@@ -272,6 +363,17 @@ class CutlassBaseDSL(BaseDSL):
                 if cfg.has_cluster:
                     cfg.cluster = [to_index(size) for size in cfg.cluster]
 
+                smem_usage = self.dsl._get_smem_usage()
+                if any(not isinstance(x, int) for x in [cfg.smem, smem_usage]):
+                    pass  # cannot compare dynamic value inside kernel to launch op in py
+                elif cfg.auto_smem:
+                    cfg.smem = smem_usage
+                elif smem_usage > cfg.smem:
+                    warnings.warn(
+                        f"Potential error: specified kernel launch smem bytes "
+                        f"({cfg.smem}) is smaller than kernel usage ({smem_usage})!",
+                        UserWarning,
+                    )
                 cfg.smem = const(cfg.smem)
 
                 if not isinstance(cfg.async_deps, (list, tuple)):
@@ -295,11 +397,12 @@ class CutlassBaseDSL(BaseDSL):
                 return token if is_async else None
 
         return KernelLauncher(
-            self, _CutlassIrKernelGenHelper, funcBody, *args, **kwargs
+            self,
+            lambda: _CutlassIrKernelGenHelper(self),
+            funcBody,
+            *args,
+            **kwargs,
         )
-
-    def _get_module_globals(self):
-        return globals()
 
     def _preprocess_launch_config_args(self, args, kwargs):
         """Helper to preprocess args and kwargs for LaunchConfig"""
@@ -316,7 +419,10 @@ class CutlassBaseDSL(BaseDSL):
         Validates if the arg is really of the annotated type.
         """
 
-        if is_arg_spec_constexpr(arg_annotation, arg_name, arg_index, None):
+        if (
+            is_arg_spec_constexpr(arg_annotation, arg_name, arg_index, None)
+            or arg_annotation is Any
+        ):
             pass
         else:
             origin = get_origin(arg_annotation)
@@ -329,11 +435,12 @@ class CutlassBaseDSL(BaseDSL):
                         f"expects argument #{arg_index+1} ({arg_name}) to be Type[{expected_base}], but got {arg}"
                     )
             # Handle Union types and generic types
-            elif origin is Union:
+            elif origin is Union or isinstance(arg_annotation, UnionType):
                 # For Union types, check if arg matches any of the allowed types
                 allowed_types = get_args(arg_annotation)
                 if not any(
-                    (isinstance(ty, type) and isinstance(arg, ty))
+                    (ty is Any)
+                    or (isinstance(ty, type) and isinstance(arg, ty))
                     or (get_origin(ty) is tuple and isinstance(arg, tuple))
                     for ty in allowed_types
                 ):
@@ -381,6 +488,26 @@ class CutlassBaseDSL(BaseDSL):
                     jit_exec_arg.extend(get_c_pointers(arg) if is_host else dyn_vals)
                 else:
                     jit_exec_arg = jit_arg_type = jit_arg_attr = None
+            elif not hasattr(arg, "__extract_mlir_values__") and not hasattr(
+                arg, "__new_from_mlir_values__"
+            ):
+                # Try tree_flatten
+                try:
+                    dyn_vals, _ = tree_flatten(arg)
+                except DSLTreeFlattenError:
+                    # If fails, just return the original arg
+                    return jit_exec_arg, jit_arg_type, jit_arg_attr
+
+                if dyn_vals:
+                    jit_arg_type.extend([v.type for v in dyn_vals])
+                    jit_arg_attr.extend([default_attr] * len(dyn_vals))
+                    jit_exec_arg.extend(
+                        _get_c_pointers_cutlass(arg) if is_host else dyn_vals
+                    )
+                else:
+                    # If tree flatten yields empty list, treat it as a constexpr thing
+                    # Like a dataclass with all fields are constexpr, or an empty tuple or list
+                    jit_exec_arg = jit_arg_type = jit_arg_attr = None
         return jit_exec_arg, jit_arg_type, jit_arg_attr
 
     def _generate_execution_arguments_for_known_types(
@@ -396,6 +523,17 @@ class CutlassBaseDSL(BaseDSL):
                 blk_args = fop_args[iv_block_args : iv_block_args + n_args]
                 ir_arg.append(new_from_mlir_values(arg, blk_args))
                 iv_block_args += n_args
+            elif not hasattr(arg, "__extract_mlir_values__") and not hasattr(
+                arg, "__new_from_mlir_values__"
+            ):
+                # Try tree_unflatten
+                try:
+                    dyn_vals, tree_def = tree_flatten(arg)
+                    block_args = fop_args[iv_block_args : iv_block_args + len(dyn_vals)]
+                    ir_arg.append(tree_unflatten(tree_def, block_args))
+                    iv_block_args += len(dyn_vals)
+                except DSLTreeFlattenError:
+                    return ir_arg, iv_block_args
 
         return ir_arg, iv_block_args
 
@@ -458,10 +596,7 @@ class KernelLauncher:
 
     def _check_func_args(self, funcBody, *func_args, **func_kwargs):
         # Get function signature
-        if isinstance(funcBody, DSLCallable):
-            sig = funcBody.get_signature()
-        else:
-            sig = inspect.signature(funcBody)
+        sig = inspect.signature(funcBody)
 
         # func_args and func_kwargs should match funcBody's signature,
         # no extra or missing arguments.
@@ -472,6 +607,12 @@ class KernelLauncher:
                 f"Failed to bind arguments to function `{funcBody.__name__}` with signature `{sig}`",
                 cause=e,
             )
+
+    def smem_usage(self) -> int:
+        """
+        Check smem usage for this kernel, only available after `launch`
+        """
+        return self.dsl._get_smem_usage()
 
     def launch(self, *args, **kwargs):
         self.dsl.frame = inspect.currentframe().f_back
@@ -497,134 +638,151 @@ class KernelLauncher:
 # =============================================================================
 # Utils
 # =============================================================================
-
-
-def is_frozen_dataclass(obj_or_cls) -> bool:
+def _filter_readonly_frozen_dataclass(
+    iter_args: List[Any], items_to_filter: List[Any], full_write_args_count: int
+) -> List[Any]:
     """
-    Return True if obj_or_cls is a dataclass (class or instance) declared with frozen=True,
-    otherwise False.
-    """
-    if not isinstance(obj_or_cls, type):
-        # If it's an instance, get its class
-        obj_or_cls = obj_or_cls.__class__
+    Filter items based on whether corresponding iter_args are frozen dataclasses.
 
-    # Must be a dataclass, and __dataclass_params__.frozen must be True
-    return (
-        is_dataclass(obj_or_cls)
-        and getattr(obj_or_cls, "__dataclass_params__", None) is not None
-        and obj_or_cls.__dataclass_params__.frozen
+    This function filters items (which can be values or names) based on the same
+    logic: keep items if they correspond to full-write arguments (index < full_write_args_count)
+    or if the corresponding iter_arg is not a frozen dataclass.
+
+    Args:
+        iter_args: List of arguments to check for frozen dataclass status
+        items_to_filter: List of items to filter (values or names)
+        full_write_args_count: Number of arguments that are always written (not read-only)
+
+    Returns:
+        Filtered list of items
+
+    Examples:
+        # Filter values (original remove_read_only_frozen_dataclass behavior)
+        filtered_values = _filter_readonly_frozen_dataclass(iter_args, iter_args, full_write_args_count)
+
+        # Filter names (original filter_readonly_frozen_dataclass_names behavior)
+        filtered_names = _filter_readonly_frozen_dataclass(iter_args, iter_args_names, full_write_args_count)
+    """
+    return [
+        item
+        for i, item in enumerate(items_to_filter)
+        if i < full_write_args_count or not is_frozen_dataclass(iter_args[i])
+    ]
+
+
+def remove_read_only_frozen_dataclass(
+    iter_args: List[Any], full_write_args_count: int
+) -> List[Any]:
+    """Filter out frozen dataclass arguments that are not full-write arguments."""
+    return _filter_readonly_frozen_dataclass(
+        iter_args, iter_args, full_write_args_count
     )
+
+
+def filter_readonly_frozen_dataclass_names(
+    iter_args: List[Any], iter_args_names: List[str], full_write_args_count: int
+) -> List[str]:
+    """Filter names based on whether corresponding iter_args are frozen dataclasses."""
+    return _filter_readonly_frozen_dataclass(
+        iter_args, iter_args_names, full_write_args_count
+    )
+
+
+def insert_read_only_frozen_dataclass(
+    iter_args: List[Any], original_iter_args: List[Any], full_write_args_count: int
+) -> List[Any]:
+    """
+    Insert read-only frozen dataclass arguments back into the iteration arguments.
+
+    This function takes the new iteration arguments and the original arguments,
+    and preserves frozen dataclass instances from the original arguments while
+    using the new arguments for non-frozen dataclass instances.
+
+    Args:
+        iter_args: New iteration arguments to use for non-frozen dataclass instances
+        original_iter_args: Original iteration arguments to preserve frozen dataclass instances from
+        full_write_args_count: Number of arguments that are always written (not read-only)
+
+    Returns:
+        List of arguments with frozen dataclass instances preserved from original
+    """
+    # Take full-write arguments from new iter_args
+    full_write_args = (
+        iter_args[:full_write_args_count] if full_write_args_count > 0 else []
+    )
+
+    # Process remaining arguments: preserve frozen dataclass from original, use new for others
+    remaining_original = original_iter_args[full_write_args_count:]
+    remaining_new = iter_args[full_write_args_count:]
+
+    def process_remaining_arg(original_arg, new_arg_iter):
+        """Process a single remaining argument, preserving frozen dataclass if present"""
+        return original_arg if is_frozen_dataclass(original_arg) else next(new_arg_iter)
+
+    # Use zip to pair original args with new args, then map the processing function
+    new_arg_iter = iter(remaining_new)
+    processed_remaining = [
+        process_remaining_arg(orig_arg, new_arg_iter) for orig_arg in remaining_original
+    ]
+
+    return full_write_args + processed_remaining
+
+
+def unpack_to_irvalue(
+    mixed_values: List[Any], body_name: str, full_write_args_count: int
+) -> Tuple[List[ir.Value], PyTreeDef]:
+    log().debug("===--- Values UNPack")
+    for idx, packed in enumerate(mixed_values):
+        log().debug("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
+
+    try:
+        unpacked_values, treedef = tree_flatten(
+            remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
+        )
+    except DSLTreeFlattenError as e:
+        raise DSLRuntimeError(
+            f"The '{body_name}' statement encountered a user-defined Python object, which cannot be automatically converted into an dynamic expression.",
+            context={
+                e.message: (
+                    f"All expressions within '{body_name}' must be dynamic expressions, "
+                    "mixing Python objects and dynamic expressions is not supported. "
+                    "The DSL failed to convert the Python object into dynamic expressions."
+                )
+            },
+            suggestion=(
+                f"Please ensure '{e.type_str}' implements the '{DynamicExpression.__name__}' or mark with `dataclass`, "
+                f"so it can be treated as a valid dynamic expression or mark '{body_name}' as a constant expression if conditions are Python objects."
+            ),
+        )
+
+    log().debug("------------------ ")
+    for idx, unpacked in enumerate(unpacked_values):
+        log().debug("[%d]: unpacked values: %s", idx, unpacked)
+    log().debug("treedef: %s", treedef)
+    log().debug("------------------ ")
+
+    return unpacked_values, treedef
 
 
 def pack_from_irvalue(
     ir_values: List["ir.Value"],
-    indices: Dict[int, Tuple[int, int]],
-    class_types: List[Any],
+    pytree_def: PyTreeDef,
+    mixed_values: List[Any],
+    full_write_args_count: int,
 ) -> List[Any]:
     """
     Packs MLIR values into a list of mixed values.
     """
     log().debug("===--- Values Pack (%d)", len(ir_values))
-    for idx, packed in enumerate(ir_values):
-        log().debug("[%d]: will-packed: %s", idx, ir_values)
-    for idx, unpacked in indices.items():
-        log().debug("[%d]: indices: %s", idx, unpacked)
-    for idx, c in enumerate(class_types):
-        log().debug("[%d]: obj-types: %s", idx, type(c))
-
-    mixed_values = [None] * len(indices)
-    for idx, (start, length) in sorted(indices.items()):
-        chunk = ir_values[start : start + length]
-        obj = class_types[idx]
-        if is_frozen_dataclass(obj):
-            mixed_values[idx] = obj
-        elif not isinstance(obj, type) and hasattr(obj, "__new_from_mlir_values__"):
-            mixed_values[idx] = obj.__new_from_mlir_values__(chunk)
-        elif isinstance(chunk, list) and chunk[0] is None:
-            mixed_values[idx] = class_types[idx]
-        else:
-            if len(chunk) == 1:
-                try:
-                    mixed_values[idx] = t.as_numeric(chunk[0])
-                except ValueError:
-                    # Suppress the conversion error and try new_from_mlir_values below
-                    pass
-
-            if mixed_values[idx] is None:
-                mixed_values[idx] = new_from_mlir_values(obj, chunk)
-
-    log().debug("------------------ ")
-    for idx, packed in enumerate(mixed_values):
-        log().debug("[%d]: packed: %s", idx, packed)
-    log().debug("------------------ ")
-    return mixed_values
-
-
-def unpack_to_irvalue(
-    mixed_values: List[Any], body_name: str
-) -> Tuple[List[ir.Value], List[Any], Dict[int, Tuple[int, int]], List[Any]]:
-    """
-    Unpacks mixed values into ir.Value values.
-    """
-    unpacked_values = []
-    ir_values = []
-    indices = {}
-    class_types = []
-    current_offset = 0
-
-    log().debug("===--- Values UNPack (%d)", len(mixed_values))
-    for idx, packed in enumerate(mixed_values):
-        log().debug("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
-    for idx, item in enumerate(mixed_values):
-        class_types.append(item)
-        try:
-            if is_frozen_dataclass(item):
-                extracted_vals = [None]
-            else:
-                extracted_vals = extract_mlir_values(item)
-                # it's consexpr (python value), so we create mlir value for it
-                if extracted_vals == []:
-                    if item is None:
-                        extracted_vals = [None]
-                    else:
-                        dyn_expr = t.as_numeric(item)
-                        extracted_vals = extract_mlir_values(dyn_expr)
-                        ir_values.extend(extracted_vals)
-                else:
-                    ir_values.extend(extracted_vals)
-
-            unpacked_values.extend(extracted_vals)
-            length = len(extracted_vals)
-            indices[idx] = (current_offset, length)
-            current_offset += length
-        except Exception as e:
-            raise DSLRuntimeError(
-                f"The '{body_name}' statement encountered a user-defined Python object, which cannot be automatically converted into an dynamic expression (aka MLIR value).",
-                context={
-                    item: (
-                        f"All expressions within '{body_name}' must be dynamic expressions, "
-                        "mixing Python objects and dynamic expressions (aka MLIR values) is not supported. "
-                        "The DSL failed to convert the Python object into MLIR values."
-                    )
-                },
-                suggestion=(
-                    f"Please ensure '{item}' implements the '{DynamicExpression.__name__}', "
-                    f"so it can be treated as a valid dynamic expression or mark '{body_name}' as a constant expression if conditions are Python objects."
-                ),
-            ) from e
-
-    log().debug("------------------ ")
-    for idx, unpacked in enumerate(unpacked_values):
-        log().debug("[%d]: unpacked values: %s", idx, unpacked)
-    for idx, unpacked in enumerate(ir_values):
-        log().debug("[%d]: unpacked ir_values: %s", idx, unpacked)
-    for idx, unpacked in indices.items():
-        log().debug("[%d]: indices: %s", idx, unpacked)
-    for idx, unpacked in enumerate(class_types):
-        log().debug("[%d]: initial-class-types: %s", idx, unpacked)
+    for idx, value in enumerate(ir_values):
+        log().debug("[%d]: will-packed: %s", idx, value)
+    log().debug("treedef: %s", pytree_def)
     log().debug("------------------ ")
 
-    return ir_values, unpacked_values, indices, class_types
+    unflattened = tree_unflatten(pytree_def, ir_values)
+    return insert_read_only_frozen_dataclass(
+        unflattened, mixed_values, full_write_args_count
+    )
 
 
 def to_index(value):
@@ -1015,8 +1173,8 @@ def any_(iterable):
 
 def select_(cond, if_value, else_value):
     def _as_scalar(value):
-        if const_expr(isinstance(value, list)):
-            if const_expr(len(value) == 1):
+        if isinstance(value, list):
+            if len(value) == 1:
                 return value[0]
             else:
                 raise DSLRuntimeError(
@@ -1024,16 +1182,16 @@ def select_(cond, if_value, else_value):
                 )
         return value
 
-    if const_expr(not is_dynamic_expression(cond)):
+    if not is_dynamic_expression(cond):
         raise DSLRuntimeError("Conditional expression must be dynamic")
 
     # Extract MLIR values
     cond = extract_mlir_values(cond)
-    if const_expr(is_dynamic_expression(if_value)):
+    if is_dynamic_expression(if_value):
         if_value = extract_mlir_values(if_value)
     else:
         if_value = const(if_value)
-    if const_expr(is_dynamic_expression(else_value)):
+    if is_dynamic_expression(else_value):
         else_value = extract_mlir_values(else_value)
     else:
         else_value = const(else_value)
@@ -1089,7 +1247,7 @@ def for_generate(
     iter_args: Optional[Sequence[ir.Value]] = None,
     *,
     unroll: LoopUnroll = None,
-    pipelining=None,
+    prefetch_stages=None,
     loc=None,
     ip=None,
 ):
@@ -1127,8 +1285,8 @@ def for_generate(
     if unroll is not None:
         for_op.attributes["loop_annotation"] = unroll
 
-    if pipelining is not None:
-        for_op.attributes["cutlass.pipelining"] = _createI32Attr(pipelining)
+    if prefetch_stages is not None:
+        for_op.attributes["cutlass.pipelining"] = _createI32Attr(prefetch_stages)
 
     iv = for_op.induction_variable
     new_results = new_from_mlir_values(iter_args, for_op.results)
@@ -1155,11 +1313,11 @@ def not_(lhs: Union[ir.Value, bool], *, loc=None, ip=None):
     """
     res = None
     # Handle Python bool first to prevent infinite recursion
-    if const_expr(type(lhs) == bool):
+    if type(lhs) == bool:
         res = lhs ^ True
-    elif const_expr(hasattr(lhs, "__dsl_not__")):
+    elif hasattr(lhs, "__dsl_not__"):
         res = lhs.__dsl_not__(loc=loc, ip=ip)
-    elif const_expr(is_dynamic_expression(lhs)):
+    elif is_dynamic_expression(lhs):
         # If lhs is MLIR value, compute not using xor
         res = arith.XOrIOp(lhs, const(1, lhs.type)).result
     else:
@@ -1338,29 +1496,59 @@ def equal(lhs, rhs):
     return lhs == rhs
 
 
-def in_(lhs, rhs, op):
+def not_equal(lhs, rhs):
+    if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
+        return lhs != rhs
+
+    # Both sequence
+    if isinstance(lhs, Sequence) and isinstance(rhs, Sequence):
+        # Short-circuit for unequal length
+        if len(lhs) != len(rhs):
+            return True
+        return any_(not_equal(l, r) for l, r in zip(lhs, rhs))
+
+    if hasattr(lhs, "__ne__"):
+        return lhs != rhs
+    elif hasattr(rhs, "__ne__"):
+        return rhs != lhs
+    else:
+        return not_(equal(lhs, rhs))
+
+
+def in_(lhs, rhs):
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return lhs in rhs
 
     if not isinstance(rhs, Sequence):
         raise DSLRuntimeError(
-            f"'{op}' not supported between instances of {type(lhs)} and {type(rhs)}"
+            f"'in' not supported between instances of {type(lhs)} and {type(rhs)}"
         )
 
     return any_(equal(lhs, r) for r in rhs)
 
 
-def _lt_gt(lhs, rhs, op):
-    def native_lt_gt(lhs, rhs, op):
-        if op == "<":
-            return lhs < rhs
-        elif op == ">":
-            return lhs > rhs
-        else:
-            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
+def _lte_gte(lhs, rhs, op):
+    def native_lte_gte(lhs, rhs, op):
+        match op:
+            case "<":
+                return lhs < rhs
+            case "<=":
+                if hasattr(lhs, "__le__"):
+                    return lhs <= rhs
+                else:
+                    return not_(lhs > rhs)
+            case ">":
+                return lhs > rhs
+            case ">=":
+                if hasattr(lhs, "__ge__"):
+                    return lhs >= rhs
+                else:
+                    return not_(lhs < rhs)
+            case _:
+                raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
 
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
-        return native_lt_gt(lhs, rhs, op)
+        return native_lte_gte(lhs, rhs, op)
 
     # Both sequence, comparisons other than == and != do not allow mixing different types of sequences
     if (
@@ -1375,7 +1563,7 @@ def _lt_gt(lhs, rhs, op):
             is_equal = equal(l, r)
             mask.append(not_(or_(is_equal, unequal_found)))
             unequal_found = not_(is_equal)
-            comp_results.append(_lt_gt(l, r, op))
+            comp_results.append(_lte_gte(l, r, op))
 
         result = any_(and_(r, m) for r, m in zip(comp_results, mask))
 
@@ -1383,50 +1571,113 @@ def _lt_gt(lhs, rhs, op):
             # Ref https://docs.python.org/3/tutorial/datastructures.html#comparing-sequences-and-other-types
             # If one sequence is an initial sub-sequence of the other, the shorter sequence is the smaller (lesser) one
             has_valid_mask = any_(mask)
-            if op == "<":
-                length_result = len(lhs) < len(rhs)
-            elif op == ">":
-                length_result = len(lhs) > len(rhs)
+            match op:
+                case "<":
+                    length_result = len(lhs) < len(rhs)
+                case ">":
+                    length_result = len(lhs) > len(rhs)
+                case "<=":
+                    length_result = len(lhs) <= len(rhs)
+                case ">=":
+                    length_result = len(lhs) >= len(rhs)
             if type(has_valid_mask) == bool:
                 return result if has_valid_mask else length_result
             else:
                 return select_(has_valid_mask, result, length_result)
         else:
-            return result
+            if op in {"<=", ">="}:
+                # If no unequal, return True
+                return select_(unequal_found, result, True)
+            else:
+                return result
     else:
-        return native_lt_gt(lhs, rhs, op)
+        return native_lte_gte(lhs, rhs, op)
 
 
 def greater_than(lhs, rhs):
-    return _lt_gt(lhs, rhs, ">")
+    return _lte_gte(lhs, rhs, ">")
+
+
+def greater_equal(lhs, rhs):
+    return _lte_gte(lhs, rhs, ">=")
 
 
 def less_than(lhs, rhs):
-    return _lt_gt(lhs, rhs, "<")
+    return _lte_gte(lhs, rhs, "<")
+
+
+def less_equal(lhs, rhs):
+    return _lte_gte(lhs, rhs, "<=")
+
+
+def _compare_dispatch(lhs, rhs, op):
+    """
+    Dispatches the comparison operation between lhs and rhs based on the given operator.
+
+    :param lhs: The left-hand side operand for the comparison.
+    :param rhs: The right-hand side operand for the comparison.
+    :param op: The comparison operator as a string. Supported operators are:
+        - "is", "is not": Python identity comparisons.
+        - "in", "not in": Membership tests.
+        - "==", "!=": Equality and inequality.
+        - "<", ">", "<=", ">=": Relational comparisons.
+    :return: The result of the comparison, which may be a boolean or a DSL-specific type.
+    :raises DSLRuntimeError: If the operator is not supported.
+    """
+    match op:
+        # 'is' and 'is not' are pure python operators
+        case "is":
+            return lhs is rhs
+        case "is not":
+            return lhs is not rhs
+        case "in":
+            return in_(lhs, rhs)
+        case "not in":
+            return not_(in_(lhs, rhs))
+        case "==":
+            return equal(lhs, rhs)
+        case "!=":
+            return not_equal(lhs, rhs)
+        case "<":
+            return less_than(lhs, rhs)
+        case ">":
+            return greater_than(lhs, rhs)
+        case ">=":
+            return greater_equal(lhs, rhs)
+        case "<=":
+            return less_equal(lhs, rhs)
+        case _:
+            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
 
 
 def _compare_executor(left, comparators, ops):
-    result = left
+    # Fast path for single comparison
+    if len(comparators) == 1:
+        return _compare_dispatch(left, comparators[0], ops[0])
+
+    # Chain comparison, dispatch in a loop
+    result = True
+    current = left
     for comparator, op in zip(comparators, ops):
-        # 'is' and 'is not' are pure python operators
-        if op == "is":
-            result = result is comparator
-        elif op == "is not":
-            result = result is not comparator
-        elif op in ["in", "not in"]:
-            result = in_(left, comparator, op)
-        elif op in ["==", "!="]:
-            result = equal(left, comparator)
-        elif op in ["<", ">="]:
-            result = less_than(left, comparator)
-        elif op in [">", "<="]:
-            result = greater_than(left, comparator)
-        else:
-            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
-        # Invert the result for NotIn, NotEq, GtE, LtE
-        if op in ["not in", "!=", ">=", "<="]:
-            result = not_(result)
+        cmp_result = _compare_dispatch(current, comparator, op)
+        result = and_(result, cmp_result)
+        current = comparator
+
     return result
+
+
+def _builtin_redirector(fcn):
+    if fcn == builtins.max:
+        return max
+    elif fcn == builtins.min:
+        return min
+    elif fcn == builtins.any:
+        return any_
+    elif fcn == builtins.all:
+        return all_
+    else:
+        raise DSLRuntimeError(f"Unsupported built-in function: {fcn}")
+
 
 # =============================================================================
 # Set the AST decorator
@@ -1434,11 +1685,12 @@ def _compare_executor(left, comparators, ops):
 
 # Set the DSL specific functions
 executor.set_functions(
-    is_dynamic_expression,
-    _loop_execute_range_dynamic,
-    _if_execute_dynamic,
-    _while_execute_dynamic,
-    _compare_executor,
-    any_,
-    all_,
+    is_dynamic_expression=is_dynamic_expression,
+    loop_execute_range_dynamic=_loop_execute_range_dynamic,
+    if_dynamic=_if_execute_dynamic,
+    while_dynamic=_while_execute_dynamic,
+    compare_executor=_compare_executor,
+    any_executor=any_,
+    all_executor=all_,
+    builtin_redirector=_builtin_redirector,
 )

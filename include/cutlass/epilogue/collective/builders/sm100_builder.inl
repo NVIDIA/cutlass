@@ -582,7 +582,13 @@ sm100_sparse_get_tma_dispatch_policy() {
  * Selected op also maximizes the TMEM_LOAD shape in order to minimize TMEM_LOADs issued,
  * subject to the constraint of the provided per-warp tmem subpartition shape
 **/
-template<class GmemStrideTypeD, class ElementAccumulator, class ElementD, class TmemShape_MN, class FusionOp>
+template<
+  class GmemStrideTypeD,
+  class ElementAccumulator,
+  class ElementD,
+  class TmemShape_MN,
+  bool IsBlockScaleSupported
+>
 constexpr auto
 sm100_get_tmem_load_op() {
   using namespace cute;
@@ -958,6 +964,172 @@ struct CallbacksBuilder<
   >;
 };
 
+// Attempts to compute a reasonably performant epilogue tile or allows the user to provide one.
+template<
+  class OpClass,
+  class CtaTileShape_MNK,
+  class EpilogueTileType,
+  class TmemWarpShape_MN,
+  class ElementC_,
+  class GmemStrideTypeC,
+  class ElementD,
+  class GmemStrideTypeD,
+  bool IsPerColScaleSupported
+>
+static constexpr auto
+sm100_dense_compute_tile_shape_or_override() {
+  using namespace cute;
+  static_assert(!cute::is_same_v<OpClass, arch::OpClassSparseTensorOp> && !cute::is_same_v<OpClass, arch::OpClassBlockScaledSparseTensorOp>);
+
+  constexpr bool DisableSource = cute::is_void_v<ElementC_>;
+  using ElementC = cute::conditional_t<DisableSource, ElementD, ElementC_>;
+  
+  if constexpr (is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && 
+                is_same_v<EpilogueTileType, EpilogueTileAuto> && 
+                size<1>(CtaTileShape_MNK{}) == 256) {
+    constexpr int CtaM = size<0>(CtaTileShape_MNK{});
+    constexpr int WarpM = size<0>(TmemWarpShape_MN{});
+    constexpr int DpFull = 32;
+    constexpr int M = cute::min(CtaM, DpFull * WarpM); // target 32dp tmem load
+    // Note: 
+    // Set Epi_Tile_N to 128 support OverlappingAccum for the largest tile.
+    // This is a general workable epi_tile_N which does not promise best perf.
+    return make_tile(Int<M>{}, Int<128>{}); 
+  }
+  else if constexpr (is_same_v<EpilogueTileType, EpilogueTileAuto>) {
+    constexpr int CtaM = size<0>(CtaTileShape_MNK{});
+    constexpr int CtaN = size<1>(CtaTileShape_MNK{});
+    constexpr int WarpM = size<0>(TmemWarpShape_MN{});
+    constexpr int WarpN = size<1>(TmemWarpShape_MN{});
+    constexpr int MaxBits = cute::max(sizeof_bits_v<ElementC>, sizeof_bits_v<ElementD>);
+
+    constexpr int DpFull = 32; // tmem datapaths in 1 subpartition
+    constexpr int M = cute::min(CtaM, DpFull * WarpM); // target 32dp tmem load
+    constexpr int N_perf = [&]() constexpr { // Known subtile sizes tested for perf
+      // Epilogues w/o residual load are less sensitive to smem allocation
+      // Target a fixed amount of compute per epilogue iteration
+      if (DisableSource) {
+        if (MaxBits == 4) {
+          // Make epilogue tile larger to reduce the epilogue iterations.
+          // 64 is the experimental value. It will minimize epilogue iterations but keep the number of A/B buffers the same.
+          constexpr int ComputeElts = 8192;
+          return ComputeElts / M;
+        }
+        constexpr int ComputeElts = 4096;
+        return ComputeElts / M;
+      }
+      // Epilogues w/ residual load are more sensitive to smem allocation
+      // Target optimal smem distribution between epilogue+mainloop based on datatype+tilesize
+      else {
+        if (MaxBits == 32) {
+          return (CtaM > 64 && CtaN <= 128) ? 16 : 32;
+        }
+        // Per-column scaling is high register pressure, reduce tile to prevent spills
+        else if (IsPerColScaleSupported) {
+          return 32;
+        }
+        else if (MaxBits == 16) {
+          return (CtaN <= 128) ? 32 : 64;
+        }
+        else {
+          return 64;
+        }
+      }
+    }();
+    constexpr int N_min_C = (DisableSource || detail::is_m_major<GmemStrideTypeC>()) ? 8 * WarpN
+                              : (sizeof_bits_v<ElementC> == 6) ? 128 * WarpN // TMA store only supports SW128B for FP6 data type
+                                                              : 128 / sizeof_bits_v<ElementC> * WarpN;
+    constexpr int N_min_D = (detail::is_m_major<GmemStrideTypeD>()) ? 8 * WarpN
+                              : (sizeof_bits_v<ElementD> == 6) ? 128 * WarpN // TMA store only supports SW128B for FP6 data type
+                                                              : 128 / sizeof_bits_v<ElementD> * WarpN;
+    constexpr int N = cute::min(CtaN, cute::max(N_perf, N_min_C, N_min_D));
+    static_assert(CtaN >= N_min_C && CtaN >= N_min_D, "CTA tile too small");
+
+    // stride by tmem warp layout and return a by-mode tiler
+    auto tile_m = Layout<Int<M>>{};
+    auto tile_n = Layout<Shape <Int<N / WarpN>,Int<        WarpN>>,
+                        Stride<Int<         1>,Int<CtaN / WarpN>>>{};
+
+    return make_tile(tile_m, coalesce(tile_n));
+  }
+  else {
+    static_assert(cute::is_tuple<EpilogueTileType>::value && not is_layout<EpilogueTileType>::value,
+                    "EpilogueTile must be a cute::Tile or cute::Shape");
+
+    EpilogueTileType epi_tile;
+    constexpr int M = size<0>(shape(epi_tile));
+    constexpr int N = size<1>(shape(epi_tile));
+    static_assert(N % 8 == 0, "Unsupported tile shape");
+
+    return epi_tile;
+  }
+}
+
+template<
+  bool Is2SmMma,
+  class MmaTileShape_MNK
+>
+static constexpr auto
+sm100_tmem_warps() {
+  if constexpr (Is2SmMma && size<0>(MmaTileShape_MNK{}) == 128) {
+    return Shape<_2,_2>{};
+  }
+  else {
+    return Shape<_4,_1>{};
+  }
+}
+
+template<
+  bool Is2SmMma,
+  class MmaTileShape_MNK
+>
+static constexpr auto
+sm100_cta_tile_shape() {
+  if constexpr (Is2SmMma) { // 2x1 threadblock shape
+    auto [mma_tile_m, mma_tile_n, mma_tile_k] = MmaTileShape_MNK{};
+    auto cta_tile_m = reverse(shape_div(reverse(mma_tile_m), _2{})); // first MmaTile_M/2 elements, preserve multimode
+    return make_shape(cta_tile_m, mma_tile_n, mma_tile_k);
+  }
+  else { // 1x1 threadblock shape
+    return MmaTileShape_MNK{};
+  }
+}
+
+template<
+  class EpilogueScheduleType,
+  class ElementC_,
+  class ElementD,
+  int EpiTiles,
+  int FragmentSize
+>
+static constexpr auto
+sm100_dense_dispatch_policy() {
+  // 8b residuals load fast and consume little smem, so the perf cost of waiting on stores to finish outweighs the cost of extra allocation
+  constexpr bool ReuseSmem = sizeof_bits_v<ElementC_> > 8;
+  // TMA store delay performs worse with residual loads
+  constexpr bool DelayTmaStore = is_void_v<ElementC_>;
+
+  constexpr int StagesD = cute::min(EpiTiles, 2);
+  constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 4), StagesD+1)
+                                    : cute::min(EpiTiles, 4);
+
+  if constexpr (is_base_of_v<PtrArrayNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                is_base_of_v<PtrArrayNoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
+    return Sm100PtrArrayNoSmemWarpSpecialized{};
+  }
+  else if constexpr (is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
+    return Sm100NoSmemWarpSpecialized{};
+  }
+  else if constexpr (is_same_v<EpilogueScheduleType, PtrArrayTmaWarpSpecialized1Sm> ||
+                     is_same_v<EpilogueScheduleType, PtrArrayTmaWarpSpecialized2Sm>) {
+    constexpr bool DelayTmaStore_ = false; // TMA store delay complicates tensormap updates for Ptr-Array GEMMs
+    return Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore_>{};
+  }
+  else {
+    return Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
+  }
+}
+
 // Helper for building TMA warp-specialized collective epilogues, specialized by
 // the fusion operation performed and the dispatch policy to use.
 template <
@@ -1017,17 +1189,7 @@ private:
     }
   }
   using CtaTileShape_MNK = decltype(cta_tile_shape());
-
-  static constexpr auto
-  tmem_warps() {
-    if constexpr (Is2SmMma && size<0>(MmaTileShape_MNK{}) == 128) {
-      return Shape<_2,_2>{};
-    }
-    else {
-      return Shape<_4,_1>{};
-    }
-  }
-  using TmemWarpShape_MN = decltype(tmem_warps());
+  using TmemWarpShape_MN = decltype(detail::sm100_tmem_warps<Is2SmMma, MmaTileShape_MNK>());
 
   // Attempts to compute a reasonably performant epilogue tile or allows the user to provide one.
   static constexpr auto
@@ -1041,84 +1203,10 @@ private:
                         ElementC_, GmemStrideTypeC, ElementD, GmemStrideTypeD, Schedule,
                         FusionOp>();
     }
-    else if constexpr (is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && 
-                  is_same_v<EpilogueTileType, EpilogueTileAuto> && 
-                  size<1>(CtaTileShape_MNK{}) == 256) {
-      constexpr int CtaM = size<0>(CtaTileShape_MNK{});
-      constexpr int WarpM = size<0>(TmemWarpShape_MN{});
-      constexpr int DpFull = 32;
-      constexpr int M = cute::min(CtaM, DpFull * WarpM); // target 32dp tmem load
-      // Note: 
-      // Set Epi_Tile_N to 128 support OverlappingAccum for the largest tile.
-      // This is a general workable epi_tile_N which does not promise best perf.
-      return make_tile(Int<M>{}, Int<128>{}); 
-    }
-    else if constexpr (is_same_v<EpilogueTileType, EpilogueTileAuto>) {
-      constexpr int CtaM = size<0>(CtaTileShape_MNK{});
-      constexpr int CtaN = size<1>(CtaTileShape_MNK{});
-      constexpr int WarpM = size<0>(TmemWarpShape_MN{});
-      constexpr int WarpN = size<1>(TmemWarpShape_MN{});
-      constexpr int MaxBits = cute::max(sizeof_bits_v<ElementC>, sizeof_bits_v<ElementD>);
-
-      constexpr int DpFull = 32; // tmem datapaths in 1 subpartition
-      constexpr int M = cute::min(CtaM, DpFull * WarpM); // target 32dp tmem load
-      constexpr int N_perf = [&]() constexpr { // Known subtile sizes tested for perf
-        // Epilogues w/o residual load are less sensitive to smem allocation
-        // Target a fixed amount of compute per epilogue iteration
-        if (DisableSource) {
-          if (MaxBits == 4) {
-            // Make epilogue tile larger to reduce the epilogue iterations.
-            // 64 is the experimental value. It will minimize epilogue iterations but keep the number of A/B buffers the same.
-            constexpr int ComputeElts = 8192;
-            return ComputeElts / M;
-          }
-          constexpr int ComputeElts = 4096;
-          return ComputeElts / M;
-        }
-        // Epilogues w/ residual load are more sensitive to smem allocation
-        // Target optimal smem distribution between epilogue+mainloop based on datatype+tilesize
-        else {
-          if (MaxBits == 32) {
-            return (CtaM > 64 && CtaN <= 128) ? 16 : 32;
-          }
-          // Per-column scaling is high register pressure, reduce tile to prevent spills
-          else if (FusionOp::IsPerColScaleSupported) {
-            return 32;
-          }
-          else if (MaxBits == 16) {
-            return (CtaN <= 128) ? 32 : 64;
-          }
-          else {
-            return 64;
-          }
-        }
-      }();
-      constexpr int N_min_C = (DisableSource || detail::is_m_major<GmemStrideTypeC>()) ? 8 * WarpN
-                                : (sizeof_bits_v<ElementC> == 6) ? 128 * WarpN // TMA store only supports SW128B for FP6 data type
-                                                                : 128 / sizeof_bits_v<ElementC> * WarpN;
-      constexpr int N_min_D = (detail::is_m_major<GmemStrideTypeD>()) ? 8 * WarpN
-                                : (sizeof_bits_v<ElementD> == 6) ? 128 * WarpN // TMA store only supports SW128B for FP6 data type
-                                                                : 128 / sizeof_bits_v<ElementD> * WarpN;
-      constexpr int N = cute::min(CtaN, cute::max(N_perf, N_min_C, N_min_D));
-      static_assert(CtaN >= N_min_C && CtaN >= N_min_D, "CTA tile too small");
-
-      // stride by tmem warp layout and return a by-mode tiler
-      auto tile_m = Layout<Int<M>>{};
-      auto tile_n = Layout<Shape <Int<N / WarpN>,Int<        WarpN>>,
-                          Stride<Int<         1>,Int<CtaN / WarpN>>>{};
-
-      return make_tile(tile_m, coalesce(tile_n));
-    }
     else {
-      static_assert(cute::is_tuple<EpilogueTileType>::value && not is_layout<EpilogueTileType>::value,
-                      "EpilogueTile must be a cute::Tile or cute::Shape");
-
-      EpilogueTileType epi_tile;
-      constexpr int M = size<0>(shape(epi_tile));
-      constexpr int N = size<1>(shape(epi_tile));
-      static_assert(N % 8 == 0, "Unsupported tile shape");
-
-      return epi_tile;
+      return sm100_dense_compute_tile_shape_or_override<
+        OpClass, CtaTileShape_MNK, EpilogueTileType, TmemWarpShape_MN,
+        ElementC_, GmemStrideTypeC, ElementD, GmemStrideTypeD, FusionOp::IsPerColScaleSupported>();
     }
   }
   using EpilogueTile_MN = decltype(epilogue_tile());
@@ -1129,30 +1217,18 @@ private:
 
   using EpilogueWarpTileShape_MN = decltype(shape_div(EpilogueTileShape_MN{}, TmemWarpShape_MN{}));
   using AccLoadOp = decltype(detail::sm100_get_tmem_load_op<
-      GmemStrideTypeD, ElementAccumulator, ElementD, EpilogueWarpTileShape_MN, FusionOp>());
+      GmemStrideTypeD, ElementAccumulator, ElementD, EpilogueWarpTileShape_MN,
+      FusionOp::IsBlockScaleSupported
+      >());
 
   static constexpr auto
   dispatch_policy() {
-    // 8b residuals load fast and consume little smem, so the perf cost of waiting on stores to finish outweighs the cost of extra allocation
-    constexpr bool ReuseSmem = sizeof_bits_v<ElementC_> > 8;
-    // TMA store delay performs worse with residual loads
-    constexpr bool DelayTmaStore = is_void_v<ElementC_>;
-
-    constexpr int StagesD = cute::min(EpiTiles, 2);
-    constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 4), StagesD+1)
-                                      : cute::min(EpiTiles, 4);
-
     if constexpr (is_same_v<OpClass, arch::OpClassSparseTensorOp> ||
                   is_same_v<OpClass, arch::OpClassBlockScaledSparseTensorOp>) {
       return detail::sparse::sm100_sparse_get_tma_dispatch_policy<CtaTileShape_MNK, EpilogueTile_MN, ElementC_, ElementD, Schedule>();
     }
-    else if constexpr (is_same_v<Schedule, PtrArrayTmaWarpSpecialized1Sm> ||
-                       is_same_v<Schedule, PtrArrayTmaWarpSpecialized2Sm>) {
-      constexpr bool DelayTmaStore_ = false; // TMA store delay complicates tensormap updates for Ptr-Array GEMMs
-      return Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore_>{};
-    }
     else {
-      return Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
+      return detail::sm100_dense_dispatch_policy<Schedule, ElementC_, ElementD, EpiTiles, FragmentSize>();
     }
   }
 
@@ -1226,6 +1302,87 @@ public:
       decltype(detail::sm100_get_smem_store_op<GmemStrideTypeD, InternalSmemElementD, ElementAccumulator, AccLoadOp>()),
       decltype(register_shuffle_op())
     >;
+};
+
+template<
+  class OpClass,
+  class MmaTileShape_MNK,
+  class EpilogueTileType, 
+  class ElementAccumulator_,
+  class ElementC,
+  class ElementD,
+  class Schedule,
+  class GmemStrideTypeC,
+  class GmemStrideTypeD,
+  bool IsPerColScaleSupported,
+  bool IsBlockScaleSupported
+>
+struct Sm100EpilogueDescriptor {
+  using ElementAccumulator = ElementAccumulator_;
+
+  static constexpr bool Is2SmMma = is_base_of_v<TmaWarpSpecialized2Sm, Schedule> || is_base_of_v<NoSmemWarpSpecialized2Sm, Schedule>;
+  using CtaTileShape_MNK = decltype(sm100_cta_tile_shape<Is2SmMma, MmaTileShape_MNK>());
+  using TileShape = CtaTileShape_MNK;
+
+  using TmemWarpShape_MN = decltype(detail::sm100_tmem_warps<Is2SmMma, MmaTileShape_MNK>());
+
+  using EpilogueTile = decltype(
+    sm100_dense_compute_tile_shape_or_override<OpClass, CtaTileShape_MNK, EpilogueTileType,
+      TmemWarpShape_MN, ElementC, GmemStrideTypeC, ElementD, GmemStrideTypeD, IsPerColScaleSupported>()
+  );
+
+  using EpilogueTileShape_MN = decltype(product_each(shape(EpilogueTile{})));
+  static constexpr int EpiTiles = size(shape_div(take<0,2>(CtaTileShape_MNK{}), EpilogueTileShape_MN{}));
+  static constexpr int FragmentSize = size(EpilogueTileShape_MN{}) / NumThreadsPerWarpGroup;
+
+  using DispatchPolicy = decltype(sm100_dense_dispatch_policy<Schedule, ElementC, ElementD, EpiTiles, FragmentSize>());
+
+  constexpr static int StagesC = DispatchPolicy::StagesC;
+  constexpr static int StagesD = DispatchPolicy::StagesD;
+
+  using EpilogueWarpTileShape_MN = decltype(shape_div(EpilogueTileShape_MN{}, TmemWarpShape_MN{}));
+  using AccLoadOp = decltype(detail::sm100_get_tmem_load_op<
+      GmemStrideTypeD, ElementAccumulator, ElementD, EpilogueWarpTileShape_MN,
+      IsBlockScaleSupported
+      >());
+};
+
+// Get Stride, SmemLayout, and CopyOpS2R for AuxLoad node
+template<
+  typename EpilogueDescriptor,
+  typename StrideOrLayoutTag,
+  typename ElementAux
+>
+struct Sm100AuxLoadDescriptor {
+  constexpr static int Stages = EpilogueDescriptor::StagesC;
+  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+  using Element = ElementAux;
+  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+
+  using SmemLayoutAtom = decltype(detail::sm100_get_epilogue_smem_swizzle_layout_atom<
+    Stride, ElementAux, EpilogueTile>());
+
+  using CopyOpS2R = decltype(detail::sm100_get_smem_load_op<
+    Stride, ElementAux, typename EpilogueDescriptor::ElementAccumulator, typename EpilogueDescriptor::AccLoadOp>());
+};
+
+// Get Stride, SmemLayout, and CopyOpS2R for AuxStore node
+template<
+  typename EpilogueDescriptor,
+  typename StrideOrLayoutTag,
+  typename ElementAux
+>
+struct Sm100AuxStoreDescriptor {
+  constexpr static int Stages = EpilogueDescriptor::StagesD;
+  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+  using Element = ElementAux;
+  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+
+  using SmemLayoutAtom = decltype(detail::sm100_get_epilogue_smem_swizzle_layout_atom<
+    Stride, ElementAux, EpilogueTile>());
+
+  using CopyOpR2S = decltype(detail::sm100_get_smem_store_op<
+    Stride, ElementAux, typename EpilogueDescriptor::ElementAccumulator, typename EpilogueDescriptor::AccLoadOp>());
 };
 
 } // namespace detail
@@ -1304,17 +1461,7 @@ private:
     }
   }
   using CtaTileShape_MNK = decltype(cta_tile_shape());
-
-  static constexpr auto
-  tmem_warps() {
-    if constexpr (Is2SmMma && size<0>(MmaTileShape_MNK{}) == 128) {
-      return Shape<_2,_2>{};
-    }
-    else {
-      return Shape<_4,_1>{};
-    }
-  }
-  using TmemWarpShape_MN = decltype(tmem_warps());
+  using TmemWarpShape_MN = decltype(detail::sm100_tmem_warps<Is2SmMma, MmaTileShape_MNK>());
 
   static constexpr auto
   epilogue_tile() {
@@ -1338,20 +1485,15 @@ private:
 
   using EpilogueWarpTileShape_MN = decltype(shape_div(EpilogueTile{}, TmemWarpShape_MN{}));
   using AccLoadOp = decltype(detail::sm100_get_tmem_load_op<
-      GmemStrideTypeD, ElementAccumulator, ElementD, EpilogueWarpTileShape_MN, FusionOp>());
+      GmemStrideTypeD, ElementAccumulator, ElementD, EpilogueWarpTileShape_MN,
+      FusionOp::IsBlockScaleSupported
+      >());
   static constexpr int FragmentSize = size(EpilogueTile{}) / NumThreadsPerWarpGroup;
 
-  static constexpr auto
-  dispatch_policy() {
-    if constexpr (std::is_base_of_v<PtrArrayNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
-                  std::is_base_of_v<PtrArrayNoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
-      return Sm100PtrArrayNoSmemWarpSpecialized{};
-    }
-    else {
-      return Sm100NoSmemWarpSpecialized{};
-    }
-  }
-  using DispatchPolicy = decltype(dispatch_policy());
+  using EpilogueTileShape_MN = decltype(product_each(shape(EpilogueTile{})));
+  static constexpr int EpiTiles = size(shape_div(take<0,2>(CtaTileShape_MNK{}), EpilogueTileShape_MN{}));
+
+  using DispatchPolicy = decltype(detail::sm100_dense_dispatch_policy<EpilogueScheduleType, ElementC_, ElementD, EpiTiles, FragmentSize>());
 
   static constexpr auto
   fusion_callbacks() {

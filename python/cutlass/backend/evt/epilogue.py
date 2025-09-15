@@ -70,7 +70,7 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
 
         # Epilogue Thread Type
         epilogue_thread_type = self.visitor.epilogue_thread_type
-        if cc == 90:
+        if cc_map[cc] in [90, 100]:
             self.arg_c_type = self.visitor.arg_c_type
             self.arg_d_type = self.visitor.arg_d_type
         output_names = self.visitor.return_names
@@ -114,7 +114,7 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
                 Helper function for extracting device pointer
                 """
                 # Skip the special tensors
-                if cc == 90:
+                if cc in [90, 100]:
                     if tensor_name in ["C", "D"]:
                         return 0
                 if tensor_name not in kwargs.keys():

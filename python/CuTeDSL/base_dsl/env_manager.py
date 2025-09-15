@@ -58,6 +58,11 @@ def get_int_env_var(var_name, default_value=0):
     return int(value) if value and value.isdigit() else default_value
 
 
+@lru_cache(maxsize=None)
+def has_env_var(var_name):
+    return os.getenv(var_name) is not None
+
+
 def detect_gpu_arch(prefix):
     """
     Attempts to detect the machine's GPU architecture.
@@ -256,6 +261,7 @@ class EnvironmentVarManager:
     - [DSL_NAME]_ARCH: GPU architecture (default: "sm_100")
     - [DSL_NAME]_WARNINGS_AS_ERRORS: Enable warnings as error (default: False)
     - [DSL_NAME]_WARNINGS_IGNORE: Ignore warnings (default: False)
+    - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
     - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
     - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
     - [DSL_NAME]_FILE_CACHING_CAPACITY: Limits the number of the cache save/load files (default: 1000)
@@ -267,7 +273,6 @@ class EnvironmentVarManager:
         self.prefix = prefix  # change if needed
 
         # Printing options
-        self.log_to_console = get_bool_env_var(f"{prefix}_LOG_TO_CONSOLE", False)
         self.print_after_preprocessor = get_bool_env_var(
             f"{prefix}_PRINT_AFTER_PREPROCESSOR", False
         )
@@ -275,15 +280,29 @@ class EnvironmentVarManager:
         self.filterStacktrace = get_bool_env_var(f"{prefix}_FILTER_STACKTRACE", True)
         # File options
         self.keepIR = get_bool_env_var(f"{prefix}_KEEP_IR", False)
+        # Logging options
+        self.log_to_console = get_bool_env_var(f"{prefix}_LOG_TO_CONSOLE", False)
         self.log_to_file = get_bool_env_var(f"{prefix}_LOG_TO_FILE", False)
-        # Other options
+        if (
+            has_env_var(f"{prefix}_LOG_LEVEL")
+            and not self.log_to_console
+            and not self.log_to_file
+        ):
+            log().warning(
+                f"Log level was set, but neither logging to file ({prefix}_LOG_TO_FILE) nor logging to console ({prefix}_LOG_TO_CONSOLE) is enabled!"
+            )
         self.log_level = get_int_env_var(f"{prefix}_LOG_LEVEL", 1)
+
+        # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
         self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))
         self.warnings_as_errors = get_bool_env_var(
             f"{prefix}_WARNINGS_AS_ERRORS", False
         )
         self.warnings_ignore = get_bool_env_var(f"{prefix}_WARNINGS_IGNORE", False)
+        self.enable_optimization_warnings = get_bool_env_var(
+            f"{prefix}_ENABLE_OPTIMIZATION_WARNINGS", False
+        )
         self.jitTimeProfiling = get_bool_env_var(f"{prefix}_JIT_TIME_PROFILING", False)
         self.disable_file_caching = get_bool_env_var(
             f"{prefix}_DISABLE_FILE_CACHING", False

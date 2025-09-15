@@ -991,7 +991,7 @@ public:
           mainloop_sf_pipeline,
           mainloop_sf_pipe_producer_state,
           load_inputs,
-          cta_coord_mnkl,
+          cta_coord_mnk,
           k_tile_iter_next, k_tile_count - k_tile_prologue, 
           false, /* did_batch_change - prologue loads handle tensormap acquire */
           enable_prefetch ? k_tile_count - k_tile_prologue : 0

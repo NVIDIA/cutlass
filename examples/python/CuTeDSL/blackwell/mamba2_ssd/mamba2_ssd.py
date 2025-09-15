@@ -622,7 +622,6 @@ class SSDKernel:
             block=[self.threads_per_cta, 1, 1],
             cluster=self.cluster_shape_mnk,
             min_blocks_per_mp=1,
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
         )
 
@@ -693,7 +692,7 @@ class SSDKernel:
         G = cute.size(tma_tensor_b, mode=[3])
         NGROUP_RATIO = EH // G
 
-        # Make tiledMma
+        # Make TiledMma
         (
             tiled_mma_intra1,
             tiled_mma_intra2,
@@ -1745,7 +1744,7 @@ class SSDKernel:
                     cute.arch.fence_view_async_tmem_load()
 
                     # Combine INTER1_ACC/last_column/State
-                    exp_last_column = cute.arch.exp(last_column.ir_value())
+                    exp_last_column = cute.math.exp(last_column, fastmath=True)
                     for reg_idx in range(0, cute.size(tTR_rP), 2):
                         (
                             tTR_rP[reg_idx],
@@ -2267,9 +2266,11 @@ class SSDKernel:
                                 ) = cute.arch.fma_packed_f32x2(
                                     (tTR_rInter[reg_idx], tTR_rInter[reg_idx + 1]),
                                     (
-                                        cute.arch.exp(tTR_rDeltaA[reg_idx].ir_value()),
-                                        cute.arch.exp(
-                                            tTR_rDeltaA[reg_idx + 1].ir_value()
+                                        cute.math.exp(
+                                            tTR_rDeltaA[reg_idx], fastmath=True
+                                        ),
+                                        cute.math.exp(
+                                            tTR_rDeltaA[reg_idx + 1], fastmath=True
                                         ),
                                     ),
                                     (tTR_rIntra[reg_idx], tTR_rIntra[reg_idx + 1]),
@@ -3072,14 +3073,19 @@ class SSDKernel:
             m, n = tCoord[subtile_idx]
             if m < n:
                 tCompute[subtile_idx] = cutlass.Float32(-float("inf"))
+        LOG2_E = cutlass.Float32(1.4426950408889634)
         for subtile_idx in cutlass.range(0, cute.size(tTR_rQ), 2, unroll_full=True):
             # TODO: use math.exp directly
+            tCompute_log2e = cute.arch.mul_packed_f32x2(
+                (tCompute[subtile_idx], tCompute[subtile_idx + 1]), (LOG2_E, LOG2_E)
+            )
             (
                 tCompute[subtile_idx],
                 tCompute[subtile_idx + 1],
             ) = cute.arch.mul_packed_f32x2(
-                cute.arch.exp_packed_f32x2(
-                    (tCompute[subtile_idx], tCompute[subtile_idx + 1])
+                (
+                    cute.math.exp2(tCompute_log2e[0], fastmath=True),
+                    cute.math.exp2(tCompute_log2e[1], fastmath=True),
                 ),
                 (tCrDelta[subtile_idx], tCrDelta[subtile_idx + 1]),
             )
@@ -3245,11 +3251,11 @@ class SSDKernel:
         for reg_idx in range(0, cute.size(tBrB_Compute), 2):
             tCompute[reg_idx], tCompute[reg_idx + 1] = cute.arch.mul_packed_f32x2(
                 (
-                    cute.arch.exp(
-                        (last_column - tBrDeltaA_Compute[reg_idx]).ir_value()
+                    cute.math.exp(
+                        (last_column - tBrDeltaA_Compute[reg_idx]), fastmath=True
                     ),
-                    cute.arch.exp(
-                        (last_column - tBrDeltaA_Compute[reg_idx + 1]).ir_value()
+                    cute.math.exp(
+                        (last_column - tBrDeltaA_Compute[reg_idx + 1]), fastmath=True
                     ),
                 ),
                 (tBrDelta_Compute[reg_idx], tBrDelta_Compute[reg_idx + 1]),

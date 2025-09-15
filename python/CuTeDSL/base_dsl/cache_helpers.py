@@ -139,8 +139,7 @@ def dump_cache_to_path(
     dsl_name, jit_cache, cache_limit, path=default_generated_ir_path
 ):
     log().info("JIT cache : dumping [%s] items=[%s]", dsl_name, len(jit_cache))
-    if not os.path.exists(path):
-        os.makedirs(path)
+    os.makedirs(path, exist_ok=True)
     original_path = os.getcwd()
     try:
         os.chdir(path)

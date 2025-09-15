@@ -126,6 +126,7 @@ from .core import (
     basic_copy_if,
     autovec_copy,
     copy,
+    copy_atom_call,
     gemm,
     # Wrapper classes
     ComposedLayout,
@@ -290,6 +291,7 @@ __all__ = [
     "basic_copy_if",
     "autovec_copy",
     "copy",
+    "copy_atom_call",
     "gemm",
     # Tensor creation
     "full",
