@@ -44,7 +44,8 @@
     - Fix a corner case issue where the sequence length of q is not a multiple of tile_q.
     - Remove tma padding for forward kernel inputs.
 * Further enhance blockwise and groupwise GEMMs on Hopper and Blackwell
-    - On Blackwell SM100, a new type of [MoE GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm/) is added to significantly improve the performace.  It uses TMA+CPASYNC to load input matrices and have more contraints on problem sizes than general group GEMM.
+    - Add Blackwell SM100 kernels for MoEs (focusing on Low-Latency inference performance): [example 92](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm/).
+It uses TMA (for weights) and CPASYNC (for tokens) to load input matrices and allow only one problem dimension to vary across groups/experts, unlike general Grouped GEMMs.  Note: further API simplifications and kernel improvements are upcoming. Any feedback on API is welcome.
     - On Blackwell SM120, a blockwise gemm kernel is added: [example 87](https://github.com/NVIDIA/cutlass/tree/main/examples/87_blackwell_geforce_gemm_blockwise/).
     - On Hopper, add K major scale factor support for SM90 blockwise kernels.
     - On Hopper, relax the restriction that the k dimension of the problem size has to be the multiple of the k dimension of the tile size.
