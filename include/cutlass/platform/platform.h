@@ -607,6 +607,52 @@ struct alignment_of<double2> {
   enum { value = 16 };
 };
 
+#if !defined(CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED)
+#define CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED (__CUDACC_VER_MAJOR__ >= 13)
+#endif
+
+#if (CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED)
+template <>
+struct alignment_of<long4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<ulong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<longlong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<ulonglong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<double4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<long4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<ulong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<longlong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<ulonglong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<double4_32a> {
+  enum { value = 32 };
+};
+#else
 template <>
 struct alignment_of<long4> {
   enum { value = 16 };
@@ -628,6 +674,7 @@ struct alignment_of<double4> {
   enum { value = 16 };
 };
 
+#endif
 
 // Specializations for volatile/const qualified types
 template <typename value_t>
