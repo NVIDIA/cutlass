@@ -441,6 +441,18 @@ public:
         }
       }
 
+      if (seq_len_kv % QK_BLK_N != 0) {
+        int col_idx = (kv_tile_idx + (kv_splits_new - 1) * ATOM_M) * QK_SG_N + thread_idx % SubgroupSize;
+        int remainder = seq_len_kv % QK_BLK_N;
+        int column_offset = (kv_splits_new - 1) * QK_BLK_N + kv_splits_cache * QK_BLK_N;
+        CUTLASS_PRAGMA_UNROLL
+        for (int n = 0; n < FragsN; n++, col_idx += get<1>(MmaAtomShape())) {
+          if (col_idx - column_offset >= remainder) {
+            tSr(0, 0, n) = ElementAccumulator{-INFINITY};
+          }
+        }
+      }
+
       CollectiveSoftmaxEpilogue softmax(params.softmax);
       softmax.template operator()<Num_SGs>((kv_splits - 1) == 0, tSr, max_reg, sum_reg, shmem_max_tensor, out_reg);
 

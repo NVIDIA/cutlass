@@ -376,6 +376,25 @@ public:
           }
         }
       }
+      // Add masking for partial tiles at the end block
+      if (seq_len % QK_BLK_N != 0) {
+        const int remainder = seq_len % QK_BLK_N;
+        const int item_id = thread_idx % SubgroupSize;
+        int col_idx = item_id + (nblock_limit - 1) * QK_BLK_N;
+        int column_offset =  (nblock_limit - 1) * QK_BLK_N;
+        CUTLASS_PRAGMA_UNROLL
+        for (int n = 0; n < FragsN; ++n, col_idx += get<1>(MmaAtomShape())) {
+          if (col_idx - column_offset >= remainder) {
+            CUTLASS_PRAGMA_UNROLL
+            for (int m = 0; m < FragsM; ++m) {
+              CUTLASS_PRAGMA_UNROLL
+              for (int row = 0; row < Vec; ++row) {
+                tSr(row, m, n) = ElementAccumulator{-INFINITY};
+              }
+            }
+          }
+        }
+      }
       CollectiveSoftmaxEpilogue softmax(params.softmax);
       softmax((nblock_limit - 1) == 0, tSr, max_reg, sum_reg, out_reg);
 
