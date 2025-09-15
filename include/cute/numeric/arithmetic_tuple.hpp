@@ -259,14 +259,16 @@ using E = ScaledBasis<Int<1>,Ns...>;
 
 // Apply the Ns... pack to another Tuple
 template <class T, class Tuple>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_get(T const&, Tuple&& t)
 {
   return static_cast<Tuple&&>(t);
 }
 
 template <class T, int... Ns, class Tuple>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_get(ScaledBasis<T,Ns...> const&, Tuple&& t)
 {
   if constexpr (sizeof...(Ns) == 0) {
@@ -278,7 +280,8 @@ basis_get(ScaledBasis<T,Ns...> const&, Tuple&& t)
 }
 
 template <class T>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_value(T const& e) {
   if constexpr (is_scaled_basis<T>::value) {
     return e.value();
