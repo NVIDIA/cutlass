@@ -9,7 +9,7 @@ _CUTLASS 3.9.2 - May 2025_
 
 **For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)**
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/codeplaysoftware/cutlass-fork/badge)](https://scorecard.dev/viewer/?uri=github.com/codeplaysoftware/cutlass-fork)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intel/cutlass-sycl/badge)](https://scorecard.dev/viewer/?uri=github.com/intel/cutlass-sycl)
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-matrix multiplication (GEMM) and related computations at all levels 
