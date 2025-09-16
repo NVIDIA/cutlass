@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -243,6 +244,13 @@ struct is_scaled_basis : false_type {};
 template <class T, int... Ns>
 struct is_scaled_basis<ScaledBasis<T,Ns...>> : true_type {};
 
+template <class T>
+struct is_arithmetic_tuple_like : false_type {};
+template <class... T>
+struct is_arithmetic_tuple_like<ArithmeticTuple<T...>> : true_type {};
+template <class T, int... Ns>
+struct is_arithmetic_tuple_like<ScaledBasis<T,Ns...>> : true_type {};
+
 template <class T, int... Ns>
 struct is_integral<ScaledBasis<T,Ns...>> : true_type {};
 
@@ -259,14 +267,16 @@ using E = ScaledBasis<Int<1>,Ns...>;
 
 // Apply the Ns... pack to another Tuple
 template <class T, class Tuple>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_get(T const&, Tuple&& t)
 {
   return static_cast<Tuple&&>(t);
 }
 
 template <class T, int... Ns, class Tuple>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_get(ScaledBasis<T,Ns...> const&, Tuple&& t)
 {
   if constexpr (sizeof...(Ns) == 0) {
@@ -278,7 +288,8 @@ basis_get(ScaledBasis<T,Ns...> const&, Tuple&& t)
 }
 
 template <class T>
-CUTE_HOST_DEVICE decltype(auto)
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
 basis_value(T const& e) {
   if constexpr (is_scaled_basis<T>::value) {
     return e.value();
@@ -408,6 +419,15 @@ operator*(ScaledBasis<T,Ns...> const& e, B const& b) {
   return ScaledBasis<decltype(r),Ns...>{r};
 }
 
+// Division
+template <class T, int N, class B>
+CUTE_HOST_DEVICE constexpr
+auto
+operator/(ScaledBasis<T,N> const& e, B const& b) {
+  auto r = e.value() / b;
+  return ScaledBasis<decltype(r),N>{r};
+}
+
 // Addition
 template <class T, int... Ns, class U, int... Ms>
 CUTE_HOST_DEVICE constexpr
@@ -454,6 +474,43 @@ operator+(ScaledBasis<T,Ns...> const& t, C<u>) {
     return t;
   }
   CUTE_GCC_UNREACHABLE;
+}
+
+// Component-wise maximum
+template <class... T, class... U>
+CUTE_HOST_DEVICE constexpr
+auto
+atuple_max(ArithmeticTuple<T...> const& t, ArithmeticTuple<U...> const& u) {
+  constexpr int R = cute::max(int(sizeof...(T)), int(sizeof...(U)));
+  return transform_apply(append<R>(t,Int<0>{}), append<R>(u,Int<0>{}), max_fn{}, [](auto const&... a){ return make_arithmetic_tuple(a...); });
+}
+
+template <class T, int... Ns, class U, int... Ms>
+CUTE_HOST_DEVICE constexpr
+auto
+atuple_max(ScaledBasis<T,Ns...> const& t, ScaledBasis<U,Ms...> const& u) {
+  return atuple_max(as_arithmetic_tuple(t), as_arithmetic_tuple(u));
+}
+
+template <class... T, class U, int... Ms>
+CUTE_HOST_DEVICE constexpr
+auto
+atuple_max(ArithmeticTuple<T...> const& t, ScaledBasis<U,Ms...> const& u) {
+  return atuple_max(t, as_arithmetic_tuple(u));
+}
+
+template <class T, int... Ns, class... U>
+CUTE_HOST_DEVICE constexpr
+auto
+atuple_max(ScaledBasis<T,Ns...> const& t, ArithmeticTuple<U...> const& u) {
+  return atuple_max(as_arithmetic_tuple(t), u);
+}
+
+template <class T0, class T1, class... Ts>
+CUTE_HOST_DEVICE constexpr
+auto
+atuple_max(T0 const& t0, T1 const& t1, Ts const&... ts) {
+    return atuple_max(t0, atuple_max(t1, ts...));
 }
 
 //

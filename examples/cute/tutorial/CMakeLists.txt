@@ -51,16 +51,21 @@ if (CUTLASS_ENABLE_SYCL)
   )
 
   if (SYCL_INTEL_TARGET)
-    message(STATUS "Building CuTE BMG examples for Intel GPU targets")
+    message(STATUS "Building CuTE examples for Intel GPU targets")
     cutlass_example_add_executable(
       cute_tutorial_bmg
-      sgemm_bmg.cpp
+      bgemm_bmg_legacy.cpp
+    )
+
+    cutlass_example_add_executable(
+      cute_tutorial_xe_gemm
+      xe_gemm.cpp
     )
   endif()
-  
+
   if (SYCL_NVIDIA_TARGET)
     message(STATUS "Building CuTE examples for NVIDIA GPU targets with SYCL")
-    
+
     cutlass_example_add_executable(
       cute_tutorial_sgemm_sm70
       sgemm_sm70_sycl.cpp

@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -196,6 +197,8 @@ struct TiledCopy : Copy_Atom
   using AtomNumThr = decltype(size<0>(AtomLayoutRef{}));
   using AtomNumVal = decltype(size<1>(AtomLayoutRef{}));
 
+  using Atom = Copy_Atom;
+
   // Layout information for the TiledCopy
   using Tiler_MN       = ShapeTiler_MN;
   using TiledLayout_TV = LayoutCopy_TV;
@@ -204,6 +207,16 @@ struct TiledCopy : Copy_Atom
 
   CUTE_STATIC_ASSERT_V(TiledNumThr{} % AtomNumThr{} == Int<0>{}, "TiledCopy uses too few thrs for selected CopyAtom");
   CUTE_STATIC_ASSERT_V(TiledNumVal{} % AtomNumVal{} == Int<0>{}, "TiledCopy uses too few vals for selected CopyAtom");
+
+  // Additional Trait parameters/transformations
+  template <class... TraitsArgs>
+  CUTE_HOST_DEVICE
+  auto
+  with(TraitsArgs&&... args) const {
+    TiledCopy result;
+    static_cast<Copy_Atom&>(result) = Copy_Atom::with(static_cast<TraitsArgs&&>(args)...);
+    return result;
+  }
 
   // Tile a tensor or a layout from shape
   //   (M,N,...)
@@ -383,6 +396,32 @@ struct ThrCopy
   }
 
   template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  atom_partition_S(STensor&& stensor) const {
+    // Get fragment layout, and group atom thread modes (ThrV) since that is not done by tidfrg_D.
+    static constexpr auto RThrV = rank<0>(typename TiledCopy::AtomLayoutSrc{});
+    auto tf_layout0 = TiledCopy::tidfrg_S(stensor.layout());
+    auto tf_layout = replace<0>(tf_layout0, group<0,RThrV>(get<0>(tf_layout0)));
+    auto thr_tensor = make_tensor(static_cast<STensor&&>(stensor).data(), tf_layout);
+    // Index, selecting full ThrV slice.
+    auto thr = idx2crd(thr_idx_, shape<0>(thr_tensor));
+    return thr_tensor(replace<0>(thr, _), _, _);
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  atom_partition_D(DTensor&& dtensor) const {
+    static constexpr auto RThrV = rank<0>(typename TiledCopy::AtomLayoutDst{});
+    auto tf_layout0 = TiledCopy::tidfrg_D(dtensor.layout());
+    auto tf_layout = replace<0>(tf_layout0, group<0,RThrV>(get<0>(tf_layout0)));
+    auto thr_tensor = make_tensor(static_cast<DTensor&&>(dtensor).data(), tf_layout);
+    auto thr = idx2crd(thr_idx_, shape<0>(thr_tensor));
+    return thr_tensor(replace<0>(thr, _), _, _);
+  }
+
+  template <class STensor>
   CUTE_HOST_DEVICE static
   auto
   retile_S(STensor&& stensor) {
@@ -398,6 +437,36 @@ struct ThrCopy
     // static_assert(sizeof(typename remove_cvref_t<DTensor>::value_type) == sizeof(typename TiledCopy::ValType),
     //               "Expected ValType for tiling DstTensor.");
     return make_tensor(static_cast<DTensor&&>(dtensor).data(), TiledCopy::retile(dtensor.layout()));
+  }
+
+  template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_fragment_S(STensor&& stensor) const {
+    return make_fragment_like<typename TiledCopy::ValType>(partition_S(stensor));
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_fragment_D(DTensor&& dtensor) const {
+    return make_fragment_like<typename TiledCopy::ValType>(partition_D(dtensor));
+  }
+
+  template <class STensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_sg_fragment_S(STensor&& stensor) const {
+    return make_subgroup_tensor(partition_fragment_S(stensor),
+                                layout(atom_partition_S(stensor)));
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  partition_sg_fragment_D(DTensor&& dtensor) const {
+    return make_subgroup_tensor(partition_fragment_D(dtensor),
+                                layout(atom_partition_D(dtensor)));
   }
 };
 
@@ -689,6 +758,8 @@ print(ThrCopy<TiledCopy, ThrIdx> const& thr_copy)
 
 #if defined(SYCL_INTEL_TARGET)
 #include <cute/atom/copy_traits_xe.hpp>
+#include <cute/atom/copy_traits_xe_2d.hpp>
+#include <cute/atom/copy_traits_xe_legacy.hpp>
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

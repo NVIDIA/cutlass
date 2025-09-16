@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,10 +36,6 @@
 #include <cute/atom/mma_traits.hpp>
 #include <cute/tensor_impl.hpp>
 #include <cute/util/type_traits.hpp>
-
-#if defined(CUTLASS_ENABLE_SYCL)
-#include <cute/atom/mma_traits_xe.hpp>
-#endif
 
 namespace cute {
 
@@ -375,6 +372,12 @@ struct TiledMMA : MMA_Atom
     return get_slice(thr_idx);
   }
 
+  CUTE_HOST_DEVICE constexpr
+  auto
+  tile_mnk() const {
+    return make_tile(tile_size_mnk<0>(), tile_size_mnk<1>(), tile_size_mnk<2>());
+  }
+
   //
   // Utility for printing and visualization
   //
@@ -498,6 +501,40 @@ struct ThrMMA : TiledMMA
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
   }
 
+  // Atom-level partitioning
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_C(CTensor&& ctensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
+
+    auto atom_vmn = make_coord(_, make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
+    return thr_tensor(atom_vmn, _);       // (atom-local thr, val) -> coord
+  }
+
+  template <class ATensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_A(ATensor&& atensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(atensor.layout()));
+
+    auto atom_vmk = make_coord(_, make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
+    return thr_tensor(atom_vmk, _);
+  }
+
+  template <class BTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  atom_partition_B(BTensor&& btensor) const
+  {
+    auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(btensor.layout()));
+
+    auto atom_vnk = make_coord(_, make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
+    return thr_tensor(atom_vnk, _);
+  }
+
   template <class CTensor>
   CUTE_HOST_DEVICE constexpr
   auto
@@ -520,6 +557,33 @@ struct ThrMMA : TiledMMA
   partition_fragment_B(BTensor&& btensor) const
   {
     return TiledMMA::make_fragment_B(partition_B(btensor));
+  }
+
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  partition_sg_fragment_C(CTensor&& ctensor) const
+  {
+    return make_subgroup_tensor(partition_fragment_C(ctensor),
+                                layout(atom_partition_C(ctensor)));
+  }
+
+  template <class ATensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  partition_sg_fragment_A(ATensor&& atensor) const
+  {
+    return make_subgroup_tensor(partition_fragment_A(atensor),
+                                layout(atom_partition_A(atensor)));
+  }
+
+  template <class BTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  partition_sg_fragment_B(BTensor&& btensor) const
+  {
+    return make_subgroup_tensor(partition_fragment_B(btensor),
+                                layout(atom_partition_B(btensor)));
   }
 };
 
@@ -561,10 +625,10 @@ make_tiled_mma(MMA_Op       const&,
 // media/docs/cute/0t_mma_atom.md#tiledmmas to construct a scatter
 // permutation which ensures hardware operates on contiguous
 // chunks of the TiledMMA. The docs describe how the Layout
-// implies a repetition of the atom across additional hardware. 
+// implies a repetition of the atom across additional hardware.
 // Permutations, in the simplest form, imply additional iterations
 // to cover a larger tile (i.e. CTALayout) than the hardware can handle
-// at once. 
+// at once.
 //
 // Consider an example for Xe hardware:
 //   using TiledMma =
@@ -572,13 +636,13 @@ make_tiled_mma(MMA_Op       const&,
 //                Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
 //                Tile<_256, _256, _32>>;
 //
-// This MMA_Atom is performed by a whole warp and operates on an 8x16x16 chunk. 
+// This MMA_Atom is performed by a whole warp and operates on an 8x16x16 chunk.
 // The second arg (Layout) defines a repetition of the atom across *additional warps*,
 // i.e. iterating across more hardware. The third arg (Tile) defines a repetition of this
 // MMA across *additional values*. For this example, in the M dimension, the atom produces
 // 8 values of C, the hardware repetition (8) scales this up to 64 values in M, and the
-// requested permutation (256) scales this up to 256 values (implying 4 iterations in the 
-// M direction). 
+// requested permutation (256) scales this up to 256 values (implying 4 iterations in the
+// M direction).
 //
 // By cute convention, the repetition of the atom across hardware is the inner
 // iteration, while the repetition across values is the outer. We can use a more complex
@@ -595,11 +659,11 @@ make_tiled_mma(MMA_Op       const&,
 //                  Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, // Permutation on N
 //                  _32>>; // K unpermuted
 //
-// Consider only the M permutation (each mode's permutation is independent and in this 
+// Consider only the M permutation (each mode's permutation is independent and in this
 // example the M & N permutations are similar). This permutation maintains blocks of 8
 // contiguous values from the canonical tiling (mode 0 is 8:1).
-// It scatters 8 of these blocks of 8 to a spacing of 32 values (mode 1 is 8:32), leaving 
-// a 'gap' of 24. These gaps of 24 are filled by repeating the preceding pattern 4 times, 
+// It scatters 8 of these blocks of 8 to a spacing of 32 values (mode 1 is 8:32), leaving
+// a 'gap' of 24. These gaps of 24 are filled by repeating the preceding pattern 4 times,
 // at a spacing of 8 values (mode 2 is 4:8).
 // In this manner, the tiling has been permuted so that the values handled by each thread are
 // closer together.
@@ -781,5 +845,6 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 
 #if defined(CUTLASS_ENABLE_SYCL)
 #include <cute/atom/mma_traits_xe.hpp>
+#include <cute/atom/mma_traits_xe_legacy.hpp>
 #endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////

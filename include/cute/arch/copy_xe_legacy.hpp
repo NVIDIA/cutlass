@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -31,37 +31,41 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/tensor_impl.hpp>
-#include <cute/tensor_sg.hpp>
+#if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
+#define CUTE_ARCH_COPY_XE_ENABLED
+#endif
 
-//
-// Extended Engines
-//
+#if defined(CUTE_ARCH_COPY_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
+#include <cute/arch/copy_xe_legacy_builtin.hpp>
+#elif defined(CUTE_ARCH_COPY_XE_ENABLED)
+#include <cute/arch/copy_xe_legacy_spirv.hpp>
+#endif
 
-#include <cute/pointer_swizzle.hpp>
-#include <cute/pointer_sparse.hpp>
-#include <cute/pointer_flagged.hpp>
-#include <cute/tensor_zip.hpp>
+#include <cute/arch/copy_xe_legacy_U4.hpp>
+#include <cute/arch/copy_xe_legacy_U8.hpp>
+#include <cute/arch/copy_xe_legacy_U16.hpp>
+#include <cute/arch/copy_xe_legacy_U32.hpp>
+#include <cute/arch/copy_xe_legacy_U64.hpp>
 
-//
-// Tensor Algorithms
-//
+// FIXME: these are not copy-related and should be declared elsewhere.
+#ifdef __SYCL_DEVICE_ONLY__
+SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
+SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope, int memory_semantics);
+#endif
 
-#include <cute/algorithm/tensor_algorithms.hpp>
-#include <cute/algorithm/fill.hpp>
-#include <cute/algorithm/clear.hpp>
-#include <cute/algorithm/copy.hpp>
-#include <cute/algorithm/prefetch.hpp>
-#include <cute/algorithm/axpby.hpp>
-#include <cute/algorithm/gemm.hpp>
-#include <cute/algorithm/reorder.hpp>
+namespace cute
+{
 
-#include <cute/algorithm/cooperative_copy.hpp>
-#include <cute/algorithm/cooperative_gemm.hpp>
+// scope = 3 is for subgroup, scop = 2 is for workgroup
+CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = 0, int memory_semantics = 0) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, memory_semantics);
+#endif
+}
+CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = 0, int memory_semantics = 0) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, memory_semantics);
+#endif
+}
 
-//
-// Utilities
-//
-
-#include <cute/util/print_tensor.hpp>
-#include <cute/util/print_latex.hpp>
+} // end namespace cute

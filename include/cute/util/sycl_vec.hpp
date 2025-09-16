@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,18 +31,38 @@
  **************************************************************************************************/
 #pragma once
 
-// fwd declare OCL function and OCL types
-#include <sycl/sycl.hpp> //for sycl::vec
+#include <sycl/sycl.hpp>                        // sycl::vec
+#include "cute/numeric/int.hpp"                 // int_byte_t
+#include "cute/numeric/numeric_types.hpp"       // bfloat16_t, half_t, etc.
 
-namespace cute
+namespace cute::intel
 {
-namespace intel
-{
+
+constexpr int sg_size = 16;
+using _SGSize = Int<sg_size>;
+
 #ifdef __SYCL_DEVICE_ONLY__
-template <class T, int N> using vector_t = T __attribute__((ext_vector_type(N)));
+template <class T> struct vector_element_helper {
+  using type = conditional_t<(sizeof_bits_v<T> < 8), uint8_t, T>;
+};
+template <> struct vector_element_helper<tfloat32_t>   { using type = uint32_t; };
+template <> struct vector_element_helper<bfloat16_t>   { using type = uint16_t; };
+template <> struct vector_element_helper<half_t>       { using type = uint16_t; };
+template <> struct vector_element_helper<float_e5m2_t> { using type = uint8_t;  };
+template <> struct vector_element_helper<float_e4m3_t> { using type = uint8_t;  };
+
+template <class T, int N> struct vector_helper {
+    using U = typename vector_element_helper<T>::type;
+    using type = U __attribute__((ext_vector_type(ceil_div(N * sizeof_bits_v<T>, sizeof_bits_v<U>))));
+};
+template <class T, int N> using vector_t = typename vector_helper<T, N>::type;
 #else
 template <class T, int N> using vector_t = sycl::marray<T, N>;
 #endif
+
+template <typename T, int bits>
+using storage_vector_t = vector_t<int_byte_t<bits_to_bytes(sizeof_bits_v<T>)>,
+                                  bits / bytes_to_bits(bits_to_bytes(sizeof_bits_v<T>))>;
 
 using uint = unsigned int;
 using ushort = unsigned short;
@@ -90,5 +111,4 @@ using ulong2 = vector_t<ulong, 2>;
 using ulong4 = vector_t<ulong, 4>;
 
 using coord_t = vector_t<int, 2>;
-} // namespace intel end
-} // namespace cute end
+} // namespace cute::intel
