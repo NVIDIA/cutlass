@@ -111,7 +111,8 @@ Examples leveraging CUTLASS's [Python interface](../python/README.md) are locate
 
 # Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved. \
+Copyright (C) 2025 Intel Corporation, All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

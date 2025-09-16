@@ -1,4 +1,3 @@
-
 # Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -44,6 +43,11 @@ if (CUTLASS_ENABLE_SYCL)
   cutlass_example_add_executable(
     cute_tutorial_tiled_copy
     tiled_copy_sycl.cpp
+  )
+
+  cutlass_example_add_executable(
+    cute_tutorial_tiled_copy_if
+    tiled_copy_if_sycl.cpp
   )
 
   if (SYCL_INTEL_TARGET)
