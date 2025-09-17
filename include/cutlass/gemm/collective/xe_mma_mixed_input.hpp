@@ -328,7 +328,7 @@ public:
       }();
 
       if constexpr (ModeScale) {
-        return Params{tiled_copy_a, tiled_copy_b, tiled_copy_scale, {}, args.group_size};
+        return Params{tiled_copy_a, tiled_copy_b, {tiled_copy_scale}, {}, args.group_size};
       } else {
         auto ptr_Z = [&]() {
           if constexpr (sizeof_bits_v<NonVoidElementZero> < 8) {
@@ -353,7 +353,7 @@ public:
           }
         }();
 
-        return Params{tiled_copy_a, tiled_copy_b, tiled_copy_scale, tiled_copy_zero, args.group_size};
+        return Params{tiled_copy_a, tiled_copy_b, {tiled_copy_scale}, {tiled_copy_zero}, args.group_size};
       }
     }
   }

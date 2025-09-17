@@ -40,6 +40,7 @@ add_library(DPCPP::DPCPP INTERFACE IMPORTED)
 
 set(DPCPP_FLAGS "-fsycl;")
 set(DPCPP_COMPILE_ONLY_FLAGS "")
+set(DPCPP_LINK_ONLY_FLAGS "")
 
 if(NOT "${DPCPP_SYCL_TARGET}" STREQUAL "")
   list(APPEND DPCPP_FLAGS "-fsycl-targets=${DPCPP_SYCL_TARGET};")
@@ -63,10 +64,10 @@ if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "spir64" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_bmg_g21")
   if ((CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.2) OR CUTLASS_SYCL_BUILTIN_ENABLE)
-    list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
+    list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
   else()
-    list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate")
- endif()
+    list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate")
+  endif()
   if(DPCPP_DISABLE_ITT_FOR_CUTLASS)
     list(APPEND DPCPP_FLAGS "-fno-sycl-instrument-device-code")
   endif()
@@ -76,14 +77,16 @@ endif()
 if(UNIX)
   set_target_properties(DPCPP::DPCPP PROPERTIES
     INTERFACE_COMPILE_OPTIONS "${DPCPP_FLAGS};${DPCPP_COMPILE_ONLY_FLAGS}"
-    INTERFACE_LINK_OPTIONS "${DPCPP_FLAGS}"
+    INTERFACE_LINK_OPTIONS "${DPCPP_FLAGS};${DPCPP_LINK_ONLY_FLAGS}"
     INTERFACE_LINK_LIBRARIES ${DPCPP_LIB_DIR}
     INTERFACE_INCLUDE_DIRECTORIES "${DPCPP_BIN_DIR}/../include/sycl;${DPCPP_BIN_DIR}/../include")
   message(STATUS "DPCPP INCLUDE DIR: ${DPCPP_BIN_DIR}/../include/sycl;${DPCPP_BIN_DIR}/../include")
-  message(STATUS "Using DPCPP flags: ${DPCPP_FLAGS};${DPCPP_COMPILE_ONLY_FLAGS}")
+  message(STATUS "Using DPCPP compile flags: ${DPCPP_FLAGS};${DPCPP_COMPILE_ONLY_FLAGS}")
+  message(STATUS "Using DPCPP link flags: ${DPCPP_FLAGS};${DPCPP_LINK_ONLY_FLAGS}")
 else()
   set_target_properties(DPCPP::DPCPP PROPERTIES
     INTERFACE_COMPILE_OPTIONS "${DPCPP_FLAGS};${DPCPP_COMPILE_ONLY_FLAGS}"
+    INTERFACE_LINK_OPTIONS "${DPCPP_FLAGS};${DPCPP_LINK_ONLY_FLAGS}"
     INTERFACE_LINK_LIBRARIES ${DPCPP_LIB_DIR}
     INTERFACE_INCLUDE_DIRECTORIES "${DPCPP_BIN_DIR}/../include/sycl")
 endif()
@@ -105,7 +108,7 @@ function(add_sycl_to_target)
   )
   get_target_property(target_type ${CUTLASS_ADD_SYCL_TARGET} TYPE)
   if (NOT target_type STREQUAL "OBJECT_LIBRARY")
-    target_link_options(${CUTLASS_ADD_SYCL_TARGET} PUBLIC ${DPCPP_FLAGS})
+    target_link_options(${CUTLASS_ADD_SYCL_TARGET} PUBLIC ${DPCPP_FLAGS} ${DPCPP_LINK_ONLY_FLAGS})
   endif()
 endfunction()
 

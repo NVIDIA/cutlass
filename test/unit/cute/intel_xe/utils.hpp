@@ -52,6 +52,7 @@ using namespace syclcompat::experimental;
 
 #define CUTLASS_ENABLE_DEBUG_PRINTS (0)
 #define LOG_GROUP (0)
+#undef LOG_THREAD
 #define LOG_THREAD (0)
 
 template <class atype, class btype, class ctype>
