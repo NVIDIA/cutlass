@@ -1,4 +1,5 @@
 # Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 INTEL CORPORATION. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -195,32 +196,6 @@ if (CUTLASS_ENABLE_SYCL)
   if(SYCL_INTEL_TARGET)
     list(APPEND SUBDIRS flash_attention)
   endif()
-else()
-  set(SUBDIRS
-    core
-    cute
-    gemm
-    conv
-    layout
-    transform
-    epilogue
-    reduction
-    util
-    pipeline
-    substrate
-    cluster_launch
-    )
-endif()
-if(TARGET nvidia::nvrtc AND TARGET nvidia::cuda_driver)
-  set(CUTLASS_NVRTC_ENABLE_INIT ON)
-else()
-  set(CUTLASS_NVRTC_ENABLE_INIT OFF)
-endif()  
-
-set(CUTLASS_NVRTC_ENABLE ${CUTLASS_NVRTC_ENABLE_INIT} CACHE BOOL "Enable NVRTC support")
-
-if (CUTLASS_NVRTC_ENABLE AND NOT CUTLASS_ENABLE_SYCL)
-  list(APPEND SUBDIRS nvrtc)
 endif()
 
 foreach(SUBDIR ${SUBDIRS})
