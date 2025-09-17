@@ -85,8 +85,6 @@ using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define CUTLASS_SYCL_PROFILING_ENABLED
-
 // Command line options parsing
 struct Options {
 
@@ -302,9 +300,9 @@ struct ExampleRunner {
     if(!passed) return cutlass::Status::kErrorInternal;
 
     if (options.iterations > 0) {
-      GPU_Clock timer;
       float elapsed_time_seconds = 0.f;
       for (int i = 0; i < options.iterations; ++i) {
+        GPU_Clock timer;
         gemm_op.initialize(arguments, workspace.get());
         timer.start();
         gemm_op.run();

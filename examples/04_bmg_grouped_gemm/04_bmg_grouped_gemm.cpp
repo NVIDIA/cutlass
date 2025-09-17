@@ -96,7 +96,6 @@ using ElementOutput = float;          // <- data type of elements in output matr
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define CUTLASS_SYCL_PROFILING_ENABLED
 
 // Command line options parsing
 struct Options {
