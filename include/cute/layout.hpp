@@ -1474,49 +1474,33 @@ domain_distribute(ShapeA const& a, ShapeB const& b)
 // Kernel (Nullspace) of a Layout
 //
 
-namespace detail {
-
-template <int NextI, class Stride, int... Is>
-CUTE_HOST_DEVICE constexpr
-auto
-nullspace_seq(Stride const& stride, seq<Is...>)
-{
-  if constexpr (NextI == rank_v<Stride>) {
-    return seq<Is...>{};
-  } else
-  if constexpr (is_constant<0, decltype(get<NextI>(stride))>::value) {
-    return detail::nullspace_seq<NextI+1>(stride, seq<Is..., NextI>{});
-  } else {
-    return detail::nullspace_seq<NextI+1>(stride, seq<Is...>{});
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-} // end namespace detail
-
-//
-// Build the nullspace of a layout
-// @result A layout @a result such that
-//    size(@a result) == size(@a layout) / size(filter(@a layout))
-//    @a layout(@a result(i)) == 0 for all i < size(@a result)
-//
-
+/** Return a layout that represents the nullspace of @a layout
+ * @post @a layout(@a result(i)) == 0 for all i < size(@a result)
+ * @post nullspace(@a result) == Layout<_1,_0>{}
+ * @post size(@a result) == size(@a layout) / size(filter(@a layout))
+ */
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 nullspace(Layout<Shape,Stride> const& layout)
 {
-  auto flat_layout = flatten(layout);
+  [[maybe_unused]] auto flat_stride = flatten(layout.stride());
 
-  [[maybe_unused]] auto iseq = detail::nullspace_seq<0>(flat_layout.stride(), seq<>{});
+  // Select all indices corresponding to stride-0s
+  auto iseq = cute::fold(make_seq<rank_v<decltype(flat_stride)>>{}, cute::tuple<>{},
+                         [&](auto init, auto i){
+                           if constexpr (is_constant_v<0, decltype(get<i>(flat_stride))>) { return append(init, i); }
+                           else                                                           { return init;            }
+                           CUTE_GCC_UNREACHABLE;
+                         });
 
-  if constexpr (iseq.size() == 0) {
+  if constexpr (tuple_size<decltype(iseq)>::value == 0) {
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
-    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
-    return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
+    auto flat_shape = flatten(layout.shape());
+    auto rstride = compact_major<LayoutLeft>(flat_shape);
+    return make_layout(unwrap(transform(iseq, [&](auto i) { return get<i>(flat_shape); })),
                        unwrap(transform(iseq, [&](auto i) { return get<i>(rstride); })));
   }
 

@@ -46,11 +46,13 @@
 #endif
 
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110A_ENABLED))
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
-#if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED))
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
@@ -386,6 +388,7 @@ public:
   //
   CUTLASS_HOST_DEVICE
   static void init(ValueType const* smem_ptr, uint32_t arrive_count) {
+    CUTLASS_ASSERT(arrive_count != 0 && "Arrive count must be non-zero");
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(

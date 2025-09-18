@@ -283,7 +283,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
     // default value
-    this->cluster_m_fallback = std::string(operation_desc.gemm.name).find("_2sm") != std::string::npos ? 2 : 1;
+    this->cluster_m_fallback = (this->cluster_m % 2 == 0) ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
@@ -407,6 +407,11 @@ int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::bytes(
   int64_t bytes = 0;
   for (size_t group_idx = 0, num_groups = problem_sizes.size(); group_idx < num_groups;
        group_idx++) {
+
+    // If M = 0 or N = 0, no tiles are scheduled and no bytes are loaded for the group
+    if (m(group_idx) * n(group_idx) == 0) {
+      continue;
+    }
 
     bytes +=
       int64_t(library::sizeof_bits(operation_desc.gemm.A.element) * m(group_idx) / 8) * k(group_idx) +
@@ -630,6 +635,8 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
 
   gemm_workspace_.arguments.use_pdl = problem_.use_pdl;
 
+  cudaStreamCreateWithFlags(&gemm_workspace_.stream, cudaStreamNonBlocking);
+
   initialize_result_(this->model_result_, options, operation_desc, problem_space);
 
   return status;
@@ -654,6 +661,7 @@ void GroupedGemmOperationProfiler::initialize_result_(
   result.bytes = problem_.bytes(operation_desc);
   result.flops = problem_.flops(operation_desc);
   result.runtime = 0;
+  result.runtime_vector.resize(options.device.devices.size(), 0);
 
 }
 
@@ -1585,9 +1593,9 @@ Status GroupedGemmOperationProfiler::profile_cutlass_(
   void* host_workspace,
   void* device_workspace) {
   library::Operation const* underlying_operation = operation;
-  results_.back().status = underlying_operation->initialize_with_arguments(&gemm_workspace_.arguments);
-  if (results_.back().status != Status::kSuccess) {
-    return results_.back().status;
+  result.status = underlying_operation->initialize_with_arguments(&gemm_workspace_.arguments);
+  if (result.status != Status::kSuccess) {
+    return result.status;
   }
 
   auto func = [&](cudaStream_t stream, int iteration) {
@@ -1600,9 +1608,9 @@ Status GroupedGemmOperationProfiler::profile_cutlass_(
     gemm_workspace_.arguments.ptr_C = gemm_workspace_.C_ptr_array_device[problem_idx]->data();
     gemm_workspace_.arguments.ptr_D = gemm_workspace_.D_ptr_array_device[problem_idx]->data();
 
-    return underlying_operation->run(arguments, host_workspace, device_workspace);
+    return underlying_operation->run(arguments, host_workspace, device_workspace, stream);
   };
-  return profile_kernel_(result, options, func);
+  return profile_kernel_(result, options, func, gemm_workspace_.stream);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

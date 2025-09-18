@@ -33,8 +33,8 @@
 */
 
 #pragma once
-
-#include <cuda/std/cassert>
+#include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 
 #include "mma.h"
 #include "cutlass/layout/matrix.h"

@@ -347,20 +347,20 @@ struct CollectiveMma<
 
   template<
     class KTileCount,
-    class GTensorPartitionedScaleA, class GTensorPartitionedScaleB,
-    class IdentTensorPartitionedScaleA, class IdentTensorPartitionedScaleB,
+    class GTensorScaleA, class GTensorScaleB,
+    class IdentTensorScaleA, class IdentTensorScaleB,
     class STensorScaleA, class STensorScaleB
   >
   struct LoadSFParams {
     // for scheduler
     KTileCount k_tiles;
 
-    GTensorPartitionedScaleA tSFAgSFA_mkl;
-    GTensorPartitionedScaleB tSFBgSFB_nkl;
-    IdentTensorPartitionedScaleA tSFAIdentSFA_mkl;
-    IdentTensorPartitionedScaleB tSFBIdentSFB_nkl;
-    STensorScaleA tSFAsSFA;
-    STensorScaleB tSFBsSFB;
+    GTensorScaleA gSFA_mkl;
+    GTensorScaleB gSFB_nkl;
+    IdentTensorScaleA identSFA_mkl;
+    IdentTensorScaleB identSFB_nkl;
+    STensorScaleA sSFA;
+    STensorScaleB sSFB;
 
     LayoutSFA layout_SFA;
     LayoutSFB layout_SFB;
@@ -368,14 +368,14 @@ struct CollectiveMma<
     CUTLASS_DEVICE
     LoadSFParams (
         KTileCount k_tiles_,
-        GTensorPartitionedScaleA tSFAgSFA_mkl_, GTensorPartitionedScaleB tSFBgSFB_nkl_,
-        IdentTensorPartitionedScaleA tSFAIdentSFA_mkl_, IdentTensorPartitionedScaleB tSFBIdentSFB_nkl_,
-        STensorScaleA tSFAsSFA_, STensorScaleB tSFBsSFB_,
+        GTensorScaleA gSFA_mkl_, GTensorScaleB gSFB_nkl_,
+        IdentTensorScaleA identSFA_mkl_, IdentTensorScaleB identSFB_nkl_,
+        STensorScaleA sSFA_, STensorScaleB sSFB_,
         LayoutSFA layout_SFA_, LayoutSFB layout_SFB_)
     : k_tiles(k_tiles_)
-    , tSFAgSFA_mkl(tSFAgSFA_mkl_), tSFBgSFB_nkl(tSFBgSFB_nkl_)
-    , tSFAIdentSFA_mkl(tSFAIdentSFA_mkl_), tSFBIdentSFB_nkl(tSFBIdentSFB_nkl_)
-    , tSFAsSFA(tSFAsSFA_), tSFBsSFB(tSFBsSFB_)
+    , gSFA_mkl(gSFA_mkl_), gSFB_nkl(gSFB_nkl_)
+    , identSFA_mkl(identSFA_mkl_), identSFB_nkl(identSFB_nkl_)
+    , sSFA(sSFA_), sSFB(sSFB_)
     , layout_SFA(layout_SFA_), layout_SFB(layout_SFB_) {}
   };
 
@@ -732,35 +732,16 @@ struct CollectiveMma<
     static_assert(rank(decltype(gSFA_mkl){}) == 5);
     static_assert(rank(decltype(gSFB_nkl){}) == 5);
 
-    // 1 thread copies entire set of scalar
-    GmemTiledCopySFA scale_copy_a{};
-    GmemTiledCopySFB scale_copy_b{};
-
-    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x % size(scale_copy_a));
-    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x % size(scale_copy_b));
-
     Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()),
         SmemLayoutScaleA{});                                                                          // (CTA_M,CTA_K,P)
     Tensor sSFB = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()),
         SmemLayoutScaleB{});                                                                          // (CTA_M,CTA_K,P)
 
-    Tensor tSFAgSFA_mkl = thr_scale_copy_a.partition_S(gSFA_mkl);                        // (CPY, BLK_M, BLK_K, m, k, l)
-    Tensor tSFAIdentSFA_mkl = thr_scale_copy_a.partition_S(identSFA_mkl);                // (CPY, BLK_M, BLK_K, m, k, l)
-
-    Tensor tSFAsSFA = thr_scale_copy_a.partition_D(sSFA);
-
-    Tensor tSFBgSFB_nkl = thr_scale_copy_b.partition_S(gSFB_nkl);                        // (CPY, BLK_N, BLK_K, m, k, l)
-    Tensor tSFBIdentSFB_nkl = thr_scale_copy_b.partition_S(identSFB_nkl);                // (CPY, BLK_N, BLK_K, m, k, l)
-    Tensor tSFBsSFB = thr_scale_copy_b.partition_D(sSFB);
-
-    static_assert(rank(decltype(tSFAgSFA_mkl){}) == 6);
-    static_assert(rank(decltype(tSFBgSFB_nkl){}) == 6);
-
     LoadSFParams load_params {
       size<3>(gSFA_mkl),
-      tSFAgSFA_mkl, tSFBgSFB_nkl,                     // for input scale tensor values
-      tSFAIdentSFA_mkl, tSFBIdentSFB_nkl,             // for predicating scale tensor copies
-      tSFAsSFA, tSFBsSFB,                             // for scale tensor values
+      gSFA_mkl, gSFB_nkl,                             // for input scale tensor values
+      identSFA_mkl, identSFB_nkl,                     // for predicating scale tensor copies
+      sSFA, sSFB,                                     // for scale tensor values
       mainloop_params.layout_SFA,                     // for predicating scale tensor copies
       mainloop_params.layout_SFB                      // for predicating scale tensor copies
     };
@@ -922,24 +903,44 @@ struct CollectiveMma<
       KTileIterator k_tile_iter, int k_tile_count) {
 
     auto [unused_k_tiles,
-          tSFAgSFA_mkl, tSFBgSFB_nkl,
-          tSFAIdentSFA_mkl, tSFBIdentSFB_nkl,
-          tSFAsSFA, tSFBsSFB,
+          gSFA_mkl, gSFB_nkl,
+          identSFA_mkl, identSFB_nkl,
+          sSFA, sSFB,
           layout_SFA, layout_SFB] = load_inputs;
 
     // slice out the work coord from partitioned tensors
     GmemTiledCopySFA scale_copy_a{};
     GmemTiledCopySFB scale_copy_b{};
 
-    Tensor tSFAgSFA = tSFAgSFA_mkl(_, _, _, get<0>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+    Tensor gSFA_k_compact = filter_zeros(
+      gSFA_mkl(_, _, get<0>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl)));               // (BLK_M_CPT, BLK_K_CPT, k_cpt)
+    Tensor gSFB_k_compact = filter_zeros(
+      gSFB_nkl(_, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl)));               // (BLK_N_CPT, BLK_K_CPT, k_cpt)
 
-    Tensor tSFBgSFB = tSFBgSFB_nkl(_, _, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+    Tensor identSFA_k_compact = filter_zeros(
+        identSFA_mkl(_, _, get<0>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl)), 
+        gSFA_k_compact.stride());                                                       // (BLK_M_CPT, BLK_K_CPT, k_cpt)
+    Tensor identSFB_k_compact = filter_zeros(
+        identSFB_nkl(_, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl)), 
+        gSFB_k_compact.stride());                                                       // (BLK_N_CPT, BLK_K_CPT, k_cpt)
 
-    Tensor thr_tile_SFA_k = tSFAIdentSFA_mkl(_0{}, _, _, get<0>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
-    Tensor thr_tile_pSFA = make_tensor<bool>(shape(filter_zeros(thr_tile_SFA_k(_,_,_0{}), tSFAgSFA(_0{},_,_,_0{}).stride())));
-    Tensor thr_tile_SFB_k = tSFBIdentSFB_nkl(_0{}, _, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+    Tensor sSFA_compact = filter_zeros(sSFA);                                               // (BLK_M_CPT, BLK_K_CPT, P)
+    Tensor sSFB_compact = filter_zeros(sSFB);                                               // (BLK_N_CPT, BLK_K_CPT, P)
 
-    Tensor thr_tile_pSFB = make_tensor<bool>(shape(filter_zeros(thr_tile_SFB_k(_,_,_0{}), tSFBgSFB(_0{},_,_,_0{}).stride())));
+    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x % size(scale_copy_a));
+    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x % size(scale_copy_b));
+
+    Tensor tSFAgSFA_k_compact = thr_scale_copy_a.partition_S(gSFA_k_compact);                  // (CPY, BLK_M, BLK_K, k)
+    Tensor tSFAIdentSFA_k_compact = thr_scale_copy_a.partition_S(identSFA_k_compact);          // (CPY, BLK_M, BLK_K, k)
+
+    Tensor tSFAsSFA_compact = thr_scale_copy_a.partition_D(sSFA_compact);
+
+    Tensor tSFBgSFB_k_compact = thr_scale_copy_b.partition_S(gSFB_k_compact);                  // (CPY, BLK_N, BLK_K, k)
+    Tensor tSFBIdentSFB_k_compact = thr_scale_copy_b.partition_S(identSFB_k_compact);          // (CPY, BLK_N, BLK_K, k)
+    Tensor tSFBsSFB_compact = thr_scale_copy_b.partition_D(sSFB_compact);
+
+    Tensor thr_tile_pSFA = make_fragment_like<bool>(tSFAgSFA_k_compact(_0{},_,_,_0{}));
+    Tensor thr_tile_pSFB = make_fragment_like<bool>(tSFBgSFB_k_compact(_0{},_,_,_0{}));
 
     // Issue the loads
     CUTLASS_PRAGMA_NO_UNROLL
@@ -949,18 +950,22 @@ struct CollectiveMma<
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFA); ++i) {
-        Tensor thr_tile_SFA = filter_zeros(thr_tile_SFA_k(_,_,*k_tile_iter), tSFAgSFA(_0{},_,_,_0{}).stride());
-        thr_tile_pSFA(i) = elem_less(thr_tile_SFA(i), shape(filter_zeros(layout_SFA))) && threadIdx.x % 32 < size(scale_copy_a);
+        Tensor tSFAIdentSFA_compact = tSFAIdentSFA_k_compact(_0{},_,_,*k_tile_iter);
+        thr_tile_pSFA(i) = elem_less(tSFAIdentSFA_compact(i), 
+            shape(filter_zeros(layout_SFA))) && threadIdx.x % 32 < size(scale_copy_a);
       }
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFB); ++i) {
-        Tensor thr_tile_SFB = filter_zeros(thr_tile_SFB_k(_,_,*k_tile_iter), tSFBgSFB(_0{},_,_,_0{}).stride());
-        thr_tile_pSFB(i) = elem_less(thr_tile_SFB(i), shape(filter_zeros(layout_SFB))) && threadIdx.x % 32 < size(scale_copy_b);
+        Tensor tSFBIdentSFB_compact = tSFBIdentSFB_k_compact(_0{},_,_,*k_tile_iter);
+        thr_tile_pSFB(i) = elem_less(tSFBIdentSFB_compact(i), 
+            shape(filter_zeros(layout_SFB))) && threadIdx.x % 32 < size(scale_copy_b);
       }
 
-      copy_if(scale_copy_a, thr_tile_pSFA, filter_zeros(tSFAgSFA(_,_,_,*k_tile_iter)), filter_zeros(tSFAsSFA(_,_,_,mainloop_sf_pipe_producer_state.index())));
-      copy_if(scale_copy_b, thr_tile_pSFB, filter_zeros(tSFBgSFB(_,_,_,*k_tile_iter)), filter_zeros(tSFBsSFB(_,_,_,mainloop_sf_pipe_producer_state.index())));
+      copy_if(scale_copy_a, thr_tile_pSFA, tSFAgSFA_k_compact(_,_,_,*k_tile_iter), 
+          tSFAsSFA_compact(_,_,_,mainloop_sf_pipe_producer_state.index()));
+      copy_if(scale_copy_b, thr_tile_pSFB, tSFBgSFB_k_compact(_,_,_,*k_tile_iter), 
+          tSFBsSFB_compact(_,_,_,mainloop_sf_pipe_producer_state.index()));
       mainloop_sf_pipeline.producer_commit(mainloop_sf_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive_noinc);
 
       __syncwarp();

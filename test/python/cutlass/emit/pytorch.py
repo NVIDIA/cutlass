@@ -40,9 +40,9 @@ import unittest
 
 from cutlass_library import ConvMode
 
-import cutlass
+import cutlass_cppgen
 
-if cutlass.utils.datatypes.is_torch_available():
+if cutlass_cppgen.utils.datatypes.is_torch_available():
     import torch
 
 
@@ -95,7 +95,7 @@ def _generate_conv2d_problem(conv_kind, dtype, ps):
     :type conv_kind: str
     :param dtype: data type of tensors
     :param problem_size: the conv2d problem size
-    :type problem_size: cutlass.shape.Conv2DProblemSize
+    :type problem_size: cutlass_cppgen.shape.Conv2DProblemSize
 
     :return: initialized tensors A, B, C, and D
     :rtype: list
@@ -116,18 +116,18 @@ def _generate_conv2d_problem(conv_kind, dtype, ps):
     return [torch.ceil(torch.empty(size, dtype=dtype, device='cuda').uniform_(-4.5, 3.5)).to(memory_format=torch.channels_last) for size in sizes]
 
 
-@unittest.skipIf(not cutlass.utils.datatypes.is_torch_available(), 'PyTorch must be available to run PyTorch extension tests')
+@unittest.skipIf(not cutlass_cppgen.utils.datatypes.is_torch_available(), 'PyTorch must be available to run PyTorch extension tests')
 class PyTorchExtensionTest(unittest.TestCase):
 
     def test_gemm(self):
         random.seed(2023)
 
         dtype = torch.float16
-        plan = cutlass.op.Gemm(element=dtype, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.Gemm(element=dtype, layout=cutlass_cppgen.LayoutType.RowMajor)
         op = plan.construct()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            mod = cutlass.emit.pytorch(op, name='gemm_mod', cc=plan.cc, sourcedir=tmpdir, jit=True)
+            mod = cutlass_cppgen.emit.pytorch(op, name='gemm_mod', cc=plan.cc, sourcedir=tmpdir, jit=True)
 
         A, B, C, _ = _initialize(dtype, 1024, 256, 512)
 
@@ -154,11 +154,11 @@ class PyTorchExtensionTest(unittest.TestCase):
         random.seed(2023)
 
         dtype = torch.float16
-        plan = cutlass.op.GroupedGemm(element=dtype, layout=cutlass.LayoutType.RowMajor)
+        plan = cutlass_cppgen.op.GroupedGemm(element=dtype, layout=cutlass_cppgen.LayoutType.RowMajor)
         op = plan.construct()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            mod = cutlass.emit.pytorch(op, name='grouped_gemm_mod', cc=plan.cc, sourcedir=tmpdir, jit=True)
+            mod = cutlass_cppgen.emit.pytorch(op, name='grouped_gemm_mod', cc=plan.cc, sourcedir=tmpdir, jit=True)
 
         As, Bs, Cs, _ = _generate_problems(dtype, 50)
 
@@ -189,14 +189,14 @@ class PyTorchExtensionTest(unittest.TestCase):
         torch.manual_seed(2023)
 
         dtype = torch.float16
-        plan = cutlass.op.Conv2d(kind="fprop", element=dtype, element_accumulator=torch.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="fprop", element=dtype, element_accumulator=torch.float32)
         plan.activation = "relu"
 
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
-            mod = cutlass.emit.pytorch(op, name="conv2d_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
+            mod = cutlass_cppgen.emit.pytorch(op, name="conv2d_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
 
-        problem_size = cutlass.shape.Conv2DProblemSize(
+        problem_size = cutlass_cppgen.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
             0, 0,
@@ -231,13 +231,13 @@ class PyTorchExtensionTest(unittest.TestCase):
     def test_conv2d_dgrad(self):
         torch.manual_seed(2023)
         dtype = torch.float16
-        plan = cutlass.op.Conv2d(kind="dgrad", element=dtype, element_accumulator=torch.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="dgrad", element=dtype, element_accumulator=torch.float32)
 
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
-            mod = cutlass.emit.pytorch(op, name="conv2d_dgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
+            mod = cutlass_cppgen.emit.pytorch(op, name="conv2d_dgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
 
-        problem_size = cutlass.shape.Conv2DProblemSize(
+        problem_size = cutlass_cppgen.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
             0, 0,
@@ -265,13 +265,13 @@ class PyTorchExtensionTest(unittest.TestCase):
     def test_conv2d_wgrad(self):
         torch.manual_seed(2023)
         dtype = torch.float16
-        plan = cutlass.op.Conv2d(kind="wgrad", element=dtype, element_accumulator=torch.float32)
+        plan = cutlass_cppgen.op.Conv2d(kind="wgrad", element=dtype, element_accumulator=torch.float32)
 
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
-            mod = cutlass.emit.pytorch(op, name="conv2d_wgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
+            mod = cutlass_cppgen.emit.pytorch(op, name="conv2d_wgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
 
-        problem_size = cutlass.shape.Conv2DProblemSize(
+        problem_size = cutlass_cppgen.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
             0, 0,

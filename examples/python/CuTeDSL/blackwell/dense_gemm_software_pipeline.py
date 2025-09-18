@@ -110,17 +110,6 @@ Constraints:
 """
 
 
-class PipelineStateMinimal:
-    """
-    Pipeline state contains an index and phase bit corresponding to the current position in the circular buffer.
-    """
-
-    def __init__(self, count, index, phase):
-        self.count = count
-        self.index = index
-        self.phase = phase
-
-
 class DenseGemmKernel:
     """
     This class implements batched matrix multiplication (C = A x B) with support for various data types
@@ -497,7 +486,6 @@ class DenseGemmKernel:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=(*self.cluster_shape_mn, 1),
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
         )
         return
@@ -576,12 +564,18 @@ class DenseGemmKernel:
             pipeline.Agent.Thread, num_tma_producer
         )
         ab_pipeline = pipeline.PipelineTmaUmma.create(
+            barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
             producer_group=ab_pipeline_producer_group,
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
-            barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             cta_layout_vmnk=cluster_layout_vmnk,
+        )
+        ab_producer_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Producer, self.num_ab_stage
+        )
+        ab_consumer_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Consumer, self.num_ab_stage
         )
 
         # Initialize acc_pipeline (barrier) and states
@@ -590,10 +584,10 @@ class DenseGemmKernel:
             pipeline.Agent.Thread, self.threads_per_cta, self.threads_per_cta
         )
         acc_pipeline = pipeline.PipelineUmmaAsync.create(
+            barrier_storage=storage.acc_full_mbar_ptr.data_ptr(),
             num_stages=self.num_acc_stage,
             producer_group=acc_pipeline_producer_group,
             consumer_group=acc_pipeline_consumer_group,
-            barrier_storage=storage.acc_full_mbar_ptr.data_ptr(),
             cta_layout_vmnk=cluster_layout_vmnk,
         )
         acc_producer_state = pipeline.make_pipeline_state(
@@ -665,7 +659,7 @@ class DenseGemmKernel:
         gC_mnl = cute.local_tile(
             mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
         )
-        k_block_cnt = cute.size(gA_mkl, mode=[3])
+        k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
         #
         # Partition global tensor for TiledMMA_A/B/C
@@ -793,24 +787,12 @@ class DenseGemmKernel:
         # ///////////////////////////////////////////////////////////////////////////////
         #  MAINLOOP
         # ///////////////////////////////////////////////////////////////////////////////
-        prefetch_k_block_cnt = cutlass.min(self.num_ab_stage - 2, k_block_cnt)
+        prefetch_k_tile_cnt = cutlass.min(self.num_ab_stage - 2, k_tile_cnt)
         if warp_idx == 0:
-            for k_block in cutlass.range(
-                k_block_cnt,
-                pipelining=self.num_ab_stage - 2,
+            for k_tile in cutlass.range(
+                k_tile_cnt,
+                prefetch_stages=self.num_ab_stage - 2,
             ):
-                ab_producer_state = PipelineStateMinimal(
-                    k_block,
-                    k_block % self.num_ab_stage,
-                    cutlass.Int32((k_block // self.num_ab_stage) % 2) ^ 1,
-                )
-
-                ab_consumer_state = PipelineStateMinimal(
-                    k_block,
-                    k_block % self.num_ab_stage,
-                    cutlass.Int32((k_block // self.num_ab_stage) % 2),
-                )
-
                 # wait for AB buffer empty
                 ab_pipeline.producer_acquire(ab_producer_state)
 
@@ -835,22 +817,26 @@ class DenseGemmKernel:
                     ab_pipeline.consumer_wait(ab_consumer_state)
 
                     # tCtAcc += tCrA * tCrB
-                    num_kphases = cute.size(tCrA, mode=[2])
-                    for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
-                        kphase_coord = (None, None, kphase_idx, ab_consumer_state.index)
+                    num_kblocks = cute.size(tCrA, mode=[2])
+                    for kblock_idx in cutlass.range(num_kblocks, unroll_full=True):
+                        kblock_coord = (None, None, kblock_idx, ab_consumer_state.index)
 
                         cute.gemm(
                             tiled_mma,
                             tCtAcc,
-                            tCrA[kphase_coord],
-                            tCrB[kphase_coord],
+                            tCrA[kblock_coord],
+                            tCrB[kblock_coord],
                             tCtAcc,
                         )
-                        # Enable accumulate on tCtAcc after first kphase
+                        # Enable accumulate on tCtAcc after first kblock
                         tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
 
                     # Async arrive AB buffer empty
                     ab_pipeline.consumer_release(ab_consumer_state)
+
+                ab_producer_state.advance()
+                ab_consumer_state.advance()
+
             # Async arrive accumulator buffer full
             if is_leader_cta:
                 acc_pipeline.producer_commit(acc_producer_state)
@@ -964,12 +950,10 @@ class DenseGemmKernel:
         # Wait A/B buffer empty
         #
         if warp_idx == 0:
-            ab_producer_state = PipelineStateMinimal(
-                k_block_cnt,
-                k_block_cnt % self.num_ab_stage,
-                cutlass.Int32((k_block_cnt // self.num_ab_stage) % 2) ^ 1,
-            )
-            ab_pipeline.producer_acquire(ab_producer_state)
+            # Reverse prefetch_k_tile_cnt times to next available buffer
+            for i in range(prefetch_k_tile_cnt):
+                ab_producer_state.reverse()
+            ab_pipeline.producer_tail(ab_producer_state)
         return
 
     def epilog_tmem_copy_and_partition(
@@ -1579,7 +1563,6 @@ def run_dense_gemm(
     warmup_iterations: int = 0,
     iterations: int = 1,
     skip_ref_check: bool = False,
-    measure_launch_overhead=False,
 ):
     """
     Prepare A/B/C tensors, launch GPU kernel, and reference checking.
@@ -1725,7 +1708,7 @@ def run_dense_gemm(
             ref_c = ref
         elif c_dtype in {cutlass.Float8E5M2, cutlass.Float8E4M3FN}:
             # m major: (l, n, m) -> (m, n, l)
-            # k major: (l, m, n) -> (m, n, l)
+            # n major: (l, m, n) -> (m, n, l)
             permute_order = (1, 2, 0) if c_major == "n" else (2, 1, 0)
             shape = (l, m, n) if c_major == "n" else (l, n, m)
             f8_torch_tensor = cutlass_torch.create_and_permute_torch_tensor(

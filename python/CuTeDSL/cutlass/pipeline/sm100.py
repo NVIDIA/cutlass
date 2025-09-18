@@ -19,6 +19,7 @@ import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, if_generate
 
 from cutlass.pipeline import (
+    Agent,
     CooperativeGroup,
     PipelineOp,
     PipelineState,
@@ -106,9 +107,9 @@ class PipelineTmaUmma(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param tx_count: Number of bytes expected to be written to the transaction barrier for one stage
         :type tx_count: int
@@ -258,9 +259,9 @@ class PipelineAsyncUmma(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout | None
@@ -368,9 +369,9 @@ class PipelineUmmaAsync(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout | None

@@ -136,10 +136,6 @@ class SGemm:
             stride=(1, (self._bN + padding_b), self._bK * (self._bN + padding_b)),
         )
 
-        smem_size = cute.size_in_bytes(mA.element_type, sA_layout) + cute.size_in_bytes(
-            mB.element_type, sB_layout
-        )
-
         # ///////////////////////////////////////////////////////////////////////////////
         # Create copy layouts that will be used for asynchronous
         # global memory -> shared memory copies:
@@ -258,7 +254,6 @@ class SGemm:
         ).launch(
             grid=grid_dim,
             block=[cute.size(atoms_layout), 1, 1],
-            smem=smem_size,
             stream=stream,
         )
 
@@ -738,14 +733,20 @@ def run(
 
     print("Compiling kernel with cute.compile ...")
     start_time = time.time()
-    gemm = cute.compile(sgemm, a_tensor, b_tensor, c_tensor, stream=current_stream)
+    compiled_fn = cute.compile(
+        sgemm,
+        a_tensor,
+        b_tensor,
+        c_tensor,
+        stream=current_stream,
+    )
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
 
     print("Executing GEMM kernel...")
 
     if not skip_ref_check:
-        gemm(a_tensor, b_tensor, c_tensor)
+        compiled_fn(a_tensor, b_tensor, c_tensor)
         torch.cuda.synchronize()
         print("Verifying results...")
         ref = torch.einsum("mk,nk->mn", a, b)
@@ -804,7 +805,7 @@ def run(
         )
 
     avg_time_us = testing.benchmark(
-        gemm,
+        compiled_fn,
         workspace_generator=generate_tensors,
         workspace_count=workspace_count,
         stream=current_stream,
@@ -837,6 +838,7 @@ if __name__ == "__main__":
     parser.add_argument("--c_major", choices=["n", "m"], default="n")
     parser.add_argument("--warmup_iterations", default=2, type=int)
     parser.add_argument("--iterations", default=100, type=int)
+    parser.add_argument("--static_shape", action="store_true")
     parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument(
         "--use_cold_l2",

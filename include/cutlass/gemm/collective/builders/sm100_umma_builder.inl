@@ -184,6 +184,8 @@ struct CollectiveBuilder<
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
       // Dense Gemm / PtrArrayDenseGemm
       (
+       (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
+       (not cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
        (cute::is_base_of_v<KernelScheduleSm100DenseGemm, BuilderScheduleTag> ||
         cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)) &&
       // Alignment check

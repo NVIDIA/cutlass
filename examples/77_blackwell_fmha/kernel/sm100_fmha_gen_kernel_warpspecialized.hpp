@@ -247,6 +247,9 @@ struct Sm100FmhaGenKernelWarpspecialized {
   }
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
+#if (! defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && ! defined(CUTLASS_ARCH_MMA_SM100F_ENABLED))
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
 
     TileScheduler tile_scheduler{params.tile_scheduler};
 
@@ -365,7 +368,7 @@ struct Sm100FmhaGenKernelWarpspecialized {
       pipeline_corr_epi_params.role = CollectiveMainloop::PipelineE::ThreadCategory::Consumer;
     }
     pipeline_corr_epi_params.producer_arv_count = NumWarpsCorrection * cutlass::NumThreadsPerWarp;
-    pipeline_corr_epi_params.consumer_arv_count = NumWarpsEpilogue * cutlass::NumThreadsPerWarp;
+    pipeline_corr_epi_params.consumer_arv_count = cute::max(1, NumWarpsEpilogue * cutlass::NumThreadsPerWarp);
     typename CollectiveMainloop::PipelineE pipeline_corr_epi(
       shared_storage.pipelines.corr_epi,
       pipeline_corr_epi_params,
@@ -569,6 +572,7 @@ struct Sm100FmhaGenKernelWarpspecialized {
 
       /* no-op, donate regs and exit */
     }
+#endif
   }
 
 };

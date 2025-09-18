@@ -8,7 +8,7 @@
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
-
+import enum
 from dataclasses import dataclass
 from typing import Type, Optional
 
@@ -101,6 +101,42 @@ class MmaUniversalTrait(core.Trait):
 ####################################################################################################
 
 
+class MemoryOrder(enum.Enum):
+    WEAK = _cute_ir.MemOrderKind.WEAK
+    RELAXED = _cute_ir.MemOrderKind.RELAXED
+    ACQUIRE = _cute_ir.MemOrderKind.ACQUIRE
+    RELEASE = _cute_ir.MemOrderKind.RELEASE
+    ACQ_REL = _cute_ir.MemOrderKind.ACQ_REL
+    SC = _cute_ir.MemOrderKind.SC
+    MMIO = _cute_ir.MemOrderKind.MMIO
+    CONSTANT = _cute_ir.MemOrderKind.CONSTANT
+    VOLATILE = _cute_ir.MemOrderKind.VOLATILE
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+    def _to_ir(self) -> _cute_ir.MemOrderKind:
+        return self.value
+
+
+class MemoryScope(enum.Enum):
+    CTA = _cute_ir.MemScopeKind.CTA
+    CLUSTER = _cute_ir.MemScopeKind.CLUSTER
+    GPU = _cute_ir.MemScopeKind.GPU
+    SYS = _cute_ir.MemScopeKind.SYS
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+    def _to_ir(self) -> _cute_ir.MemScopeKind:
+        return self.value
+
 @dataclass(frozen=True)
 class CopyUniversalOp(core.CopyOp):
     """
@@ -133,13 +169,18 @@ class CopyUniversalOp(core.CopyOp):
         **kwargs,
     ) -> "CopyUniversalTrait":
         num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
+        memory_order = kwargs.get("memory_order", MemoryOrder.WEAK)
+        memory_scope = kwargs.get("memory_scope", MemoryScope.CTA)
         if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
             raise ValueError(
                 "expects a 'num_bits_per_copy' kw argument of type int that is non-negative "
                 f"when creating a copy Atom for {self.__class__.__name__}"
             )
         ty = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
-            copy_internal_type.mlir_type, num_bits_per_copy
+            copy_internal_type.mlir_type,
+            num_bits_per_copy,
+            memory_order._to_ir(),
+            memory_scope._to_ir(),
         )
         return CopyUniversalTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
 

@@ -11,7 +11,7 @@
 
 from typing import Type, Union, overload
 
-from cutlass.cutlass_dsl import Int8, Numeric, NumericMeta
+from cutlass.cutlass_dsl import Int8, Numeric, NumericMeta, CutlassBaseDSL
 
 import cutlass.cute as cute
 from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
@@ -40,14 +40,17 @@ class SmemAllocator:
         """
         self._base = get_dyn_smem(Int8, alignment=1024)
         self._allocated_bytes = 0
+        CutlassBaseDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)
 
     @overload
-    def allocate(self, size_or_type: int, byte_alignment: int): ...
+    def allocate(self, size_or_type: int, byte_alignment: int) -> cute.Pointer: ...
 
     @overload
-    def allocate(self, size_or_type: cute.struct, byte_alignment: int): ...
+    def allocate(
+        self, size_or_type: cute.struct, byte_alignment: int
+    ) -> cute.Pointer: ...
 
-    def allocate(self, size_or_type, byte_alignment: int = 1) -> int:
+    def allocate(self, size_or_type, byte_alignment: int = 1) -> cute.Pointer:
         """Allocate a block of memory with specified size and alignment.
 
         This method adjusts the base pointer to ensure proper alignment and updates

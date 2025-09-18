@@ -66,6 +66,8 @@ set(TEST_VARLEN_17 --verify --varlen --mask=causal --causal-type=qbegin --d=128 
 set(TEST_VARLEN_18 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=128 --varlen-k=128)
 set(TEST_VARLEN_19 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=17 --varlen-k=257)
 set(TEST_VARLEN_20 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=17 --varlen-k=25)
+set(TEST_VARLEN_21 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1013 --varlen-k=1024)
+set(TEST_VARLEN_22 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1024 --varlen-k=1035)
 
 
 
@@ -90,6 +92,8 @@ set(TEST_MLA_FWD_VARLEN_17 --verify --varlen --mask=causal --causal-type=qbegin 
 set(TEST_MLA_FWD_VARLEN_18 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=128 --varlen-k=128)
 set(TEST_MLA_FWD_VARLEN_19 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=17 --varlen-k=257)
 set(TEST_MLA_FWD_VARLEN_20 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=17 --varlen-k=25)
+set(TEST_MLA_FWD_VARLEN_21 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1013 --varlen-k=1024)
+set(TEST_MLA_FWD_VARLEN_22 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1024 --varlen-k=1035)
 
 
 set(TEST_GEN_BASIC --b=1 --h=4 --k=512 --d=128 --verify)
@@ -142,6 +146,8 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_VARLEN_18
         TEST_VARLEN_19
         TEST_VARLEN_20
+        TEST_VARLEN_21
+        TEST_VARLEN_22
         )
     target_include_directories(77_blackwell_fmha_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_fmha_${PREC} PRIVATE ${PREC_MACRO})
@@ -165,7 +171,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
-	    TEST_MLA_SEP_REDUCTION
+        TEST_MLA_SEP_REDUCTION
         TEST_MLA_FUSE_REDUCTION
         )
     target_include_directories(77_blackwell_mla_2sm_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -177,8 +183,8 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
-	    TEST_MLA_SEP_REDUCTION
-	    TEST_MLA_FUSE_REDUCTION
+        TEST_MLA_SEP_REDUCTION
+        TEST_MLA_FUSE_REDUCTION
         )
     target_include_directories(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${PREC_MACRO} CPASYNC)
@@ -243,6 +249,8 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_MLA_FWD_VARLEN_18
         TEST_MLA_FWD_VARLEN_19
         TEST_MLA_FWD_VARLEN_20
+        TEST_MLA_FWD_VARLEN_21
+        TEST_MLA_FWD_VARLEN_22
         )
     target_include_directories(77_blackwell_mla_fwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_mla_fwd_${PREC} PRIVATE ${PREC_MACRO})

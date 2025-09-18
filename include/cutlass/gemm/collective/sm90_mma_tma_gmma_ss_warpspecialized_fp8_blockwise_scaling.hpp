@@ -73,7 +73,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
     StridePairA_,
@@ -91,7 +91,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = cute::tuple_element_t<0,StridePairA_>;
@@ -134,9 +134,12 @@ struct CollectiveMma<
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
+  static constexpr bool MMajorSFA = size<0,1>(LayoutSFA{}.stride()) == 1;
+  static constexpr bool NMajorSFB = size<0,1>(LayoutSFB{}.stride()) == 1;
+
   static constexpr int ScaleTmaThreshold = 32;
-  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold;
-  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold;
+  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold && MMajorSFA;
+  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold && NMajorSFB;
   // Two threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
   static constexpr int NumProducerThreadEvents = ((IsTmaLoadSFA && IsTmaLoadSFB)? 1 : 33);
 
@@ -151,7 +154,12 @@ struct CollectiveMma<
   static_assert((size<0>(TileShape{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
   static_assert((size<1>(TileShape{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
-  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<
+      ScaleGranularityM, 
+      ScaleGranularityN, 
+      ScaleGranularityK,
+      MMajorSFA ? cute::GMMA::Major::MN : cute::GMMA::Major::K,
+      NMajorSFB ? cute::GMMA::Major::MN : cute::GMMA::Major::K>;
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
   using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(TileShape{}));
 
@@ -170,8 +178,8 @@ struct CollectiveMma<
   using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
 
-  static constexpr int AlignmentSFA = 1;
-  static constexpr int AlignmentSFB = 1;
+  static constexpr int AlignmentSFA = IsTmaLoadSFA ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
+  static constexpr int AlignmentSFB = IsTmaLoadSFB ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
 
   // Block scaling smem layout
   using SmemLayoutSFA = decltype(make_layout(
@@ -382,12 +390,6 @@ struct CollectiveMma<
     if (IsTmaLoadSFB && !cutlass::detail::check_alignment<min_tma_aligned_elements_S>(args.layout_SFB)) {
       implementable = false;
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size doesn't meet the minimum alignment requirements for using TMA to load scale B.\n");
-    }
-
-    // We expect full tiles in K
-    if (K % size<2>(TileShape{}) != 0) {
-      implementable = false;
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size K is incompatible with tile size.\n");
     }
     return implementable;
   }
@@ -669,7 +671,7 @@ struct CollectiveMma<
       Tensor tSFAcSFA_compact = filter_zeros(tSFAcSFA);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFApSFA); ++i) {
-        tSFApSFA(i) = load_sfa && elem_less(get<0>(tSFAcSFA_compact(i)), get<0>(SFA_shape));
+        tSFApSFA(i) = load_sfa && elem_less(tSFAcSFA_compact(i), SFA_shape);
       }
 
       bool load_sfb = thread_idx < ScaleNsPerTile;
@@ -677,7 +679,7 @@ struct CollectiveMma<
       Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFBpSFB); ++i) {
-        tSFBpSFB(i) = load_sfb && elem_less(get<0>(tSFBcSFB_compact(i)), get<0>(SFB_shape));
+        tSFBpSFB(i) = load_sfb && elem_less(tSFBcSFB_compact(i), SFB_shape);
       }
       int write_stage = smem_pipe_write.index();
       // Copy scale tensors from global memory to shared memory

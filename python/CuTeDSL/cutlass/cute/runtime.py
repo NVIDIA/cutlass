@@ -21,7 +21,7 @@ from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 
 from cutlass.base_dsl.dsl import is_dynamic_expression
-from cutlass.cutlass_dsl import TensorFormat, JitArgAdapterRegistry
+from cutlass.cutlass_dsl import JitArgAdapterRegistry
 
 # Local modules imports
 from .typing import (
@@ -82,41 +82,35 @@ class _Pointer(Pointer):
         self._dtype = dtype
         self._addr_space = mem_space
 
-        is_in_device = mem_space == _cute_ir.AddressSpace.gmem
         if assumed_align is None:
-            if is_in_device:
-                self._assumed_align = 32
-            else:
-                self._assumed_align = dtype.width // 8
+            self._assumed_align = dtype.width // 8
         else:
             self._assumed_align = assumed_align
 
-        class PtrDescriptor(ctypes.Structure):
-            """A ctype descriptor for CuTe memref ptr"""
-
-            _fields_ = [("ptr", ctypes.c_void_p)]
-
-            def __str__(self):
-                return f"0x{self.ptr:016x}"
-
-        self._desc = PtrDescriptor(int(self._pointer))
-        self._c_pointer = ctypes.cast(ctypes.pointer(self._desc), ctypes.c_void_p)
+        self._c_pointer = None
         assert (
-            self._desc.ptr % self._assumed_align == 0
+            int(self._pointer) % self._assumed_align == 0
         ), f"pointer must be {self._assumed_align} bytes aligned"
 
     def size_in_bytes(self) -> int:
+        self._desc = ctypes.c_void_p(int(self._pointer))
         return ctypes.sizeof(self._desc)
 
     def __get_mlir_types__(self):
         return [self.mlir_type]
 
     def __c_pointers__(self):
+        if self._c_pointer is None:
+            self._desc = ctypes.c_void_p(int(self._pointer))
+            self._c_pointer = ctypes.addressof(self._desc)
         return [self._c_pointer]
 
     def __new_from_mlir_values__(self, values):
         assert len(values) == 1
         return values[0]
+
+    def __extract_mlir_values__(self):
+        return [self._c_pointer]
 
     # Move mlir Type out of __init__ to decouple with mlir Context
     @property
@@ -145,7 +139,7 @@ class _Pointer(Pointer):
         return False
 
     def __str__(self) -> str:
-        return f"Ptr<0x{self._desc.ptr:016x}@{self._addr_space}>"
+        return f"Ptr<0x{int(self._pointer):016x}@{self._addr_space}>"
 
     def __repr__(self):
         return self.__str__()

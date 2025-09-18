@@ -31,9 +31,12 @@ from .helpers import (
 
 from .sm90 import (
     PipelineAsync,
+    PipelineCpAsync,
     PipelineTmaAsync,
     PipelineTmaMultiConsumersAsync,
     PipelineTmaStore,
+    PipelineProducer,
+    PipelineConsumer,
 )
 
 from .sm100 import (
@@ -53,10 +56,13 @@ __all__ = [
     "PipelineUserType",
     "PipelineState",
     "PipelineAsync",
+    "PipelineCpAsync",
     "PipelineTmaAsync",
     "PipelineTmaUmma",
     "PipelineTmaMultiConsumersAsync",
     "PipelineAsyncUmma",
     "PipelineUmmaAsync",
     "PipelineTmaStore",
+    "PipelineProducer",
+    "PipelineConsumer",
 ]

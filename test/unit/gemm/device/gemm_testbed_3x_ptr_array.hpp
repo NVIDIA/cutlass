@@ -830,6 +830,32 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCoo
   ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
 };
 
+//
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_,
+                                                                                              AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> : public
+       HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> {
+  using Base = HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                                      Gemm, ElementA_, ElementB_>;
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = Base::kDefaultSeed,
+    typename Base::LayoutTagA::Stride stride_factor_A_ = typename Base::LayoutTagA::Stride(),
+    typename Base::LayoutTagB::Stride stride_factor_B_ = typename Base::LayoutTagB::Stride()
+  ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
+};
 
 template<class Gemm>
 struct HostCollectiveDefaultEpilogue {
@@ -2250,13 +2276,16 @@ bool TestSmall(double alpha = 1.0, double beta = 1.0,
   using ElementA = typename Gemm::GemmKernel::ElementA;
   using ElementB = typename Gemm::GemmKernel::ElementB;
   using TiledMma = typename Gemm::GemmKernel::TiledMma;
-  int alignment_bits = 128;
 
   static constexpr bool IsF8F6F4 = cutlass::gemm::collective::detail::is_sm100_mma_f8f6f4<TiledMma, ElementA, ElementB>();
-  alignment_bits = cutlass::detail::get_input_alignment_bits<ElementA, IsF8F6F4>();
-  // For fp4 and fp6 kernels, the min alignment_input is 128 elements, so we don't need to add alignment_input in test problem sizes.
-  int alignment_input = (alignment_bits / cute::sizeof_bits<ElementA>::value == 128) ? 0 : (alignment_bits / cute::sizeof_bits<ElementA>::value);
-
+  // For fp4 and fp6 kernels, the min alignment_input is 128 elements, so we don't need to add alignment_input in test problem sizes.  
+  int alignment_bits_a = cutlass::detail::get_input_alignment_bits<ElementA, IsF8F6F4>();
+  int alignment_input_a = (alignment_bits_a / cute::sizeof_bits<ElementA>::value == 128) ? 0 : (alignment_bits_a / cute::sizeof_bits<ElementA>::value);
+  
+  int alignment_bits_b = cutlass::detail::get_input_alignment_bits<ElementB, IsF8F6F4>();
+  int alignment_input_b = (alignment_bits_b / cute::sizeof_bits<ElementB>::value == 128) ? 0 : (alignment_bits_b / cute::sizeof_bits<ElementB>::value);
+  
+  int alignment_input = (alignment_input_a == 0 || alignment_input_b == 0) ? 0 : std::max(alignment_input_a, alignment_input_b);
 
   if constexpr (apply_alignment_offset) {
     // If BlockScaled, then min alignment is SFVecSize

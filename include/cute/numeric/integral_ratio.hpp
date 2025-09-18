@@ -225,6 +225,27 @@ operator==(C<c>, R<a,b>) {
   return {};
 }
 
+template <auto a, auto b, auto x, auto y>
+CUTE_HOST_DEVICE constexpr
+bool_constant<R<a,b>::num * R<x,y>::den < R<x,y>::num * R<a,b>::den>
+operator<(R<a,b>, R<x,y>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+bool_constant<R<a,b>::num < c * R<a,b>::den>
+operator<(R<a,b>, C<c>) {
+  return {};
+}
+
+template <auto c, auto x, auto y>
+CUTE_HOST_DEVICE constexpr
+bool_constant<c * R<x,y>::den < R<x,y>::num>
+operator<(C<c>, R<x,y>) {
+  return {};
+}
+
 ///////////////////////
 // Special functions //
 ///////////////////////

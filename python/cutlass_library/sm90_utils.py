@@ -407,7 +407,7 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
 
 def is_tile_desc_compatible_with_cooperative(tile_description):
     # Cooperative kernels require a minimum CTA-M of 128
-    return tile_description.threadblock_shape[0] >= 128
+    return tile_description.threadblock_shape[0] % 128 == 0
 
 
 def can_tile_desc_use_shmem_in_epilogue(tile_description, data_types):
@@ -637,7 +637,10 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         # Pruning: don't stamp out fp8 ping-pong kernel with non-tma epilogue
         if not is_fp8 or level >= 1:
-            schedules.append([to_grouped_schedule(KernelScheduleType.TmaWarpSpecializedPingpong, grouped), to_grouped_schedule(default_epilogue, grouped)])
+            if not is_blockwise(gemm_kind):
+                schedules.append([to_grouped_schedule(KernelScheduleType.TmaWarpSpecializedPingpong, grouped), to_grouped_schedule(default_epilogue, grouped)])
+            else:
+                schedules.append([to_grouped_schedule(KernelScheduleType.BlockwiseTmaWarpSpecializedPingpong, grouped), to_grouped_schedule(default_epilogue, grouped)])
 
         if can_do_fp8_fast_accum:
             if not grouped:

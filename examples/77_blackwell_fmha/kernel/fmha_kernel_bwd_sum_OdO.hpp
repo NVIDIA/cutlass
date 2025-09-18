@@ -46,18 +46,18 @@ struct FmhaKernelBwdSumOdO {
     ProblemShape problem_shape;
 
     const Element* ptr_O;
-    cute::tuple<int, cute::_1, cute::tuple<int, int>> stride_O;
+    cute::tuple<int, cute::_1, cute::tuple<cute::tuple<int, int>, int>> stride_O;
     const Element* ptr_dO;
-    cute::tuple<int, cute::_1, cute::tuple<int, int>> stride_dO;
+    cute::tuple<int, cute::_1, cute::tuple<cute::tuple<int, int>, int>> stride_dO;
 
     ElementAcc* ptr_sum_OdO;
-    cute::tuple<cute::_1, cute::tuple<int, int>> stride_sum_OdO;
+    cute::tuple<cute::_1, cute::tuple<cute::tuple<int, int>, int>> stride_sum_OdO;
 
     const ElementAcc* ptr_lse = nullptr;
-    cute::tuple<cute::_1, cute::tuple<int, int>> stride_lse;
+    cute::tuple<cute::_1, cute::tuple<cute::tuple<int, int>, int>> stride_lse;
 
     ElementAcc* ptr_scaled_lse = nullptr;
-    cute::tuple<cute::_1, cute::tuple<int, int>> stride_scaled_lse;
+    cute::tuple<cute::_1, cute::tuple<cute::tuple<int, int>, int>> stride_scaled_lse;
 
     ElementAcc sum_odo_scale = 1.0;
     ElementAcc lse_scale = 1.0;
@@ -104,11 +104,11 @@ struct FmhaKernelBwdSumOdO {
   }
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
-    auto ptr_O_bh = params.ptr_O + blockIdx.y * get<2,0>(params.stride_O) + blockIdx.z * get<2,1>(params.stride_O);
-    auto ptr_dO_bh = params.ptr_dO + blockIdx.y * get<2,0>(params.stride_dO) + blockIdx.z * get<2,1>(params.stride_dO);
-    auto ptr_sum_OdO_bh = params.ptr_sum_OdO + blockIdx.y * get<1,0>(params.stride_sum_OdO) + blockIdx.z * get<1,1>(params.stride_sum_OdO);
-    auto ptr_lse_bh = params.ptr_lse + blockIdx.y * get<1,0>(params.stride_lse) + blockIdx.z * get<1,1>(params.stride_lse);
-    auto ptr_scaled_lse_bh = params.ptr_scaled_lse + blockIdx.y * get<1,0>(params.stride_scaled_lse) + blockIdx.z * get<1,1>(params.stride_scaled_lse);
+    auto ptr_O_bh = params.ptr_O + blockIdx.y * get<2,0,0>(params.stride_O) + blockIdx.z * get<2,1>(params.stride_O);
+    auto ptr_dO_bh = params.ptr_dO + blockIdx.y * get<2,0,0>(params.stride_dO) + blockIdx.z * get<2,1>(params.stride_dO);
+    auto ptr_sum_OdO_bh = params.ptr_sum_OdO + blockIdx.y * get<1,0,0>(params.stride_sum_OdO) + blockIdx.z * get<1,1>(params.stride_sum_OdO);
+    auto ptr_lse_bh = params.ptr_lse + blockIdx.y * get<1,0,0>(params.stride_lse) + blockIdx.z * get<1,1>(params.stride_lse);
+    auto ptr_scaled_lse_bh = params.ptr_scaled_lse + blockIdx.y * get<1,0,0>(params.stride_scaled_lse) + blockIdx.z * get<1,1>(params.stride_scaled_lse);
 
     auto problem_q = get<0>(params.problem_shape);
     int seqlen_q = problem_q;

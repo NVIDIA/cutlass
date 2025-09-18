@@ -32,7 +32,7 @@
 
 
 /*! \file
-    \brief Block Wise Scale configs specific for SM100 Blockwise/Groupwise MMA
+    \brief Blockwise Scale configs specific for Blockwise/Groupwise MMA
 */
 
 #pragma once
@@ -41,6 +41,7 @@
 
 #include "cute/int_tuple.hpp"
 #include "cute/atom/mma_traits_sm100.hpp"
+#include "cute/arch/mma_sm90.hpp"
 
 namespace cutlass::detail{
 
@@ -270,8 +271,13 @@ struct RuntimeBlockwiseScaleConfig {
 };
 
 // Sm90 only supports MN major for SFA and SFB for now
-template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK>
-using Sm90BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK>;
+template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, cute::GMMA::Major majorSFA = cute::GMMA::Major::MN, cute::GMMA::Major majorSFB = cute::GMMA::Major::MN>
+using Sm90BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<
+    SFVecSizeM, 
+    SFVecSizeN, 
+    SFVecSizeK, 
+    majorSFA == cute::GMMA::Major::MN ? UMMA::Major::MN : UMMA::Major::K, 
+    majorSFB == cute::GMMA::Major::MN ? UMMA::Major::MN : UMMA::Major::K>;
 
 template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK, UMMA::Major majorSFA = UMMA::Major::MN, UMMA::Major majorSFB = UMMA::Major::MN>
 using Sm100BlockwiseScaleConfig = Sm1xxBlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK, majorSFA, majorSFB>;

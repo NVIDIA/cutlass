@@ -534,14 +534,14 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     tStS_v.data() = uint32_t(stage == _0{} ? TmemAllocation::V0 : TmemAllocation::V1);
     Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
 
-    auto tilePlikeFP32 = get<1>(TileShapeQK{}) / Int<sizeof(float)>{} * Int<sizeof(Element)>{};
+    auto tilePlikeFP32 = size<1>(TileShapeQK{}) / Int<sizeof(float)>{} * Int<sizeof(Element)>{};
     Tensor tStS_P = tStS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
     tStS_P.data() = warp_uniform(uint32_t(stage == _0{} ? TmemAllocation::P0 : TmemAllocation::P1));
     Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
 
     // Each thread owns a single row
-      using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x; // 4x32 threads with 128 cols of 32b elem 
-    using TMEM_STORE = SM100_TMEM_STORE_32dp32b32x;  // 4x32 threads with 128 cols of 8b elem
+    using TMEM_LOAD = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_LOAD_32dp32b8x, SM100_TMEM_LOAD_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
+    using TMEM_STORE = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_STORE_32dp32b8x, SM100_TMEM_STORE_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
     using TMEM_STORE_V = SM100_TMEM_STORE_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
 
     int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);

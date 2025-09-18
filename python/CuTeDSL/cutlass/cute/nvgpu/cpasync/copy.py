@@ -19,7 +19,7 @@ import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from ...core import CopyOp, Trait
+from ...core import CopyOp, Trait, ReductionOp
 from ...typing import Int16, Pointer, Integer, Numeric
 from ..common import OpError
 from ..tcgen05.mma import CtaGroup
@@ -80,6 +80,12 @@ class CopyG2SOp(CopyOp):
         **kwargs,
     ) -> "CopyG2STrait":
         num_bits_per_copy = kwargs.get("num_bits_per_copy", None)
+        # Verify that the user provided enum values
+        if not isinstance(self.cache_mode, LoadCacheMode):
+            raise OpError(
+                self,
+                "expects the 'cache_mode' Op parameter to be a LoadCacheMode instance",
+            )
         if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy <= 0):
             raise ValueError(
                 "expects a 'num_bits_per_copy' kw argument of type int that is positive "
@@ -330,7 +336,7 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkTensorTileS2GOp(CopyOp):
     """
-    Bulk tensor asynchrnous SMEM to GMEM Copy Operation using the TMA unit.
+    Bulk tensor asynchronous SMEM to GMEM Copy Operation using the TMA unit.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
     This Operation uses TMA in the ``.tile`` mode.
@@ -379,3 +385,87 @@ class CopyBulkTensorTileS2GTrait(Trait):
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
         return exec_value
+
+@dataclass(frozen=True)
+class CopyReduceBulkTensorTileS2GOp(CopyOp):
+    """
+    Bulk tensor asynchronous SMEM to GMEM Reduction Operation using the TMA unit.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-reduce-async-bulk>`__.
+    This Operation uses TMA in the ``.tile`` mode.
+    """
+
+    reduction_kind: ReductionOp = ReductionOp.ADD
+
+    admissible_archs = [
+        "sm_90",
+        "sm_90a",
+        "sm_100a",
+        "sm_100f",
+    ]
+
+    def __post__init__(self):
+        # Arch verification
+        arch = CuTeDSL.__get_dsl().envar.arch
+        if arch not in self.admissible_archs:
+            raise OpError(
+                self,
+                f"expects arch to be one of {self.admissible_archs}, but got {arch}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async SMEM -> GMEM bulk tensor reduction Operation"
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "CopyReduceBulkTensorTileS2GTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.ReductionKind:
+        if self.reduction_kind == ReductionOp.ADD:
+            return _cute_nvgpu_ir.ReductionKind.ADD
+        elif self.reduction_kind == ReductionOp.MIN:
+            return _cute_nvgpu_ir.ReductionKind.MIN
+        elif self.reduction_kind == ReductionOp.MAX:
+            return _cute_nvgpu_ir.ReductionKind.MAX
+        elif self.reduction_kind == ReductionOp.INC:
+            return _cute_nvgpu_ir.ReductionKind.INC
+        elif self.reduction_kind == ReductionOp.DEC:
+            return _cute_nvgpu_ir.ReductionKind.DEC
+        elif self.reduction_kind == ReductionOp.AND:
+            return _cute_nvgpu_ir.ReductionKind.AND
+        elif self.reduction_kind == ReductionOp.OR:
+            return _cute_nvgpu_ir.ReductionKind.OR
+        elif self.reduction_kind == ReductionOp.XOR:
+            return _cute_nvgpu_ir.ReductionKind.XOR
+        else:
+            assert False, "unrecognized self.reduction_kind"
+
+
+class CopyReduceBulkTensorTileS2GTrait(Trait):
+    def unpack(self, *, loc=None, ip=None, tma_desc_ptr: Optional[Pointer] = None):
+        """
+        Custom implementation of unpack for non-executable TMAs.
+        """
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
+        if isinstance(tma_desc_ptr, Pointer):
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmareduce<{TMA_DESC_PTR_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+            )
+        return exec_value
+
+__all__ = [
+    "LoadCacheMode",
+    "CopyG2SOp",
+    "CopyBulkTensorTileG2SOp",
+    "CopyBulkTensorTileG2SMulticastOp",
+    "CopyBulkTensorTileS2GOp",
+    "CopyReduceBulkTensorTileS2GOp",
+]

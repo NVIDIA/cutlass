@@ -64,6 +64,18 @@ from .smem_capacity import (
     get_smem_capacity_in_bytes,
 )
 
+from .distributed_helpers import (
+    spin_lock_wait,
+    spin_lock_multimem_arrive,
+    multimem_ld_reduce_8xf16,
+    multimem_ld_reduce_4xf32,
+    multimem_ld_reduce_8xbf16,
+    multimem_ld_reduce_16xe4m3,
+    multimem_ld_reduce_16xe5m2,
+    multimem_st_4xb32,
+    sm_wise_inter_gpu_multimem_barrier,
+)
+
 __all__ = [
     "get_smem_capacity_in_bytes",
     "SmemAllocator",

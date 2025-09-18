@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import ctypes
+from math import prod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Type, Union
@@ -52,6 +54,25 @@ def dtype(ty: Type[Numeric]):
     if torch_dtype is None:
         raise TypeError(f"{ty} is not supported by torch")
     return torch_dtype
+
+
+def as_tensor(pointer, shape, torch_type):
+    """Convert a pointer to a torch tensor"""
+    if torch_type.itemsize == 1:
+        cytype = ctypes.c_uint8
+    elif torch_type.itemsize == 2:
+        cytype = ctypes.c_uint16
+    elif torch_type.itemsize == 4:
+        cytype = ctypes.c_uint32
+    elif torch_type.itemsize == 8:
+        cytype = ctypes.c_uint64
+    else:
+        raise ValueError(f"Unsupported torch dtype: {torch_type}")
+    cpointer = ctypes.cast(pointer, ctypes.POINTER(cytype))
+    arr = (cpointer._type_ * prod(shape)).from_address(
+        ctypes.addressof(cpointer.contents)
+    )
+    return torch.frombuffer(arr, dtype=torch_type).view(*shape)
 
 
 @dataclass
@@ -128,7 +149,7 @@ def create_and_permute_torch_tensor(
             if not isinstance(init_config, GaussianInitConfig):
                 raise ValueError("init_config must be GaussianInitConfig()")
         f32_torch_tensor = init_torch_tensor.normal_(init_config.mean, init_config.std)
-        f32_torch_tensor = f32_torch_tensor * (1 << init_config.scale)
+        f32_torch_tensor = f32_torch_tensor * init_config.scale
     else:
         raise ValueError(f"Invalid init type: {init_type}")
 

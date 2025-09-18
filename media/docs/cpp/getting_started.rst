@@ -13,4 +13,5 @@ Getting Started
   Terminology<terminology.md>
   Fundamental Types<fundamental_types.md>
   Programming Guidelines<programming_guidelines.md>
+  GEMM Heuristics <heuristics.md>
   

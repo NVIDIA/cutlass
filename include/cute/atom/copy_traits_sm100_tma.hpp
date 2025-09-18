@@ -135,6 +135,13 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_OP, NumBitsPerTMA>
   uint64_t*, // smem mbarrier
   uint64_t   // cache hint
   > const opargs_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -223,6 +230,13 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_MULTICAST_OP, NumBitsPerTMA>
   uint16_t,  // multicast mask
   uint64_t   // cache hint
   > const opargs_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return get<0>(opargs_);
+  }
 };
 
 ////////////////////////////////////

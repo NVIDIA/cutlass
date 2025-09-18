@@ -35,14 +35,13 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
 
-#include "cutlass/cutlass.h"
 #include "cutlass/numeric_size.h"
 #include "cutlass/platform/platform.h"
 
@@ -205,6 +204,12 @@ using int2b_t = integer_subbyte<2, true>;
 
 /// 2-bit Unsigned integer type
 using uint2b_t = integer_subbyte<2, false>;
+
+/// 3-bit Integer type
+using int3b_t = integer_subbyte<3, true>;
+
+/// 3-bit Unsigned integer type
+using uint3b_t = integer_subbyte<3, false>;
 
 /// 4-bit Integer type
 using int4b_t = integer_subbyte<4, true>;

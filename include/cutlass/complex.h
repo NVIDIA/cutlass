@@ -34,14 +34,12 @@
 #include <cuComplex.h>
 
 #include <cuda_fp16.h>
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
-
-#include "cutlass/cutlass.h"
 #include "cutlass/functional.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/real.h"
