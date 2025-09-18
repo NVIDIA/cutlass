@@ -1,5 +1,6 @@
 /***************************************************************************************************
 * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+* Copyright (c) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,6 +44,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/complex.h"
 #include "cutlass/util/reference/device/tensor_foreach.h"
+#include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/layout/vector.h"
 
@@ -175,25 +177,17 @@ void BlockFillRandomUniformCopyFromHost(
   size_t capacity,
   uint64_t seed,                          ///< seed for RNG
   typename RealType<Element>::Type max,   ///< upper bound of distribution
-  typename RealType<Element>::Type min    ///< lower bound for distribution
+  typename RealType<Element>::Type min,   ///< lower bound for distribution
+  int bits = -1                           ///< If non-negative, specifies number of fractional bits that
+                                          ///  are not truncated to zero. Permits reducing precision of
+                                          ///  data.
   ) {
-  
-  if constexpr(std::is_same_v<Element, float> || 
-               std::is_same_v<Element, cute::bfloat16_t> || 
-               std::is_same_v<Element, cute::half_t>) {
-    std::random_device rd;
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<float> dis(min, max);
-    auto buff = std::vector<Element>(capacity);
+  auto buff = std::vector<Element>(capacity);
 
-    for (size_t i = 0; i < capacity; ++i) {
-      buff[i] = (Element)(dis(gen));
-    }
-    syclcompat::memcpy<Element>(ptr, buff.data(), capacity);
-    syclcompat::wait();
-  } else {
-    assert(false && "Not supported dtype");
-  }
+  cutlass::reference::host::BlockFillRandomUniform(buff.data(), capacity, seed, max, min, bits);
+
+  syclcompat::memcpy<Element>(ptr, buff.data(), capacity);
+  syclcompat::wait();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
