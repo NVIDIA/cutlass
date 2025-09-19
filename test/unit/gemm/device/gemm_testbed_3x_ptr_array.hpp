@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2124,7 +2125,7 @@ struct TestbedImpl {
     status = gemm_op.run();
 #if defined SYCL_INTEL_TARGET
     result = cudaSuccess;
-    syclcompat::wait();
+    compat::wait();
 #else
     result = cudaDeviceSynchronize();
 #endif

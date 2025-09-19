@@ -31,7 +31,7 @@
  **************************************************************************************************/
 
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 
 #include <cute/tensor.hpp>
 
@@ -57,7 +57,7 @@ bool verify(
   char transA,
   char transB
 ) {
-  auto ref_d_C = syclcompat::malloc<TC>(m*n);
+  auto ref_d_C = compat::malloc<TC>(m*n);
   cutlass::TensorRef ref_A_T(d_A, cutlass::layout::RowMajor::packed({m, k}));
   cutlass::TensorRef ref_A_N(d_A, cutlass::layout::ColumnMajor::packed({m, k}));
   
@@ -126,8 +126,8 @@ bool verify(
   }
 
 
-  // CUTLASS on SYCL uses the compatibility library syclcompat for e.g. default in-order queue
-  syclcompat::wait();
+  // CUTLASS on SYCL uses the compatibility library compat for e.g. default in-order queue
+  compat::wait();
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   bool passed = cutlass::reference::device::BlockCompareEqual(
@@ -168,7 +168,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler, int stages,
   Tensor mC_coord = cute::get_xe_tensor(C_shape);   //(m,n,l)
 
   // Get the appropriate blocks for this thread block
-  auto cta_coord = make_coord(syclcompat::work_group_id::x(), syclcompat::work_group_id::y(), 0);  // (m,n,k)
+  auto cta_coord = make_coord(compat::work_group_id::x(), compat::work_group_id::y(), 0);  // (m,n,k)
 
   Tensor gA = local_tile(mA_coord, select<0,2>(cta_tiler), make_coord(BlockIdxX(),_,BlockIdxZ()));  // (BLK_M,BLK_K,k)
   Tensor gB = local_tile(mB_coord, select<1,2>(cta_tiler), make_coord(BlockIdxY(),_,BlockIdxZ()));  // (BLK_N,BLK_K,k)
@@ -180,7 +180,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler, int stages,
 
   TiledMma tiled_mma;
   constexpr int sg_size = 16;
-  auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+  auto sg = compat::get_nd_item<1>().get_sub_group();
   auto first_thread_in_sg_idx = sg.get_group_linear_id() * sg_size;
   auto thr_mma = tiled_mma.get_slice(first_thread_in_sg_idx);
 
@@ -192,8 +192,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler, int stages,
   Tensor tCrA = make_tensor<TA>(make_fragment_layout(copy_a, tCgA(_,_,_,0).shape()));
   Tensor tCrB = make_tensor<TB>(make_fragment_layout(copy_b, tCgB(_,_,_,0).shape()));
 
-  ThrCopy thr_copy_a = copy_a.get_slice(syclcompat::local_id::x());
-  ThrCopy thr_copy_b = copy_b.get_slice(syclcompat::local_id::x());
+  ThrCopy thr_copy_a = copy_a.get_slice(compat::local_id::x());
+  ThrCopy thr_copy_b = copy_b.get_slice(compat::local_id::x());
 
   // Retile registers for copies
   Tensor tArA = thr_copy_a.retile_D(tCrA);
@@ -313,23 +313,23 @@ gemm_nt(int m, int n, int k,
   TiledMMA mmaC = TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<decltype(cta_tiler)>,
                                  Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA{};
 
-  auto dimBlock = syclcompat::dim3(size(mmaC));
-  auto dimGrid  = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+  auto dimBlock = compat::dim3(size(mmaC));
+  auto dimGrid  = compat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
   constexpr int SubgroupSize = 16;
   constexpr int smem_size = 0;
   auto kernel_props = [] {
-    return syclcompat::experimental::kernel_properties{
+    return compat::experimental::kernel_properties{
       sycl::ext::oneapi::experimental::sub_group_size<SubgroupSize>
     };
   }();
-  syclcompat::experimental::launch_properties launch_props {
+  compat::experimental::launch_properties launch_props {
     sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
   };
-  syclcompat::experimental::launch_policy policy{
+  compat::experimental::launch_policy policy{
     dimGrid, dimBlock, launch_props, kernel_props
   };
-  auto event = syclcompat::experimental::launch<
+  auto event = compat::experimental::launch<
     gemm_device<decltype(prob_shape), decltype(cta_tiler),
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
@@ -390,23 +390,23 @@ gemm_tn(int m, int n, int k,
   TiledMMA mmaC = TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<decltype(cta_tiler)>,
                                     Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA{};  // 256x128x16 TiledMMA
 
-  auto dimBlock = syclcompat::dim3(size(mmaC));
-  auto dimGrid  = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+  auto dimBlock = compat::dim3(size(mmaC));
+  auto dimGrid  = compat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
   constexpr int SubgroupSize = 16;
   constexpr int smem_size = 0;
   auto kernel_props = [] {
-    return syclcompat::experimental::kernel_properties{
+    return compat::experimental::kernel_properties{
       sycl::ext::oneapi::experimental::sub_group_size<SubgroupSize>
     };
   }();
-  syclcompat::experimental::launch_properties launch_props {
+  compat::experimental::launch_properties launch_props {
     sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
   };
-  syclcompat::experimental::launch_policy policy{
+  compat::experimental::launch_policy policy{
     dimGrid, dimBlock, launch_props, kernel_props
   };
-  auto event = syclcompat::experimental::launch<
+  auto event = compat::experimental::launch<
     gemm_device<decltype(prob_shape), decltype(cta_tiler),
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
@@ -465,24 +465,24 @@ gemm_tt(int m, int n, int k,
   TiledMMA mmaC = TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<decltype(cta_tiler)>,
                                  Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA{};
 
-  auto dimBlock = syclcompat::dim3(size(mmaC));
-  auto dimGrid  = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+  auto dimBlock = compat::dim3(size(mmaC));
+  auto dimGrid  = compat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
   // Cutlass only support simd_16
   constexpr int SubgroupSize = 16;
   constexpr int smem_size = 0;
   auto kernel_props = [] {
-    return syclcompat::experimental::kernel_properties{
+    return compat::experimental::kernel_properties{
       sycl::ext::oneapi::experimental::sub_group_size<SubgroupSize>
     };
   }();
-  syclcompat::experimental::launch_properties launch_props {
+  compat::experimental::launch_properties launch_props {
     sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
   };
-  syclcompat::experimental::launch_policy policy{
+  compat::experimental::launch_policy policy{
     dimGrid, dimBlock, launch_props, kernel_props
   };
-  auto event = syclcompat::experimental::launch<
+  auto event = compat::experimental::launch<
     gemm_device<decltype(prob_shape), decltype(cta_tiler),
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
@@ -562,13 +562,13 @@ int main(int argc, char** argv)
   for (int j = 0; j < n*k; ++j) h_B[j] = static_cast<TB>( (rand()%21) - 10 );
   for (int j = 0; j < m*n; ++j) h_C[j] = static_cast<TC>(-1);
 
-  auto d_A = syclcompat::malloc<TA>(m*k);
-  auto d_B = syclcompat::malloc<TB>(k*n);
-  auto d_C = syclcompat::malloc<TC>(m*n);
+  auto d_A = compat::malloc<TA>(m*k);
+  auto d_B = compat::malloc<TB>(k*n);
+  auto d_C = compat::malloc<TC>(m*n);
 
-  syclcompat::memcpy<TA>(d_A, h_A.data(), m*k);
-  syclcompat::memcpy<TB>(d_B, h_B.data(), k*n);
-  syclcompat::memcpy<TC>(d_C, h_C.data(), m*n);
+  compat::memcpy<TA>(d_A, h_A.data(), m*k);
+  compat::memcpy<TB>(d_B, h_B.data(), k*n);
+  compat::memcpy<TC>(d_C, h_C.data(), m*n);
 
   int ldA = 0, ldB = 0, ldC = m;
 
@@ -597,7 +597,7 @@ int main(int argc, char** argv)
        d_B, ldB,
        beta,
        d_C, ldC);
-  syclcompat::wait_and_throw();
+  compat::wait_and_throw();
 
   bool passed = verify(
     d_A,
@@ -630,7 +630,7 @@ int main(int argc, char** argv)
          beta,
          d_C, ldC);
   }
-  syclcompat::wait();
+  compat::wait();
   double cute_time = timer.seconds() / timing_iterations;
   printf("CUTE_GEMM:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
 

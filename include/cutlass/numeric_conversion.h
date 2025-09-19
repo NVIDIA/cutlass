@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -5559,7 +5560,7 @@ private:
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
 #if defined(CUTLASS_ENABLE_SYCL)
-      t[ii] = syclcompat::dp4a(x, mask[ii], 0);
+      t[ii] = compat::dp4a(x, mask[ii], 0);
 #else
       t[ii] = __dp4a(x, mask[ii], 0);
 #endif

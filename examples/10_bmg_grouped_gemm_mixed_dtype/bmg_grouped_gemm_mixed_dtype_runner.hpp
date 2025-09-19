@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2025 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -315,9 +316,9 @@ struct ExampleRunner {
       SrcT* h_src = new SrcT[size * L];
       ElementScale* scale_h = new ElementScale[L];
       ElementZero* zero_h = new ElementZero[L];
-      syclcompat::memcpy(h_src, d_src, size * L * sizeof(SrcT));
-      syclcompat::memcpy(scale_h, scale, L * sizeof(ElementScale));
-      syclcompat::memcpy(zero_h, zero, L * sizeof(ElementZero));
+      compat::memcpy(h_src, d_src, size * L * sizeof(SrcT));
+      compat::memcpy(scale_h, scale, L * sizeof(ElementScale));
+      compat::memcpy(zero_h, zero, L * sizeof(ElementZero));
       
       DstT* h_dst = new DstT[size * L];
       for(size_t j = 0; j < L; ++j) {
@@ -326,7 +327,7 @@ struct ExampleRunner {
         }
       }
 
-      syclcompat::memcpy(d_dst, h_dst, size * sizeof(DstT));
+      compat::memcpy(d_dst, h_dst, size * sizeof(DstT));
   }
 
   /// Populates a Gemm::Arguments structure from the given commandline options
@@ -466,10 +467,10 @@ struct ExampleRunner {
       CUTLASS_CHECK(gemm_ref.initialize(arguments, workspace.get()));
       CUTLASS_CHECK(gemm_ref.run());
 
-      syclcompat::wait();
+      compat::wait();
       // compare_reference
       passed |= cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_D.get(), block_D.get() + offset_D[i], block_ref_D.size(), epsilon, non_zero_floor);
-      syclcompat::wait();
+      compat::wait();
     }
 
     return passed;
@@ -615,7 +616,7 @@ struct ExampleRunner {
     std::vector<uint8_t> zero(size(zero_layout) * sizeof_bits_v<ElementZero> / 8, 0);
     cutlass::device_memory::copy_to_host(zero.data(), (uint8_t*)zero_buffer, zero.size());
 
-    syclcompat::wait();
+    compat::wait();
 
     auto dst_tensor = make_tensor(make_gmem_ptr(reinterpret_cast<DequantizedElement*>(dst.data())), operand_layout);
 
@@ -669,7 +670,7 @@ struct ExampleRunner {
     }
 
     cutlass::device_memory::copy_to_device(dq_buffer, (DequantizedElement*)(raw_pointer_cast(dst_tensor.data())), dst_tensor.size());
-    syclcompat::wait();
+    compat::wait();
   }
 
 
@@ -872,7 +873,7 @@ struct ExampleRunner {
     // Run the GEMM
     CUTLASS_CHECK(gemm_op.run());
 
-    syclcompat::wait();
+    compat::wait();
 
     // Verify that the result is correct
     bool passed = verify(options);
@@ -886,7 +887,7 @@ struct ExampleRunner {
       for (int i = 0; i < options.iterations; ++i) {
         gemm_op.run();
       }
-      syclcompat::wait();
+      compat::wait();
 
       float cute_time = timer.seconds() / options.iterations;
       double cute_average_time = double(cute_time) / double(options.iterations);

@@ -30,7 +30,7 @@
 **************************************************************************************************/
 
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 #include <sycl/ext/intel/experimental/grf_size_properties.hpp>
 
 #include <cute/tensor.hpp>

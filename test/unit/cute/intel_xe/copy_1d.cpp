@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,13 +34,13 @@
 
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 
 #include "cutlass_unit_test.h"
 
 using namespace cute;
 using namespace cutlass;
-using namespace syclcompat::experimental;
+using namespace compat::experimental;
 
 #define SUBGROUP_SIZE (16)
 
@@ -50,7 +51,7 @@ void copy_kernel_vectorized(TensorS tile_S, TensorD tile_D) {
   using Element = typename TensorS::value_type;
 
   // Shared memory buffers
-  auto smem = syclcompat::local_mem<Element[size(tile_S)]>();
+  auto smem = compat::local_mem<Element[size(tile_S)]>();
   Tensor sTensor = make_tensor(make_smem_ptr(smem), tile_S.layout());
 
   // Define `AccessType` which controls the size of the actual memory access.
@@ -180,15 +181,15 @@ TEST(PVC_1d_copy, copy_double) {
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(subgroup_size);
+    auto blockDim = compat::dim3(subgroup_size);
 
     launch<copy_kernel_vectorized<decltype(S), decltype(D)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       // printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
@@ -221,17 +222,17 @@ TEST(PVC_1d_copy, copy_double) {
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(subgroup_size);
+    auto blockDim = compat::dim3(subgroup_size);
     //
     // Launch the kernel
     //
     launch<copy_kernel_vectorized<decltype(S), decltype(D)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], host_src[i]);
@@ -263,17 +264,17 @@ TEST(PVC_1d_copy, copy_double) {
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(subgroup_size);
+    auto blockDim = compat::dim3(subgroup_size);
     //
     // Launch the kernel
     //
     launch<copy_kernel_vectorized<decltype(S), decltype(D)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], host_src[i]);

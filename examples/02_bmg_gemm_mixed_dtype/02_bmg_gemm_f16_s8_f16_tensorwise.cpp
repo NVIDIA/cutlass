@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2025 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -193,10 +194,10 @@ struct ExampleRunner {
       SrcT* h_src = new SrcT[size * L];
       ElementScale* scale_h = new ElementScale[L];
       ElementZero* zero_h = new ElementZero[L];
-      syclcompat::memcpy(h_src, d_src, size * L * sizeof(SrcT));
-      syclcompat::wait();
-      syclcompat::memcpy(scale_h, scale, L * sizeof(ElementScale));
-      syclcompat::memcpy(zero_h, zero, L * sizeof(ElementZero));
+      compat::memcpy(h_src, d_src, size * L * sizeof(SrcT));
+      compat::wait();
+      compat::memcpy(scale_h, scale, L * sizeof(ElementScale));
+      compat::memcpy(zero_h, zero, L * sizeof(ElementZero));
       
       DstT* h_dst = new DstT[size * L];
       for(size_t j = 0; j < L; ++j) {
@@ -205,8 +206,8 @@ struct ExampleRunner {
         }
       }
 
-      syclcompat::memcpy(d_dst, h_dst, size * sizeof(DstT));
-      syclcompat::wait();
+      compat::memcpy(d_dst, h_dst, size * sizeof(DstT));
+      compat::wait();
   }
 
   bool verify(const ProblemShapeType& problem_size, ElementCompute alpha, ElementCompute beta) {
@@ -245,7 +246,7 @@ struct ExampleRunner {
           M * N,
           M * N 
       );
-      syclcompat::wait();
+      compat::wait();
 
       bool passed = cutlass::reference::device::BlockCompareEqual(
           block_ref_D.get(), block_D.get(), block_D.size());
@@ -311,7 +312,7 @@ struct ExampleRunner {
     // Run the GEMM
     CUTLASS_CHECK(gemm_op.run());
 
-    syclcompat::wait();
+    compat::wait();
 
     // Verify that the result is correct
     bool passed = verify(problem_size, options.alpha, options.beta);
@@ -325,7 +326,7 @@ struct ExampleRunner {
       for (int i = 0; i < options.iterations; ++i) {
         gemm_op.run();
       }
-      syclcompat::wait();
+      compat::wait();
 
       float cute_time = timer.seconds() / options.iterations;
       double tflops = (2.0 * options.m * options.n * options.k * options.l) * 1e-12;

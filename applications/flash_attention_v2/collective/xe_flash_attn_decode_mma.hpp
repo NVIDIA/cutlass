@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -226,7 +227,7 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     auto thr_copy_K = gmem_tiled_copy_k.get_slice(thread_idx);
     // Instantiate the MMA object
     TiledMmaQK tiled_mma;
-    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+    auto sg = compat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_id()[0] * DispatchPolicy::SubgroupSize;
     // For Normal Attention, K matrix tile_id = subgroup_id (cache and new both)
     // For Paged Attention, K matrix tile_id = page_table[subgroup_id] (cache, new keys follow normal attention)
@@ -315,7 +316,7 @@ struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ele
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
     TiledMmaPV tiled_mma;
-    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+    auto sg = compat::get_nd_item<1>().get_sub_group();
     auto thread_mma = tiled_mma.get_slice(0);
     // convert X*512|1024 to 32*64*x*8|16 and use (_, sg.get_group_id()[0] / ATOM_N) to index in the (x,8|16) coordinate
     Tensor gV_ = take<0,3>(local_tile(gV, select<1,2>(SubgroupTileShapePV{}), make_coord(_, kv_tile_idx)));

@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,8 +41,8 @@
 #include <cute/tensor.hpp>
 
 #if defined(CUTLASS_ENABLE_SYCL)
-namespace sc = syclcompat;
-namespace sc_exp = syclcompat::experimental;
+namespace sc = compat;
+namespace sc_exp = compat::experimental;
 namespace sycl_ext = sycl::ext::oneapi::experimental;
 #endif
 

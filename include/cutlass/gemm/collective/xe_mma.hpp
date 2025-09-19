@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -183,7 +184,7 @@ struct CollectiveMma<MainloopIntelXeXMX16<Stages, Schedule>, TileShape_, Element
     TiledMma tiled_mma;
     // TODO(Codeplay): see if we can make this nicer
     // To make all work items in a subgroup have the same global tensors pass in the index of work item 0 in each subgroup
-    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+    auto sg = compat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_linear_id() * DispatchPolicy::SubgroupSize;
     auto thr_mma = tiled_mma.get_slice(first_thread_in_sg_idx);
 

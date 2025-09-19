@@ -1,6 +1,7 @@
 
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -76,8 +77,8 @@ test_copy_vectorization(CopyPolicy policy, GmemLayout gmem_layout, RmemTiler rme
   device_vector<T> d_in = h_in;
   Tensor m_in = make_tensor(make_gmem_ptr(raw_pointer_cast(d_in.data())), gmem_layout);
   #if defined(CUTLASS_ENABLE_SYCL)
-  syclcompat::launch<kernel<decltype(m_in),decltype(rmem_tiler),  decltype(policy)>>(
-    syclcompat::dim3(1), syclcompat::dim3(1),
+  compat::launch<kernel<decltype(m_in),decltype(rmem_tiler),  decltype(policy)>>(
+    compat::dim3(1), compat::dim3(1),
     m_in, rmem_tiler, policy
   );
   #else

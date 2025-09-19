@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,7 +39,7 @@
 
 #if defined(CUTLASS_ENABLE_SYCL)
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -63,7 +64,7 @@ unsigned int ThreadIdxX() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_id::x();
+  return compat::local_id::x();
 #else
   return 0;
 #endif
@@ -74,7 +75,7 @@ unsigned int ThreadIdxY() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_id::y();
+  return compat::local_id::y();
 #else
   return 0;
 #endif
@@ -85,7 +86,7 @@ unsigned int ThreadIdxZ() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_id::z();
+  return compat::local_id::z();
 #else
   return 0;
 #endif
@@ -96,7 +97,7 @@ unsigned int BlockIdxX() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_id::x();
+  return compat::work_group_id::x();
 #else
   return 0;
 #endif
@@ -107,7 +108,7 @@ unsigned int BlockIdxY() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_id::y();
+  return compat::work_group_id::y();
 #else
   return 0;
 #endif
@@ -118,7 +119,7 @@ unsigned int BlockIdxZ() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_id::z();
+  return compat::work_group_id::z();
 #else
   return 0;
 #endif
@@ -129,7 +130,7 @@ unsigned int BlockDimX() {
 #if defined(__CUDA_ARCH__)
   return blockDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_range::x();
+  return compat::local_range::x();
 #else
   return 0;
 #endif
@@ -140,7 +141,7 @@ unsigned int BlockDimY() {
 #if defined(__CUDA_ARCH__)
   return blockDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_range::y();
+  return compat::local_range::y();
 #else
   return 0;
 #endif
@@ -151,7 +152,7 @@ unsigned int BlockDimZ() {
 #if defined(__CUDA_ARCH__)
   return blockDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::local_range::z();
+  return compat::local_range::z();
 #else
   return 0;
 #endif
@@ -162,7 +163,7 @@ unsigned int GridDimX() {
 #if defined(__CUDA_ARCH__)
   return gridDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::x();
+  return compat::work_group_range::x();
 #else
   return 0;
 #endif
@@ -173,7 +174,7 @@ unsigned int GridDimY() {
 #if defined(__CUDA_ARCH__)
   return gridDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::y();
+  return compat::work_group_range::y();
 #else
   return 0;
 #endif
@@ -184,7 +185,7 @@ unsigned int GridDimZ() {
 #if defined(__CUDA_ARCH__)
   return gridDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::z();
+  return compat::work_group_range::z();
 #else
   return 0;
 #endif
@@ -203,7 +204,7 @@ void syncthreads() {
 #if defined(__CUDA_ARCH__)
   __syncthreads();
 #elif defined(__SYCL_DEVICE_ONLY__)
-  syclcompat::wg_barrier();
+  compat::wg_barrier();
 #endif
 }
 
@@ -212,7 +213,7 @@ int syncthreads_and(int cond) {
 #if defined(__CUDA_ARCH__)
   return __syncthreads_and(cond);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  auto group = syclcompat::get_nd_item<1>().get_group();
+  auto group = compat::get_nd_item<1>().get_group();
   sycl::group_barrier(group);
   return sycl::all_of_group(group, cond);
 #else
@@ -225,7 +226,7 @@ void syncwarp() {
 #if defined(__CUDA_ARCH__)
   __syncwarp();
 #elif defined(__SYCL_DEVICE_ONLY__)
-  sycl::group_barrier(syclcompat::get_nd_item<1>().get_sub_group());
+  sycl::group_barrier(compat::get_nd_item<1>().get_sub_group());
 #endif
 }
 
@@ -244,7 +245,7 @@ unsigned int byte_perm(unsigned int x, unsigned int y, unsigned int s) {
 #if defined(__CUDA_ARCH__)
   return __byte_perm(x, y, s);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::byte_level_permute(x, y, s);
+  return compat::byte_level_permute(x, y, s);
 #else
   return 0;
 #endif
@@ -262,7 +263,7 @@ T shfl_up_sync(
 #if defined(__CUDA_ARCH__)
   return __shfl_up_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::shift_sub_group_right(syclcompat::get_nd_item<1>().get_sub_group(), var, delta, width);
+  return compat::shift_sub_group_right(compat::get_nd_item<1>().get_sub_group(), var, delta, width);
 #else
   return static_cast<T>(0);
 #endif
@@ -278,7 +279,7 @@ T shfl_down_sync(
 #if defined(__CUDA_ARCH__)
   return __shfl_down_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::shift_sub_group_left(syclcompat::get_nd_item<1>().get_sub_group(), var, delta, width);
+  return compat::shift_sub_group_left(compat::get_nd_item<1>().get_sub_group(), var, delta, width);
 #else
   return static_cast<T>(0);
 #endif
@@ -294,7 +295,7 @@ T shfl_sync(
 #if defined(__CUDA_ARCH__)
   return __shfl_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  auto g = syclcompat::get_nd_item<1>().get_sub_group();
+  auto g = compat::get_nd_item<1>().get_sub_group();
   unsigned int start_index = (g.get_local_linear_id() / width) * width;
   return sycl::select_from_group(g, var, start_index + delta % width);
 #else
@@ -312,8 +313,8 @@ T shfl_xor_sync(
 #if defined(__CUDA_ARCH__)
   return __shfl_xor_sync(mask, var, laneMask, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  auto g = syclcompat::get_nd_item<1>().get_sub_group();
-  return syclcompat::permute_sub_group_by_xor(g, var, laneMask);
+  auto g = compat::get_nd_item<1>().get_sub_group();
+  return compat::permute_sub_group_by_xor(g, var, laneMask);
 #else
   return static_cast<T>(0);
 #endif
@@ -353,13 +354,13 @@ namespace cutlass {
 // Stream
 using cudaStream_t = sycl::queue *;
 
-using dim3 = syclcompat::dim3;
+using dim3 = compat::dim3;
 
 // Atomic
 template <typename T>
 CUTLASS_DEVICE T atomicAdd(T *address, T val) {
 #if defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::atomic_fetch_add<sycl::access::address_space::global_space>(address, val);
+  return compat::atomic_fetch_add<sycl::access::address_space::global_space>(address, val);
 #endif
   return static_cast<T>(0);
 }
@@ -367,7 +368,7 @@ CUTLASS_DEVICE T atomicAdd(T *address, T val) {
 CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
   int result = 0;
 #if defined(__SYCL_DEVICE_ONLY__)
-  result = syclcompat::atomic_compare_exchange_strong(address, compare, val);
+  result = compat::atomic_compare_exchange_strong(address, compare, val);
 #endif
   return result;
 }
@@ -409,8 +410,8 @@ CUTLASS_HOST_DEVICE
 cudaError_t cudaMemsetAsync(void *devPtr, unsigned int value, size_t count, cudaStream_t stream = nullptr) {
   static_assert(std::is_same_v<T, void>, "cudaMemsetAsync takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
-  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
-  syclcompat::fill_async(devPtr, value, count, q);
+  sycl::queue q = stream ? *stream : compat::get_default_queue();
+  compat::fill_async(devPtr, value, count, q);
   return cudaSuccess;
 }
 
@@ -424,8 +425,8 @@ CUresult cuMemsetD32Async(CUdeviceptr devPtr, uint32_t value, size_t count, cuda
   static_assert(std::is_same_v<T, void>, "cuMemsetD32Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
-  syclcompat::fill_async(ptr, value, count, q);
+  sycl::queue q = stream ? *stream : compat::get_default_queue();
+  compat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 
@@ -435,8 +436,8 @@ CUresult cuMemsetD16Async(CUdeviceptr devPtr, uint16_t value, size_t count, cuda
   static_assert(std::is_same_v<T, void>, "cuMemsetD16Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
-  syclcompat::fill_async(ptr, value, count, q);
+  sycl::queue q = stream ? *stream : compat::get_default_queue();
+  compat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 
@@ -446,8 +447,8 @@ CUresult cuMemsetD8Async(CUdeviceptr devPtr, uint8_t value, size_t count, cudaSt
   static_assert(std::is_same_v<T, void>, "cuMemsetD8Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
-  syclcompat::fill_async(ptr, value, count, q);
+  sycl::queue q = stream ? *stream : compat::get_default_queue();
+  compat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 
@@ -480,7 +481,7 @@ cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
 
 // Expose dim3 in the cute namespace
 namespace cute {
-  using dim3 = syclcompat::dim3;
+  using dim3 = compat::dim3;
 }
 #endif
 

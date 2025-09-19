@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,7 +62,7 @@ struct KernelHardwareInfo {
 #if defined (CUTLASS_ENABLE_SYCL)
   static inline int
   query_device_multiprocessor_count(int device_id = 0) {
-    auto& dev = syclcompat::get_device(device_id);
+    auto& dev = compat::get_device(device_id);
     int multiprocessor_count = 1;
     //TODO (Codeplay): Replace with device.get_info<sycl::ext::oneapi::info::device::num_compute_units>() once available 
 #if defined __SYCL_CUDA_ARCH__

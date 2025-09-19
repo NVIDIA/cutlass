@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -204,7 +205,7 @@ struct ExampleRunner {
           M * N  // batch_stride_D
         );
 
-    syclcompat::wait();
+    compat::wait();
 
     auto D_shape = make_shape(M, N, L);
     auto D1_shape = make_shape(M, NUM_HEAD, NOPE_DIM, L);
@@ -215,8 +216,8 @@ struct ExampleRunner {
     auto D1 = std::vector<ElementOutput>(size(D1_shape));
     // 256x128x128
     auto D2 = std::vector<ElementOutput>(size(D2_shape));
-    syclcompat::memcpy<ElementOutput>(D.data(), block_ref_D.get(), size(D_shape));
-    syclcompat::wait();
+    compat::memcpy<ElementOutput>(D.data(), block_ref_D.get(), size(D_shape));
+    compat::wait();
 
     for (int l = 0; l < L; l++) {
       for (int i = 0; i < M; i++) {
@@ -235,15 +236,15 @@ struct ExampleRunner {
     }
 
     auto test_D = std::vector<ElementOutput>(size(D_shape));
-    syclcompat::memcpy<ElementOutput>(test_D.data(), block_D.get(), size(D_shape));
+    compat::memcpy<ElementOutput>(test_D.data(), block_D.get(), size(D_shape));
 
     // 256x128x64
     auto test_D1 = std::vector<ElementOutput>(size(D1_shape));
     // 256x128x128
     auto test_D2 = std::vector<ElementOutput>(size(D2_shape));
-    syclcompat::memcpy<ElementOutput>(test_D1.data(), block_D1.get(), size(D1_shape));
-    syclcompat::memcpy<ElementOutput>(test_D2.data(), block_D2.get(), size(D2_shape));
-    syclcompat::wait();
+    compat::memcpy<ElementOutput>(test_D1.data(), block_D1.get(), size(D1_shape));
+    compat::memcpy<ElementOutput>(test_D2.data(), block_D2.get(), size(D2_shape));
+    compat::wait();
 
     uint32_t err_cnt = 0;
     constexpr float atol = 1e-4;
@@ -358,7 +359,7 @@ struct ExampleRunner {
     // Run the GEMM
     gemm_op.run();
 
-    syclcompat::wait();
+    compat::wait();
 
     // Verify that the result is correct
     bool passed = verify(problem_size, splitk_size, options.alpha, options.beta);

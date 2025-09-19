@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,8 +49,8 @@ namespace detail {
 template <class STensor, uint32_t row, uint32_t SgN, class RTensor, class OutTensor>
 CUTLASS_DEVICE
 void group_reduce_sum_partial(STensor &stensor, RTensor &vec, OutTensor &out) {
-  auto sg = syclcompat::get_nd_item<1>().get_sub_group();
-  auto group = syclcompat::get_nd_item<1>().get_group();
+  auto sg = compat::get_nd_item<1>().get_sub_group();
+  auto group = compat::get_nd_item<1>().get_group();
 
   CUTLASS_PRAGMA_UNROLL
   for (int i = 0; i < size(vec); i++) {
@@ -126,8 +127,8 @@ void group_reduce_sum_partial(STensor &stensor, RTensor &vec, OutTensor &out) {
 template <class STensor, uint32_t row, uint32_t SgN, class RTensor, class OutTensor>
 CUTLASS_DEVICE
 void group_reduce_max_partial(STensor &stensor, RTensor &vec, OutTensor &out) {
-  auto sg = syclcompat::get_nd_item<1>().get_sub_group();
-  auto group = syclcompat::get_nd_item<1>().get_group();
+  auto sg = compat::get_nd_item<1>().get_sub_group();
+  auto group = compat::get_nd_item<1>().get_group();
 
   CUTLASS_PRAGMA_UNROLL
   for (int i = 0; i < size(vec); i++) {
@@ -388,7 +389,7 @@ public:
       constexpr auto vec_size = min(Epi_M, Sg_N);
       constexpr auto vec_folds = Epi_M / vec_size;
 
-      auto smem = syclcompat::local_mem<float[Sg_Nums * vec_size]>();
+      auto smem = compat::local_mem<float[Sg_Nums * vec_size]>();
       Tensor stensor = make_tensor(make_smem_ptr(smem), make_shape(Int<vec_size>{}, Int<Sg_N>{}, Int<Sg_M>{}));
 
       Tensor res =

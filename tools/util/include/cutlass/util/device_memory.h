@@ -1,5 +1,6 @@
 /******************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,7 +61,7 @@ T* allocate(size_t count = 1) {
 
 #if defined(CUTLASS_ENABLE_SYCL)
   if (count > 0) {
-    ptr = reinterpret_cast<T*>(syclcompat::malloc(bytes));
+    ptr = reinterpret_cast<T*>(compat::malloc(bytes));
     if ((void*)ptr == nullptr) {
       throw std::runtime_error("Failed to allocate memory");
     }
@@ -93,7 +94,7 @@ template <typename T>
 void free(T* ptr) {
   if (ptr) {
 #if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::free(ptr);
+    compat::free(ptr);
     if (ptr != nullptr) {
       throw std::runtime_error("Failed to free device memory");
     }
@@ -117,7 +118,7 @@ void copy(T* dst, T const* src, size_t count, cudaMemcpyKind kind) {
     bytes = 1;
   }
 #if defined(CUTLASS_ENABLE_SYCL)
-  syclcompat::memcpy(dst, src, bytes);
+  compat::memcpy(dst, src, bytes);
 #else
   cudaError_t cuda_error = (cudaMemcpy(dst, src, bytes, kind));
   if (cuda_error != cudaSuccess) {
@@ -198,7 +199,7 @@ public:
   struct deleter {
     void operator()(T* ptr) {
 #if defined(CUTLASS_ENABLE_SYCL)
-      syclcompat::free(ptr);
+      compat::free(ptr);
 #else
       cudaError_t cuda_error = (cudaFree(ptr));
       if (cuda_error != cudaSuccess) {

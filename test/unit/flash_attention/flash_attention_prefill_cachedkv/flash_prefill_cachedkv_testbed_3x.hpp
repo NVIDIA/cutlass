@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -243,10 +244,10 @@ struct TestbedImpl {
           page_mapping[logical_idx] = physical_pages[blk];
         }
       }
-      syclcompat::memcpy(paged_kv_cache.page_table.get(), page_mapping.data(), page_mapping.size() * sizeof(int));
+      compat::memcpy(paged_kv_cache.page_table.get(), page_mapping.data(), page_mapping.size() * sizeof(int));
 
       paged_kv_cache.num_pages_per_seq.reset(num_pages_per_seq.size());
-      syclcompat::memcpy(paged_kv_cache.num_pages_per_seq.get(), num_pages_per_seq.data(), num_pages_per_seq.size() * sizeof(int));
+      compat::memcpy(paged_kv_cache.num_pages_per_seq.get(), num_pages_per_seq.data(), num_pages_per_seq.size() * sizeof(int));
     }
 
     initialize_block(block_Q, seed + 2023);
@@ -406,24 +407,24 @@ struct TestbedImpl {
           cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
 
           // Concatenate K_cache and K
-          syclcompat::memcpy<ElementK>(
+          compat::memcpy<ElementK>(
               block_K_concat.get(),
               block_K_cache.get() + offset_k_cache,
               seq_len_kv_cache * head_size_qk
           );
-          syclcompat::memcpy<ElementK>(
+          compat::memcpy<ElementK>(
               block_K_concat.get() + seq_len_kv_cache * head_size_qk,
               block_K.get() + offset_k,
               seq_len_kv * head_size_qk
           );
 
           // Concatenate V_cache and V
-          syclcompat::memcpy<ElementV>(
+          compat::memcpy<ElementV>(
               block_V_concat.get(),
               block_V_cache.get() + offset_v_cache,
               seq_len_kv_cache * head_size_vo
           );
-          syclcompat::memcpy<ElementV>(
+          compat::memcpy<ElementV>(
               block_V_concat.get() + seq_len_kv_cache * head_size_vo,
               block_V.get() + offset_v,
               seq_len_kv * head_size_vo
@@ -451,10 +452,10 @@ struct TestbedImpl {
                                                 seq_len_qo * seq_len_kv_total    // batch_stride_S
         );
 
-        syclcompat::wait();
+        compat::wait();
 
         std::vector<ElementAccumulator> host_S(block_S.size());
-        syclcompat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
+        compat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
 
         // delete this memory as it is no longer needed
         block_S.reset();
@@ -521,7 +522,7 @@ struct TestbedImpl {
         cutlass::DeviceAllocation<ElementV> block_P;
         block_P.reset(host_P.size());
 
-        syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+        compat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
 
@@ -539,12 +540,12 @@ struct TestbedImpl {
                                                 seq_len_qo * head_size_vo  // batch_stride_O
         );
 
-        syclcompat::wait();
+        compat::wait();
         // delete this memory as it is no longer needed
         block_P.reset();
 
         std::vector<ElementAccumulator> vec_acc(block_acc.size());
-        syclcompat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
+        compat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
 
         // delete this memory as it is no longer needed
         block_acc.reset();
@@ -552,7 +553,7 @@ struct TestbedImpl {
         for(int i = 0; i < vec_out.size(); i++) {
           vec_out[i] = static_cast<ElementOutput>(vec_acc[i]);
         }
-        syclcompat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
+        compat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
 
         offset_q += seq_len_qo * head_size_qk;
         if(kv_group_update % q_group_size==0) {
@@ -566,7 +567,7 @@ struct TestbedImpl {
       }
     }
 
-    syclcompat::wait();
+    compat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_O.get(), block_O.get(),
@@ -659,29 +660,29 @@ struct TestbedImpl {
     // configure smem size and carveout
     int smem_size = FlashPrefillCachedKV::SharedStorageSize;
 
-    const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
-    const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
+    const auto sycl_block = compat::dim3(block.x, block.y, block.z);
+    const auto sycl_grid = compat::dim3(grid.x, grid.y, grid.z);
 
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
-    using namespace syclcompat::experimental;
+    using namespace compat::experimental;
     auto event = launch<cutlass::device_kernel<FlashPrefillCachedKV>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
                       kernel_properties{sycl_exp::sub_group_size<FlashPrefillCachedKV::DispatchPolicy::SubgroupSize>}},
         params);
 #else
-    syclcompat::experimental::launch_properties launch_props {
+    compat::experimental::launch_properties launch_props {
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
     };
-    syclcompat::experimental::kernel_properties kernel_props{
+    compat::experimental::kernel_properties kernel_props{
       sycl::ext::oneapi::experimental::sub_group_size<FlashPrefillCachedKV::DispatchPolicy::SubgroupSize>
     };
-    syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FlashPrefillCachedKV>>(policy, params);
+    compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
+    auto event = compat::experimental::launch<cutlass::device_kernel<FlashPrefillCachedKV>>(policy, params);
 #endif
     EventManager::getInstance().addEvent(event);
 
     try {
-      syclcompat::wait_and_throw();
+      compat::wait_and_throw();
     } catch (std::exception const &e) {
       ADD_FAILURE() << "Error at Kernel Sync.";
       return false;

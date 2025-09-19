@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -290,7 +291,7 @@ struct BenchmarkRunnerGemm {
     std::vector<uint8_t> zero(size(zero_layout) * sizeof_bits_v<ElementZero> / 8, 0);
     cutlass::device_memory::copy_to_host(zero.data(), (uint8_t*)zero_buffer, zero.size());
 
-    syclcompat::wait();
+    compat::wait();
 
     auto dst_tensor = make_tensor(make_gmem_ptr(reinterpret_cast<DequantizedElement*>(dst.data())), select<1, 0, 2>(operand_layout));
 
@@ -362,7 +363,7 @@ struct BenchmarkRunnerGemm {
     }
 
     cutlass::device_memory::copy_to_device(dq_buffer, (DequantizedElement*)(raw_pointer_cast(dst_tensor.data())), dst_tensor.size());
-    syclcompat::wait();
+    compat::wait();
     return dq_buffer;
   }
 
@@ -394,7 +395,7 @@ struct BenchmarkRunnerGemm {
     std::vector<uint8_t> zero(size(zero_layout) * sizeof_bits_v<ElementZero> / 8, 0);
     cutlass::device_memory::copy_to_host(zero.data(), (uint8_t*)zero_buffer, zero.size());
 
-    syclcompat::wait();
+    compat::wait();
 
     auto dst_tensor = make_tensor(make_gmem_ptr(reinterpret_cast<DequantizedElement*>(dst.data())), operand_layout);
 
@@ -448,7 +449,7 @@ struct BenchmarkRunnerGemm {
     }
 
     cutlass::device_memory::copy_to_device(dq_buffer, (DequantizedElement*)(raw_pointer_cast(dst_tensor.data())), dst_tensor.size());
-    syclcompat::wait();
+    compat::wait();
     return dq_buffer;
   }
 
@@ -529,7 +530,7 @@ struct BenchmarkRunnerGemm {
     );
 
 #if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::wait();
+    compat::wait();
 #else
     cudaDeviceSynchronize();
 #endif
@@ -546,7 +547,7 @@ struct BenchmarkRunnerGemm {
           block_ref_D.get(), block_ref_D.get(), block_Aux[0].get(), block_D.size());
     }
 
-    syclcompat::wait();
+    compat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = reference::device::BlockCompareEqual(
@@ -689,7 +690,7 @@ struct BenchmarkRunnerGemm {
     gemm_op.run();
 
 #if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::wait();
+    compat::wait();
 #else
     cudaDeviceSynchronize();
 #endif

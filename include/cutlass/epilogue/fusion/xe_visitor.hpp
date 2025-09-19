@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -420,7 +421,7 @@ struct XeRowBroadcast {
       ptr_row = params.ptr_row;
     }
   // TODO(Codeplay): id_in_sg instead of thread_idx here because incorrect tiled copy definition
-    int id_in_sg = syclcompat::get_nd_item<1>().get_sub_group().get_local_id();
+    int id_in_sg = compat::get_nd_item<1>().get_sub_group().get_local_id();
     Tensor mRow = make_tensor(make_gmem_ptr(ptr_row), make_layout(layout_M,layout_N,layout_L));
     Tensor tCgRow = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
       mRow, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, id_in_sg);

@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -163,7 +164,7 @@ public:
     constexpr int FragsM = shape<1>(FragOutLayout{});
     constexpr int FragsN = size(select<2,3>(shape(FragOutLayout{})));
 
-    auto g = syclcompat::get_nd_item<1>().get_sub_group();
+    auto g = compat::get_nd_item<1>().get_sub_group();
     auto out_reg = make_tensor(static_cast<decltype(out) &&>(out).data() , Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
 
     CUTLASS_PRAGMA_UNROLL

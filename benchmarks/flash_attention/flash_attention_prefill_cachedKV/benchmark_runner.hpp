@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -218,29 +219,29 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
           cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
 
           // Concatenate K_cache and K
-          syclcompat::memcpy<ElementK>(
+          compat::memcpy<ElementK>(
               block_K_concat.get(),
               block_K_cache[0].get() + offset_k_cache,
               seq_len_kv_cache * head_size_qk
           );
-          syclcompat::memcpy<ElementK>(
+          compat::memcpy<ElementK>(
               block_K_concat.get() + seq_len_kv_cache * head_size_qk,
               block_K[0].get() + offset_k,
               seq_len_kv * head_size_qk
           );
 
           // Concatenate V_cache and V
-          syclcompat::memcpy<ElementV>(
+          compat::memcpy<ElementV>(
               block_V_concat.get(),
               block_V_cache[0].get() + offset_v_cache,
               seq_len_kv_cache * head_size_vo
           );
-          syclcompat::memcpy<ElementV>(
+          compat::memcpy<ElementV>(
               block_V_concat.get() + seq_len_kv_cache * head_size_vo,
               block_V[0].get() + offset_v,
               seq_len_kv * head_size_vo
           );
-          syclcompat::wait();
+          compat::wait();
 
           k_ptr = block_K_concat.get();
           v_ptr = block_V_concat.get();
@@ -265,11 +266,11 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
                                                 seq_len_qo * seq_len_kv_total    // batch_stride_S
         );
 
-        syclcompat::wait();
+        compat::wait();
 
         std::vector<ElementAccumulator> host_S(block_S.size());
-        syclcompat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
-        syclcompat::wait();
+        compat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
+        compat::wait();
 
         // delete this memory as it is no longer needed
         block_S.reset();
@@ -336,8 +337,8 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
         cutlass::DeviceAllocation<ElementV> block_P;
         block_P.reset(host_P.size());
 
-        syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
-        syclcompat::wait();
+        compat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+        compat::wait();
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
 
@@ -355,13 +356,13 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
                                                 seq_len_qo * head_size_vo  // batch_stride_O
         );
 
-        syclcompat::wait();
+        compat::wait();
         // delete this memory as it is no longer needed
         block_P.reset();
 
         std::vector<ElementAccumulator> vec_acc(block_acc.size());
-        syclcompat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
-        syclcompat::wait();
+        compat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
+        compat::wait();
 
         // delete this memory as it is no longer needed
         block_acc.reset();
@@ -369,8 +370,8 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
         for(int i = 0; i < vec_out.size(); i++) {
           vec_out[i] = static_cast<ElementOutput>(vec_acc[i]);
         }
-        syclcompat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
-        syclcompat::wait();
+        compat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
+        compat::wait();
 
         offset_q += seq_len_qo * head_size_qk;
         if(kv_group_update % q_group_size==0) {
@@ -384,7 +385,7 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
       }
     }
 
-    syclcompat::wait();
+    compat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_O.get(), block_O.get(),
@@ -566,24 +567,24 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
     // configure smem size and carveout
     int smem_size = GemmKernel::SharedStorageSize;
 
-    const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
-    const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
+    const auto sycl_block = compat::dim3(block.x, block.y, block.z);
+    const auto sycl_grid = compat::dim3(grid.x, grid.y, grid.z);
 
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
-    using namespace syclcompat::experimental;
+    using namespace compat::experimental;
     auto event = launch<cutlass::device_kernel<GemmKernel>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
                       kernel_properties{sycl_exp::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>}},
         params);
 #else
-    syclcompat::experimental::launch_properties launch_props{
+    compat::experimental::launch_properties launch_props{
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size)
     };
-    syclcompat::experimental::kernel_properties kernel_props{
+    compat::experimental::kernel_properties kernel_props{
       sycl::ext::oneapi::experimental::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>
     };
-    syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<GemmKernel>>(policy, params);
+    compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
+    auto event = compat::experimental::launch<cutlass::device_kernel<GemmKernel>>(policy, params);
 #endif
 
     EventManager::getInstance().addEvent(event);
@@ -632,7 +633,7 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
     // Run the GEMM
     run(params);
 
-    syclcompat::wait();
+    compat::wait();
 
     // Verify that the result is correct
     bool use_kv_cache = options.seq_len_kv_cache > 0;

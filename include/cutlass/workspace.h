@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,8 +67,8 @@ zero_workspace(
     CUTLASS_TRACE_HOST("  clearing workspace");
 
 #if defined (CUTLASS_ENABLE_SYCL)
-    auto q = stream ? *stream : syclcompat::get_default_queue();
-    syclcompat::memset_async(workspace, 0, workspace_size, q);
+    auto q = stream ? *stream : compat::get_default_queue();
+    compat::memset_async(workspace, 0, workspace_size, q);
 #elif defined(CUTLASS_ENABLE_CUDA_HOST_ADAPTER) && CUTLASS_ENABLE_CUDA_HOST_ADAPTER
     //
     // Use the cuda host adapter

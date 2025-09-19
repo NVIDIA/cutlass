@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,7 +36,7 @@
 
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 
 #include "cutlass_unit_test.h"
 
@@ -46,7 +47,7 @@ using namespace cutlass;
 using namespace cutlass::layout;
 using namespace cutlass::detail;
 
-using namespace syclcompat::experimental;
+using namespace compat::experimental;
 
 #define SUBGROUP_SIZE (16)
 
@@ -136,10 +137,10 @@ template <class kernel> void run(uint32_t m, uint32_t n, uint32_t k) {
   cutlass::device_vector<TB> d_B = h_B;
   cutlass::device_vector<TC> d_C = h_C;
 
-  auto dimBlock = syclcompat::dim3(
+  auto dimBlock = compat::dim3(
       ceil_div(kernel::wg_tile_m, kernel::sg_tile_m),
       SUBGROUP_SIZE * ceil_div(kernel::wg_tile_n, kernel::sg_tile_n));
-  auto dimGrid = syclcompat::dim3(size(ceil_div(m, kernel::wg_tile_m)),
+  auto dimGrid = compat::dim3(size(ceil_div(m, kernel::wg_tile_m)),
                                   size(ceil_div(n, kernel::wg_tile_n)));
 
   launch<kernel::func>(
@@ -147,7 +148,7 @@ template <class kernel> void run(uint32_t m, uint32_t n, uint32_t k) {
                     kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
       d_A.data(), d_B.data(), d_C.data(), m, n, k);
 
-  syclcompat::wait();
+  compat::wait();
 
   h_C = d_C;
   verify(m, n, k, h_A.data(), h_B.data(), h_C.data(), kernel::is_a_row_major,

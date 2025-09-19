@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,13 +34,13 @@
 
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 
 #include "cutlass_unit_test.h"
 
 using namespace cute;
 using namespace cutlass;
-using namespace syclcompat::experimental;
+using namespace compat::experimental;
 
 #define SUBGROUP_SIZE (16)
 
@@ -125,18 +126,18 @@ TEST(PVC_2d_copy, load_store_global) {
                         Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                         Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(size(tiled_copy));
+    auto blockDim = compat::dim3(size(tiled_copy));
     //
     // Launch the kernel
     //
     launch<copy_kernel_global<decltype(S), decltype(D), decltype(tiled_copy),
                               decltype(tiled_copy)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_copy, tiled_copy);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], host_src[i]);
@@ -174,18 +175,18 @@ TEST(PVC_2d_copy, load_store_global_V) {
                         Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                         Layout<Shape<_8, _2>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(size(tiled_copy));
+    auto blockDim = compat::dim3(size(tiled_copy));
     //
     // Launch the kernel
     //
     launch<copy_kernel_global<decltype(S), decltype(D), decltype(tiled_copy),
                               decltype(tiled_copy)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_copy, tiled_copy);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], host_src[i]);
@@ -199,7 +200,7 @@ void copy_kernel_local(TensorS S, TensorD D, TiledCopy Op) {
   // Shared memory buffers
   using Element = typename TensorS::value_type;
   ;
-  auto smem = syclcompat::local_mem<Element[size(S)]>();
+  auto smem = compat::local_mem<Element[size(S)]>();
   Tensor sTensor = make_tensor(make_smem_ptr(smem), S.layout());
 
   auto thr_copy = Op.get_thread_slice(ThreadIdxX());
@@ -250,17 +251,17 @@ TEST(PVC_2d_copy, load_store_local) {
                         Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                         Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(size(tiled_copy));
+    auto blockDim = compat::dim3(size(tiled_copy));
     //
     // Launch the kernel
     //
     launch<copy_kernel_local<decltype(S), decltype(D), decltype(tiled_copy)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_copy);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], host_src[i]);
@@ -346,18 +347,18 @@ TEST(PVC_2d_copy, load_store_stomic_float) {
                                       Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                                       Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(size(tiled_load));
+    auto blockDim = compat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
     launch<copy_kernel_atomic<decltype(S), decltype(D), decltype(tiled_load),
                               decltype(tiled_atom)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_atom);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], 2 * host_src[i]);
@@ -398,18 +399,18 @@ TEST(PVC_2d_copy, load_store_stomic_int) {
                                       Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                                       Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
-    auto blockDim = syclcompat::dim3(size(tiled_load));
+    auto blockDim = compat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
     launch<copy_kernel_atomic<decltype(S), decltype(D), decltype(tiled_load),
                               decltype(tiled_atom)>>(
         launch_policy{
-            syclcompat::dim3(1), blockDim,
+            compat::dim3(1), blockDim,
             kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_atom);
 
-    syclcompat::wait_and_throw();
+    compat::wait_and_throw();
     host_output = device_output;
     for (int i = 0; i < M * N; ++i) {
       EXPECT_EQ(host_output[i], 2 * host_src[i]);

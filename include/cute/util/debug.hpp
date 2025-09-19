@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,7 +38,7 @@
 
 #if defined(CUTLASS_ENABLE_SYCL)
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 #else
 #include <cuda_runtime_api.h>
 #endif
@@ -130,7 +131,7 @@ block([[maybe_unused]] int bid)
 #if defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == static_cast<unsigned int>(bid);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  using namespace syclcompat;
+  using namespace compat;
   return (work_group_id::x() + work_group_id::y() * work_group_range::x() +
           work_group_id::z() * work_group_range::y() * work_group_range::x() == bid);
 #else
@@ -145,7 +146,7 @@ thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 #if defined(__CUDA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == static_cast<unsigned int>(tid)) && block(bid);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  using namespace syclcompat;
+  using namespace compat;
   return (local_id::x() + local_id::y() * local_range::x() +
           local_id::z() * local_range::x() * local_range::y() == tid) && block(bid);
 #else

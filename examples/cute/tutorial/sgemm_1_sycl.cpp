@@ -1,6 +1,7 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,7 +32,7 @@
  **************************************************************************************************/
 
 #include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+#include <compat.hpp>
 
 #include <cute/tensor.hpp>
 
@@ -96,14 +97,14 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), dC); // (M,N)
 
   // Get the appropriate blocks for this thread block
-  auto cta_coord = make_coord(syclcompat::work_group_id::x(), syclcompat::work_group_id::y(), _);  // (m,n,k)
+  auto cta_coord = make_coord(compat::work_group_id::x(), compat::work_group_id::y(), _);  // (m,n,k)
   Tensor gA = local_tile(mA, cta_tiler, cta_coord, Step<_1, X,_1>{});  // (BLK_M,BLK_K,k)
   Tensor gB = local_tile(mB, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (BLK_N,BLK_K,k)
   Tensor gC = local_tile(mC, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (BLK_M,BLK_N)
 
   // Shared memory buffers
-  auto smemA = syclcompat::local_mem<TA[cosize_v<ASmemLayout>]>();
-  auto smemB = syclcompat::local_mem<TB[cosize_v<BSmemLayout>]>();
+  auto smemA = compat::local_mem<TA[cosize_v<ASmemLayout>]>();
+  auto smemB = compat::local_mem<TB[cosize_v<BSmemLayout>]>();
   Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
   Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
 
@@ -113,11 +114,11 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // TUTORIAL: Example of simple raked partitioning of ThreadLayouts tA|tB over data A|B tiles
 
-  Tensor tAgA = local_partition(gA, tA, syclcompat::local_id::x());    // (THR_M,THR_K,k)
-  Tensor tAsA = local_partition(sA, tA, syclcompat::local_id::x());    // (THR_M,THR_K)
+  Tensor tAgA = local_partition(gA, tA, compat::local_id::x());    // (THR_M,THR_K,k)
+  Tensor tAsA = local_partition(sA, tA, compat::local_id::x());    // (THR_M,THR_K)
 
-  Tensor tBgB = local_partition(gB, tB, syclcompat::local_id::x());    // (THR_N,THR_K,k)
-  Tensor tBsB = local_partition(sB, tB, syclcompat::local_id::x());    // (THR_N,THR_K)
+  Tensor tBgB = local_partition(gB, tB, compat::local_id::x());    // (THR_N,THR_K,k)
+  Tensor tBsB = local_partition(sB, tB, compat::local_id::x());    // (THR_N,THR_K)
 
   CUTE_STATIC_ASSERT_V(size<0>(tAgA) == size<0>(tAsA));                // THR_M
   CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // THR_K
@@ -131,11 +132,11 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   // TUTORIAL: Example of partitioning via projections of a ThreadLayout tC
 
   // Partition sA (M,K) by the rows of tC
-  Tensor tCsA = local_partition(sA, tC, syclcompat::local_id::x(), Step<_1, X>{});  // (THR_M,BLK_K)
+  Tensor tCsA = local_partition(sA, tC, compat::local_id::x(), Step<_1, X>{});  // (THR_M,BLK_K)
   // Partition sB (N,K) by the cols of tC
-  Tensor tCsB = local_partition(sB, tC, syclcompat::local_id::x(), Step< X,_1>{});  // (THR_N,BLK_K)
+  Tensor tCsB = local_partition(sB, tC, compat::local_id::x(), Step< X,_1>{});  // (THR_N,BLK_K)
   // Partition gC (M,N) by the tile of tC
-  Tensor tCgC = local_partition(gC, tC, syclcompat::local_id::x(), Step<_1,_1>{});  // (THR_M,THR_N)
+  Tensor tCgC = local_partition(gC, tC, compat::local_id::x(), Step<_1,_1>{});  // (THR_M,THR_N)
 
   // Allocate the accumulators -- same shape/layout as the partitioned data
   Tensor tCrC = make_tensor_like(tCgC);                                // (THR_M,THR_N)
@@ -204,7 +205,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
     cp_async_fence();        // Label the end of (potential) cp.async instructions
     cp_async_wait<0>();      // Sync on all (potential) cp.async instructions
-    syclcompat::wg_barrier();// Wait for all threads to write to smem
+    compat::wg_barrier();// Wait for all threads to write to smem
 
     // Compute gemm on tC thread-partitioned smem
     gemm(tCsA, tCsB, tCrC);            // (THR_M,THR_N) += (THR_M,BLK_K) * (THR_N,BLK_K)
@@ -221,7 +222,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     //     }
     //   }
 
-    syclcompat::wg_barrier();         // Wait for all threads to read from smem
+    compat::wg_barrier();         // Wait for all threads to read from smem
   }
 
 #endif
@@ -280,10 +281,10 @@ gemm_nt(int m, int n, int k,
   auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (n,k) -> thr_idx
   auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
 
-  auto dimBlock = syclcompat::dim3(size(tC));
-  auto dimGrid  = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+  auto dimBlock = compat::dim3(size(tC));
+  auto dimGrid  = compat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-  auto event = syclcompat::launch<
+  auto event = compat::launch<
       gemm_device<decltype(prob_shape), decltype(cta_tiler),
                   TA, decltype(dA), decltype(sA), decltype(tA),
                   TB, decltype(dB), decltype(sB), decltype(tB),
@@ -337,10 +338,10 @@ gemm_tn(int m, int n, int k,
   auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}), LayoutRight{});  // (n,k) -> thr_idx; k-major
   auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));                 // (m,n) -> thr_idx; m-major
 
-  auto dimBlock = syclcompat::dim3(size(tC));
-  auto dimGrid  = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+  auto dimBlock = compat::dim3(size(tC));
+  auto dimGrid  = compat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-  auto event = syclcompat::launch<
+  auto event = compat::launch<
       gemm_device<decltype(prob_shape), decltype(cta_tiler),
                   TA, decltype(dA), decltype(sA), decltype(tA),
                   TB, decltype(dB), decltype(sB), decltype(tB),
@@ -416,13 +417,13 @@ int main(int argc, char** argv)
   for (int j = 0; j < n*k; ++j) h_B[j] = static_cast<TB>( 2*(rand() / double(RAND_MAX)) - 1 );
   for (int j = 0; j < m*n; ++j) h_C[j] = static_cast<TC>(-1);
 
-  auto d_A = syclcompat::malloc<TA>(m*k);
-  auto d_B = syclcompat::malloc<TB>(k*n);
-  auto d_C = syclcompat::malloc<TC>(m*n);
+  auto d_A = compat::malloc<TA>(m*k);
+  auto d_B = compat::malloc<TB>(k*n);
+  auto d_C = compat::malloc<TC>(m*n);
 
-  syclcompat::memcpy<TA>(d_A, h_A.data(), m*k);
-  syclcompat::memcpy<TB>(d_B, h_B.data(), k*n);
-  syclcompat::memcpy<TC>(d_C, h_C.data(), m*n);
+  compat::memcpy<TA>(d_A, h_A.data(), m*k);
+  compat::memcpy<TB>(d_B, h_B.data(), k*n);
+  compat::memcpy<TC>(d_C, h_C.data(), m*n);
   
   double gflops = (2.0*m*n*k) * 1e-9;
 
@@ -453,7 +454,7 @@ int main(int argc, char** argv)
        d_B, ldB,
        beta,
        d_C, ldC);
-  syclcompat::wait_and_throw();
+  compat::wait_and_throw();
 
   // Timing iterations
   timer.start();

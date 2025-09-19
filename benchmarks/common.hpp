@@ -1,5 +1,6 @@
 /***************************************************************************************************
-* Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,7 +40,7 @@
 namespace cutlass {
   static inline std::size_t get_llc_size() {
     #if defined(CUTLASS_ENABLE_SYCL)
-      return syclcompat::get_default_queue().get_device().get_info<sycl::info::device::global_mem_cache_size>();   
+      return compat::get_default_queue().get_device().get_info<sycl::info::device::global_mem_cache_size>();   
     #else
       cudaDeviceProp prop_struct;
       auto result = cudaGetDeviceProperties(&prop_struct, 0);

@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,7 +35,7 @@
 
 #pragma once
 #ifdef CUTLASS_ENABLE_SYCL
-#include <syclcompat.hpp> 
+#include <compat.hpp> 
 #else
 #include <cuda.h>
 #endif
@@ -111,7 +112,7 @@ bool initialize_block(Element* block, std::size_t size, uint64_t seed, Args_t&&.
     }
   }
 
-  syclcompat::wait();
+  compat::wait();
   return true;
 }
 
@@ -189,7 +190,7 @@ void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
     }
   }
 
-  syclcompat::wait();
+  compat::wait();
 }
 
 #undef CUDA_CHECK

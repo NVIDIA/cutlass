@@ -1,6 +1,6 @@
 /***************************************************************************************************
-* Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
-* Copyright (c) 2025 Intel Corporation, All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -186,8 +186,8 @@ void BlockFillRandomUniformCopyFromHost(
 
   cutlass::reference::host::BlockFillRandomUniform(buff.data(), capacity, seed, max, min, bits);
 
-  syclcompat::memcpy<Element>(ptr, buff.data(), capacity);
-  syclcompat::wait();
+  compat::memcpy<Element>(ptr, buff.data(), capacity);
+  compat::wait();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
