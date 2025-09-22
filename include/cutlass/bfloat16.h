@@ -362,8 +362,7 @@ struct numeric_limits<cutlass::bfloat16_t> {
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
-  static cutlass::bfloat16_t epsilon() { return (cutlass::bfloat16_t)(cutlass::bfloat16_t::bitcast(0x3f81) - cutlass::bfloat16_t::bitcast(0x3f80)); }
-
+  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x3c00); }
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
   static cutlass::bfloat16_t round_error() { return cutlass::bfloat16_t(0.5f); }
@@ -431,8 +430,7 @@ struct numeric_limits<cutlass::bfloat16_t> {
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
-  static cutlass::bfloat16_t epsilon() { return (cutlass::bfloat16_t)(cutlass::bfloat16_t::bitcast(0x3f81) - cutlass::bfloat16_t::bitcast(0x3f80)); }
-
+  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x3c00); }
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
   static cutlass::bfloat16_t round_error() { return cutlass::bfloat16_t(0.5f); }
