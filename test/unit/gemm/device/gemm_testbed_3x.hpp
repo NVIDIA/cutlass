@@ -485,9 +485,11 @@ struct HostCollectiveMainloop {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     {
       CUTLASS_TRACE_HOST("HostCollectiveMainloop::initialize: Check last error before sync_device()");
+#if !defined(CUTLASS_ENABLE_SYCL)
       cudaError_t error = cudaGetLastError();
       const auto error_str = cudaGetErrorString(error);
       CUTLASS_TRACE_HOST("HostCollectiveMainloop::initialize: cudaGetLastError() is " << error_str);
+#endif
       CUTLASS_TRACE_HOST("HostCollectiveMainloop::initialize: tensor_A.host_data()=" << tensor_A.host_data() << ", tensor_A.device_data()=" << tensor_A.device_data());
       CUTLASS_TRACE_HOST("HostCollectiveMainloop::initialize: tensor_B.host_data()=" << tensor_B.host_data() << ", tensor_B.device_data()=" << tensor_B.device_data());
     }
