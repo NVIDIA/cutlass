@@ -678,7 +678,7 @@ Result profile(Options const &options) {
       return result;
     }
 
-    // Print average runtime and GFLOPs.
+    // Print average runtime and GFLOPS.
     result.runtime_ms = double(runtime_ms) / double(options.iterations);
 
     // Cleanup

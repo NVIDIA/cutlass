@@ -472,7 +472,7 @@ bool run(Options &options) {
     return false;
   }
 
-  // Compute average runtime and GFLOPs.
+  // Compute average runtime and GFLOPS.
   result.m = problem_size.m();
   result.n = problem_size.n();
   result.k = problem_size.k();
@@ -603,7 +603,7 @@ bool run(Options &options) {
   std::cout.precision(4);
   std::cout << "Runtime: " << result.runtime_ms << " ms" << std::endl;
   std::cout.precision(2);
-  std::cout << "GFLOPs: " << result.gflops << std::endl;
+  std::cout << "GFLOPS: " << result.gflops << std::endl;
   std::cout << "Normalized L2 norm of" << std::endl;
   std::cout.precision(8);
   std::cout << std::scientific

@@ -607,7 +607,7 @@ int run(Options &options)
     }
     timer.stop();
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     float elapsed_ms = timer.elapsed_millis();
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);

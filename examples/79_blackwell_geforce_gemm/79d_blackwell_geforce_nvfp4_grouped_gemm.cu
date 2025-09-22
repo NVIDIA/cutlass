@@ -849,7 +849,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     }
     timer.stop();
 
-    // Compute average setup and runtime and GFLOPs.
+    // Compute average setup and runtime and GFLOPS.
     float elapsed_ms       = timer.elapsed_millis();
     result.avg_runtime_ms  = double(elapsed_ms) / double(options.iterations);
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);

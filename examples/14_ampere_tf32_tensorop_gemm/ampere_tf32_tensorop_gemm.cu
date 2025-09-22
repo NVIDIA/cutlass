@@ -369,7 +369,7 @@ int run(Options &options) {
     return -1;
   }
 
-  // Compute average runtime and GFLOPs.
+  // Compute average runtime and GFLOPS.
   result.runtime_ms = double(runtime_ms) / double(options.iterations);
   result.gflops = options.gflops(result.runtime_ms / 1000.0);
 
@@ -412,7 +412,7 @@ int run(Options &options) {
 
   if (passed) {
     std::cout << "Runtime: " << result.runtime_ms << " ms" << std::endl;
-    std::cout << " GFLOPs: " << result.gflops << std::endl;
+    std::cout << " GFLOPS: " << result.gflops << std::endl;
   }
 
   std::cout << (passed ? "Passed" : "Failed") << std::endl;

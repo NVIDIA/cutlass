@@ -63,29 +63,29 @@
         Basic data-parallel GEMM
           Disposition: Passed
           Avg runtime: 0.112633 ms
-          GFLOPs: 152530
+          GFLOPS: 152530
 
         StreamK GEMM with default load-balancing
           Disposition: Passed
           Avg runtime: 0.0941929 ms
-          GFLOPs: 182390
+          GFLOPS: 182390
           Speedup vs Basic-DP: 1.196
 
         StreamK emulating basic data-parallel GEMM
           Disposition: Passed
           Avg runtime: 0.113119 ms
-          GFLOPs: 151875
+          GFLOPS: 151875
           Speedup vs Basic-DP: 0.996
 
         Basic split-K GEMM with tile-splitting factor 2
           Disposition: Passed
           Avg runtime: 0.104772 ms
-          GFLOPs: 163973
+          GFLOPS: 163973
 
         StreamK emulating Split-K GEMM with tile-splitting factor 2
           Disposition: Passed
           Avg runtime: 0.105379 ms
-          GFLOPs: 163029
+          GFLOPS: 163029
           Speedup vs Basic-SplitK: 0.994
 
  **************************************************************************************************/
@@ -421,13 +421,13 @@ Result run(std::string description, Options &options)
     }
     timer.stop();
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     float elapsed_ms = timer.elapsed_millis();
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPs: " << result.gflops << std::endl;
+    std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
 
   if (!result.passed) {

@@ -968,7 +968,7 @@ public:
       return result;
     }
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     result.runtime_ms = double(runtime_ms) / double(options.iterations);
     result.gflops = options.gflops(result.runtime_ms / 1000.0);
 
@@ -988,7 +988,7 @@ public:
       << ", " << options.batch_size << "}." << std::endl;
     std::cout << std::endl;
     std::cout << "    " << "Runtime: " << result.runtime_ms << " ms" << std::endl;
-    std::cout << "    " << "GFLOPs: " << result.gflops << std::endl;
+    std::cout << "    " << "GFLOPS: " << result.gflops << std::endl;
 
     return result;
   }

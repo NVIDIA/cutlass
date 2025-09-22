@@ -347,7 +347,7 @@ struct Result {
       out << "Name,";
     }
 
-    out << "Layer,N,D,H,W,C,K,T,R,S,Stride_D,Stride_H,Stride_W,Runtime,GFLOPs";
+    out << "Layer,N,D,H,W,C,K,T,R,S,Stride_D,Stride_H,Stride_W,Runtime,GFLOPS";
 
     return out;
   }
@@ -659,7 +659,7 @@ Result profile_convolution(Options const &options) {
       return result;
     }
 
-    // Print average runtime and GFLOPs.
+    // Print average runtime and GFLOPS.
     result.runtime_ms = double(runtime_ms) / double(options.iterations);
     result.gflops = options.gflops(result.runtime_ms / 1000.0);
 

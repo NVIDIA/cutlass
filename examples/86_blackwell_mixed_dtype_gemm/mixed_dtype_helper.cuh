@@ -169,7 +169,7 @@ void mixed_dtype_profiling(
   cudaEventDestroy(start);
   cudaEventDestroy(stop);
 
-  // Compute average setup and runtime and GFLOPs.
+  // Compute average setup and runtime and GFLOPS.
   result.avg_runtime_ms = std::accumulate(runtimes.begin(), runtimes.end(), 0.0f) / runtimes.size();
   result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 

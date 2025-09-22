@@ -675,7 +675,7 @@ struct Testbed {
 
     std::cout << "         Runtime: " << elapsed_ms_per_iter << " ms\n" << std::endl;
 
-    std::cout << "          GFLOPs: " << gflops_per_second << "  GFLOPs" << std::endl;
+    std::cout << "          GFLOPS: " << gflops_per_second << "  GFLOPS" << std::endl;
     std::cout << "Memory bandwidth: " << gbytes_per_second << "  GiB/s" << std::endl;
 
     return true;

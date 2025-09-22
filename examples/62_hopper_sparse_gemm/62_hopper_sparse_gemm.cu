@@ -502,7 +502,7 @@ struct Runner
       }
       timer.stop();
 
-      // Compute average runtime and GFLOPs.
+      // Compute average runtime and GFLOPS.
       float elapsed_ms = timer.elapsed_millis();
       double avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
       double gflops = options.gflops(avg_runtime_ms / 1000.0);

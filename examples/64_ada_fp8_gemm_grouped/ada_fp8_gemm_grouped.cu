@@ -272,7 +272,7 @@ struct Options {
       output_file.open(output_path.c_str(), open_mode);
 
       if (output_file.good() && open_mode != std::ios_base::app) {
-        output_file << "Tag,Provider,Kind,Groups,Runtime,GFLOPs\n";
+        output_file << "Tag,Provider,Kind,Groups,Runtime,GFLOPS\n";
       }
     }
 
@@ -1029,7 +1029,7 @@ public:
       return result;
     }
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     result.runtime_ms = double(runtime_ms) / double(this->options.iterations);
     result.gflops = this->options.gflops(result.runtime_ms / 1000.0);
 
@@ -1062,7 +1062,7 @@ public:
 
     std::cout << std::endl;
     std::cout << "    " << "Grouped Runtime: " << result.runtime_ms << " ms" << std::endl;
-    std::cout << "    " << "Grouped  GFLOPs: " << result.gflops << std::endl;
+    std::cout << "    " << "Grouped  GFLOPS: " << result.gflops << std::endl;
     if (this->options.profile_initialization) {
       std::cout << "    " << "Init    Runtime: " << result.initialization_time_ms << " ms" << std::endl;
     }
