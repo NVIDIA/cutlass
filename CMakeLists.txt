@@ -129,7 +129,7 @@ if (CUTLASS_ENABLE_SYCL)
 
   if (CUTLASS_SYCL_PROFILING_ENABLED)
     add_compile_definitions(CUTLASS_SYCL_PROFILING_ENABLED)
-    add_compile_definitions(SYCLCOMPAT_PROFILING_ENABLED)
+    add_compile_definitions(COMPAT_PROFILING_ENABLED)
   endif()
 
   if (CUTLASS_SYCL_BUILTIN_ENABLE)
