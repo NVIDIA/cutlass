@@ -197,6 +197,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
 
     // scaling factor to quantize O
     float inv_scale_o = 1.0f;
+
+    int window_size_left = -1;
+    int window_size_right = -1;
   };
 
   struct Params {
@@ -206,6 +209,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     float scale_softmax_log2;
 
     float scale_output;
+
+    int window_size_left;
+    int window_size_right;
   };
 
   template<class ProblemShape>
@@ -229,7 +235,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
         Load::to_underlying_arguments(problem_shape, args.load, workspace),
         args.scale_q * args.scale_k * scale_softmax,
         args.scale_q * args.scale_k * log2_e * scale_softmax,
-        args.scale_v * args.inv_scale_o
+        args.scale_v * args.inv_scale_o,
+        args.window_size_left,
+        args.window_size_right
     };
   }
 
@@ -269,7 +277,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     auto pipeline_q_release_state = pipeline_q_consumer_state;
     auto pipeline_kv_release_state = pipeline_kv_consumer_state;
 
-    int mask_tile_count = Mask{}.get_trip_count(blk_coord, TileShape{}, problem_shape);
+    int mask_tile_count = Mask(params.window_size_left, params.window_size_right).get_trip_count(blk_coord, TileShape{}, problem_shape);
 
     typename CollectiveMmaQK::TiledMma mma_qk;
     ThrMMA thr_mma_qk = mma_qk.get_slice(0);
@@ -569,7 +577,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     copy(tiled_tmem_load, tTMEM_LOADtS, tTMEM_LOADrS);
 
     if constexpr (need_apply_mask) {
-      Mask{}.apply_mask(tTMEM_LOADrS, tTMEM_LOADcS, problem_shape);
+      Mask(params.window_size_left, params.window_size_right).apply_mask(tTMEM_LOADrS, tTMEM_LOADcS, problem_shape);
     }
 
     ElementQK old_row_max = row_max;
@@ -720,7 +728,12 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       PipelineC& pipeline_c, typename PipelineC::PipelineState& pipeline_c_producer_state,
       OrderBarrierSoftmax& order_s) {
 
-    int mask_tile_count = Mask{}.get_unmasked_trip_count(blk_coord, TileShape{}, problem_shape);
+    Mask mask(params.window_size_left, params.window_size_right);
+    auto min_max = mask.get_n_block_min_max(blk_coord, TileShape{}, problem_shape);
+    int n_block_min = get<0>(min_max);
+    const int n_block_max = get<1>(min_max);
+    const int n_block_start_unmask = mask.get_n_block_start_unmask(blk_coord, TileShape{}, problem_shape);
+    const int n_block_stop_unmask = mask.get_n_block_stop_unmask(blk_coord, TileShape{}, problem_shape);
 
     ElementQK row_max = -INFINITY;
     ElementQK row_sum = 0;
@@ -728,41 +741,79 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     Tensor cS_base = make_identity_tensor(select<0,1>(TileShapeQK{}));
     auto logical_offset = make_coord(
         get<0>(blk_coord) * get<0>(TileShape{}) + (stage % get<0>(ThreadShape{})) * get<0>(TileShapeQK{}),
-        0 + (stage % get<1>(ThreadShape{})) * get<1>(TileShapeQK{})
+        0 + (stage % get<1>(ThreadShape{})) * get<1>(TileShapeQK{}) + n_block_min * get<1>(TileShape{})
     );
     Tensor cS = domain_offset(logical_offset, cS_base);
 
     pipeline_c.producer_acquire(pipeline_c_producer_state);
 
-    CUTLASS_PRAGMA_NO_UNROLL
-    for (; mask_tile_count > 0; mask_tile_count -= 1) {
-      softmax_step<false /* need_apply_mask */>(
-          row_max, row_sum, stage,
-          (mask_tile_count == 1) &&
-              (Mask{}.get_masked_trip_count(blk_coord, TileShape{}, problem_shape) == 0),
-          blk_coord, cS, params, problem_shape,
-          pipeline_s, pipeline_s_consumer_state,
-          pipeline_c, pipeline_c_producer_state,
-          order_s
-      );
+    // from observation, dispatch is better for the mask -> unmask -> mask pattern and when the number of tiles is small
+    if constexpr (std::is_base_of_v<cutlass::fmha::collective::LocalMask<true>, Mask>
+        || std::is_base_of_v<cutlass::fmha::collective::LocalMask<false>, Mask>) {
+      auto dispatch_bool = [](bool b, auto fn) {
+        if (b) {
+          fn(cute::true_type{});
+        }
+        else {
+          fn(cute::false_type{});
+        }
+      };
 
-      cS.data() = cS.data() + E<1>{} * get<1>(ThreadShape{}) * get<1>(TileShapeQK{});
-    }
+      CUTLASS_PRAGMA_NO_UNROLL
+      for (; n_block_min < n_block_max; n_block_min += 1) {
+        // Apply mask only for tiles outside the attention window
+        // for local mask, we don't guarantee n_block_start_unmask <= n_block_stop_unmask <= n_block_max
+        bool need_apply_mask = warp_uniform(n_block_min < n_block_start_unmask || n_block_min >= n_block_stop_unmask);
 
-    // Masked iterations
-    mask_tile_count = Mask{}.get_masked_trip_count(blk_coord, TileShape{}, problem_shape);
+        dispatch_bool(need_apply_mask, [&](auto is_masked_tile) {
+          if constexpr (decltype(is_masked_tile)::value) {
+            softmax_step<true /* need_apply_mask */>(
+                row_max, row_sum, stage, (n_block_min == n_block_max - 1),
+                blk_coord, cS, params, problem_shape,
+                pipeline_s, pipeline_s_consumer_state,
+                pipeline_c, pipeline_c_producer_state,
+                order_s
+            );
+          } else {
+            softmax_step<false /* need_apply_mask */>(
+                row_max, row_sum, stage, (n_block_min == n_block_max - 1),
+                blk_coord, cS, params, problem_shape,
+                pipeline_s, pipeline_s_consumer_state,
+                pipeline_c, pipeline_c_producer_state,
+                order_s
+            );
+          }
+        });
 
-    CUTLASS_PRAGMA_NO_UNROLL
-    for (; mask_tile_count > 0; mask_tile_count -= 1) {
-      softmax_step<true /* need_apply_mask */>(
-          row_max, row_sum, stage, mask_tile_count == 1,
-          blk_coord, cS, params, problem_shape,
-          pipeline_s, pipeline_s_consumer_state,
-          pipeline_c, pipeline_c_producer_state,
-          order_s
-      );
+        cS.data() = cS.data() + E<1>{} * get<1>(ThreadShape{}) * get<1>(TileShapeQK{});
+      }
+    } else {
+      CUTLASS_PRAGMA_NO_UNROLL
+      for (; n_block_min < n_block_stop_unmask; n_block_min += 1) {
+        softmax_step<false /* need_apply_mask */>(
+            row_max, row_sum, stage,
+            (n_block_min == n_block_max - 1),
+            blk_coord, cS, params, problem_shape,
+            pipeline_s, pipeline_s_consumer_state,
+            pipeline_c, pipeline_c_producer_state,
+            order_s
+        );
 
-      cS.data() = cS.data() + E<1>{} * get<1>(ThreadShape{}) * get<1>(TileShapeQK{});
+        cS.data() = cS.data() + E<1>{} * get<1>(ThreadShape{}) * get<1>(TileShapeQK{});
+      }
+
+      CUTLASS_PRAGMA_NO_UNROLL
+      for (; n_block_min < n_block_max; n_block_min += 1) {
+        softmax_step<true /* need_apply_mask */>(
+            row_max, row_sum, stage, n_block_min == n_block_max - 1,
+            blk_coord, cS, params, problem_shape,
+            pipeline_s, pipeline_s_consumer_state,
+            pipeline_c, pipeline_c_producer_state,
+            order_s
+        );
+
+        cS.data() = cS.data() + E<1>{} * get<1>(ThreadShape{}) * get<1>(TileShapeQK{});
+      }
     }
 
     pipeline_c.producer_commit(pipeline_c_producer_state);
@@ -963,7 +1014,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       PipelineE& pipeline_epi, typename PipelineE::PipelineState& pipeline_epi_producer_state,
       CollectiveEpilogue& epilogue) {
 
-    int mask_tile_count = Mask{}.get_trip_count(blk_coord, TileShape{}, problem_shape);
+    int mask_tile_count = Mask(params.window_size_left, params.window_size_right).get_trip_count(blk_coord, TileShape{}, problem_shape);
 
     int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);
 
