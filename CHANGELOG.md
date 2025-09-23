@@ -2,6 +2,21 @@
 
 # CUTLASS 4.x
 
+# CUTLASS 4.2.1
+## [4.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.1) (2025-09-22)
+
+### CuTe DSL
+* Bug fixings and improvements
+    - Fixed an issue when running DSL codes with cuda-python 13.0
+    - Fixed an issue when running inductor with DSL codes
+    - Fixed an issue with unexpected logging when running DSL codes in FlashInfer
+    - Fixed the issue reported in https://github.com/NVIDIA/cutlass/issues/2647
+    - Fixed an issue when conditional define of variables outside of dynamic control flow
+
+### CUTLASS C++
+* Bypass EVT for nosmem blockwise kernels on Blackwell.
+* Rename cutlass/python/cutlass directory to cutlass/python/cutlass_cppgen.
+
 ## [4.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.0) (2025-09-15)
 
 ### CuTe DSL
