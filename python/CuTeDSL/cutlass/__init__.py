@@ -55,3 +55,5 @@ LaunchConfig = _dsl.BaseDSL.LaunchConfig
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
+
+CACHE_FILE = "compiled_cache.db"

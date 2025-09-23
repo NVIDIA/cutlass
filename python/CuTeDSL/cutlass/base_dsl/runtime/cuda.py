@@ -255,7 +255,13 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0):
     _log().info(f"{cuDevice} <-- cuDeviceGet")
     # Create context
     _log().info(f"cuCtxCreate {0} {cuDevice}")
-    context = checkCudaErrors(cuda.cuCtxCreate(0, cuDevice))
+    if cuda.CUDA_VERSION >= 13000:
+        # Use cuCtxCreate_v4 API with explicit CUctxCreateParams None, since v2
+        # and v3 API has been removed from CTK 13.
+        # See https://github.com/NVIDIA/cuda-python/pull/792
+        context = checkCudaErrors(cuda.cuCtxCreate(None, 0, cuDevice))
+    else:
+        context = checkCudaErrors(cuda.cuCtxCreate(0, cuDevice))
     _log().info(f"{context} <-- cuCtxCreate")
 
     return context
