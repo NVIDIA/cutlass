@@ -31,6 +31,8 @@ from ..base_dsl.ast_helpers import (
     range_perf_warning,
     cf_symbol_check,
     redirect_builtin_function,
+    copy_members,
+    get_locals_or_none,
 )
 
 from ..base_dsl import *
