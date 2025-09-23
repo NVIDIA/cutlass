@@ -2,7 +2,6 @@
 
 # CUTLASS 4.x
 
-# CUTLASS 4.2.1
 ## [4.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.1) (2025-09-22)
 
 ### CuTe DSL
