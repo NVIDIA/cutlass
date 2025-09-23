@@ -668,12 +668,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     ast.keyword(arg="prefetch_stages", value=prefetch_stages),
                     ast.keyword(
                         arg="write_args",
-                        value=ast.List(
-                            elts=[
-                                ast.Name(id=arg, ctx=ast.Load()) for arg in write_args
-                            ],
-                            ctx=ast.Load(),
-                        ),
+                        value=self.generate_get_locals_or_none_call(write_args),
                     ),
                     ast.keyword(
                         arg="full_write_args_count",
@@ -706,28 +701,6 @@ class DSLPreprocessor(ast.NodeTransformer):
             ),
             node,
         )
-
-    def create_loop_call(self, func_name, iter_args):
-        """
-        Assigns the returned value from the loop function directly (without a tuple unpacking).
-        """
-        if len(iter_args) == 0:
-            return ast.Expr(value=ast.Name(id=func_name, ctx=ast.Load()))
-        elif len(iter_args) == 1:
-            return ast.Assign(
-                targets=[ast.Name(id=iter_args[0], ctx=ast.Store())],
-                value=ast.Name(id=func_name, ctx=ast.Load()),
-            )
-        else:
-            return ast.Assign(
-                targets=[
-                    ast.Tuple(
-                        elts=[ast.Name(id=var, ctx=ast.Store()) for var in iter_args],
-                        ctx=ast.Store(),
-                    )
-                ],
-                value=ast.Name(id=func_name, ctx=ast.Load()),
-            )
 
     def visit_BoolOp(self, node):
         # Visit child nodes first
@@ -1140,10 +1113,10 @@ class DSLPreprocessor(ast.NodeTransformer):
             full_write_args_count,
         )
 
-        assign = ast.copy_location(self.create_loop_call(func_name, write_args), node)
+        assign = self.create_cf_call(func_name, write_args, node)
 
         # This should work fine as it modifies the AST structure
-        exprs = exprs + [func_def, assign]
+        exprs = exprs + [func_def] + assign
 
         if target_var_is_active_before_loop:
             # Create a new assignment to the target variable
@@ -1429,11 +1402,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             func_def = self.create_while_function(
                 func_name, node, write_args, full_write_args_count
             )
-            assign = ast.copy_location(
-                self.create_loop_call(func_name, write_args), node
-            )
+            assign = self.create_cf_call(func_name, write_args, node)
 
-        return [func_def, assign]
+        return [func_def] + assign
 
     def visit_Try(self, node):
         with self.scope_manager:
@@ -1447,17 +1418,27 @@ class DSLPreprocessor(ast.NodeTransformer):
             self.generic_visit(node)
         return node
 
-    def create_if_call(self, func_name, yield_args):
+    def create_cf_call(self, func_name, yield_args, node):
         """Creates the assignment statement for the if function call"""
         if not yield_args:
-            return ast.Expr(value=ast.Name(id=func_name, ctx=ast.Load()))
-        elif len(yield_args) == 1:
-            return ast.Assign(
+            return [
+                ast.copy_location(
+                    ast.Expr(value=ast.Name(id=func_name, ctx=ast.Load())), node
+                )
+            ]
+        has_self = False
+        for i, arg in enumerate(yield_args):
+            if arg == "self":
+                has_self = True
+                yield_args[i] = "yield_self"
+                break
+        if len(yield_args) == 1:
+            assign = ast.Assign(
                 targets=[ast.Name(id=yield_args[0], ctx=ast.Store())],
                 value=ast.Name(id=func_name, ctx=ast.Load()),
             )
         else:
-            return ast.Assign(
+            assign = ast.Assign(
                 targets=[
                     ast.Tuple(
                         elts=[ast.Name(id=var, ctx=ast.Store()) for var in yield_args],
@@ -1466,6 +1447,23 @@ class DSLPreprocessor(ast.NodeTransformer):
                 ],
                 value=ast.Name(id=func_name, ctx=ast.Load()),
             )
+
+        if has_self:
+            fix_self = ast.Expr(
+                value=ast.Call(
+                    func=self._create_module_attribute(
+                        "copy_members", lineno=node.lineno, col_offset=node.col_offset
+                    ),
+                    args=[
+                        ast.Name(id="self", ctx=ast.Load()),
+                        ast.Name(id="yield_self", ctx=ast.Load()),
+                    ],
+                    keywords=[],
+                )
+            )
+            return [ast.copy_location(assign, node), ast.copy_location(fix_self, node)]
+        else:
+            return [ast.copy_location(assign, node)]
 
     def visit_IfExp(self, node):
         """
@@ -1567,9 +1565,24 @@ class DSLPreprocessor(ast.NodeTransformer):
             func_def = self.create_if_function(
                 func_name, node, yield_args, full_write_args_count
             )
-            assign = ast.copy_location(self.create_if_call(func_name, yield_args), node)
+            assign = self.create_cf_call(func_name, yield_args, node)
 
-        return [func_def, assign]
+        return [func_def] + assign
+
+    def generate_get_locals_or_none_call(self, write_args):
+        return ast.Call(
+            func=self._create_module_attribute("get_locals_or_none"),
+            args=[
+                ast.Call(
+                    func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[]
+                ),
+                ast.List(
+                    elts=[ast.Constant(value=arg) for arg in write_args],
+                    ctx=ast.Load(),
+                ),
+            ],
+            keywords=[],
+        )
 
     def create_if_function(self, func_name, node, write_args, full_write_args_count):
         test_expr = self.visit(node.test)
@@ -1627,10 +1640,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             ),  # ast.Name(id="pred", ctx=ast.Load())
             ast.keyword(
                 arg="write_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
-                    ctx=ast.Load(),
-                ),
+                value=self.generate_get_locals_or_none_call(write_args),
             ),
         ]
 
@@ -1813,10 +1823,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             ast.keyword(arg="pred", value=test_expr),
             ast.keyword(
                 arg="write_args",
-                value=ast.List(
-                    elts=[ast.Name(id=arg, ctx=ast.Load()) for arg in write_args],
-                    ctx=ast.Load(),
-                ),
+                value=self.generate_get_locals_or_none_call(write_args),
             ),
         ]
         decorator = ast.copy_location(

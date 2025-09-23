@@ -20,6 +20,7 @@ import warnings
 import inspect
 from types import BuiltinFunctionType
 from functools import lru_cache
+from inspect import getmembers
 
 from .utils.logger import log
 from .common import *
@@ -579,3 +580,37 @@ def redirect_builtin_function(fcn):
     if isinstance(fcn, BuiltinFunctionType) and executor._builtin_redirector:
         return executor._builtin_redirector(fcn)
     return fcn
+
+
+def copy_members(dest, src):
+    """
+    Copies all non-callable, non-dunder members from src to dest if they exist in src.
+    Skips members that are callables or have names starting with double underscores.
+    """
+    if id(dest) == id(src):
+        return
+
+    members = getmembers(dest)
+    for name, value in members:
+        if (
+            name.startswith("__")
+            or isinstance(value, Callable)
+            or not hasattr(src, name)
+        ):
+            continue
+        setattr(dest, name, getattr(src, name))
+
+
+def get_locals_or_none(locals, symbols):
+    """
+    Given a locals() dictionary and a list of symbol names, return a list of their values
+    in the same order as the symbols list. If a symbol is not present in locals, None is returned
+    for that symbol.
+    """
+    variables = []
+    for symbol in symbols:
+        if symbol in locals:
+            variables.append(locals[symbol])
+        else:
+            variables.append(None)
+    return variables
