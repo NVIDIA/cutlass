@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.2.0
+# CUTLASS 4.2.1
 
-_CUTLASS 4.2.0 - Sept 2025_
+_CUTLASS 4.2.1 - Sept 2025_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -224,7 +224,10 @@ CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be
 |NVIDIA H100 Tensor Core GPU            |9.0|11.8|
 |NVIDIA H200 Tensor Core GPU            |9.0|11.8|
 |NVIDIA B200 Tensor Core GPU            |10.0|12.8|
+|NVIDIA B300 Tensor Core GPU            |10.3|13.0|
+|NVIDIA DRIVE Thor                      |11.0|13.0|
 |NVIDIA GeForce RTX 50x0 series         |12.0|12.8|
+|NVIDIA DGX Spark                       |12.1|13.0|
 
 ## Target Architecture
 
