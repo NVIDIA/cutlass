@@ -1435,8 +1435,12 @@ private:
                                     is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
                                     is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
                                     is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
-  // Input transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
-  static constexpr bool IsInputTransformSchedule = IsInterleavedComplex || IsFastF32Schedule;
+  static constexpr bool IsBlockwiseSchedule = is_same_v<BlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
+                                    is_same_v<BlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
+                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  // Transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
+  static constexpr bool IsTransformSchedule = IsInterleavedComplex || IsFastF32Schedule || IsBlockwiseSchedule;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
 
@@ -1470,7 +1474,7 @@ private:
       static_assert(is_tuple_v<EpilogueTileType>, "Shape or Tile");
       return EpilogueTileType{};
     }
-    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp> || not IsInputTransformSchedule) {
+    else if constexpr (is_same_v<OpClass,arch::OpClassBlockScaledTensorOp> || not IsTransformSchedule) {
       // Save register usage for sm103 blockscaled kernels and sm100 cpasync kernels
       // to avoid register spilling.
       constexpr int EpiM = size<0>(CtaTileShape_MNK{});
@@ -1501,7 +1505,7 @@ private:
       DisableSource ? thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
     if constexpr (IsDefaultFusionOp<FusionOp>::value &&\
                   not is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && \
-                 (IsInputTransformSchedule || \
+                 (IsTransformSchedule || \
                   is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized1Sm> || \
                   is_same_v<EpilogueScheduleType, PtrArrayNoSmemWarpSpecialized2Sm>)
                  ) {

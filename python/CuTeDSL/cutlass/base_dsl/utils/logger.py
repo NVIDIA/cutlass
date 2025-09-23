@@ -47,7 +47,8 @@ def setup_log(
     if log_to_console or log_to_file:
         logger.setLevel(log_level)
     else:
-        logger.setLevel(logging.NOTSET)
+        # Makes sure logging is OFF
+        logger.setLevel(logging.CRITICAL + 1)
 
     # Clear existing handlers to prevent duplicate logs
     if logger.hasHandlers():
