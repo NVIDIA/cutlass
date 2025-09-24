@@ -537,7 +537,7 @@ struct TestbedGemvFp4SFDBase
                 << ", batch size: " << gemm_batch
                 << std::endl;
       std::cout << "         Runtime: " << elapsed_ms_per_iter << " ms" << std::endl;
-      std::cout << "          GFLOPs: " << gflops_per_second << "  GFLOPs" << std::endl;
+      std::cout << "          GFLOPS: " << gflops_per_second << "  GFLOPS" << std::endl;
       std::cout << "Memory bandwidth: " << gbytes_per_second << "  GiB/s" << std::endl;
 
     }

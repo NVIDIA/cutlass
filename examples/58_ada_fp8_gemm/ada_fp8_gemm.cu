@@ -738,13 +738,13 @@ struct TestbedRunner {
       return false;
     }
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     runtime_ms = runtime_ms / float(options.iterations);
     float gflops = options.gflops(runtime_ms / 1000.0f);
 
     std::cout << "Problem size: " << options.problem_size.m() << 'x' << options.problem_size.n() << 'x' << options.problem_size.k() << std::endl;
     std::cout << "Runtime (ms): " << runtime_ms << std::endl;
-    std::cout << "GFLOPs/sec:   " << gflops << std::endl;
+    std::cout << "GFLOPS/sec:   " << gflops << std::endl;
 
     // Cleanup
     for (auto event : events) {

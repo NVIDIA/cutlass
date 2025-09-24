@@ -286,7 +286,7 @@ void batched_gemv_kernel_test(cutlass::gemm::BatchedGemmCoord problem_size,
                   << " x " << problem_size.batch() 
                   << std::endl;
 
-        std::cout << "  GFLOPs:     " << gflops_per_sec << std::endl;
+        std::cout << "  GFLOPS:     " << gflops_per_sec << std::endl;
         std::cout << "BW (R/W):     " << read_bandwidth << " / " << write_bandwidth << " GB/sec" << std::endl;
         std::cout << " Runtime:     " << avg_runtime << " ms" << std::endl;
     }

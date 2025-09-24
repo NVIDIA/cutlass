@@ -755,7 +755,7 @@ public:
     float runtime_total_ms = 0;
     CHECK_CUDA_CALL(cudaEventElapsedTime(&runtime_total_ms, events[0], events[1]), return false);
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     double runtime_avg_ms = double(runtime_total_ms) / double(options.iterations);
     double gflops = options.gflops(runtime_avg_ms / 1000.0, kBatched);
 
@@ -765,7 +765,7 @@ public:
     }
 
     std::cout << "    Runtime: " << runtime_avg_ms << " ms\n"
-                 "     GFLOPs: " << gflops << std::endl;
+                 "     GFLOPS: " << gflops << std::endl;
 
     return true;
   }

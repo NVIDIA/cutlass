@@ -596,7 +596,7 @@ struct ExampleRunner
 
       std::cout << name << ":\n";
       std::cout << "  Runtime: " << runtime << " ms\n";
-      std::cout << "   GFLOPs: " << gflops  << "\n";
+      std::cout << "   GFLOPS: " << gflops  << "\n";
     };
 
     benchmark("Fused", [&](){ run_gemm(gemm); });

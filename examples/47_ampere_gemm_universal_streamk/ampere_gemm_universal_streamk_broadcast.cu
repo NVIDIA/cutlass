@@ -532,13 +532,13 @@ Result run(std::string description, Options &options)
     }
     timer.stop();
 
-    // Compute average runtime and GFLOPs.
+    // Compute average runtime and GFLOPS.
     float elapsed_ms = timer.elapsed_millis();
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPs: " << result.gflops << std::endl;
+    std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
 
   // TODO: uncomment when results match

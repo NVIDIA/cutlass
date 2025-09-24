@@ -499,7 +499,7 @@ struct Result {
       out << "Name,";
     }
 
-    out << "Layer,N,H,W,C,K,R,S,Runtime,GFLOPs";
+    out << "Layer,N,H,W,C,K,R,S,Runtime,GFLOPS";
 
     return out;
   }
