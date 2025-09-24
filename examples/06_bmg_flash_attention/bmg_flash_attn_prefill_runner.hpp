@@ -171,14 +171,6 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
 
-
-  template <typename SrcT, typename DstT>
-  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
-    compat::get_default_queue().parallel_for(size, [=](auto indx) {
-      d_dst[indx] = static_cast<DstT>(d_src[indx]);
-    }).wait();
-  }
-
   template <typename T>
   static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
 
@@ -186,7 +178,7 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
     using outType = cute::conditional_t<is_fp8_v<Tin>, half_t, Tin>;
     if constexpr(is_fp8_v<Tin>) {
       cutlass::DeviceAllocation<outType> out(in.size());
-      convert_fp8_to_fp16<Tin, outType>(in.get(), out.get(), in.size());
+      convert_dtype<Tin, outType, ExampleRunner>(in.get(), out.get(), in.size());
       return out;
     } else { 
       return in;
@@ -516,7 +508,7 @@ template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
       sycl::ext::oneapi::experimental::sub_group_size<FMHAPrefillKernel::DispatchPolicy::SubgroupSize>
     };
     compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = compat::experimental::launch<cutlass::device_kernel<FMHAPrefillKernel>>(policy, params);
+    auto event = compat::experimental::launch<cutlass::device_kernel<FMHAPrefillKernel>, FMHAPrefillKernel>(policy, params);
 #endif
 
     EventManager::getInstance().addEvent(event);

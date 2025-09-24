@@ -181,12 +181,12 @@ struct ExampleRunner {
       cutlass::DeviceAllocation<half_t> block_B_fp16(block_B.size());
 
       // fp8 -> fp16
-      convert_dtype<ElementA, half_t>(
+      convert_dtype<ElementA, half_t, ExampleRunner>(
           block_A.get(),
           block_A_fp16.get(),
           block_A.size()
       );
-      convert_dtype<ElementB, half_t>(
+      convert_dtype<ElementB, half_t, ExampleRunner>(
           block_B.get(),
           block_B_fp16.get(),
           block_B.size()

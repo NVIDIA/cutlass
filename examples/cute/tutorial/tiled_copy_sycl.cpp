@@ -98,6 +98,8 @@ void copy_kernel(TensorS S, TensorD D, ThreadLayout)
 /// Uses `make_tiled_copy()` to perform a copy using vector instructions. This operation
 /// has the precondition that pointers are aligned to the vector size.
 ///
+template <class...> class CopyKernelVectorizedName;
+
 template <class TensorS, class TensorD, class ThreadLayout, class VecLayout>
 void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout)
 {
@@ -222,6 +224,7 @@ int main(int argc, char** argv)
   // Launch the kernel
   //
   compat::launch<copy_kernel_vectorized<decltype(tiled_tensor_S), decltype(tiled_tensor_D),
+                                            decltype(thr_layout), decltype(vec_layout)>, CopyKernelVectorizedName<decltype(tiled_tensor_S), decltype(tiled_tensor_D),
                                             decltype(thr_layout), decltype(vec_layout)>>(
       gridDim, blockDim, tiled_tensor_S, tiled_tensor_D, thr_layout, vec_layout);
   compat::wait_and_throw();

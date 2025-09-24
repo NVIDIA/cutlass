@@ -194,17 +194,17 @@ public:
 
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;
 
-  static constexpr auto BLK_M = get<0>(WorkgroupTileShape{});
-  static constexpr auto BLK_N = get<1>(WorkgroupTileShape{});
-  static constexpr auto BLK_K = get<2>(WorkgroupTileShape{});
-  
-  static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int BLK_M = get<0>(WorkgroupTileShape{});
+  static constexpr int BLK_N = get<1>(WorkgroupTileShape{});
+  static constexpr int BLK_K = get<2>(WorkgroupTileShape{});
 
-  static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
-  static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
-  static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
+  static constexpr int ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+
+  static constexpr int SG_M = ceil_div(BLK_M, ATOM_M);
+  static constexpr int SG_N = ceil_div(BLK_N, ATOM_N);
+  static constexpr int SG_K = ceil_div(BLK_K, ATOM_K);
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
   
   using GmemTiledCopyScaleA = typename scale_zero_copy_traits<NonVoidElementScaleA, SG_N>::type;
@@ -553,8 +553,8 @@ public:
     using FragScaleALayout = Layout<Shape<Int<scaleA_traits_size>, Int<scaleA_traits_num>, _1>>;
     Tensor fragment_scaleA_input = make_tensor<NonVoidElementScaleA>(FragScaleALayout{});
 
-    static constexpr auto scaleB_traits_size = decltype(size(typename GmemTiledCopyScaleB::BlockShape{}))::value / SubgroupSize;
-    static constexpr auto scaleB_traits_num = SG_N / size<1>(typename GmemTiledCopyScaleB::BlockShape{});
+    static constexpr int scaleB_traits_size = decltype(size(typename GmemTiledCopyScaleB::BlockShape{}))::value / SubgroupSize;
+    static constexpr int scaleB_traits_num = SG_N / size<1>(typename GmemTiledCopyScaleB::BlockShape{});
     using FragScaleBLayout = Layout<Shape<Int<scaleB_traits_size>, Int<scaleB_traits_num>, _1>>;
     Tensor fragment_scaleB_input = make_tensor<NonVoidElementScaleB>(FragScaleBLayout{});
 

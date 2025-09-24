@@ -174,23 +174,23 @@ public:
 
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;
 
-  static constexpr auto BLK_M = get<0>(WorkgroupTileShape{});
-  static constexpr auto BLK_N = get<1>(WorkgroupTileShape{});
-  static constexpr auto BLK_K = get<2>(WorkgroupTileShape{});
+  static constexpr int BLK_M = get<0>(WorkgroupTileShape{});
+  static constexpr int BLK_N = get<1>(WorkgroupTileShape{});
+  static constexpr int BLK_K = get<2>(WorkgroupTileShape{});
   
-  static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
 
-  static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
-  static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
-  static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
+  static constexpr int SG_M = ceil_div(BLK_M, ATOM_M);
+  static constexpr int SG_N = ceil_div(BLK_N, ATOM_N);
+  static constexpr int SG_K = ceil_div(BLK_K, ATOM_K);
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
   
   using GmemTiledCopyScale = typename scale_zero_copy_traits<NonVoidElementScale, SG_N>::type;
   using GmemTiledCopyZero = typename scale_zero_copy_traits<NonVoidElementZero, SG_N, InternalNonVoidStrideZero>::type;
 
-  static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
+  static constexpr int Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
 
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;

@@ -137,6 +137,8 @@ BlockElementwiseOp(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<class> class BlockCompareEqualKernelName;
+
 /// Performs a bit-level equality check between two blocks
 template <typename Element>
 bool BlockCompareEqual(
@@ -195,7 +197,7 @@ bool BlockCompareEqual(
 #if defined(CUTLASS_ENABLE_SYCL)
   const auto sycl_block = compat::dim3(block_size, 1, 1);
   const auto sycl_grid = compat::dim3(grid_size, 1, 1);
-  compat::launch<kernel::BlockCompareEqual<Element>>(sycl_grid, sycl_block, device_equal_flag, ptr_A, ptr_B, capacity);
+  compat::launch<kernel::BlockCompareEqual<Element>, BlockCompareEqualKernelName<Element>>(sycl_grid, sycl_block, device_equal_flag, ptr_A, ptr_B, capacity);
   compat::wait();
 
   compat::memcpy(&equal_flag, device_equal_flag, sizeof(int));
@@ -227,6 +229,8 @@ bool BlockCompareEqual(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<class> class BlockCompareRelativelyEqualName;
 
 /// Performs a bit-level equality check between two blocks
 template <typename Element>
@@ -289,7 +293,7 @@ bool BlockCompareRelativelyEqual(
   const auto sycl_block = compat::dim3(block_size, 1, 1);
   const auto sycl_grid = compat::dim3(grid_size, 1, 1);
 
-  compat::launch<kernel::BlockCompareRelativelyEqual<Element>>(sycl_grid, sycl_block, device_equal_flag, ptr_A, ptr_B, capacity,
+  compat::launch<kernel::BlockCompareRelativelyEqual<Element>, BlockCompareRelativelyEqualName<Element>>(sycl_grid, sycl_block, device_equal_flag, ptr_A, ptr_B, capacity,
                                                                   epsilon, nonzero_floor);
   compat::wait();
 
@@ -330,6 +334,8 @@ bool BlockCompareRelativelyEqual(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<template<class> class, class> class BlockElementwiseOpKernelName; 
+
 /// Performs an elementwise function of two blocks
 template <template <class> class BinaryOp, typename Element>
 void BlockElementwiseOp(
@@ -366,7 +372,7 @@ void BlockElementwiseOp(
 #if defined(CUTLASS_ENABLE_SYCL)
   const auto sycl_block = compat::dim3(block_size, 1, 1);
   const auto sycl_grid = compat::dim3(grid_size, 1, 1);
-  compat::launch<kernel::BlockElementwiseOp<BinaryOp, Element>>(
+  compat::launch<kernel::BlockElementwiseOp<BinaryOp, Element>, BlockElementwiseOpKernelName<BinaryOp, Element>>(
       sycl_grid, sycl_block, ptr_dst, ptr_A, ptr_B, capacity);
 #else
   dim3 grid(grid_size, 1, 1);

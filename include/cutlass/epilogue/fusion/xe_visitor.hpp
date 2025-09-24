@@ -64,7 +64,7 @@ struct XeAuxLoad {
   };
 
   using Trait_Aux = Copy_Traits<CopyOpG2R>;
-  using SubgroupSize = Int<size((typename Trait_Aux::ThrID){})>;
+  using SubgroupSize = decltype(size((typename Trait_Aux::ThrID){}));
   using XE_Copy_Aux = decltype(make_tiled_copy(Copy_Atom<Trait_Aux, Element>{}
                       .with(static_cast<Element const*>(nullptr), int32_t(0), int32_t(0), int32_t(0)),
                          Layout<Shape<_1, SubgroupSize>>{},

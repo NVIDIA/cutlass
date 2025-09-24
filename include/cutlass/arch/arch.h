@@ -45,7 +45,7 @@ namespace arch {
 constexpr int sm100_smem_capacity_bytes = 232448;  
 constexpr int sm120_smem_capacity_bytes = 101376;
 
-#if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && (defined(__CUDA__) || defined(CUTLASS_ENABLE_SYCL)))
+#if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && (defined(__CUDA__)) || defined(CUTLASS_ENABLE_SYCL))
 
 /// Computes laneId within a warp
 CUTLASS_DEVICE

@@ -56,6 +56,9 @@
 /// Simple copy kernel.
 //
 // Uses local_partition() to partition a tile among threads arranged as (THR_M, THR_N).
+
+template <class TensorS, class TensorD, class BlockShape, class ThreadLayout> class CopyIfKernelName;
+
 template <class TensorS, class TensorD, class BlockShape, class ThreadLayout>
 void copy_if_kernel(TensorS S, TensorD D, BlockShape block_shape, ThreadLayout)
 {
@@ -89,6 +92,9 @@ void copy_if_kernel(TensorS S, TensorD D, BlockShape block_shape, ThreadLayout)
 /// Uses `make_tiled_copy()` to perform a copy using vector instructions. This operation
 /// has the precondition that pointers are aligned to the vector size.
 ///
+
+template <class TensorS, class TensorD, class BlockShape, class Tiled_Copy> class CopyIfKernelVectorizedName;
+
 template <class TensorS, class TensorD, class BlockShape, class Tiled_Copy>
 void copy_if_kernel_vectorized(TensorS S, TensorD D, BlockShape block_shape, Tiled_Copy tiled_copy)
 {
@@ -189,7 +195,8 @@ int main(int argc, char** argv)
   // Launch the kernel
   //
   compat::launch<copy_if_kernel<decltype(tensor_S), decltype(tensor_D), 
-    decltype(block_shape), decltype(thr_layout)>>(
+    decltype(block_shape), decltype(thr_layout)>, CopyIfKernelName<decltype(tensor_S), 
+    decltype(tensor_D), decltype(block_shape), decltype(thr_layout)>>(
       gridDim, blockDim, tensor_S, tensor_D, block_shape, thr_layout
     );
   compat::wait_and_throw();
@@ -255,7 +262,8 @@ int main(int argc, char** argv)
                                           val_layout);        // value layout (e.g. 4x1)
 
   compat::launch<copy_if_kernel_vectorized<decltype(tensor_S), decltype(tensor_D),
-    decltype(block_shape), decltype(tiled_copy)>>(
+    decltype(block_shape), decltype(tiled_copy)>, CopyIfKernelVectorizedName<decltype(tensor_S), 
+    decltype(tensor_D), decltype(block_shape), decltype(tiled_copy)>>(
       gridDim, blockDim, tensor_S, tensor_D, block_shape, tiled_copy
     );
   compat::wait_and_throw();

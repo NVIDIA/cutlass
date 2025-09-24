@@ -56,7 +56,7 @@ sycl::nd_range<3> transform_nd_range(const sycl::nd_range<Dim> &range) {
   return sycl::nd_range<3>{{1, 1, global_range[0]}, {1, 1, local_range[0]}};
 }
 
-template <auto F, typename... Args>
+template <auto F, class N, typename... Args>
 std::enable_if_t<std::is_invocable_v<decltype(F), Args...>, sycl::event>
 launch(const sycl::nd_range<3> &range, sycl::queue q, Args... args) {
   static_assert(detail::getArgumentCount(F) == sizeof...(args),
@@ -65,7 +65,7 @@ launch(const sycl::nd_range<3> &range, sycl::queue q, Args... args) {
       std::is_same<std::invoke_result_t<decltype(F), Args...>, void>::value,
       "SYCL kernels should return void");
 
-  return q.parallel_for(
+  return q.parallel_for<N>(
       range, [=](sycl::nd_item<3>) { [[clang::always_inline]] F(args...); });
 }
 
@@ -94,29 +94,29 @@ inline sycl::nd_range<1> compute_nd_range(int global_size_in,
   return compute_nd_range<1>(global_size_in, work_group_size);
 }
 
-template <auto F, int Dim, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, int Dim, typename... Args>
 std::enable_if_t<std::is_invocable_v<decltype(F), Args...>, sycl::event>
 launch(const sycl::nd_range<Dim> &range, sycl::queue q, Args... args) {
-  return detail::launch<F>(detail::transform_nd_range<Dim>(range), q, args...);
+  return detail::launch<F, N>(detail::transform_nd_range<Dim>(range), q, args...);
 }
 
-template <auto F, int Dim, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, int Dim, typename... Args>
 std::enable_if_t<std::is_invocable_v<decltype(F), Args...>, sycl::event>
 launch(const sycl::nd_range<Dim> &range, Args... args) {
-  return launch<F>(range, get_default_queue(), args...);
+  return launch<F, N>(range, get_default_queue(), args...);
 }
 
 // Alternative launch through dim3 objects
-template <auto F, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, typename... Args>
 std::enable_if_t<std::is_invocable_v<decltype(F), Args...>, sycl::event>
 launch(const dim3 &grid, const dim3 &threads, sycl::queue q, Args... args) {
-  return launch<F>(sycl::nd_range<3>{grid * threads, threads}, q, args...);
+  return launch<F, N>(sycl::nd_range<3>{grid * threads, threads}, q, args...);
 }
 
-template <auto F, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, typename... Args>
 std::enable_if_t<std::is_invocable_v<decltype(F), Args...>, sycl::event>
 launch(const dim3 &grid, const dim3 &threads, Args... args) {
-  return launch<F>(grid, threads, get_default_queue(), args...);
+  return launch<F, N>(grid, threads, get_default_queue(), args...);
 }
 
 } // namespace compat
@@ -125,7 +125,7 @@ namespace compat::experimental {
 
 namespace detail {
 
-template <auto F, typename LaunchPolicy, typename... Args>
+template <auto F, class N, typename LaunchPolicy, typename... Args>
 sycl::event launch(LaunchPolicy launch_policy, sycl::queue q, Args... args) {
   static_assert(compat::args_compatible<LaunchPolicy, F, Args...>,
                 "Mismatch between device function signature and supplied "
@@ -138,11 +138,11 @@ sycl::event launch(LaunchPolicy launch_policy, sycl::queue q, Args... args) {
     auto KernelFunctor = build_kernel_functor<F>(cgh, launch_policy, args...);
     if constexpr (compat::detail::is_range_v<
                       typename LaunchPolicy::RangeT>) {
-      parallel_for(cgh, config, KernelFunctor);
+      sycl_exp::parallel_for<N>(cgh, config, KernelFunctor);
     } else {
       static_assert(
           compat::detail::is_nd_range_v<typename LaunchPolicy::RangeT>);
-      nd_launch(cgh, config, KernelFunctor);
+      sycl_exp::nd_launch<N>(cgh, config, KernelFunctor);
     }
   });
 }
@@ -150,16 +150,16 @@ sycl::event launch(LaunchPolicy launch_policy, sycl::queue q, Args... args) {
 }
 
 
-template <auto F, typename LaunchPolicy, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, typename LaunchPolicy, typename... Args>
 sycl::event launch(LaunchPolicy launch_policy, sycl::queue q, Args... args) {
   static_assert(detail::is_launch_policy_v<LaunchPolicy>);
-  return detail::launch<F>(launch_policy, q, args...);
+  return detail::launch<F, N>(launch_policy, q, args...);
 }
 
-template <auto F, typename LaunchPolicy, typename... Args>
+template <auto F, class N=sycl::detail::auto_name, typename LaunchPolicy, typename... Args>
 sycl::event launch(LaunchPolicy launch_policy, Args... args) {
   static_assert(detail::is_launch_policy_v<LaunchPolicy>);
-  return launch<F>(launch_policy, get_default_queue(), args...);
+  return launch<F, N>(launch_policy, get_default_queue(), args...);
 }
 
 } // namespace compat::experimental

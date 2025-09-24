@@ -126,13 +126,13 @@ public:
   static constexpr int ATOM_N = CollectiveMainloop::ATOM_N;
   static constexpr int ATOM_K = CollectiveMainloop::ATOM_K;
 
-  static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
+  static constexpr int Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr int Vec = CollectiveMainloop::Vec; // 8
   static constexpr int FragsM = CollectiveMainloop::FragsM;  // 1
   static constexpr int FragsN = CollectiveMainloop::FragsNS; // 4
 
   static constexpr int VSlicer = get<1>(TileShapeOutput{}) / (get<1>(TileShapePV{}) * ATOM_N);
-  using AccumShape =  decltype(make_shape(Int<Vec>{}, Int<FragsM>{}, Int<get<1>(TileShapePV{}) / get<1>(MmaAtomShape())>{}, Int<VSlicer>{}));
+  using AccumShape =  decltype(make_shape(Int<Vec>{}, Int<FragsM>{}, get<1>(TileShapePV{}) / get<1>(MmaAtomShape()), Int<VSlicer>{}));
 
   static_assert(FragsM == 1, "Limit the seq_len_qo to 1 MMA Atom worth of data per work-group.");
 

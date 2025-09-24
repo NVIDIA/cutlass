@@ -497,7 +497,7 @@ public:
     const auto sycl_grid = compat::dim3(grid.x, grid.y, grid.z);
 
     auto q = stream ? *stream : compat::get_default_queue();
-    compat::experimental::launch<cutlass::Kernel<GemmKernel>>(
+    compat::experimental::launch<cutlass::Kernel<GemmKernel>, GemmKernel>(
       compat::experimental::launch_policy{
         sycl_grid, sycl_block,
 #if defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)

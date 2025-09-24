@@ -198,7 +198,7 @@ template <class F, class Tuple, size_t... Is>
 __compat_inline__ constexpr void apply_expand(F &&f, Tuple &&t,
                                                   std::index_sequence<Is...>) {
   [[clang::always_inline]] std::forward<F>(f)(
-      get<Is>(std::forward<Tuple>(t))...);
+      std::get<Is>(std::forward<Tuple>(t))...);
 }
 
 template <class F, class Tuple>

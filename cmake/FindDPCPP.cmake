@@ -39,6 +39,10 @@ find_library(DPCPP_LIB_DIR NAMES sycl sycl6 PATHS "${DPCPP_BIN_DIR}/../lib")
 add_library(DPCPP::DPCPP INTERFACE IMPORTED)
 
 set(DPCPP_FLAGS "-fsycl;")
+if(DPCPP_HOST_COMPILER)
+  list(APPEND DPCPP_FLAGS "-fsycl-host-compiler=${DPCPP_HOST_COMPILER}")
+  list(APPEND DPCPP_FLAGS "-fsycl-host-compiler-options=-Wno-changes-meaning -D$<JOIN:$<TARGET_PROPERTY:COMPILE_DEFINITIONS>, -D> -I$<JOIN:$<TARGET_PROPERTY:INCLUDE_DIRECTORIES>, -I>")
+endif()
 set(DPCPP_COMPILE_ONLY_FLAGS "")
 set(DPCPP_LINK_ONLY_FLAGS "")
 

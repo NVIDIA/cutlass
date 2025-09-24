@@ -194,6 +194,8 @@ __global__ void
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<class...> class GemmComplexKernelName;
+
 /// Computes a general matrix product among matrices (tensors of rank=2) pointed to by TensorRef
 /// objects.
 ///
@@ -267,6 +269,20 @@ using compat::dim3;
                       InnerProductOp,
                       kMblock,
                       kNblock
+                    >, GemmComplexKernelName<
+                      ElementA,
+                      LayoutA,
+                      ElementB,
+                      LayoutB,
+                      ElementC,
+                      LayoutC,
+                      ScalarType,
+                      ComputeType,
+                      ElementD,
+                      ConvertOp,
+                      InnerProductOp,
+                      decltype(kMblock),
+                      decltype(kNblock)
                     >>(grid, block, 
                         problem_size,
                         alpha,
@@ -344,6 +360,18 @@ using compat::dim3;
                       InnerProductOp,
                       kBigMblock,
                       kBigNblock
+                    >, GemmComplexKernelName<
+                      ElementA,
+                      LayoutA,
+                      ElementB,
+                      LayoutB,
+                      ElementC,
+                      LayoutC,
+                      ScalarType,
+                      ComputeType,
+                      ElementD,
+                      ConvertOp,
+                      InnerProductOp
                     >>(Biggrid, Bigblock, 
                         problem_size,
                         alpha,

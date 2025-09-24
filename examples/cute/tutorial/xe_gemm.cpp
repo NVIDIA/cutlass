@@ -219,7 +219,8 @@ choose_tiled_mma(ATensor const& A, BTensor const& B, CTensor const&)
   return MMA{};
 }
 
-template <class ATensor, class BTensor, class CTensor>
+template <class, class, char, char> class GemmCuteName;
+template <class ATensor, class BTensor, class CTensor, typename TA, typename TB, char layoutA, char layoutB>
 void
 gemm_cute(sycl::queue &Q,
           ATensor   const& A,         // (M,K)
@@ -240,7 +241,7 @@ gemm_cute(sycl::queue &Q,
     intelex::grf_size<256>
   };
 
-  auto event = Q.parallel_for(sycl::nd_range<2>(global, local), kernel_props,
+  auto event = Q.parallel_for<GemmCuteName<TA, TB, layoutA, layoutB>>(sycl::nd_range<2>(global, local), kernel_props,
     [=](auto) {
       gemm_device(A, B, C, mma);
     }
@@ -249,6 +250,7 @@ gemm_cute(sycl::queue &Q,
   EventManager::getInstance().addEvent(event);
 }
 
+template <class...> class GemmVerifyKernelName;
 template <class ATensor, class BTensor, class CTensor>
 bool
 gemm_verify(sycl::queue &Q,
@@ -263,7 +265,7 @@ gemm_verify(sycl::queue &Q,
   auto ok = sycl::malloc_shared<bool>(1, Q);
   *ok = true;
 
-  Q.parallel_for(sycl::range<2>(m, n), [=](sycl::item<2> id) {
+  Q.parallel_for<GemmVerifyKernelName<ATensor, BTensor, CTensor>>(sycl::range<2>(m, n), [=](sycl::item<2> id) {
     int i = id[0], j = id[1];
 
     using AccType = typename CTensor::element_type;
@@ -322,7 +324,7 @@ test_case(sycl::queue &Q, int m, int n, int k)
   subbyte_pack(B);
 
   // Test accuracy:
-  gemm_cute(Q, A, B, C);
+  gemm_cute<decltype(A), decltype(B), decltype(C), TA, TB, layoutA, layoutB>(Q, A, B, C);
   Q.wait_and_throw();
 
 #ifdef SKIP_VERIFY
@@ -340,7 +342,7 @@ test_case(sycl::queue &Q, int m, int n, int k)
 
     timer.start();
     for (int i = 0; i < timing_iterations; ++i)
-      gemm_cute(Q, A, B, C);
+      gemm_cute<decltype(A), decltype(B), decltype(C), TA, TB, layoutA, layoutB>(Q, A, B, C);
     Q.wait_and_throw();
 
     double avg = timer.seconds() / timing_iterations;

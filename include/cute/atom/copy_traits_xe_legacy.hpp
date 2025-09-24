@@ -518,7 +518,7 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
                                                 decltype(prepend<2>(mma_atom_regs_shape, _1{})),
                                                 decltype(append<2>(mma_atom_regs_shape, _1{}))>;
 
-  using ThreadLayout_ = Shape<Int<size(typename TiledCopy::Traits_LD_t::ThrID{})>, _1>;
+  using ThreadLayout_ = Shape<decltype(size(typename TiledCopy::Traits_LD_t::ThrID{})), _1>;
   using ThreadLayoutRegs = std::conditional_t<TiledCopy::is_matrix_B,
                                               ThreadLayout_,
                                               decltype(cute::reverse(ThreadLayout_{}))>;

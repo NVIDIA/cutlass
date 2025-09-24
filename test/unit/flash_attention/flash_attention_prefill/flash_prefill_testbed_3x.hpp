@@ -126,6 +126,17 @@ struct Shape_h192 {
     using GmemTiledCopyV = cute::XE_2D_U16x16x32_LD_V;
     using GmemTiledCopyO = cute::XE_2D_U16x8x16_ST_N;
   };
+  
+  template <class, class> class convert_fp8_to_fp16_name;
+
+  template <typename SrcT, typename DstT>
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+    compat::get_default_queue().parallel_for<convert_fp8_to_fp16_name<SrcT, DstT>>(size, [=](auto indx) {
+      d_dst[indx] = static_cast<DstT>(d_src[indx]);
+    }).wait();
+  }
+
+
 /////////////////////////////////////////////////////////////////////
 
 template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,  
@@ -226,14 +237,6 @@ struct TestbedImpl {
   //
   // Methods
   //
-
-  template <typename SrcT, typename DstT>
-  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
-    compat::get_default_queue().parallel_for(size, [=](auto indx) {
-      d_dst[indx] = static_cast<DstT>(d_src[indx]);
-    }).wait();
-  }
-
   template <typename T>
   static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
 
@@ -637,7 +640,7 @@ struct TestbedImpl {
       sycl::ext::oneapi::experimental::sub_group_size<FlashAttention::DispatchPolicy::SubgroupSize>
     };
     compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = compat::experimental::launch<cutlass::device_kernel<FlashAttention>>(policy, params);
+    auto event = compat::experimental::launch<cutlass::device_kernel<FlashAttention>, FlashAttention>(policy, params);
 #endif
     EventManager::getInstance().addEvent(event);
 
@@ -680,8 +683,9 @@ template <
   typename FlashAttention
 >
 struct Testbed3x {
-  using TestBedImpl = typename detail::TestbedImpl<FlashAttention>;
-  TestBedImpl impl_;
+  // using TestBedImp = typename detail::TestbedImpl<FlashAttention>;
+  // TestBedImp impl_;
+  detail::TestbedImpl<FlashAttention> impl_;
 
   //
   // Methods
