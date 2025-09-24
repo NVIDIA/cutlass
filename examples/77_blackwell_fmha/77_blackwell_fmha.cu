@@ -301,6 +301,14 @@ struct Options {
       local = true;
       residual = false;
       causal = false;
+      if(causal_type == "qend") {
+        causal_q_begin = false;
+      } else {
+        causal_q_begin = true;
+      }
+      if (varlen) {
+        residual = true;
+      }
     }
 
     cmd.get_cmd_line_argument("sm-count", sm_count, defaults.sm_count);
@@ -732,13 +740,33 @@ struct FwdRunner {
       get<1>(problem_shape_).cumulative_length = buffers[buffer_index]->device_cumulative_seqlen_kv.get();
     }
     typename Operation::Arguments arguments{
-      problem_shape_,
-      { buffers[buffer_index]->block_Q.get(), stride_Q,
-        buffers[buffer_index]->block_K.get(), stride_K,
-        buffers[buffer_index]->block_V.get(), stride_V },
-      { buffers[buffer_index]->block_O.get(), stride_O,
-        buffers[buffer_index]->block_LSE.get(), stride_LSE },
-      hw_info
+      problem_shape_,                                   // 1st field: Problem dimensions
+
+      // 2nd field: Mainloop arguments - input tensor data and scaling parameters
+      {
+        // Nested Load arguments for tensor pointers and strides
+        { buffers[buffer_index]->block_Q.get(), stride_Q,   // Query tensor pointer and stride
+          buffers[buffer_index]->block_K.get(), stride_K,   // Key tensor pointer and stride
+          buffers[buffer_index]->block_V.get(), stride_V,   // Value tensor pointer and stride
+          options.window_size_left,   // window_size_left: for local attention
+          options.window_size_right   // window_size_right: for local attention
+        },
+
+        // Scaling parameters for attention computation
+        0.0f,          // scale_softmax: 0.0f means use default 1/sqrt(D)
+        1.0f,          // scale_q: scaling factor for Q tensor dequantization
+        1.0f,          // scale_k: scaling factor for K tensor dequantization
+        1.0f,          // scale_v: scaling factor for V tensor dequantization
+        1.0f,          // inv_scale_o: inverse scaling factor for O tensor quantization
+        options.window_size_left,   // window_size_left: for local attention
+        options.window_size_right   // window_size_right: for local attention
+      },
+
+      // 3rd field: Epilogue arguments - output tensors O, LSE with their memory pointers and strides
+      { buffers[buffer_index]->block_O.get(), stride_O,     // Output tensor pointer and stride
+        buffers[buffer_index]->block_LSE.get(), stride_LSE },// Log-sum-exp tensor pointer and stride
+
+      hw_info                                           // 4th field: Hardware info (SM count, etc.)
     };
     return arguments;
   }
@@ -1132,9 +1160,6 @@ int main_single(int argc, char const **args) {
         fn(CausalMask<false>{});
       }
     }
-    else if (options.residual) {
-      fn(ResidualMask{});
-    }
     else if (options.local) {
       if (options.window_size_left == -1 || options.window_size_right == -1) {
         throw std::runtime_error("Error: --window_size_left and --window_size_right must be set for local attention.");
@@ -1144,6 +1169,9 @@ int main_single(int argc, char const **args) {
       } else {
         fn(LocalMask<false>{});
       }
+    }
+    else if (options.residual) {
+      fn(ResidualMask{});
     }
     else {
       fn(NoMask{});

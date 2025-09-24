@@ -41,6 +41,7 @@ set_property(
 set(TEST_BASIC --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=no)
 set(TEST_CAUSAL_00 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=causal)
 set(TEST_CAUSAL_01 --verify --iterations=0 --b=1 --h=1 --h_k=1 --q=1013 --k=1024 --d=128 --mask=causal --causal-type=qend)
+set(TEST_LOCAL --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --window_size_right=512 --window_size_left=512)
 set(TEST_VARLEN --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=residual --varlen)
 set(TEST_HDIM64 --b=2 --h=4 --q=512 --k=512 --d=64 --verify)
 set(TEST_GQA --b=2 --h=4 --h_k=2 --q=512 --k=512 --d=64 --verify)
@@ -69,7 +70,16 @@ set(TEST_VARLEN_20 --verify --varlen --mask=causal --causal-type=qend --d=128 --
 set(TEST_VARLEN_21 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1013 --varlen-k=1024)
 set(TEST_VARLEN_22 --verify --varlen --mask=causal --causal-type=qend --d=128 --h=4 --h_k=4 --varlen-q=1024 --varlen-k=1035)
 
-
+set(TEST_LOCAL_00 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --window_size_right=128 --window_size_left=0)
+set(TEST_LOCAL_01 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --window_size_right=128 --window_size_left=128)
+set(TEST_LOCAL_02 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --window_size_right=0 --window_size_left=0)
+set(TEST_LOCAL_03 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --window_size_right=32 --window_size_left=0)
+set(TEST_LOCAL_04 --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=local --causal-type=qend --window_size_right=0 --window_size_left=32)
+set(TEST_LOCAL_05 --b=1 --h=4 --d=128 --verify --varlen --mask=local --window_size_right=0 --window_size_left=128 --varlen-q=128 --varlen-k=128)
+set(TEST_LOCAL_06 --b=1 --h=4 --d=128 --verify --varlen --mask=local --window_size_right=0 --window_size_left=128 --varlen-q=17 --varlen-k=257)
+set(TEST_LOCAL_07 --h=4 --d=128 --verify --varlen --mask=local --window_size_right=0 --window_size_left=128 --varlen-q=100:300 --varlen-k=100:300)
+set(TEST_LOCAL_08 --h=4 --d=128 --verify --varlen --mask=local --window_size_right=0 --window_size_left=128 --varlen-q=177:366:479 --varlen-k=257:0:766)
+set(TEST_LOCAL_09 --h=4 --d=128 --verify --varlen --mask=local --causal-type=qend --window_size_right=0 --window_size_left=128 --varlen-q=177:366:479 --varlen-k=257:0:766)
 
 set(TEST_MLA_FWD_VARLEN_00 --verify --varlen --mask=causal,residual --dl=128 --dr=64 --h=8 --h_k=4 --varlen-q=128 --varlen-k=128)
 set(TEST_MLA_FWD_VARLEN_01 --verify --varlen --mask=causal,residual --dl=128 --dr=64 --h=4 --h_k=4 --varlen-q=128 --varlen-k=128)
@@ -122,6 +132,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_BASIC
         TEST_CAUSAL_00
         TEST_CAUSAL_01
+        TEST_LOCAL
         TEST_VARLEN
         TEST_HDIM64
         TEST_GQA
@@ -148,6 +159,16 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_VARLEN_20
         TEST_VARLEN_21
         TEST_VARLEN_22
+        TEST_LOCAL_00
+        TEST_LOCAL_01
+        TEST_LOCAL_02
+        TEST_LOCAL_03
+        TEST_LOCAL_04
+        TEST_LOCAL_05
+        TEST_LOCAL_06
+        TEST_LOCAL_07
+        TEST_LOCAL_08
+        TEST_LOCAL_09
         )
     target_include_directories(77_blackwell_fmha_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_fmha_${PREC} PRIVATE ${PREC_MACRO})
@@ -195,6 +216,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_fmha_bwd.cu
         TEST_COMMAND_OPTIONS
         TEST_BASIC
+        TEST_LOCAL
         TEST_VARLEN
         # NOTE: bwd doesn't support GQA yet, --h_k will just get ignored in these tests
         TEST_VARLEN_00
@@ -214,6 +236,16 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         TEST_VARLEN_14
         TEST_BWD_MLA_BASIC
         TEST_BWD_MLA_VARLEN
+        TEST_LOCAL_00
+        TEST_LOCAL_01
+        TEST_LOCAL_02
+        TEST_LOCAL_03
+        TEST_LOCAL_04
+        TEST_LOCAL_05
+        TEST_LOCAL_06
+        TEST_LOCAL_07
+        TEST_LOCAL_08
+        TEST_LOCAL_09
         )
     target_include_directories(77_blackwell_fmha_bwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_fmha_bwd_${PREC} PRIVATE ${PREC_MACRO})
