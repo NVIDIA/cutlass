@@ -4,7 +4,7 @@ mkdir -p ~/cutlass/build
 cd ~/cutlass/build
 
 export CUDA_VISIBLE_DEVICES=7
-export REF_PRINT_DIFF=1
+# export REF_PRINT_DIFF=1
 
 cmake .. -DCUTLASS_NVCC_ARCHS=100a
 
@@ -26,19 +26,17 @@ targets=(
     # test_examples_77_blackwell_fmha_fp16_test_local_07
     # test_examples_77_blackwell_fmha_fp16_test_local_08
     # test_examples_77_blackwell_fmha_fp16_test_local_09
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_causal
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_varlen
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_00
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_01
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_02
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_03
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_04
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_05
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_06
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_07
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_08
-    # test_examples_77_blackwell_fmha_bwd_fp16_test_local_09
+    test_examples_77_blackwell_fmha_bwd_fp16_test_varlen
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_00
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_01
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_02
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_03
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_04
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_05
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_06
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_07
+    test_examples_77_blackwell_fmha_bwd_fp16_test_local_08
 )
 
 for test in "${targets[@]}"
