@@ -1,6 +1,6 @@
 # SYCL CUTLASS Changelog
 
-## [Cutlass 3.9.2 SYCL backend Version 0.4-dev] (2025-09-23)
+## [Cutlass 3.9.2 SYCL backend Version 0.5] (2025-09-24)
 ### Major Architecture Changes
 - **Xe Rearchitecture ([#477](https://github.com/intel/cutlass-sycl/pull/477))**: Complete redesign of Xe CuTe atoms with new architecture
   - New MMA atoms for improved performance
@@ -9,7 +9,12 @@
   - Generic and optimized reorder atoms for {int4, uint4, int8, uint8, e2m1, e4m3, e5m2} -> {half, bfloat16}
   - Requires IGC version [v2.18.5](https://github.com/intel/intel-graphics-compiler/releases/tag/v2.18.5) or later  
 
-### New Features
+### New Features  
+- **G++ Host Compiler Support ([#490](https://github.com/intel/cutlass-sycl/pull/490))**: Added comprehensive support for using G++ as host compiler
+  - Migrated `syclcompat` to this repository as `cutlasscompat` for better compatibility
+  - Fixed compilation issues when using G++ instead of clang++
+  - Added new CI workflow for testing G++ host compiler builds
+  - Enhanced build system to support `-DDPCPP_HOST_COMPILER=g++` option
 - **Grouped GEMM for Mixed Dtype ([#457](https://github.com/intel/cutlass-sycl/pull/457))**: Extended grouped GEMM support to mixed precision operations
   - Added support for BF16 + S8 mixed dtype grouped GEMM
   - Added support for FP16 + U4 mixed dtype grouped GEMM
