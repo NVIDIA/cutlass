@@ -677,7 +677,7 @@ struct TestbedImpl {
       sycl::ext::oneapi::experimental::sub_group_size<FlashPrefillCachedKV::DispatchPolicy::SubgroupSize>
     };
     compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = compat::experimental::launch<cutlass::device_kernel<FlashPrefillCachedKV>>(policy, params);
+    auto event = compat::experimental::launch<cutlass::device_kernel<FlashPrefillCachedKV>, FlashPrefillCachedKV>(policy, params);
 #endif
     EventManager::getInstance().addEvent(event);
 

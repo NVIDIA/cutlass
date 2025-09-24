@@ -43,7 +43,7 @@
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)
-// Move to SYCLCompat ?
+// Move to compat ?
 namespace cutlass {
 
   namespace kernel {

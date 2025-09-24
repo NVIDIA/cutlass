@@ -212,12 +212,6 @@ struct ExampleRunner {
   //
   // Methods
   //
-  template <typename SrcT, typename DstT>
-  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
-    compat::get_default_queue().parallel_for(size, [=](auto indx) {
-      d_dst[indx] = static_cast<DstT>(d_src[indx]);
-    }).wait();
-  }
 
   bool verify(const Options &options) {
     using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
@@ -367,12 +361,12 @@ struct ExampleRunner {
     initialize_block(block_B, seed + 2022);
     initialize_block(block_C, seed + 2021);
 
-    convert_fp8_to_fp16<ElementA, half_t>(
+    convert_dtype<ElementA, half_t, ExampleRunner>(
         block_A.get(),
         block_A_dq.get(),
         block_A.size()
     );
-    convert_fp8_to_fp16<ElementB, half_t>(
+    convert_dtype<ElementB, half_t, ExampleRunner>(
         block_B.get(),
         block_B_dq.get(),
         block_B.size()

@@ -45,6 +45,8 @@ using namespace compat::experimental;
 
 #define SUBGROUP_SIZE (16)
 
+template<class...> class GemmDeviceName;
+
 template <class MMA, uint32_t wg_tile_m, uint32_t wg_tile_n, uint32_t sg_tile_m,
           uint32_t sg_tile_n, uint32_t sg_tile_k, class TA, class TB, class TC>
 void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
@@ -177,7 +179,7 @@ void gemm(int m, int n, int k, TA *A, TB *B, TC *C) {
                                   size(ceil_div(n, wg_tile_n)));
 
   launch<gemm_device<MMA, wg_tile_m, wg_tile_n, sg_tile_m, sg_tile_n, sg_tile_k,
-                     TA, TB, TC>>(
+                     TA, TB, TC>, GemmDeviceName<MMA, TA, TB, TC>>(
       launch_policy{dimGrid, dimBlock,
                     kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
       A, B, C, m, n, k);

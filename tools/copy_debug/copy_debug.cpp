@@ -43,6 +43,8 @@ using namespace cute;
 
 #define SUBGROUP_SIZE (16)
 
+template <class...> class CopyKernelName;
+
 template <class CopyInstruction, class TensorS, class fragment_size>
 void copy_kernel(TensorS S) {
   using namespace cute;
@@ -116,7 +118,7 @@ void copy(int global_M, int global_N) {
 
   auto gridDim = compat::dim3(1);
   auto blockDim = compat::dim3(SUBGROUP_SIZE);
-  launch<copy_kernel<CopyInstruction, decltype(tensor_S), fragment_size>>(
+  launch<copy_kernel<CopyInstruction, decltype(tensor_S), fragment_size>, CopyKernelName<CopyInstruction, decltype(tensor_S)>>(
       launch_policy{gridDim, blockDim,
                     kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
       tensor_S);

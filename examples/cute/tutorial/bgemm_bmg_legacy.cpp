@@ -136,6 +136,8 @@ bool verify(
   return passed;
 }
 
+template <class...> class GemmDeviceName;
+
 template <class ProblemShape, class CtaTiler,
           class TA, class AStride, class TiledCopyA,
           class TB, class BStride, class TiledCopyB,
@@ -208,14 +210,14 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler, int stages,
   //
 
   // constexpr int Num_SGs = size(tiled_mma);
-  static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
-  static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
+  static constexpr int ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+  static constexpr int Num_SGs = ATOM_N * ATOM_M * ATOM_K;
 
-  static constexpr auto BLK_M = get<0>(CtaTiler{});
-  static constexpr auto BLK_N = get<1>(CtaTiler{});
-  static constexpr auto BLK_K = get<2>(CtaTiler{});
+  static constexpr int BLK_M = get<0>(CtaTiler{});
+  static constexpr int BLK_N = get<1>(CtaTiler{});
+  static constexpr int BLK_K = get<2>(CtaTiler{});
 
   auto prefetch_a = cute::prefetch_selector<Shape<Int<BLK_M>,Int<BLK_K>>, Num_SGs>(copy_a);
   auto prefetch_b = cute::prefetch_selector<Shape<Int<BLK_N>,Int<BLK_K>>, Num_SGs>(copy_b);
@@ -334,6 +336,10 @@ gemm_nt(int m, int n, int k,
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
                 TC, decltype(dC), decltype(copyC), decltype(mmaC),
+                Alpha, Beta>, GemmDeviceName<decltype(prob_shape), decltype(cta_tiler),
+                TA, decltype(dA), decltype(copyA),
+                TB, decltype(dB), decltype(copyB),
+                TC, decltype(dC), decltype(copyC), decltype(mmaC),
                 Alpha, Beta>>(policy, prob_shape, cta_tiler, bP,
                     A, dA, copyA,
                     B, dB, copyB,
@@ -411,6 +417,10 @@ gemm_tn(int m, int n, int k,
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
                 TC, decltype(dC), decltype(copyC), decltype(mmaC),
+                Alpha, Beta>, GemmDeviceName<decltype(prob_shape), decltype(cta_tiler),
+                TA, decltype(dA), decltype(copyA),
+                TB, decltype(dB), decltype(copyB),
+                TC, decltype(dC), decltype(copyC), decltype(mmaC),
                 Alpha, Beta>>(policy, prob_shape, cta_tiler, bP,
                     A, dA, copyA,
                     B, dB, copyB,
@@ -484,6 +494,10 @@ gemm_tt(int m, int n, int k,
   };
   auto event = compat::experimental::launch<
     gemm_device<decltype(prob_shape), decltype(cta_tiler),
+                TA, decltype(dA), decltype(copyA),
+                TB, decltype(dB), decltype(copyB),
+                TC, decltype(dC), decltype(copyC), decltype(mmaC),
+                Alpha, Beta>, GemmDeviceName<decltype(prob_shape), decltype(cta_tiler),
                 TA, decltype(dA), decltype(copyA),
                 TB, decltype(dB), decltype(copyB),
                 TC, decltype(dC), decltype(copyC), decltype(mmaC),

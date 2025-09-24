@@ -200,13 +200,6 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
   };
   PagedKVParams paged_kv_cache;
 
-  template <typename SrcT, typename DstT>
-  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
-    compat::get_default_queue().parallel_for(size, [=](auto indx) {
-      d_dst[indx] = static_cast<DstT>(d_src[indx]);
-    }).wait();
-  }
-
   template <typename T>
   static constexpr bool is_fp8_v = cute::is_any_of_v<T, cute::float_e5m2_t, cute::float_e4m3_t>;
 
@@ -214,7 +207,7 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
     using outType = cutlass::DeviceAllocation<cute::conditional_t<is_fp8_v<Tin>, half_t, Tin>>;
     if constexpr(is_fp8_v<Tin>) {
       cutlass::DeviceAllocation<half_t> out(in.size());
-      convert_fp8_to_fp16<Tin, half_t>(in.get(), out.get(), in.size());
+      convert_dtype<Tin, half_t, ExampleRunner>(in.get(), out.get(), in.size());
       return out;
     } else { 
       return in;
@@ -651,7 +644,7 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
       sycl::ext::oneapi::experimental::sub_group_size<FMHAKernel::DispatchPolicy::SubgroupSize>
     };
     compat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = compat::experimental::launch<cutlass::device_kernel<FMHAKernel>>(policy, params);
+    auto event = compat::experimental::launch<cutlass::device_kernel<FMHAKernel>, FMHAKernel>(policy, params);
 #endif
 
     EventManager::getInstance().addEvent(event);
