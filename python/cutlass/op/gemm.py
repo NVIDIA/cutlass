@@ -131,7 +131,7 @@ from cutlass_cppgen.backend import compiler
 from cutlass_cppgen.backend.evt import EpilogueFunctorVisitor
 from cutlass_cppgen.backend.gemm_operation import GemmArguments, GemmOperationUniversal
 from cutlass_cppgen.backend.library import TensorDescription, TileDescription
-from cutlass.backend.utils.device import default_stream
+from cutlass_cppgen.backend.utils.device import default_stream
 from cutlass_cppgen.op.op import OperationBase
 from cutlass_cppgen.shape import GemmCoord
 from cutlass_cppgen.utils import check, datatypes
@@ -626,7 +626,7 @@ class Gemm(OperationBase):
 
     def run(self, A=None, B=None, C=None, D=None,
             alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None,
-            stream = default_stream()) -> GemmArguments:
+            stream = None) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -649,14 +649,14 @@ class Gemm(OperationBase):
         :type sync: bool
         :param print_module: whether to print the emitted C++ code
         :type print_module: bool
-        :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+        :param stream: cuda stream, defaults to the default stream
         :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
         :rtype: cutlass_cppgen.backend.GemmArguments
         """
-        if not stream:
-            stream = cuda.CUstream(0)
+        if stream is None:
+            stream = default_stream()
         super().run_setup()
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")

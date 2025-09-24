@@ -92,7 +92,7 @@ def _todevice(host_data, stream):
     """
     if cutlass_cppgen.use_rmm:
         return rmm.DeviceBuffer.to_device(host_data.tobytes())
-    if cutlass._use_sycl:
+    if cutlass_cppgen._use_sycl:
         nbytes = len(host_data.tobytes())
         usm_device_ptr = device_mem_alloc(nbytes, stream)
         stream.memcpy(usm_device_ptr.usm_mem, host_data.tobytes(), nbytes)
@@ -124,7 +124,7 @@ def todevice(host_data, dtype=np.float32, stream = None):
 def device_mem_alloc(size, stream = None):
     if cutlass_cppgen.use_rmm:
         return rmm.DeviceBuffer(size=size)
-    elif cutlass._use_sycl:
+    elif cutlass_cppgen._use_sycl:
         device_usm = MemoryUSMDevice(size, queue=stream)
         return SYCLPtrWrapper(device_usm)
     else:

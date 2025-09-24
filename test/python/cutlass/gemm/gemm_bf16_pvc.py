@@ -38,19 +38,19 @@ from functools import partial
 import logging
 import unittest
 
-import cutlass
-from cutlass.backend.utils.device import device_cc
+import cutlass_cppgen
+from cutlass_cppgen.backend.utils.device import device_cc
 
 from utils import LayoutCombination, add_test_gemm
 
 
-cutlass.set_log_level(logging.WARNING)
+cutlass_cppgen.set_log_level(logging.WARNING)
 cc = 11
-dtype = cutlass.DataType.bf16
+dtype = cutlass_cppgen.DataType.bf16
 
 
 @unittest.skipIf(device_cc() != cc, 'Device compute capability is insufficient for PVC tests.')
-@unittest.skipIf(cutlass.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
+@unittest.skipIf(cutlass_cppgen.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
 class GemmBF16PVC(unittest.TestCase):
     """
     Wrapper class to which tests will be added dynamically in __main__
@@ -61,18 +61,18 @@ class GemmBF16PVC(unittest.TestCase):
 add_test_pvc_bf16 = partial(add_test_gemm, cls=GemmBF16PVC, cc=11,
                             element=dtype,
                             compilation_modes=["dpcpp"],
-                            opclass=cutlass.OpcodeClass.TensorOp,
+                            opclass=cutlass_cppgen.OpcodeClass.TensorOp,
                             stages=0,
                             cluster_shape=[1, 1, 1])
 
 add_test_f32_acc = partial(add_test_pvc_bf16, alignments=[2, 2, 4],
-                           element_C=cutlass.DataType.f32,
-                           element_output=cutlass.DataType.f32,
-                           element_accumulator=cutlass.DataType.f32)
+                           element_C=cutlass_cppgen.DataType.f32,
+                           element_output=cutlass_cppgen.DataType.f32,
+                           element_accumulator=cutlass_cppgen.DataType.f32)
 add_test_bf16_acc = partial(add_test_pvc_bf16, alignments=[2, 2, 2],
-                            element_C=cutlass.DataType.bf16,
-                            element_output=cutlass.DataType.bf16,
-                            element_accumulator=cutlass.DataType.bf16)
+                            element_C=cutlass_cppgen.DataType.bf16,
+                            element_output=cutlass_cppgen.DataType.bf16,
+                            element_accumulator=cutlass_cppgen.DataType.bf16)
 
 add_test_f32_acc(layouts=LayoutCombination.TTT,
                  threadblock_shape=[256, 256, 32], warp_count=[8, 4, 1])

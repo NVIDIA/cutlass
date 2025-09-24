@@ -247,6 +247,13 @@ def add_test_gemm(
             td.threadblock_shape = threadblock_shape
             td.stages = stages
             td.cluster_shape = cluster_shape
+            
+            # For Intel PVC (CC 11), ensure we use auto schedules and default tile scheduler
+            if cc == 11:
+                td.kernel_schedule = cutlass_cppgen.KernelScheduleType.ScheduleAuto
+                td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.ScheduleAuto
+                td.tile_scheduler = cutlass_cppgen.TileSchedulerType.Default
+            
             op = plan.construct(tile_description=td, alignment_A=alignment_A, alignment_B=alignment_B, alignment_C=alignment_C)
             self.assertTrue(test_all_gemm(op, 'universal', compilation_mode=compilation_mode))
 

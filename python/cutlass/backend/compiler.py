@@ -218,7 +218,7 @@ class ArtifactManager:
             key, cubin_image, host_binary, operation_name, op_attr = row
             op_attr = json.loads(op_attr)
             if self._is_sycl():
-                q = dpctl.SyclQueue(cutlass.sycl_device())
+                q = dpctl.SyclQueue(cutlass_cppgen.sycl_device())
                 module = dpctl.program.create_program_from_spirv(
                     q, cubin_image)
                 kernel = module.get_sycl_kernel(operation_name)
@@ -359,7 +359,7 @@ class ArtifactManager:
                     file.write(source_buffer_device)
 
                 # Compile with DPC++
-                cmd_template = "clang++ ${options} ${srcfile} -o ${outfile} -fsycl-dump-device-code=${tmpdir}"
+                cmd_template = "icpx ${options} ${srcfile} -o ${outfile} -fsycl-dump-device-code=${tmpdir}"
                 values = {
                     "options": compilation_options.get_str(),
                     "srcfile": temp_cpp.name,
@@ -378,7 +378,7 @@ class ArtifactManager:
                 # generates multiple SPIR-V files. We create a program from each of
                 # them to find the one containing the kernel with the correct
                 # subgroup size.
-                q = dpctl.SyclQueue(cutlass.sycl_device())
+                q = dpctl.SyclQueue(cutlass_cppgen.sycl_device())
                 op_name = f"__sycl_kernel_{operation_list[0].name()}"
                 cubin_image = None
                 for f in spv_files:
@@ -441,7 +441,7 @@ class ArtifactManager:
             cmd.extend(["-shared", "-o", temp_dst.name,
                         temp_src.name, "-lcudart", "-lcuda"])
         else:
-            cmd.append("clang++")
+            cmd.append("icpx")
             # Clang does not support "-fpermissive"
             cmd.extend(["-fsycl", "-w", "-fPIC"])
             cmd.extend(host_compilation_options.get_str().split(" "))
@@ -472,7 +472,7 @@ class ArtifactManager:
             host_compile_options = CompilationOptions(
                 self._nvcc_compile_options, arch, include_paths, False)
         else:
-            cutlass.initialize_sycl_context()
+            cutlass_cppgen.initialize_sycl_context()
             arch = "intel_gpu_pvc"
             host_compile_options = CompilationOptions(
                 ["-std=c++17", "-DCUTLASS_ENABLE_SYCL", "-DSYCL_INTEL_TARGET"],
@@ -515,7 +515,7 @@ class ArtifactManager:
             if self._is_sycl():
                 if cubin_image is None:
                     raise RuntimeError("SYCL compilation failed, see debug log")
-                q = dpctl.SyclQueue(cutlass.sycl_device())
+                q = dpctl.SyclQueue(cutlass_cppgen.sycl_device())
                 program = dpctl.program.create_program_from_spirv(
                     q, cubin_image)
             else:

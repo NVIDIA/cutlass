@@ -15,7 +15,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "cuda-python>=11.8.0",
   "networkx",
   "numpy",
   "pydot",

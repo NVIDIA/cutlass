@@ -80,7 +80,7 @@ def device_cc(device: int = -1) -> int:
     if device == -1:
         device = cutlass_cppgen.device_id()
 
-    if cutlass._use_sycl:
+    if cutlass_cppgen._use_sycl:
         # Using '11' to encode Intel PVC as an integer in the expected format.
         return 11
 
@@ -94,8 +94,8 @@ def device_sm_count(device: int = -1):
     if device == -1:
         device = cutlass_cppgen.device_id()
 
-    if cutlass._use_sycl:
-        return cutlass._sycl_device.max_compute_units
+    if cutlass_cppgen._use_sycl:
+        return cutlass_cppgen._sycl_device.max_compute_units
 
     err, device_sm_count = cuda.cuDeviceGetAttribute(
         cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device
@@ -136,6 +136,6 @@ def to_device_ptr(tensor) -> cuda.CUdeviceptr:
 
 
 def default_stream():
-    if cutlass._use_sycl:
-        return dpctl.SyclQueue(cutlass._sycl_device)
+    if cutlass_cppgen._use_sycl:
+        return dpctl.SyclQueue(cutlass_cppgen._sycl_device)
     return cuda.CUstream(0)
