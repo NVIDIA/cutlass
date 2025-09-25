@@ -294,12 +294,12 @@ Instructions for building and running the Unit tests are described in the [Quick
 
 # About
 
-CUTLASS is released by NVIDIA Corporation as Open Source software under the 
+CUTLASS-SYCL is released by INTEL Corporation as Open Source software under the
 [3-clause "New" BSD license](LICENSE.txt).
 
 # Contributors
 
-The official list of CUTLASS developers and contributors is available here: [CONTRIBUTORS](CONTRIBUTORS.md).
+The official list of CUTLASS-SYCL developers and contributors is available here: [CONTRIBUTORS](CONTRIBUTORS.md).
 
 # Copyright
 
