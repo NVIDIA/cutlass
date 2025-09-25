@@ -31,15 +31,15 @@
 #pragma once
 
 /*! \file
-  \brief HostTensor contributes management for both host and device memory.
+  \brief HostTensorPlanarComplex contributes management for both host and device memory.
 
-  HostTensor allocates host and device memory upon construction. Basic element-wise operations on
+  HostTensorPlanarComplex allocates host and device memory upon construction. Basic element-wise operations on
   host memory synchronize device memory automatically. Explicit copy operations provide abstractions
   for CUDA memcpy operations.
 
   Call {host, device}_{data, ref, view}() for accessing host or device memory.
 
-  See cutlass/tensor_ref.h and cutlass/tensor_view.h for more details.
+  See cutlass/tensor_ref_planar_complex.h and cutlass/tensor_view_planar_complex.h for more details.
 */
 
 #include <vector>
