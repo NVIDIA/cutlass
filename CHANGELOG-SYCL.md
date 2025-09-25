@@ -1,6 +1,6 @@
-# SYCL CUTLASS Changelog
+# CUTLASS SYCL Changelog
 
-## [Cutlass 3.9.2 SYCL backend Version 0.5] (2025-09-24)
+## [CUTLASS SYCL 0.5] (2025-09-26)
 ### Major Architecture Changes
 - **Xe Rearchitecture ([#477](https://github.com/intel/cutlass-sycl/pull/477))**: Complete redesign of Xe CuTe atoms with new architecture
   - New MMA atoms for improved performance
@@ -10,7 +10,7 @@
   - Requires IGC version [v2.18.5](https://github.com/intel/intel-graphics-compiler/releases/tag/v2.18.5) or later  
 
 ### New Features  
-- **G++ Host Compiler Support ([#490](https://github.com/intel/cutlass-sycl/pull/490))**: Added comprehensive support for using G++ as host compiler
+- **G++ Host Compiler Support ([#490](https://github.com/intel/cutlass-sycl/pull/490))**: Support for G++ 13 as host compiler
   - Migrated `syclcompat` to this repository as `cutlasscompat` for better compatibility
   - Fixed compilation issues when using G++ instead of clang++
   - Added new CI workflow for testing G++ host compiler builds
@@ -34,17 +34,15 @@
 
 ### Testing and Development Infrastructure
 - **Enhanced Unit Testing**: Added comprehensive unit tests for 16-bit x 8-bit grouped GEMM operations
-- **Build System Improvements**: Reduced BMG builds and updated CI/CD configurations
-- **Documentation Updates**: Updated README for Intel Xe architecture support
 - **Code Restructuring**: Refactored examples and codebase to focus on SYCL implementation
-  - Removed CUDA-only examples and unit tests to streamline SYCL development
-  - Cleaned up NVIDIA-specific code paths that are no longer needed
-  - Consolidated example structure around SYCL-first approach
 
 ### Bug Fixes
 - **Variable Name Bug Fix ([#491](https://github.com/intel/cutlass-sycl/pull/491))**: Fixed variable name bugs in CuTe architecture
 - **2D Block Prefetch OOB Fix ([#488](https://github.com/intel/cutlass-sycl/pull/488))**: Fixed 2D block prefetch out-of-bounds issues in CuTe arch
 - Various minor bug fixes and code improvements
+
+### Notes and Known Issues
+- CUTLASS APIs (Gemm/Collectives) are not updated with rearchitected Xe Cute atoms.
 
 ## [Cutlass 3.9.2 SYCL backend Version 0.3](https://github.com/codeplay/cutlass-fork/releases/tag/v3.9.2-0.3) (2025-06-30)
 - Add support for GEMM FP8 (E5M2 and E4M3)
