@@ -23,5 +23,5 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/nvidia/cutlass"
-"Bug Tracker" = "https://github.com/nvidia/cutlass/issues"
+"Homepage" = "https://github.com/intel/cutlass-sycl"
+"Bug Tracker" = "https://github.com/intel/cutlass-sycl/issues"
