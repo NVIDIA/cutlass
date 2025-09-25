@@ -3,44 +3,25 @@
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/codeplaysoftware/cutlass-fork/badge)](https://scorecard.dev/viewer/?uri=github.com/codeplaysoftware/cutlass-fork)
 
-This repository contains a development version of the CUTLASS repository
-with experimental SYCL support enabled. The aim is to
-support other SYCL-enabled devices with minimal source code modifications by using the same CUTLASS features and concepts.
-
-Given that most of the backend work happens in the CUTE implementation,
-the CUTLASS interface remains the same, and the SYCL support only needs 
-changes at the atom and pipeline level.
-
 SYCL[1] is a royalty-free, cross-platform abstraction layer that enables
 code for heterogeneous and offload processors to be written with modern 
 ISO C++, and provides API and abstractions to find devices and manage 
 resources for GPUs. 
 
-## Support for NVIDIA GPUs using CUDA
-
-The support for NVIDIA GPUs using CUTLASS is unmodified; you can still use this repository as a drop-in replacement for the upstream NVIDIA repository.
-The SYCL support does not conflict with the original NVIDIA CUDA path.
-Only some portions of the common headers and the build system are slightly modified
-to enable the SYCL compilation mode.
-
-We aim to integrate any changes from the upstream NVIDIA repository as soon
-as we can.
-
 ## Support for Intel GPUs
 
-The SYCL backend supports running CUTLASS on Intel GPUs.
-Currently, Intel Data Center Max 1550 and 1100 (a.k.a Ponte Vecchio - PVC) are supported.
-Intel Arc B580 is known to work but is not yet optimized.
+The CUTLASS-SYCL supports running on Intel GPUs.
+Currently, Intel Data Center Max 1550 and 1100 (a.k.a Ponte Vecchio - PVC) along with Intel Arc B580 (a.k.a BattleMage - BMG) are supported.
 
-The `examples/sycl` directory shows a number of GEMM algorithms and examples of 
-CUTLASS running on PVC, including flash attention V2.
+The `examples` directory shows a number of GEMM algorithms and examples of 
+CUTLASS-SYCL running on PVC and BMG, including flash attention V2.
 
 Only Linux platforms are supported.
 
 ### Requirements (SYCL for Intel GPU)
 
 To build CUTLASS SYCL support for Intel GPUs, you need the DPC++ compiler;
-you can use the latest [[nightly build](https://github.com/intel/llvm/releases)] 
+you can use the latest open source [[nightly build](https://github.com/intel/llvm/releases)] 
 or a oneAPI toolkit from 2025.1 onwards. Intel Compute Runtime 25.13 (with Intel Graphics Compiler 2.10.10) is required. At the time of the release it can be installed from [intel-graphics-staging](https://launchpad.net/~kobuk-team/+archive/ubuntu/intel-graphics-staging). Installation from [intel-graphics](https://launchpad.net/~kobuk-team/+archive/ubuntu/intel-graphics) is recommended when it is available there.
 
 Building the tests and the examples requires oneMKL for random number generation.
@@ -49,7 +30,18 @@ Building the tests and the examples requires oneMKL for random number generation
 
 The following instructions show how to use the nightly build to build the cutlass examples
 
+#### Building with oneAPI Basekit
+Download [oneAPI basekit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html)
+```
+$ . /opt/intel/oneapi/setvars.sh
+$ CC=icx CXX=icpx cmake .. -G Ninja \
+  -DCUTLASS_ENABLE_SYCL=ON \
+  -DDPCPP_SYCL_TARGET=intel_gpu_pvc \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DCMAKE_CXX_FLAGS="-ftemplate-backtrace-limit=0 -fdiagnostics-color=always"
+```
 
+#### Building with open source nightly release of DPC++
 ```
 # Download the nightly of DPCPP compiler
 $ wget https://github.com/intel/llvm/releases/tag/nightly-2025-01-31
@@ -69,7 +61,7 @@ $ CC=clang CXX=clang++ cmake .. -G Ninja \
 
 CMake will check that DPC++ compiler is available in the system,
 and it will download the MKL library if it cannot find it.
-To get better performance result we require the following combinations of the environment variables flags to provide better performance hints for generating optimised code. For ahead of time (AOT) compilation, the following options have to be set during compilation and for Just in time (JIT) Compilation  when running
+To get better performance result we require the following combinations of the environment variables flags to provide better performance hints for generating optimised code. For ahead of time (AOT) compilation, the following options have to be set during compilation:
 
 ```
 export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file" 
@@ -77,11 +69,11 @@ export IGC_VISAOptions="-perfmodel"
 export IGC_VectorAliasBBThreshold=10000
 export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"  
 ```
-To build and run a simple PVC gemm example run the commands below.
+To build and run a simple PVC/BMG gemm example run the commands below.
 
 ```
-$ ninja 00_pvc_gemm
-$ ./examples/sycl/00_pvc_gemm/00_pvc_gemm
+$ ninja 00_bmg_gemm
+$ ./examples/00_bmg_gemm/00_bmg_gemm
 Disposition: Passed
 Problem Size: 5120x4096x4096x1
 Cutlass GEMM Performance:     [247.159]TFlop/s  (0.6951)ms

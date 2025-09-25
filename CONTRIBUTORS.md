@@ -2,7 +2,41 @@
 
 [README](./README.md#documentation) > **Contributors**
 
-# CUTLASS C++ Developers **
+# CUTLASS SYCL Developers **
+
+Alejandro Acosta<br />
+Amit Singh Chandel<br />
+Antony Vance<br />
+Atharva Dubey<br />
+Carlos Gonzalez<br />
+Chen Xi<br />
+Finlay Marno<br />
+Jacky Deng<br />
+Ji Yang<br />
+Jiexin Zheng<br />
+Joe Todd<br />
+Leslie Fang<br />
+Liyang Ling<br />
+Lukas Sommer<br />
+Mehdi Goli<br />
+Min Jean Cho<br />
+Muhammad Tanvir<br />
+Ouadie EL FAROUKI<br />
+Peter Caday<br />
+Ratnam Parikh<br />
+Roland Schulz<br />
+Ruyman Reyes<br />
+Sanchit Jain<br />
+Sijia Lou<br />
+Tadej Ciglarič<br />
+Tao Zhang<br />
+Victor Perez<br />
+Yang Ji<br />
+Yuankun Shi<br />
+
+** _The list is sorted alphabetically by first name._
+
+# CUTLASS C++ Developers ****
 
 Andrew Kerr<br />
 Paul Springer<br />
@@ -68,7 +102,7 @@ Ian Tramble<br />
 Ali Hassani<br />
 Shreya Gaur<br />
 
-** _The list is sorted in order of the author's first contribution to the CUTLASS project._
+**** _The list is sorted in order of the author's first contribution to the CUTLASS project._
 
 # CUTLASS DSL Developers ***
 
@@ -173,6 +207,7 @@ Sean Treichler<br />
 # Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2025 Intel Corporation. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

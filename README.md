@@ -1,6 +1,6 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS SYCL 0.3 (Base - CUTLASS 3.9.2)
+# CUTLASS SYCL 0.5
 
 **This repository fast-follows NVIDIA CUTLASS repository adding SYCL support for Intel GPUs.**
 
@@ -33,23 +33,36 @@ See the [functionality docs](./media/docs/cpp/functionality.md) for a more compr
 list of kernel level features, data types, instructions, and minimum supported by CUTLASS on each GPU
 architecture.
 
-# What's New in CUTLASS SYCL 0.3 
-- Add support for GEMM FP8 (E5M2 and E4M3)
-- Add example for GEMM FP8 with support for channel-wise and group-wise quantization
-- Add support for Grouped GEMM FP8
-- Improve performance for FP8 to FP16 conversion
-- Add support for epilogue data conversion
-- Add support for FP16 GEMM with FP16 accumulator
-- Add support for BF16 GEMM with BF16 accumulator
-- Add support for mixed dtype GEMM with support for tensor-wise, channel-wise and group-wise quantization
-- Add example of mixed dtype BF16 + INT8 using channel-wise and group-wise quantization
-- Add example of mixed dtype FP16 + INT8 using tensor-wise quantization
-- Add example of mixed dtype FP16 + INT4 using channel-wise and group-wise quantization
-- Add support for zero-point quantization in INT4 and INT8 data types
-- Add support for Flash Attention prefill FP8 with and without KV cache
-- Add support for Flash Attention decode FP8 with and without KV cache
+Base NVIDIA CUTLASS Versions for CUTLASS-SYCL releases:
+| CUTLASS SYCL | NVIDIA CUTLASS |
+|-----------------|----------|
+|0.1| 3.9|
+|0.2 | 3.9.2 |
+|0.3 | 3.9.2 |
+|0.5 | 4.2.0 |
 
-**See the [CHANGELOG](CHANGELOG-SYCL.md) for details of all past releases and updates.**
+# What's New in CUTLASS SYCL 0.5 
+
+### Major Architecture Changes
+- **Xe Rearchitecture ([#477](https://github.com/intel/cutlass-sycl/pull/477))**: Complete redesign of Xe CuTe atoms with new architecture
+  - New MMA atoms for improved performance
+  - Enhanced 2D copy atoms (loads, stores, prefetch with VNNI/transpose support)
+  - New 2D copy helpers (low-level `make_block_2d_copy` and high-level `make_block_2d_copy_{A,B,C}`)
+  - Generic and optimized reorder atoms for {int4, uint4, int8, uint8, e2m1, e4m3, e5m2} -> {half, bfloat16}
+  - Requires IGC version [v2.18.5](https://github.com/intel/intel-graphics-compiler/releases/tag/v2.18.5) or later
+
+### New Features  
+- **G++ Host Compiler Support ([#490](https://github.com/intel/cutlass-sycl/pull/490))**: Support for G++ 13 as host compiler
+- Migrated `syclcompat` to this repository as `cutlasscompat` for better compatibility
+  - Fixed compilation issues when using G++ instead of clang++
+  - Added new CI workflow for testing G++ host compiler builds
+  - Enhanced build system to support `-DDPCPP_HOST_COMPILER=g++` option
+- **Grouped GEMM for Mixed Dtype ([#457](https://github.com/intel/cutlass-sycl/pull/457))**: Extended grouped GEMM support to mixed precision operations
+  - Added support for BF16 + S8 mixed dtype grouped GEMM
+  - Added support for FP16 + U4 mixed dtype grouped GEMM
+  - New examples: `10_bmg_grouped_gemm_bf16_f16_s8.cpp` and `10_bmg_grouped_gemm_f16_u4.cpp`
+
+  **See the [CHANGELOG](CHANGELOG-SYCL.md) for details of all past releases and updates.**
 
 # CuTe
 
@@ -82,17 +95,7 @@ Minimum requirements:
 - DPC++ Compiler Version: oneAPI 2025.1 and onwards
 - Intel Compute Runtime: 25.13 (with Intel Graphics Compiler 2.10.10)
 
-## Operating Systems
-
-We are regularly testing following setup in CI.
-
-|**Operating System** | **Compiler** |
-|-----------------|----------|
-| Ubuntu 22.04 | GCC 11.2.0 |
-| Ubuntu 24.04 | GCC 13.3.0 |
-
-
-## Hardware
+## Hardware Support
 
 CUTLASS-SYCL runs successfully on the following Intel GPUs.
 
@@ -100,6 +103,18 @@ CUTLASS-SYCL runs successfully on the following Intel GPUs.
 |---|---|
 |Intel Data Center GPU Max Series            |Xe-HPC|
 |Intel Arc GPU B580 Graphics                       |Xe2|
+
+## Validated Software Configurations
+
+We are regularly testing following setup in CI.
+
+|**Platform**|**Operating System** | **DPC++ Compiler** | **G++** | **Intel Compute Runtime** |**Intel Graphics Compiler** |
+|-----------------|----------|-----------------|--------|---------------------|-----------------------|
+|Xe-HPC| Ubuntu 22.04 |2025.2+ |G++13  | 25.18 | 2.11 |
+|Xe2| Ubuntu 25.04 |2025.2+  |G++13  | 25.35 | 2.18 |
+
+
+
 
 
 ## Target Architecture
@@ -129,7 +144,6 @@ CUTLASS is described in the following documents and the accompanying
 - [Efficient GEMM in CUDA](./media/docs/cpp/efficient_gemm.md) - describes how GEMM kernels may be implemented efficiently in CUDA
 - [CUTLASS 3.x Design](./media/docs/cpp/cutlass_3x_design.md) - describes the CUTLASS 3.x design, its benefits, and how CuTe enables us to write much more composable components
 - [GEMM API 3.x](./media/docs/cpp/gemm_api_3x.md) - describes the CUTLASS 3.x GEMM model and C++ template concepts
-- [GEMM API 2.x](./media/docs/cpp/gemm_api.md) - describes the CUTLASS 2.x GEMM model and C++ template concepts
 - [Implicit GEMM Convolution](./media/docs/cpp/implicit_gemm_convolution.md) - describes 2-D and 3-D convolution in CUTLASS
 - [Code Organization](./media/docs/cpp/code_organization.md) - describes the organization and contents of the CUTLASS project
 - [Terminology](./media/docs/cpp/terminology.md) - describes terms used in the code
@@ -137,51 +151,51 @@ CUTLASS is described in the following documents and the accompanying
 - [Fundamental types](./media/docs/cpp/fundamental_types.md) - describes basic C++ classes used in CUTLASS to represent numeric quantities and arrays
 - [Layouts](./media/docs/cpp/layout.md) - describes layouts of matrices and tensors in memory
 - [Tile Iterators](./media/docs/cpp/tile_iterator_concept.md) - describes C++ concepts for iterating over tiles of matrices in memory
-- [CUTLASS Profiler](./media/docs/cpp/profiler.md) - command-line driven profiling application
 - [CUTLASS Utilities](./media/docs/cpp/utilities.md) - additional templates used to facilitate rapid development
-- [Dependent kernel launch](./media/docs/cpp/dependent_kernel_launch.md) - describes a new feature in Hopper which allows overlapping dependent 
-kernels in the same stream, and how it is used in CUTLASS.
 
 # Resources
-We have also described the structure of an efficient GEMM in our talk at the
-[GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
-- [CUTLASS: Software Primitives for Dense Linear Algebra at All Levels and Scales within CUDA](https://www.nvidia.com/en-us/on-demand/session/gtcsiliconvalley2018-s8854/)
-- [Developing CUDA Kernels to Push Tensor Cores to the Absolute Limit on NVIDIA A100](https://www.nvidia.com/en-us/on-demand/session/gtcsj20-s21745/)
-- [Accelerating Convolution with Tensor Cores in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31883/)
-- [Accelerating Backward Data Gradient by Increasing Tensor Core Utilization in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41996/)
-- [CUTLASS: Python API, Enhancements, and NVIDIA Hopper](https://www.nvidia.com/en-us/on-demand/session/gtcfall22-a41131/)
 
-# Building CUTLASS
+# Building CUTLASS-SYCL
 
-CUTLASS is a header-only template library and does not need to be built to be used by other
-projects. Client applications should target CUTLASS's `include/` directory in their include
+CUTLASS-SYCL is a header-only template library and does not need to be built to be used by other
+projects. Client applications should target CUTLASS-SYCL's `include/` directory in their include
 paths.
 
-CUTLASS unit tests, examples, and utilities can be build with CMake.
+CUTLASS-SYCL unit tests, examples, and utilities can be built with CMake.
 The minimum version of CMake is given in the [Quickstart guide](./media/docs/cpp/quickstart.md).
-Make sure the `CUDACXX` environment  variable points to NVCC in the CUDA Toolkit installed
-on your system.
+Make sure you have Intel oneAPI DPC++ compiler installed and the environment is properly set up.
 
 ```bash
-$ export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
+$ source /opt/intel/oneapi/setvars.sh
 ```
 
-Create a build directory within the CUTLASS project, then run CMake. By default CUTLASS will build kernels
-for CUDA architecture versions 5.0, 6.0, 6.1, 7.0, 7.5, 8.0, 8.6, 8.9, and 9.0.
-To reduce compile time you can specify
-the architectures to build CUTLASS for by changing the CMake configuration setting
-`CUTLASS_NVCC_ARCHS`.
+Create a build directory within the CUTLASS-SYCL project, then run CMake. You need to specify
+the target Intel GPU architecture using the `DPCPP_SYCL_TARGET` flag.
+For Intel Data Center GPU Max Series (Ponte Vecchio), use `intel_gpu_pvc`.
+For Intel Arc GPU B580 Graphics, use `intel_gpu_bmg_g21`.
 
 ```bash
 $ mkdir build && cd build
 
-$ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA's Ampere Architecture
+$ CC=icx CXX=icpx cmake .. -G Ninja -DCUTLASS_ENABLE_SYCL=ON -DDPCPP_SYCL_TARGET="intel_gpu_pvc"     # compiles for Intel Data Center GPU Max Series
 ```
 
-From the `build/` directory, compile and run the CUTLASS unit tests by building the target `test_unit` with make.
+Or for Intel Arc GPU B580 Graphics:
 
-The unit tests are organized as several binaries mirroring the top-level namespaces of CUTLASS,
+```bash
+$  CC=icx CXX=icpx cmake .. -G Ninja -DCUTLASS_ENABLE_SYCL=ON -DDPCPP_SYCL_TARGET="intel_gpu_bmg_g21" # compiles for Intel Arc GPU B580 Graphics
+```
+
+To compile with G++ as host compiler, add the flag `-DDPCPP_HOST_COMPILER=g++-13` to the cmake command. Please note that the build system must be able to find `g++-13` in your PATH.
+
+```bash
+$  CC=icx CXX=icpx cmake .. -G Ninja -DCUTLASS_ENABLE_SYCL=ON -DDPCPP_HOST_COMPILER=g++-13 -DDPCPP_SYCL_TARGET="intel_gpu_bmg_g21" # compiles for Intel Arc GPU B580 Graphics with G++ as host compiler
+```
+
+From the `build/` directory, compile and run the CUTLASS-SYCL unit tests by building the target `test_unit` with make.
+
+The unit tests are organized as several binaries mirroring the top-level namespaces of CUTLASS-SYCL,
 and they may be executed in parallel via make's `-j` command line argument.
 
 ```bash
@@ -190,62 +204,60 @@ $ make test_unit -j
 ...
 ...
 [----------] Global test environment tear-down
-[==========] 946 tests from 57 test cases ran. (10812 ms total)
-[  PASSED  ] 946 tests.
+[==========] XXX tests from YY test cases ran. (ZZZZ ms total)
+[  PASSED  ] XXX tests.
 ```
 
-All tests should pass on supported platforms, though the exact number of tests may vary over time.
+All tests should pass on supported Intel GPU platforms, though the exact number of tests may vary over time.
 
 
 # Project Structure
 
-CUTLASS is arranged as a header-only library along with Utilities, Tools, Examples, and unit tests. 
-[Doxygen documentation](https://nvidia.github.io/cutlass) provides a complete list of files, classes, 
-and template concepts defined in the CUTLASS project.
+CUTLASS-SYCL is arranged as a header-only library along with Utilities, Tools, Examples, and unit tests. 
 
 A detailed explanation of the source code organization may be found in the 
-[CUTLASS documentation](./media/docs/cpp/code_organization.md), but several main components are summarized below.
+[CUTLASS-SYCL documentation](./media/docs/cpp/code_organization.md), but several main components are summarized below.
 
-## CUTLASS Template Library
+## CUTLASS-SYCL Template Library
 
 ```
 include/                     # client applications should target this directory in their build's include paths
 
-  cutlass/                   # CUDA Templates for Linear Algebra Subroutines and Solvers - headers only
+  cutlass/                   # SYCL Templates for Linear Algebra Subroutines and Solvers - headers only
 
-    arch/                    # direct exposure of architecture features (including instruction-level GEMMs)
+    arch/                    # direct exposure of Intel GPU architecture features (including instruction-level GEMMs)
 
-    conv/                    # code specialized for convolution
+    conv/                    # code specialized for convolution on Intel GPUs
 
-    epilogue/                # code specialized for the epilogue of gemm/convolution
+    epilogue/                # code specialized for the epilogue of gemm/convolution using SYCL
 
-    gemm/                    # code specialized for general matrix product computations
+    gemm/                    # code specialized for general matrix product computations with SYCL
 
     layout/                  # layout definitions for matrices, tensors, and other mathematical objects in memory
 
-    platform/                # CUDA-capable Standard Library components
+    platform/                # SYCL-capable Standard Library components for Intel GPUs
 
-    reduction/               # bandwidth-limited reduction kernels that do not fit the "gemm" model
+    reduction/               # bandwidth-limited reduction kernels optimized for Intel GPU architectures
 
-    thread/                  # simt code that can be performed within a CUDA thread
+    thread/                  # SYCL workgroup and subgroup code for Intel GPU execution units
     
-    transform/               # code specialized for layout, type, and domain transformations
+    transform/               # code specialized for layout, type, and domain transformations using SYCL
 
     *                        # core vocabulary types, containers, and basic numeric operations
 
-  cute/                      # CuTe Layout, layout algebra, MMA/Copy atoms, tiled MMA/Copy
+  cute/                      # CuTe Layout, layout algebra, MMA/Copy atoms, tiled MMA/Copy for SYCL
 
     algorithm/               # Definitions of core operations such as copy, gemm, and operations on cute::tuples
 
-    arch/                    # Bare bones PTX wrapper structs for copy and math instructions
+    arch/                    # Intel GPU architecture wrapper structs for copy and math instructions
 
-    atom/                    # Meta-information either link to or built from arch/ operators
+    atom/                    # Meta-information for Intel GPU operators and SYCL kernels
 
-      mma_atom.hpp           # cute::Mma_Atom and cute::TiledMma
+      mma_atom.hpp           # cute::Mma_Atom and cute::TiledMma for Intel GPU architectures
 
-      copy_atom.hpp          # cute::Copy_Atom and cute::TiledCopy
+      copy_atom.hpp          # cute::Copy_Atom and cute::TiledCopy optimized for SYCL
 
-      *sm*.hpp               # Arch specific meta-information for copy and math operations
+      *xe*.hpp               # Intel Xe architecture specific meta-information for copy and math operations
 
     *                        # Core library types such as Shape, Stride, Layout, Tensor, and associated operations
 
@@ -259,18 +271,18 @@ include/                     # client applications should target this directory 
 
 ```
 tools/
-  library/                   # CUTLASS Instance Library - contains instantiations of all supported CUTLASS templates
+  library/                   # CUTLASS-SYCL Instance Library - contains instantiations of all supported CUTLASS-SYCL templates
     include/
       cutlass/
         library/
 
-  profiler/                  # CUTLASS Profiler         - command-line utility for executing operations in the
-                             #                            CUTLASS Library
+  profiler/                  # CUTLASS Profiler         - SYCL support not yet available
+                             #                            (command-line utility for executing operations)
   
-  util/                      # CUTLASS Utilities        - contains numerous helper classes for
-    include/                 #                            manging tensors in device memory, reference
-      cutlass/               #                            implementations for GEMM, random initialization
-        util/                #                            of tensors, and I/O.
+  util/                      # CUTLASS-SYCL Utilities   - contains numerous helper classes for
+    include/                 #                            managing tensors in Intel GPU device memory, reference
+      cutlass/               #                            implementations for SYCL GEMM, random initialization
+        util/                #                            of tensors, and I/O for Intel GPU environments.
 ```
 
 ### Test
@@ -279,225 +291,6 @@ The `test/unit/` directory consist of unit tests implemented with Google Test th
 basic usage of Core API components and complete tests of the CUTLASS GEMM computations.
 
 Instructions for building and running the Unit tests are described in the [Quickstart guide](./media/docs/cpp/quickstart.md).
-
-# Performance Profiling
-
-The `tools/profiler/` directory contains a command-line utility for launching each of the GEMM kernels.
-It can be built as follows:
-
-```bash
-$ make cutlass_profiler -j16
-```
-## Building all GEMM and Convolution kernels (_long_ build times)
-
-By default, only one tile size is instantiated for each data type, math instruction, and layout.
-To instantiate all, set the following environment variable when running CMake from an empty `build/` directory.
-Beware, this results in *tens of thousands* of kernels and long build times. 
-This would also result in a large binary size and on some platforms linker to fail on building the library.
-Therefore, it's highly recommended to generate only a subset of kernels as demonstrated in the sub-section below.
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_LIBRARY_KERNELS=all
-...
-$ make cutlass_profiler -j16
-```
-
-## Building a subset of GEMM and Convolution kernels (_reduced_ build times)
-
-To compile strictly one kernel or a small set of kernels, a comma-delimited list of kernel names with 
-wildcard characters may be used to reduce the set of kernels. The following examples show building exactly one
-or a subset of kernels for NVIDIA Ampere and Turing architecture:
-
-### Building a subset Tensor Core GEMM kernels
-
-To compile a subset of Tensor Core GEMM kernels with FP32 accumulation and FP16 input targeting NVIDIA Ampere and Turing architecture, 
-use the below cmake command line:
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*gemm_f16_*_nt_align8
-...
-$ make cutlass_profiler -j16
-```
-
-Example command line for profiling a subset of Tensor Core GEMM kernels is as follows:
-```bash
-./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s*gemm_f16_*_nt_align8 --m=3456 --n=4096 --k=4096
-
-...
-=============================
-  Problem ID: 1
-
-        Provider: CUTLASS
-   OperationKind: gemm
-       Operation: cutlass_tensorop_s1688gemm_f16_256x128_32x2_nt_align8
-
-          Status: Success
-    Verification: ON
-     Disposition: Passed
-
-reference_device: Passed
-          cuBLAS: Passed
-
-       Arguments: --gemm_kind=universal --m=3456 --n=4096 --k=4096 --A=f16:column --B=f16:row --C=f32:column --alpha=1  \
-                  --beta=0 --split_k_slices=1 --batch_count=1 --op_class=tensorop --accum=f32 --cta_m=256 --cta_n=128  \
-                  --cta_k=32 --stages=2 --warps_m=4 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=8 --min_cc=75  \
-                  --max_cc=1024
-
-           Bytes: 118489088  bytes
-           FLOPs: 115992428544  flops
-
-         Runtime: 1.55948  ms
-          Memory: 70.7616 GiB/s
-
-            Math: 74378.8 GFLOP/s
-
-
-
-=============================
-...
-```
-
-### Building one CUDA Core GEMM kernel
-
-To compile one SGEMM kernel targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
-...
-$ make cutlass_profiler -j16
-```
-
-Example command line for profiling single SGEMM CUDA kernel is as follows:
-```bash
-$ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
-
-=============================
-  Problem ID: 1
-
-        Provider: CUTLASS
-   OperationKind: gemm
-       Operation: cutlass_simt_sgemm_128x128_8x2_nn_align1
-
-          Status: Success
-    Verification: ON
-     Disposition: Passed
-
-          cuBLAS: Passed
-
-       Arguments: --m=3456 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0 --split_k_slices=1  \
-                  --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
-                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
-
-           Bytes: 180355072  bytes
-           FLOPs: 115992428544  flops
-
-         Runtime: 6.73655  ms
-          Memory: 24.934 GiB/s
-
-            Math: 17218.4 GFLOP/s
-
-=============================
-```
-
-### Building a subset of Tensor Core Convolution kernels
-
-To compile a subset of Tensor core convolution kernels implementing forward propagation (fprop) with FP32 accumulation 
-and FP16 input targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*fprop_optimized_f16
-...
-$ make cutlass_profiler -j16
-```
-
-Example command line for profiling a subset of Tensor Core convolution kernels is as follows:
-
-```bash
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s*fprop_optimized_f16 --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
-
-...
-=============================
-  Problem ID: 1
-
-        Provider: CUTLASS
-   OperationKind: conv2d
-       Operation: cutlass_tensorop_s16816fprop_optimized_f16_128x128_32x5_nhwc
-
-          Status: Success
-    Verification: ON
-     Disposition: Passed
-
-reference_device: Passed
-
-       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
-                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f16:nhwc --Filter=f16:nhwc --Output=f32:nhwc  \
-                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
-                  --eq_gemm_provider=none --op_class=tensorop --accum=f32 --cta_m=128 --cta_n=128 --cta_k=32 --stages=5  \
-                  --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=16 --min_cc=80 --max_cc=1024
-
-           Bytes: 1130659840  bytes
-           FLOPs: 118482796544  flops
-
-         Runtime: 0.711496  ms
-          Memory: 1479.99 GiB/s
-
-            Math: 166526 GFLOP/s
-
-=============================
-...
-```
-
-
-### Building one Convolution CUDA kernel
-
-To compile and run one CUDA Core convolution kernel implementing forward propagation (fprop) with F32 accumulation 
-and FP32 input targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
-...
-$ make cutlass_profiler -j16
-```
-
-Example command line for profiling one CUDA Core convolution kernel:
-
-```bash
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
-
-
-=============================
-  Problem ID: 1
-
-        Provider: CUTLASS
-   OperationKind: conv2d
-       Operation: cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
-
-          Status: Success
-    Verification: ON
-     Disposition: Passed
-
-reference_device: Passed
-
-       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
-                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f32:nhwc --Filter=f32:nhwc --Output=f32:nhwc  \
-                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
-                  --eq_gemm_provider=none --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
-                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
-
-           Bytes: 2055798784  bytes
-           FLOPs: 118482796544  flops
-
-         Runtime: 7.34266  ms
-          Memory: 260.752 GiB/s
-
-            Math: 16136.2 GFLOP/s
-
-
-=============================
-
-```
-
-## More Details on Compiling CUTLASS Kernels and CUTLASS Profiler
-- Please follow the links for more CMake examples on selectively compiling CUTLASS kernels:
-  - [GEMM CMake Examples](./media/docs/cpp/quickstart.md#gemm-cmake-examples) 
-  - [Implicit GEMM convolution CMake Examples](./media/docs/cpp/quickstart.md#convolution-cmake-examples)
-- [Further details about the CUTLASS Profiler are described here.](./media/docs/cpp/profiler.md)
-
 
 # About
 
