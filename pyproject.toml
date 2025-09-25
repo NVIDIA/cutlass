@@ -3,9 +3,9 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nvidia-cutlass"
-version = "4.0.0.0"
-description = "CUTLASS"
+name = "cutlass-sycl"
+version = "0.5.0"
+description = "CUTLASS-SYCL"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "BSD-3-Clause"}
@@ -23,5 +23,5 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/nvidia/cutlass"
-"Bug Tracker" = "https://github.com/nvidia/cutlass/issues"
+"Homepage" = "https://github.com/intel/cutlass-sycl"
+"Bug Tracker" = "https://github.com/intel/cutlass-sycl/issues"
