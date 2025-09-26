@@ -727,11 +727,17 @@ struct BenchmarkRunnerGemm {
     state.SetLabel(extra_label.str());
 
     auto gflop = 2.0 * options.m * options.n * options.k * options.l * 1e-9;
+
+    // Compatible with data types smaller than 8 bits here
+    constexpr double bits_per_byte = static_cast<double>(sizeof_bits_v<char>);
+    constexpr double sizeof_a = sizeof_bits_v<ElementA> / bits_per_byte;
+    constexpr double sizeof_b = sizeof_bits_v<ElementB> / bits_per_byte;
+    constexpr double sizeof_c = sizeof_bits_v<ElementC> / bits_per_byte;
     auto mega_bytes_transferred = static_cast<double>(
-        options.m * options.k * sizeof_bits_v<ElementA> +
-        options.k * options.n * sizeof_bits_v<ElementB> +
-        (options.beta != 0 ? 2 : 1) * options.m * options.n * sizeof_bits_v<ElementC>
-      ) * 1e-6 * options.l / sizeof_bits_v<int8_t>;
+        options.m * options.k * sizeof_a +
+        options.k * options.n * sizeof_b +
+        (options.beta != 0 ? 2 : 1) * options.m * options.n * sizeof_c
+      ) * 1e-6 * options.l;
 
     initialize_counters(state);
     int32_t counter = 1;
