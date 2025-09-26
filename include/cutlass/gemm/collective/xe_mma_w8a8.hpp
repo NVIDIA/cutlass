@@ -96,7 +96,7 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
   static constexpr int SG_M = ceil_div(BLK_M, ATOM_M);
   static constexpr int SG_N = ceil_div(BLK_N, ATOM_N);
   static constexpr int SG_K = ceil_div(BLK_K, ATOM_K);
-  using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
+  using SubgroupTileShape = Shape<C<SG_M>, C<SG_N>, C<SG_K>>;
 
   // 32
   static constexpr int Num_SGs = ATOM_N * ATOM_M * ATOM_K;
