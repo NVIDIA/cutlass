@@ -722,9 +722,11 @@ struct BenchmarkRunnerGemm {
     }
     state.SetLabel(extra_label.str());
 
-    double sizeof_a = sizeof_bits_v<ElementA> / static_cast<double>(sizeof_bits_v<int8_t>);
-    double sizeof_b = sizeof_bits_v<ElementB> / static_cast<double>(sizeof_bits_v<int8_t>);
-    double sizeof_c = sizeof_bits_v<ElementC> / static_cast<double>(sizeof_bits_v<int8_t>);
+    // Compatible with data types smaller than 8 bits here
+    constexpr double bits_per_byte = static_cast<double>(sizeof_bits_v<char>);
+    constexpr double sizeof_a = sizeof_bits_v<ElementA> / bits_per_byte;
+    constexpr double sizeof_b = sizeof_bits_v<ElementB> / bits_per_byte;
+    constexpr double sizeof_c = sizeof_bits_v<ElementC> / bits_per_byte;
     auto mega_bytes_transferred = static_cast<double>(
         options.m * options.k * sizeof_a +
         options.k * options.n * sizeof_b +
