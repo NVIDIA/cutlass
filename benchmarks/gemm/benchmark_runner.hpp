@@ -722,6 +722,8 @@ struct BenchmarkRunnerGemm {
     }
     state.SetLabel(extra_label.str());
 
+    auto gflop = 2.0 * options.m * options.n * options.k * options.l * 1e-9;
+
     // Compatible with data types smaller than 8 bits here
     constexpr double bits_per_byte = static_cast<double>(sizeof_bits_v<char>);
     constexpr double sizeof_a = sizeof_bits_v<ElementA> / bits_per_byte;
