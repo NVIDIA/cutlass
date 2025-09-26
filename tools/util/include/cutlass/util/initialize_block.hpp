@@ -35,7 +35,7 @@
 
 #pragma once
 #ifdef CUTLASS_ENABLE_SYCL
-#include <compat.hpp> 
+#include <cute/util/compat.hpp> 
 #else
 #include <cuda.h>
 #endif

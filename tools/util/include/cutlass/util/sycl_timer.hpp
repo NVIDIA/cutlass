@@ -33,7 +33,7 @@
 #pragma once
 
 #include <sycl/sycl.hpp>
-#include <compat.hpp>
+#include <cute/util/compat.hpp>
 
 #if defined(CUTLASS_SYCL_PROFILING_ENABLED)
 #include "cutlass/util/sycl_event_manager.hpp"

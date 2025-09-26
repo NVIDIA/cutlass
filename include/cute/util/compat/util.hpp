@@ -31,6 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #include <cassert>
 #include <type_traits>
@@ -39,9 +40,9 @@
 #include <sycl/group_barrier.hpp>
 #include <sycl/kernel_bundle.hpp>
 
-#include <compat/math.hpp>
-#include <compat/memory.hpp>
-#include <compat/dims.hpp>
+#include <cute/util/compat/math.hpp>
+#include <cute/util/compat/memory.hpp>
+#include <cute/util/compat/dims.hpp>
 
 #if defined(__NVPTX__)
 #include <sycl/ext/oneapi/experimental/cuda/masked_shuffles.hpp>

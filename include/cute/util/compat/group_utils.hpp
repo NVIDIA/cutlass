@@ -31,13 +31,14 @@
 //===------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #include <iterator>
 #include <stdexcept>
 #include <sycl/sycl.hpp>
 
-#include <compat/defs.hpp>
-#include <compat/math.hpp>
+#include <cute/util/compat/defs.hpp>
+#include <cute/util/compat/math.hpp>
 
 namespace compat {
 namespace group {

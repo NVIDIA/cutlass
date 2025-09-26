@@ -31,6 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #include <limits>
 #include <sycl/feature_test.hpp>
@@ -45,7 +46,7 @@
 #include <sycl/ext/oneapi/experimental/bfloat16_math.hpp>
 #endif
 #include <sycl/ext/oneapi/experimental/complex/complex.hpp>
-#include <compat/traits.hpp>
+#include <cute/util/compat/traits.hpp>
 
 namespace compat {
 namespace detail {

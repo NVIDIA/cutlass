@@ -32,7 +32,7 @@
  **************************************************************************************************/
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#include <compat/compat.hpp>
+#include <cute/util/compat/compat.hpp>
 
 #include <vector>
 #else

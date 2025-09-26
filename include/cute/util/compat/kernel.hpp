@@ -31,6 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #ifdef _WIN32
 #include <unordered_set>

@@ -32,10 +32,10 @@
 
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
-#include <compat.hpp>
+#include <cute/util/compat.hpp>
 
 #include <cutlass/util/device_memory.h>
-#include <compat/compat.hpp>
+#include <cute/util/compat/compat.hpp>
 #include <cutlass/cutlass.h>
 
 using namespace compat::experimental;

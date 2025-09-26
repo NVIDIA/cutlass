@@ -167,7 +167,7 @@ void verify_gemm_correctness(cute::Tensor<EngineC, CLayout> const& h_c_out_tenso
 
 #if defined(CUTLASS_ENABLE_SYCL)
 #include <sycl/sycl.hpp>
-#include <compat/compat.hpp>
+#include <cute/util/compat/compat.hpp>
 #include <cutlass/sycl_vector_types.h>
 
 namespace sc = compat;

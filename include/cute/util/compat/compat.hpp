@@ -18,9 +18,20 @@
  *  compat.hpp
  *
  *  Description:
- *    Main include header for Compat
+ *    Main include internal header for Compat
  **************************************************************************/
 
 #pragma once
+#pragma GCC system_header
 
-#include <compat/compat.hpp>
+#include <cute/util/compat/atomic.hpp>
+#include <cute/util/compat/defs.hpp>
+#include <cute/util/compat/device.hpp>
+#include <cute/util/compat/dims.hpp>
+#include <cute/util/compat/group_utils.hpp>
+#include <cute/util/compat/id_query.hpp>
+#include <cute/util/compat/kernel.hpp>
+#include <cute/util/compat/launch.hpp>
+#include <cute/util/compat/math.hpp>
+#include <cute/util/compat/memory.hpp>
+#include <cute/util/compat/util.hpp>

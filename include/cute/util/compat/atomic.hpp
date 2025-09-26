@@ -31,6 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #include <cassert>
 
@@ -39,7 +40,7 @@
 #include <sycl/memory_enums.hpp>
 #include <sycl/multi_ptr.hpp>
 
-#include <compat/traits.hpp>
+#include <cute/util/compat/traits.hpp>
 
 namespace compat {
 

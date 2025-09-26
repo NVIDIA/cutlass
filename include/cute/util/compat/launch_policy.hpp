@@ -22,6 +22,7 @@
  **************************************************************************/
 
 #pragma once
+#pragma GCC system_header
 
 #include "sycl/ext/oneapi/experimental/enqueue_functions.hpp"
 #include "sycl/ext/oneapi/properties/properties.hpp"
@@ -30,10 +31,10 @@
 #include <sycl/queue.hpp>
 #include <sycl/range.hpp>
 
-#include <compat/defs.hpp>
-#include <compat/device.hpp>
-#include <compat/dims.hpp>
-#include <compat/traits.hpp>
+#include <cute/util/compat/defs.hpp>
+#include <cute/util/compat/device.hpp>
+#include <cute/util/compat/dims.hpp>
+#include <cute/util/compat/traits.hpp>
 
 namespace compat {
 namespace experimental {

@@ -22,6 +22,7 @@
  **************************************************************************/
 
 #pragma once
+#pragma GCC system_header
 
 #include <sycl/feature_test.hpp>
 #ifdef SYCL_EXT_ONEAPI_BFLOAT16_MATH_FUNCTIONS

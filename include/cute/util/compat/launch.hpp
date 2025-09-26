@@ -22,6 +22,7 @@
  **************************************************************************/
 
 #pragma once
+#pragma GCC system_header
 
 #include <sycl/accessor.hpp>
 #include <sycl/event.hpp>
@@ -30,9 +31,9 @@
 #include <sycl/range.hpp>
 #include <sycl/reduction.hpp>
 
-#include <compat/device.hpp>
-#include <compat/dims.hpp>
-#include <compat/launch_policy.hpp>
+#include <cute/util/compat/device.hpp>
+#include <cute/util/compat/dims.hpp>
+#include <cute/util/compat/launch_policy.hpp>
 
 namespace compat {
 

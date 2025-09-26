@@ -31,6 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+#pragma GCC system_header
 
 #include <cassert>
 #include <cstdint>
@@ -52,9 +53,9 @@
 #include <sycl/ext/intel/experimental/usm_properties.hpp>
 #endif
 
-#include <compat/device.hpp>
-#include <compat/traits.hpp>
-#include <compat/defs.hpp>
+#include <cute/util/compat/device.hpp>
+#include <cute/util/compat/traits.hpp>
+#include <cute/util/compat/defs.hpp>
 
 #if defined(__linux__)
 #include <sys/mman.h>
