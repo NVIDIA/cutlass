@@ -85,8 +85,8 @@ Now that we have transformed our problem in such a way that allows us to dispatc
 we can reuse much of the machinery CUTLASS offers to implement this forward pass convolution
 operator. CUTLASS decomposes these "moving parts" of GPU linear algebra into reusable,
 modular software components abstracted by C++ template classes. This example
-demonstrates how some of the lower layers of the hierarchy can be re-used for custom kernels
-by writing a custom kernel for convolution that re-uses the Ampere/Ada GEMM collectives
+demonstrates how some of the lower layers of the hierarchy can be reused for custom kernels
+by writing a custom kernel for convolution that reuses the Ampere/Ada GEMM collectives
 from CUTLASS 3.
 
 A kernel author is free to compose their custom components with any of the existing templates

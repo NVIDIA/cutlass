@@ -57,7 +57,7 @@ The simplest way to use the profiler is to pass `m`, `n`, and `k` as well as you
 per kernel to determine best rasterization orders, swizzles, and cluster sizes. Passing `blockwiseGemm`
 or `GroupedGemm` through the operation flag will determine which set of operations will be profiled.
 
-For examle, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
+For example, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
 granularity m = 1, scale granularity n = 128, and scale granularity k = 128 for the problem size 8192x8192x8192:
 ```
 cutlass_profiler --operation=blockwiseGemm \
@@ -92,7 +92,7 @@ It is also worthwhile to note that C can be void if scaling by beta is not neede
 
 - *MMA Dimensions*: in both Blackwell and Hopper tensor cores it is worthwhile to note that the smallest `MMA_M` dimension is 64, but `MMA_N`
 dimension can be as small as 8 for some instructions. For problem sizes where M is small consider computing $D^T = \alpha B^T A^T + \beta C^T$ instead.
-  - When computing after swapping A and B and transposing the N dimension is now our small dimension. With a small `MMA_N` we can more effectively tile without performing unecessary computation.
+  - When computing after swapping A and B and transposing the N dimension is now our small dimension. With a small `MMA_N` we can more effectively tile without performing unnecessary computation.
 - *Layout Swapping*: When optimizing with the profiler swap `m` and `n` inputs and adjust layouts to reflect this swapping and transposing.
   - For example if we have a row-major A, column-major B, and row-major D, we can swap tensors and run a kernel with:
     - The left hand matrix as row-major (since B transposed is row-major)

@@ -271,7 +271,7 @@ def update_tma_descriptor(
     :type tma_atom:       CopyAtom
     :param gmem_tensor:   The GMEM tensor
     :type gmem_tensor:    Tensor
-    :param tensormap_ptr: The pointer to the memory location of the descriptor to udpate
+    :param tensormap_ptr: The pointer to the memory location of the descriptor to update
     :type tensormap_ptr:  Pointer
     """
     _cute_nvgpu_ir.update_tma_desc(

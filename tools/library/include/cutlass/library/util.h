@@ -175,7 +175,7 @@ ConvKind from_string<ConvKind>(std::string const &str);
 /// Converts a RuntimeDatatype enumerant to a string
 char const *to_string(cutlass::library::RuntimeDatatype type, bool pretty = false);
 
-/// Convers a RuntimeDatatype enumerant from a string
+/// Converts a RuntimeDatatype enumerant from a string
 template<>
 cutlass::library::RuntimeDatatype from_string<cutlass::library::RuntimeDatatype>(std::string const &str);
 
@@ -183,14 +183,14 @@ cutlass::library::RuntimeDatatype from_string<cutlass::library::RuntimeDatatype>
 /// Converts a RasterOrder enumerant to a string
 char const *to_string(RasterOrder type, bool pretty = false);
 
-/// Convers a RasterOrder enumerant from a string
+/// Converts a RasterOrder enumerant from a string
 template<>
 RasterOrder from_string<RasterOrder>(std::string const &str);
 
 /// Converts a bool to a string
 char const *to_string(bool type, bool pretty = false);
 
-/// Convers a bool from a string
+/// Converts a bool from a string
 template<>
 bool from_string<bool>(std::string const &str);
 

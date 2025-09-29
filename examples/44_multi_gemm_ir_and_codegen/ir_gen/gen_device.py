@@ -45,7 +45,7 @@ class gen_device:
         self.b2b_num = len(fuse_gemm_info)
         self.user_header_file = user_header_file
         self.args = {}
-        # device arg struct memebr
+        # device arg struct member
         self.arg_member = []
         self.gen_class_name = gen_class_name
         self.gen_kernel_name = gen_class_name + "Kernel"

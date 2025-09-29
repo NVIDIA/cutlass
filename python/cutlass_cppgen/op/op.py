@@ -425,7 +425,7 @@ class OperationBase:
 
     def run_setup(self):
         """
-        Steps that must be taken before caling `plan.run()`
+        Steps that must be taken before calling `plan.run()`
         """
         # Initialize the memory pool if, if not already done
         cutlass_cppgen.get_memory_pool()

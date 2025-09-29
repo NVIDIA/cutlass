@@ -173,7 +173,7 @@ enum class SplitKMode {
   kInvalid
 };
 
-/// Indicates the classificaition of the math instruction
+/// Indicates the classification of the math instruction
 enum class OpcodeClassID {
   kSimt,
   kTensorOp,

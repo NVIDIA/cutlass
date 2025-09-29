@@ -77,7 +77,7 @@ def get_dyn_smem(
     :param alignment:     An optional pointer alignment, the result pointer is offset appropriately
     :type alignment:      int
     :return:              A pointer to the start of the dynamic SMEM allocation with a correct
-                          alignement
+                          alignment
     :rtype:               Pointer
     """
     if not isinstance(element_type, NumericMeta):

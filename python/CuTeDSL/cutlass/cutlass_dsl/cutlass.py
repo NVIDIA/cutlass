@@ -833,7 +833,7 @@ def _validate_iter_args_structure(iter_args, ir_values):
 
 
 # =============================================================================
-# DSL implementation of Python Build-in Operators
+# DSL implementation of Python Built-in Operators
 # =============================================================================
 
 

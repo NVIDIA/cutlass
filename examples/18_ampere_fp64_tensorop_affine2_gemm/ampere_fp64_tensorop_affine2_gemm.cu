@@ -41,7 +41,7 @@ change to method to visit the global memory:
      address
      addr = base_pointer + coord1 * stride1 + coord2 * stride2
 
-The rest part of GEMM which includes shared memory load/store, mma comutation
+The rest part of GEMM which includes shared memory load/store, mma computation
 is the same.
 
 This example uses Ampere fp64 tensore core Affine2 GEMM as an example.  SIMT 

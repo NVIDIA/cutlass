@@ -90,7 +90,7 @@ def kernel(
     dst_c: cute.Tensor,
 ):
     # Note: SMEM_SIZE bytes (specified in kernel().launch(smem=...)) can be reserved for developer to utilize
-    # Note: alignment of inital allocator base ptr is 1024
+    # Note: alignment of initial allocator base ptr is 1024
     allocator = cutlass.utils.SmemAllocator()
     # base ptr of allocator points at: SMEM_ADDR_START (the starting address of available shared memory)
 

@@ -282,14 +282,14 @@ for filename in args.src_files:
 
                 if len(splits) > 1:
                     if not splits[0].isspace():
-                        # Only add text to filler if there are non-whitespace charcters
+                        # Only add text to filler if there are non-whitespace characters
                         # preceding the TEST definition in the line
                         filler_text += splits[0]
 
                         # The new line is just the TEST-related line
                         line = 'TEST' + splits[-1]
 
-                # Add tests and transtion to TestDeclaredWaitingStart state.
+                # Add tests and transition to TestDeclaredWaitingStart state.
                 # Do not add the line to the test text of the new test case; this
                 # will be done in either the TestDeclaredWaitingStart state processing
                 # below or in the InTest state processing below.
