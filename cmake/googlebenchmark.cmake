@@ -45,4 +45,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googlebenchmark)
 
+# Silence warnings from GoogleBenchmark sources
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  foreach(tgt benchmark benchmark_main)
+    if(TARGET ${tgt})
+      target_compile_options(${tgt} PRIVATE -w)
+    endif()
+  endforeach()
+endif()
+
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)

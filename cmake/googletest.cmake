@@ -44,13 +44,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  if (TARGET gtest)
-   # Ignore unsupported warning flags on IntelLLVM
-    target_compile_options(gtest PRIVATE -Wno-unknown-warning-option)
-    # Show -Winline warnings, but don’t let them become errors
-    target_compile_options(gtest PRIVATE -Wno-error=inline)
-  endif()
+# Silence warnings from GoogleTest sources
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  foreach(tgt gtest gtest_main gmock gmock_main)
+    if(TARGET ${tgt})
+      target_compile_options(${tgt} PRIVATE -w)
+    endif()
+  endforeach()
 endif()
 
 if (MSVC)

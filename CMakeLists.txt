@@ -28,6 +28,18 @@
 
 if(CUTLASS_ENABLE_SYCL)
   cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
+
+  # Silence warnings from GoogleTest headers
+  include_directories(SYSTEM
+      ${CMAKE_CURRENT_SOURCE_DIR}/_deps/googletest-src/googletest/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/_deps/googletest-src/googlemock/include
+  )
+
+  # Silence warnings from GoogleBenchmark headers
+  include_directories(SYSTEM
+      ${CMAKE_CURRENT_SOURCE_DIR}/_deps/googlebenchmark-src/include
+  )
+
 else()
   cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
   cmake_policy(SET CMP0112 NEW)
@@ -121,6 +133,16 @@ if (CUTLASS_ENABLE_SYCL)
          DPCPP_SYCL_TARGET STREQUAL "intel_gpu_bmg_g21")
     set(SYCL_INTEL_TARGET ON)
     add_compile_definitions(SYCL_INTEL_TARGET)
+    add_compile_options(-Wall
+       -Wno-unused-variable
+       -Wno-unused-local-typedef
+       -Wno-unused-but-set-variable
+       -Wno-uninitialized
+       -Wno-reorder-ctor
+       -Wno-logical-op-parentheses
+       -Wno-unused-function
+       -Wno-unknown-pragmas
+    )
   endif()
 
   add_compile_definitions(CUTLASS_ENABLE_SYCL)
