@@ -142,7 +142,7 @@ template <
   typename OutputOp_,                       ///< Output operator - concept is EpilogueWithBroadcastOp
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
   int FragmentsPerPartition = 1,            ///< Used to coarsten the epilogue granularity
-  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp_>::value),
   bool IsSingleSource = OutputOp_::kIsSingleSource
 >
@@ -166,7 +166,7 @@ template <
   typename OutputOp_,
   typename Padding_,
   int FragmentsPerPartition,
-  int IterationsUnroll
+  bool IterationsUnroll
 >
 class EpilogueStreamkWithBroadcast<
   Shape_,
@@ -309,7 +309,7 @@ template <
   typename OutputOp_,
   typename Padding_,
   int FragmentsPerPartition,
-  int IterationsUnroll
+  bool IterationsUnroll
 >
 class EpilogueStreamkWithBroadcast<
   Shape_,
