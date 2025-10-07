@@ -2,16 +2,12 @@ name: "SYCL Python Interface Test"
 
 on:
   push:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   merge_group:
-    branches: [ "sycl-develop" ]
+    branches: [ "main" ]
   workflow_dispatch:
-    inputs:
-      DPCPP_VERSION:
-        description: "DPCPP version to use"
-        type: string
 
 permissions: {}
 
@@ -22,31 +18,32 @@ concurrency:
 jobs:
   run-tests:
     name: Run Python Interface tests on Intel PVC
-    # strategy:
-    #   matrix:
-    #     compiler: [ NIGHTLY, RELEASE ]
-    runs-on: cp-gpumax-1100-gpu
+    runs-on: pvc
     timeout-minutes: 60
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install Intel graphics drivers
         uses: ./.github/actions/install-intel-graphics
         with:
           GPU: 'PVC'
           IGC: 'ROLLING'
+
       - name: Install DPC++
         id: install_dpcpp
         uses: ./.github/actions/install-dpcpp
         with:
-          # DPCPP_RELEASE: ${{ matrix.compiler }}
-          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          DPCPP_RELEASE: RELEASE
+          #DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
           DPCPP_PATH: ~/dpcpp
+
       - name: Setup virtual environment
         shell: bash
         run: |
@@ -65,12 +62,14 @@ jobs:
           DPCTL_BRANCH: master
           DPCTL_PATH: ~/dpctl
           VENV_PATH: ~/.venv
+
       - name: Install Torch XPU
         shell: bash
         run: |
           source ~/.venv/bin/activate
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/test/xpu
           pip uninstall --yes intel-sycl-rt intel-cmplr-lib-ur umf
+
       - name: Run Python Interface GEMM Tests
         shell: bash
         run: |
@@ -79,4 +78,32 @@ jobs:
           export CUTLASS_USE_SYCL=1
           export SYCL_UR_TRACE=2
           export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-          python test/python/cutlass/gemm/run_all_tests.py
+          python test/python/cutlass/gemm/gemm_bf16_pvc.py
+
+      - name: Cleanup DPC++
+        if: always()
+        shell: bash
+        run: |
+          echo "Cleaning up DPC++ installation..."
+          echo "Removing OneAPI packages..."
+          sudo apt remove -y intel-oneapi-runtime-libs intel-oneapi-compiler-dpcpp-cpp || true
+          sudo rm -f /etc/apt/sources.list.d/oneAPI.list
+          sudo rm -f /usr/share/keyrings/oneapi-archive-keyring.gpg
+          # Clean up environment files
+          rm -f setvars.sh
+          # Clean up build artifacts
+          rm -rf build/ || true
+          echo "DPC++ cleanup completed"
+
+      - name: Cleanup DPCTL
+        if: always()
+        shell: bash
+        run: |
+          echo "Cleaning up DPCTL installation..."
+          DPCTL_PATH="${{ inputs.DPCTL_PATH || '~/dpctl' }}"
+          DPCTL_PATH=$(eval echo $DPCTL_PATH)  # Expand ~ to home directory
+          if [ -d "$DPCTL_PATH" ]; then
+            echo "Removing DPCTL directory: $DPCTL_PATH"
+            sudo rm -rf "$DPCTL_PATH"
+          fi
+          echo "DPCTL cleanup completed"
