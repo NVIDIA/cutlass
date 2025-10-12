@@ -1259,7 +1259,12 @@ class BaseDSL:
         return None
 
     def get_function_ptr(self, original_function):
-        file_name = inspect.getsourcefile(original_function)
+        try:
+            file_name = inspect.getsourcefile(original_function)
+        except (OSError, TypeError):
+            # Interactive mode - use placeholder filename
+            file_name = "<interactive>"
+        
         code_object = compile(
             original_function._transformed_ast, filename=file_name, mode="exec"
         )

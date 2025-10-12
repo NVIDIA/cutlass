@@ -304,9 +304,21 @@ class DSLPreprocessor(ast.NodeTransformer):
             return []
 
         # Step 1. Parse the given function
-        file_name = inspect.getsourcefile(function_pointer)
-        lines, start_line = inspect.getsourcelines(function_pointer)
-        dedented_source = textwrap.dedent("".join(lines))
+        try:
+            file_name = inspect.getsourcefile(function_pointer)
+            lines, start_line = inspect.getsourcelines(function_pointer)
+            dedented_source = textwrap.dedent("".join(lines))
+        except (OSError, TypeError):
+            # Handle interactive mode (e.g., Python shell, Jupyter) where source is not available
+            # In this case, we cannot preprocess the function
+            log().warning(
+                "Cannot get source code for function [%s]. "
+                "Interactive mode (Python shell/Jupyter) is not supported for preprocessing. "
+                "Please define functions in a .py file instead.",
+                func_name
+            )
+            return []
+        
         tree = ast.parse(dedented_source, filename=file_name)
         # Bump the line numbers so they match the real source file
         ast.increment_lineno(tree, start_line - 1)
@@ -446,7 +458,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         """
         Transforms the provided function using the preprocessor.
         """
-        self.file_name = inspect.getsourcefile(original_function)
+        try:
+            self.file_name = inspect.getsourcefile(original_function)
+        except (OSError, TypeError):
+            # Interactive mode - use placeholder filename
+            self.file_name = "<interactive>"
+        
         self.function_globals = exec_globals
         transformed_tree = self.transform_function(
             original_function.__name__, original_function
