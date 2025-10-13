@@ -170,6 +170,8 @@ foreach(EXAMPLE
   90_sm103_fp4_ultra_grouped_gemm
   91_fp4_gemv
   92_blackwell_moe_gemm
+  93_hopper_dual_gemm
+  94_blackwell_geforce_dual_gemm
   )
 
   add_subdirectory(${EXAMPLE})
