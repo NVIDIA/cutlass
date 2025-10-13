@@ -64,7 +64,7 @@ print_layout(Layout const& layout)  // (m,n) -> idx
     print("    ");
     for (int n = 0; n < size<1>(layout); ++n) {
       printf("+");
-      for (int i = 1; i < idx_width + 1; ++i) {
+      for (int i = 0; i < idx_width; ++i) {
         printf("-");
       }
     }
