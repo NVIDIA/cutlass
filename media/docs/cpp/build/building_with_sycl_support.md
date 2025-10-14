@@ -10,17 +10,17 @@ resources for GPUs.
 
 ## Support for Intel GPUs
 
-The CUTLASS-SYCL supports running on Intel GPUs.
+The SYCL*TLA supports running on Intel GPUs.
 Currently, Intel Data Center Max 1550 and 1100 (a.k.a Ponte Vecchio - PVC) along with Intel Arc B580 (a.k.a BattleMage - BMG) are supported.
 
 The `examples` directory shows a number of GEMM algorithms and examples of 
-CUTLASS-SYCL running on PVC and BMG, including flash attention V2.
+SYCL*TLA running on PVC and BMG, including flash attention V2.
 
 Only Linux platforms are supported.
 
 ### Requirements (SYCL for Intel GPU)
 
-To build CUTLASS SYCL support for Intel GPUs, you need the DPC++ compiler;
+To build SYCL*TLA support for Intel GPUs, you need the DPC++ compiler;
 you can use the latest open source [[nightly build](https://github.com/intel/llvm/releases)] 
 or a oneAPI toolkit from 2025.1 onwards. Intel Compute Runtime 25.13 (with Intel Graphics Compiler 2.10.10) is required. At the time of the release it can be installed from [intel-graphics-staging](https://launchpad.net/~kobuk-team/+archive/ubuntu/intel-graphics-staging). Installation from [intel-graphics](https://launchpad.net/~kobuk-team/+archive/ubuntu/intel-graphics) is recommended when it is available there.
 
@@ -87,7 +87,7 @@ purposes and not intended for production.
 
 ### Requirements 
  
-To build CUTLASS SYCL support you need the latest version of DPC++ compiler. You can either use a recent [nightly build](https://github.com/intel/llvm/releases)
+To build SYCL*TLA support you need the latest version of DPC++ compiler. You can either use a recent [nightly build](https://github.com/intel/llvm/releases)
 or build the compiler from source as described in [oneAPI DPC++ guideline]((https://github.com/intel/llvm/blob/sycl/sycl/doc/GetStartedGuide.md#build-dpc-toolchain-with-support-for-nvidia-cuda)).
 
 ### Building with SYCL for NVIDIA support
