@@ -1,4 +1,4 @@
-# SYCL*TLA (previously referred as cutlass-sycl) Changelog
+# SYCL*TLA (previously referred to as cutlass-sycl) Changelog
 
 ## [SYCL*TLA 0.5](https://github.com/intel/cutlass-sycl/releases/tag/v0.5) (2025-09-26)
 ### Major Architecture Changes

@@ -3,7 +3,7 @@
 # SYCL* Templates for Linear Algebra (SYCL*TLA)
 
 **This repository is forked from the NVIDIA CUTLASS repository and extends CUTLASS and CuTe API support to Intel GPUs through SYCL enablement.**
-**This project was previously referred as CUTLASS-SYCL, you may see references to CUTLASS-SYCL in the code and documentation.**
+**This project was previously referred to as CUTLASS-SYCL, you may see references to CUTLASS-SYCL in the code and documentation.**
 **For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)**
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intel/sycl-tla/badge)](https://scorecard.dev/viewer/?uri=github.com/intel/sycl-tla)
@@ -68,7 +68,7 @@ Base NVIDIA CUTLASS Versions for SYCL*TLA releases:
 
 # CuTe
 
-SYCL*TLA supports the newly introducted core library, CuTe, to describe and manipulate tensors of threads and data.
+SYCL*TLA supports the newly introduced core library, CuTe, to describe and manipulate tensors of threads and data.
 CuTe in SYCL*TLA is a collection of C++ SYCL template abstractions for
 defining and operating on hierarchically multidimensional layouts of threads and data.
 CuTe provides `Layout` and `Tensor` objects that compactly package the type,
