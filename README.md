@@ -6,7 +6,7 @@
 **This project was previously referred as CUTLASS-SYCL, you may see references to CUTLASS-SYCL in the code and documentation.**
 **For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)**
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intel/cutlass-sycl/badge)](https://scorecard.dev/viewer/?uri=github.com/intel/sycl-tla)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intel/sycl-tla/badge)](https://scorecard.dev/viewer/?uri=github.com/intel/sycl-tla)
 
 SYCL*TLA is a modular, header‑only C++ template framework for high‑performance 
 GEMM, and fused epilogue kernels. It applies hierarchical tiling, composable policy 
