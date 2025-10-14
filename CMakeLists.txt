@@ -125,6 +125,67 @@ option(CUTLASS_SYCL_BUILTIN_ENABLE "Enable this option to use builtin functions 
 if (CUTLASS_ENABLE_SYCL)
   set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
+  # Auto-detect IGC version for Intel targets
+  function(detect_igc_version)
+    # Check if IGC_VERSION_MAJOR/MINOR are already set
+    if(IGC_VERSION_MAJOR AND IGC_VERSION_MINOR)
+      # Validate minimum version requirement (IGC 2.18+ for PVC features)
+      if(IGC_VERSION_MAJOR LESS 2 OR (IGC_VERSION_MAJOR EQUAL 2 AND IGC_VERSION_MINOR LESS 18))
+        message(WARNING "User-provided IGC version ${IGC_VERSION_MAJOR}.${IGC_VERSION_MINOR} is below minimum requirement. Enforcing IGC 2.18 minimum for PVC compatibility.")
+        set(IGC_VERSION_MAJOR 2 PARENT_SCOPE)
+        set(IGC_VERSION_MINOR 18 PARENT_SCOPE)
+        message(STATUS "Using enforced minimum IGC version: 2.18")
+      else()
+        message(STATUS "Using user-provided IGC version: ${IGC_VERSION_MAJOR}.${IGC_VERSION_MINOR}")
+      endif()
+      return()
+    endif()
+
+    # Try ocloc query for driver version
+    find_program(OCLOC_EXECUTABLE ocloc)
+    if(OCLOC_EXECUTABLE)
+      execute_process(
+        COMMAND ${OCLOC_EXECUTABLE} query OCL_DRIVER_VERSION
+        OUTPUT_VARIABLE OCL_DRIVER_VERSION
+        ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+      
+      # Extract driver minor version from 25.X.Y format
+      if(OCL_DRIVER_VERSION MATCHES "^25\\.([0-9]+)")
+        set(DRIVER_MINOR ${CMAKE_MATCH_1})
+        
+        # Map driver version to IGC version (enforce minimum 2.18 for PVC compatibility)
+        if(DRIVER_MINOR EQUAL 42)
+          set(IGC_MAJOR 2)
+          set(IGC_MINOR 21)
+        elseif(DRIVER_MINOR GREATER_EQUAL 39)
+          set(IGC_MAJOR 2)
+          set(IGC_MINOR 20)
+        elseif(DRIVER_MINOR GREATER_EQUAL 37)
+          set(IGC_MAJOR 2)
+          set(IGC_MINOR 19)
+        elseif(DRIVER_MINOR GREATER_EQUAL 34)
+          set(IGC_MAJOR 2)
+          set(IGC_MINOR 18)
+        else()
+          # For any older driver, use IGC 2.18 minimum (required for PVC features)
+          set(IGC_MAJOR 2)
+          set(IGC_MINOR 18)
+        endif()
+        
+        set(IGC_VERSION_MAJOR ${IGC_MAJOR} PARENT_SCOPE)
+        set(IGC_VERSION_MINOR ${IGC_MINOR} PARENT_SCOPE)
+        message(STATUS "Auto-detected IGC version: ${IGC_MAJOR}.${IGC_MINOR} (driver ${OCL_DRIVER_VERSION})")
+        return()
+      endif()
+    endif()
+    
+    # Fallback to PVC-safe default
+    set(IGC_VERSION_MAJOR 2 PARENT_SCOPE)
+    set(IGC_VERSION_MINOR 18 PARENT_SCOPE)
+    message(WARNING "Could not detect IGC version. Using IGC 2.18 default (PVC-compatible). Override with -DIGC_VERSION_MAJOR=X -DIGC_VERSION_MINOR=Y")
+  endfunction()
+
   if(DPCPP_SYCL_TARGET STREQUAL "nvptx64-nvidia-cuda")
     set(SYCL_NVIDIA_TARGET ON)
     add_compile_definitions(SYCL_NVIDIA_TARGET)
@@ -133,6 +194,21 @@ if (CUTLASS_ENABLE_SYCL)
          DPCPP_SYCL_TARGET STREQUAL "intel_gpu_bmg_g21")
     set(SYCL_INTEL_TARGET ON)
     add_compile_definitions(SYCL_INTEL_TARGET)
+    
+    # Auto-detect IGC version for Intel targets
+    detect_igc_version()
+    
+    # Make IGC version variables cacheable so users can override them
+    set(IGC_VERSION_MAJOR ${IGC_VERSION_MAJOR} CACHE STRING "Intel Graphics Compiler major version")
+    set(IGC_VERSION_MINOR ${IGC_VERSION_MINOR} CACHE STRING "Intel Graphics Compiler minor version")
+    
+    message(STATUS "Using IGC version: ${IGC_VERSION_MAJOR}.${IGC_VERSION_MINOR}")
+    
+    # Note about SPIR-V targets
+    if(DPCPP_SYCL_TARGET STREQUAL "spir64")
+      message(STATUS "Note: For SPIR-V targets, IGC version is determined at runtime. "
+                     "The detected version (${IGC_VERSION_MAJOR}.${IGC_VERSION_MINOR}) may differ from runtime IGC.")
+    endif()
     add_compile_options(-Wall
        -Wno-unused-variable
        -Wno-unused-local-typedef

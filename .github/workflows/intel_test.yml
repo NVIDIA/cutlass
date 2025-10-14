@@ -43,22 +43,16 @@ jobs:
             gpu: BMG
             intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
-            igc_version_major: 2
-            igc_version_minor: 18
             runner: bmg108629-01
           - compiler: RELEASE
             gpu: PVC
             intel_graphics: ROLLING
             sycl_target: intel_gpu_pvc
-            igc_version_major: 2
-            igc_version_minor: 11
             runner: pvc146162-01
           - compiler: NIGHTLY
             gpu: PVC
             intel_graphics: ROLLING
             sycl_target: intel_gpu_pvc
-            igc_version_major: 2
-            igc_version_minor: 11
             runner: pvc146162-01
 
     name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
@@ -103,14 +97,13 @@ jobs:
           which $CXX
           $CXX --version
           sycl-ls
+
       - name: Build
         shell: bash
         run: |
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \
             -DDPCPP_SYCL_TARGET=${{ matrix.sycl_target }} \
-            -DIGC_VERSION_MAJOR=${{ matrix.igc_version_major }} \
-            -DIGC_VERSION_MINOR=${{ matrix.igc_version_minor }} \
             -DCMAKE_CXX_FLAGS="-Werror" \
             -DCUTLASS_SYCL_RUNNING_CI=ON
           cmake --build . 
