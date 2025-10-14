@@ -311,3 +311,107 @@ TEST(PVC_CuTe_Xe, MMA_XE_8x16x8_F32TF32TF32F32_TT) {
   MMA_Test<XE_8x16x8_F32TF32TF32F32_TT, 64, 64, 8, 16, 32, tfloat32_t,
            tfloat32_t, float>(512, 512, 256);
 }
+
+#if (IGC_VERSION_MAJOR >= 2 && IGC_VERSION_MINOR >= 18)
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_S8_8x16) {
+  MMA_Test<XE_DPAS_TT<8, int32_t, int8_t>, 64, 64, 8, 16, 32, int8_t, int8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_S8_4x16) {
+  MMA_Test<XE_DPAS_TT<4, int32_t, int8_t>, 32, 64, 4, 16, 32, int8_t, int8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_S8_2x16) {
+  MMA_Test<XE_DPAS_TT<2, int32_t, int8_t>, 16, 64, 2, 16, 32, int8_t, int8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_S8_1x16) {
+  MMA_Test<XE_DPAS_TT<1, int32_t, int8_t>, 8, 64, 1, 16, 32, int8_t, int8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_U8_8x16) {
+  MMA_Test<XE_DPAS_TT<8, int32_t, uint8_t>, 64, 64, 8, 16, 32, uint8_t, uint8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_U8_4x16) {
+  MMA_Test<XE_DPAS_TT<4, int32_t, uint8_t>, 32, 64, 4, 16, 32, uint8_t, uint8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_U8_2x16) {
+  MMA_Test<XE_DPAS_TT<2, int32_t, uint8_t>, 16, 64, 2, 16, 32, uint8_t, uint8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_U8_1x16) {
+  MMA_Test<XE_DPAS_TT<1, int32_t, uint8_t>, 8, 64, 1, 16, 32, uint8_t, uint8_t,
+           int32_t>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_BF16_8x16) {
+  MMA_Test<XE_DPAS_TT<8, float, bfloat16_t>, 256, 256, 32, 64, 32, bfloat16_t,
+           bfloat16_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_BF16_4x16) {
+  MMA_Test<XE_DPAS_TT<4, float, bfloat16_t>, 32, 64, 4, 16, 16, bfloat16_t,
+           bfloat16_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_BF16_2x16) {
+  MMA_Test<XE_DPAS_TT<2, float, bfloat16_t>, 16, 64, 2, 16, 16, bfloat16_t,
+           bfloat16_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_BF16_1x16) {
+  MMA_Test<XE_DPAS_TT<1, float, bfloat16_t>, 8, 64, 1, 16, 16, bfloat16_t,
+           bfloat16_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_F16_8x16) {
+  MMA_Test<XE_DPAS_TT<8, float, half_t>, 64, 64, 8, 16, 16, half_t, half_t,
+           float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_F16_4x16) {
+  MMA_Test<XE_DPAS_TT<4, float, half_t>, 32, 64, 4, 16, 16, half_t, half_t,
+           float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_F16_2x16) {
+  MMA_Test<XE_DPAS_TT<2, float, half_t>, 16, 64, 2, 16, 16, half_t, half_t,
+           float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_F16_1x16) {
+  MMA_Test<XE_DPAS_TT<1, float, half_t>, 8, 64, 1, 16, 16, half_t, half_t,
+           float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_8x16) {
+  MMA_Test<XE_DPAS_TT<8, float, tfloat32_t>, 64, 64, 8, 16, 32, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_4x16) {
+  MMA_Test<XE_DPAS_TT<4, float, tfloat32_t>, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_2x16) {
+  MMA_Test<XE_DPAS_TT<2, float, tfloat32_t>, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_1x16) {
+  MMA_Test<XE_DPAS_TT<1, float, tfloat32_t>, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+#endif
