@@ -1,6 +1,6 @@
-# CUTLASS SYCL Changelog
+# SYCL*TLA (previously referred to as cutlass-sycl) Changelog
 
-## [CUTLASS SYCL 0.5](https://github.com/intel/cutlass-sycl/releases/tag/v0.5) (2025-09-26)
+## [SYCL*TLA 0.5](https://github.com/intel/cutlass-sycl/releases/tag/v0.5) (2025-09-26)
 ### Major Architecture Changes
 - **Xe Rearchitecture ([#477](https://github.com/intel/cutlass-sycl/pull/477))**: Complete redesign of Xe CuTe atoms with new architecture
   - New MMA atoms for improved performance

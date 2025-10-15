@@ -2,7 +2,7 @@
 
 [README](./README.md#documentation) > **Contributors**
 
-# CUTLASS SYCL Developers **
+# SYCL*TLA Developers **
 
 Alejandro Acosta<br />
 Amit Singh Chandel<br />

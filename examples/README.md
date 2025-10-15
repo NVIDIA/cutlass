@@ -1,9 +1,9 @@
-# CUTLASS SYCL - Programming Examples
+# SYCL*TLA - Programming Examples
 
 > [!IMPORTANT]
 > ### ⚠️ **Not for Benchmarking!** ⚠️
 > 
-> These examples are designed **solely for demonstrating CUTLASS-SYCL functionality** and may **NOT be optimized for performance benchmarking**.
+> These examples are designed **solely for demonstrating SYCL*TLA functionality** and may **NOT be optimized for performance benchmarking**.
 > 
 
 ### Build Requirements
@@ -29,7 +29,7 @@ examples/
     └── 01_gemm_softmax/
 ```
 
-## CUTLASS-SYCL Examples for Intel GPUs
+## SYCL*TLA Examples for Intel GPUs
 
 The following examples are optimized for Intel GPU architectures using SYCL:
 
