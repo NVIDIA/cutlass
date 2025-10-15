@@ -347,7 +347,7 @@ struct LayoutAwareConvertImpl<
 // Specialization for INT8 -> BF16 with [3120] value order
 template <>
 struct LayoutAwareConvertImpl<
-  cutlass::int8_t,
+  int8_t,
   cutlass::bfloat16_t,
   cute::Layout<cute::Shape<_2,_2>, cute::Stride<_2,_1>>,
   cute::Layout<_4>
@@ -362,9 +362,9 @@ struct LayoutAwareConvertImpl<
                 cute::Layout<_4>
                 >& dst) {
 
-    static_assert(cute::is_same_v<cutlass::int8_t, typename EngineIn::value_type> &&
+    static_assert(cute::is_same_v<int8_t, typename EngineIn::value_type> &&
                   cute::is_same_v<cutlass::bfloat16_t, typename EngineOut::value_type>);
-    using SrcArray = cutlass::Array<cutlass::int8_t, 8>;
+    using SrcArray = cutlass::Array<int8_t, 8>;
     using DstArray = cutlass::Array<cutlass::bfloat16_t, 8>;
     using RegArray = cutlass::AlignedArray<uint32_t, 4, sizeof(DstArray)>;
 
@@ -402,7 +402,7 @@ struct LayoutAwareConvertImpl<
 // Specialization for INT8 -> FP16 with [3120] value order
 template <>
 struct LayoutAwareConvertImpl<
-  cutlass::int8_t,
+  int8_t,
   cutlass::half_t,
   cute::Layout<cute::Shape<_2,_2>, cute::Stride<_2,_1>>,
   cute::Layout<_4>
@@ -417,9 +417,9 @@ struct LayoutAwareConvertImpl<
                 cute::Layout<_4>
                 >& dst) {
 
-    static_assert(cute::is_same_v<cutlass::int8_t, typename EngineIn::value_type> &&
+    static_assert(cute::is_same_v<int8_t, typename EngineIn::value_type> &&
                   cute::is_same_v<cutlass::half_t, typename EngineOut::value_type>);
-    using SrcArray = cutlass::Array<cutlass::int8_t, 8>;
+    using SrcArray = cutlass::Array<int8_t, 8>;
     using DstArray = cutlass::Array<cutlass::half_t, 8>;
     using RegArray = cutlass::AlignedArray<uint32_t, 4, sizeof(DstArray)>;
 
