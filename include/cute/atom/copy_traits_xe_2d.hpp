@@ -500,7 +500,8 @@ make_block_2d_copy(const CopyOp& op,
   using LayoutCopy_TV = typename SGCopy::TiledLayout_TV;
 
   // Expand the shape.
-  auto x_shape = elem_scale(ShapeTiler_MN{}, atom_shape);
+  auto x_atom_shape = append<rank_v<ShapeTiler_MN>>(atom_shape, _1{});
+  auto x_shape = elem_scale(ShapeTiler_MN{}, x_atom_shape);
 
   // Expand the single-SG TV layout to the full shape, then tile.
   auto x_tv_layout1 = composition(make_layout(ShapeTiler_MN{}, make_layout(x_shape).stride()), LayoutCopy_TV{});
