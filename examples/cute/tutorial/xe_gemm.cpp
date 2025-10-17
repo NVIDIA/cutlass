@@ -391,7 +391,7 @@ int main(int argc, char** argv)
   auto n = parse_size();
   auto k = parse_size();
 
-  sycl::queue Q;
+  sycl::queue Q = compat::get_default_queue();
 
   // Native compute
   test_case<tfloat32_t, tfloat32_t, float, 'R', 'R'>(Q, m, n, k);
