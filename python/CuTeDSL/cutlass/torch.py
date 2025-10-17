@@ -169,7 +169,7 @@ def convert_cute_tensor(
 ) -> Tensor:
     """
     Change the value of the cute tensor to make its value converted from a fp32 torch tensor.
-    Used for fp8 types tensor creatation now.
+    Used for fp8 types tensor creation now.
     """
     # if torch_tensor is on cpu, create a gpu copy
     if f32_torch_tensor.device.type == "cpu":

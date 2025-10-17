@@ -221,7 +221,7 @@ class SSDKernel:
             self.internal_stages,
         )
 
-        # B needs to be proprocessed to be used as A operand of INTER1_MMA
+        # B needs to be preprocessed to be used as A operand of INTER1_MMA
         self.bt_smem_layout = cute.coalesce(
             sm100_utils.make_smem_layout_epi(
                 self.io_dtype,

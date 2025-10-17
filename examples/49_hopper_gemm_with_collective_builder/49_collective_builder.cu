@@ -238,7 +238,7 @@ bool initialize_block(
 // to select an appropriate value on its own. The CollectiveBuilder will attempt to select
 // configurations that will result in the most-performant kernel, but this is not a guarantee.
 //
-// If relying on 'Auto' schedules, all builders must use the 'Auto' schedule to ensure compatiblity.
+// If relying on 'Auto' schedules, all builders must use the 'Auto' schedule to ensure compatibility.
 // For example, if `KernelScheduleAuto` is used for the mainloop builder, `EpilogueScheduleAuto` must
 // be used for the epilogue builder.
 //

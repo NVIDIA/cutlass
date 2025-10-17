@@ -1723,7 +1723,7 @@ def print_tensor(
 
 
 #
-# Utilties
+# Utilities
 #
 
 
@@ -4301,7 +4301,7 @@ def flat_divide(target, tiler: Tiler, *, loc=None, ip=None):
 
 
 #
-# Higher-level utilties
+# Higher-level utilities
 #
 
 
@@ -6727,7 +6727,7 @@ class struct:
             intA : cutlass.Int16
 
 
-        # Supports aligment for its elements:
+        # Supports alignment for its elements:
         @cute.struct
         class StorageB:
             a: cute.struct.Align[
@@ -7000,7 +7000,7 @@ class struct:
                     f"Struct element only support struct/array/base_dsl scalar, "
                     f"but got {object}"
                 )
-            # Total aligment determined by the strictest requirement
+            # Total alignment determined by the strictest requirement
             alignment = max(alignment, sub_align)
         # Total size determined by alignment
         self._align_of = alignment

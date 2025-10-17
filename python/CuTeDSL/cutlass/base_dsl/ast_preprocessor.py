@@ -1009,7 +1009,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         extra_exprs.append(step)
         extra_exprs.append(offset)
 
-        # Add this to begining of loop body
+        # Add this to beginning of loop body
         # for i in range(start, stop, step):
         #     i = offset - i if isNegative else i
         assert isinstance(node.target, ast.Name)
