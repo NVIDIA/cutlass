@@ -257,7 +257,7 @@ class JitExecutor:
                 raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
 
     def update_jit_cuda_modules(self, kernel_symbols):
-        # preload cuda module from compiled cubin in ir and store to jit_executor.kernels.
+        # preload cuda module from compiled cubin in ir and store to jit_executor.cuda_modules.
         if len(kernel_symbols) > 0:
             extra_args = []
             module = self.ir_module
