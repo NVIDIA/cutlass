@@ -76,6 +76,8 @@ from .distributed_helpers import (
     sm_wise_inter_gpu_multimem_barrier,
 )
 
+from .print_latex import print_latex, print_latex_tv
+
 __all__ = [
     "get_smem_capacity_in_bytes",
     "SmemAllocator",
@@ -90,4 +92,6 @@ __all__ = [
     "create_initial_search_state",
     "GroupedGemmTileSchedulerHelper",
     "HardwareInfo",
+    "print_latex",
+    "print_latex_tv",
 ]
