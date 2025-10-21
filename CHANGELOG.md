@@ -17,9 +17,9 @@
         + New Pipeline API `PipelineProducer` and `PipelineConsumer` to simplify code (no more explicit pipeline state management)
     - Separate epilogue code for non-TMA and TMA implementation
         + Note that the updates simplifies the codes but existing APIs still work and are supported
-    - [Basic Blackwell SM100 GEMM with decent performance](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/tutorial_fp16_gemm_0.py)
+    - [Basic Blackwell SM100 GEMM with decent performance](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0.py)
         + Simple tutorial achieves 84% SOL performance with MNK 8K
-    - Reworked [elementwise add notebook]() with more details and detailed explanation about TV alyout
+    - Reworked [elementwise add notebook](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/notebooks/elementwise_add.ipynb) with more details and detailed explanation about TV layout
         + Updated implementation to handle general data type and multiple inputs
         + Updated explanation for TV layout in simpler language
         + Added visualization of TV Layout with 3rd party utils
