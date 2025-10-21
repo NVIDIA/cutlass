@@ -65,7 +65,7 @@ Changelog for CuTe DSL API changes
   - Introduce S2T CopyOps in `tcgen05/copy.py <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/cutlass/cute/nvgpu/tcgen05/copy.py>`_.
   - Introduce BlockScaled layout utilities in `blockscaled_layout.py <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/cutlass/utils/blockscaled_layout.py>`_ for creating the required scale factor layouts in global memory, shared memory and tensor memory.
 
-* ``cutlass.cute.compile`` now supports compilation options. Refer to `JIT compilation options <https://docs.nvidia.com/cutlass/media/docs/pythonDSL/cute_dsl_general/dsl_jit_compilation_options.html>`_ for more details.
+* ``cutlass.cute.compile`` now supports compilation options. Refer to `JIT compilation options <https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/dsl_jit_compilation_options.html>`_ for more details.
 * ``cutlass.cute.testing.assert_`` now works for device JIT function. Specify ``--enable-device-assertions`` as compilation option to enable.
 * ``cutlass.cute.make_tiled_copy`` is now deprecated. Please use ``cutlass.cute.make_tiled_copy_tv`` instead.
 * Shared memory capacity query
