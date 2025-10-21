@@ -233,7 +233,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -508,6 +507,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     auto problem_shape = params.problem_shape;
 
     // Account for more than one epilogue warp
@@ -551,7 +551,6 @@ public:
     typename MainloopABPipeline::Params mainloop_ab_pipeline_params;
     if (WarpCategory::MainloopABLoad == warp_category) {
       mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Producer;
-      // Initialize the barrier for TMA load prefetch
     }
     if (WarpCategory::MMA == warp_category) {
       mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Consumer;

@@ -55,6 +55,7 @@
 #if !defined(__CUDACC_RTC__)
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_rcggemm.hpp"
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_sparse_mma_warpspecialized.hpp"

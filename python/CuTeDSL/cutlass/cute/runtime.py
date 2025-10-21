@@ -13,41 +13,18 @@ import ctypes
 from functools import lru_cache
 import itertools
 import operator
-from time import time
-from typing import Union
+from typing import Union, Optional
 
 # MLIR modules imports
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 
-from cutlass.base_dsl.dsl import is_dynamic_expression
-from cutlass.cutlass_dsl import JitArgAdapterRegistry
+from cutlass.cutlass_dsl import JitArgAdapterRegistry, DSLRuntimeError
 
 # Local modules imports
-from .typing import (
-    AddressSpace,
-    Tensor,
-    Type,
-    Pointer,
-    Boolean,
-    Numeric,
-    Float4E2M1FN,
-    Int64,
-    Int32,
-    Int16,
-    Int8,
-    Uint64,
-    Uint32,
-    Uint16,
-    Uint8,
-    Float64,
-    Float32,
-    Float16,
-    BFloat16,
-    Float8E5M2,
-)
+from .typing import AddressSpace, Tensor, Type, Pointer, Numeric
 from . import core
-from .core import _Tensor as CoreTensor
+from .tensor import _Tensor as CoreTensor
 
 
 class _Pointer(Pointer):
@@ -88,9 +65,9 @@ class _Pointer(Pointer):
             self._assumed_align = assumed_align
 
         self._c_pointer = None
-        assert (
-            int(self._pointer) % self._assumed_align == 0
-        ), f"pointer must be {self._assumed_align} bytes aligned"
+        assert int(self._pointer) % self._assumed_align == 0, (
+            f"pointer must be {self._assumed_align} bytes aligned"
+        )
 
     def size_in_bytes(self) -> int:
         self._desc = ctypes.c_void_p(int(self._pointer))
@@ -108,9 +85,6 @@ class _Pointer(Pointer):
     def __new_from_mlir_values__(self, values):
         assert len(values) == 1
         return values[0]
-
-    def __extract_mlir_values__(self):
-        return [self._c_pointer]
 
     # Move mlir Type out of __init__ to decouple with mlir Context
     @property
@@ -146,11 +120,7 @@ class _Pointer(Pointer):
 
 
 class _Tensor(Tensor):
-    def __init__(
-        self,
-        tensor,
-        assumed_align=None,
-    ):
+    def __init__(self, tensor, assumed_align=None, use_32bit_stride=False):
         # If tensor is already a DLPack object, use it directly
         if hasattr(tensor, "__dlpack_device__") and not hasattr(tensor, "__dlpack__"):
             self._dlpack_data = tensor
@@ -161,13 +131,13 @@ class _Tensor(Tensor):
         self._is_dynamic = False
         self._memref_desc = None
         self._dtype = None
+        self._use_32bit_stride = use_32bit_stride
 
     @property
     def __class__(self) -> Type[Tensor]:
         # Cheat to let `type(_Tensor())` to return cute.Tensor
         return Tensor
 
-    @staticmethod
     def lazily_load_dltensor(func):
         """Decorator to lazily load the DLTensorWrapper.
 
@@ -177,13 +147,15 @@ class _Tensor(Tensor):
 
         def wrapper(self, *args, **kwargs):
             if self._dltensor_wrapper is None:
-                self._dltensor_wrapper = _cute_ir.DLTensorWrapper(self._dlpack_data)
+                self._dltensor_wrapper = _cute_ir.DLTensorWrapper(
+                    self._dlpack_data, self._use_32bit_stride
+                )
             return func(self, *args, **kwargs)
 
         return wrapper
 
     @lazily_load_dltensor
-    def mark_layout_dynamic(self, leading_dim: int | None = None):
+    def mark_layout_dynamic(self, leading_dim: Optional[int] = None):
         """Marks the tensor layout as dynamic based on the leading dimension.
 
         :param leading_dim: The leading dimension of the layout, defaults to None
@@ -209,7 +181,7 @@ class _Tensor(Tensor):
     def mark_compact_shape_dynamic(
         self,
         mode: int,
-        stride_order: tuple[int, ...] | None = None,
+        stride_order: Optional[tuple[int, ...]] = None,
         divisibility: int = 1,
     ):
         """Marks the tensor shape as dynamic and propagates dynamic and divisibility information to the corresponding strides.
@@ -308,10 +280,10 @@ class _Tensor(Tensor):
         return self.__str__()
 
     def __setitem__(self, crd, value):
-        raise TypeError(f"runtime._Tensor is not indexable")
+        raise TypeError("runtime._Tensor is not indexable")
 
     def __getitem__(self, crd):
-        raise TypeError(f"runtime._Tensor is not indexable")
+        raise TypeError("runtime._Tensor is not indexable")
 
     @property
     @lazily_load_dltensor
@@ -326,7 +298,7 @@ class _Tensor(Tensor):
     @property
     def layout(self):
         raise NotImplementedError(
-            f"layout property is not supported in runtime, support in future"
+            "layout property is not supported in runtime, support in future"
         )
 
     @property
@@ -363,7 +335,7 @@ class _Tensor(Tensor):
         return core.leading_dim(self.shape, self.stride)
 
     def fill(self, value: Numeric):
-        raise TypeError(f"fill function is not supported in runtime")
+        raise TypeError("fill function is not supported in runtime")
 
     @property
     @lazily_load_dltensor
@@ -389,6 +361,7 @@ class _Tensor(Tensor):
 def from_dlpack(
     tensor_dlpack,
     assumed_align=None,
+    use_32bit_stride=False,
 ) -> Tensor:
     """Convert from tensor object supporting __dlpack__() to a CuTe Tensor.
 
@@ -397,6 +370,10 @@ def from_dlpack(
     :param assumed_align: Assumed alignment of the tensor (bytes), defaults to None,
       if None, will use the element size bytes as the assumed alignment.
     :type assumed_align: int, optional
+    :param use_32bit_stride: Whether to use 32-bit stride, defaults to False. When True, the dynamic
+      stride bitwidth will be set to 32 for small problem size (cosize(layout) <= Int32_max) for better performance.
+      This is only applied when the dimension is dynamic.
+    :type use_32bit_stride: bool, optional
     :return: A CuTe Tensor object
     :rtype: Tensor
 
@@ -415,6 +392,7 @@ def from_dlpack(
     return _Tensor(
         tensor_dlpack,
         assumed_align=assumed_align,
+        use_32bit_stride=use_32bit_stride,
     )
 
 

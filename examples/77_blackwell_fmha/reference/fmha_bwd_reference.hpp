@@ -329,6 +329,20 @@ void fmha_bwd_reference_dQ(
   dim3 grid(size<0>(mDQ), size<2>(mDQ), 1);
   dim3 block(256);
   int shared_mem = size<0>(mK) * sizeof(typename TensorDQ::value_type);
+  cudaError_t result;
+  if (shared_mem >= (48 << 10)) {
+    result = cudaFuncSetAttribute(
+        &fmha_bwd_reference_dQ_kernel<ProblemShape, TensorQ, TensorK, TensorV,
+        TensorO, TensorLSE, TensorDO, TensorDQ, Fusion>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        shared_mem);
+    if (cudaSuccess != result) {
+      cudaGetLastError(); // Clear the error state
+      throw std::runtime_error("Failed to allocate " +
+                               std::to_string(shared_mem >> 10) + " KB dynamic smem for dQ tensor in ref. check - " +
+			       "please try reducing seq_len or skipping ref. check");
+    }
+  }
   fmha_bwd_reference_dQ_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDQ, fusion);
 }
 
@@ -356,6 +370,20 @@ void fmha_bwd_reference_dK(
   dim3 grid(K, H_K * B, 1);
   dim3 block(std::max(D, 256));
   int shared_mem = size<0>(mDO) * sizeof(typename TensorDK::value_type);
+  cudaError_t result;
+  if (shared_mem >= (48 << 10)) {
+    result = cudaFuncSetAttribute(
+        &fmha_bwd_reference_dK_kernel<ProblemShape, TensorQ, TensorK, TensorV, 
+	TensorO, TensorLSE, TensorDO, TensorDK, Fusion>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        shared_mem);
+    if (cudaSuccess != result) {
+      cudaGetLastError(); // Clear the error state
+      throw std::runtime_error("Failed to allocate " +
+                               std::to_string(shared_mem >> 10) + " KB dynamic smem for dO tensor in ref. check - " +
+                               "please try reducing seq_len or skipping ref. check");
+    }
+  }  
   fmha_bwd_reference_dK_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDK, fusion);
 }
 
@@ -383,6 +411,20 @@ void fmha_bwd_reference_dV(
   dim3 grid(K, H_K * B, 1);
   dim3 block(std::max(D_VO, 256));
   int shared_mem = size<0>(mDO) * sizeof(typename TensorDV::value_type);
+  cudaError_t result;
+  if (shared_mem >= (48 << 10)) {
+    result = cudaFuncSetAttribute(
+        &fmha_bwd_reference_dV_kernel<ProblemShape, TensorQ, TensorK, TensorV,
+        TensorO, TensorLSE, TensorDO, TensorDV, Fusion>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        shared_mem);
+    if (cudaSuccess != result) {
+      cudaGetLastError(); // Clear the error state
+      throw std::runtime_error("Failed to allocate " +
+                               std::to_string(shared_mem >> 10) + " KB dynamic smem for dO tensor in ref. check - " +
+                               "please try reducing seq_len or skipping ref. check");
+    }
+  }  
   fmha_bwd_reference_dV_kernel<<<grid, block, shared_mem>>>(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDV, fusion);
 }
 

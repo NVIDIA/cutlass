@@ -209,6 +209,7 @@ enum class GemmKind {
   kPlanarComplex,
   kPlanarComplexArray,
   kGrouped,
+  kBlockScaledSparseGemm,
   kInvalid
 };
 

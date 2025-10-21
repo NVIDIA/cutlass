@@ -30,11 +30,12 @@ cmake_minimum_required(VERSION 3.15)
 project(tensor)
 
 # Find Python
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # Get Python site-packages directory using Python
 execute_process(
-    COMMAND ${Python_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
+    COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
     OUTPUT_VARIABLE Python_SITE_PACKAGES
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
@@ -45,7 +46,13 @@ message(STATUS "Python site-packages directory: ${Python_SITE_PACKAGES}")
 list(APPEND CMAKE_PREFIX_PATH ${Python_SITE_PACKAGES}/nanobind/cmake)
 
 # Find nanobind
-find_package(nanobind REQUIRED)
+find_package(nanobind)
+if(NOT nanobind_FOUND)
+    message(FATAL_ERROR 
+        "nanobind not found!\n"
+        "Please install nanobind with: pip install nanobind\n"
+    )
+endif()
 
 # Add the module
 nanobind_add_module(tensor tensor.cpp)

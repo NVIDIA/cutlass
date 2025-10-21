@@ -40,6 +40,7 @@ __all__ = [
     "Field",
     "MmaTF32Op",
     "MmaF16BF16Op",
+    "MmaF16BF16SparseOp",
     "MmaI8Op",
     "MmaFP8Op",
     "MmaMXF8Op",

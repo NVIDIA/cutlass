@@ -49,7 +49,7 @@ set(TEST_SMALL_LARGE_GROUP --m=128 --n=128 --groups=50 --iterations=0)          
 set(TEST_RANDOM_PERF --iterations=10)                                               # Random problem sizes
 set(TEST_RANDOM_PERF_LARGE_GROUP --groups=50 --iterations=10)                       # Random problem sizes
 
-if(CUTLASS_NVCC_ARCHS STREQUAL "100a")
+if("100a" IN_LIST CUTLASS_NVCC_ARCHS)
 cutlass_example_add_executable(
   75_blackwell_grouped_gemm
   75_blackwell_grouped_gemm.cu

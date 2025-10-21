@@ -23,7 +23,6 @@ def make_layout(...):
 
 """
 
-
 from functools import lru_cache, wraps
 
 from ..._mlir import ir  # type: ignore

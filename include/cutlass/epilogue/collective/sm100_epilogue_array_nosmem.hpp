@@ -398,10 +398,33 @@ public:
     if (epilogue_op.is_source_needed()) {
       ptr_C_l = params.ptr_C[l_coord];
     }
+    auto [stride_c, stride_d] = [&, l = l_coord]() {
+      if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
+        // If grouped gemm
+        if (epilogue_op.is_source_needed()) {
+            return make_tuple(
+                detail::get_epilogue_stride<DispatchPolicy>(params.dC[l]),
+                detail::get_epilogue_stride<DispatchPolicy>(params.dD[l])
+            );  
+        }   
+        else {
+          return make_tuple(
+              InternalStrideC{}, 
+              detail::get_epilogue_stride<DispatchPolicy>(params.dD[l])
+          );  
+        }   
+      }   
+      else {
+        return make_tuple(
+            detail::get_epilogue_stride<DispatchPolicy>(params.dC),
+            detail::get_epilogue_stride<DispatchPolicy>(params.dD)
+        );  
+      }   
+    }();
 
     // Represent the full output tensor, slice to get the tile this CTA is responsible for
-    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, append<3>(params.dC,_0{}));           // (M,N,L)
-    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, append<3>(params.dD,_0{})); // (M,N,L)
+    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, stride_c);           // (M,N,L)
+    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, stride_d); // (M,N,L)
     Tensor gC = local_tile(mC, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
     Tensor gD = local_tile(mD, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
 
@@ -572,12 +595,7 @@ public:
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
-
-    bool fusion_implementable = FusionCallbacks::can_implement(problem_shape, args.thread);
-    if (!fusion_implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum requirements for FusionCallbacks.\n");
-    }
-    return fusion_implementable;
+    return true;
   }
 
 

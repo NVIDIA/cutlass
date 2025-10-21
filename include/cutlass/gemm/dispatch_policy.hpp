@@ -539,7 +539,7 @@ struct KernelTmaWarpSpecializedInputTransformSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
-// InputTransform GEMM
+// Mixed Input Transform GEMM
 template<
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_
@@ -1184,6 +1184,21 @@ template<
   int AccumulatorPipelineStageCount_,
   class ClusterShape_ = Shape<_1,_1,_1>
 >
+struct MainloopSm100RCGroupGemmTmaUmmaWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm100;
+  constexpr static bool IsOverlappingAccum = false;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
@@ -1240,7 +1255,6 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
   // For backwards compatibility with GemmUniversalAdapter.
   constexpr static int Stages = Load2TransformPipelineStageCount;
 };
-
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
 template<

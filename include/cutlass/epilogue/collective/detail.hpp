@@ -40,6 +40,7 @@
 #include "cute/tensor.hpp"
 #include "cute/numeric/numeric_types.hpp"
 #include "cute/util/type_traits.hpp"
+#include "cute/arch/copy_sm90_desc.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -315,13 +316,37 @@ public:
     return false;
   }
 
+  template <bool... Args>
   CUTLASS_DEVICE auto
   load_init(
-    [[maybe_unused]] typename EpilogueOp::Params const& params,
-    [[maybe_unused]] TensorMapStorage& shared_tensormaps,
-    [[maybe_unused]] int32_t sm_count,
-    [[maybe_unused]] int32_t sm_idx) {
-    return cute::make_tuple(nullptr);
+      typename EpilogueOp::Params const& params,
+      TensorMapStorage& shared_tensormaps,
+      int32_t sm_count,
+      int32_t sm_idx) {
+    return cute::make_tuple(
+      tensormaps_init<true>(params, shared_tensormaps, sm_count, sm_idx, 0)
+    );
+  }
+
+  template <bool... Args>
+  CUTLASS_DEVICE auto
+  tensormaps_init(
+      [[maybe_unused]] typename EpilogueOp::Params const& params,
+      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+      [[maybe_unused]] int32_t sm_count,
+      [[maybe_unused]] int32_t sm_idx,
+      [[maybe_unused]] int32_t warp_group_idx = 0) {
+    // In the async tensormap update kernels, we will use operator[] to index the return value to locate the correct tensormap.
+    // In other kernels, we will use return value as tensormap pointer directly.
+    struct {
+      CUTLASS_DEVICE operator cute::TmaDescriptor *() const {
+        return reinterpret_cast<cute::TmaDescriptor*>(0);
+      }
+      CUTLASS_DEVICE auto operator [] (int) const {
+        return reinterpret_cast<cute::TmaDescriptor*>(0);
+      }
+    } ret;
+    return ret;
   }
 
   template<
@@ -377,14 +402,17 @@ public:
     return load_pipe_producer_state;
   }
 
+  template <bool... Args>
   CUTLASS_DEVICE auto
   store_init(
-    [[maybe_unused]] typename EpilogueOp::Params const& params,
-    [[maybe_unused]] TensorMapStorage& shared_tensormaps,
-    [[maybe_unused]] int32_t sm_count,
-    [[maybe_unused]] int32_t sm_idx,
-    [[maybe_unused]] int32_t warp_group_idx) {
-    return cute::make_tuple(nullptr);
+    typename EpilogueOp::Params const& params,
+    TensorMapStorage& shared_tensormaps,
+    int32_t sm_count,
+    int32_t sm_idx,
+    int32_t warp_group_idx = 0) {
+    return cute::make_tuple(
+      tensormaps_init<false>(params, shared_tensormaps, sm_count, sm_idx, 0)
+    );
   }
 
   template<
@@ -495,6 +523,7 @@ public:
   // Dummy methods to perform different parts of TMA/Tensormap modifications
 
   template <bool IsLoad,
+            bool WaitForInflightTmaRequests = true,
             class ProblemShapeMNKL>
   CUTLASS_DEVICE
   void
@@ -504,15 +533,17 @@ public:
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
       [[maybe_unused]] ProblemShapeMNKL problem_shape,
       [[maybe_unused]] int32_t next_batch,
-      [[maybe_unused]] int32_t warp_group_idx) { }
+      [[maybe_unused]] int32_t warp_group_idx = 0
+  ) { }
 
-  template <bool IsLoad>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       [[maybe_unused]] TensorMapStorage& shared_tensormaps,
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] int32_t warp_group_idx) { }
+      [[maybe_unused]] int32_t warp_group_idx = 0
+  ) { }
 
   template <bool IsLoad>
   CUTLASS_DEVICE
@@ -536,6 +567,10 @@ public:
   using PipelineStorage = typename LoadPipeline::SharedStorage;
 
   static constexpr int NumAccumulatorMtxs = Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp>::value;
+
+  // Epilog assumes a max scheduler pipe count to calculate the number of asynchronous tma update buffer they need.
+  // In these epilogues, we don't need to update tensormaps at all. Setting this to INT_MAX.
+  constexpr static uint32_t NumMaxSchedulerPipelineStageCount = INT_MAX;
 
   template<class CtaTileMNK>
   CUTLASS_HOST_DEVICE
@@ -564,13 +599,37 @@ public:
   // ctor inheritance
   using EpilogueOp::EpilogueOp;
 
+  template <bool... Args>
+  CUTLASS_DEVICE auto
+  tensormaps_init(
+      [[maybe_unused]] typename EpilogueOp::Params const& params,
+      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+      [[maybe_unused]] int32_t sm_count,
+      [[maybe_unused]] int32_t sm_idx,
+      [[maybe_unused]] int32_t warp_group_idx = 0) const {
+    // In the async tensormap update kernels, we will use operator[] to index the return value to locate the correct tensormap.
+    // In other kernels, we will use return value as tensormap pointer directly.
+    struct {
+      CUTLASS_DEVICE operator cute::TmaDescriptor *() const {
+        return reinterpret_cast<cute::TmaDescriptor*>(0);
+      }
+      CUTLASS_DEVICE auto operator [] (int) const {
+        return reinterpret_cast<cute::TmaDescriptor*>(0);
+      }
+    } ret;
+    return ret;
+  }
+
+  template <bool... Args>
   CUTLASS_DEVICE auto
   load_init(
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] int32_t const sm_count,
-      [[maybe_unused]] int32_t const sm_idx) const {
-    return cute::make_tuple(nullptr);
+      typename EpilogueOp::Params const& params,
+      TensorMapStorage& shared_tensormap,
+      int32_t const sm_count,
+      int32_t const sm_idx) const {
+    return cute::make_tuple(
+      tensormaps_init<true>(params, shared_tensormap, sm_count, sm_idx, 0)
+    );
   }
 
   template<
@@ -633,13 +692,16 @@ public:
   {
   }
 
+  template <bool... Args>
   CUTLASS_DEVICE auto
   store_init(
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] int32_t const sm_count,
-      [[maybe_unused]] int32_t const sm_idx) const {
-    return cute::make_tuple(nullptr);
+      typename EpilogueOp::Params const& params,
+      TensorMapStorage& shared_tensormap,
+      int32_t const sm_count,
+      int32_t const sm_idx) const {
+    return cute::make_tuple(
+      tensormaps_init<false>(params, shared_tensormap, sm_count, sm_idx, 0)
+    );
   }
 
   template<
@@ -703,18 +765,18 @@ public:
   >
   CUTLASS_DEVICE auto
   store(
-    LoadPipeline load_pipeline,
-    LoadPipelineState load_pipe_consumer_state,
-    StorePipeline store_pipeline,
-    StorePipelineState store_pipe_producer_state,
-    ProblemShapeMNKL problem_shape_mnkl,
-    CtaTileMNK cta_tile_mnk,
-    CtaCoordMNKL cta_coord_mnkl,
-    MmaTileMNK mma_tile_mnk,
-    TiledMma tiled_mma,
-    cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
-    TensorStorage& shared_tensors,
-    TiledCopyT2R tiled_t2r)
+      LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_consumer_state,
+      StorePipeline store_pipeline,
+      StorePipelineState store_pipe_producer_state,
+      ProblemShapeMNKL problem_shape_mnkl,
+      CtaTileMNK cta_tile_mnk,
+      CtaCoordMNKL cta_coord_mnkl,
+      MmaTileMNK mma_tile_mnk,
+      TiledMma tiled_mma,
+      cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
+      TensorStorage& shared_tensors,
+      TiledCopyT2R tiled_t2r)
   {
     (*this)(
       problem_shape_mnkl,
@@ -740,19 +802,19 @@ public:
   >
   CUTLASS_DEVICE auto
   store(
-    LoadPipeline load_pipeline,
-    LoadPipelineState load_pipe_consumer_state,
-    StorePipeline store_pipeline,
-    StorePipelineState store_pipe_producer_state,
-    ProblemShapeMNKL problem_shape_mnkl,
-    CtaTileMNK cta_tile_mnk,
-    CtaCoordMNKL cta_coord_mnkl,
-    MmaTileMNK mma_tile_mnk,
-    TiledMma tiled_mma,
-    cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
-    TensorStorage& shared_tensors,
-    TensorMap tensormap,
-    TiledCopyT2R tiled_t2r) {
+      LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_consumer_state,
+      StorePipeline store_pipeline,
+      StorePipelineState store_pipe_producer_state,
+      ProblemShapeMNKL problem_shape_mnkl,
+      CtaTileMNK cta_tile_mnk,
+      CtaCoordMNKL cta_coord_mnkl,
+      MmaTileMNK mma_tile_mnk,
+      TiledMma tiled_mma,
+      cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
+      TensorStorage& shared_tensors,
+      TensorMap tensormap,
+      TiledCopyT2R tiled_t2r) {
     (*this)(
       problem_shape_mnkl,
       cta_tile_mnk,
@@ -765,6 +827,7 @@ public:
 
   template<
     bool ReuseTmem = false,
+    bool WaitForInflightTmaRequests = true,
     class AccumulatorPipeline,
     class AccumulatorPipelineState,
     class ProblemShapeMNKL,
@@ -825,8 +888,7 @@ public:
   }
 
   // Dummy methods to perform different parts of TMA/Tensormap modifications
-
-  template <bool IsLoad, class ProblemShape>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true, class ProblemShape>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
@@ -834,14 +896,16 @@ public:
       [[maybe_unused]] typename EpilogueOp::Params const& params,
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
       [[maybe_unused]] ProblemShape problem_shape,
-      [[maybe_unused]] int32_t next_batch) { }
+      [[maybe_unused]] int32_t next_batch
+  ) { }
 
-  template <bool IsLoad>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+      [[maybe_unused]] cute::TmaDescriptor const* tensormap
+  ) { }
 
   template <bool IsLoad>
   CUTLASS_DEVICE

@@ -1140,6 +1140,7 @@ struct CollectiveBuilder<
       GmmaMajorB, ElementBMma, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
+
   // Reserve 128B for 8 stages of tile scheduling
   static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag>> ? 
       sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;

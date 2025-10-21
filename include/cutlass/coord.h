@@ -102,6 +102,7 @@ public:
   template <int R, typename I, typename L>
   CUTLASS_HOST_DEVICE
   Coord(Coord<R, I, L> other) {
+    static_assert(kRank == R);
     for (int i = 0; i < kRank; ++i) {
       idx[i] = other[i];
     }

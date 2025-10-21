@@ -35,8 +35,8 @@
 #include <string>
 
 #define CUTLASS_MAJOR 4
-#define CUTLASS_MINOR 2
-#define CUTLASS_PATCH 1
+#define CUTLASS_MINOR 3
+#define CUTLASS_PATCH 0 
 
 #ifdef CUTLASS_VERSIONS_GENERATED
 #include "cutlass/version_extended.h"
