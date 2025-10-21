@@ -13,16 +13,16 @@ from functools import partial
 from typing import Tuple
 
 import cutlass.cute as cute
-from cutlass.cutlass_dsl import T, dsl_user_op, while_generate
+from cutlass.cutlass_dsl import T, dsl_user_op
 
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import arith, llvm, nvvm, scf
+from cutlass._mlir.dialects import llvm, nvvm
 from cutlass._mlir.dialects.nvvm import (
     MemOrderKind,
     MemScopeKind,
     AtomicOpKind,
 )
-from cutlass.cute.typing import Pointer, Int32, Boolean
+from cutlass.cute.typing import Pointer, Int32
 
 
 @dsl_user_op
@@ -41,32 +41,42 @@ def atomicAdd(dst_ptr: Pointer, val: Int32, loc=None, ip=None) -> Int32:
 
 @cute.jit
 def ld_bypass(input_tensor: cute.Tensor):
-    fragment = cute.make_fragment(input_tensor.layout, input_tensor.element_type)
+    fragment = cute.make_rmem_tensor(input_tensor.layout, input_tensor.element_type)
     copy_atom_load = cute.make_copy_atom(
         cute.nvgpu.CopyUniversalOp(),
         input_tensor.element_type,
         memory_order=cute.nvgpu.common.MemoryOrder.VOLATILE,
         memory_scope=cute.nvgpu.common.MemoryScope.SYS,
     )
-    cute.copy(copy_atom_load, input_tensor, fragment)
+    cute.copy_atom_call(copy_atom_load, input_tensor, fragment)
     vals = fragment.load()
     return vals
 
+
 @cute.jit
-def spin_lock_wait(lock_ptr: Pointer, expect_count: Int32, mem_order : str = "relaxed", mem_scope : str = "gpu", loc=None, ip=None) -> None:
+def spin_lock_wait(
+    lock_ptr: Pointer,
+    expect_count: Int32,
+    mem_order: str = "relaxed",
+    mem_scope: str = "gpu",
+    loc=None,
+    ip=None,
+) -> None:
     """
     wait on a spin lock until the expected count is reached.
     """
     res = 0
     while res != expect_count:
         res = nvvm.atomicrmw(
-            T.i32(),    
-            AtomicOpKind.CAS, 
-            lock_ptr.llvm_ptr, 
+            T.i32(),
+            AtomicOpKind.CAS,
+            lock_ptr.llvm_ptr,
             Int32(0).ir_value(loc=loc, ip=ip),
             b=Int32(expect_count).ir_value(loc=loc, ip=ip),
-            mem_order=MemOrderKind.ACQUIRE if mem_order == "acquire" else MemOrderKind.RELAXED,
-            syncscope=MemScopeKind.GPU if mem_scope == "gpu" else MemScopeKind.SYS
+            mem_order=(
+                MemOrderKind.ACQUIRE if mem_order == "acquire" else MemOrderKind.RELAXED
+            ),
+            syncscope=MemScopeKind.GPU if mem_scope == "gpu" else MemScopeKind.SYS,
         )
 
 
@@ -77,7 +87,7 @@ def multimem_red_add_sys_release(mc_ptr: Pointer, loc=None, ip=None) -> None:
     """
     llvm.inline_asm(
         None,
-        [mc_ptr.toint().ir_value()],
+        [mc_ptr.toint().ir_value(loc=loc, ip=ip)],
         "multimem.red.release.sys.global.add.u32 [$0], 1;",
         "l",
         has_side_effects=True,
@@ -86,6 +96,7 @@ def multimem_red_add_sys_release(mc_ptr: Pointer, loc=None, ip=None) -> None:
         ip=ip,
     )
 
+
 @dsl_user_op
 def multimem_red_add_gpu_relaxed(mc_ptr: Pointer, loc=None, ip=None) -> None:
     """
@@ -93,7 +104,7 @@ def multimem_red_add_gpu_relaxed(mc_ptr: Pointer, loc=None, ip=None) -> None:
     """
     llvm.inline_asm(
         None,
-        [mc_ptr.toint().ir_value()],
+        [mc_ptr.toint().ir_value(loc=loc, ip=ip)],
         "multimem.red.relaxed.gpu.global.add.u32 [$0], 1;",
         "l",
         has_side_effects=True,
@@ -110,7 +121,9 @@ def spin_lock_multimem_arrive(lock_ptr: Pointer, loc=None, ip=None) -> None:
     multimem_red_add_gpu_relaxed(lock_ptr, loc=loc, ip=ip)
 
 
-def sm_wise_inter_gpu_multimem_barrier(barrier : Pointer, barrier_mc : Pointer, num_ranks, loc=None, ip=None) -> None :
+def sm_wise_inter_gpu_multimem_barrier(
+    barrier: Pointer, barrier_mc: Pointer, num_ranks, loc=None, ip=None
+) -> None:
     """
     barrier for inter-gpu sm-wise
     """
@@ -119,7 +132,9 @@ def sm_wise_inter_gpu_multimem_barrier(barrier : Pointer, barrier_mc : Pointer, 
     pid = bidx + bidy * bdimx + bidz * bdimx * bdimy
     multimem_red_add_sys_release(barrier_mc + pid, loc=loc, ip=ip)
     cute.arch.fence_proxy(cute.arch.ProxyKind.alias)
-    spin_lock_wait(barrier + pid, num_ranks, mem_order="acquire", mem_scope="sys", loc=loc, ip=ip)
+    spin_lock_wait(
+        barrier + pid, num_ranks, mem_order="acquire", mem_scope="sys", loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -129,9 +144,9 @@ def multimem_ld_reduce_base(
     ptx_string: str = "",
     loc=None,
     ip=None,
-)  -> Tuple[Int32, Int32, Int32, Int32]:
+) -> Tuple[Int32, Int32, Int32, Int32]:
     # ld reduce 8xf16 elts
-    mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value()
+    mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     return_struct = llvm.inline_asm(
         ir.Type.parse("!llvm.struct<(i32,i32,i32,i32)>"),
         [mc_ptr_int],
@@ -146,11 +161,26 @@ def multimem_ld_reduce_base(
     return return_regs[0], return_regs[1], return_regs[2], return_regs[3]
 
 
-multimem_ld_reduce_8xf16 = partial(multimem_ld_reduce_base, ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f32.v4.f16x2 {$0, $1, $2, $3}, [$4];")
-multimem_ld_reduce_4xf32 = partial(multimem_ld_reduce_base, ptx_string="multimem.ld_reduce.sys.relaxed.global.add.v4.f32 {$0, $1, $2, $3}, [$4];")
-multimem_ld_reduce_8xbf16 = partial(multimem_ld_reduce_base, ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f32.v4.bf16x2 {$0, $1, $2, $3}, [$4];")
-multimem_ld_reduce_16xe4m3 = partial(multimem_ld_reduce_base, ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f16.v4.e4m3x4 {$0, $1, $2, $3}, [$4];")
-multimem_ld_reduce_16xe5m2 = partial(multimem_ld_reduce_base, ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f16.v4.e5m2x4 {$0, $1, $2, $3}, [$4];")
+multimem_ld_reduce_8xf16 = partial(
+    multimem_ld_reduce_base,
+    ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f32.v4.f16x2 {$0, $1, $2, $3}, [$4];",
+)
+multimem_ld_reduce_4xf32 = partial(
+    multimem_ld_reduce_base,
+    ptx_string="multimem.ld_reduce.sys.relaxed.global.add.v4.f32 {$0, $1, $2, $3}, [$4];",
+)
+multimem_ld_reduce_8xbf16 = partial(
+    multimem_ld_reduce_base,
+    ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f32.v4.bf16x2 {$0, $1, $2, $3}, [$4];",
+)
+multimem_ld_reduce_16xe4m3 = partial(
+    multimem_ld_reduce_base,
+    ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f16.v4.e4m3x4 {$0, $1, $2, $3}, [$4];",
+)
+multimem_ld_reduce_16xe5m2 = partial(
+    multimem_ld_reduce_base,
+    ptx_string="multimem.ld_reduce.sys.relaxed.global.add.acc::f16.v4.e5m2x4 {$0, $1, $2, $3}, [$4];",
+)
 
 
 @dsl_user_op
@@ -165,7 +195,7 @@ def multimem_st_4xb32(
     ip=None,
 ) -> None:
     # st 4x32 bits of data
-    mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value()
+    mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
         T.i32(),
         [mc_ptr_int, x, y, z, w],
@@ -176,4 +206,3 @@ def multimem_st_4xb32(
         loc=loc,
         ip=ip,
     )
-

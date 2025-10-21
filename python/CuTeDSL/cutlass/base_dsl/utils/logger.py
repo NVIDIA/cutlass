@@ -78,4 +78,22 @@ def setup_log(
     return logger
 
 
+def _init_logger_with_client_name(prefix):
+    from ..env_manager import LogEnvironmentManager
+
+    log_env = LogEnvironmentManager(prefix)
+
+    if log_env.log_to_console == False and log_env.jit_time_profiling:
+        log_env.log_to_console = True
+        log_env.log_level = 20  # info level
+
+    setup_log(
+        prefix,
+        log_env.log_to_console,
+        log_env.log_to_file,
+        f"{prefix}.log",
+        log_env.log_level,
+    )
+
+
 logger = setup_log("generic")

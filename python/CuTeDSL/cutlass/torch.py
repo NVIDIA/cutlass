@@ -18,14 +18,13 @@ from typing import Optional, Type, Union
 from cutlass.cute.typing import (
     Numeric,
     Boolean,
-    Float,
-    Integer,
     TFloat32,
     Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
     Float8E8M0FNU,
     Float4E2M1FN,
+    Int4,
     Tensor,
 )
 from cutlass.cute.runtime import from_dlpack
@@ -169,7 +168,7 @@ def convert_cute_tensor(
 ) -> Tensor:
     """
     Change the value of the cute tensor to make its value converted from a fp32 torch tensor.
-    Used for fp8 types tensor creatation now.
+    Used for fp8 and int4 types tensor creatation now.
     """
     # if torch_tensor is on cpu, create a gpu copy
     if f32_torch_tensor.device.type == "cpu":
@@ -177,6 +176,7 @@ def convert_cute_tensor(
 
     # Fp8 type need explicit type conversion
     if dtype in {
+        Int4,
         Float8E5M2,
         Float8E4M3FN,
         Float8E8M0FNU,
@@ -281,7 +281,9 @@ def cute_tensor_like(
     """
 
     # allocate device buffer for cute tensor
-    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+        cutlass_dtype.is_integer and cutlass_dtype.width == 4
+    ):
         torch_dtype = torch.int8
     else:
         torch_dtype = dtype(cutlass_dtype)
@@ -298,7 +300,9 @@ def cute_tensor_like(
         cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
 
     # initialize the cute tensor data
-    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+        cutlass_dtype.is_integer and cutlass_dtype.width == 4
+    ):
         cute_tensor = convert_cute_tensor(
             data_ref.to(dtype=torch.float32),
             cute_tensor,

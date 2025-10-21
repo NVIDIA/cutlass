@@ -625,14 +625,14 @@ public:
       return 0;
     }
     else if constexpr (ModeHasScales) {
-      constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
+      constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
       static_assert(scale_tx_bytes % 128 == 0, "Each scale stage must be 128B aligned."); // required by TMA
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return scale_tx_bytes;
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         // Scale and zero share smem layout
-        constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
+        constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
         static_assert(zero_tx_bytes % 128 == 0, "Each zero stage must be 128B aligned."); // required by TMA
         return scale_tx_bytes + zero_tx_bytes;
       }
@@ -1189,8 +1189,7 @@ public:
       auto smem_thr_copy_S = smem_tiled_copy_S.get_slice(threadIdx.x % 128);
 
       Tensor sS = make_tensor(make_smem_ptr(shared_storage.input.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_SCALE_K,PIPE)
-      Tensor tCsS = cta_mma.partition_A(sS);
-      Tensor tSsS = smem_thr_copy_S.partition_S(tCsS);
+      Tensor tSsS = smem_thr_copy_S.partition_S(sS);
       Tensor tSrS = make_tensor<ElementScale>(tSsS(_,_,_,_,0).shape());
 
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
@@ -1198,8 +1197,7 @@ public:
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor sZ = make_tensor(make_smem_ptr(shared_storage.input.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
-        Tensor tCsZ = cta_mma.partition_A(sZ);
-        Tensor tZsZ = smem_thr_copy_S.partition_S(tCsZ);
+        Tensor tZsZ = smem_thr_copy_S.partition_S(sZ);
         Tensor tZrZ = make_tensor<ElementZero>(tZsZ(_,_,_,_,0).shape());
         return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS, tZrZ, tZsZ);
       }

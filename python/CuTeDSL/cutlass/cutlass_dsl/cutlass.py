@@ -15,14 +15,26 @@ regarding to that dialect.
 """
 
 # Local module imports
-from itertools import chain
 from types import GenericAlias, SimpleNamespace, UnionType
-from typing import Callable, Union, Type, List, Union, Sequence, ForwardRef, Any
+from typing import (
+    Callable,
+    Union,
+    List,
+    Tuple,
+    Sequence,
+    ForwardRef,
+    Any,
+    get_origin,
+    get_args,
+)
 import functools
 import pkgutil
 from dataclasses import is_dataclass, fields
+from math import ceil
+from itertools import chain
 from collections.abc import Sequence
 import builtins
+import ctypes
 
 from ..base_dsl import *
 from ..base_dsl import compiler
@@ -30,8 +42,8 @@ from ..base_dsl.dsl import is_dynamic_expression, extract_mlir_values
 from ..base_dsl.typing import *
 from ..base_dsl.typing import DynamicExpression, get_mlir_types
 from ..base_dsl.runtime.jit_arg_adapters import is_arg_spec_constexpr
+from ..base_dsl.runtime import cuda as cuda_helpers
 
-from ..base_dsl.ast_helpers import const_expr
 
 # MLIR Imports
 from cutlass._mlir import ir, execution_engine, passmanager
@@ -43,7 +55,8 @@ from cutlass._mlir.extras import types as T
 
 # Helpers
 from ..base_dsl._mlir_helpers import arith as cutlass_arith
-from ..base_dsl._mlir_helpers import lru_cache_ir
+from ..base_dsl._mlir_helpers.op import dsl_user_op
+from ..base_dsl._mlir_helpers.arith import const
 
 from ..base_dsl.ast_helpers import (
     loop_selector,
@@ -60,7 +73,6 @@ from ..base_dsl.ast_helpers import (
     any_executor,
     all_executor,
     range_value_check,
-    range_perf_warning,
     cf_symbol_check,
 )
 
@@ -130,6 +142,22 @@ def is_cute_algebra_type(arg_spec):
                 ) and tuple_arg0.__forward_arg__ in (_cute_algebra_type_aliases):
                     return True
     return False
+
+
+def _build_kernel_attrs(config) -> dict:
+    kernel_attrs = {}
+    if config.min_blocks_per_mp > 1:
+        kernel_attrs = {
+            cuda_helpers.cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT: ceil(
+                config.min_blocks_per_mp
+                * config.smem
+                / cuda_helpers.get_device_attribute(
+                    cuda_helpers.cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
+                )
+                * 100
+            )
+        }
+    return kernel_attrs
 
 
 def _get_c_pointers_cutlass(obj):
@@ -203,8 +231,8 @@ class CutlassBaseDSL(BaseDSL):
     ) -> Any:
         return False
 
-    def _build_gpu_module(self, attrs):
-        self.gpu_module = gpu.GPUModuleOp(ir.StringAttr.get("kernels"))
+    def _build_gpu_module(self, attrs, loc=None):
+        self.gpu_module = gpu.GPUModuleOp(ir.StringAttr.get("kernels"), loc=loc)
         with ir.InsertionPoint(self.gpu_module.bodyRegion.blocks.append(*[])):
             pass
 
@@ -232,9 +260,9 @@ class CutlassBaseDSL(BaseDSL):
         return ir.InsertionPoint(self.gpu_module.bodyRegion.blocks[0])
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
-        assert isinstance(
-            config, BaseDSL.LaunchConfig
-        ), f"Expect LaunchConfig for @kernel, but got {type(config)}"
+        assert isinstance(config, BaseDSL.LaunchConfig), (
+            f"Expect LaunchConfig for @kernel, but got {type(config)}"
+        )
 
         ret = {}
         # generate launch bound attr from LaunchConfig
@@ -278,7 +306,7 @@ class CutlassBaseDSL(BaseDSL):
                     version_hash.update(chunk)
         except Exception:
             raise DSLRuntimeError(
-                f"Failed to read the shared library file libCutlassIRPythonCAPI.so."
+                "Failed to read the shared library file libCutlassIRPythonCAPI.so."
                 "The file may not exist or may not be readable."
                 "Please re-install the package."
             )
@@ -315,6 +343,50 @@ class CutlassBaseDSL(BaseDSL):
         allocator, callback = self._smem_usage_tracker
         return callback(allocator)
 
+    @staticmethod
+    def gpu_launch_func(
+        async_token,
+        async_dependencies,
+        kernel,
+        grid_size_x,
+        grid_size_y,
+        grid_size_z,
+        block_size_x,
+        block_size_y,
+        block_size_z,
+        kernel_operands,
+        *,
+        cluster_size_x=None,
+        cluster_size_y=None,
+        cluster_size_z=None,
+        dynamic_shared_memory_size=None,
+        async_object=None,
+        use_pdl=False,
+        loc=None,
+        ip=None,
+    ) -> ir.Value:
+        op = gpu.LaunchFuncOp(
+            asyncToken=async_token,
+            asyncDependencies=async_dependencies,
+            kernel=kernel,
+            gridSizeX=grid_size_x,
+            gridSizeY=grid_size_y,
+            gridSizeZ=grid_size_z,
+            blockSizeX=block_size_x,
+            blockSizeY=block_size_y,
+            blockSizeZ=block_size_z,
+            kernelOperands=kernel_operands,
+            clusterSizeX=cluster_size_x,
+            clusterSizeY=cluster_size_y,
+            clusterSizeZ=cluster_size_z,
+            dynamicSharedMemorySize=dynamic_shared_memory_size,
+            asyncObject=async_object,
+            loc=loc,
+            ip=ip,
+        )
+        op.attributes["use_pdl"] = ir.BoolAttr.get(use_pdl)
+        return _get_op_result_or_op_results(op)
+
     def _kernel_helper(self, funcBody, *args, **kwargs):
         class _CutlassIrKernelGenHelper(BaseDSL._KernelGenHelper):
             def __init__(self, dsl: CutlassBaseDSL):
@@ -344,16 +416,17 @@ class CutlassBaseDSL(BaseDSL):
                 kernelSym = kwargs.get("kernelSym", None)
                 kernelOperands = kwargs.get("kernelOperands", None)
                 requiredArgs = kwargs.get("requiredArgs", None)
+                loc = kwargs.get("loc", None)
                 assert kernelSym is not None, "kernelSym being None is not expected!"
-                assert (
-                    requiredArgs is not None
-                ), "requiredArgs being None is not expected!"
-                assert (
-                    kernelOperands is not None
-                ), "kernelOperands being None is not expected!"
-                assert isinstance(
-                    requiredArgs.config, BaseDSL.LaunchConfig
-                ), f"Expect LaunchConfig for @kernel, but got {type(requiredArgs.config)}"
+                assert requiredArgs is not None, (
+                    "requiredArgs being None is not expected!"
+                )
+                assert kernelOperands is not None, (
+                    "kernelOperands being None is not expected!"
+                )
+                assert isinstance(requiredArgs.config, BaseDSL.LaunchConfig), (
+                    f"Expect LaunchConfig for @kernel, but got {type(requiredArgs.config)}"
+                )
 
                 cfg = requiredArgs.config
 
@@ -379,7 +452,7 @@ class CutlassBaseDSL(BaseDSL):
                 if not isinstance(cfg.async_deps, (list, tuple)):
                     cfg.async_deps = [cfg.async_deps]
                 is_async = len(cfg.async_deps) > 0
-                token = gpu.launch_func(
+                token = CutlassBaseDSL.gpu_launch_func(
                     gpu.AsyncTokenType.get() if is_async else None,
                     cfg.async_deps,
                     kernelSym,
@@ -393,6 +466,8 @@ class CutlassBaseDSL(BaseDSL):
                         )
                     ),
                     dynamic_shared_memory_size=cfg.smem,
+                    use_pdl=cfg.use_pdl,
+                    loc=loc,
                 )
                 return token if is_async else None
 
@@ -432,7 +507,7 @@ class CutlassBaseDSL(BaseDSL):
                 expected_base = get_args(arg_annotation)[0]
                 if not issubclass(arg, expected_base):
                     return DSLRuntimeError(
-                        f"expects argument #{arg_index+1} ({arg_name}) to be Type[{expected_base}], but got {arg}"
+                        f"expects argument #{arg_index + 1} ({arg_name}) to be Type[{expected_base}], but got {arg}"
                     )
             # Handle Union types and generic types
             elif origin is Union or isinstance(arg_annotation, UnionType):
@@ -445,13 +520,17 @@ class CutlassBaseDSL(BaseDSL):
                     for ty in allowed_types
                 ):
                     return DSLRuntimeError(
-                        f"expects argument #{arg_index+1} ({arg_name}) to be one of {allowed_types}, but got {type(arg)}"
+                        f"expects argument #{arg_index + 1} ({arg_name}) to be one of {allowed_types}, but got {type(arg)}"
                     )
+            elif isinstance(arg_annotation, GenericAlias):
+                # skip generic types such as List[int], Tuple[int, int], etc. for performance consideration?
+                pass
+
             elif isinstance(arg_annotation, type):
                 # Handle simple type annotations
                 if not isinstance(arg, arg_annotation) and arg is not None:
                     return DSLRuntimeError(
-                        f"expects argument #{arg_index+1} ({arg_name}) to be {arg_annotation}, but got {type(arg)}"
+                        f"expects argument #{arg_index + 1} ({arg_name}) to be {arg_annotation}, but got {type(arg)}"
                     )
         # Everything looks good if we are here
         return None
@@ -618,6 +697,7 @@ class KernelLauncher:
         self.dsl.frame = inspect.currentframe().f_back
         self.dsl._preprocess_launch_config_args(args, kwargs)
         config = self.dsl.LaunchConfig(*args, **kwargs)
+        kernel_attrs = _build_kernel_attrs(config)
 
         kernel_generator = self.dsl.kernel_launcher(
             requiredArgs=["config"],
@@ -627,7 +707,7 @@ class KernelLauncher:
         )(self.funcBody)
 
         ret, name = kernel_generator(*self.func_args, **self.func_kwargs, config=config)
-        self.dsl.kernel_symbols.append(name)
+        self.dsl.kernel_info[name] = kernel_attrs
         self.dsl.frame = None
         return ret.launch_op_ret
 
@@ -790,9 +870,9 @@ def to_index(value):
     if is_dynamic_expression(value):
         if isinstance(value, Numeric):
             value = value.ir_value()
-        assert ir.IntegerType.isinstance(
-            value.type
-        ), f"expects integer type, but got {value.type}"
+        assert ir.IntegerType.isinstance(value.type), (
+            f"expects integer type, but got {value.type}"
+        )
         res = arith.index_cast(T.index(), value)
     else:
         res = const(int(value), ty=T.index())
@@ -831,7 +911,6 @@ def _validate_iter_args_structure(iter_args, ir_values):
     return count_values(iter_args) == len(ir_values)
 
 
-
 # =============================================================================
 # DSL implementation of Python Build-in Operators
 # =============================================================================
@@ -839,7 +918,7 @@ def _validate_iter_args_structure(iter_args, ir_values):
 
 def _minmax(op, *args, loc=None, ip=None):
     """Computes the minimum or maximum value from the provided arguments."""
-    from ..base_dsl.typing import _binary_op, _binary_op_type_promote
+    from ..base_dsl.typing import _binary_op_type_promote
 
     # AST Traversal doesn't support early exit in if executor
     x = None
@@ -854,34 +933,39 @@ def _minmax(op, *args, loc=None, ip=None):
     # Handle case for min(a, b, c, ...) and min([x, y], [b]) and min(a, (x, y, z))
     elif len(args) > 1:
         res, *xs = tuple(args)
+
         for x in xs:
-            lhs = as_numeric(op(res, loc=loc, ip=ip))
-            rhs = as_numeric(op(x, loc=loc, ip=ip))
             emitter = getattr(cutlass_arith, f"_{op.__name__}")
-
-            lhs, rhs, res_type = _binary_op_type_promote(lhs, rhs, promote_bool=True)
-
-            if isinstance(lhs.value, cutlass_arith.ArithValue) and isinstance(
-                lhs, Integer
-            ):
-                lhs_val = lhs.value.with_signedness(lhs.signed)
+            if not (is_dynamic_expression(res) or is_dynamic_expression(x)):
+                res = emitter(op(res), op(x))
             else:
-                lhs_val = lhs.value
+                lhs = as_numeric(op(res, loc=loc, ip=ip))
+                rhs = as_numeric(op(x, loc=loc, ip=ip))
+                lhs, rhs, res_type = _binary_op_type_promote(
+                    lhs, rhs, promote_bool=True
+                )
 
-            if isinstance(rhs.value, cutlass_arith.ArithValue) and isinstance(
-                rhs, Integer
-            ):
-                rhs_val = rhs.value.with_signedness(rhs.signed)
-            else:
-                rhs_val = rhs.value
+                if isinstance(lhs.value, cutlass_arith.ArithValue) and isinstance(
+                    lhs, Integer
+                ):
+                    lhs_val = lhs.value.with_signedness(lhs.signed)
+                else:
+                    lhs_val = lhs.value
 
-            res = res_type(emitter(lhs_val, rhs_val), loc=loc, ip=ip)
+                if isinstance(rhs.value, cutlass_arith.ArithValue) and isinstance(
+                    rhs, Integer
+                ):
+                    rhs_val = rhs.value.with_signedness(rhs.signed)
+                else:
+                    rhs_val = rhs.value
+                res = res_type(emitter(lhs_val, rhs_val), loc=loc, ip=ip)
         x = res
     else:
         raise DSLNotImplemented(f"{type(args)} is not supported")
     return x
 
 
+@dsl_user_op
 def min(*args, loc=None, ip=None):
     """Computes the minimum value from the provided arguments.
 
@@ -940,6 +1024,7 @@ def min(*args, loc=None, ip=None):
     return _minmax(min, *args, loc=loc, ip=ip)
 
 
+@dsl_user_op
 def max(*args, loc=None, ip=None):
     """Computes the maximum value from the provided arguments.
 
@@ -1275,7 +1360,7 @@ def for_generate(
 
     def _createI32Attr(value):
         if not isinstance(value, int):
-            raise DSLRuntimeError(f"value must be int.")
+            raise DSLRuntimeError("value must be int.")
         return ir.IntegerAttr.get(ir.IntegerType.get_signless(32), value)
 
     ir_iter_args = extract_mlir_values(iter_args) if iter_args is not None else None
@@ -1529,23 +1614,22 @@ def in_(lhs, rhs):
 
 def _lte_gte(lhs, rhs, op):
     def native_lte_gte(lhs, rhs, op):
-        match op:
-            case "<":
-                return lhs < rhs
-            case "<=":
-                if hasattr(lhs, "__le__"):
-                    return lhs <= rhs
-                else:
-                    return not_(lhs > rhs)
-            case ">":
-                return lhs > rhs
-            case ">=":
-                if hasattr(lhs, "__ge__"):
-                    return lhs >= rhs
-                else:
-                    return not_(lhs < rhs)
-            case _:
-                raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
+        if op == "<":
+            return lhs < rhs
+        elif op == "<=":
+            if hasattr(lhs, "__le__"):
+                return lhs <= rhs
+            else:
+                return not_(lhs > rhs)
+        elif op == ">":
+            return lhs > rhs
+        elif op == ">=":
+            if hasattr(lhs, "__ge__"):
+                return lhs >= rhs
+            else:
+                return not_(lhs < rhs)
+        else:
+            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
 
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return native_lte_gte(lhs, rhs, op)
@@ -1571,15 +1655,14 @@ def _lte_gte(lhs, rhs, op):
             # Ref https://docs.python.org/3/tutorial/datastructures.html#comparing-sequences-and-other-types
             # If one sequence is an initial sub-sequence of the other, the shorter sequence is the smaller (lesser) one
             has_valid_mask = any_(mask)
-            match op:
-                case "<":
-                    length_result = len(lhs) < len(rhs)
-                case ">":
-                    length_result = len(lhs) > len(rhs)
-                case "<=":
-                    length_result = len(lhs) <= len(rhs)
-                case ">=":
-                    length_result = len(lhs) >= len(rhs)
+            if op == "<":
+                length_result = len(lhs) < len(rhs)
+            elif op == ">":
+                length_result = len(lhs) > len(rhs)
+            elif op == "<=":
+                length_result = len(lhs) <= len(rhs)
+            elif op == ">=":
+                length_result = len(lhs) >= len(rhs)
             if type(has_valid_mask) == bool:
                 return result if has_valid_mask else length_result
             else:
@@ -1624,30 +1707,29 @@ def _compare_dispatch(lhs, rhs, op):
     :return: The result of the comparison, which may be a boolean or a DSL-specific type.
     :raises DSLRuntimeError: If the operator is not supported.
     """
-    match op:
-        # 'is' and 'is not' are pure python operators
-        case "is":
-            return lhs is rhs
-        case "is not":
-            return lhs is not rhs
-        case "in":
-            return in_(lhs, rhs)
-        case "not in":
-            return not_(in_(lhs, rhs))
-        case "==":
-            return equal(lhs, rhs)
-        case "!=":
-            return not_equal(lhs, rhs)
-        case "<":
-            return less_than(lhs, rhs)
-        case ">":
-            return greater_than(lhs, rhs)
-        case ">=":
-            return greater_equal(lhs, rhs)
-        case "<=":
-            return less_equal(lhs, rhs)
-        case _:
-            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
+    # 'is' and 'is not' are pure python operators
+    if op == "is":
+        return lhs is rhs
+    elif op == "is not":
+        return lhs is not rhs
+    elif op == "in":
+        return in_(lhs, rhs)
+    elif op == "not in":
+        return not_(in_(lhs, rhs))
+    elif op == "==":
+        return equal(lhs, rhs)
+    elif op == "!=":
+        return not_equal(lhs, rhs)
+    elif op == "<":
+        return less_than(lhs, rhs)
+    elif op == ">":
+        return greater_than(lhs, rhs)
+    elif op == ">=":
+        return greater_equal(lhs, rhs)
+    elif op == "<=":
+        return less_equal(lhs, rhs)
+    else:
+        raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
 
 
 def _compare_executor(left, comparators, ops):

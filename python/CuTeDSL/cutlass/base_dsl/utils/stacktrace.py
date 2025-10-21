@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 """
- This module provides stacktrace helper functions
+This module provides stacktrace helper functions
 """
 
 import os

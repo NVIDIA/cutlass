@@ -13,7 +13,6 @@
 This module provides MLIR GPU Dialect helper functions
 """
 
-
 from ..._mlir import ir
 from ..._mlir.dialects import gpu, arith, scf
 from ..._mlir.extras import types as T

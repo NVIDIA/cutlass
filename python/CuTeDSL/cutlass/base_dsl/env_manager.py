@@ -29,6 +29,7 @@ from typing import Any
 
 from ..base_dsl.runtime.cuda import get_compute_capability_major_minor
 from .utils.logger import log
+from .cache_helpers import get_default_file_dump_root
 
 IS_WINDOWS = sys.platform == "win32"
 CLIB_EXT = ".dll" if IS_WINDOWS else ".so"
@@ -40,12 +41,21 @@ CLIB_EXT = ".dll" if IS_WINDOWS else ".so"
 
 @lru_cache(maxsize=None)
 def get_str_env_var(var_name, default_value=None):
+    """
+    Get the string value of an environment variable.
+    Note that the value is cached after the first call.
+    """
     value = os.getenv(var_name)
     return value if value is not None else default_value
 
 
 @lru_cache(maxsize=None)
 def get_bool_env_var(var_name, default_value=False):
+    """
+    Get the value of a boolean environment variable.
+    If the value it not in False, 0, or empty string, it is considered True.
+    Note that the value is cached after the first call.
+    """
     value = get_str_env_var(var_name)
     if value is None:
         return default_value
@@ -54,12 +64,21 @@ def get_bool_env_var(var_name, default_value=False):
 
 @lru_cache(maxsize=None)
 def get_int_env_var(var_name, default_value=0):
+    """
+    Get the value of an integer environment variable.
+    If the value is not a valid integer, the default value 0 is returned.
+    Note that the value is cached after the first call.
+    """
     value = get_str_env_var(var_name)
     return int(value) if value and value.isdigit() else default_value
 
 
 @lru_cache(maxsize=None)
 def has_env_var(var_name):
+    """
+    Check if an environment variable is set.
+    Note that the value is cached after the first call.
+    """
     return os.getenv(var_name) is not None
 
 
@@ -85,6 +104,8 @@ def detect_gpu_arch(prefix):
     suffix = ""
     if major >= 9:
         suffix = "a"
+    if major == 11 and minor == 0:
+        major, minor = 10, 1
 
     return f"sm_{major}{minor}{suffix}"
 
@@ -244,43 +265,14 @@ def get_prefix_dsl_libs(prefix: str):
     return None
 
 
-class EnvironmentVarManager:
-    """Manages environment variables for configuration options.
-
-    Printing options:
-    - [DSL_NAME]_LOG_TO_CONSOLE: Print logging to stderr (default: False)
-    - [DSL_NAME]_PRINT_AFTER_PREPROCESSOR: Print after preprocess (default: False)
-    - [DSL_NAME]_PRINT_IR: Print generated IR (default: False)
-    - [DSL_NAME]_FILTER_STACKTRACE: Filter internal stacktrace (default: True)
-    File options:
-    - [DSL_NAME]_KEEP_IR: Save generated IR in a file (default: False)
-    - [DSL_NAME]_LOG_TO_FILE: Store all logging into a file, excluding COMPILE_LOGS (default: False)
-    Other options:
-    - [DSL_NAME]_LOG_LEVEL: Logging level to set, for LOG_TO_CONSOLE or LOG_TO_FILE (default: 1).
-    - [DSL_NAME]_DRYRUN: Generates IR only (default: False)
-    - [DSL_NAME]_ARCH: GPU architecture (default: "sm_100")
-    - [DSL_NAME]_WARNINGS_AS_ERRORS: Enable warnings as error (default: False)
-    - [DSL_NAME]_WARNINGS_IGNORE: Ignore warnings (default: False)
-    - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
-    - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
-    - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
-    - [DSL_NAME]_FILE_CACHING_CAPACITY: Limits the number of the cache save/load files (default: 1000)
-    - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
-    - [DSL_NAME]_NO_SOURCE_LOCATION: Generate source location (default: False)
-    """
-
+class LogEnvironmentManager:
     def __init__(self, prefix="DSL"):
-        self.prefix = prefix  # change if needed
+        self.prefix = prefix
 
-        # Printing options
-        self.print_after_preprocessor = get_bool_env_var(
-            f"{prefix}_PRINT_AFTER_PREPROCESSOR", False
-        )
-        self.printIR = get_bool_env_var(f"{prefix}_PRINT_IR", False)
-        self.filterStacktrace = get_bool_env_var(f"{prefix}_FILTER_STACKTRACE", True)
-        # File options
-        self.keepIR = get_bool_env_var(f"{prefix}_KEEP_IR", False)
         # Logging options
+        self.jit_time_profiling = get_bool_env_var(
+            f"{prefix}_JIT_TIME_PROFILING", False
+        )
         self.log_to_console = get_bool_env_var(f"{prefix}_LOG_TO_CONSOLE", False)
         self.log_to_file = get_bool_env_var(f"{prefix}_LOG_TO_FILE", False)
         if (
@@ -293,9 +285,58 @@ class EnvironmentVarManager:
             )
         self.log_level = get_int_env_var(f"{prefix}_LOG_LEVEL", 1)
 
+
+class EnvironmentVarManager(LogEnvironmentManager):
+    """Manages environment variables for configuration options.
+
+    Printing options:
+    - [DSL_NAME]_LOG_TO_CONSOLE: Print logging to stderr (default: False)
+    - [DSL_NAME]_PRINT_AFTER_PREPROCESSOR: Print after preprocess (default: False)
+    - [DSL_NAME]_PRINT_IR: Print generated IR (default: False)
+    - [DSL_NAME]_FILTER_STACKTRACE: Filter internal stacktrace (default: True)
+    File options:
+    - [DSL_NAME]_DUMP_DIR: Directory to dump the generated files (default: current working directory)
+    - [DSL_NAME]_KEEP_IR: Save generated IR in a file (default: False)
+    - [DSL_NAME]_KEEP_PTX: Save generated PTX in a file (default: False)
+    - [DSL_NAME]_KEEP_CUBIN: Save generated CUBIN in a file (default: False)
+    - [DSL_NAME]_LOG_TO_FILE: Store all logging into a file, excluding COMPILE_LOGS (default: False)
+    Other options:
+    - [DSL_NAME]_LINEINFO: Compile with `--lineinfo` enabling developer tools such as the profiler and debugger (default: False)
+    - [DSL_NAME]_LOG_LEVEL: Logging level to set, for LOG_TO_CONSOLE or LOG_TO_FILE (default: 1).
+    - [DSL_NAME]_DRYRUN: Generates IR only (default: False)
+    - [DSL_NAME]_ARCH: GPU architecture (default: "sm_100")
+    - [DSL_NAME]_WARNINGS_AS_ERRORS: Enable warnings as error (default: False)
+    - [DSL_NAME]_WARNINGS_IGNORE: Ignore warnings (default: False)
+    - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
+    - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
+    - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
+    - [DSL_NAME]_FILE_CACHING_CAPACITY: Limits the number of the cache save/load files (default: 1000)
+    - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
+    """
+
+    def __init__(self, prefix="DSL"):
+        super().__init__(prefix)
+
+        # Printing options
+        self.print_after_preprocessor = get_bool_env_var(
+            f"{prefix}_PRINT_AFTER_PREPROCESSOR", False
+        )
+        self.print_ir = get_bool_env_var(f"{prefix}_PRINT_IR", False)
+        self.filter_stacktrace = get_bool_env_var(f"{prefix}_FILTER_STACKTRACE", True)
+        self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", False)
+        self.dump_dir = get_str_env_var(
+            f"{prefix}_DUMP_DIR", get_default_file_dump_root()
+        )
+        self.keep_ptx = get_bool_env_var(f"{prefix}_KEEP_PTX", False)
+        self.keep_cubin = get_bool_env_var(f"{prefix}_KEEP_CUBIN", False)
+
+        # File options
+        self.keep_ir = get_bool_env_var(f"{prefix}_KEEP_IR", False)
         # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
         self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))
+        if self.arch.startswith("sm_110"):
+            self.arch = self.arch.replace("sm_110", "sm_101")
         self.warnings_as_errors = get_bool_env_var(
             f"{prefix}_WARNINGS_AS_ERRORS", False
         )
@@ -303,18 +344,17 @@ class EnvironmentVarManager:
         self.enable_optimization_warnings = get_bool_env_var(
             f"{prefix}_ENABLE_OPTIMIZATION_WARNINGS", False
         )
-        self.jitTimeProfiling = get_bool_env_var(f"{prefix}_JIT_TIME_PROFILING", False)
         self.disable_file_caching = get_bool_env_var(
             f"{prefix}_DISABLE_FILE_CACHING", False
         )
         self.file_caching_capacity = get_int_env_var(
             f"{prefix}_FILE_CACHING_CAPACITY", 1000
         )
-        self.generate_source_location = not get_bool_env_var(
-            f"{prefix}_NO_SOURCE_LOCATION", False
-        )
         # set cuda
         self.cuda_toolkit = get_cuda_toolkit_path()
 
         # set mlir shared libraries
         self.shared_libs = get_prefix_dsl_libs(prefix)
+
+        # whether to enable assert in host and device code
+        self.enable_assertions = get_bool_env_var(f"{prefix}_ENABLE_ASSERTIONS", False)

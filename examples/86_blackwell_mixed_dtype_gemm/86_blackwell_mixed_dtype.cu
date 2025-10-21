@@ -332,6 +332,7 @@ bool verify(MixedDtypeOptions const& options) {
   // Compute reference output
   //
   
+  // Reference uses dequantized B matrix as input. Hence we need to change alignment.
   constexpr int AlignmentBdq = 128 / cutlass::sizeof_bits<MmaType>::value; 
   
   using CollectiveMainloopRef = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -351,7 +352,7 @@ bool verify(MixedDtypeOptions const& options) {
       ElementAccumulator, ElementAccumulator,
       ElementC, LayoutC, AlignmentC,
       ElementD, LayoutD, AlignmentD,
-      EpilogueSchedule
+      cutlass::epilogue::collective::EpilogueScheduleAuto
     >::CollectiveOp;
 
   using GemmKernelRef = cutlass::gemm::kernel::GemmUniversal<

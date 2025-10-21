@@ -110,6 +110,8 @@ set(TEST_BWD_MLA_VARLEN --b=1 --h=4 --q=512 --k=512 --d=192 --d_vo=128 --verify 
 set(TEST_MLA_SEP_REDUCTION  --b=1 --k=4096 --split_kv=8 --page=128 --verify)
 set(TEST_MLA_FUSE_REDUCTION --b=1 --k=4096 --split_kv=8 --page=128 --fuse_reduction --verify)
 
+set(TEST_MLA_LARGE_SPLIT_KV --verify --split_kv=20 --page=128)
+
 if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC_ARCHS MATCHES 100a))
 
   foreach(PREC fp8 fp16)
@@ -171,6 +173,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
+	TEST_MLA_LARGE_SPLIT_KV
         TEST_MLA_SEP_REDUCTION
         TEST_MLA_FUSE_REDUCTION
         )
@@ -183,6 +186,7 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
         77_blackwell_mla.cu
         TEST_COMMAND_OPTIONS
         TEST_MLA_BASIC
+	TEST_MLA_LARGE_SPLIT_KV
         TEST_MLA_SEP_REDUCTION
         TEST_MLA_FUSE_REDUCTION
         )
