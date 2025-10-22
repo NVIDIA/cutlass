@@ -26,7 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+if (CUTLASS_NVCC_ARCHS MATCHES 90a)
 cutlass_example_add_executable(
   65_distributed_gemm
   65_distributed_gemm.cu
   )
+endif()

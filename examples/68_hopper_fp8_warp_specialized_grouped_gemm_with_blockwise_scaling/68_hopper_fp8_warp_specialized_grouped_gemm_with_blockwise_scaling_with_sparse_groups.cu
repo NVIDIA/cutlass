@@ -132,8 +132,7 @@ using ElementCompute      = float;                                          // E
 
 using ArchTag       = cutlass::arch::Sm90;                          // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass = cutlass::arch::OpClassTensorOp;               // Operator class tag
-
-using TileShape  = Shape<_128,_128,_128>;  // This one is just to make the compiler happy with verify()...
+using TileShape     = Shape<_128,_128,_128>;                        // Threadblock-level tile size
 using ClusterShape  = Shape<_1,_1,_1>;                              // Shape of the threadblocks in a cluster
 
 static constexpr int ScaleGranularityM = 1;
@@ -148,7 +147,7 @@ using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout ty
 using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout type for SFB matrix operand
 
 
-using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum;
+using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise;
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedPingpong;
 using EpilogueTileType  = cutlass::epilogue::collective::EpilogueTileAuto;
 using FusionOperation   = cutlass::epilogue::fusion::LinearCombination<ElementC, ElementAccumulator>;
@@ -407,12 +406,37 @@ void initialize(const OptionType &options) {
   beta_host.clear();
 
   for (int i = 0; i < options.groups; i++) {
-    ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
-    ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
-    ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
-    ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
-    ptr_blockscale_A_host.at(i) = blockscale_block_A.get() + offset_blockscale_A.at(i);
-    ptr_blockscale_B_host.at(i) = blockscale_block_B.get() + offset_blockscale_B.at(i);
+    // If the current group's matrix has size 0, set the pointer to nullptr
+    if (i < options.groups - 1 && offset_A.at(i) == offset_A.at(i + 1)) {
+      ptr_A_host.at(i) = nullptr;
+    } else {
+      ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
+    }
+    if (i < options.groups - 1 && offset_B.at(i) == offset_B.at(i + 1)) {
+      ptr_B_host.at(i) = nullptr;
+    } else {
+      ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
+    }
+    if (i < options.groups - 1 && offset_C.at(i) == offset_C.at(i + 1)) {
+      ptr_C_host.at(i) = nullptr;
+    } else {
+      ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
+    }
+    if (i < options.groups - 1 && offset_D.at(i) == offset_D.at(i + 1)) {
+      ptr_D_host.at(i) = nullptr;
+    } else {
+      ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
+    }
+    if (i < options.groups - 1 && offset_blockscale_A.at(i) == offset_blockscale_A.at(i + 1)) {
+      ptr_blockscale_A_host.at(i) = nullptr;
+    } else {
+      ptr_blockscale_A_host.at(i) = blockscale_block_A.get() + offset_blockscale_A.at(i);
+    }
+    if (i < options.groups - 1 && offset_blockscale_B.at(i) == offset_blockscale_B.at(i + 1)) {
+      ptr_blockscale_B_host.at(i) = nullptr;
+    } else {
+      ptr_blockscale_B_host.at(i) = blockscale_block_B.get() + offset_blockscale_B.at(i);
+    }
     alpha_host.push_back((options.alpha == FLT_MAX) ? static_cast<ElementAccumulator>((rand() % 5) + 1) : options.alpha);
     beta_host.push_back((options.beta == FLT_MAX) ? static_cast<ElementAccumulator>(rand() % 5) : options.beta);
     ptr_alpha_host.at(i) = block_alpha.get() + i;
@@ -551,10 +575,10 @@ bool verify(const OptionType &options) {
   blockscale_block_B.copy_to_host(blockscale_block_B_host.data());
 
   bool passed = true;
+  std::cout << "  Running host reference kernel - may run for a while for large problems." << std::endl;
   for (int group_idx = 0; group_idx < options.groups; group_idx++) {
     // Group scaling tensors shapes based `ScaleGranularityM`, CTA Block (TileShape) and GEMM Problem shape
     auto [m, n, k] = options.problem_sizes_after_alignment_host.at(group_idx);
-    auto gemm_problem_shape = cute::make_shape(m, n, k);
 
     // Create instantiation for device reference gemm kernel
     auto A = cute::make_tensor(block_A_host.data() + offset_A.at(group_idx),
@@ -637,9 +661,26 @@ bool verify(const OptionType &options) {
 template <typename OptionType>
 int run(OptionType &options, bool host_problem_shapes_available = true)
 {
-
   allocate(options);
   initialize(options);
+
+  std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
+  for (int32_t i = 0; i < options.groups; ++i) {
+    std::cout << "    " << options.problem_sizes_host.at(i);
+    std::cout << ", " << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
+  }
+  std::cout << "  Groups      : " << options.groups  << std::endl;
+  std::cout << "  Tile shape (M, N, K): " << size<0>(TileShape{}) << ", " << size<1>(TileShape{}) << ", " << size<2>(TileShape{}) << std::endl;
+  std::cout << "  ScaleGranularityM: " << ScaleGranularityM << " (ScaleMsPerTile: " << ScaleMsPerTile << ")" << std::endl;
+  std::cout << "  ScaleGranularityN: " << ScaleGranularityN << " (ScaleNsPerTile: " << ScaleNsPerTile << ")" << std::endl;
+  std::string raster = "Heuristic";
+  if (options.raster_order == RasterOrderOptions::AlongN) {
+    raster = "Along N";
+  }
+  else if (options.raster_order == RasterOrderOptions::AlongM) {
+    raster = "Along M";
+  }
+  std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm;
@@ -695,27 +736,10 @@ int run(OptionType &options, bool host_problem_shapes_available = true)
                                         ScaleMsPerTile, 
                                         ScaleNsPerTile>(result.avg_runtime_ms / 1000.0);
 
-    std::string raster = "Heuristic";
-
-    if (options.raster_order == RasterOrderOptions::AlongN) {
-      raster = "Along N";
-    }
-    else if (options.raster_order == RasterOrderOptions::AlongM) {
-      raster = "Along M";
-    }
-
-    std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
-    for (int32_t i = 0; i < options.groups; ++i) {
-      std::cout << "    " << options.problem_sizes_host.at(i);
-      std::cout << ", " << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
-    }
-    std::cout << "  Groups      : " << options.groups  << std::endl;
-    std::cout << "  Tile shape (M, N, K): " << size<0>(TileShape{}) << ", " << size<1>(TileShape{}) << ", " << size<2>(TileShape{}) << std::endl;
-    std::cout << "  ScaleGranularityM: " << ScaleGranularityM << " (ScaleMsPerTile: " << ScaleMsPerTile << ")" << std::endl;
-    std::cout << "  ScaleGranularityN: " << ScaleGranularityN << " (ScaleNsPerTile: " << ScaleNsPerTile << ")" << std::endl;
-    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
+    std::cout << "  GBPS:   " << result.gbps << std::endl;
+    fflush(stdout);
   }
 
   return 0;
@@ -766,8 +790,8 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
+  std::cout << "Running tests with host problem shapes:" << std::endl;
   run(options, true);
-
   std::cout << "Running tests without host problem shapes:" << std::endl;
   run(options, false);
 

@@ -40,10 +40,10 @@ class LayoutEnum(Enum):
     def is_m_major_a(self):
         return self == LayoutEnum.COL_MAJOR
 
-    def is_k_major_b(self):
+    def is_n_major_b(self):
         return self == LayoutEnum.COL_MAJOR
 
-    def is_n_major_b(self):
+    def is_k_major_b(self):
         return self == LayoutEnum.ROW_MAJOR
 
     def is_n_major_c(self):
@@ -55,7 +55,14 @@ class LayoutEnum(Enum):
     @staticmethod
     def from_tensor(tensor: cute.Tensor) -> "LayoutEnum":
         ret = None
-        if tensor.leading_dim == 1:
+        if isinstance(tensor.leading_dim, tuple):
+            if tensor.leading_dim[0] == 1:
+                ret = LayoutEnum.ROW_MAJOR
+            elif tensor.leading_dim[0] == 0:
+                ret = LayoutEnum.COL_MAJOR
+            else:
+                raise ValueError(f"Invalid leading dimension: {tensor.leading_dim}")
+        elif tensor.leading_dim == 1:
             ret = LayoutEnum.ROW_MAJOR
         elif tensor.leading_dim == 0:
             ret = LayoutEnum.COL_MAJOR

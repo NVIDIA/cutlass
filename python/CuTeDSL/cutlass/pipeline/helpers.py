@@ -44,17 +44,17 @@ class CooperativeGroup:
     CooperativeGroup contains size and alignment restrictions for an Agent.
     """
 
-    def __init__(self, agent: Agent, size: int = 1, alignment: int = 1):
+    def __init__(self, agent: Agent, size: int = 1, alignment=None):
+        if alignment is not None:
+            warnings.warn(
+                "The 'alignment' parameter of CooperativeGroup's constructor is deprecated and "
+                "will be removed in a subsequent release, please remove it from your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         if agent is Agent.Thread:
             assert size > 0
-            if size == 32:
-                assert (
-                    size == alignment
-                ), "Error: Alignment does not match number of threads in a warp."
-            elif size == 128:
-                assert (
-                    size == alignment
-                ), "Error: Alignment does not match number of threads in a warpgroup."
         elif agent is Agent.ThreadBlock:
             raise NotImplementedError("Error: Not yet supported.")
         elif agent is Agent.ThreadBlockCluster:
@@ -89,6 +89,8 @@ class PipelineOp(enum.Enum):
     TmaStore = enum.auto()
     # Composite of multiple PipelineOps
     Composite = enum.auto()
+    # Async load without TMA
+    AsyncLoad = enum.auto()
 
 
 def _get_pipeline_op(type_str):
@@ -220,22 +222,27 @@ class MbarrierArray(SyncObject):
         if self.op_type is PipelineOp.AsyncThread:
             self.arrive_mbarrier(index, dst)
         elif self.op_type is PipelineOp.TCGen05Mma:
-            assert (
-                cta_group is not None
-            ), "Error: CTA group must be provided for TCGen05Mma."
+            assert cta_group is not None, (
+                "Error: CTA group must be provided for TCGen05Mma."
+            )
             self.arrive_tcgen05mma(index, dst, cta_group)
         elif self.op_type in [PipelineOp.TmaLoad]:
             self.arrive_and_expect_tx(index, self.tx_count)
+        elif self.op_type is PipelineOp.AsyncLoad:
+            self.arrive_cp_async_mbarrier(index)
         else:
-            assert (
-                False
-            ), f"Error: MbarrierArray is not supported for PipelineOp: {_get_pipeline_op(self.op_type)}."
+            assert False, (
+                f"Error: MbarrierArray is not supported for PipelineOp: {_get_pipeline_op(self.op_type)}."
+            )
 
     def arrive_mbarrier(self, index: int, dst_rank: Optional[int] = None) -> None:
         if dst_rank is None:
             cute.arch.mbarrier_arrive(self.get_barrier(index))
         else:
             cute.arch.mbarrier_arrive(self.get_barrier(index), dst_rank)
+
+    def arrive_cp_async_mbarrier(self, index: int):
+        cute.arch.cp_async_mbarrier_arrive_noinc(self.get_barrier(index))
 
     def arrive_tcgen05mma(
         self, index: int, mask: Optional[int], cta_group: cute.nvgpu.tcgen05.CtaGroup
@@ -344,9 +351,6 @@ class NamedBarrier(SyncObject):
         self.arrive_and_wait()
 
     def wait_unaligned(self) -> None:
-        warnings.warn(
-            "NamedBarrier wait also arrives on the barrier. Routing call to NamedBarrier.arrive_and_wait()."
-        )
         llvm.inline_asm(
             None,
             [Int32(self.barrier_id).ir_value(), Int32(self.num_threads).ir_value()],
@@ -366,7 +370,7 @@ class NamedBarrier(SyncObject):
         raise NotImplementedError("Error: Not supported.")
 
     def sync(self) -> None:
-        cute.arch.barrier(barrier_id=self.barrier_id)
+        self.arrive_and_wait()
 
     def get_barrier(self) -> int:
         return self.barrier_id
@@ -402,9 +406,9 @@ class TmaStoreFence(SyncObject):
 
     # TmaStoreFence doesn't have mbarriers
     def get_barrier(self) -> None:
-        assert (
-            False
-        ), "Error: TmaStoreFence doesn't use mbarriers and cannot return a barrier."
+        assert False, (
+            "Error: TmaStoreFence doesn't use mbarriers and cannot return a barrier."
+        )
 
     def max(self) -> None:
         raise NotImplementedError("Error: Not supported.")
@@ -531,9 +535,9 @@ def make_pipeline_state(type: PipelineUserType, stages: int):
             Int32(0),
         )
     else:
-        assert (
-            False
-        ), "Error: invalid PipelineUserType specified for make_pipeline_state."
+        assert False, (
+            "Error: invalid PipelineUserType specified for make_pipeline_state."
+        )
 
 
 ##############################################################################
@@ -567,9 +571,9 @@ def _sync(group: Agent):
         cute.arch.cluster_arrive()
         cute.arch.cluster_wait()
     else:
-        assert (
-            False
-        ), "Error: No explicit sync instruction exists. Please use barriers (named / mbarrier) instead."
+        assert False, (
+            "Error: No explicit sync instruction exists. Please use barriers (named / mbarrier) instead."
+        )
 
 
 def _mbarrier_i64_to_ptr(val: Int64) -> cute.Pointer:

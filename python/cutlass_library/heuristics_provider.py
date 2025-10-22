@@ -41,7 +41,14 @@ import logging
 import ctypes
 import functools
 
-from library import DataType, LayoutType
+
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import DataType, LayoutType
+except ImportError:
+  from library import DataType, LayoutType
 
 class MatmulHeuristics:
 

@@ -123,6 +123,11 @@ struct CollectiveMma<
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
 
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = SchedulerPipelineStageCount + Stages + 2;
+
   using ElementA = ElementA_;
   using ElementAMma = typename TiledMma::ValTypeA;
   using StrideA = StrideA_;
@@ -417,7 +422,7 @@ struct CollectiveMma<
     constexpr uint32_t NumInputTensors = 2;
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count);
+    return (NumInputTensors * SizeOfCuTensorMap * sm_count * NumTmaDescriptorsPerSm);
   }
 
   template <class ProblemShape>
@@ -497,7 +502,7 @@ struct CollectiveMma<
   /// tBsB - partitioned smem tensor for B
   /// mcast_mask_a - tma multicast mask for A
   /// mcast_mask_b - tma multicast mask for B
-  template <class ProblemShape_MNKL>
+  template <bool IsTensorMapUpdateAsync = false, class ProblemShape_MNKL>
   CUTLASS_DEVICE auto
   load_init(
       ProblemShape_MNKL const& problem_shape_MNKL,
@@ -505,6 +510,7 @@ struct CollectiveMma<
       TensorStorage& shared_tensors,
       TensorMapStorage& shared_tensormaps,
       int32_t const sm_count, int32_t const sm_idx,
+      [[maybe_unused]] int32_t num_groups,
       [[maybe_unused]] int32_t init_group) const {
     using X = Underscore;
 
@@ -550,14 +556,20 @@ struct CollectiveMma<
     uint16_t mcast_mask_a = create_tma_multicast_mask<2>(cta_layout_vmnk, cta_coord_vmnk);
     uint16_t mcast_mask_b = create_tma_multicast_mask<1>(cta_layout_vmnk, cta_coord_vmnk);
 
-    // Fetch a copy of tensormaps for the CTA from Params
-    auto input_tensormaps = tensormaps_init(params, shared_tensormaps, sm_count, sm_idx);
-
-    return cute::make_tuple(
+    auto ret = cute::make_tuple(
         gA_mkl, gB_nkl,                        // for scheduler
         tAgA_mkl, tBgB_nkl, tAsA, tBsB,        // for input tensor values
-        mcast_mask_a, mcast_mask_b,            // multicast masks
-        input_tensormaps);                     // for tma descriptor modification (per-CTA tensormap copy)
+        mcast_mask_a, mcast_mask_b             // multicast masks
+    );
+
+    if constexpr (IsTensorMapUpdateAsync) {
+      return ret;
+    }
+    else {
+      // Fetch a copy of tensormaps for the CTA from Params
+      auto input_tensormaps = tensormaps_init<IsTensorMapUpdateAsync>(params, shared_tensormaps, sm_count, sm_idx);
+      return cute::tuple_cat(ret, cute::make_tuple(input_tensormaps));
+    }
   }
 
   /// Set up the data needed by this collective for mma compute.
@@ -612,7 +624,8 @@ struct CollectiveMma<
                 cute::tuple<TensorMapA, TensorMapB>> const& load_inputs,
     TileCoordMNKL const& cta_coord_mnkl,
     KTileIterator k_tile_iter, int k_tile_count,
-    bool did_batch_change) {
+    bool did_batch_change,
+    [[maybe_unused]] int curr_batch) {
 
     auto [unused_gA, unused_gB,
           tAgA_mkl, tBgB_nkl, tAsA, tBsB,
@@ -739,6 +752,7 @@ struct CollectiveMma<
   // Methods to perform different parts of TMA/Tensormap modifications
   //
 
+  template <bool IsTensorMapUpdateAsync = false>
   CUTLASS_DEVICE auto
   tensormaps_init(
       Params const& mainloop_params,
@@ -747,8 +761,8 @@ struct CollectiveMma<
       int32_t const sm_idx) const {
     cute::TmaDescriptor* gmem_tensormap = mainloop_params.tensormaps;
 
-    cute::TmaDescriptor* tma_desc_a = &gmem_tensormap[sm_idx];
-    cute::TmaDescriptor* tma_desc_b = &gmem_tensormap[sm_idx + sm_count];
+    cute::TmaDescriptor* tma_desc_a = &gmem_tensormap[sm_idx * NumTmaDescriptorsPerSm];
+    cute::TmaDescriptor* tma_desc_b = &gmem_tensormap[(sm_idx + sm_count) * NumTmaDescriptorsPerSm];
 
     if (cute::elect_one_sync()) {
       // Bringing tensormaps from params to smem for modification later
@@ -762,7 +776,29 @@ struct CollectiveMma<
     }
     __syncwarp();
 
-    return cute::make_tuple(tma_desc_a, tma_desc_b);
+    struct TensorMapArray {
+      cute::TmaDescriptor* tma_desc_a;
+      cute::TmaDescriptor* tma_desc_b;
+
+      TensorMapArray() = default;
+  
+      CUTLASS_DEVICE
+      TensorMapArray(cute::TmaDescriptor* tma_desc_a, cute::TmaDescriptor* tma_desc_b) : tma_desc_a(tma_desc_a), tma_desc_b(tma_desc_b) {}
+  
+      CUTLASS_DEVICE
+      cute::tuple<cute::TmaDescriptor*, cute::TmaDescriptor*>
+      operator[](int32_t idx) {
+        idx = idx % NumTmaDescriptorsPerSm;
+        return cute::make_tuple(tma_desc_a + idx, tma_desc_b + idx);
+      }
+    };
+
+    if constexpr (IsTensorMapUpdateAsync) {
+      return TensorMapArray(tma_desc_a, tma_desc_b);
+    }
+    else {
+      return cute::make_tuple(tma_desc_a, tma_desc_b);
+    }
   }
 
   // Replace address for the global tensor (to be done by single thread)
@@ -826,7 +862,7 @@ struct CollectiveMma<
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)
-  template <class TensorMapA, class TensorMapB, class ProblemShape>
+  template <bool WaitForInflightTmaRequests = true, class TensorMapA, class TensorMapB, class ProblemShape>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
@@ -834,7 +870,8 @@ struct CollectiveMma<
       Params const& mainloop_params,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps,
       ProblemShape problem_shape,
-      int32_t next_batch) {
+      int32_t next_batch
+  ) {
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
       tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
@@ -849,18 +886,24 @@ struct CollectiveMma<
     // Ensure warp is converged before issuing tensormap fence release
     __syncwarp();
     // Entire warp must do this (ie its aligned)
-    tensormaps_cp_fence_release(shared_tensormaps, input_tensormaps);
+    tensormaps_cp_fence_release<WaitForInflightTmaRequests>(
+      shared_tensormaps,
+      input_tensormaps
+    );
   }
 
-  template <class TensorMapA, class TensorMapB>
+  template <bool WaitForInflightTmaRequests = true, class TensorMapA, class TensorMapB>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release (
       TensorMapStorage& shared_tensormaps,
-      cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) {
-    if (cute::elect_one_sync()) {
-      cute::tma_desc_commit_group();
-      cute::tma_desc_wait_group();
+      cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps
+  ) {
+    if constexpr (WaitForInflightTmaRequests) {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
     }
     // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);

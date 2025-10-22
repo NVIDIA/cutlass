@@ -90,6 +90,8 @@ class PersistentTileSchedulerParams:
         self,
         problem_shape_ntile_mnl: cute.Shape,
         cluster_shape_mnk: cute.Shape,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
         *,
         loc=None,
         ip=None,
@@ -102,17 +104,26 @@ class PersistentTileSchedulerParams:
         :type problem_shape_ntile_mnl: cute.Shape
         :param cluster_shape_mnk: The shape of the cluster in (m, n) dimensions.
         :type cluster_shape_mnk: cute.Shape
+        :param swizzle_size: Swizzling size in the unit of cluster. 1 means no swizzle
+        :type swizzle_size: int
+        :param raster_along_m: Rasterization order of clusters. Only used when swizzle_size > 1.
+            True means along M, false means along N.
+        :type raster_along_m: bool
 
         :raises ValueError: If cluster_shape_k is not 1.
         """
 
         if cluster_shape_mnk[2] != 1:
             raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")
+        if swizzle_size < 1:
+            raise ValueError(f"expect swizzle_size >= 1, but get {swizzle_size}")
 
         self.problem_shape_ntile_mnl = problem_shape_ntile_mnl
         # cluster_shape_mnk is kept for reconstruction
         self._cluster_shape_mnk = cluster_shape_mnk
         self.cluster_shape_mn = cluster_shape_mnk[:2]
+        self.swizzle_size = swizzle_size
+        self._raster_along_m = raster_along_m
         self._loc = loc
 
         # By default, we follow m major (col-major) raster order, so make a col-major layout
@@ -124,9 +135,51 @@ class PersistentTileSchedulerParams:
             ip=ip,
         )
 
+        if swizzle_size > 1:
+            problem_shape_ncluster_mnl = cute.round_up(
+                self.problem_layout_ncluster_mnl.shape,
+                (1, swizzle_size, 1) if raster_along_m else (swizzle_size, 1, 1),
+            )
+
+            if raster_along_m:
+                self.problem_layout_ncluster_mnl = cute.make_layout(
+                    (
+                        problem_shape_ncluster_mnl[0],
+                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),
+                        problem_shape_ncluster_mnl[2],
+                    ),
+                    stride=(
+                        swizzle_size,
+                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],
+                    ),
+                    loc=loc,
+                    ip=ip,
+                )
+            else:
+                self.problem_layout_ncluster_mnl = cute.make_layout(
+                    (
+                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),
+                        problem_shape_ncluster_mnl[1],
+                        problem_shape_ncluster_mnl[2],
+                    ),
+                    stride=(
+                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),
+                        swizzle_size,
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],
+                    ),
+                    loc=loc,
+                    ip=ip,
+                )
+
     def __extract_mlir_values__(self):
         values, self._values_pos = [], []
-        for obj in [self.problem_shape_ntile_mnl, self._cluster_shape_mnk]:
+        for obj in [
+            self.problem_shape_ntile_mnl,
+            self._cluster_shape_mnk,
+            self.swizzle_size,
+            self._raster_along_m,
+        ]:
             obj_values = extract_mlir_values(obj)
             values += obj_values
             self._values_pos.append(len(obj_values))
@@ -135,7 +188,13 @@ class PersistentTileSchedulerParams:
     def __new_from_mlir_values__(self, values):
         obj_list = []
         for obj, n_items in zip(
-            [self.problem_shape_ntile_mnl, self._cluster_shape_mnk], self._values_pos
+            [
+                self.problem_shape_ntile_mnl,
+                self._cluster_shape_mnk,
+                self.swizzle_size,
+                self._raster_along_m,
+            ],
+            self._values_pos,
         ):
             obj_list.append(new_from_mlir_values(obj, values[:n_items]))
             values = values[n_items:]
@@ -160,7 +219,7 @@ class PersistentTileSchedulerParams:
 
         # Total ctas in problem size
         num_ctas_mnl = tuple(
-            x * y
+            cute.size(x) * y
             for x, y in zip(
                 self.problem_layout_ncluster_mnl.shape, self.cluster_shape_mn
             )
@@ -252,9 +311,8 @@ class StaticPersistentTileScheduler:
             new_num_tiles_executed,
         )
 
-    # called by host
-    @dsl_user_op
     @staticmethod
+    @dsl_user_op
     def create(
         params: PersistentTileSchedulerParams,
         block_idx: Tuple[Integer, Integer, Integer],
@@ -276,7 +334,6 @@ class StaticPersistentTileScheduler:
         :return: A StaticPersistentTileScheduler object.
         :rtype: StaticPersistentTileScheduler
         """
-        params = params
 
         # Calculate the number of persistent clusters by dividing the total grid size
         # by the number of CTAs per cluster
@@ -346,9 +403,14 @@ class StaticPersistentTileScheduler:
             self.params.problem_layout_ncluster_mnl, loc=loc, ip=ip
         )
 
-        cur_cluster_coord = self.params.problem_layout_ncluster_mnl.get_hier_coord(
-            current_work_linear_idx, loc=loc, ip=ip
-        )
+        if self.params.swizzle_size == 1:
+            cur_cluster_coord = self.params.problem_layout_ncluster_mnl.get_hier_coord(
+                current_work_linear_idx, loc=loc, ip=ip
+            )
+        else:
+            cur_cluster_coord = self.params.problem_layout_ncluster_mnl.get_flat_coord(
+                current_work_linear_idx, loc=loc, ip=ip
+            )
 
         # cur_tile_coord is a tuple of i32 values
         cur_tile_coord = tuple(
@@ -382,3 +444,5 @@ class StaticPersistentTileScheduler:
     @property
     def num_tiles_executed(self) -> Int32:
         return self._num_tiles_executed
+
+

@@ -23,6 +23,7 @@ __all__ = [
     "CopyBulkTensorTileG2SOp",
     "CopyBulkTensorTileG2SMulticastOp",
     "CopyBulkTensorTileS2GOp",
+    "CopyReduceBulkTensorTileS2GOp",
     #
     # helpers.py
     #
@@ -35,4 +36,5 @@ __all__ = [
     "fence_tma_desc_acquire",
     "cp_fence_tma_desc_release",
     "fence_tma_desc_release",
+    "group_bulk_copy_modes",
 ]

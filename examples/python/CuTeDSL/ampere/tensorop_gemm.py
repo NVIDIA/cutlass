@@ -28,10 +28,8 @@
 
 import argparse
 import math
-import time
 from typing import Tuple, Type
 
-import cuda.bindings.driver as cuda
 import torch
 
 import cutlass
@@ -121,12 +119,12 @@ class TensorOpGemm:
         self.mma_inst_shape = (16, 8, 16)
         mmaM, mmaN, mmaK = self.mma_inst_shape
 
-        assert (
-            self.bM % (atom_lay_M * mmaM) == 0
-        ), "bM must be divisible by MMA instruction"
-        assert (
-            self.bN % (atom_lay_N * mmaN) == 0
-        ), "bN must be divisible by MMA instruction"
+        assert self.bM % (atom_lay_M * mmaM) == 0, (
+            "bM must be divisible by MMA instruction"
+        )
+        assert self.bN % (atom_lay_N * mmaN) == 0, (
+            "bN must be divisible by MMA instruction"
+        )
         assert atom_lay_K == 1, "this example does not support atom layout K > 1"
         assert self.bK % mmaK == 0, "bK must be divisible by MMA instruction"
         assert self.num_stages >= 3, "num_stages must be greater than or equal to 3"
@@ -428,7 +426,7 @@ class TensorOpGemm:
             # at the granularity of a copy atom, so the predicate tensor does not
             # need separate booleans for individual elements within a copy
             # atom (for example, the elements of tAgA.shape[0][0].)
-            tApA = cute.make_fragment(
+            tApA = cute.make_rmem_tensor(
                 cute.make_layout(
                     (
                         tAgA.shape[0][1],
@@ -439,7 +437,7 @@ class TensorOpGemm:
                 ),
                 cutlass.Boolean,
             )
-            tBpB = cute.make_fragment(
+            tBpB = cute.make_rmem_tensor(
                 cute.make_layout(
                     (
                         tBsB.shape[0][1],
@@ -471,7 +469,7 @@ class TensorOpGemm:
             cute.arch.sync_threads()
             # Start async loads for the first k-tile. Here we take care of the k residue
             # via if/else check along the k dimension. Because we shifted the identity tensor
-            # by the residue_k and because the identity tensor is a counting tensor, the
+            # by the residue_k and because the identity tensor is a coord tensor, the
             # values of any identity tensor element that is poison is less than -1
             num_smem_stages = cute.size(tAsA, mode=[3])
             k_tile_count = cute.size(tAgA, mode=[3])
@@ -683,7 +681,7 @@ class TensorOpGemm:
             # Copy results of D back to shared memory
             cute.autovec_copy(tCrD, tCsC)
 
-            # Create counting tensor for C
+            # Create coord tensor for C
             ceilM, ceilN, _ = cute.ceil_div(mC.shape, (self.bM, self.bN, 1))
             mcC = cute.make_identity_tensor(
                 (
@@ -707,7 +705,7 @@ class TensorOpGemm:
             cute.autovec_copy(tCsC_epilogue, tCrC_epilogue)
 
             # Create predication tensor for m
-            tCpC = cute.make_fragment(
+            tCpC = cute.make_rmem_tensor(
                 cute.make_layout(
                     (
                         tCgC_epilogue.shape[0][1],
@@ -851,7 +849,7 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
-    print(f"Running Ampere tensor core GEMM example:")
+    print("Running Ampere tensor core GEMM example:")
     print(f"mnkl: {mnkl}")
     print(
         f"A dtype: {ab_dtype}, B dtype: {ab_dtype}, C dtype: {c_dtype}, Acc dtype: {acc_dtype}"
@@ -943,6 +941,7 @@ def run(
     )
 
     return avg_time_us  # Return execution time in microseconds
+
 
 if __name__ == "__main__":
 

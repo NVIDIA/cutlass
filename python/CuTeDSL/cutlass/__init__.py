@@ -11,13 +11,12 @@
 
 from .cutlass_dsl import (
     Constexpr,
+    dsl_user_op,
     as_numeric,
     min,
     max,
     and_,
     or_,
-    all_,
-    any_,
     not_,
     all_,
     any_,
@@ -29,6 +28,7 @@ from .cutlass_dsl import (
     while_generate,
     yield_out,
     # Control-flow with AST pre-processor
+    range,
     range_constexpr,
     range_dynamic,
     const_expr,
@@ -46,6 +46,7 @@ from .cute.typing import *
 
 # Utilities not belonging to CuTe
 from . import utils as utils
+from . import pipeline as pipeline
 
 # Used as internal symbol
 from . import cutlass_dsl as _dsl
@@ -55,3 +56,5 @@ LaunchConfig = _dsl.BaseDSL.LaunchConfig
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
+
+CACHE_FILE = "compiled_cache.db"

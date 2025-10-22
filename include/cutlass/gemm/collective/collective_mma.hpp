@@ -56,6 +56,7 @@
 #if !defined(__CUDACC_RTC__)
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_rcggemm.hpp"
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_sparse_mma_warpspecialized.hpp"
@@ -66,6 +67,8 @@
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_blockwise_scaling.hpp"
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized_mixed_input.hpp"
 #include "cutlass/gemm/collective/sm100_mma_cpasync_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm100_mma_mixed_tma_cpasync_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm100_blockscaled_mma_mixed_tma_cpasync_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm103_blockscaled_mma_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm103_blockscaled_mma_array_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm120_mma_tma.hpp"

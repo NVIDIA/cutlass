@@ -92,6 +92,7 @@ sm100_compute_stage_count_or_override_blockscaled(StageCountAutoCarveout<carveou
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementPairA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -105,7 +106,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassBlockScaledTensorOp,
     ElementPairA,
     GmemLayoutATag,
@@ -119,7 +120,10 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       // Blockscaled Gemm
+      (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100, BuilderScheduleTag>) &&
       (cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>) 
        &&
@@ -249,12 +253,14 @@ struct CollectiveBuilder<
       4 // 4 Tensor maps for A, SFA, B and SFB
     >::KernelSmemCarveout;
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockscaled<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, B, SFA, and SFB.");
 
   using DispatchPolicy = 

@@ -507,6 +507,9 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
 
   CUTLASS_DEVICE void operator()(Params const& params, char* smem_raw) {
+#if (! defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && ! defined(CUTLASS_ARCH_MMA_SM100F_ENABLED))
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
 
     TileScheduler tile_scheduler(params.tile_scheduler);
 
@@ -814,6 +817,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
       tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
     }
+#endif
   }
 
   template<class BlkCoord>
@@ -1035,10 +1039,6 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto pipeline_commit_state = pipeline_acquire_state;
     int pipeline_offset = 0;
 
-    for (int i = 0; i < StagesPV; i++) {
-      cutlass::arch::cp_async_fence();
-    }
-
     auto load_stage = [&](auto fn) {
       pipeline_load.producer_acquire(pipeline_acquire_state);
       fn(pipeline_acquire_state.index());
@@ -1127,6 +1127,13 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     pipeline_page_table.consumer_release(pipeline_pt_release_state);
     ++pipeline_pt_release_state;
+
+    // Extra async fence if the pipeline_offset can't meet the StagesPV
+    int extra_offset = 0;
+    while (pipeline_offset + extra_offset < StagesPV - 1) {
+      extra_offset++;
+      cutlass::arch::cp_async_fence();
+    }
 
     while (pipeline_offset > 0) {
       cutlass::arch::cp_async_fence();
@@ -2093,7 +2100,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       cutlass::arch::NamedBarrier(
           (kNumComputeWarps + kNumLoadWarps) * NumThreadsPerWarp,
           kNamedBarrierEpilogue
-      ).arrive();
+      ).arrive_and_wait();
 
       return;
     }

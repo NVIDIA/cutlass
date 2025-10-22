@@ -16,15 +16,27 @@ from cutlass.cutlass_dsl import dsl_user_op
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import llvm
 
-from ...typing import Coord, Layout, Tensor, Tiler, Pointer, Int16, Numeric, NumericMeta
-from ... import core
+from ...typing import (
+    Coord,
+    Layout,
+    ComposedLayout,
+    Tensor,
+    Tiler,
+    Pointer,
+    Int16,
+    Numeric,
+    NumericMeta,
+)
+from ... import core, atom
 from .copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SMulticastOp,
     CopyBulkTensorTileS2GOp,
+    CopyReduceBulkTensorTileS2GOp,
     CopyBulkTensorTileG2SNonExecTrait,
     CopyBulkTensorTileG2SMulticastNonExecTrait,
     CopyBulkTensorTileS2GTrait,
+    CopyReduceBulkTensorTileS2GTrait,
 )
 
 
@@ -34,16 +46,17 @@ def make_tiled_tma_atom(
         CopyBulkTensorTileG2SOp,
         CopyBulkTensorTileG2SMulticastOp,
         CopyBulkTensorTileS2GOp,
+        CopyReduceBulkTensorTileS2GOp,
     ],
     gmem_tensor: Tensor,
-    smem_layout: Union[Layout, core.ComposedLayout],
+    smem_layout: Union[Layout, ComposedLayout],
     cta_tiler: Tiler,
     num_multicast: int = 1,
     *,
     internal_type: Optional[Type[Numeric]] = None,
     loc=None,
     ip=None,
-) -> Tuple[core.CopyAtom, Tensor]:
+) -> Tuple[atom.CopyAtom, Tensor]:
     """
     Makes a TMA Copy Atom in the ``.tile`` mode to copy tiles of a GMEM tensor to/from SMEM
     buffer with the given Layout.
@@ -67,11 +80,11 @@ def make_tiled_tma_atom(
        similarly to any other CuTe tensors using the algebra.
 
     :param op:            The Copy Operation to construct an Atom for
-    :type op:             Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp, CopyBulkTensorTileS2GOp]
+    :type op:             Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp, CopyBulkTensorTileS2GOp, CopyReduceBulkTensorTileS2GOp]
     :param gmem_tensor:   The GMEM tensor involved in the Copy
     :type gmem_tensor:    Tensor
     :param smem_layout:   The SMEM layout to construct the Copy Atom for
-    :type smem_layout:    Union[Layout, core.ComposedLayout]
+    :type smem_layout:    Union[Layout, ComposedLayout]
     :param cta_tiler:     The CTA Tiler to use
     :type cta_tiler:      Tiler
     :param num_multicast: The multicast factor
@@ -79,7 +92,7 @@ def make_tiled_tma_atom(
     :param internal_type: An optional parameter for the internal data type to use when the actual data type is not supported by the TMA unit
     :type internal_type:  Type[Numeric]
     :return:              A Copy Atom for this Operation and the associated TMA tensor
-    :rtype:               Tuple[core.CopyAtom, Tensor]
+    :rtype:               Tuple[atom.CopyAtom, Tensor]
     """
 
     if internal_type is not None:
@@ -93,6 +106,9 @@ def make_tiled_tma_atom(
         loc=loc,
         ip=ip,
     )
+
+    if isinstance(smem_layout, core._ComposedLayout):
+        smem_layout = smem_layout.value
 
     if isinstance(op, CopyBulkTensorTileG2SOp):
         if num_multicast != 1:
@@ -110,7 +126,7 @@ def make_tiled_tma_atom(
             loc=loc,
             ip=ip,
         )
-        return core.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
+        return atom.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
     elif isinstance(op, CopyBulkTensorTileG2SMulticastOp):
         if num_multicast < 1:
             raise ValueError(
@@ -128,7 +144,7 @@ def make_tiled_tma_atom(
             ip=ip,
         )
         return (
-            core.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
+            atom.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
             res[1],
         )
     elif isinstance(op, CopyBulkTensorTileS2GOp):
@@ -140,14 +156,25 @@ def make_tiled_tma_atom(
             loc=loc,
             ip=ip,
         )
-        return core.CopyAtom(op, CopyBulkTensorTileS2GTrait(res[0])), res[1]
+        return atom.CopyAtom(op, CopyBulkTensorTileS2GTrait(res[0])), res[1]
+    elif isinstance(op, CopyReduceBulkTensorTileS2GOp):
+        res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_reduce(
+            gmem_tensor.value,
+            smem_layout,
+            cta_v_map,
+            op._to_ir(),
+            internal_type=internal_type,
+            loc=loc,
+            ip=ip,
+        )
+        return atom.CopyAtom(op, CopyReduceBulkTensorTileS2GTrait(res[0])), res[1]
     else:
         raise ValueError(f"expects a bulk tensor (TMA) Copy Op, but got {op}")
 
 
 @dsl_user_op
 def tma_partition(
-    atom: core.CopyAtom,
+    atom: atom.CopyAtom,
     cta_coord: Coord,
     cta_layout: Layout,
     smem_tensor: Tensor,
@@ -207,7 +234,7 @@ def create_tma_multicast_mask(
 
 
 @dsl_user_op
-def prefetch_descriptor(tma_atom: core.CopyAtom, *, loc=None, ip=None) -> None:
+def prefetch_descriptor(tma_atom: atom.CopyAtom, *, loc=None, ip=None) -> None:
     """
     Prefetches the TMA descriptor associated with the TMA Atom.
     """
@@ -216,7 +243,7 @@ def prefetch_descriptor(tma_atom: core.CopyAtom, *, loc=None, ip=None) -> None:
 
 @dsl_user_op
 def copy_tensormap(
-    tma_atom: core.CopyAtom, tensormap_ptr: Pointer, *, loc=None, ip=None
+    tma_atom: atom.CopyAtom, tensormap_ptr: Pointer, *, loc=None, ip=None
 ) -> None:
     """
     Copies the tensormap held by a TMA Copy Atom to the memory location pointed to by the provided
@@ -234,7 +261,7 @@ def copy_tensormap(
 
 @dsl_user_op
 def update_tma_descriptor(
-    tma_atom: core.CopyAtom,
+    tma_atom: atom.CopyAtom,
     gmem_tensor: Tensor,
     tma_desc_ptr: Pointer,
     *,
@@ -275,7 +302,7 @@ def fence_tma_desc_acquire(
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    tma_desc_ptr_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value()
+    tma_desc_ptr_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
         None,
         [tma_desc_ptr_i64],
@@ -298,8 +325,12 @@ def cp_fence_tma_desc_release(
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-tensormap-cp-fenceproxy>`__.
     """
-    tma_desc_global_ptr_i64 = tma_desc_global_ptr.toint(loc=loc, ip=ip).ir_value()
-    tma_desc_shared_ptr_i32 = tma_desc_shared_ptr.toint(loc=loc, ip=ip).ir_value()
+    tma_desc_global_ptr_i64 = tma_desc_global_ptr.toint(loc=loc, ip=ip).ir_value(
+        loc=loc, ip=ip
+    )
+    tma_desc_shared_ptr_i32 = tma_desc_shared_ptr.toint(loc=loc, ip=ip).ir_value(
+        loc=loc, ip=ip
+    )
     llvm.inline_asm(
         None,
         [tma_desc_global_ptr_i64, tma_desc_shared_ptr_i32],
@@ -325,3 +356,13 @@ def fence_tma_desc_release(*, loc=None, ip=None) -> None:
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
+
+
+@dsl_user_op
+def group_bulk_copy_modes(src: Tensor, dst: Tensor, loc=None, ip=None) -> Tuple:
+    """
+    Copy async bulk need group mode 0, acquiring whole tensor for bulk copy
+    """
+    mSrc = core.group_modes(src, 0, core.rank(src))
+    mDst = core.group_modes(dst, 0, core.rank(dst))
+    return (mSrc, mDst)

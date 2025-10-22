@@ -86,10 +86,10 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
   static constexpr int StageCountQ = get<1>(TileShape{}) == 256 ? 1 : 2;
   static constexpr int StageCountKV = 256 * 11 / get<1>(TileShape{});
-  
+
   using StagesQ = cutlass::gemm::collective::StageCount<StageCountQ>;
   using StagesKV = cutlass::gemm::collective::StageCount<StageCountKV>;
-  
+
   using ClusterShape = Shape<_1, _1, _1>;
 
   static const int Alignment = 128 / sizeof_bits_v<Element>;
@@ -187,7 +187,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       SmemLayoutQ, SmemLayoutK, SmemLayoutV,
       PipelineQ, PipelineKV, TileShape, Mask
   >;
-  
+
   struct Arguments {
     typename Load::Arguments load;
 
@@ -534,14 +534,14 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     tStS_v.data() = uint32_t(stage == _0{} ? TmemAllocation::V0 : TmemAllocation::V1);
     Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
 
-    auto tilePlikeFP32 = get<1>(TileShapeQK{}) / Int<sizeof(float)>{} * Int<sizeof(Element)>{};
+    auto tilePlikeFP32 = size<1>(TileShapeQK{}) / Int<sizeof(float)>{} * Int<sizeof(Element)>{};
     Tensor tStS_P = tStS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
     tStS_P.data() = warp_uniform(uint32_t(stage == _0{} ? TmemAllocation::P0 : TmemAllocation::P1));
     Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
 
     // Each thread owns a single row
-      using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x; // 4x32 threads with 128 cols of 32b elem 
-    using TMEM_STORE = SM100_TMEM_STORE_32dp32b32x;  // 4x32 threads with 128 cols of 8b elem
+    using TMEM_LOAD = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_LOAD_32dp32b8x, SM100_TMEM_LOAD_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
+    using TMEM_STORE = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_STORE_32dp32b8x, SM100_TMEM_STORE_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
     using TMEM_STORE_V = SM100_TMEM_STORE_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
 
     int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);
@@ -622,7 +622,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     NumericArrayConverter<Element, ElementQK, kConversionsPerStep> convert;
 
     const int kReleasePipeCount = 10;  // must be multiple of 2
-    
+
     order_s.wait();
 
     CUTLASS_PRAGMA_UNROLL
@@ -646,7 +646,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       }
       tTMEM_STORErS_x4_e[i / kConversionsPerStep] = convert(in_conv);
 
-      
+
       if (i == size(tTMEM_LOADrS) - kReleasePipeCount) {
         order_s.arrive();
       }
@@ -672,7 +672,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     pipeline_c.producer_acquire(pipeline_c_producer_state);
 
-    ElementQK acc_scale = 0.5f * ::exp2f(scale * (old_row_max - row_max_safe));
+    ElementQK acc_scale = (old_row_max == row_max_safe) ? 0.5f : 0.5f * ::exp2f(scale * (old_row_max - row_max_safe));
     row_sum *= acc_scale;
     // row_sum = sum(reg_S)
     float2 local_row_sum_f32x2 = make_float2(row_sum, row_sum);
@@ -700,7 +700,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     cute::add(local_row_sum_2, local_row_sum_2, local_row_sum_3);
     cute::add(local_row_sum_f32x2, local_row_sum_f32x2, local_row_sum_2);
     float local_row_sum = local_row_sum_f32x2.x + local_row_sum_f32x2.y;
-    
+
     row_sum = local_row_sum;
 
     if (final_call) {
@@ -781,7 +781,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
   template<class Vector, class GTensor, class CTensor, class Shape, class Epilogue>
   CUTLASS_DEVICE auto
   correction_epilogue(
-      float scale_softmax_log2, float scale_out, Vector const& v0, Vector const& v1, 
+      float scale_softmax_log2, float scale_out, Vector const& v0, Vector const& v1,
       GTensor& gO, CTensor const& cO, Shape const& g_shape,
       Epilogue const& epilogue) {
 
@@ -794,13 +794,13 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 32 / sizeof(ElementOut);
 
-    using TMEM_LOAD = std::conditional_t<kCorrectionTileSize == 32, SM100_TMEM_LOAD_32dp32b32x, SM100_TMEM_LOAD_32dp32b16x>;  // 4x32 threads with 64 cols of 32b elem 
+    using TMEM_LOAD = std::conditional_t<kCorrectionTileSize == 32, SM100_TMEM_LOAD_32dp32b32x, SM100_TMEM_LOAD_32dp32b16x>;  // 4x32 threads with 64 cols of 32b elem
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
     Tensor tOgO = mma.get_slice(0).partition_C(gO);
-    
+
     Tensor tOtO_i = tOtO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOcO_i = tOcO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOgO_i = tOgO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
@@ -812,7 +812,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     auto tiled_tmem_load = make_tmem_copy(TMEM_LOAD{}, tOtO_i);
     auto thr_tmem_load   = tiled_tmem_load.get_slice(thread_idx);
-    
+
     Tensor tTMEM_LOADtO0 = thr_tmem_load.partition_S(tOtO0);
     Tensor tTMEM_LOADtO1 = thr_tmem_load.partition_S(tOtO1);
     Tensor tTMEM_LOADcO = thr_tmem_load.partition_D(tOcO_i);
@@ -841,10 +841,10 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
       Tensor tTMrO0 = make_tensor<ElementPV>(shape(tTMEM_LOADcO));
       Tensor tTMrO1 = make_tensor<ElementPV>(shape(tTMEM_LOADcO));
-      
+
       copy(tiled_tmem_load, tTMEM_LOADtO0_i, tTMrO0);
       copy(tiled_tmem_load, tTMEM_LOADtO1_i, tTMrO1);
-      
+
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < size(tTMrO0); j += 2) {
         float2 in0 = make_float2(tTMrO0(j), tTMrO0(j+1));
@@ -891,24 +891,24 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 32;
 
-    using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x;  // 4x32 threads with 64 cols of 32b elem 
+    using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x;  // 4x32 threads with 64 cols of 32b elem
     using TMEM_STORE = SM100_TMEM_STORE_32dp32b32x;  // 4x32 threads with 64 cols of 32b elem
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor cO = make_identity_tensor(select<0,1>(TileShapePV{}));
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
-    
+
     Tensor tOtO_i = tOtO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOcO_i = tOcO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
 
     tOtO_i.data() = tOtO_i.data().get() + tmem_O;
-    
+
     auto tiled_tmem_load = make_tmem_copy(TMEM_LOAD{}, tOtO_i);
     auto thr_tmem_load   = tiled_tmem_load.get_slice(thread_idx);
     auto tiled_tmem_store = make_tmem_copy(TMEM_STORE{}, tOtO_i);
     auto thr_tmem_store   = tiled_tmem_store.get_slice(thread_idx);
-    
+
     Tensor tTMEM_LOADtO = thr_tmem_load.partition_S(tOtO_i);
     Tensor tTMEM_LOADcO = thr_tmem_load.partition_D(tOcO_i);
     Tensor tTMEM_STOREtO = thr_tmem_store.partition_D(tOtO_i);
@@ -918,7 +918,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     float2 scale_f32x2 = make_float2(scale, scale);
 
     Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<get<2>(TileShape{}) / kCorrectionTileSize>{}));
-    
+
     auto copy_in = [&](int i) {
       Tensor tTMEM_LOADtO_i = tTMEM_LOADtO;
       tTMEM_LOADtO_i.data() = tTMEM_LOADtO_i.data().get() + uint32_t(i * kCorrectionTileSize);
@@ -948,13 +948,16 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       }
 
       Tensor tTMrO_i = tTMrO(_, i).compose(make_layout(shape<0>(tTMrO)));
-      CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < size(tTMrO_i); j += 2) {
-        float2 in = make_float2(tTMrO_i(j), tTMrO_i(j+1));
-        float2 out;
-        cute::mul(out, scale_f32x2, in);
-        tTMrO_i(j) = out.x;
-        tTMrO_i(j+1) = out.y;
+
+      if (scale != 1.0f) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < size(tTMrO_i); j += 2) {
+          float2 in = make_float2(tTMrO_i(j), tTMrO_i(j+1));
+          float2 out;
+          cute::mul(out, scale_f32x2, in);
+          tTMrO_i(j) = out.x;
+          tTMrO_i(j+1) = out.y;
+        }
       }
 
       copy_out(i);
@@ -981,7 +984,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     Tensor cS = make_identity_tensor(select<0,1>(TileShapeQK{}));
     Tensor tScS = typename CollectiveMmaQK::TiledMma{}.get_slice(0).partition_C(cS);
-    
+
     Tensor tStS_v = tStS.compose(make_layout(make_shape(_128{}, _2{})));
     Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
 
@@ -1019,11 +1022,14 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       copy(tiled_tmem_loadv, tTMEM_LOADVtS0, tTMEM_LOADVrS);
 
       // e^(scale * (old_max - new_max)
-      float scale = ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
+      float scale = (tTMEM_LOADVrS(kIdxOldRowMax) == tTMEM_LOADVrS(kIdxNewRowMax)) ? 1.0f : ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
 
       pipeline_o.consumer_wait(pipeline_o_consumer_state);
 
-      correction_rescale(scale, uint32_t(TmemAllocation::O0));
+      bool warp_do_correction = __any_sync(0xFFFFFFFF, scale != 1.0f);
+      if (warp_do_correction) {
+        correction_rescale(scale, uint32_t(TmemAllocation::O0));
+      }
 
       pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
       ++pipeline_s1_c_consumer_state;
@@ -1037,11 +1043,14 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
       copy(tiled_tmem_loadv, tTMEM_LOADVtS1, tTMEM_LOADVrS);
 
-      scale = ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
+      scale = (tTMEM_LOADVrS(kIdxOldRowMax) == tTMEM_LOADVrS(kIdxNewRowMax)) ? 1.0f : ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
 
       pipeline_o.consumer_wait(pipeline_o_consumer_state);
 
-      correction_rescale(scale, uint32_t(TmemAllocation::O1));
+      warp_do_correction = __any_sync(0xFFFFFFFF, scale != 1.0f);
+      if (warp_do_correction) {
+        correction_rescale(scale, uint32_t(TmemAllocation::O1));
+      }
 
       pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
       ++pipeline_s0_c_consumer_state;
