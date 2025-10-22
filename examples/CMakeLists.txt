@@ -101,6 +101,7 @@ if(CUTLASS_ENABLE_SYCL)
     message(STATUS "Building examples for Intel GPU targets")
     foreach(EXAMPLE
       00_bmg_gemm
+      00_bmg_gemm/legacy
       01_bmg_gemm_with_collective_builder
       02_bmg_gemm_mixed_dtype
       03_bmg_gemm_streamk

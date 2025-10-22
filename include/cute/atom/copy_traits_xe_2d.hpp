@@ -125,7 +125,7 @@ struct Xe2DTraitsBase
     assert((height <= 0xFFFFFF) && "CuTe runtime error: block 2D tensor height exceeds 2^24");
     assert((pitch <= 0xFFFFFF) && "CuTe runtime error: block 2D tensor pitch exceeds 2^24");
 #endif
-    init_payload();
+    device_init();
   }
 
   template <class Op2, typename ValType2>
@@ -134,7 +134,7 @@ struct Xe2DTraitsBase
     : base_ptr(other.base_ptr), width(other.width), height(other.height), pitch(other.pitch),
       tiled_strides(other.tiled_strides)
   {
-    init_payload();
+    device_init();
   }
 
   // Initialize a previously-uninitialized atom.
@@ -145,7 +145,7 @@ struct Xe2DTraitsBase
   }
 
   CUTE_DEVICE
-  void init_payload() {
+  void device_init() const {
 #ifdef __SYCL_DEVICE_ONLY__
     payload = __builtin_IB_subgroup_createBlock2DAddressPayload(
       base_ptr,
@@ -757,6 +757,16 @@ make_block_2d_copy_X(CopyOp             const& op,          // Copy operation
   return make_block_2d_copy<ValType>(op, gstride, x_mode, y_mode, atom_shape, sv_layout_t);
 }
 
+// Single trait with specializations
+template<typename T> struct is_xe_block_2d_atom : std::false_type {};
+template<int B, int H, int W, int BW> struct is_xe_block_2d_atom<XE_LOAD_2D<B,H,W,BW>> : std::true_type {};
+template<int B, int H, int W> struct is_xe_block_2d_atom<XE_LOAD_2D_TRANSPOSE<B,H,W>> : std::true_type {};
+template<int B, int H, int W, int BW> struct is_xe_block_2d_atom<XE_LOAD_2D_VNNI<B,H,W,BW>> : std::true_type {};
+template<int B, int H, int W> struct is_xe_block_2d_atom<XE_STORE_2D<B,H,W>> : std::true_type {};
+
+template<typename T> constexpr bool is_xe_block_2d_atom_v = is_xe_block_2d_atom<T>::value;
+
+
 // MMA-focused TiledCopy creation functions.
 template <class TiledMMA, class GEngine, class GLayout>
 CUTE_HOST_DEVICE
@@ -775,6 +785,7 @@ make_block_2d_copy_A(CopyOp                   const& op,    // Copy operation
                      TiledMMA                 const& mma,   // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
+  static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
   return make_block_2d_copy_A<ValType>(op, mma, gmem.stride()).with(gmem);
 }
@@ -847,6 +858,7 @@ make_block_2d_copy_B(CopyOp                   const& op,    // Copy operation
                      TiledMMA                 const& mma,   // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
+  static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
   return make_block_2d_copy_B<ValType>(op, mma, gmem.stride()).with(gmem);
 }
@@ -919,6 +931,7 @@ make_block_2d_copy_C(CopyOp                   const& op,    // Copy operation
                      TiledMMA                 const& mma,   // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
+  static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
   return make_block_2d_copy_C<ValType>(op, mma, gmem.stride()).with(gmem);
 }
@@ -1079,7 +1092,38 @@ make_block_2d_prefetch(PrefetchOp         const& op,
   return make_block_2d_copy<ValType>(op, stride, x_mode, y_mode, atom_shape, sv_layout);
 }
 
+//
+// Block 2D Copy Utilities - Helper functions for conditional copy operation selection
+//
+template <class CopyOp, class TiledMMA, class ATensor>
+auto get_block_2d_copy_A(TiledMMA const& tiled_mma, ATensor const& a_tensor)
+{
+  if constexpr (!std::is_void_v<CopyOp>) {
+    return make_block_2d_copy_A(CopyOp{}, tiled_mma, a_tensor);
+  } else {
+    return make_block_2d_copy_A(tiled_mma, a_tensor);
+  }
+}
 
+template <class CopyOp, class TiledMMA, class BTensor>
+auto get_block_2d_copy_B(TiledMMA const& tiled_mma, BTensor const& b_tensor)
+{
+  if constexpr (!std::is_void_v<CopyOp>) {
+    return make_block_2d_copy_B(CopyOp{}, tiled_mma, b_tensor);
+  } else {
+    return make_block_2d_copy_B(tiled_mma, b_tensor);
+  }
+}
+
+template <class CopyOp, class TiledMMA, class CTensor>
+auto get_block_2d_copy_C(TiledMMA const& tiled_mma, CTensor const& c_tensor)
+{
+  if constexpr (!std::is_void_v<CopyOp>) {
+    return make_block_2d_copy_C(CopyOp{}, tiled_mma, c_tensor);
+  } else {
+    return make_block_2d_copy_C(tiled_mma, c_tensor);
+  }
+}
 
 //
 // Display utilities
