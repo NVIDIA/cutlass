@@ -13,7 +13,6 @@ from typing import overload, Type, Tuple, Union
 
 from cutlass.cutlass_dsl import dsl_user_op
 
-import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import nvvm
 
@@ -21,6 +20,7 @@ from ...typing import (
     Shape,
     IntTuple,
     Layout,
+    ComposedLayout,
     Tensor,
     Int,
     Numeric,
@@ -29,6 +29,8 @@ from ...typing import (
     Int32,
 )
 from ... import core
+from ...tensor import recast_tensor
+from ...atom import CopyAtom, TiledCopy
 from .mma import SmemLayoutAtomKind, CtaGroup
 from .copy import (
     Pack,
@@ -56,7 +58,7 @@ from .copy import (
 @dsl_user_op
 def make_smem_layout_atom(
     kind: SmemLayoutAtomKind, element_type: Type[Numeric], *, loc=None, ip=None
-) -> core.ComposedLayout:
+) -> ComposedLayout:
     """
     Makes a SMEM layout Atom.
 
@@ -68,7 +70,7 @@ def make_smem_layout_atom(
     :param element_type: The element data type to construct the layout for
     :type element_type:  Type[Numeric]
     :return:             The SMEM layout atom
-    :rtype:              core.ComposedLayout
+    :rtype:              ComposedLayout
     """
     if not isinstance(element_type, NumericMeta):
         raise TypeError(f"element_type must be a Numeric, but got {element_type}")
@@ -130,13 +132,13 @@ def tile_to_mma_shape(
 
 @overload
 def tile_to_mma_shape(
-    atom: core.ComposedLayout,
+    atom: ComposedLayout,
     mma_tile_shape: Shape,
     order: IntTuple = None,
     *,
     loc=None,
     ip=None,
-) -> core.ComposedLayout: ...
+) -> ComposedLayout: ...
 
 
 @dsl_user_op
@@ -152,7 +154,7 @@ def tile_to_mma_shape(
     if core.rank(order) != core.rank(mma_tile_shape) - 1:
         raise ValueError(
             f"rank(order)={core.rank(order)} must be equal to "
-            f"rank(mma_tile_shape)-1={core.rank(mma_tile_shape)-1}"
+            f"rank(mma_tile_shape)-1={core.rank(mma_tile_shape) - 1}"
         )
     order_val = core._pack_int_tuple(order, loc=loc, ip=ip)
     mma_tile_shape_val = core._pack_shape(mma_tile_shape, loc=loc, ip=ip)
@@ -164,8 +166,12 @@ def tile_to_mma_shape(
     ):
         raise ValueError("tile_to_mma_shape only supports static inputs")
 
+    if isinstance(atom, core._ComposedLayout):
+        atom = atom.value
+
     res_ty = _cute_nvgpu_ir.tile_to_mma_shape(atom, mma_tile_shape_val, order_val)
-    return _cute_ir.static(res_ty, loc=loc, ip=ip)
+    res_val = core.static(res_ty, loc=loc, ip=ip)
+    return core.coalesce(res_val, target_profile=mma_tile_shape, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -209,7 +215,7 @@ def commit(
 ####################################################################################################
 
 
-def is_tmem_load(atom: core.CopyAtom) -> bool:
+def is_tmem_load(atom: CopyAtom) -> bool:
     """
     Returns whether a CopyAtom instance is a TMEM load.
     """
@@ -225,7 +231,7 @@ def is_tmem_load(atom: core.CopyAtom) -> bool:
     )
 
 
-def is_tmem_store(atom: core.CopyAtom) -> bool:
+def is_tmem_store(atom: CopyAtom) -> bool:
     """
     Returns whether a CopyAtom instance is a TMEM store.
     """
@@ -242,7 +248,7 @@ def is_tmem_store(atom: core.CopyAtom) -> bool:
 
 
 def get_tmem_copy_properties(
-    atom: core.CopyAtom,
+    atom: CopyAtom,
 ) -> Tuple[int, int, int, Union[Pack, Unpack]]:
     """
     Returns the properties of a TMEM copy atom (number of data paths, bits, repetitions,
@@ -279,7 +285,7 @@ def find_tmem_tensor_col_offset(tmem_tensor: Tensor, *, loc=None, ip=None) -> In
     """
     tmem_col_mask = 0x0000FFFF
     offset = (
-        core.cosize(core.recast_tensor(tmem_tensor, Int32).layout, loc=loc, ip=ip)
+        core.cosize(recast_tensor(tmem_tensor, Int32).layout, loc=loc, ip=ip)
         & tmem_col_mask
     )
     if isinstance(offset, int):
@@ -289,8 +295,8 @@ def find_tmem_tensor_col_offset(tmem_tensor: Tensor, *, loc=None, ip=None) -> In
 
 @dsl_user_op
 def make_tmem_copy(
-    atom: core.CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
-) -> core.TiledCopy:
+    atom: CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
+) -> TiledCopy:
     """
     Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
     """
@@ -298,13 +304,13 @@ def make_tmem_copy(
         atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
     )
     new_trait = type(atom._trait)(tiled_copy_val)
-    return core.TiledCopy(atom.op, new_trait)
+    return TiledCopy(atom.op, new_trait)
 
 
 @dsl_user_op
 def make_s2t_copy(
-    atom: core.CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
-) -> core.TiledCopy:
+    atom: CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
+) -> TiledCopy:
     """
     Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
     """
@@ -312,12 +318,12 @@ def make_s2t_copy(
         atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
     )
     new_trait = type(atom._trait)(tiled_copy_val)
-    return core.TiledCopy(atom.op, new_trait)
+    return TiledCopy(atom.op, new_trait)
 
 
 @dsl_user_op
 def get_s2t_smem_desc_tensor(
-    atom: core.CopyAtom, smem_tensor: Tensor, *, loc=None, ip=None
+    atom: CopyAtom, smem_tensor: Tensor, *, loc=None, ip=None
 ) -> Tensor:
     """
     Returns the SMEM descriptor tensor from a S2T copy atom and a SMEM tensor.

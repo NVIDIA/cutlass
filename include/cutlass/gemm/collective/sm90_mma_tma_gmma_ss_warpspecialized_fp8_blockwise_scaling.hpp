@@ -73,7 +73,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
     StridePairA_,
@@ -91,7 +91,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = cute::tuple_element_t<0,StridePairA_>;
@@ -390,12 +390,6 @@ struct CollectiveMma<
     if (IsTmaLoadSFB && !cutlass::detail::check_alignment<min_tma_aligned_elements_S>(args.layout_SFB)) {
       implementable = false;
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size doesn't meet the minimum alignment requirements for using TMA to load scale B.\n");
-    }
-
-    // We expect full tiles in K
-    if (K % size<2>(TileShape{}) != 0) {
-      implementable = false;
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size K is incompatible with tile size.\n");
     }
     return implementable;
   }

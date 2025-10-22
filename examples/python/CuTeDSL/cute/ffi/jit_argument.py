@@ -54,7 +54,6 @@ import cutlass.cute as cute
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
-import cutlass._mlir.extras.types as T
 
 
 class ExampleTensorValue(ir.Value):
@@ -244,7 +243,7 @@ import tempfile
 import torch
 
 
-def run_test(tmpdir=None):
+def run_test(tmpdir=None, cmake_args=""):
     # Skip cleanup if user provides tmpdir
     cleanup = tmpdir is None
     # Initialize temporary build directory
@@ -253,7 +252,8 @@ def run_test(tmpdir=None):
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        subprocess.run(["cmake", "-B", tmpdir, current_dir], check=True)
+        cmake_args = cmake_args.split()
+        subprocess.run(["cmake", "-B", tmpdir, current_dir] + cmake_args, check=True)
         subprocess.run(["cmake", "--build", tmpdir], check=True)
 
         sys.path.append(tmpdir)
@@ -284,7 +284,10 @@ def run_test(tmpdir=None):
         # Execute compiled function
         compiled_func(tensor)
     except Exception as e:
-        print(e)
+        import traceback
+
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise e
     finally:
         if cleanup:
             # Clean up the temporary directory
@@ -298,8 +301,17 @@ if __name__ == "__main__":
         description="Set temporary directory for building C modules"
     )
     parser.add_argument(
-        "--tmp-dir", type=str, help="Temporary directory path for building C modules"
+        "--tmp-dir",
+        type=str,
+        default=None,
+        help="Temporary directory path for building C modules",
+    )
+    parser.add_argument(
+        "--cmake-args",
+        type=str,
+        default="",
+        help="Extra CMake arguments for building C modules",
     )
     args = parser.parse_args()
 
-    run_test(args.tmp_dir)
+    run_test(tmpdir=args.tmp_dir, cmake_args=args.cmake_args)

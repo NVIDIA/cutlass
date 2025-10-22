@@ -313,6 +313,7 @@ auto sSFB = [&]() {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementPairA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -326,7 +327,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm103,
+    ArchTag,
     arch::OpClassBlockScaledTensorOp,
     ElementPairA,
     GmemLayoutATag,
@@ -340,6 +341,8 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm103> 
+      ) &&
       // Not paired input, Not Complex input
       (cute::is_tuple_v<ElementPairA>       && cute::is_tuple_v<ElementPairB> &&
        not cute::is_complex_v<ElementPairA> && not cute::is_complex_v<ElementPairB>) &&
@@ -495,11 +498,12 @@ struct CollectiveBuilder<
                                                                TensorMapStorage +
                                                                TmaPrefetchStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<Int<MMA_M>, Int<MMA_N/cute::size(AtomThrID{})>, _128>; // SmemAllocTypes are uint8_t. We always allocate 128bytes
   static constexpr auto PipelineStages = cutlass::gemm::collective::detail::sm103_compute_stage_count_or_override_blockscaled<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
 
   using DispatchPolicy = typename cute::conditional_t<IsArrayOfPointersGemm,
     cutlass::gemm::MainloopSm103ArrayTmaUmmaWarpSpecializedBlockScaled<

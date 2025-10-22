@@ -73,6 +73,16 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
+# nvcc supports response files with --options-file but some tools like clangd
+# might choke on it. Thus provide a way to control the use of this feature.
+set(CUTLASS_CUDA_USE_RESPONSE_FILE ON CACHE BOOL "Enable CUDA response files for includes, libraries, and objects")
+
+if(NOT CUTLASS_CUDA_USE_RESPONSE_FILE)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES 0)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_LIBRARIES 0)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_OBJECTS 0)
+endif()
+
 if (CUDA_VERSION VERSION_LESS 11.3)
   message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 11.4 or higher, and strongly recommends CUDA 11.8 or higher.")
 elseif (CUDA_VERSION VERSION_LESS 11.4)
@@ -337,7 +347,7 @@ set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma-delimited list of opera
 set(CUTLASS_LIBRARY_KERNELS ${CUTLASS_LIBRARY_KERNELS_INIT} CACHE STRING "Comma-delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If the string 'all' is specified, all kernels are enabled.")
 set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option ONLY takes effect if CUTLASS_LIBRARY_KERNELS is set.")
 set(CUTLASS_LIBRARY_EXCLUDE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option always takes effect, whether or not CUTLASS_LIBRARY_KERNELS is set. It also can exclude kernels from the filter file (see KERNEL_FILTER_FILE).")
-set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
+set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 and SM100 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
 
 if(CUTLASS_LIBRARY_INSTANTIATION_LEVEL OR CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
   message(STATUS "Enable extended SM90 WGMMA instruction shapes for instantiation levels")
@@ -804,9 +814,9 @@ if(NOT WIN32)
   # Add common library search paths so executables and libraries can load and run
   # without LD_LIBRARY_PATH being set.
   link_libraries(
-    "-Wl,-rpath,'$ORIGIN'"
-    "-Wl,-rpath,'$ORIGIN/../lib64'"
-    "-Wl,-rpath,'$ORIGIN/../lib'"
+    "-Wl,-rpath,'$$ORIGIN'"
+    "-Wl,-rpath,'$$ORIGIN/../lib64'"
+    "-Wl,-rpath,'$$ORIGIN/../lib'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
     ${CMAKE_DL_LIBS}
@@ -934,7 +944,7 @@ function(cutlass_add_executable_tests NAME TARGET)
 
      install(
        FILES ${__RESULT_CACHE_FILE}
-       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}/
+       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}
        )
 
     endif()
@@ -1062,7 +1072,7 @@ function(cutlass_generate_profiler_tests NAME)
 
   install(
     FILES ${CUTLASS_PROFILER_REGRESSION_LIST_FILE}
-    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass/
+    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass
     RENAME profiler_regressions.csv
     )
 

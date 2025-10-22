@@ -80,6 +80,7 @@ function(cutlass_example_add_executable NAME)
 
 endfunction()
 
+
 foreach(EXAMPLE
   00_basic_gemm
   01_cutlass_utilities
@@ -170,6 +171,7 @@ foreach(EXAMPLE
   89_sm103_fp4_ultra_gemm
   90_sm103_fp4_ultra_grouped_gemm
   91_fp4_gemv
+  92_blackwell_moe_gemm
   )
 
   add_subdirectory(${EXAMPLE})

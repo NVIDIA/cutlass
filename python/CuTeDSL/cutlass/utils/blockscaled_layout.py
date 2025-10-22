@@ -10,7 +10,6 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass, field
-from typing import Union
 
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -97,6 +96,7 @@ def make_smem_layout_sfa(
 ) -> cute.Layout:
     """
     Make smem layout for SFA based on:
+
     1. BlockScaledBasicChunk
     2. MMA tiler shape
     3. Scale factor vector size
@@ -161,6 +161,7 @@ def make_smem_layout_sfb(
 ) -> cute.Layout:
     """
     Make smem layout for SFB based on:
+
     1. BlockScaledBasicChunk
     2. MMA tiler shape
     3. Scale factor vector size
@@ -224,6 +225,7 @@ def make_tmem_layout_sfa(
     ip=None,
 ) -> cute.Layout:
     """Make tmem layout for SFA based on:
+
     1. SFA smem layout per stage
     2. Cta tile shape m
     3. tiled MMA atom thr size
@@ -241,7 +243,7 @@ def make_tmem_layout_sfa(
     :return: TMEM layout for SFA
     :rtype: cute.Layout
     """
-    atom_thr_size = cute.size(tiled_mma.thr_id.shape)
+    atom_thr_size = cute.size(tiled_mma.thr_id.shape, loc=loc, ip=ip)
     cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size
 
     sfa_layout_ty = _cute_nvgpu_ir.make_tmem_layout_sfa(
@@ -261,6 +263,7 @@ def make_tmem_layout_sfb(
     ip=None,
 ) -> cute.Layout:
     """Make tmem layout for SFB based on:
+
     1. SFB smem layout per stage
     2. Cta tile shape m
     3. tiled MMA atom thr size
@@ -278,7 +281,7 @@ def make_tmem_layout_sfb(
     :return: TMEM layout for SFB
     :rtype: cute.Layout
     """
-    atom_thr_size = cute.size(tiled_mma.thr_id.shape)
+    atom_thr_size = cute.size(tiled_mma.thr_id.shape, loc=loc, ip=ip)
     cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size
 
     sfb_layout_ty = _cute_nvgpu_ir.make_tmem_layout_sfb(

@@ -135,7 +135,7 @@ public:
 
   // Sink scheduler params as a member
   Params scheduler_params;
-  SchedulerResponse *response_ptr_ = nullptr;
+  void *response_ptr_ = nullptr;
   ProblemShape cached_problem_shapes_[2];
 
   //
@@ -225,6 +225,8 @@ public:
       for (int group = 0; group < groups; group++) {
         auto ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes.get_host_problem_shape(group)), cute::shape<0>(cta_shape)));
         auto ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes.get_host_problem_shape(group)), cute::shape<1>(cta_shape)));
+        if(ctas_along_m <= 0) ctas_along_m = 1;
+        if(ctas_along_n <= 0) ctas_along_n = 1;
         auto problem_blocks_m = round_up(ctas_along_m, cute::get<0>(cluster_shape));
         auto problem_blocks_n = round_up(ctas_along_n, cute::get<1>(cluster_shape));
         total_ctas += problem_blocks_m * problem_blocks_n;
@@ -301,7 +303,7 @@ public:
       int32_t log_swizzle_size, 
       RasterOrder raster_order) {
 
-    int32_t valid_tile = 1;
+    uint8_t valid_tile = 1;
 
     // Use a warp to "speculatively" check if the work tile maps to the next 32 groups
     int lane_idx = canonical_lane_idx();
@@ -329,7 +331,8 @@ public:
           auto problem_blocks_n = round_up(ctas_along_n, (1 << log_swizzle_size) * cluster_shape.n());
           group_info.problem_blocks_along_raster_order = raster_order == RasterOrder::AlongN ? problem_blocks_n : problem_blocks_m;
           group_info.total_tiles = problem_blocks_m * problem_blocks_n;
-        } else {
+        }
+        else {
           group_info.total_tiles = INT_MAX;
         }
 
@@ -428,23 +431,31 @@ public:
               scheduler_params.log_swizzle_size_, 
               scheduler_params.raster_order_);
   }
-  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
+
+  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
   advance_to_next_work(
     TileSchedulerPipeline& scheduler_pipeline,
     TileSchedulerPipelineState scheduler_pipe_producer_state,
-    uint32_t advance_count = 1) {
+    uint32_t advance_count = 1,
+    CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
 
     current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
     auto work_tile = get_current_work_for_linear_idx(current_work_linear_idx_);
+    using WorkTileWithCallbackInfo = decltype(callback_before_commit(work_tile));
+    WorkTileWithCallbackInfo work_tile_with_callback_info = work_tile;
     scheduler_pipeline.producer_acquire(scheduler_pipe_producer_state);
+    if (work_tile_with_callback_info.is_valid()) {
+      work_tile_with_callback_info = callback_before_commit(work_tile);
+    }
+
     if (cute::elect_one_sync()) {
-      response_ptr_[scheduler_pipe_producer_state.index()] = work_tile;
+      reinterpret_cast<WorkTileWithCallbackInfo *>(response_ptr_)[scheduler_pipe_producer_state.index()] = work_tile_with_callback_info;
       cutlass::arch::fence_view_async_shared();
       scheduler_pipeline.producer_commit(scheduler_pipe_producer_state);
     }
-    return cute::make_tuple(work_tile, true);
+    return cute::make_tuple(work_tile_with_callback_info, true);
   }
 
   // Returns whether the block assigned this work should compute the epilogue for the corresponding
@@ -555,31 +566,37 @@ public:
   }
 
   // Kernel helper function to get next work tile
-  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
+  template <typename WorkTileWithCallbackInfo, typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
   CUTLASS_DEVICE
   auto
   fetch_next_work(
-    WorkTileInfo work_tile_info,
+    WorkTileWithCallbackInfo work_tile_with_callback_info,
     TileSchedulerPipeline& scheduler_pipeline,
     TileSchedulerPipelineState scheduler_pipe_consumer_state) {
 
-    if (continue_current_work(work_tile_info)) {
-      return cute::make_tuple(work_tile_info, true);
+    if (continue_current_work(work_tile_with_callback_info)) {
+      return cute::make_tuple(work_tile_with_callback_info, true);
     }
     scheduler_pipeline.consumer_wait(scheduler_pipe_consumer_state);
-    auto work_tile = response_ptr_[scheduler_pipe_consumer_state.index()];
+    work_tile_with_callback_info = reinterpret_cast<WorkTileWithCallbackInfo *>(response_ptr_)[scheduler_pipe_consumer_state.index()];
     cutlass::arch::fence_view_async_shared();
     scheduler_pipeline.consumer_release(scheduler_pipe_consumer_state);
 
-    return cute::make_tuple(work_tile, true);
+    return cute::make_tuple(work_tile_with_callback_info, true);
   }
   
   // Returns the initial work tile info that will be computed over
-  template <class ClusterShape>
+  template <class ClusterShape, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
-  initial_work_tile_info(ClusterShape) {
-    return get_current_work_for_linear_idx(current_work_linear_idx_);
+  initial_work_tile_info(ClusterShape, CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo response) { return response;}) {
+    auto work_tile = get_current_work_for_linear_idx(current_work_linear_idx_);
+    using WorkTileWithCallbackInfo = decltype(callback_before_commit(work_tile));
+    WorkTileWithCallbackInfo work_tile_with_callback_info = work_tile;
+    if (work_tile_with_callback_info.is_valid()) {
+      work_tile_with_callback_info = callback_before_commit(work_tile);
+    }
+    return work_tile_with_callback_info;
   }
 };
 

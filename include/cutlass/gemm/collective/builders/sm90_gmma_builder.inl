@@ -52,21 +52,21 @@ namespace cutlass::gemm::collective {
 namespace detail {
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count.
-template<int capacity_bytes, class ElementA, class ElementB, class TileShapeMNK, int stages, int alignment = 128>
+template<int capacity_bytes, class ElementA, class ElementB, class TileShapeMNK, int alignment = 128, int stages>
 constexpr int
 compute_stage_count_or_override(StageCount<stages> stage_count) {
   return stages;
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count.
-template<int capacity_bytes, class ElementA, class ElementB, class TileShapeMNK, int stages, int alignment = 128>
+template<int capacity_bytes, class ElementA, class ElementB, class TileShapeMNK, int alignment = 128, int stages>
 constexpr int
 compute_stage_count_or_override(cute::Int<stages> stage_count) {
   return stages;
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count.
-template<int capacity_bytes_, class ElementA, class ElementB, class TileShapeMNK, int carveout_bytes_, int alignment = 128>
+template<int capacity_bytes_, class ElementA, class ElementB, class TileShapeMNK, int alignment = 128, int carveout_bytes_>
 constexpr int
 compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes_> stage_count) {
   constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
@@ -85,7 +85,7 @@ compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes_> stage_co
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity in gemm of blockwise/groupwise scale.
-template<int capacity_bytes_, class ElementA, class ElementB, class ElementBlockScale, class TileShapeMNK, int ScaleMsPerTile, int ScaleNsPerTile, int carveout_bytes_, int alignment = 128>
+template<int capacity_bytes_, class ElementA, class ElementB, class ElementBlockScale, class TileShapeMNK, int ScaleMsPerTile, int ScaleNsPerTile, int alignment = 128, int carveout_bytes_>
 constexpr int
 compute_stage_count_with_blockwise_scale(StageCountAutoCarveout<carveout_bytes_> stage_count) {
   constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
@@ -107,7 +107,14 @@ compute_stage_count_with_blockwise_scale(StageCountAutoCarveout<carveout_bytes_>
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity (with an optional scale matrix), or overrides with manual count.
-template<int capacity_bytes, class ElementA, class ElementB, class ElementScale, class ElementZero, class TileShapeMNK, int stages, int alignment = 128>
+template<int capacity_bytes, class ElementA, class ElementB, class ElementScale, class ElementZero, class TileShapeMNK, int alignment = 128, int stages>
+constexpr int
+compute_stage_count_or_override_single_affine_transformed_input(cute::Int<stages> stage_count) {
+  return stages;
+}
+
+// Returns the maximum number of smem tiles that can be used with a given smem capacity (with an optional scale matrix), or overrides with manual count.
+template<int capacity_bytes, class ElementA, class ElementB, class ElementScale, class ElementZero, class TileShapeMNK, int alignment = 128, int stages>
 constexpr int
 compute_stage_count_or_override_single_affine_transformed_input(StageCount<stages> stage_count) {
   return stages;
@@ -124,7 +131,7 @@ constexpr int get_bits_for_possibly_void_element() {
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity (with an optional scale matrix), or overrides with manual count.
-template<int capacity_bytes_, class ElementA, class ElementB, class ElementScale, class ElementZero, class TileShapeMNK, int carveout_bytes_, int alignment = 128>
+template<int capacity_bytes_, class ElementA, class ElementB, class ElementScale, class ElementZero, class TileShapeMNK, int alignment = 128, int carveout_bytes_>
 constexpr int
 compute_stage_count_or_override_single_affine_transformed_input(StageCountAutoCarveout<carveout_bytes_> stage_count) {
 
@@ -456,12 +463,12 @@ public:
   static constexpr int PipelineStages = IsMixedInput ?
       ( IsArrayOfPointersGemm ? 
         detail::compute_stage_count_or_override_single_affine_transformed_input<Sm90ReducedSmemCapacityBytes,
-          RealElementA, RealElementB, ElementScale, ElementZero, TileShape_MNK, StageCountType::bytes, SmemAlignment>(StageCountType{}) : 
+          RealElementA, RealElementB, ElementScale, ElementZero, TileShape_MNK, SmemAlignment>(StageCountType{}) : 
         detail::compute_stage_count_or_override_single_affine_transformed_input<detail::sm90_smem_capacity_bytes,
-          RealElementA, RealElementB, ElementScale, ElementZero, TileShape_MNK, StageCountType::bytes, SmemAlignment>(StageCountType{})
+          RealElementA, RealElementB, ElementScale, ElementZero, TileShape_MNK, SmemAlignment>(StageCountType{})
       ) 
       : detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes,
-          ElementAMma, ElementBMma, TileShape_MNK, StageCountType::bytes, SmemAlignment>(StageCountType{});
+          ElementAMma, ElementBMma, TileShape_MNK, SmemAlignment>(StageCountType{});
       
   using DispatchPolicy = cute::conditional_t<IsMixedInput,
       cute::conditional_t<IsArrayOfPointersGemm,
@@ -1069,10 +1076,10 @@ struct CollectiveBuilder<
     StageCountType,
     KernelScheduleType,
     cute::enable_if_t<
-      (cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum> or
-       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum> or
-       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum> or
-       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum>) and
+      (cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8Blockwise> or
+       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise> or
+       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpongFP8Blockwise> or
+       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise>) and
       not detail::is_use_rmem_A<ElementA, GmemLayoutPairA, ElementB, GmemLayoutPairB>()
     >
 > {
@@ -1105,7 +1112,7 @@ struct CollectiveBuilder<
     cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelScheduleType>);
 
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
-  static_assert(IsFP8Input, "Warp Specialized gemm with FP8 BlockScaled Accumulator is only compatible with FP8 Blocked Scaled version right now.");
+  static_assert(IsFP8Input, "Warp Specialized gemm with FP8 Blockwise (Software) Scaling is only compatible with FP8 inputs version right now.");
 
   // For fp32 types, map to tf32 MMA value type
   using ElementAMma = cute::conditional_t<cute::is_same_v<ElementA, float>, tfloat32_t, ElementA>;
@@ -1133,6 +1140,7 @@ struct CollectiveBuilder<
       GmmaMajorB, ElementBMma, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
+
   // Reserve 128B for 8 stages of tile scheduling
   static constexpr size_t SchedulerPipelineStorage = cute::is_pointer_v<TagToStrideA_t<GmemLayoutATag>> ? 
       sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) : 0;
@@ -1146,8 +1154,8 @@ struct CollectiveBuilder<
   static constexpr int PipelineStages = detail::compute_stage_count_with_blockwise_scale<detail::sm90_smem_capacity_bytes - KernelSmemCarveout,
       ElementAMma, ElementBMma, ElementBlockScale, TileShape_MNK, ScaleMsPerTile, ScaleNsPerTile>(StageCountType{});
   using DispatchPolicy = cute::conditional_t<IsArrayOfPointersGemm,
-    MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType>>;
+    MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType>>;
 
   using SmemCopyAtomA = void;
   using SmemCopyAtomB = void;

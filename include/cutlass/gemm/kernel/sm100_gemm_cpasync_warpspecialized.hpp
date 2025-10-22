@@ -188,7 +188,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -371,6 +370,8 @@ public:
 
     using namespace cute;
     using X = Underscore;
+
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     // Separate out problem shape for convenience
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});

@@ -348,6 +348,9 @@ struct BlockScaledGemmDescription : public OperationDescription {
   /// Describes the destination matrix
   TensorDescription D;
 
+  /// Describes the sparse meta matrices
+  TensorDescription E;
+
   /// Describes the SFA operand
   TensorDescription SFA;
 

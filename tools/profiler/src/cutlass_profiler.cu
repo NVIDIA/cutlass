@@ -63,7 +63,7 @@ CutlassProfiler::CutlassProfiler(
 
   operation_profilers_.emplace_back(new GemmOperationProfiler(options));
 
-  operation_profilers_.emplace_back(new BlockScaledGemmOperationProfiler(options));   
+  operation_profilers_.emplace_back(new BlockScaledGemmOperationProfiler(options));
 
   operation_profilers_.emplace_back(new BlockwiseGemmOperationProfiler(options));   
 

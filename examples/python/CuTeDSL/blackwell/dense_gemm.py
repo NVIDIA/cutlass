@@ -39,7 +39,8 @@ import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
-from cutlass.cute.runtime import from_dlpack
+
+import cutlass.cute.testing as testing
 
 """
 A high-performance batched dense GEMM (C = A * B) example for the NVIDIA Blackwell SM100 architecture
@@ -203,6 +204,7 @@ class DenseGemmKernel:
         self.use_2cta_instrs = use_2cta_instrs
         self.cluster_shape_mn = cluster_shape_mn
         # K dimension is deferred in _setup_attributes
+        self.mma_tiler_mn = mma_tiler_mn
         self.mma_tiler = (*mma_tiler_mn, 1)
         self.use_tma_store = use_tma_store
 
@@ -414,58 +416,16 @@ class DenseGemmKernel:
         tma_atom_c = None
         tma_tensor_c = None
         if cutlass.const_expr(self.use_tma_store):
-            c_cta_v_layout = cute.composition(
-                cute.make_identity_layout(c.shape), self.epi_tile
-            )
             epi_smem_layout = cute.slice_(self.c_smem_layout_staged, (None, None, 0))
             tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
                 cpasync.CopyBulkTensorTileS2GOp(),
                 c,
                 epi_smem_layout,
-                c_cta_v_layout,
+                self.epi_tile,
             )
 
         # Compute grid size
         grid = self._compute_grid(c, self.cta_tile_shape_mnk, self.cluster_shape_mn)
-
-        self.buffer_align_bytes = 1024
-
-        c_smem_size = (
-            cute.cosize(self.c_smem_layout_staged.outer) if self.use_tma_store else 0
-        )
-
-        # Define shared storage for kernel
-        @cute.struct
-        class SharedStorage:
-            ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage]
-            ab_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage]
-            acc_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
-            tmem_dealloc_mbar_ptr: cutlass.Int64
-            tmem_holding_buf: cutlass.Int32
-            # (EPI_TILE_M, EPI_TILE_N, STAGE)
-            sC: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.c_dtype,
-                    c_smem_size,
-                ],
-                self.buffer_align_bytes,
-            ]
-            # (MMA, MMA_M, MMA_K, STAGE)
-            sA: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.a_dtype, cute.cosize(self.a_smem_layout_staged.outer)
-                ],
-                self.buffer_align_bytes,
-            ]
-            # (MMA, MMA_N, MMA_K, STAGE)
-            sB: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.b_dtype, cute.cosize(self.b_smem_layout_staged.outer)
-                ],
-                self.buffer_align_bytes,
-            ]
-
-        self.shared_storage = SharedStorage
 
         # Launch the kernel synchronously
         self.kernel(
@@ -486,7 +446,6 @@ class DenseGemmKernel:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=(*self.cluster_shape_mn, 1),
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
         )
         return
@@ -552,11 +511,17 @@ class DenseGemmKernel:
         #
         # Alloc and init: a+b full/empty, accumulator full, tensor memory dealloc barrier
         #
-        smem = utils.SmemAllocator()
-        storage = smem.allocate(self.shared_storage)
+        @cute.struct
+        class SharedStorage:
+            ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage * 2]
+            acc_full_mbar_ptr: cute.struct.MemRange[
+                cutlass.Int64, self.num_acc_stage * 2
+            ]
+            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_holding_buf: cutlass.Int32
 
-        tmem_dealloc_mbar_ptr = storage.tmem_dealloc_mbar_ptr
-        tmem_holding_buf = storage.tmem_holding_buf
+        smem = utils.SmemAllocator()
+        storage = smem.allocate(SharedStorage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -564,25 +529,19 @@ class DenseGemmKernel:
         ab_pipeline_consumer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread, num_tma_producer
         )
-        ab_pipeline = pipeline.PipelineTmaUmma.create(
+        ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
             producer_group=ab_pipeline_producer_group,
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
-        )
-        ab_producer_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Producer, self.num_ab_stage
-        )
-        ab_consumer_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Consumer, self.num_ab_stage
-        )
+        ).make_participants()
 
         # Initialize acc_pipeline (barrier) and states
         acc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
         acc_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, self.threads_per_cta, self.threads_per_cta
+            pipeline.Agent.Thread, self.threads_per_cta
         )
         acc_pipeline = pipeline.PipelineUmmaAsync.create(
             barrier_storage=storage.acc_full_mbar_ptr.data_ptr(),
@@ -598,15 +557,16 @@ class DenseGemmKernel:
             pipeline.PipelineUserType.Consumer, self.num_acc_stage
         )
 
+        tmem_alloc_barrier = pipeline.NamedBarrier(
+            barrier_id=0, num_threads=self.threads_per_cta
+        )
         # Tensor memory dealloc barrier init
-        if use_2cta_instrs:
-            if warp_idx == 0:
-                num_tmem_dealloc_threads = 32
-                with cute.arch.elect_one():
-                    cute.arch.mbarrier_init(
-                        tmem_dealloc_mbar_ptr, num_tmem_dealloc_threads
-                    )
-        cute.arch.mbarrier_init_fence()
+        tmem = utils.TmemAllocator(
+            storage.tmem_holding_buf,
+            barrier_for_retrieve=tmem_alloc_barrier,
+            is_two_cta=use_2cta_instrs,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+        )
 
         # Cluster arrive after barrier init
         if cute.size(self.cluster_shape_mn) > 1:
@@ -616,20 +576,28 @@ class DenseGemmKernel:
         # Setup smem tensor A/B/C
         #
         # (EPI_TILE_M, EPI_TILE_N, STAGE)
-        sC = (
-            storage.sC.get_tensor(
-                c_smem_layout_staged.outer, swizzle=c_smem_layout_staged.inner
+        sC = None
+        if cutlass.const_expr(self.use_tma_store):
+            sC = smem.allocate_tensor(
+                element_type=self.c_dtype,
+                layout=c_smem_layout_staged.outer,
+                byte_alignment=128,
+                swizzle=c_smem_layout_staged.inner,
             )
-            if self.use_tma_store
-            else None
-        )
+
         # (MMA, MMA_M, MMA_K, STAGE)
-        sA = storage.sA.get_tensor(
-            a_smem_layout_staged.outer, swizzle=a_smem_layout_staged.inner
+        sA = smem.allocate_tensor(
+            element_type=self.a_dtype,
+            layout=a_smem_layout_staged.outer,
+            byte_alignment=128,
+            swizzle=a_smem_layout_staged.inner,
         )
         # (MMA, MMA_N, MMA_K, STAGE)
-        sB = storage.sB.get_tensor(
-            b_smem_layout_staged.outer, swizzle=b_smem_layout_staged.inner
+        sB = smem.allocate_tensor(
+            element_type=self.b_dtype,
+            layout=b_smem_layout_staged.outer,
+            byte_alignment=128,
+            swizzle=b_smem_layout_staged.inner,
         )
 
         #
@@ -660,7 +628,7 @@ class DenseGemmKernel:
         gC_mnl = cute.local_tile(
             mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
         )
-        k_block_cnt = cute.size(gA_mkl, mode=[3])
+        k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
         #
         # Partition global tensor for TiledMMA_A/B/C
@@ -721,55 +689,15 @@ class DenseGemmKernel:
         if cute.size(self.cluster_shape_mn) > 1:
             cute.arch.cluster_wait()
 
-        #
         # Alloc tensor memory buffer
-        #
-        if warp_idx == 0:
-            cute.arch.alloc_tmem(
-                self.num_tmem_alloc_cols, tmem_holding_buf, is_two_cta=use_2cta_instrs
-            )
+        tmem.allocate(self.num_tmem_alloc_cols)
 
-        #
-        # Bar sync for retrieve tensor memory ptr from shared memory
-        #
-        cute.arch.barrier()
+        # Barrier before retrieve tensor memory ptr from shared memory
+        tmem.wait_for_alloc()
 
-        #
-        # Retrieving tensor memory ptr and make accumulator tensor
-        #
-        tmem_ptr = cute.arch.retrieve_tmem_ptr(
-            self.acc_dtype, alignment=16, ptr_to_buffer_holding_addr=tmem_holding_buf
-        )
+        tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
         # (MMA, MMA_M, MMA_N)
         tCtAcc = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-
-        #
-        # Partition for epilogue
-        #
-        tiled_copy_t2r, tTR_tAcc, tTR_rAcc = self.epilog_tmem_copy_and_partition(
-            tidx, tCtAcc, tCgC, epi_tile, use_2cta_instrs
-        )
-
-        tTR_rC = None
-        tiled_copy_r2s = None
-        simt_atom = None
-        tRS_rC = None
-        tRS_sC = None
-        bSG_sC = None
-        bSG_gC = None
-        tTR_gC = None
-        if cutlass.const_expr(self.use_tma_store):
-            tTR_rC = cute.make_fragment(tTR_rAcc.shape, self.c_dtype)
-            tiled_copy_r2s, tRS_rC, tRS_sC = self.epilog_smem_copy_and_partition(
-                tiled_copy_t2r, tTR_rC, tidx, sC
-            )
-            tma_atom_c, bSG_sC, bSG_gC = self.epilog_gmem_copy_and_partition(
-                tidx, tma_atom_c, tCgC, epi_tile, sC
-            )
-        else:
-            simt_atom, tTR_rC, tTR_gC = self.epilog_gmem_copy_and_partition(
-                tidx, tiled_copy_t2r, tCgC, epi_tile, sC
-            )
 
         #
         # Slice to per mma tile index
@@ -778,123 +706,91 @@ class DenseGemmKernel:
         tAgA = tAgA[(None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])]
         # ((atom_v, rest_v), RestK)
         tBgB = tBgB[(None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])]
-        if cutlass.const_expr(self.use_tma_store):
-            # ((ATOM_V, REST_V), EPI_M, EPI_N)
-            bSG_gC = bSG_gC[(None, None, None, *mma_tile_coord_mnl)]
-        else:
-            # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
-            tTR_gC = tTR_gC[(None, None, None, None, None, *mma_tile_coord_mnl)]
 
         #
         # Pipelining TMA load A/B and MMA mainloop
         #
-        prefetch_k_block_cnt = cutlass.min(self.num_ab_stage - 2, k_block_cnt)
-
+        prefetch_k_tile_cnt = cutlass.min(self.num_ab_stage - 2, k_tile_cnt)
         if warp_idx == 0:
-            # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt
-            peek_ab_empty_status = cutlass.Boolean(1)
-            if ab_producer_state.count < k_block_cnt:
-                peek_ab_empty_status = ab_pipeline.producer_try_acquire(
-                    ab_producer_state
-                )
             #
             # Prefetch TMA load A/B
             #
-            for prefetch_idx in cutlass.range(prefetch_k_block_cnt, unroll=1):
+            for k_tile_idx in cutlass.range(prefetch_k_tile_cnt, unroll=1):
                 # Conditionally wait for AB buffer empty
-                ab_pipeline.producer_acquire(ab_producer_state, peek_ab_empty_status)
+                producer_handle = ab_producer.acquire_and_advance()
 
                 # TMA load A/B
                 cute.copy(
                     tma_atom_a,
-                    tAgA[(None, ab_producer_state.count)],
-                    tAsA[(None, ab_producer_state.index)],
-                    tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
+                    tAgA[(None, k_tile_idx)],
+                    tAsA[(None, producer_handle.index)],
+                    tma_bar_ptr=producer_handle.barrier,
                     mcast_mask=a_full_mcast_mask,
                 )
                 cute.copy(
                     tma_atom_b,
-                    tBgB[(None, ab_producer_state.count)],
-                    tBsB[(None, ab_producer_state.index)],
-                    tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
+                    tBgB[(None, k_tile_idx)],
+                    tBsB[(None, producer_handle.index)],
+                    tma_bar_ptr=producer_handle.barrier,
                     mcast_mask=b_full_mcast_mask,
                 )
 
-                # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt + k_block + 1
-                ab_producer_state.advance()
-                peek_ab_empty_status = cutlass.Boolean(1)
-                if ab_producer_state.count < k_block_cnt:
-                    peek_ab_empty_status = ab_pipeline.producer_try_acquire(
-                        ab_producer_state
-                    )
+            peek_ab_full_status = cutlass.Boolean(False)
+            if is_leader_cta:
+                peek_ab_full_status = ab_consumer.try_wait()
 
-            # Peek (try_wait) AB buffer full for k_block = 0
-            peek_ab_full_status = cutlass.Boolean(1)
-            if ab_consumer_state.count < k_block_cnt and is_leader_cta:
-                peek_ab_full_status = ab_pipeline.consumer_try_wait(ab_consumer_state)
+            # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+            peek_ab_empty_status = ab_producer.try_acquire()
 
             #
             # MMA mainloop
             #
-            for k_block in range(k_block_cnt):
+            for k_tile_idx in cutlass.range(k_tile_cnt):
                 # Conditionally wait for AB buffer empty
-                ab_pipeline.producer_acquire(ab_producer_state, peek_ab_empty_status)
+                if k_tile_idx < k_tile_cnt - prefetch_k_tile_cnt:
+                    producer_handle = ab_producer.acquire_and_advance(
+                        peek_ab_empty_status
+                    )
 
-                if ab_producer_state.count < k_block_cnt:
                     # TMA load A/B
                     cute.copy(
                         tma_atom_a,
-                        tAgA[(None, ab_producer_state.count)],
-                        tAsA[(None, ab_producer_state.index)],
-                        tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
+                        tAgA[(None, producer_handle.count)],
+                        tAsA[(None, producer_handle.index)],
+                        tma_bar_ptr=producer_handle.barrier,
                         mcast_mask=a_full_mcast_mask,
                     )
                     cute.copy(
                         tma_atom_b,
-                        tBgB[(None, ab_producer_state.count)],
-                        tBsB[(None, ab_producer_state.index)],
-                        tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
+                        tBgB[(None, producer_handle.count)],
+                        tBsB[(None, producer_handle.index)],
+                        tma_bar_ptr=producer_handle.barrier,
                         mcast_mask=b_full_mcast_mask,
                     )
 
                 if is_leader_cta:
                     # Conditionally wait for AB buffer full
-                    ab_pipeline.consumer_wait(ab_consumer_state, peek_ab_full_status)
+                    consumer_handle = ab_consumer.wait_and_advance(peek_ab_full_status)
 
                     # tCtAcc += tCrA * tCrB
-                    num_kphases = cute.size(tCrA, mode=[2])
-                    for kphase_idx in cutlass.range(num_kphases, unroll_full=True):
-                        kphase_coord = (None, None, kphase_idx, ab_consumer_state.index)
+                    num_kblks = cute.size(tCrA, mode=[2])
+                    for kblk_idx in cutlass.range(num_kblks, unroll_full=True):
+                        kblk_crd = (None, None, kblk_idx, consumer_handle.index)
 
                         cute.gemm(
-                            tiled_mma,
-                            tCtAcc,
-                            tCrA[kphase_coord],
-                            tCrB[kphase_coord],
-                            tCtAcc,
+                            tiled_mma, tCtAcc, tCrA[kblk_crd], tCrB[kblk_crd], tCtAcc
                         )
-                        # Enable accumulate on tCtAcc after first kphase
+                        # Enable accumulate on tCtAcc after first kblock
                         tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
 
                     # Async arrive AB buffer empty
-                    ab_pipeline.consumer_release(ab_consumer_state)
+                    consumer_handle.release()
 
-                # Peek (try_wait) AB buffer empty for k_block = prefetch_k_block_cnt + k_block + 1
-                ab_producer_state.advance()
-                peek_ab_empty_status = cutlass.Boolean(1)
-                if ab_producer_state.count < k_block_cnt:
-                    peek_ab_empty_status = ab_pipeline.producer_try_acquire(
-                        ab_producer_state
-                    )
+                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+                peek_ab_empty_status = ab_producer.try_acquire()
 
-                # Peek (try_wait) AB buffer full for k_block = k_block + 1
-                ab_consumer_state.advance()
-                peek_ab_full_status = cutlass.Boolean(1)
-                if ab_consumer_state.count < k_block_cnt:
-                    if is_leader_cta:
-                        peek_ab_full_status = ab_pipeline.consumer_try_wait(
-                            ab_consumer_state
-                        )
+                # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
+                peek_ab_full_status = ab_consumer.try_wait()
 
             # Async arrive accumulator buffer full
             if is_leader_cta:
@@ -905,114 +801,39 @@ class DenseGemmKernel:
         #
 
         # Release tensor memory allocation lock
-        if warp_idx == 0:
-            cute.arch.relinquish_tmem_alloc_permit(is_two_cta=use_2cta_instrs)
+        tmem.relinquish_alloc_permit()
 
         # Wait for accumulator buffer full
         acc_pipeline.consumer_wait(acc_consumer_state)
 
-        tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
         if cutlass.const_expr(self.use_tma_store):
-            bSG_gC = cute.group_modes(bSG_gC, 1, cute.rank(bSG_gC))
+            assert tma_atom_c is not None and sC is not None
+            self.epilogue_tma_store(
+                tidx,
+                warp_idx,
+                mma_tile_coord_mnl,  # type: ignore
+                tma_atom_c,
+                tCtAcc,
+                sC,
+                tCgC,
+                epi_tile,
+                epilogue_op,
+            )
+
         else:
-            tTR_gC = cute.group_modes(tTR_gC, 3, cute.rank(tTR_gC))
-
-        c_pipeline = None
-        if cutlass.const_expr(self.use_tma_store):
-            # Initialize tma store c_pipeline
-            c_producer_group = pipeline.CooperativeGroup(
-                pipeline.Agent.Thread, self.threads_per_cta, self.threads_per_cta
-            )
-            c_pipeline = pipeline.PipelineTmaStore.create(
-                num_stages=self.num_c_stage,
-                producer_group=c_producer_group,
-            )
-
-        #
-        # Store accumulator to global memory in subtiles
-        #
-        subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
-        for subtile_idx in range(subtile_cnt):
-            #
-            # Load accumulator from tensor memory buffer to register
-            #
-            tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
-            cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
-
-            if cutlass.const_expr(self.use_tma_store):
-                #
-                # Perform epilogue op on accumulator and convert to C type
-                #
-                acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
-                acc_vec = epilogue_op(acc_vec.to(self.c_dtype))
-                tRS_rC.store(acc_vec)
-
-                #
-                # Store C to shared memory
-                #
-                c_buffer = subtile_idx % self.num_c_stage
-                cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
-                # Fence and barrier to make sure shared memory store is visible to TMA store
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
-                cute.arch.barrier()
-
-                #
-                # TMA store C to global memory
-                #
-                if warp_idx == 0:
-                    cute.copy(
-                        tma_atom_c,
-                        bSG_sC[(None, c_buffer)],
-                        bSG_gC[(None, subtile_idx)],
-                    )
-                    # Fence and barrier to make sure TMA store is completed to recollect C buffer
-                    c_pipeline.producer_commit()
-                    c_pipeline.producer_acquire()
-                cute.arch.barrier()
-            else:
-                #
-                # Perform epilogue op on accumulator and convert to C type
-                #
-                acc_vec = tTR_rAcc.load()
-                acc_vec = epilogue_op(acc_vec.to(self.c_dtype))
-                tTR_rC.store(acc_vec)
-
-                #
-                # Store C to global memory
-                #
-                cute.copy(simt_atom, tTR_rC, tTR_gC[(None, None, None, subtile_idx)])
+            self.epilogue(tidx, mma_tile_coord_mnl, tCtAcc, tCgC, epi_tile, epilogue_op)  # type: ignore
 
         #
         # Dealloc the tensor memory buffer
         #
-        cute.arch.barrier()
-        if warp_idx == 0:
-            if use_2cta_instrs:
-                cute.arch.mbarrier_arrive(
-                    tmem_dealloc_mbar_ptr, cta_rank_in_cluster ^ 1
-                )
-                cute.arch.mbarrier_wait(tmem_dealloc_mbar_ptr, 0)
-            cute.arch.dealloc_tmem(
-                tmem_ptr, self.num_tmem_alloc_cols, is_two_cta=use_2cta_instrs
-            )
-
-        #
-        # Wait for C store complete
-        #
-        if cutlass.const_expr(self.use_tma_store):
-            c_pipeline.producer_tail()
+        pipeline.sync(barrier_id=1)
+        tmem.free(tmem_ptr)
 
         #
         # Wait A/B buffer empty
         #
         if warp_idx == 0:
-            # Reverse prefetch_k_block_cnt times to next available buffer
-            for i in range(prefetch_k_block_cnt):
-                ab_producer_state.reverse()
-            ab_pipeline.producer_tail(ab_producer_state)
+            ab_producer.tail()
         return
 
     def epilog_tmem_copy_and_partition(
@@ -1024,7 +845,8 @@ class DenseGemmKernel:
         use_2cta_instrs: Union[cutlass.Boolean, bool],
     ) -> Tuple[cute.TiledCopy, cute.Tensor, cute.Tensor]:
         """
-        Make tiledCopy for tensor memory load, then use it to partition tensor memory (source) and register array (destination).
+        Make tiledCopy for tensor memory load, then use it to partition tensor memory (source)
+        and register array (destination).
 
         :param tidx: The thread index in epilogue warp groups
         :type tidx: cutlass.Int32
@@ -1053,10 +875,7 @@ class DenseGemmKernel:
             use_2cta_instrs,
         )
         # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N)
-        tAcc_epi = cute.flat_divide(
-            tAcc[((None, None), 0, 0)],
-            epi_tile,
-        )
+        tAcc_epi = cute.flat_divide(tAcc[((None, None), 0, 0)], epi_tile)
         # (EPI_TILE_M, EPI_TILE_N)
         tiled_copy_t2r = tcgen05.make_tmem_copy(
             copy_atom_t2r, tAcc_epi[(None, None, 0, 0)]
@@ -1073,7 +892,7 @@ class DenseGemmKernel:
         # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
         tTR_gC = thr_copy_t2r.partition_D(gC_mnl_epi)
         # (T2R, T2R_M, T2R_N)
-        tTR_rAcc = cute.make_fragment(
+        tTR_rAcc = cute.make_rmem_tensor(
             tTR_gC[(None, None, None, 0, 0, 0, 0, 0)].shape, self.acc_dtype
         )
         return tiled_copy_t2r, tTR_tAcc, tTR_rAcc
@@ -1086,7 +905,8 @@ class DenseGemmKernel:
         sC: cute.Tensor,
     ) -> Tuple[cute.TiledCopy, cute.Tensor, cute.Tensor]:
         """
-        Make tiledCopy for shared memory store, then use it to partition register array (source) and shared memory (destination).
+        Make tiledCopy for shared memory store, then use it to partition register array (source)
+        and shared memory (destination).
 
         :param tiled_copy_t2r: The tiled copy operation for tmem to register copy(t2r)
         :type tiled_copy_t2r: cute.TiledCopy
@@ -1114,69 +934,185 @@ class DenseGemmKernel:
         tRS_rC = tiled_copy_r2s.retile(tTR_rC)
         return tiled_copy_r2s, tRS_rC, tRS_sC
 
-    def epilog_gmem_copy_and_partition(
+    @cute.jit
+    def epilogue_tma_store(
         self,
-        tidx: cutlass.Int32,
-        atom: Union[cute.CopyAtom, cute.TiledCopy],
-        gC_mnl: cute.Tensor,
-        epi_tile: cute.Tile,
+        epi_tidx: cutlass.Int32,
+        warp_idx: cutlass.Int32,
+        mma_tile_coord_mnl: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        tma_atom_c: cute.CopyAtom,
+        tCtAcc: cute.Tensor,
         sC: cute.Tensor,
-    ) -> Tuple[cute.CopyAtom, cute.Tensor, cute.Tensor]:
-        """Make tiledCopy for global memory store, then use it to:
-        - partition register array (source) and global memory (destination) for none TMA store version;
-        - partition shared memory (source) and global memory (destination) for TMA store version.
-
-        :param tidx: The thread index in epilogue warp groups
-        :type tidx: cutlass.Int32
-        :param atom: The copy_atom_c to be used for TMA store version, or tiled_copy_t2r for none TMA store version
-        :type atom: cute.CopyAtom or cute.TiledCopy
-        :param gC_mnl: The global tensor C
-        :type gC_mnl: cute.Tensor
-        :param epi_tile: The epilogue tiler
-        :type epi_tile: cute.Tile
-        :param sC: The shared memory tensor to be copied and partitioned
-        :type sC: cute.Tensor
-
-        :return: A tuple containing either:
-            - For TMA store: (tma_atom_c, bSG_sC, bSG_gC) where:
-                - tma_atom_c: The TMA copy atom
-                - bSG_sC: The partitioned shared memory tensor C
-                - bSG_gC: The partitioned global tensor C
-            - For non-TMA store: (simt_atom, tTR_rC, tTR_gC) where:
-                - simt_atom: The SIMT copy atom
-                - tTR_rC: The register tensor C
-                - tTR_gC: The partitioned global tensor C
-        :rtype: Tuple[cute.CopyAtom, cute.Tensor, cute.Tensor]
+        tCgC: cute.Tensor,
+        epi_tile: cute.Tile,
+        epilogue_op: cutlass.Constexpr,
+    ) -> None:
         """
-        # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, RestM, RestN, RestL)
-        gC_epi = cute.flat_divide(
-            gC_mnl[((None, None), 0, 0, None, None, None)], epi_tile
+        Epilogue implementation for TMA store version.
+
+        :param epi_tidx: Thread index
+        :type epi_tidx: cutlass.Int32
+        :param warp_idx: Warp index
+        :type warp_idx: cutlass.Int32
+        :param tCtAcc: Partitioned accumulator tensor
+        :type tCtAcc: cute.Tensor
+        :param sC: Shared memory C tensor
+        :type sC: cute.Tensor
+        :param tCgC: Global memory C tensor
+        :type tCgC: cute.Tensor
+        :param epi_tile: Epilogue tile
+        :type epi_tile: cute.Tile
+        :param epilogue_op: Epilogue operation
+        :type epilogue_op: cutlass.Constexpr
+        :param tma_atom_c: TMA atom for C tensor
+        :type tma_atom_c: cute.CopyAtom
+        """
+        tiled_copy_t2r, tTR_tAcc, tTR_rAcc = self.epilog_tmem_copy_and_partition(
+            epi_tidx, tCtAcc, tCgC, epi_tile, self.use_2cta_instrs
         )
-        if cutlass.const_expr(self.use_tma_store):
-            tma_atom_c = atom
-            sC_for_tma_partition = cute.group_modes(sC, 0, 2)
-            gC_for_tma_partition = cute.group_modes(gC_epi, 0, 2)
-            # ((ATOM_V, REST_V), EPI_M, EPI_N)
-            # ((ATOM_V, REST_V), EPI_M, EPI_N, RestM, RestN, RestL)
-            bSG_sC, bSG_gC = cpasync.tma_partition(
-                tma_atom_c,
-                0,
-                cute.make_layout(1),
-                sC_for_tma_partition,
-                gC_for_tma_partition,
+        tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
+
+        # ((ATOM_V, REST_V), EPI_M, EPI_N)
+        tTR_rC = cute.make_rmem_tensor(tTR_rAcc.shape, self.c_dtype)
+        tiled_copy_r2s, tRS_rC, tRS_sC = self.epilog_smem_copy_and_partition(
+            tiled_copy_t2r, tTR_rC, epi_tidx, sC
+        )
+
+        # ((ATOM_V, REST_V), EPI_M, EPI_N, RestM, RestN, RestL)
+        tCgC_epi = cute.flat_divide(
+            tCgC[((None, None), 0, 0, None, None, None)], epi_tile
+        )
+
+        # ((ATOM_V, REST_V), EPI_M, EPI_N)
+        bSG_sC, bSG_gC = cpasync.tma_partition(
+            tma_atom_c,
+            0,
+            cute.make_layout(1),
+            cute.group_modes(sC, 0, 2),
+            cute.group_modes(tCgC_epi, 0, 2),
+        )
+
+        bSG_gC = bSG_gC[(None, None, None, *mma_tile_coord_mnl)]
+        bSG_gC = cute.group_modes(bSG_gC, 1, cute.rank(bSG_gC))
+
+        # Initialize tma store c_pipeline
+        c_producer_group = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, self.threads_per_cta
+        )
+        c_pipeline = pipeline.PipelineTmaStore.create(
+            num_stages=self.num_c_stage, producer_group=c_producer_group
+        )
+
+        #
+        # Store accumulator to global memory in sub-tiles
+        #
+        subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
+        for subtile_idx in cutlass.range(subtile_cnt):
+            #
+            # Load accumulator from tensor memory buffer to register
+            #
+            tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
+            cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
+
+            #
+            # Perform epilogue op on accumulator and convert to C type
+            #
+            acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
+            acc_vec = epilogue_op(acc_vec.to(self.c_dtype))
+            tRS_rC.store(acc_vec)
+
+            #
+            # Store C to shared memory
+            #
+            c_buffer = subtile_idx % self.num_c_stage
+            cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
+            # Fence and barrier to make sure shared memory store is visible to TMA store
+            cute.arch.fence_proxy(
+                cute.arch.ProxyKind.async_shared,
+                space=cute.arch.SharedSpace.shared_cta,
             )
-            return tma_atom_c, bSG_sC, bSG_gC
-        else:
-            tiled_copy_t2r = atom
-            # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
-            thr_copy_t2r = tiled_copy_t2r.get_slice(tidx)
-            tTR_gC = thr_copy_t2r.partition_D(gC_epi)
-            # (T2R, T2R_M, T2R_N)
-            tTR_rC = cute.make_fragment(
-                tTR_gC[(None, None, None, 0, 0, 0, 0, 0)].shape, self.c_dtype
-            )
-            simt_atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.c_dtype)
-            return simt_atom, tTR_rC, tTR_gC
+            pipeline.sync(barrier_id=1)
+
+            # TMA store C to global memory
+            if warp_idx == 0:
+                cute.copy(
+                    tma_atom_c, bSG_sC[(None, c_buffer)], bSG_gC[(None, subtile_idx)]
+                )
+                # Fence and barrier to make sure TMA store is completed to recollect C buffer
+                c_pipeline.producer_commit()
+                c_pipeline.producer_acquire()
+            pipeline.sync(barrier_id=1)
+
+        # Wait for C store complete
+        c_pipeline.producer_tail()
+
+    @cute.jit
+    def epilogue(
+        self,
+        epi_tidx: cutlass.Int32,
+        mma_tile_coord_mnl: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        tCtAcc: cute.Tensor,
+        tCgC: cute.Tensor,
+        epi_tile: cute.Tile,
+        epilogue_op: cutlass.Constexpr,
+    ) -> None:
+        """
+        Epilogue implementation for non-TMA store version.
+
+        :param epi_tidx: Thread index
+        :type epi_tidx: cutlass.Int32
+        :param tCtAcc: Partitioned accumulator tensor
+        :type tCtAcc: cute.Tensor
+        :param tCgC: Global memory C tensor
+        :type tCgC: cute.Tensor
+        :param epi_tile: Epilogue tile
+        :type epi_tile: cute.Tile
+        :param epilogue_op: Epilogue operation
+        :type epilogue_op: cutlass.Constexpr
+        """
+        tiled_copy_t2r, tTR_tAcc, tTR_rAcc = self.epilog_tmem_copy_and_partition(
+            epi_tidx, tCtAcc, tCgC, epi_tile, self.use_2cta_instrs
+        )
+        tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
+
+        # ((ATOM_V, REST_V), EPI_M, EPI_N, RestM, RestN, RestL)
+        tCgC_epi = cute.flat_divide(
+            tCgC[((None, None), 0, 0, None, None, None)], epi_tile
+        )
+
+        # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
+        thr_copy_t2r = tiled_copy_t2r.get_slice(epi_tidx)
+        tTR_gC = thr_copy_t2r.partition_D(tCgC_epi)
+        # (T2R, T2R_M, T2R_N)
+        tTR_rC = cute.make_rmem_tensor(
+            tTR_gC[(None, None, None, 0, 0, 0, 0, 0)].shape, self.c_dtype
+        )
+        simt_atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.c_dtype)
+
+        # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
+        tTR_gC = tTR_gC[(None, None, None, None, None, *mma_tile_coord_mnl)]
+        tTR_gC = cute.group_modes(tTR_gC, 3, cute.rank(tTR_gC))
+
+        #
+        # Store accumulator to global memory in sub-tiles
+        #
+        subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
+        for subtile_idx in cutlass.range(subtile_cnt):
+            #
+            # Load accumulator from tensor memory buffer to register
+            #
+            tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
+            cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
+
+            #
+            # Perform epilogue op on accumulator and convert to C type
+            #
+            acc_vec = tTR_rAcc.load()
+            acc_vec = epilogue_op(acc_vec.to(self.c_dtype))
+            tTR_rC.store(acc_vec)
+
+            # Store C to global memory
+            cute.copy(simt_atom, tTR_rC, tTR_gC[(None, None, None, subtile_idx)])
 
     @staticmethod
     def _compute_stages(
@@ -1327,27 +1263,21 @@ class DenseGemmKernel:
         tCtAcc_fake = tiled_mma.make_fragment_C(acc_shape)
         return sm100_utils.get_num_tmem_alloc_cols(tCtAcc_fake)
 
-    @staticmethod
     def is_valid_dtypes(
-        ab_dtype: Type[cutlass.Numeric],
-        acc_dtype: Type[cutlass.Numeric],
-        c_dtype: Type[cutlass.Numeric],
+        self, ab_dtype: Type[cutlass.Numeric], c_dtype: Type[cutlass.Numeric]
     ) -> bool:
         """
         Check if the dtypes are valid
 
         :param ab_dtype: The data type of the A and B operands
         :type ab_dtype: Type[cutlass.Numeric]
-        :param acc_dtype: The data type of the accumulator
-        :type acc_dtype: Type[cutlass.Numeric]
         :param c_dtype: The data type of the output tensor
         :type c_dtype: Type[cutlass.Numeric]
 
         :return: True if the dtypes are valid, False otherwise
         :rtype: bool
         """
-        is_valid = True
-        if ab_dtype not in {
+        valid_ab_dtypes = {
             cutlass.Float16,
             cutlass.BFloat16,
             cutlass.TFloat32,
@@ -1355,21 +1285,36 @@ class DenseGemmKernel:
             cutlass.Int8,
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
-        }:
-            is_valid = False
-        if (
-            acc_dtype not in {cutlass.Float32, cutlass.Float16, cutlass.Int32}
-            or acc_dtype == cutlass.Float16
-            and ab_dtype
-            not in {cutlass.Float16, cutlass.Float8E4M3FN, cutlass.Float8E5M2}
-            or acc_dtype == cutlass.Int32
-            and ab_dtype not in {cutlass.Uint8, cutlass.Int8}
-        ):
-            is_valid = False
-        if (
-            acc_dtype == cutlass.Float32
-            and c_dtype
-            not in {
+        }
+        if ab_dtype not in valid_ab_dtypes:
+            return False
+
+        if self.acc_dtype not in {cutlass.Float32, cutlass.Float16, cutlass.Int32}:
+            return False
+
+        # Define compatibility mapping between accumulator type and AB type
+        acc_ab_compatibility = {
+            cutlass.Float32: {
+                cutlass.Float16,
+                cutlass.BFloat16,
+                cutlass.TFloat32,
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E5M2,
+            },  # Float32 accumulator supports floating point AB types only
+            cutlass.Float16: {
+                cutlass.Float16,
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E5M2,
+            },
+            cutlass.Int32: {cutlass.Uint8, cutlass.Int8},
+        }
+        # Check compatibility between accumulator type and AB type
+        if ab_dtype not in acc_ab_compatibility[self.acc_dtype]:
+            return False
+
+        # Define compatibility mapping between accumulator type and C type
+        acc_c_compatibility = {
+            cutlass.Float32: {
                 cutlass.Float32,
                 cutlass.Float16,
                 cutlass.BFloat16,
@@ -1378,42 +1323,28 @@ class DenseGemmKernel:
                 cutlass.Int32,
                 cutlass.Int8,
                 cutlass.Uint8,
-            }
-            or acc_dtype == cutlass.Float16
-            and c_dtype
-            not in {
+            },
+            cutlass.Float16: {
                 cutlass.BFloat16,
                 cutlass.Float16,
-            }
-            or acc_dtype == cutlass.Int32
-            and c_dtype
-            not in {
+            },
+            cutlass.Int32: {
                 cutlass.BFloat16,
                 cutlass.Float16,
                 cutlass.Float32,
                 cutlass.Int32,
                 cutlass.Int8,
                 cutlass.Uint8,
-            }
-        ):
-            is_valid = False
-        return is_valid
+            },
+        }
+        # Check compatibility between accumulator type and C type
+        if c_dtype not in acc_c_compatibility[self.acc_dtype]:
+            return False
 
-    @staticmethod
-    def is_valid_mma_tiler_and_cluster_shape(
-        use_2cta_instrs: bool,
-        mma_tiler_mn: Tuple[int, int],
-        cluster_shape_mn: Tuple[int, int],
-    ) -> bool:
-        """
-        Check if the mma tiler and cluster shape are valid
+        return True
 
-        :param use_2cta_instrs: Whether to use 2 CTA groups
-        :type use_2cta_instrs: bool
-        :param mma_tiler_mn: The (M, N) shape of the MMA instruction tiler
-        :type mma_tiler_mn: Tuple[int, int]
-        :param cluster_shape_mn: The (ClusterM, ClusterN) shape of the CTA cluster
-        :type cluster_shape_mn: Tuple[int, int]
+    def is_valid_mma_tiler_and_cluster_shape(self) -> bool:
+        """Check if the mma tiler and cluster shape are valid.
 
         :return: True if the mma tiler and cluster shape are valid, False otherwise
         :rtype: bool
@@ -1421,29 +1352,29 @@ class DenseGemmKernel:
         is_valid = True
         # Skip invalid mma tile shape
         if not (
-            (not use_2cta_instrs and mma_tiler_mn[0] in [64, 128])
-            or (use_2cta_instrs and mma_tiler_mn[0] in [128, 256])
+            (not self.use_2cta_instrs and self.mma_tiler_mn[0] in [64, 128])
+            or (self.use_2cta_instrs and self.mma_tiler_mn[0] in [128, 256])
         ):
             is_valid = False
-        if mma_tiler_mn[1] not in range(32, 257, 32):
+        if self.mma_tiler_mn[1] not in range(32, 257, 32):
             is_valid = False
         # Skip illegal cluster shape
-        if cluster_shape_mn[0] % (2 if use_2cta_instrs else 1) != 0:
+        if self.cluster_shape_mn[0] % (2 if self.use_2cta_instrs else 1) != 0:
             is_valid = False
         # Skip invalid cluster shape
         is_power_of_2 = lambda x: x > 0 and (x & (x - 1)) == 0
         if (
-            cluster_shape_mn[0] * cluster_shape_mn[1] > 16
-            or cluster_shape_mn[0] <= 0
-            or cluster_shape_mn[1] <= 0
-            or not is_power_of_2(cluster_shape_mn[0])
-            or not is_power_of_2(cluster_shape_mn[1])
+            self.cluster_shape_mn[0] * self.cluster_shape_mn[1] > 16
+            or self.cluster_shape_mn[0] <= 0
+            or self.cluster_shape_mn[1] <= 0
+            or not is_power_of_2(self.cluster_shape_mn[0])
+            or not is_power_of_2(self.cluster_shape_mn[1])
         ):
             is_valid = False
         return is_valid
 
-    @staticmethod
     def is_valid_tensor_alignment(
+        self,
         m: int,
         n: int,
         k: int,
@@ -1481,41 +1412,29 @@ class DenseGemmKernel:
         """
         is_valid = True
 
-        def check_contigous_16B_alignment(dtype, is_mode0_major, tensor_shape):
+        # TODO: move to utils
+        def check_contiguous_16B_alignment(dtype, is_mode0_major, tensor_shape):
             major_mode_idx = 0 if is_mode0_major else 1
             num_major_elements = tensor_shape[major_mode_idx]
             num_contiguous_elements = 16 * 8 // dtype.width
             return num_major_elements % num_contiguous_elements == 0
 
         if (
-            not check_contigous_16B_alignment(ab_dtype, a_major == "m", (m, k, l))
-            or not check_contigous_16B_alignment(ab_dtype, b_major == "n", (n, k, l))
-            or not check_contigous_16B_alignment(c_dtype, c_major == "m", (m, n, l))
+            not check_contiguous_16B_alignment(ab_dtype, a_major == "m", (m, k, l))
+            or not check_contiguous_16B_alignment(ab_dtype, b_major == "n", (n, k, l))
+            or not check_contiguous_16B_alignment(c_dtype, c_major == "m", (m, n, l))
         ):
             is_valid = False
         return is_valid
 
-    @staticmethod
-    def is_valid_epilog_store_option(
-        use_2cta_instrs: bool,
-        use_tma_store: bool,
-        m: int,
-        n: int,
-        mma_tiler_mn: Tuple[int, int],
-    ) -> bool:
+    def is_valid_epilog_store_option(self, m: int, n: int) -> bool:
         """
         Check if the epilogue store option is valid
 
-        :param use_2cta_instrs: Whether to use 2 CTA groups
-        :type use_2cta_instrs: bool
-        :param use_tma_store: Whether to use TMA store
-        :type use_tma_store: bool
         :param m: The number of rows in the A tensor
         :type m: int
         :param n: The number of columns in the B tensor
         :type n: int
-        :param mma_tiler_mn: The (M, N) shape of the MMA instruction tiler
-        :type mma_tiler_mn: Tuple[int, int]
 
         :return: True if the epilogue store option is valid, False otherwise
         :rtype: bool
@@ -1524,89 +1443,106 @@ class DenseGemmKernel:
         is_valid = True
         # None TMA store version does not have predication, can not support OOB tiles
         cta_tile_shape_mn = (
-            mma_tiler_mn[0] // (2 if use_2cta_instrs else 1),
-            mma_tiler_mn[1],
+            self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1),
+            self.mma_tiler_mn[1],
         )
-        if not use_tma_store:
+        if not self.use_tma_store:
             if not (m % cta_tile_shape_mn[0] == 0 and n % cta_tile_shape_mn[1] == 0):
                 is_valid = False
         return is_valid
 
-    @staticmethod
-    def can_implement(
-        ab_dtype: Type[cutlass.Numeric],
-        acc_dtype: Type[cutlass.Numeric],
-        c_dtype: Type[cutlass.Numeric],
-        use_2cta_instrs: bool,
-        mma_tiler_mn: Tuple[int, int],
-        cluster_shape_mn: Tuple[int, int],
-        use_tma_store: bool,
-        m: int,
-        n: int,
-        k: int,
-        l: int,
-        a_major: str,
-        b_major: str,
-        c_major: str,
-    ) -> bool:
-        """
-        Check if the gemm can be implemented
+    def can_implement(self, a: cute.Tensor, b: cute.Tensor, c: cute.Tensor) -> bool:
+        """Check if the given tensors can be implemented by this kernel.
 
-        :param ab_dtype: The data type of the A and B operands
-        :type ab_dtype: Type[cutlass.Numeric]
-        :param acc_dtype: The data type of the accumulator
-        :type acc_dtype: Type[cutlass.Numeric]
-        :param c_dtype: The data type of the output tensor
-        :type c_dtype: Type[cutlass.Numeric]
-        :param use_2cta_instrs: Whether to use 2 CTA groups
-        :type use_2cta_instrs: bool
-        :param mma_tiler_mn: The (M, N) shape of the MMA instruction tiler
-        :type mma_tiler_mn: Tuple[int, int]
-        :param cluster_shape_mn: The (ClusterM, ClusterN) shape of the CTA cluster
-        :type cluster_shape_mn: Tuple[int, int]
-        :param use_tma_store: Whether to use TMA store
-        :type use_tma_store: bool
-        :param m: The number of rows in the A tensor
-        :type m: int
-        :param n: The number of columns in the B tensor
-        :type n: int
-        :param k: The number of columns in the A tensor
-        :type k: int
-        :param l: The number of columns in the C tensor
-        :type l: int
-        :param a_major: The major axis of the A tensor
-        :type a_major: str
-        :param b_major: The major axis of the B tensor
-        :type b_major: str
-        :param c_major: The major axis of the C tensor
-        :type c_major: str
+        :param a: Input tensor A
+        :type a: cute.Tensor
+        :param b: Input tensor B
+        :type b: cute.Tensor
+        :param c: Output tensor C
+        :type c: cute.Tensor
 
-        :return: True if the gemm can be implemented, False otherwise
+        :return: True if the gemm supports the given config, False otherwise
         :rtype: bool
         """
+        m, n, k, l = a.shape[0], b.shape[0], a.shape[1], a.shape[2]
+
+        # infer a_major, b_major, c_major
+        is_m_major_a = utils.LayoutEnum.from_tensor(a).is_m_major_a()
+        is_n_major_b = utils.LayoutEnum.from_tensor(b).is_n_major_b()
+        is_m_major_c = utils.LayoutEnum.from_tensor(c).is_m_major_c()
+        a_major = "m" if is_m_major_a else "k"
+        b_major = "n" if is_n_major_b else "k"
+        c_major = "m" if is_m_major_c else "n"
+
         can_implement = True
         # Skip unsupported types
-        if not DenseGemmKernel.is_valid_dtypes(ab_dtype, acc_dtype, c_dtype):
+        if not self.is_valid_dtypes(a.element_type, c.element_type):
             can_implement = False
         # Skip invalid mma tile shape and cluster shape
-        if not DenseGemmKernel.is_valid_mma_tiler_and_cluster_shape(
-            use_2cta_instrs, mma_tiler_mn, cluster_shape_mn
-        ):
+        if not self.is_valid_mma_tiler_and_cluster_shape():
             can_implement = False
         # Skip illegal problem shape for load/store alignment
-        if not DenseGemmKernel.is_valid_tensor_alignment(
-            m, n, k, l, ab_dtype, c_dtype, a_major, b_major, c_major
+        if not self.is_valid_tensor_alignment(
+            m, n, k, l, a.element_type, c.element_type, a_major, b_major, c_major
         ):
             can_implement = False
         # Skip invalid epilogue store option
-        if not DenseGemmKernel.is_valid_epilog_store_option(
-            use_2cta_instrs, use_tma_store, m, n, mma_tiler_mn
-        ):
+        if not self.is_valid_epilog_store_option(m, n):
             can_implement = False
+
         return can_implement
 
 
-def run_dense_gemm(
+def create_tensors(l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype):
+    torch.manual_seed(1111)
+
+    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
+    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype)
+    c_torch_cpu = cutlass_torch.matrix(l, m, n, c_major == "m", c_dtype)
+
+    a_tensor, _ = cutlass_torch.cute_tensor_like(
+        a_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+    )
+    b_tensor, _ = cutlass_torch.cute_tensor_like(
+        b_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+    )
+    c_tensor, c_torch_gpu = cutlass_torch.cute_tensor_like(
+        c_torch_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
+    )
+
+    return (
+        a_tensor,
+        b_tensor,
+        c_tensor,
+        a_torch_cpu,
+        b_torch_cpu,
+        c_torch_cpu,
+        c_torch_gpu,
+    )
+
+
+def compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance):
+    # Copy gpu result back
+    kernel_result = c_torch_gpu.cpu()
+
+    # Compute reference result
+    ref = torch.einsum(
+        "mkl,nkl->mnl",
+        a_torch_cpu.to(dtype=torch.float32),
+        b_torch_cpu.to(dtype=torch.float32),
+    )
+
+    # Convert ref to c_dtype
+    _, ref_torch_gpu = cutlass_torch.cute_tensor_like(
+        ref, c_dtype, is_dynamic_layout=True, assumed_align=16
+    )
+    ref_result = ref_torch_gpu.cpu()
+
+    # Assert close results
+    torch.testing.assert_close(kernel_result, ref_result, atol=tolerance, rtol=1e-05)
+
+
+def run(
     mnkl: Tuple[int, int, int, int],
     ab_dtype: Type[cutlass.Numeric],
     c_dtype: Type[cutlass.Numeric],
@@ -1614,20 +1550,60 @@ def run_dense_gemm(
     a_major: str,
     b_major: str,
     c_major: str,
-    mma_tiler_mn: Tuple[int, int],
-    cluster_shape_mn: Tuple[int, int],
-    use_2cta_instrs: bool,
-    use_tma_store: bool,
-    tolerance: float,
+    mma_tiler_mn: Tuple[int, int] = (256, 256),
+    cluster_shape_mn: Tuple[int, int] = (2, 1),
+    use_2cta_instrs: bool = True,
+    use_tma_store: bool = True,
+    tolerance: float = 1e-01,
     warmup_iterations: int = 0,
     iterations: int = 1,
     skip_ref_check: bool = False,
-    measure_launch_overhead=False,
+    use_cold_l2: bool = False,
+    **kwargs,
 ):
+    """Execute a batched dense GEMM operation on Blackwell architecture with performance benchmarking.
+
+    This function prepares input tensors, configures and launches the GEMM kernel,
+    optionally performs reference validation, and benchmarks the execution performance.
+
+    :param mnkl: Problem size (M, N, K, L)
+    :type mnkl: Tuple[int, int, int, int]
+    :param ab_dtype: Data type for input tensors A and B
+    :type ab_dtype: Type[cutlass.Numeric]
+    :param c_dtype: Data type for output tensor C
+    :type c_dtype: Type[cutlass.Numeric]
+    :param acc_dtype: Data type for accumulation during matrix multiplication
+    :type acc_dtype: Type[cutlass.Numeric]
+    :param a_major/b_major/c_major: Memory layout of tensor A/B/C
+    :type a_major/b_major/c_major: str
+    :param mma_tiler_mn: MMA tiling size. If not specified in the decorator parameters, the autotuner will use the
+        default value of (256, 256). Otherwise, the autotuner will use the value specified in the decorator parameters.
+    :type mma_tiler_mn: Tuple[int, int], optional
+    :param cluster_shape_mn: Cluster shape. If not specified in the decorator parameters, the autotuner will use the
+        default value of (2, 1). Otherwise, the autotuner will use the value specified in the decorator parameters.
+    :type cluster_shape_mn: Tuple[int, int], optional
+    :param use_2cta_instrs: Whether to use 2CTA instructions. If not specified in the decorator parameters, the autotuner
+        will use the default value of True. Otherwise, the autotuner will use the value specified in the decorator parameters.
+    :type use_2cta_instrs: bool, optional
+    :param use_tma_store: Whether to use TMA store. If not specified in the decorator parameters, the autotuner will use
+        the default value of True. Otherwise, the autotuner will use the value specified in the decorator parameters.
+    :type use_tma_store: bool, optional
+    :param tolerance: Tolerance value for reference validation comparison, defaults to 1e-01
+    :type tolerance: float, optional
+    :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 0
+    :type warmup_iterations: int, optional
+    :param iterations: Number of benchmark iterations to run, defaults to 1
+    :type iterations: int, optional
+    :param skip_ref_check: Whether to skip reference result validation, defaults to False
+    :type skip_ref_check: bool, optional
+    :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
+    :type use_cold_l2: bool, optional
+    :raises RuntimeError: If CUDA GPU is not available
+    :raises ValueError: If the configuration is invalid or unsupported by the kernel
+    :return: Execution time of the GEMM kernel
+    :rtype: float
     """
-    Prepare A/B/C tensors, launch GPU kernel, and reference checking.
-    """
-    print(f"Running B100 Dense GEMM test with:")
+    print("Running Blackwell Dense GEMM test with:")
     print(f"mnkl: {mnkl}")
     print(f"AB dtype: {ab_dtype}, C dtype: {c_dtype}, Acc dtype: {acc_dtype}")
     print(f"Matrix majors - A: {a_major}, B: {b_major}, C: {c_major}")
@@ -1638,168 +1614,78 @@ def run_dense_gemm(
     print(f"Warmup iterations: {warmup_iterations}")
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
 
     # Unpack parameters
     m, n, k, l = mnkl
 
-    # Skip unsupported testcase
-    if not DenseGemmKernel.can_implement(
-        ab_dtype,
-        acc_dtype,
-        c_dtype,
-        use_2cta_instrs,
-        mma_tiler_mn,
-        cluster_shape_mn,
-        use_tma_store,
-        m,
-        n,
-        k,
-        l,
-        a_major,
-        b_major,
-        c_major,
-    ):
-        raise TypeError(
-            f"Unsupported testcase {ab_dtype}, {acc_dtype}, {c_dtype}, {use_2cta_instrs}, {mma_tiler_mn}, {cluster_shape_mn}, {use_tma_store}, {m}, {n}, {k}, {l}, {a_major}, {b_major}, {c_major}"
-        )
-
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
 
-    torch.manual_seed(1111)
+    # Get current CUDA stream from PyTorch
+    torch_stream = torch.cuda.current_stream()
+    # Get the raw stream pointer as a CUstream
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    # Create and permute tensor A/B/C
-    def create_and_permute_tensor(
-        l, mode0, mode1, is_mode0_major, dtype, is_dynamic_layout=True
-    ):
-        # is_mode0_major: (l, mode1, mode0) -> (mode0, mode1, l)
-        # else: (l, mode0, mode1) -> (mode0, mode1, l)
-        shape = (l, mode1, mode0) if is_mode0_major else (l, mode0, mode1)
-        permute_order = (2, 1, 0) if is_mode0_major else (1, 2, 0)
-        is_unsigned = dtype in {cutlass.Uint8}
-        # Temporarily use uint8 as torch does not support fp8 type
-        torch_dtype = (
-            cutlass_torch.dtype(dtype)
-            if dtype not in {cutlass.Float8E5M2, cutlass.Float8E4M3FN}
-            else torch.uint8
-        )
-
-        # Create dtype torch tensor (cpu)
-        torch_tensor_cpu = cutlass_torch.create_and_permute_torch_tensor(
-            shape,
-            torch_dtype,
-            permute_order=permute_order,
-            init_type=cutlass_torch.TensorInitType.RANDOM,
-            init_config=cutlass_torch.RandomInitConfig(
-                min_val=0 if is_unsigned else -2, max_val=4 if is_unsigned else 2
-            ),
-        )
-        # Create dtype torch tensor (gpu)
-        torch_tensor = torch_tensor_cpu.cuda()
-
-        # Create f32 torch tensor (cpu)
-        f32_torch_tensor = torch_tensor_cpu.to(dtype=torch.float32)
-
-        # Create dtype cute tensor (gpu)
-        cute_tensor = from_dlpack(torch_tensor, assumed_align=16)
-        cute_tensor.element_type = dtype
-        if is_dynamic_layout:
-            cute_tensor = cute_tensor.mark_layout_dynamic(
-                leading_dim=(0 if is_mode0_major else 1)
-            )
-        cute_tensor = cutlass_torch.convert_cute_tensor(
-            f32_torch_tensor,
-            cute_tensor,
-            dtype,
-            is_dynamic_layout=is_dynamic_layout,
-        )
-
-        return f32_torch_tensor, cute_tensor, torch_tensor
-
-    a_ref, a_tensor, a_torch = create_and_permute_tensor(
-        l, m, k, a_major == "m", ab_dtype, is_dynamic_layout=True
-    )
-    b_ref, b_tensor, b_torch = create_and_permute_tensor(
-        l, n, k, b_major == "n", ab_dtype, is_dynamic_layout=True
-    )
-    c_ref, c_tensor, c_torch = create_and_permute_tensor(
-        l, m, n, c_major == "m", c_dtype, is_dynamic_layout=True
+    a_tensor, b_tensor, c_tensor, a_torch_cpu, b_torch_cpu, c_torch_cpu, c_torch_gpu = (
+        create_tensors(l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype)
     )
 
-    # Configure gemm kernel
+    # Build GEMM object
     gemm = DenseGemmKernel(
-        acc_dtype,
-        use_2cta_instrs,
-        mma_tiler_mn,
-        cluster_shape_mn,
-        use_tma_store,
+        acc_dtype, use_2cta_instrs, mma_tiler_mn, cluster_shape_mn, use_tma_store
     )
 
-    torch_stream = torch.cuda.Stream()
-    stream = cuda.CUstream(torch_stream.cuda_stream)
-    # Compile gemm kernel
-    compiled_gemm = cute.compile(gemm, a_tensor, b_tensor, c_tensor, stream)
-
-    # Launch GPU kernel
-    # Warm up
-    for i in range(warmup_iterations):
-        compiled_gemm(a_tensor, b_tensor, c_tensor, stream)
-    # Execution
-    for i in range(iterations):
-        compiled_gemm(a_tensor, b_tensor, c_tensor, stream)
-
-    # Compute reference result
-    if not skip_ref_check:
-        if ab_dtype in {
-            cutlass.Int8,
-            cutlass.Uint8,
-            cutlass.Float8E4M3FN,
-            cutlass.Float8E5M2,
-        }:
-            ref = torch.einsum("mkl,nkl->mnl", a_ref.cpu(), b_ref.cpu())
-        else:
-            ref = (torch.einsum("mkl,nkl->mnl", a_ref, b_ref)).cpu()
-
-        # Copy gpu result back
-        gpu_c = c_torch.cpu()
-
-        # Convert ref to c_type
-        if c_dtype == cutlass.Float32:
-            ref_c = ref
-        elif c_dtype in {cutlass.Float8E5M2, cutlass.Float8E4M3FN}:
-            # m major: (l, n, m) -> (m, n, l)
-            # n major: (l, m, n) -> (m, n, l)
-            permute_order = (1, 2, 0) if c_major == "n" else (2, 1, 0)
-            shape = (l, m, n) if c_major == "n" else (l, n, m)
-            f8_torch_tensor = cutlass_torch.create_and_permute_torch_tensor(
-                shape,
-                torch.uint8,
-                permute_order=permute_order,
-                init_type=cutlass_torch.TensorInitType.SKIP,
-            ).cuda()
-            # Create dtype cute tensor (gpu)
-            ref_c_tensor = from_dlpack(
-                f8_torch_tensor, assumed_align=16
-            ).mark_layout_dynamic(leading_dim=(1 if c_major == "n" else 0))
-            ref_c_tensor.element_type = c_dtype
-            ref_c_tensor = cutlass_torch.convert_cute_tensor(
-                ref,
-                ref_c_tensor,
-                c_dtype,
-                is_dynamic_layout=True,
-            )
-
-            ref_c = f8_torch_tensor.cpu()
-        else:
-            ref_c = ref.to(cutlass_torch.dtype(c_dtype))
-
-        # Reference checking ref_c and gpu_c
-        torch.testing.assert_close(
-            gpu_c,
-            ref_c,
-            atol=tolerance,
-            rtol=1e-05,
+    # Check if configuration can be implemented
+    can_implement = gemm.can_implement(a_tensor, b_tensor, c_tensor)
+    if not can_implement:
+        raise ValueError(
+            f"The current config which is invalid/unsupported: use_2cta_instrs = {use_2cta_instrs}, "
+            f"mma_tiler_mn = {mma_tiler_mn}, cluster_shape_mn = {cluster_shape_mn}, "
+            f"use_tma_store = {use_tma_store}"
         )
+    max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
+        cluster_shape_mn[0] * cluster_shape_mn[1]
+    )
+    compiled_gemm = cute.compile(gemm, a_tensor, b_tensor, c_tensor, current_stream)
+
+    if not skip_ref_check:
+        compiled_gemm(a_tensor, b_tensor, c_tensor, current_stream)
+        compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance)
+
+    def generate_tensors():
+        a_tensor, _ = cutlass_torch.cute_tensor_like(
+            a_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+        )
+        b_tensor, _ = cutlass_torch.cute_tensor_like(
+            b_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+        )
+        c_tensor, _ = cutlass_torch.cute_tensor_like(
+            c_torch_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
+        )
+        return testing.JitArguments(a_tensor, b_tensor, c_tensor, current_stream)
+
+    workspace_count = 1
+    if use_cold_l2:
+        one_workspace_bytes = (
+            a_torch_cpu.numel() * a_torch_cpu.element_size()
+            + b_torch_cpu.numel() * b_torch_cpu.element_size()
+            + c_torch_cpu.numel() * c_torch_cpu.element_size()
+        )
+        workspace_count = testing.get_workspace_count(
+            one_workspace_bytes, warmup_iterations, iterations
+        )
+
+    exec_time = testing.benchmark(
+        compiled_gemm,
+        workspace_generator=generate_tensors,
+        workspace_count=workspace_count,
+        stream=current_stream,
+        warmup_iterations=warmup_iterations,
+        iterations=iterations,
+    )
+
+    return exec_time  # Return execution time in microseconds
 
 
 if __name__ == "__main__":
@@ -1807,15 +1693,12 @@ if __name__ == "__main__":
     def parse_comma_separated_ints(s: str) -> Tuple[int, ...]:
         try:
             return tuple(int(x.strip()) for x in s.split(","))
-            # or: return tuple([int(x.strip()) for x in s.split(",")])
         except ValueError:
             raise argparse.ArgumentTypeError(
                 "Invalid format. Expected comma-separated integers."
             )
 
-    parser = argparse.ArgumentParser(
-        description="Example of MxNxKxL GEMM on Blackwell."
-    )
+    parser = argparse.ArgumentParser(description="Example of Dense GEMM on Blackwell.")
 
     parser.add_argument(
         "--mnkl",
@@ -1827,7 +1710,7 @@ if __name__ == "__main__":
         "--mma_tiler_mn",
         type=parse_comma_separated_ints,
         default=(128, 128),
-        help="Mma tiler (comma-separated)",
+        help="Mma tile shape (comma-separated)",
     )
     parser.add_argument(
         "--cluster_shape_mn",
@@ -1855,9 +1738,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_iterations", type=int, default=0, help="Warmup iterations"
     )
-    parser.add_argument("--iterations", type=int, default=1, help="Iterations")
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=1,
+        help="Number of iterations to run the kernel",
+    )
     parser.add_argument(
         "--skip_ref_check", action="store_true", help="Skip reference checking"
+    )
+    parser.add_argument(
+        "--use_cold_l2",
+        action="store_true",
+        default=False,
+        help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
 
     args = parser.parse_args()
@@ -1871,7 +1765,7 @@ if __name__ == "__main__":
     if len(args.cluster_shape_mn) != 2:
         parser.error("--cluster_shape_mn must contain exactly 2 values")
 
-    run_dense_gemm(
+    run(
         args.mnkl,
         args.ab_dtype,
         args.c_dtype,
@@ -1887,5 +1781,6 @@ if __name__ == "__main__":
         args.warmup_iterations,
         args.iterations,
         args.skip_ref_check,
+        args.use_cold_l2,
     )
     print("PASS")

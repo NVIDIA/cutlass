@@ -362,7 +362,7 @@ struct numeric_limits<cutlass::bfloat16_t> {
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
-  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x1000); }
+  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x3c00); }
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
@@ -431,7 +431,7 @@ struct numeric_limits<cutlass::bfloat16_t> {
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
-  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x1000); }
+  static cutlass::bfloat16_t epsilon() { return cutlass::bfloat16_t::bitcast(0x3c00); }
 
   /// Returns smallest finite value
   CUTLASS_HOST_DEVICE
@@ -667,12 +667,12 @@ bfloat16_t operator--(bfloat16_t & lhs, int) {
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::bfloat16_t operator "" _bf16(long double x) {
+cutlass::bfloat16_t operator""_bf16(long double x) {
   return cutlass::bfloat16_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::bfloat16_t operator "" _bf16(unsigned long long int x) {
+cutlass::bfloat16_t operator""_bf16(unsigned long long int x) {
   return cutlass::bfloat16_t(int(x));
 }
 

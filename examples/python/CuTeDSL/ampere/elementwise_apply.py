@@ -30,16 +30,17 @@
 import argparse
 import operator
 import time
-from typing import Type, List
+from functools import partial
+from typing import List, Type
 
 import cuda.bindings.driver as cuda
-import torch
-
-import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.torch as cutlass_torch
+import torch
 from cutlass.cute.runtime import from_dlpack
+
+import cutlass
 
 """
 An Elementwise Apply Example using CuTe DSL.
@@ -78,103 +79,83 @@ while maintaining high performance through efficient memory access patterns.
 @cute.kernel
 def elementwise_apply_kernel(
     op: cutlass.Constexpr,
-    inputs: List[cute.Tensor],
-    gC: cute.Tensor,
+    mInputs: List[cute.Tensor],
+    mC: cute.Tensor,
     cC: cute.Tensor,  # coordinate tensor
     shape: cute.Shape,
     tv_layout: cute.Layout,  # (tid, vid) -> logic coord
 ):
     tidx, _, _ = cute.arch.thread_idx()
-    bidx, _, _ = cute.arch.block_idx()
+    bidx, bidy, _ = cute.arch.block_idx()
 
-    # slice for CTAs
-    cta_coord = ((None, None), bidx)
-    # logical coord -> address
+    ###############################################################################
+    # Slice to local tile of thread block
+    ###############################################################################
+    blk_crd = ((None, None), (bidx, bidy))
+
     # Leverage the meta-programming capability of the DSL to slice the tensors for each input
     # All for loops below on input tensors would be fully unrolled automatically at compile time
-    ctaInputs = [t[cta_coord] for t in inputs]  # (TileM, TileN)
-    ctaC = gC[cta_coord]  # (TileM, TileN)
-    ctaCrd = cC[cta_coord]  # (TileM, TileN)
+    # logical coord -> memory address
+    gInputs = [t[blk_crd] for t in mInputs]  # (TileM, TileN)
+    gC = mC[blk_crd]  # (TileM, TileN)
+    gCrd = cC[blk_crd]  # (TileM, TileN)
 
-    print(f"[DSL INFO] Sliced Tensors per thread block:")
-    for i in cutlass.range_constexpr(len(ctaInputs)):
-        print(f"[DSL INFO]   ctaInputs{i} = {ctaInputs[i].type}")
-    print(f"[DSL INFO]   ctaC = {ctaC.type}")
-    print(f"[DSL INFO]   ctaCrd = {ctaCrd.type}")
+    print("[DSL INFO] Sliced Tensors per thread block:")
+    for i in cutlass.range_constexpr(len(gInputs)):
+        print(f"[DSL INFO]   ctaInputs{i} = {gInputs[i].type}")
+    print(f"[DSL INFO]   gC = {gC.type}")
+    print(f"[DSL INFO]   gCrd = {gCrd.type}")
 
-    # compose with CTA TV layout
-    # (tid, vid) -> address
-    tidfrgInputs = [cute.composition(t, tv_layout) for t in ctaInputs]
-    tidfrgC = cute.composition(ctaC, tv_layout)
-    tidfrgCrd = cute.composition(ctaCrd, tv_layout)
-    # print(f"{tv_layout = }")
-    # print(f"{tidfrgAB[0] = }")
+    ###############################################################################
+    # Compose with thread block TV layout to map thread & value indices to memory address
+    ###############################################################################
+    # (tid, vid) -> memory address
+    tidfrgInputs = [cute.composition(t, tv_layout) for t in gInputs]
+    tidfrgC = cute.composition(gC, tv_layout)
+    tidfrgCrd = cute.composition(gCrd, tv_layout)
 
-    thr_coord = (tidx, (None, None))
+    # repeat None like vid to remove hierarchy of layout
+    thr_crd = (tidx, cute.repeat_like(None, tidfrgInputs[0][1]))
 
-    # slice for threads
+    ###############################################################################
+    # Slice to local tile of thread
+    ###############################################################################
     # vid -> address
-    thrInputs = [t[thr_coord] for t in tidfrgInputs]  # (V)
-    thrC = tidfrgC[thr_coord]  # (V)
-    thrCrd = tidfrgCrd[thr_coord]
+    thrInputs = [t[thr_crd] for t in tidfrgInputs]  # (V)
+    thrC = tidfrgC[thr_crd]  # (V)
+    thrCrd = tidfrgCrd[thr_crd]
 
-    print(f"[DSL INFO] Sliced Tensors per thread:")
+    print("[DSL INFO] Sliced Tensors per thread:")
     for i in cutlass.range_constexpr(len(thrInputs)):
         print(f"[DSL INFO]   thrInputs{i} = {thrInputs[i].type}")
     print(f"[DSL INFO]   thrC = {thrC.type}")
     print(f"[DSL INFO]   thrCrd = {thrCrd.type}")
 
-    # allocate fragments for gmem->rmem
-    frgInputs = [cute.make_fragment_like(t, t.element_type) for t in thrInputs]
-    frgC = cute.make_fragment_like(thrC, gC.element_type)
-    frgPred = cute.make_fragment(thrCrd.shape, cutlass.Boolean)
+    ###############################################################################
+    # Compute predicate for out of boundary checks
+    ###############################################################################
+    frgPred = cute.make_rmem_tensor(thrCrd.shape, cutlass.Boolean)
+    print(f"[DSL INFO]   frgPred = {frgPred.type}")
 
-    for i in cutlass.range(cute.size(frgPred), unroll=1):
+    for i in cutlass.range_constexpr(cute.size(frgPred)):
         frgPred[i] = cute.elem_less(thrCrd[i], shape)
 
     # if tidx == 0 and bidx == 0:
     #     cute.print_tensor(frgPred)
 
     ##########################################################
-    # Move data to reg address space
+    # Load data and compute result
     ##########################################################
-
-    # declare the atoms which will be used later for memory copy
-    # Compile time validation: expect same element type for all input tensors so as to reuse the copy atom for load
-    assert all(t.element_type == inputs[0].element_type for t in inputs)
-
-    copy_atom_load = cute.make_copy_atom(
-        cute.nvgpu.CopyUniversalOp(),
-        inputs[0].element_type,
-        num_bits_per_copy=inputs[0].element_type.width,
-    )
-    copy_atom_store = cute.make_copy_atom(
-        cute.nvgpu.CopyUniversalOp(),
-        gC.element_type,
-        num_bits_per_copy=gC.element_type.width,
-    )
-
-    for thrInput, frgInput in zip(thrInputs, frgInputs):
-        cute.copy(copy_atom_load, thrInput, frgInput, pred=frgPred)
 
     # Load data before use. The compiler will optimize the copy and load
     # operations to convert some memory ld/st into register uses.
-    result = op(*[frgInput.load() for frgInput in frgInputs])
-
-    # Save the results back to registers. Here we reuse b's registers.
-    frgC.store(result)
-
-    # Copy the results back to c
-    cute.copy(copy_atom_store, frgC, thrC, pred=frgPred)
+    result = op(*[thrInput.load() for thrInput in thrInputs])
+    thrC.store(result)
 
 
 @cute.jit
 def elementwise_apply(
-    op: cutlass.Constexpr,
-    a: cute.Tensor,
-    b: cute.Tensor,
-    result: cute.Tensor,
-    stream: cuda.CUstream,
+    op: cutlass.Constexpr, inputs, result: cute.Tensor, stream: cuda.CUstream
 ):
     """CUDA kernel applying binary operator on each element of two n-D input tensors in
     CuTe Python and store to result tensor.
@@ -232,51 +213,71 @@ def elementwise_apply(
 
     # Opt-3: SOL with 2D thread tile
     #   * mA layout: (4096, 4096):(4096, 1)
-    #   * TV layout map to (16, 128) logical tile
+    #   * TV layout map to (64, 256) logical tile
     #   * tidx maps to mode-1 and input layout is contiguous on mode-1 for coalesced load-store
-    thr_layout = cute.make_layout((4, 32), stride=(32, 1))
-    val_layout = cute.make_layout((4, 4), stride=(4, 1))
+
+    # Use 128bit(16B) load as canonicalized form of val_layout then recast to target element-type
+    coalesced_ldst_bytes = 16
+
+    # Compile time validation: expect same element type for all input tensors
+    assert all(t.element_type == inputs[0].element_type for t in inputs)
+    dtype = inputs[0].element_type
+
+    thr_layout = cute.make_ordered_layout((4, 64), order=(1, 0))
+    val_layout = cute.make_ordered_layout((16, coalesced_ldst_bytes), order=(1, 0))
+    val_layout = cute.recast_layout(dtype.width, 8, val_layout)
     tiler_mn, tv_layout = cute.make_layout_tv(thr_layout, val_layout)
 
-    print(f"[DSL INFO] Input Tensors:")
-    print(f"[DSL INFO]   a = {a.type}")
-    print(f"[DSL INFO]   b = {b.type}")
-    print(f"[DSL INFO]   result = {result.type}")
+    print("[DSL INFO] Input Tensors:")
+    for i, t in enumerate(inputs):
+        print(f"[DSL INFO]   inputs{i} = {t}")
+    print(f"[DSL INFO]   result = {result}")
 
-    print(f"[DSL INFO] Tiling Parameters:")
+    print("[DSL INFO] Tiling Parameters:")
     print(f"[DSL INFO]   tiler_mn = {tiler_mn} per thread block")
     print(f"[DSL INFO]   tv_layout = {tv_layout}")
 
-    gA = cute.zipped_divide(a, tiler_mn)  # ((TileM, TileN), (RestM, RestN))
-    gB = cute.zipped_divide(b, tiler_mn)  # ((TileM, TileN), (RestM, RestN))
-    gC = cute.zipped_divide(result, tiler_mn)  # ((TileM, TileN), (RestM, RestN))
+    print("[DSL INFO] Tiled Tensors:")
+    mInputs = [cute.zipped_divide(input, tiler_mn) for input in inputs]
+    # ((TileM, TileN), (RestM, RestN))
+    mC = cute.zipped_divide(result, tiler_mn)
 
-    print(f"[DSL INFO] Tiled Tensors:")
-    print(f"[DSL INFO]   gA = {gA.type}")
-    print(f"[DSL INFO]   gB = {gB.type}")
-    print(f"[DSL INFO]   gC = {gC.type}")
+    # (RestM, RestN) -> (RestN, RestM)
+    remap_block = cute.make_ordered_layout(
+        cute.select(mInputs[0].shape[1], mode=[1, 0]), order=(1, 0)
+    )
+    for i, t in enumerate(mInputs):
+        print(f"[DSL INFO]   gInputs{i}            = {mInputs[i]}")
+        mInputs[i] = cute.composition(t, (None, remap_block))
+        print(f"[DSL INFO]   gInputs{i} (remapped) = {mInputs[i]}")
+
+    mC = cute.composition(mC, (None, remap_block))
+    print(f"[DSL INFO]   gC = {mC}")
 
     idC = cute.make_identity_tensor(result.shape)
     cC = cute.zipped_divide(idC, tiler=tiler_mn)
-    print(f"[DSL INFO]   coord tensor = {cC.type}")
+    print(f"[DSL INFO]   coord tensor = {cC}")
 
     # Launch the kernel asynchronously
-    # Async token(s) can also be specified as dependencies
-    elementwise_apply_kernel(
-        op,
-        [gA, gB],  # Group input tensors into a list as a single argument
-        gC,
-        cC,
-        result.shape,
-        tv_layout,
-    ).launch(
-        grid=[cute.size(gC, mode=[1]), 1, 1],
+    # Group input tensors into a list as a single argument
+    elementwise_apply_kernel(op, mInputs, mC, cC, result.shape, tv_layout).launch(
+        # Compute production at each mode of mC.shape[1] to get multi-dimensional grid size
+        grid=cute.product_each(mC.shape[1]),
         block=[cute.size(tv_layout, mode=[0]), 1, 1],
         stream=stream,
     )
 
 
-def run_elementwise_apply_and_verify(
+@cutlass.dsl_user_op
+def leaky_relu(x, alpha, *, loc=None, ip=None):
+    return cute.where(x > 0, x, alpha * x, loc=loc, ip=ip)
+
+
+def leaky_relu_ref(x, alpha):
+    return torch.where(x > 0, x, alpha * x)
+
+
+def run_and_verify(
     op,
     M,
     N,
@@ -287,14 +288,23 @@ def run_elementwise_apply_and_verify(
     iterations=100,
 ):
     if not torch.cuda.is_available():
-        raise RuntimeError(f"Ampere GPU is required to run this example!")
+        raise RuntimeError("NVIDIA GPU is required to run this example!")
+
+    if op == "leaky_relu":
+        op = partial(leaky_relu, alpha=0.01)
+        ref_op = partial(leaky_relu_ref, alpha=0.01)
+        num_inputs = 1
+    else:
+        op = getattr(operator, op)
+        ref_op = op
+        num_inputs = 2
 
     # Create non default CUDA stream from PyTorch
     torch_stream = torch.cuda.Stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    print(f"\nRunning Elementwise Apply test with:")
+    print("\nRunning Elementwise Apply test with:")
     print(f"Tensor dimensions: [{M}, {N}]")
     print(f"Input and Output Data type: {dtype}")
     print(f"Warmup iterations: {warmup_iterations}")
@@ -303,85 +313,78 @@ def run_elementwise_apply_and_verify(
     torch_dtype = cutlass_torch.dtype(dtype)
 
     # Allocate tensors with random values.
-    a = torch.randn(M, N, device=torch.device("cuda"), dtype=torch_dtype)
-    b = torch.randn(M, N, device=torch.device("cuda"), dtype=torch_dtype)
-    c = torch.zeros_like(a)
+    inputs = [
+        torch.randn(M, N, device=torch.device("cuda"), dtype=torch_dtype)
+        for _ in range(num_inputs)
+    ]
+    c = torch.zeros_like(inputs[0])
 
-    print(f"Input tensor shapes:")
-    print(f"a: {a.shape}, dtype: {a.dtype}")
-    print(f"b: {b.shape}, dtype: {b.dtype}")
+    print("Input tensor shapes:")
+    for i in range(num_inputs):
+        print(f"inputs[{i}]: {inputs[i].shape}, dtype: {inputs[i].dtype}")
     print(f"c: {c.shape}, dtype: {c.dtype}\n")
 
     epsilon = 1.2
     if op in (operator.truediv, operator.floordiv):
-        b = torch.where(b == 0, torch.tensor(epsilon), b)
+        inputs[1] = torch.where(inputs[1] == 0, torch.tensor(epsilon), inputs[1])
 
-    print("Executing elementwise apply kernel...")
+    inputs_ = [from_dlpack(t, assumed_align=16) for t in inputs]
+    c_ = from_dlpack(c, assumed_align=16).mark_layout_dynamic()
+
+    print("Compiling kernel with cute.compile ...")
+    start_time = time.time()
+    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+        elementwise_apply, op, inputs_, c_, current_stream
+    )
+    compilation_time = time.time() - start_time
+    print(f"Compilation time: {compilation_time:.4f} seconds")
 
     if not skip_ref_check:
-        elementwise_apply(
-            op,
-            from_dlpack(a),
-            from_dlpack(b),
-            from_dlpack(c).mark_layout_dynamic(),
-            current_stream,
-        )
+        print("Executing elementwise apply kernel...")
+        compiled_fn(inputs_, c_, current_stream)
         print("Verifying results...")
-        torch.testing.assert_close(op(a, b), c)
+        torch.testing.assert_close(ref_op(*inputs), c)
         print("Results verified successfully!")
+        print(f"First few elements of result: \n{c[:3, :3]}")
 
     if not benchmark:
         return
 
-    compiled_func = cute.compile(
-        elementwise_apply,
-        op,
-        from_dlpack(a),
-        from_dlpack(b),
-        from_dlpack(c).mark_layout_dynamic(),
-        current_stream,
-    )
-
     # When compiled we inlined op in the kernel, so we do not pass it when benchmarking
 
+    print("Benchmarking elementwise apply kernel...")
     avg_time_us = testing.benchmark(
-        compiled_func,
-        kernel_arguments=testing.JitArguments(
-            from_dlpack(a),
-            from_dlpack(b),
-            from_dlpack(c).mark_layout_dynamic(),
-            current_stream,
-        ),
+        compiled_fn,
+        kernel_arguments=testing.JitArguments(inputs_, c_, current_stream),
         warmup_iterations=warmup_iterations,
         iterations=iterations,
         use_cuda_graphs=True,
         stream=current_stream,
     )
 
-    avg_time = avg_time_us / 1e3
+    num_elements = sum(input.numel() for input in inputs) + c.numel()
 
     # Print execution results
-    print(f"Kernel execution time: {avg_time:.4f} ms")
+    print(f"Kernel execution time: {avg_time_us / 1e3:.4f} ms")
     print(
-        f"Achieved memory throughput: {(3 * a.numel() * dtype.width // 8) / (avg_time / 1000) / 1e9:.2f} GB/s"
+        f"Achieved memory throughput: {(num_elements * dtype.width // 8) / (avg_time_us * 1000):.2f} GB/s"
     )
-    print(f"First few elements of result: \n{c[:3, :3]}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="example of elementwise apply to demonstrate building elementwise kernels"
+        description="Demonstration of building customizable elementwise CUDA kernels using the CuTe DSL"
     )
-    parser.add_argument("--M", default=128, type=int)
-    parser.add_argument("--N", default=128, type=int)
+    parser.add_argument("--M", default=4096, type=int)
+    parser.add_argument("--N", default=4096, type=int)
     parser.add_argument("--op", default="add", type=str)
     parser.add_argument("--warmup_iterations", default=2, type=int)
     parser.add_argument("--iterations", default=100, type=int)
     parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
     args = parser.parse_args()
-    run_elementwise_apply_and_verify(
-        getattr(operator, args.op),
+    run_and_verify(
+        args.op,
         args.M,
         args.N,
         dtype=cutlass.Float32,

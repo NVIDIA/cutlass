@@ -37,7 +37,8 @@ import json
 import csv
 
 try:
-  if CUTLASS_IGNORE_PACKAGE:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
     raise ImportError("Disabling attempt to import cutlass_library")
   from cutlass_library.library import *
   from cutlass_library.generator import *

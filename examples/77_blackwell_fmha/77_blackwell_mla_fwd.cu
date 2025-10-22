@@ -590,8 +590,8 @@ struct MlaFwdRunner {
 
     ProblemShapeType problem_size_for_launch;
 
-    get<0>(problem_size_for_launch) = VariableLength{max_seqlen_q};
-    get<1>(problem_size_for_launch) = VariableLength{max_seqlen_kv};
+    get<0>(problem_size_for_launch) = VariableLength{max_seqlen_q, nullptr, total_seqlen_q};
+    get<1>(problem_size_for_launch) = VariableLength{max_seqlen_kv, nullptr, total_seqlen_kv};
     get<2>(problem_size_for_launch) = get<2>(problem_size);
     get<3>(problem_size_for_launch) = get<3>(problem_size);
 
@@ -651,9 +651,9 @@ struct MlaFwdRunner {
     }
 
     auto buffer_init_fn = [&](auto& buffer) {
-      buffer.block_Q.reset(size(shape_Q), kIsVarlen ? D_latent_rope*SQ*H : 0);
-      buffer.block_K.reset(size(shape_K), kIsVarlen ? D_latent_rope*SK*H_K : 0);
-      buffer.block_V.reset(size(shape_V), kIsVarlen ? D*SK*H_K : 0);
+      buffer.block_Q.reset(size(shape_Q));
+      buffer.block_K.reset(size(shape_K));
+      buffer.block_V.reset(size(shape_V));
       buffer.block_O.reset(size(shape_O), kIsVarlen ? D*SQ*H : 0);
       buffer.block_LSE.reset(size(shape_LSE));
       buffer.block_ref_O.reset(size(shape_O), kIsVarlen ? D*SQ*H : 0);
@@ -849,7 +849,8 @@ struct MlaFwdRunner {
       flops *= static_cast<double>(size<3,1>(problem_shape));
     }
 
-    flops *= 2.0 * (std::is_same_v<ActiveMask, CausalMask<false>> ? 0.5 : 1.0);
+    flops *= 2.0 * (std::is_same_v<ActiveMask, CausalMask<false>> || 
+                    std::is_same_v<ActiveMask, CausalMask<true>> ? 0.5 : 1.0);
     flops *= static_cast<double>(size<3,0>(problem_shape));
 
     double flops0 = flops * static_cast<double>(size<2, 0>(problem_shape) + size<2, 1>(problem_shape));

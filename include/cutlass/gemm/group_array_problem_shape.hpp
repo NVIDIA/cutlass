@@ -79,6 +79,16 @@ struct GroupProblemShape {
   }
 };
 
+template <class ProblemShape_, class MaxProblemShape_>
+struct MoEProblemShape {
+  using UnderlyingProblemShape = ProblemShape_;
+  using MaxProblemShape = MaxProblemShape_;
+
+  UnderlyingProblemShape problem_shape;
+  MaxProblemShape max_problem_shape;
+};
+
+
 template <class ProblemShape_>
 class ArrayProblemShape {
 public:
@@ -119,5 +129,15 @@ public:
 private:
   UnderlyingProblemShape problem_shape_{};
 };
+
+
+namespace detail {
+  
+template<class T>
+struct is_moe_problem_shape : cute::false_type {};
+template<class T, class U>
+struct is_moe_problem_shape<cutlass::gemm::MoEProblemShape<T,U>> : cute::true_type {}; 
+
+}
 
 } // namespace cutlass::gemm 

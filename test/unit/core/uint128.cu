@@ -58,6 +58,11 @@ TEST(uint128_t, host_arithmetic) {
       T y = j;
 
       EXPECT_TRUE(static_cast<uint64_t>(x + y) == (i + j));
+      EXPECT_TRUE(static_cast<uint64_t>(x * static_cast<uint64_t>(y)) == (i * j));
+
+      if (j != 0) {
+        EXPECT_TRUE(static_cast<uint64_t>(x / static_cast<uint64_t>(y)) == (i / j));
+      }
     }
   }
 

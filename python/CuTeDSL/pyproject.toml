@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nvidia-cutlass-dsl"
+dynamic = ["version"]
+description = "NVIDIA CUTLASS Python DSL"
+authors = [
+    {name = "NVIDIA Corporation"},
+]
+
+[tool.setuptools]
+packages = ["cutlass"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION.EDITABLE"}
+
+[tool.setuptools.package-data]
+nvidia_cutlass_dsl = ["lib/**/*"]

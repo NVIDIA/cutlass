@@ -348,10 +348,14 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       'gemm.*ue8m0xf6_ue8m0xf6_f32_f16_ue8m0xe3m2',
     ]
 
+    block_scaled_tile_k = ['x128_', 'x256_']
+
     sm103_block_scaled_data_type = [
       'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_e5m2',
       'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_ue8m0xe2m1',
     ]
+
+    sm103_block_scaled_tile_k = ['x768_']
 
     block_scaled_cluster_size = [
       '4x4x1', '2x1x1',
@@ -360,11 +364,12 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     block_scaled_layouts = ['tnt']
     # regex list must be in kernel procedural name order
-    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
-    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
+    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
+    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
     
-    sm103_block_scaled_filter_regex_1sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
-    sm103_block_scaled_filter_regex_2sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
+    sm103_block_scaled_prefetch_policy = ['tmapf']
+    sm103_block_scaled_filter_regex_1sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
+    sm103_block_scaled_filter_regex_2sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
 
     if arch in ["100a", "100f"]:
       kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
@@ -589,7 +594,6 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       # reduce L1 test runtime if reference kernel is not running on device.
       if mode == "functional_L1" and profiler_flags_for_verification == "host" :
         problem_waves = [0.5, 2.5]
-      
 
       if dynamic_cluster:
         if mode == "functional_L0":

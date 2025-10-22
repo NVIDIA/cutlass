@@ -496,8 +496,8 @@ gemm_nt(int m, int n, int k,
                size(ceil_div(N, bN)));
   gemm_device<<<dimGrid, dimBlock, smem_size, stream>>>
       (prob_shape, cta_tiler,
-       A, dA, sA, copyA, AutoVectorizingCopy{},
-       B, dB, sB, copyB, AutoVectorizingCopy{},
+       A, dA, sA, copyA, Copy_Atom<AutoVectorizingCopy, TA>{},
+       B, dB, sB, copyB, Copy_Atom<AutoVectorizingCopy, TB>{},
        C, dC, sC, mmaC,
        alpha, beta);
 }
@@ -573,8 +573,8 @@ gemm_tn(int m, int n, int k,
                size(ceil_div(N, bN)));
   gemm_device<<<dimGrid, dimBlock, smem_size, stream>>>
       (prob_shape, cta_tiler,
-       A, dA, sA, copyA, AutoVectorizingCopy{},
-       B, dB, sB, copyB, AutoVectorizingCopy{},
+       A, dA, sA, copyA, Copy_Atom<AutoVectorizingCopy, TA>{},
+       B, dB, sB, copyB, Copy_Atom<AutoVectorizingCopy, TB>{},
        C, dC, sC, mmaC,
        alpha, beta);
 }

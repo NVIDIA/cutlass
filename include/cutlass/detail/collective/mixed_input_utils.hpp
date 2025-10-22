@@ -347,7 +347,7 @@ struct LayoutAwareConvertImpl<
 // Specialization for INT8 -> BF16 with [3120] value order
 template <>
 struct LayoutAwareConvertImpl<
-  cutlass::int8_t,
+  int8_t,
   cutlass::bfloat16_t,
   cute::Layout<cute::Shape<_2,_2>, cute::Stride<_2,_1>>,
   cute::Layout<_4>
@@ -362,9 +362,9 @@ struct LayoutAwareConvertImpl<
                 cute::Layout<_4>
                 >& dst) {
 
-    static_assert(cute::is_same_v<cutlass::int8_t, typename EngineIn::value_type> &&
+    static_assert(cute::is_same_v<int8_t, typename EngineIn::value_type> &&
                   cute::is_same_v<cutlass::bfloat16_t, typename EngineOut::value_type>);
-    using SrcArray = cutlass::Array<cutlass::int8_t, 8>;
+    using SrcArray = cutlass::Array<int8_t, 8>;
     using DstArray = cutlass::Array<cutlass::bfloat16_t, 8>;
     using RegArray = cutlass::AlignedArray<uint32_t, 4, sizeof(DstArray)>;
 
@@ -402,7 +402,7 @@ struct LayoutAwareConvertImpl<
 // Specialization for INT8 -> FP16 with [3120] value order
 template <>
 struct LayoutAwareConvertImpl<
-  cutlass::int8_t,
+  int8_t,
   cutlass::half_t,
   cute::Layout<cute::Shape<_2,_2>, cute::Stride<_2,_1>>,
   cute::Layout<_4>
@@ -417,9 +417,9 @@ struct LayoutAwareConvertImpl<
                 cute::Layout<_4>
                 >& dst) {
 
-    static_assert(cute::is_same_v<cutlass::int8_t, typename EngineIn::value_type> &&
+    static_assert(cute::is_same_v<int8_t, typename EngineIn::value_type> &&
                   cute::is_same_v<cutlass::half_t, typename EngineOut::value_type>);
-    using SrcArray = cutlass::Array<cutlass::int8_t, 8>;
+    using SrcArray = cutlass::Array<int8_t, 8>;
     using DstArray = cutlass::Array<cutlass::half_t, 8>;
     using RegArray = cutlass::AlignedArray<uint32_t, 4, sizeof(DstArray)>;
 
@@ -625,14 +625,14 @@ public:
       return 0;
     }
     else if constexpr (ModeHasScales) {
-      constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
+      constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
       static_assert(scale_tx_bytes % 128 == 0, "Each scale stage must be 128B aligned."); // required by TMA
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return scale_tx_bytes;
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         // Scale and zero share smem layout
-        constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(size<0>(filter_zeros(SmemLayoutScale{})) * size<1>(filter_zeros(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
+        constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(cosize(take<0,3>(SmemLayoutScale{})) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
         static_assert(zero_tx_bytes % 128 == 0, "Each zero stage must be 128B aligned."); // required by TMA
         return scale_tx_bytes + zero_tx_bytes;
       }
@@ -705,7 +705,7 @@ public:
       auto smem_tiled_copy_S = cute::get<0>(partitioned_transform_extra_info);
       auto&& scales          = cute::get<1>(partitioned_transform_extra_info);
       using ScaleType        = decltype(scales);
-      auto tSrS              = make_tensor(static_cast<ScaleType&&>(scales).data(), scales.layout());
+      auto tSrS              = make_tensor(scales.data(), scales.layout());
       auto tSsS              = cute::get<2>(partitioned_transform_extra_info);
       copy(smem_tiled_copy_S, tSsS(_,_,_,_,load2transform_consumer_index), tSrS);
 
@@ -714,7 +714,7 @@ public:
       } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         auto&& zeros           = cute::get<3>(partitioned_transform_extra_info);
         using ZeroType         = decltype(zeros);
-        auto tZrZ              = make_tensor(static_cast<ZeroType&&>(zeros).data(), zeros.layout());
+        auto tZrZ              = make_tensor(zeros.data(), zeros.layout());
         auto tZsZ              = cute::get<4>(partitioned_transform_extra_info);
         copy(smem_tiled_copy_S, tZsZ(_,_,_,_,load2transform_consumer_index), tZrZ);
 
@@ -1002,7 +1002,6 @@ public:
     auto src_arr = recast<SrcArray>(src);
     auto dst_arr = recast<DstArray>(dst);
 
-    Tensor src_vm = cute::group_modes<1,-1>(cute::zipped_divide(src, pack));
     Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
 
     cute::transform(src_arr, dst_arr, Converter::convert);
@@ -1019,7 +1018,6 @@ public:
         auto scale_arr = recast<ScaleArray>(filter_zeros(scales));
 
         if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
-          Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
           Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
 
           for (int i = 0; i < size<1>(dst_vm); ++i){
@@ -1191,34 +1189,16 @@ public:
       auto smem_thr_copy_S = smem_tiled_copy_S.get_slice(threadIdx.x % 128);
 
       Tensor sS = make_tensor(make_smem_ptr(shared_storage.input.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_SCALE_K,PIPE)
-      Tensor tCsS = cta_mma.partition_A(sS);
-      Tensor tSsS = smem_thr_copy_S.partition_S(tCsS);
+      Tensor tSsS = smem_thr_copy_S.partition_S(sS);
       Tensor tSrS = make_tensor<ElementScale>(tSsS(_,_,_,_,0).shape());
-#if 0
-      if(cute::thread(128, 0)){
-        print("sS: ");print(sS);print("\n");
-        print("tSsS: ");print(tSsS);print("\n");
-        print("tSrS: ");print(tSrS);print("\n");
-      }
-#endif
+
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS);
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor sZ = make_tensor(make_smem_ptr(shared_storage.input.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
-        Tensor tCsZ = cta_mma.partition_A(sZ);
-        Tensor tZsZ = smem_thr_copy_S.partition_S(tCsZ);
+        Tensor tZsZ = smem_thr_copy_S.partition_S(sZ);
         Tensor tZrZ = make_tensor<ElementZero>(tZsZ(_,_,_,_,0).shape());
-#if 0
-        if(cute::thread(128, 0)){
-          print("sS: ");print(sS);print("\n");
-          print("tSsS: ");print(tSsS);print("\n");
-          print("tSrS: ");print(tSrS);print("\n");
-          print("sZ: ");print(sZ);print("\n");
-          print("tZsZ: ");print(tZsZ);print("\n");
-          print("tZrZ: ");print(tZrZ);print("\n");
-        }
-#endif
         return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS, tZrZ, tZsZ);
       }
       else {

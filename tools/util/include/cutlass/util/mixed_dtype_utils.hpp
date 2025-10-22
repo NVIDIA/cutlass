@@ -42,6 +42,7 @@
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cute/util/type_traits.hpp"
+#include "cute/numeric/numeric_types.hpp"
 
 namespace cutlass {
 
@@ -177,10 +178,7 @@ static void dequantize(DequantizedElement* dq_buffer,
 template <typename T>
 class packed_scale_t {
 public:
-  static_assert(cute::is_same_v<T, cutlass::int8_t> ||
-                cute::is_same_v<T, cutlass::uint8_t> ||
-                cute::is_same_v<T, cutlass::float_e4m3_t> ||
-                cute::is_same_v<T, cutlass::float_e5m2_t>,
+  static_assert(cute::sizeof_bits_v<T> == 8,
                 "only 8 bit arithmetic types are supported.");
   CUTLASS_HOST_DEVICE
   explicit packed_scale_t(T val) {

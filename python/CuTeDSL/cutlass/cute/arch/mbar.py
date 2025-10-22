@@ -10,14 +10,12 @@
 # is strictly prohibited.
 from typing import Optional
 
+from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import CuTeDSL, T, if_generate, dsl_user_op
 
 from cutlass._mlir.dialects import nvvm
-from cutlass._mlir import ir
 
-from ..typing import Pointer, Int, Boolean, Int32
-from ...impl_utils import check_value_in
-
+from ..typing import Pointer, Int, Boolean, Int32, AddressSpace
 
 ####################################################################################################
 #
@@ -46,17 +44,7 @@ def mbarrier_init_fence(*, loc=None, ip=None) -> None:
     """
     A fence operation that applies to the mbarrier initializations.
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
     nvvm.fence_mbarrier_init(loc=loc, ip=ip)
 
 
@@ -75,17 +63,7 @@ def mbarrier_arrive_and_expect_tx(
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
@@ -125,17 +103,7 @@ def mbarrier_expect_tx(
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
@@ -170,17 +138,7 @@ def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
     :param phase:    The phase to wait for (either 0 or 1)
     :type phase:     Int
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
     timeout_ns = 10000000
     # This NVVM Op is a spin-loop wrapping the mbarrier.try_wait.parity.shared.b64 PTX
@@ -206,17 +164,7 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
     :return:         A boolean value indicating whether the wait operation was successful
     :rtype:          Boolean
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
     return Boolean(
         nvvm.mbarrier_wait_parity(
@@ -245,23 +193,15 @@ def mbarrier_conditional_try_wait(
     :return:         A boolean value indicating whether the wait operation was successful
     :rtype:          Boolean
     """
-    arch = CuTeDSL._get_dsl().envar.arch
-    check_value_in(
-        arch,
-        [
-            "sm_90",
-            "sm_90a",
-            "sm_100a",
-            "sm_100f",
-        ],
-        "arch",
-    )
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
     return if_generate(
         cond,
         lambda: mbarrier_try_wait(mbar_ptr, phase, loc=loc, ip=ip),
         lambda: Boolean(True).ir_value(loc=loc, ip=ip),
         None,
         [Boolean],
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -284,17 +224,7 @@ def mbarrier_arrive(
     """
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
-        arch = CuTeDSL._get_dsl().envar.arch
-        check_value_in(
-            arch,
-            [
-                "sm_90",
-                "sm_90a",
-                "sm_100a",
-                "sm_100f",
-            ],
-            "arch",
-        )
+        CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
         mbar_llvm_ptr = nvvm.mapa_shared_cluster(
             mbar_llvm_ptr.type,
@@ -312,6 +242,28 @@ def mbarrier_arrive(
         Int32(1).ir_value(loc=loc, ip=ip),
         kind=nvvm.MBarrierTxnKind.ARRIVE,
         space=space,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cp_async_mbarrier_arrive_noinc(mbar_ptr: Pointer, *, loc=None, ip=None) -> None:
+    """
+    Arrives on an mbarrier for async load **without incrementing** the arrival count
+    (`cp.async.mbarrier.arrive.shared ..., noinc=1`).
+    Used in the warp-specialized kernel when the non-TMA load warp(producer) is not the same
+    as the math/epilogue warp(consumer).
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    """
+    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
+
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
+    nvvm.cp_async_mbarrier_arrive_shared(
+        mbar_llvm_ptr,
+        noinc=True,
         loc=loc,
         ip=ip,
     )

@@ -101,7 +101,8 @@ struct CollectiveMma<
   using StridePairB = StridePairB_;
   using SmemCopyAtomsA = SmemCopyAtomsA_;
   using SmemCopyAtomsB = SmemCopyAtomsB_;
-
+  using RuntimeDataTypeA = void*;
+  using RuntimeDataTypeB = void*;
   using TiledMma = TiledMma_;
   using AtomThrShapeMNK = Shape<decltype(shape<0>(typename TiledMma::ThrLayoutVMNK{})), _1, _1>;
   using DispatchPolicy = MainloopSm120TmaWarpSpecializedSparseBlockScaled<StagesA, StagesB, StagesE, SchedulerPipelineStageCount, ClusterShape>;

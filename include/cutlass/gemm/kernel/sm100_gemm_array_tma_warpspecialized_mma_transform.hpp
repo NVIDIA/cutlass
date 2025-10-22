@@ -234,7 +234,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -493,6 +492,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     auto problem_shape = params.problem_shape;
 
     // Account for more than one epilogue warp

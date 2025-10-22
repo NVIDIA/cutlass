@@ -36,7 +36,7 @@ import torch
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
-import cutlass.torch as cutlass_torch
+import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 from cutlass.cute.runtime import from_dlpack
 
@@ -103,6 +103,9 @@ class SGemm:
         assert self._bM % 16 == 0, "multiple of 16 required for tile dimension M"
         assert self._bN % 16 == 0, "multiple of 16 required for tile dimension N"
         assert self._num_stages >= 3, "num_stages must be greater than or equal to 3"
+        self.cta_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=1, num_threads=num_threads
+        )
 
     @cute.jit
     def __call__(
@@ -136,10 +139,6 @@ class SGemm:
             stride=(1, (self._bN + padding_b), self._bK * (self._bN + padding_b)),
         )
 
-        smem_size = cute.size_in_bytes(mA.element_type, sA_layout) + cute.size_in_bytes(
-            mB.element_type, sB_layout
-        )
-
         # ///////////////////////////////////////////////////////////////////////////////
         # Create copy layouts that will be used for asynchronous
         # global memory -> shared memory copies:
@@ -170,9 +169,8 @@ class SGemm:
             mA.element_type,
             num_bits_per_copy=mB.element_type.width,
         )
-
         if cutlass.const_expr(self.a_major_mode == utils.LayoutEnum.COL_MAJOR):
-            num_vectorized = 4 if (mA.layout.max_alignment % 16 == 0) else 1
+            num_vectorized = 4 if (mA.layout[0].max_alignment % 16 == 0) else 1
             atom_async_copy_A = cute.make_copy_atom(
                 cute.nvgpu.cpasync.CopyG2SOp(),
                 mA.element_type,
@@ -186,7 +184,7 @@ class SGemm:
             vA = cute.make_layout((num_vectorized, 1))
 
         if cutlass.const_expr(self.b_major_mode == utils.LayoutEnum.COL_MAJOR):
-            num_vectorized = 4 if (mB.layout.max_alignment % 16 == 0) else 1
+            num_vectorized = 4 if (mB.layout[0].max_alignment % 16 == 0) else 1
             atom_async_copy_B = cute.make_copy_atom(
                 cute.nvgpu.cpasync.CopyG2SOp(),
                 mA.element_type,
@@ -258,7 +256,6 @@ class SGemm:
         ).launch(
             grid=grid_dim,
             block=[cute.size(atoms_layout), 1, 1],
-            smem=smem_size,
             stream=stream,
         )
 
@@ -299,7 +296,7 @@ class SGemm:
         # tile (instead of the last one) irregular in shape when k is irregular.
         # We first handle the irregular tile to avoid checking for this
         # condition within the mainloop.
-        residue_k = mA.shape[1] - cutlass.Int32(self._bK) * gA.shape[2]
+        residue_k = mA.shape[1] - self._bK * gA.shape[2]
         gA = cute.domain_offset((0, residue_k, 0), gA)
         gB = cute.domain_offset((0, residue_k, 0), gB)
 
@@ -347,7 +344,7 @@ class SGemm:
         tAcA = thr_copy_A.partition_S(cA)
         tBcB = thr_copy_B.partition_S(cB)
         # Allocate predicate tensors for m and n
-        tApA = cute.make_fragment(
+        tApA = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tAsA.shape[0][1],
@@ -358,7 +355,7 @@ class SGemm:
             ),
             cutlass.Boolean,
         )
-        tBpB = cute.make_fragment(
+        tBpB = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tBsB.shape[0][1],
@@ -370,7 +367,7 @@ class SGemm:
             cutlass.Boolean,
         )
         # Allocate predicate tensors for m, n and k for residue k-tile
-        tApA_residue_k = cute.make_fragment(
+        tApA_residue_k = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tAsA.shape[0][1],
@@ -385,7 +382,7 @@ class SGemm:
             ),
             cutlass.Boolean,
         )
-        tBpB_residue_k = cute.make_fragment(
+        tBpB_residue_k = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tBsB.shape[0][1],
@@ -513,7 +510,7 @@ class SGemm:
         if k_block_max > 1:
             # Wait until our first prefetched tile is loaded in
             cute.arch.cp_async_wait_group(k_pipe_max - 2)
-            cute.arch.barrier()
+            self.cta_sync_barrier.arrive_and_wait()
             # Prefetch the first rmem from the first k-tile
             cute.autovec_copy(tCsA_p[None, None, 0], tCrA[None, None, 0])
             cute.autovec_copy(tCsB_p[None, None, 0], tCrB[None, None, 0])
@@ -550,7 +547,7 @@ class SGemm:
                     tCsA_p = tCsA[None, None, None, smem_pipe_read]
                     tCsB_p = tCsB[None, None, None, smem_pipe_read]
                     cute.arch.cp_async_wait_group(k_pipe_max - 2)
-                    cute.arch.barrier()
+                    self.cta_sync_barrier.arrive_and_wait()
 
                 # Load A, B from shared memory to registers for k_block + 1
                 k_block_next = (k_block + 1) % k_block_max  # static
@@ -616,13 +613,13 @@ class SGemm:
         # them without vectorization.
         # ///////////////////////////////////////////////////////////////////////////////
         cute.arch.cp_async_wait_group(0)
-        cute.arch.barrier()
+        self.cta_sync_barrier.arrive_and_wait()
         tCrC.store(epilogue_op(tCrC.load()))
 
         # predicate
         cC = cute.make_identity_tensor(gC.shape)
         tCpC = thr_mma.partition_C(cC)
-        predC = cute.make_fragment(tCrC.layout, cutlass.Boolean)
+        predC = cute.make_rmem_tensor(tCrC.layout, cutlass.Boolean)
         residue_m = mC.shape[0] - cutlass.Int32(self._bM) * bidx
         residue_n = mC.shape[1] - cutlass.Int32(self._bN) * bidy
         for i in range(cute.size(tCrC.shape)):
@@ -669,7 +666,7 @@ def run(
     :return: Execution time of the GEMM kernel in microseconds
     :rtype: float
     """
-    print(f"Running Ampere SIMT GEMM example:")
+    print("Running Ampere SIMT GEMM example:")
     print(f"mnk: {mnk}")
     print(f"A major: {a_major}, B major: {b_major}, C major: {c_major}")
     print(f"Static shape: {static_shape}")
@@ -702,14 +699,17 @@ def run(
     divisibility_b = b.shape[1] if b_major == "k" else b.shape[0]
     divisibility_c = c.shape[1] if c_major == "n" else c.shape[0]
 
-    a_tensor = (
-        from_dlpack(a, assumed_align=16)
-        .mark_layout_dynamic(leading_dim=(1 if a_major == "k" else 0))
-        .mark_compact_shape_dynamic(
-            mode=(1 if a_major == "k" else 0),
-            divisibility=divisibility_a,
+    if static_shape:
+        a_tensor = (
+            from_dlpack(a, assumed_align=16)
+            .mark_layout_dynamic(leading_dim=(1 if a_major == "k" else 0))
+            .mark_compact_shape_dynamic(
+                mode=(1 if a_major == "k" else 0),
+                divisibility=divisibility_a,
+            )
         )
-    )
+    else:
+        a_tensor = from_dlpack(a, assumed_align=16)
 
     b_tensor = (
         from_dlpack(b, assumed_align=16)
@@ -738,14 +738,16 @@ def run(
 
     print("Compiling kernel with cute.compile ...")
     start_time = time.time()
-    gemm = cute.compile(sgemm, a_tensor, b_tensor, c_tensor, stream=current_stream)
+    compiled_fn = cute.compile[cute.GenerateLineInfo](
+        sgemm, a_tensor, b_tensor, c_tensor, stream=current_stream
+    )
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
 
     print("Executing GEMM kernel...")
 
     if not skip_ref_check:
-        gemm(a_tensor, b_tensor, c_tensor)
+        compiled_fn(a_tensor, b_tensor, c_tensor)
         torch.cuda.synchronize()
         print("Verifying results...")
         ref = torch.einsum("mk,nk->mn", a, b)
@@ -804,7 +806,7 @@ def run(
         )
 
     avg_time_us = testing.benchmark(
-        gemm,
+        compiled_fn,
         workspace_generator=generate_tensors,
         workspace_count=workspace_count,
         stream=current_stream,
@@ -832,11 +834,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mnk", type=parse_comma_separated_ints, default=(256, 256, 64)
     )
-    parser.add_argument("--a_major", choices=["k", "m"], default="k")
+    parser.add_argument("--a_major", choices=["k", "m"], default="m")
     parser.add_argument("--b_major", choices=["k", "n"], default="k")
     parser.add_argument("--c_major", choices=["n", "m"], default="n")
     parser.add_argument("--warmup_iterations", default=2, type=int)
     parser.add_argument("--iterations", default=100, type=int)
+    parser.add_argument("--static_shape", action="store_true")
     parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument(
         "--use_cold_l2",

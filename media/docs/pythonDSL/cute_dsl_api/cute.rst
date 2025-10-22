@@ -9,3 +9,9 @@ cutlass.cute
    :show-inheritance:
    :special-members: __init__
    :private-members:
+
+.. toctree::
+  :maxdepth: 2
+  :hidden:
+
+  cute_arch

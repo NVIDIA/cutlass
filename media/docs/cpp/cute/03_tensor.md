@@ -217,7 +217,7 @@ for (int i = 0; i < A.size(); ++i)
 
 ## Tiling a Tensor
 
-Many of the [`Layout` algebra operations](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cute/02_layout_algebra.md) can also be applied to `Tensor`.
+Many of the [`Layout` algebra operations](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/02_layout_algebra.md) can also be applied to `Tensor`.
 ```cpp
    composition(Tensor, Tiler)
 logical_divide(Tensor, Tiler)

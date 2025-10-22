@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import ctypes
+from math import prod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Type, Union
@@ -16,14 +18,13 @@ from typing import Optional, Type, Union
 from cutlass.cute.typing import (
     Numeric,
     Boolean,
-    Float,
-    Integer,
     TFloat32,
     Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
     Float8E8M0FNU,
     Float4E2M1FN,
+    Int4,
     Tensor,
 )
 from cutlass.cute.runtime import from_dlpack
@@ -52,6 +53,25 @@ def dtype(ty: Type[Numeric]):
     if torch_dtype is None:
         raise TypeError(f"{ty} is not supported by torch")
     return torch_dtype
+
+
+def as_tensor(pointer, shape, torch_type):
+    """Convert a pointer to a torch tensor"""
+    if torch_type.itemsize == 1:
+        cytype = ctypes.c_uint8
+    elif torch_type.itemsize == 2:
+        cytype = ctypes.c_uint16
+    elif torch_type.itemsize == 4:
+        cytype = ctypes.c_uint32
+    elif torch_type.itemsize == 8:
+        cytype = ctypes.c_uint64
+    else:
+        raise ValueError(f"Unsupported torch dtype: {torch_type}")
+    cpointer = ctypes.cast(pointer, ctypes.POINTER(cytype))
+    arr = (cpointer._type_ * prod(shape)).from_address(
+        ctypes.addressof(cpointer.contents)
+    )
+    return torch.frombuffer(arr, dtype=torch_type).view(*shape)
 
 
 @dataclass
@@ -128,7 +148,7 @@ def create_and_permute_torch_tensor(
             if not isinstance(init_config, GaussianInitConfig):
                 raise ValueError("init_config must be GaussianInitConfig()")
         f32_torch_tensor = init_torch_tensor.normal_(init_config.mean, init_config.std)
-        f32_torch_tensor = f32_torch_tensor * (1 << init_config.scale)
+        f32_torch_tensor = f32_torch_tensor * init_config.scale
     else:
         raise ValueError(f"Invalid init type: {init_type}")
 
@@ -148,7 +168,7 @@ def convert_cute_tensor(
 ) -> Tensor:
     """
     Change the value of the cute tensor to make its value converted from a fp32 torch tensor.
-    Used for fp8 types tensor creatation now.
+    Used for fp8 and int4 types tensor creatation now.
     """
     # if torch_tensor is on cpu, create a gpu copy
     if f32_torch_tensor.device.type == "cpu":
@@ -156,6 +176,7 @@ def convert_cute_tensor(
 
     # Fp8 type need explicit type conversion
     if dtype in {
+        Int4,
         Float8E5M2,
         Float8E4M3FN,
         Float8E8M0FNU,
@@ -260,7 +281,9 @@ def cute_tensor_like(
     """
 
     # allocate device buffer for cute tensor
-    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+        cutlass_dtype.is_integer and cutlass_dtype.width == 4
+    ):
         torch_dtype = torch.int8
     else:
         torch_dtype = dtype(cutlass_dtype)
@@ -277,7 +300,9 @@ def cute_tensor_like(
         cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
 
     # initialize the cute tensor data
-    if cutlass_dtype.is_float and cutlass_dtype.width <= 8:
+    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+        cutlass_dtype.is_integer and cutlass_dtype.width == 4
+    ):
         cute_tensor = convert_cute_tensor(
             data_ref.to(dtype=torch.float32),
             cute_tensor,

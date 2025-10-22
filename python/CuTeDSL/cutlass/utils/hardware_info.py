@@ -42,7 +42,6 @@ class HardwareInfo:
 
     # Getting the max active clusters for a given cluster size
     def get_max_active_clusters(self, cluster_size: int) -> int:
-        self._get_device_function()
         if self._cuda_driver_version_lt(11, 8):
             raise RuntimeError(
                 "CUDA Driver version < 11.8, cannot get _max_active_clusters"
@@ -51,6 +50,8 @@ class HardwareInfo:
             raise ValueError(
                 f"Cluster size must be between 1 and 32, {cluster_size} is not supported"
             )
+
+        device_fn = self._get_device_function(self.device)
 
         max_shared_memory_per_block = self._checkCudaErrors(
             driver.cuDeviceGetAttribute(
@@ -67,12 +68,16 @@ class HardwareInfo:
         )
         max_dynamic_shared_memory = self._checkCudaErrors(
             driver.cuOccupancyAvailableDynamicSMemPerBlock(
-                self.kernel, 1, 1  # numBlocks  # blockSize
+                self.kernel,
+                1,
+                1,  # numBlocks  # blockSize
             )
         )
         max_active_blocks = self._checkCudaErrors(
             driver.cuOccupancyMaxActiveBlocksPerMultiprocessor(
-                self.kernel, 1, max_dynamic_shared_memory  # blockSize,
+                self.kernel,
+                1,
+                max_dynamic_shared_memory,  # blockSize,
             )
         )
         # allow non-portable cluster size to support detection of non-portable cluster size
@@ -168,7 +173,7 @@ class HardwareInfo:
         )
 
     # get a empty kernel to compute occupancy
-    def _get_device_function(self) -> None:
-        self.compiled_kernel = cute.compile(self._host_function)
-        self.module = next(iter(self.compiled_kernel.cuda_modules.modules)).cuda_module
-        self.kernel = next(iter(self.compiled_kernel.cuda_modules.modules)).kernel_ptr
+    def _get_device_function(self, device) -> None:
+        self.compiled_kernel = cute.compile(self._host_function).to(device)
+        self.kernel = self.compiled_kernel.exec_context.kernel_functions[0]
+        self.module = self.compiled_kernel.exec_context.module.cuda_modules[0]

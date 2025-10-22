@@ -9,12 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import enum
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Union
-import warnings
+from typing import Optional
 
+import cutlass
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, if_generate
 
@@ -41,7 +39,9 @@ class PipelineTmaUmma(PipelineAsync):
     cta_group: cute.nvgpu.tcgen05.CtaGroup
 
     @staticmethod
-    def _compute_mcast_arrival_mask(cta_layout_vmnk: cute.Layout):
+    def _compute_mcast_arrival_mask(
+        cta_layout_vmnk: cute.Layout, mcast_mode_mn: tuple[int, int]
+    ):
         """
         Computes a mask for signaling arrivals to multicasting threadblocks.
         """
@@ -68,12 +68,18 @@ class PipelineTmaUmma(PipelineAsync):
             cta_layout_vmnk, block_in_cluster_coord_vmnk_peer, mcast_mode=1
         )
 
-        return (
-            tma_mcast_mask_a
-            | tma_mcast_mask_b
-            | tma_mcast_mask_a_peer
-            | tma_mcast_mask_b_peer
-        )
+        assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
+        if mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 1:
+            return (
+                tma_mcast_mask_a
+                | tma_mcast_mask_b
+                | tma_mcast_mask_a_peer
+                | tma_mcast_mask_b_peer
+            )
+        elif mcast_mode_mn[1] == 1:
+            return tma_mcast_mask_b | tma_mcast_mask_b_peer
+        assert mcast_mode_mn[0] == 1
+        return tma_mcast_mask_a | tma_mcast_mask_a_peer
 
     @staticmethod
     def _compute_is_leader_cta(cta_layout_vmnk: cute.Layout):
@@ -99,6 +105,7 @@ class PipelineTmaUmma(PipelineAsync):
         tx_count: int,
         barrier_storage: cute.Pointer = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
+        mcast_mode_mn: tuple[int, int] = (1, 1),
     ):
         """
         This helper function computes any necessary attributes and returns an instance of PipelineTmaUmma.
@@ -106,14 +113,16 @@ class PipelineTmaUmma(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param tx_count: Number of bytes expected to be written to the transaction barrier for one stage
         :type tx_count: int
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout | None
+        :param mcast_mode_mn: Tuple of two integers, specifying whether mcast is enabled for the m and n modes. At least one of the two integers must be 1.
+        :type mcast_mode_mn: tuple[int, int]
         """
         if not isinstance(barrier_storage, cute.Pointer):
             raise ValueError(
@@ -139,7 +148,9 @@ class PipelineTmaUmma(PipelineAsync):
             # All threadblocks are leaders if not using clusters
             is_leader_cta = True
         else:
-            producer_mask = PipelineTmaUmma._compute_mcast_arrival_mask(cta_layout_vmnk)
+            producer_mask = PipelineTmaUmma._compute_mcast_arrival_mask(
+                cta_layout_vmnk, mcast_mode_mn
+            )
             is_leader_cta = PipelineTmaUmma._compute_is_leader_cta(cta_layout_vmnk)
 
         cta_group = (
@@ -258,9 +269,9 @@ class PipelineAsyncUmma(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout | None
@@ -368,9 +379,9 @@ class PipelineUmmaAsync(PipelineAsync):
         :type barrier_storage: cute.Pointer
         :param num_stages: Number of buffer stages for this pipeline
         :type num_stages: Int32
-        :param producer_group: CooperativeGroup for the producer agent
+        :param producer_group: `CooperativeGroup` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: CooperativeGroup for the consumer agent
+        :param consumer_group: `CooperativeGroup` for the consumer agent
         :type consumer_group: CooperativeGroup
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout | None
@@ -428,6 +439,7 @@ class PipelineUmmaAsync(PipelineAsync):
         """
         self.sync_object_full.arrive(state.index, self.producer_mask, self.cta_group)
 
+    @cute.jit
     def producer_tail(self, state: PipelineState):
         """
         Make sure the last used buffer empty signal is visible to producer.
@@ -442,11 +454,9 @@ class PipelineUmmaAsync(PipelineAsync):
         )
         is_leader_cta = cta_rank_in_cluster % 2 == 0
 
-        def then_body():
+        if is_leader_cta:
             # Assume state contains that next useful buffer
             # So we only need to advance to num_stages - 1 times to last used buffer
-            for i in range(self.num_stages - 1):
+            for i in cutlass.range_constexpr(self.num_stages - 1):
                 state.advance()
             self.producer_acquire(state)
-
-        if_generate(is_leader_cta, then_body)

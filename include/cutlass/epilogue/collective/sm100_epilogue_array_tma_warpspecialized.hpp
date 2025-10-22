@@ -128,6 +128,9 @@ public:
   static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
   static_assert(rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
 
+  // Epilog assumes a max scheduler pipe count to calculate the number of asynchronous tma update buffer they need.
+  constexpr static uint32_t NumMaxSchedulerPipelineStageCount = 8;
+
 private:
 
   constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
@@ -176,6 +179,11 @@ private:
     not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
   // TMA store delay only benefits with loop unrolling
   constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = NumMaxSchedulerPipelineStageCount + std::max(StagesC, (ReuseSmemC ? StagesC : StagesD)) + 2;
 
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
@@ -346,7 +354,8 @@ public:
     constexpr uint32_t NumInputTensors = cute::is_void_v<ElementC> ? 1 : 2;
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
+    return (NumInputTensors * SizeOfCuTensorMap * sm_count * NumTmaDescriptorsPerSm)
+            + (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>
@@ -456,16 +465,22 @@ public:
     return fusion_callbacks.is_producer_load_needed();
   }
 
+  template<bool IsTmaAsyncUpdate = false>
   CUTLASS_DEVICE auto
   load_init(
       Params const& params,
       TensorMapStorage& shared_tensormap,
       int32_t const sm_count,
       int32_t const sm_idx) const {
-    // Fetch a copy of tensormaps for the CTA from Params
-    constexpr bool IsEpiLoad = true;
-    auto load_tensormap = tensormaps_init<IsEpiLoad>(params, shared_tensormap, sm_count, sm_idx);
-    return cute::make_tuple(load_tensormap);
+    if constexpr (IsTmaAsyncUpdate) {
+      // Async update kernels will fetch the tensormap directly from tensormaps_init.
+      return cute::make_tuple();
+    } else {
+      // Fetch a copy of tensormaps for the CTA from Params
+      constexpr bool IsEpiLoad = true;
+      auto load_tensormap = tensormaps_init<IsEpiLoad>(params, shared_tensormap, sm_count, sm_idx);
+      return cute::make_tuple(load_tensormap);
+    }
   }
 
   template<
@@ -581,22 +596,27 @@ public:
     load_pipeline.producer_tail(load_pipe_producer_state);
   }
 
+  template<bool IsTmaAsyncUpdate = false>
   CUTLASS_DEVICE auto
   store_init(
       Params const& params,
       TensorMapStorage& shared_tensormap,
       int32_t const sm_count,
       int32_t const sm_idx) const {
-    // Fetch a copy of tensormaps for the CTA from Params
-    constexpr bool IsEpiLoad = false;
-    cute::TmaDescriptor* store_tensormap = nullptr;
-    int thread_idx = threadIdx.x % ThreadCount;
-    int warp_idx = thread_idx / NumThreadsPerWarp;
-    // Only the first epilogue warp needs to perform TMA related operations
-    if (warp_idx == 0) {
-      store_tensormap = tensormaps_init<IsEpiLoad>(params, shared_tensormap, sm_count, sm_idx);
+    if constexpr (IsTmaAsyncUpdate) {
+      return cute::make_tuple();
+    } else {
+      // Fetch a copy of tensormaps for the CTA from Params
+      constexpr bool IsEpiLoad = false;
+      cute::TmaDescriptor* store_tensormap = nullptr;
+      int thread_idx = threadIdx.x % ThreadCount;
+      int warp_idx = thread_idx / NumThreadsPerWarp;
+      // Only the first epilogue warp needs to perform TMA related operations
+      if (warp_idx == 0) {
+        store_tensormap = tensormaps_init<IsEpiLoad>(params, shared_tensormap, sm_count, sm_idx);
+      }
+      return cute::make_tuple(store_tensormap);
     }
-    return cute::make_tuple(store_tensormap);
   }
 
   template<
@@ -1343,17 +1363,44 @@ public:
   // Methods to perform different parts of TMA/Tensormap modifications
   //
 
-  template <bool IsLoad>
+  template <bool IsLoad, bool IsTmaAsyncUpdate = false>
   CUTLASS_DEVICE auto
   tensormaps_init(Params const& params,
       TensorMapStorage& shared_tensormap,
       int32_t const sm_count,
-      int32_t const sm_idx) const {
+      int32_t const sm_idx,
+      bool const is_leader_warp = true) const {
+
+    // Define a local struct that provides simple array indexing for TMA descriptors
+    struct TensorMapArray {
+      cute::TmaDescriptor* tma_desc;
+
+      TensorMapArray() = default;
+
+      CUTLASS_DEVICE
+      TensorMapArray(cute::TmaDescriptor* desc) : tma_desc(desc) {}
+
+      CUTLASS_DEVICE
+      cute::TmaDescriptor*
+      operator[](int32_t idx) const {
+        return tma_desc + (idx % NumTmaDescriptorsPerSm);
+      }
+    };
+
     cute::TmaDescriptor* tma_desc = nullptr;
     cute::TmaDescriptor* gmem_tensormap = params.tensormaps;
+
+    if (!is_leader_warp) {
+      if constexpr (IsTmaAsyncUpdate) {
+          return TensorMapArray{tma_desc};
+      } else {
+        return tma_desc;
+      }
+    }
+
     if constexpr (IsLoad) {
-      if (is_source_supported) {
-        tma_desc = &gmem_tensormap[sm_idx];
+      if constexpr (is_source_supported) {
+        tma_desc = &gmem_tensormap[sm_idx * NumTmaDescriptorsPerSm];
         if (cute::elect_one_sync()) {
           // Bringing tensormaps from params to smem for modification later
           Tensor pC_tensormap = make_tensor(params.tma_load_c.get_tma_descriptor(), Int<1>{}, Int<1>{});
@@ -1364,7 +1411,7 @@ public:
       }
     } else if constexpr (is_destination_supported) {
       int const offset_Ddesc = cute::is_void_v<ElementC> ? 0 : sm_count;
-      tma_desc = &gmem_tensormap[sm_idx + offset_Ddesc];
+      tma_desc = &gmem_tensormap[(sm_idx + offset_Ddesc) * NumTmaDescriptorsPerSm];
       if (cute::elect_one_sync()) {
         // Bringing tensormaps from params to smem for modification later
         Tensor pD_tensormap = make_tensor(params.tma_store_d.get_tma_descriptor(), Int<1>{}, Int<1>{});
@@ -1374,7 +1421,11 @@ public:
       __syncwarp();
     }
 
-    return tma_desc;
+    if constexpr (IsTmaAsyncUpdate) {
+      return TensorMapArray{tma_desc};
+    } else {
+      return tma_desc;
+    }
   }
 
   // Replace address for the global tensor (to be done by single thread)
@@ -1451,15 +1502,16 @@ public:
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)
-  template <bool IsLoad, class ProblemShape>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true, class ProblemShape>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
       TensorMapStorage& shared_tensormap,
       Params const& params,
-      cute::TmaDescriptor const* tensormap,
+      cute::TmaDescriptor* tensormap,
       ProblemShape problem_shape,
-      int32_t next_batch) {
+      int32_t next_batch
+  ) {
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
       tensormaps_replace_global_address<IsLoad>(shared_tensormap, params, next_batch);
@@ -1474,16 +1526,21 @@ public:
     // Ensure warp is converged before issuing tensormap fence release
     __syncwarp();
     // Entire warp must do this (ie its aligned)
-    tensormaps_cp_fence_release<IsLoad>(shared_tensormap, tensormap);
+    tensormaps_cp_fence_release<IsLoad, WaitForInflightTmaRequests>(
+      shared_tensormap,
+      tensormap
+    );
   }
 
-  template <bool IsLoad>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormap,
-      cute::TmaDescriptor const* tensormap) {
-    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
+      cute::TmaDescriptor* tensormap
+    ) {
+
+    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem if we're not using async update.
     // This operation only happens when the group/batch changes between consecutive tiles.
     // If there are no uncommitted instructions then tma_desc_commit_group results in an empty bulk async-group.
     auto tma_desc_wait_all_fn = [] () CUTLASS_LAMBDA_FUNC_INLINE {
@@ -1492,14 +1549,19 @@ public:
         cute::tma_desc_wait_group();
       }
     };
+
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
-      if (is_source_supported) {
-        tma_desc_wait_all_fn();
+      if constexpr (is_source_supported) {
+        if constexpr (WaitForInflightTmaRequests) {
+          tma_desc_wait_all_fn();
+        }
         tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_C);
       }
     } else if constexpr (is_destination_supported) {
-      tma_desc_wait_all_fn();
+      if constexpr (WaitForInflightTmaRequests) {
+        tma_desc_wait_all_fn();
+      }
       tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_D);
     }
   }
@@ -1509,7 +1571,7 @@ public:
   void
   tensormaps_fence_acquire(cute::TmaDescriptor const* tensormap) {
     if constexpr (IsLoad) {
-      if (is_source_supported) {
+      if constexpr (is_source_supported) {
         cute::tma_descriptor_fence_acquire(tensormap);
       }
     } else if constexpr (is_destination_supported) {

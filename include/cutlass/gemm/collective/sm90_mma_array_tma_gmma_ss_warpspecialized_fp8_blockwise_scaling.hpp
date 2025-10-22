@@ -73,7 +73,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<Stages, ClusterShape, KernelSchedule>,
+    MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
     StridePairA_,
@@ -92,7 +92,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<Stages, ClusterShape, KernelSchedule>;
+  using DispatchPolicy = MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = cute::tuple_element_t<0,StridePairA_>;
@@ -382,8 +382,6 @@ struct CollectiveMma<
         auto [M,N,K,L] = problem_shape_MNKL;
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), InternalStrideA{});
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), InternalStrideB{});
-        // We expect full tiles in K
-        implementable = implementable && K % size<2>(TileShape{}) == 0;
       }
     }
 
@@ -824,16 +822,13 @@ struct CollectiveMma<
     // Prologue GMMAs
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
-    // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
     auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
-    pipeline.consumer_wait(smem_pipe_read, barrier_token);
-
-    // fence_operand();
     GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
-
     warpgroup_fence_operand(accumulation());
 
-    {
+    if (k_tile_count > 0) {
+      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
       // Load per block scale values from shared memory to registers
@@ -977,7 +972,7 @@ struct CollectiveMma<
       ++smem_pipe_release;
     }
 
-    if (k_tile_count) {
+    if (k_tile_count > 0) {
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //
@@ -1072,9 +1067,11 @@ struct CollectiveMma<
   /// Perform a Consumer Epilogue to release all buffers
   CUTLASS_DEVICE void
   mma_tail(MainloopPipeline pipeline, PipelineState smem_pipe_release, int k_tile_count) {
-    // The pipeline is not released in the first iteration
-    smem_pipe_release.advance(k_tile_count - 1);
-    pipeline.consumer_release(smem_pipe_release);
+    if (k_tile_count > 0) {
+      // The pipeline is not released in the first iteration
+      smem_pipe_release.advance(k_tile_count - 1);
+      pipeline.consumer_release(smem_pipe_release);
+    }
   }
 
   //

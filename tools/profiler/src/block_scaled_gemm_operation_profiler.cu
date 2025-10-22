@@ -355,11 +355,17 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
 int64_t BlockScaledGemmOperationProfiler::GemmProblem::bytes_with_problem_shape(
   library::BlockScaledGemmDescription const &operation_desc,
   gemm::GemmCoord const &problem_shape) const {
+
+  int sfa_m     = round_up(problem_shape.m(), 128);
+  int sfb_n     = round_up(problem_shape.n(), 128);
+  int sfa_sfb_k = round_up(ceil_div(problem_shape.k(), operation_desc.SFVecSize), 4);
   // Input bytes read and Output bytes written for the gemm problem
   int64_t bytes =
     int64_t(library::sizeof_bits(operation_desc.A.element) * problem_shape.m() / 8) * problem_shape.k() +
     int64_t(library::sizeof_bits(operation_desc.B.element) * problem_shape.n() / 8) * problem_shape.k() +
-    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n();
+    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n() + 
+    int64_t(library::sizeof_bits(operation_desc.SFA.element) * sfa_m / 8) * sfa_sfb_k +
+    int64_t(library::sizeof_bits(operation_desc.SFB.element) * sfb_n / 8) * sfa_sfb_k;
 
   // Set is_beta_zero true if beta is zero
   bool is_beta_zero = std::all_of(beta.begin(), beta.end(), [](uint8_t i) { return i==0; });
@@ -726,6 +732,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
   library::BlockScaledGemmDescription const &operation_desc =
     static_cast<library::BlockScaledGemmDescription const &>(operation->description());
 
+  bool is_sparse = operation_desc.tile_description.math_instruction.opcode_class == cutlass::library::OpcodeClassID::kSparseTensorOp;
+
   // Compute the number of copies of the problem to avoid L2 camping.
   if (!options.profiling.workspace_count) {
     int64_t bytes = problem_.bytes(operation_desc);
@@ -917,6 +925,7 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     gemm_workspace_.arguments.sm_count = options.device.get_sm_count(0);
+    gemm_workspace_.arguments.device_index = static_cast<int>(0);  
   }
 
   //
@@ -932,12 +941,34 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
 
       workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
                                                             &gemm_workspace_.arguments);
+      if (is_sparse) {
+        // sparse gemm get_device_workspace_size() only return device workspace size per iteration
+        // Needs to multiply it w/ number of iteration
+        workspace_size *= gemm_workspace_.problem_count;
+      }
       gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
 
+      // Convert to structure sparse contents here.
+      if (is_sparse) {
+        uint8_t* profiler_workspaces[1];
+        profiler_workspaces[0] = reinterpret_cast<uint8_t*>(gemm_workspace_.A->data());
+        // Sparse operations have a different initialize interface.
+        // initialize_with_profiler_workspace converts mxk tensorA to compressed mxk/sp tensorA and the tensorE
+        auto modifiable_underlying_op = const_cast<library::Operation*>(underlying_operation);
+        status = modifiable_underlying_op->initialize_with_profiler_workspace(
+          &gemm_workspace_.configuration,
+          gemm_workspace_.host_workspace.data(),
+          gemm_workspace_.device_workspace.data(),
+          profiler_workspaces,
+          gemm_workspace_.problem_count);
+      }
+      else {
       status = underlying_operation->initialize(
         &gemm_workspace_.configuration,
         gemm_workspace_.host_workspace.data(),
         gemm_workspace_.device_workspace.data());
+      }
+
       if (status != Status::kSuccess) {
         return status;
       }

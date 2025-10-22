@@ -15,6 +15,14 @@ Understanding these limitations will help you avoid potential pitfalls from the 
 Please refer to :doc:`../limitations` for more details.
 
 
+Source Code Correlation
+-----------------------
+
+CuTe DSL provides Python code to PTX/SASS correlation to enable the profiling/debugging of generated kernels with debug symbols by generating line info when compiling the kernel.
+
+You can enable that globally via the environment variable CUTE_DSL_LINEINFO=1. Alternative, you can use compilation options to enable that per kernel. Please refer to :doc:`./dsl_jit_compilation_options` for more details.
+
+
 DSL Debugging
 -------------
 
@@ -75,6 +83,48 @@ This helps you verify whether the IR is generated as expected.
     export CUTE_DSL_KEEP_IR=1
 
 
+Dump the generated PTX & CUBIN
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For users familiar with PTX and SASS, CuTe DSL supports dumping the generated PTX and CUBIN.
+
+.. code:: bash
+
+    # Dump generated PTX in a .ptx file (default: False)
+    export CUTE_DSL_KEEP_PTX=1
+
+    # Dump generated cubin in a .cubin file (default: False)
+    export CUTE_DSL_KEEP_CUBIN=1
+
+To further get SASS from cubin, users can use ``nvdisasm`` (usually installed with CUDA toolkit) to disassemble the cubin.
+
+.. code:: bash
+
+    nvdisasm your_dsl_code.cubin > your_dsl_code.sass
+
+
+Access the dumped contents programmatically
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For compiled kernels, the generated PTX/CUBIN/IR can be accessed programmatically as well through following attributes:
+
+- ``__ptx__``: The generated PTX code of the compiled kernel.
+- ``__cubin__``: The generated CUBIN data of the compiled kernel.
+- ``__mlir__``: The generated IR code of the compiled kernel.
+
+.. code:: python
+    
+    compiled_foo = cute.compile(foo, ...)
+    print(f"PTX: {compiled_foo.__ptx__}")
+    with open("foo.cubin", "wb") as f:
+        f.write(compiled_foo.__cubin__)
+
+
+Change the dump directory
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, all dumped files are saved in the current working directory. To specify a different directory for the dumped files, please set the environment variable CUTE_DSL_DUMP_DIR accordingly.
+
 
 Kernel Functional Debugging
 ----------------------------
@@ -121,6 +171,7 @@ For detecting memory errors and race conditions:
     compute-sanitizer --some_options python your_dsl_code.py
 
 Please refer to the `compute-sanitizer documentation <https://developer.nvidia.com/compute-sanitizer>`_ for more details.
+
 
 Conclusion
 ----------

@@ -90,7 +90,7 @@ before issuing other instructions associated with a particular pipeline stage
 (e.g., copy or write).
 
 This is a blocking instruction
-which blocks further execution of consumer threads
+which blocks further execution of producer threads
 unless the particular stage waiting to be acquired
 is released by a consumer.
 
