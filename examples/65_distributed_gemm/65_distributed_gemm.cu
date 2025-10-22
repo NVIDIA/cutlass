@@ -403,9 +403,9 @@ void initialize(const Options &options) {
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, shape_C);
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, shape_D);
 
-  auto a_coord = cutlass::make_Coord(size(shape_A), 1);
-  auto b_coord = cutlass::make_Coord(size(shape_B), 1);
-  auto c_coord = cutlass::make_Coord(size(shape_C), 1);
+  auto a_coord = cutlass::make_Coord(size<2>(shape_A)*size<0>(shape_A), size<1>(shape_A));
+  auto b_coord = cutlass::make_Coord(size<2>(shape_B)*size<0>(shape_B), size<1>(shape_B));
+  auto c_coord = cutlass::make_Coord(size<2>(shape_C)*size<0>(shape_C), size<1>(shape_C));
 
   tensor_A.resize(a_coord);
   tensor_B.resize(b_coord);
@@ -650,7 +650,7 @@ int run(Options &options) {
     arguments_[device_idx] = dist_gemm_args_from_options(options, device_idx, stream_arr[device_idx]);
 
     // Using the arguments, query for extra workspace required for matrix multiplication computation
-    size_t workspace_size = DistGemm::get_workspace_size(arguments_[device_idx]);
+    size_t workspace_size = DistGemm::get_workspace_size(arguments_, device_idx);
     size_t exclusive_workspace_size = DistGemm::get_exclusive_workspace_size();
 
     workspace_arr[device_idx] = cutlass::device_memory::allocation<uint8_t>(workspace_size);
