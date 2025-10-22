@@ -122,6 +122,10 @@ struct Options {
   bool verify = false;
   bool verbose = false;
 
+  int window_size_left = -1;
+  int window_size_right = -1;
+  bool local = false;
+
   bool causal = false;
   bool residual = false;
   bool varlen = false;
@@ -259,6 +263,10 @@ struct Options {
     if (b == 0) b = 1;
 
     cmd.get_cmd_line_argument("iterations", iterations, defaults.iterations);
+
+    cmd.get_cmd_line_argument("window_size_left", window_size_left, defaults.window_size_left);
+    cmd.get_cmd_line_argument("window_size_right", window_size_right, defaults.window_size_right);
+
     verify = cmd.check_cmd_line_flag("verify");
     verbose = cmd.check_cmd_line_flag("verbose");
     std::string mask;
@@ -268,6 +276,9 @@ struct Options {
     }
     else if (mask == "residual") {
       residual = true;
+    }
+    else if (mask == "local") {
+      local = true;
     }
     else {
       causal = defaults.causal;
@@ -309,9 +320,11 @@ struct Options {
       << "  --d=<int>                   Sets the D extent\n"
       << "  --d_vo=<int>                  Sets the D_VO extent\n"
       << "  --iterations=<int>          Benchmarking iterations\n"
+      << "  --window_size_left=<int>    Window size left for local attention\n"
+      << "  --window_size_right=<int>   Window size right for local attention\n"
       << "  --verify                    Verify results\n"
       << "  --verbose                   Print smem and execution time per kernel\n"
-      << "  --mask=<no|residual|causal> Enables masking\n"
+      << "  --mask=<no|residual|causal|local> Enables masking\n"
       << "  --varlen                    Enables variable sequence length\n"
       << "                              B*Q and B*K become the total sequence length\n"
       << "                              and are split B-ways, alternatingly +10% and -10%\n"
@@ -415,7 +428,7 @@ struct BwdRunner {
       cute::tuple<VariableLength, VariableLength, int, int, cute::tuple<cute::tuple<int, int>, int>>,
       cute::tuple<int, int, int, int, cute::tuple<cute::tuple<int, int>, int>>
   >;
-  
+
   using StrideQ = Stride<int, _1, Stride<Stride<int, int>, int>>; // Q D    ((H_R, H_K), B)
   using StrideK = Stride<int, _1, Stride<Stride<_0, int>, int>>;  // K D    ((H_R, H_K), B)
   using StrideV = StrideK;                                        // K D_VO ((H_R, H_K), B)
@@ -467,7 +480,7 @@ struct BwdRunner {
   //
   // Methods
   //
-  bool verify(const ProblemShape& problem_shape) {
+  bool verify(const ProblemShape& problem_shape, const Options& options) {
     auto [Q, K, D, D_VO, HB] = problem_shape;
     auto [H, B] = HB;
 
@@ -481,7 +494,7 @@ struct BwdRunner {
     Tensor mDV = make_tensor(make_gmem_ptr(block_ref_dV.get()), make_shape(K, D_VO, HB), stride_dV);
     Tensor mDO = make_tensor(make_gmem_ptr(block_dO.get()), make_shape(Q, D_VO, HB), stride_dO);
 
-    fmha_bwd_reference(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDQ, mDK, mDV, ActiveMask{});
+    fmha_bwd_reference(problem_shape, mQ, mK, mV, mO, mLSE, mDO, mDQ, mDK, mDV, ActiveMask(options.window_size_left, options.window_size_right));
 
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
@@ -500,7 +513,7 @@ struct BwdRunner {
 
     bool passed_dQ = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dQ) {
-      std::cerr << "failed dQ: max diff " << max_diff 
+      std::cerr << "failed dQ: max diff " << max_diff
                 << " mean " << mean_diff << std::endl;
     }
 
@@ -508,7 +521,7 @@ struct BwdRunner {
 
     bool passed_dK = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dK) {
-      std::cerr << "failed dK: max diff " << max_diff 
+      std::cerr << "failed dK: max diff " << max_diff
                 << " mean " << mean_diff << std::endl;
     }
 
@@ -516,7 +529,7 @@ struct BwdRunner {
 
     bool passed_dV = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dV) {
-      std::cerr << "failed dV: max diff " << max_diff 
+      std::cerr << "failed dV: max diff " << max_diff
                 << " mean " << mean_diff << std::endl;
     }
 
@@ -532,7 +545,7 @@ struct BwdRunner {
 
       // generate Q as --b times
       //    gaussian (--Q, --Q / 2) sampled positive
-      //    track cumulative 
+      //    track cumulative
       std::mt19937 rng(0x202305151552ull);
       std::normal_distribution<double> dist_q(options.q, options.q / 2);
       std::normal_distribution<double> dist_kv(options.k, options.k / 2);
@@ -552,7 +565,7 @@ struct BwdRunner {
 
       const bool kVarlenSame = false;
       for (int i = 0; i < num_batches; i++) {
-        int seqlen_q = (! options.varlen_q.empty()) ? options.varlen_q.at(i) : 
+        int seqlen_q = (! options.varlen_q.empty()) ? options.varlen_q.at(i) :
                 kVarlenSame ? options.q :
                 generate_positive_int(dist_q, rng);
         int seqlen_kv = (! options.varlen_k.empty()) ? options.varlen_k.at(i) :
@@ -672,7 +685,7 @@ struct BwdRunner {
       stride_LSE);
 
     if (not options.skip_reference) {
-      fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask{});
+      fmha_reference(problem_shape, mQ, mK, mV, mO, mLSE, ActiveMask(options.window_size_left, options.window_size_right));
     }
 
     return problem_shape;
@@ -699,6 +712,8 @@ struct BwdRunner {
       block_dK.get(), stride_dK,
       block_dV.get(), stride_dV,
       softmax_scale,
+      options.window_size_left,
+      options.window_size_right,
       hw_info
     };
 
@@ -819,10 +834,10 @@ struct BwdRunner {
     // Verify that the result is correct
     bool passed = true;
     if (options.verify) {
-      passed = verify(problem_shape);
+      passed = verify(problem_shape, options);
       if (passed) example_result.verified = true;
     }
-    
+
     if (!passed) {
       std::cerr << "Reference check failed" << std::endl;
       return example_result;
@@ -945,7 +960,7 @@ int main_single(int argc, char const **args) {
       << "(compute capability 100a) and CUDA 12.8 or greater.\n";
     return 0;
   }
-  
+
   //
   // Parse options
   //
@@ -991,6 +1006,12 @@ int main_single(int argc, char const **args) {
   auto with_causal = [&](auto fn) {
     if (options.causal) {
       fn(CausalForBackwardMask{});
+    }
+    else if (options.local) {
+      if (options.window_size_left == -1 || options.window_size_right == -1) {
+        throw std::runtime_error("Error: --window_size_left and --window_size_right must be set for local attention.");
+      }
+      fn(LocalMaskForBackward{});
     }
     else if (options.residual) {
       fn(ResidualMaskForBackward{});

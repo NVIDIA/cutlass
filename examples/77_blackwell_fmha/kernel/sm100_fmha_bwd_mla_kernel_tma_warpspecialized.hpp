@@ -307,6 +307,9 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
     TensorStride stride_dq_acc;
 
     ElementAcc softmax_scale = 1.0f / sqrtf(TileShapeDQK{});
+
+    int window_size_left = -1;
+    int window_size_right = -1;
   };
 
   using TMA_K = typename CollectiveMmaQK::Params::TMA_B;
@@ -1001,7 +1004,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
         make_coord(blk_coord_k * TileShapeK{}, _0{}),
         make_identity_tensor(take<0,2>(TileShapePDO{}))
     );
-    
+
     for (int i = threadIdx.x; i < size(gDK); i += blockDim.x) {
       if (elem_less(cDK(i), select<1,2>(problem_shape))) {
         gDK(i) = Element(0);
@@ -1278,7 +1281,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
         }
 
         auto tRT_rST = quantize(tTR_rST);
-        
+
         Tensor sP = make_tensor(make_smem_ptr((Element*) shared_tensors.smem_p.begin()), SmemLayoutP{})
           (_, _, _, pipeline_compute_mma_p_producer_state.index());
 
@@ -1482,7 +1485,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
   CUTLASS_DEVICE void operator()(Params const& params, char* smem) {
 #if (! defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && ! defined(CUTLASS_ARCH_MMA_SM100F_ENABLED))
     printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
-#else    
+#else
     int warp_idx = cutlass::canonical_warp_idx_sync();
     auto role = warp_idx_to_role(warp_idx);
     uint32_t lane_predicate = cute::elect_one_sync();
