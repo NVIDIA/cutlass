@@ -110,6 +110,13 @@ constexpr int stages_member(DispatchPolicy) {
   }
 }
 
+template <class GemmKernel, class = void>
+struct IsDistGemmKernel : cute::false_type { };
+
+template <typename GemmKernel>
+struct IsDistGemmKernel<GemmKernel, cute::void_t<typename GemmKernel::TP>>
+    : cute::true_type { };
+
 } // namespace detail
 
 template <class GemmKernel_>
@@ -396,8 +403,13 @@ public:
                     || GemmKernel::ArchTag::kMinComputeCapability == 103
                     ) {
         if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
-          fallback_cluster = params.hw_info.cluster_shape_fallback;
-          cluster = params.hw_info.cluster_shape;
+          if constexpr (detail::IsDistGemmKernel<GemmKernel>::value) {
+            fallback_cluster = params.base.hw_info.cluster_shape_fallback;
+            cluster = params.base.hw_info.cluster_shape;
+          } else {
+            fallback_cluster = params.hw_info.cluster_shape_fallback;
+            cluster = params.hw_info.cluster_shape;
+          }
         }
       }
       
