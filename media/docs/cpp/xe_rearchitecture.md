@@ -147,7 +147,7 @@ struct Copy_Traits</* Op */, XMode, YMode, ValType, TiledStrides>;
 
 Since it can be a tricky to correctly choose block 2D parameters and set up an appropriate tiling, we introduce several helpers for creating TiledCopy objects.
 
-The high-level APIs `make_block_2d_copy_{A,B,C}` automatically create TiledCopy objects for use with an existing `TiledMMA`. They choose the copy operation and trait template parameters heuristically.
+The high-level APIs `make_block_2d_copy_{A,B,C,D}` automatically create TiledCopy objects for use with an existing `TiledMMA`. They choose the copy operation and trait template parameters heuristically. Note that `make_block_2d_copy_C` and `make_block_2d_copy_D` only differ in their choice of a load (C) or store (D) operation.
 
 ```c++
 template <class Engine, class Layout, /*...*/>
@@ -167,6 +167,12 @@ CUTE_DEVICE
 TiledCopy<...>
 make_block_2d_copy_C(const TiledMMA<...>&,
                      const Tensor<Engine, Layout>& gmem);       // (M,N,...)
+
+template <class Engine, class Layout, /*...*/>
+CUTE_DEVICE
+TiledCopy<...>
+make_block_2d_copy_D(const TiledMMA<...>&,
+                     const Tensor<Engine, Layout>& gmem);       // (M,N,...)
 ```
 
 The user may also override the choice of copy operation:
@@ -179,7 +185,15 @@ make_block_2d_copy_A(CopyOp                   const& op,     // Copy operation
                      TiledMMA                 const& mma,    // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem);  // Global tensor
 
-/* Similarly for B/C */
+/* Similarly for B */
+
+/* Single routine for both C/D */
+template <class TiledMMA, class CopyOp, class GEngine, class GLayout>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_CD(CopyOp                   const& op,     // Copy operation
+                      TiledMMA                 const& mma,    // TiledMMA instance
+                      Tensor<GEngine, GLayout> const& gmem);  // Global tensor
 ```
 
 The `make_block_2d_copy_*` family of functions create TiledCopy objects that match the scope of the TiledMMA. That is, the set of threads participating in the TiledMMA will also participate in the TiledCopy.
@@ -194,7 +208,7 @@ TiledCopy
 make_block_2d_copy(const CopyOp& op, const Tensor<Engine, Layout>& gmem);
 ```
 
-For advanced usage, there are additional overloads of `make_block_2d_copy` that allow more general work distributions for copies (see `include/cute/atom/copy_traits_xe_2d.hpp`).
+For advanced usage, there are additional overloads of `make_block_2d_copy` in which multiple subgroups participate (see `include/cute/atom/copy_traits_xe_2d.hpp`).
 
 As the `CUTE_DEVICE` decorators imply, all the APIs above should be called from device code only, as they set up internal state that cannot be transferred from host to device.
 
@@ -419,7 +433,7 @@ gemm_device(ATensor   const& A,         // (M,K)
   /* Create block 2D TiledCopies */
   auto copy_a = make_block_2d_copy_A(mma, A);
   auto copy_b = make_block_2d_copy_B(mma, B);
-  auto copy_c = make_block_2d_copy_C(mma, C);
+  auto copy_c = make_block_2d_copy_D(mma, C);
 
   /* Slice TiledCopy/TiledMMA operations to thread (work-item) level */
   auto thr_mma    =    mma.get_slice(local_id);

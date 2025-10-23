@@ -924,16 +924,26 @@ make_block_2d_copy_C(TiledMMA                 const& mma,   // TiledMMA instance
   return make_block_2d_copy_C<ValType>(mma, gmem.stride()).with(gmem);
 }
 
-template <class TiledMMA, class CopyOp, class GEngine, class GLayout>
+template <class TiledMMA, class GEngine, class GLayout>
 CUTE_HOST_DEVICE
 auto
-make_block_2d_copy_C(CopyOp                   const& op,    // Copy operation
-                     TiledMMA                 const& mma,   // TiledMMA instance
+make_block_2d_copy_D(TiledMMA                 const& mma,   // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
   static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
-  return make_block_2d_copy_C<ValType>(op, mma, gmem.stride()).with(gmem);
+  return make_block_2d_copy_D<ValType>(mma, gmem.stride()).with(gmem);
+}
+
+template <class TiledMMA, class CopyOp, class GEngine, class GLayout>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_CD(CopyOp                   const& op,    // Copy operation
+                      TiledMMA                 const& mma,   // TiledMMA instance
+                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
+{
+  using ValType = typename GEngine::value_type;
+  return make_block_2d_copy_CD<ValType>(op, mma, gmem.stride()).with(gmem);
 }
 
 template <class ValType, class TiledMMA, class... Strides>
@@ -942,32 +952,46 @@ auto
 make_block_2d_copy_C(TiledMMA           const& mma,         // TiledMMA instance
                      Stride<Strides...> const& gstride)     // Global memory strides
 {
-  using MMAType = typename TiledMMA::ValTypeA;
+  using MMAType = typename TiledMMA::ValTypeC;
   auto cC = make_identity_tensor(select<0,1>(mma.tile_mnk()));
-  auto op = block_2d_selector<ValType, MMAType, true>(
+  auto op = block_2d_selector<ValType, MMAType>(
     mma.get_slice(0).atom_partition_C(cC).layout(), gstride
   );
-  return make_block_2d_copy_C<ValType>(op, mma, gstride);
+  return make_block_2d_copy_CD<ValType>(op, mma, gstride);
+}
+
+template <class ValType, class TiledMMA, class... Strides>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_D(TiledMMA           const& mma,         // TiledMMA instance
+                     Stride<Strides...> const& gstride)     // Global memory strides
+{
+  using MMAType = typename TiledMMA::ValTypeD;
+  auto cD = make_identity_tensor(select<0,1>(mma.tile_mnk()));
+  auto op = block_2d_selector<ValType, MMAType, true>(
+    mma.get_slice(0).atom_partition_C(cD).layout(), gstride
+  );
+  return make_block_2d_copy_CD<ValType>(op, mma, gstride);
 }
 
 template <class ValType, class TiledMMA, class CopyOp, class... Strides>
 CUTE_HOST_DEVICE
 auto
-make_block_2d_copy_C(CopyOp             const& op,          // Copy operation
-                     TiledMMA           const& mma,         // TiledMMA instance
-                     Stride<Strides...> const& gstride)     // Global memory strides
+make_block_2d_copy_CD(CopyOp             const& op,          // Copy operation
+                      TiledMMA           const& mma,         // TiledMMA instance
+                      Stride<Strides...> const& gstride)     // Global memory strides
 {
-  return make_block_2d_copy_C<ValType>(op, mma, gstride, find_x_mode(gstride), find_y_mode(gstride));
+  return make_block_2d_copy_CD<ValType>(op, mma, gstride, find_x_mode(gstride), find_y_mode(gstride));
 }
 
 template <class ValType, class TiledMMA, class CopyOp, class... Strides, class XMode, class YMode>
 CUTE_HOST_DEVICE
 auto
-make_block_2d_copy_C(CopyOp             const& op,          // Copy operation
-                     TiledMMA           const& mma,         // TiledMMA instance
-                     Stride<Strides...> const& gstride,     // Global memory strides
-                     XMode              const& x_mode,      // x, y modes
-                     YMode              const& y_mode)
+make_block_2d_copy_CD(CopyOp             const& op,          // Copy operation
+                      TiledMMA           const& mma,         // TiledMMA instance
+                      Stride<Strides...> const& gstride,     // Global memory strides
+                      XMode              const& x_mode,      // x, y modes
+                      YMode              const& y_mode)
 {
   // Retrieve MMA atom's (subgroup, value) -> (M,N) layout
   auto tile_mn = select<0,1>(mma.tile_mnk());
