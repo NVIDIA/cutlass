@@ -930,7 +930,6 @@ auto
 make_block_2d_copy_D(TiledMMA                 const& mma,   // TiledMMA instance
                      Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
-  static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
   return make_block_2d_copy_D<ValType>(mma, gmem.stride()).with(gmem);
 }
@@ -942,6 +941,7 @@ make_block_2d_copy_CD(CopyOp                   const& op,    // Copy operation
                       TiledMMA                 const& mma,   // TiledMMA instance
                       Tensor<GEngine, GLayout> const& gmem)  // Global tensor
 {
+  static_assert(is_xe_block_2d_atom_v<CopyOp>, "Expected a block 2D atom");
   using ValType = typename GEngine::value_type;
   return make_block_2d_copy_CD<ValType>(op, mma, gmem.stride()).with(gmem);
 }
