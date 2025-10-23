@@ -665,6 +665,9 @@ public:
       }
       // Mainloop Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Mainloop) {
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+        cutlass::arch::wait_on_dependent_grids();
+        #endif
         int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx;
         int32_t const mock_l_coord = 0;
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
@@ -766,6 +769,9 @@ public:
         collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
       } // Mainloop Producer Warp End
       else if (producer_warp_role == ProducerWarpRole::MainloopAux) {
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+        cutlass::arch::wait_on_dependent_grids();
+        #endif
         if constexpr (IsMainloopAuxiliaryLoadNeeded) {
           int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx;
           int32_t const mock_l_coord = 0;
@@ -829,6 +835,9 @@ public:
       } // Mainloop Auxiliary Load Producer Warp End
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+        cutlass::arch::wait_on_dependent_grids();
+        #endif
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
         int32_t const sm_count = params.hw_info.sm_count;
 
@@ -1038,6 +1047,11 @@ public:
 
         // Get next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+        if (!next_work_tile_info.is_valid()) {
+          cutlass::arch::launch_dependent_grids();
+        }
+        #endif
         work_tile_info = next_work_tile_info;
         if (increment_pipe) {
           ++tile_scheduler_pipe_consumer_state;
