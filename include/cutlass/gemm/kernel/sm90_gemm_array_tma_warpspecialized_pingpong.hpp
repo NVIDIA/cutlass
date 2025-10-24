@@ -769,10 +769,10 @@ public:
         collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
       } // Mainloop Producer Warp End
       else if (producer_warp_role == ProducerWarpRole::MainloopAux) {
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        cutlass::arch::wait_on_dependent_grids();
-        #endif
         if constexpr (IsMainloopAuxiliaryLoadNeeded) {
+          #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+          cutlass::arch::wait_on_dependent_grids();
+          #endif
           int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx;
           int32_t const mock_l_coord = 0;
 
