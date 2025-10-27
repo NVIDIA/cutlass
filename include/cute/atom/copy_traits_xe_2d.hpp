@@ -56,7 +56,7 @@ namespace cute {
 
 // Utility to check if a layout belongs to a coordinate tensor.
 template <typename Layout>
-static constexpr bool is_counting_layout_v = is_arithmetic_tuple_like<decltype(Layout{}(0))>::value;
+static constexpr bool is_counting_layout_v = is_arithmetic_tuple_like<decltype(Layout{}(0))>::value || is_constant_v<1, decltype(size(Layout{}))>;
 
 
 
