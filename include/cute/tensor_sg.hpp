@@ -32,6 +32,7 @@
 #pragma once
 
 #include <cute/tensor_impl.hpp>                // cute::Tensor
+#include <cute/util/sycl_vec.hpp>              // intel::_SGSize
 
 namespace cute
 {
@@ -74,7 +75,7 @@ struct SubgroupTensor : Tensor<Engine, Layout>
     *this = static_cast<SubgroupTensor const&>(base);
   }
 
-  static constexpr int rank  = Layout::rank;
+  static constexpr int rank = Layout::rank;
 
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
@@ -89,13 +90,18 @@ struct SubgroupTensor : Tensor<Engine, Layout>
   }
 };
 
+template <class T>
+struct is_sg_tensor : false_type {};
+template <class Engine, class Layout, class SubgroupTVLayout>
+struct is_sg_tensor<SubgroupTensor<Engine,Layout,SubgroupTVLayout>> : true_type {};
+
 template <class Engine, class Layout, class SubgroupTVLayout>
 struct is_tensor<SubgroupTensor<Engine,Layout,SubgroupTVLayout>> : true_type {};
 
-template<class Engine,
-         class Layout,
-         class SubgroupTVLayout,
-         __CUTE_REQUIRES(is_layout<SubgroupTVLayout>::value)>
+template <class Engine,
+          class Layout,
+          class SubgroupTVLayout,
+          __CUTE_REQUIRES(is_layout<SubgroupTVLayout>::value)>
 CUTE_HOST_DEVICE
 constexpr auto
 make_subgroup_tensor(Tensor<Engine, Layout> const& tensor, SubgroupTVLayout const&)
@@ -105,6 +111,47 @@ make_subgroup_tensor(Tensor<Engine, Layout> const& tensor, SubgroupTVLayout cons
   return static_cast<SubgroupTensor<Engine,Layout,SubgroupTVLayout> const&>(tensor);
 }
 
+template <typename T, class Shape, class Stride>
+CUTE_HOST_DEVICE
+constexpr auto
+make_subgroup_tensor(Layout<Shape,Stride> const& sg_layout)
+{
+  using _SG = intel::_SGSize;
+  auto ilayout = make_layout(make_shape(_SG{}, size(sg_layout) / _SG{}),
+                             make_stride(_1{}, _16{}));
+  auto sv_layout = sg_layout.compose(ilayout);
+  return make_subgroup_tensor(make_fragment_like<T>(sv_layout(0,_)), sv_layout);
+}
+
+template <typename T, class... Args>
+CUTE_HOST_DEVICE
+constexpr auto
+make_subgroup_tensor(Args const&... args)
+{
+  return make_subgroup_tensor<T>(make_layout(args...));
+}
+
+
+// Replicate a subgroup fragment in a given mode.
+template <int Mode, int Expand, typename EngineIn, typename LayoutIn, typename TVLayoutIn>
+CUTE_HOST_DEVICE
+constexpr auto
+expand_sg_fragment_helper(SubgroupTensor<EngineIn,LayoutIn,TVLayoutIn> const&)
+{
+  constexpr SubgroupTensor<EngineIn,LayoutIn,TVLayoutIn> frag;
+  constexpr int ModeSize = get<Mode>(atuple_coshape(frag.tv_layout()));
+
+  auto xlayout = append(frag.layout(),
+                        Layout<C<Expand>, C<cosize_v<LayoutIn>>>{});
+  auto xv_layout = append(get<1>(frag.tv_layout()),
+                          make_layout(C<Expand>{}, C<ModeSize>{} * E<Mode>{}));
+  auto xtv_layout = make_layout(get<0>(frag.tv_layout()), xv_layout);
+
+  return make_subgroup_tensor(make_tensor<typename EngineIn::element_type>(xlayout), xtv_layout);
+}
+
+template <typename SGTensor, int Mode, int Expand>
+using expand_sg_fragment_t = decltype(expand_sg_fragment_helper<Mode, Expand>(SGTensor{}));
 
 //
 // Display utilities
