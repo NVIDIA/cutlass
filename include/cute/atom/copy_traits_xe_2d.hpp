@@ -725,12 +725,11 @@ block_2d_selector(CoordLayout const&, GlobalStride const&)
 }
 
 // Helper for make_block_2d_copy_* routines
-template <class ValType, class TiledMMA, class CopyOp, class... Strides,
+template <class ValType, class CopyOp, class... Strides,
           class XMode, class YMode, class MMAShape, class SVLayout>
 CUTE_HOST_DEVICE
 auto
 make_block_2d_copy_X(CopyOp             const& op,          // Copy operation
-                     TiledMMA           const& mma,         // TiledMMA instance
                      Stride<Strides...> const& gstride,     // Global memory strides
                      XMode              const& x_mode,      // x, y modes
                      YMode              const& y_mode,
@@ -838,7 +837,7 @@ make_block_2d_copy_A(CopyOp             const& op,          // Copy operation
                          make_tile(sg_to_vmk, _));                                  // (SG,V) -> (M,K)
 
   // Derive copy tile layout and create TiledCopy
-  return make_block_2d_copy_X<ValType>(op, mma, gstride, x_mode, y_mode, tile_mk, svA);
+  return make_block_2d_copy_X<ValType>(op, gstride, x_mode, y_mode, tile_mk, svA);
 }
 
 template <class TiledMMA, class GEngine, class GLayout>
@@ -900,7 +899,7 @@ make_block_2d_copy_B(CopyOp             const& op,          // Copy operation
   auto thr_vmnk = mma.get_thr_layout_vmnk();                                        // (ThrV,ThrM,ThrN,ThrK) -> thr
   auto shape_vmnk = shape(thr_vmnk);                                                // (ThrV,ThrM,ThrN,ThrK)
   auto drop_m = make_layout(shape_vmnk,
-      make_stride(_1{}, _0{}, get<0>(shape_vmnk), _0{},
+      make_stride(_1{}, _0{}, get<0>(shape_vmnk),
                   get<0>(shape_vmnk) * get<2>(shape_vmnk)));                        // (ThrV,ThrM,ThrN,ThrK) -> (ThrV,ThrN,ThrK)
 
   auto thr_to_vnk = composition(drop_m, right_inverse(thr_vmnk));                   // thr -> (ThrV,ThrN,ThrK)
@@ -911,7 +910,7 @@ make_block_2d_copy_B(CopyOp             const& op,          // Copy operation
                          make_tile(sg_to_vnk, _));                                  // (SG,V) -> (N,K)
 
   // Derive copy tile layout and create TiledCopy
-  return make_block_2d_copy_X<ValType>(op, mma, gstride, x_mode, y_mode, tile_nk, svB);
+  return make_block_2d_copy_X<ValType>(op, gstride, x_mode, y_mode, tile_nk, svB);
 }
 
 template <class TiledMMA, class GEngine, class GLayout>
@@ -1110,7 +1109,7 @@ make_block_2d_prefetch(PrefetchOp         const& op,
                                                   Int<n_sg_x>{});
 
   // Tile atom grid across collective op tile.
-  auto sv_layout = zipped_divide(make_layout(collective_op_tile), atom_shape);
+  auto sv_layout = zipped_divide(make_layout(atom_shape), collective_op_tile);
 
   // Create the TiledCopy object.
   return make_block_2d_copy<ValType>(op, stride, x_mode, y_mode, atom_shape, sv_layout);
