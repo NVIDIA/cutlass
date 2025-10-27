@@ -115,8 +115,8 @@ constexpr ReorderKind classify_xe_reorder()
 
 template <class SType, class DType,
           class SLayout, class DLayout>
-constexpr auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> coord
-                                      DLayout const& dlayout) { // (dst thr, dst val) -> coord
+auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> coord
+                            DLayout const& dlayout) { // (dst thr, dst val) -> coord
   // Calculate data transformation, interleaving WI-owned values:
   //  (thr0,val0) ... (thr15,val0), (thr0,val1), ..., (thr15,val1), ...
   auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));          // src index -> dst index

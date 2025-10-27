@@ -41,7 +41,7 @@ struct Universal_Reorder_UU {
 
   CUTE_HOST_DEVICE static void
   reorder(SrcType const& src0, DstType& dst0) {
-    dst0 = src0;
+    dst0 = DstType(src0);
   }
 };
 
