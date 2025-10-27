@@ -1008,7 +1008,162 @@ make_block_2d_copy_CD(CopyOp             const& op,          // Copy operation
                          make_tile(sg_to_vmn, _));                                  // (SG,V) -> (M,N)
 
   // Derive copy tile layout and create TiledCopy
-  return make_block_2d_copy_X<ValType>(op, mma, gstride, x_mode, y_mode, tile_mn, svC);
+  return make_block_2d_copy_X<ValType>(op, gstride, x_mode, y_mode, tile_mn, svC);
+}
+
+// Variants of make_block_2d_copy_C/D where the C/D tile is further subdivided by the user.
+//   (e.g. split-k parallelization).
+
+template <class TiledMMA,
+          class SubtileTVCoordLayout, class SubtileSGLayout,
+          class GEngine, class GLayout,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_C_subtiled(TiledMMA                 const& mma,         // TiledMMA instance
+                              SubtileTVCoordLayout     const& stv_layout,  // Subtile TV-layout: (T,V) -> coord
+                              SubtileSGLayout          const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                              Tensor<GEngine, GLayout> const& gmem)        // Global tensor
+{
+  using ValType = typename GEngine::value_type;
+  return make_block_2d_copy_C_subtiled<ValType>(mma, stv_layout, ssg_layout, gmem.stride()).with(gmem);
+}
+
+template <class TiledMMA,
+          class SubtileTVCoordLayout, class SubtileSGLayout,
+          class GEngine, class GLayout,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_D_subtiled(TiledMMA                 const& mma,         // TiledMMA instance
+                              SubtileTVCoordLayout     const& stv_layout,  // Subtile TV-layout: (T,V) -> coord
+                              SubtileSGLayout          const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                              Tensor<GEngine, GLayout> const& gmem)        // Global tensor
+{
+  using ValType = typename GEngine::value_type;
+  return make_block_2d_copy_D_subtiled<ValType>(mma, stv_layout, ssg_layout, gmem.stride()).with(gmem);
+}
+
+template <class TiledMMA,
+          class SubtileShape, class SubtileSGLayout,
+          class CopyOp, class GEngine, class GLayout,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_CD_subtiled(CopyOp                   const& op,          // Copy operation
+                               TiledMMA                 const& mma,         // TiledMMA instance
+                               SubtileShape             const& sshape,      // Subtile shape: (m,n)
+                               SubtileSGLayout          const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                               Tensor<GEngine, GLayout> const& gmem)        // Global tensor
+{
+  using ValType = typename GEngine::value_type;
+  return make_block_2d_copy_CD_subtiled<ValType>(op, sshape, ssg_layout, mma, gmem.stride()).with(gmem);
+}
+
+template <class ValType, class TiledMMA,
+          class SubtileTVCoordLayout, class SubtileSGLayout,
+          class... Strides,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_C_subtiled(TiledMMA             const& mma,         // TiledMMA instance
+                              SubtileTVCoordLayout const& stv_layout,  // Subtile TV-layout: (T,V) -> coord
+                              SubtileSGLayout      const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                              Stride<Strides...>   const& gstride)     // Global memory strides
+{
+  using MMAType = typename TiledMMA::ValTypeA;
+  auto op = block_2d_selector<ValType, MMAType>(stv_layout, gstride);
+  return make_block_2d_copy_CD_subtiled<ValType>(op, mma, atuple_coshape(stv_layout), ssg_layout, gstride);
+}
+
+template <class ValType, class TiledMMA,
+          class SubtileTVCoordLayout, class SubtileSGLayout,
+          class... Strides,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_D_subtiled(TiledMMA             const& mma,         // TiledMMA instance
+                              SubtileTVCoordLayout const& stv_layout,  // Subtile TV-layout: (T,V) -> coord
+                              SubtileSGLayout      const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                              Stride<Strides...>   const& gstride)     // Global memory strides
+{
+  using MMAType = typename TiledMMA::ValTypeA;
+  auto op = block_2d_selector<ValType, MMAType, true>(stv_layout, gstride);
+  return make_block_2d_copy_CD_subtiled<ValType>(op, mma, atuple_coshape(stv_layout), ssg_layout, gstride);
+}
+
+template <class ValType, class TiledMMA, class CopyOp,
+          class SubtileShape, class SubtileSGLayout,
+          class... Strides,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_CD_subtiled(CopyOp             const& op,          // Copy operation
+                               TiledMMA           const& mma,         // TiledMMA instance
+                               SubtileShape       const& sshape,      // Subtile shape: (m,n)
+                               SubtileSGLayout    const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                               Stride<Strides...> const& gstride)     // Global memory strides
+{
+  return make_block_2d_copy_CD_subtiled<ValType>(op, mma, sshape, ssg_layout, gstride,
+                                                 find_x_mode(gstride), find_y_mode(gstride));
+}
+
+template <class ValType, class TiledMMA, class CopyOp,
+          class SubtileShape, class SubtileSGLayout,
+          class... Strides, class XMode, class YMode,
+          __CUTE_REQUIRES(is_layout_v<SubtileSGLayout>)>
+CUTE_HOST_DEVICE
+auto
+make_block_2d_copy_CD_subtiled(CopyOp             const& op,          // Copy operation
+                               TiledMMA           const& mma,         // TiledMMA instance
+                               SubtileShape       const& sshape,      // Subtile shape: (m,n)
+                               SubtileSGLayout    const& ssg_layout,  // Subtile subgroup layout: SG_K -> (m_subtile,n_subtile)
+                               Stride<Strides...> const& gstride,     // Global memory strides
+                               XMode              const& x_mode,      // x, y modes
+                               YMode              const& y_mode)
+{
+  // Expand subtile layout.
+  auto xssg_layout = make_layout(shape(ssg_layout),
+                                 elem_scale(stride(ssg_layout), sshape));           // SG_K -> (M,N)
+
+  // Retrieve MMA atom's (subgroup, value) -> (M,N) layout.
+  // Allow cross-MMA tiling.
+  auto tile_mn = round_up(select<0,1>(mma.tile_mnk()),
+                          atuple_coshape(xssg_layout));
+
+  auto thr_vmnk = mma.get_thr_layout_vmnk();                                        // (ThrV,ThrM,ThrN,ThrK) -> thr
+  auto shape_vmnk = shape(thr_vmnk);                                                // (ThrV,ThrM,ThrN,ThrK)
+  auto drop_k = replace<3>(make_layout(shape_vmnk),
+                           make_layout(get<3>(shape_vmnk), _0{}));                  // (ThrV,ThrM,ThrN,ThrK) -> (ThrV,ThrM,ThrN)
+
+  auto thr_to_vmn = composition(drop_k, right_inverse(thr_vmnk));                   // thr -> (ThrV,ThrM,ThrN)
+  auto sg_to_vmn = composition(thr_to_vmn,
+      make_layout(product(take<1,4>(shape_vmnk)), get<0>(shape_vmnk)));             // SG -> (0,ThrM,ThrN)
+
+  auto svC = composition(mma.thrfrg_C(make_layout(tile_mn)),
+                         make_tile(sg_to_vmn, _));                                  // (SG,V) -> (M,N)
+
+  // Add subtile modes. Limitations:
+  //   - ThrK must be covered by a single mode in svC.
+  //   - SubtileSGLayout must have a subtile for each ThrK, OR ThrK must be the last mode.
+  decltype(coalesce(get<0>(svC))) sC{};
+  constexpr auto mode_thr_k = find_if(stride(sC), [](auto const &x) { return C<is_constant_v<0, decltype(x)>>{}; });
+  static_assert(shape<mode_thr_k>(sC) == shape<3>(thr_vmnk), "ThrK split into multiple modes; unsupported");
+
+  auto k_to_mn = composition(make_layout(tile_mn), xssg_layout);                    // ThrK -> (M,N)
+
+  static_assert(size(SubtileSGLayout{}) == shape<3>(thr_vmnk) || mode_thr_k + 1 >= rank(sC),
+                "Unsupported partially occupied ThrK scenario");
+
+  // Remove subtile value modes.
+  auto drop_subtiles = make_layout(zip(sshape, shape_div(tile_mn, sshape)),
+                                   zip(stride(make_layout(tile_mn)), Stride<_0,_0>{}));
+
+  auto svC_tiled = make_layout(replace<mode_thr_k>(sC, k_to_mn),
+                               coalesce(composition(drop_subtiles, get<1>(svC))));
+
+  // Derive copy tile layout and create TiledCopy
+  return make_block_2d_copy_X<ValType>(op, gstride, x_mode, y_mode, tile_mn, svC_tiled);
 }
 
 // Prefetch selection and creation.
