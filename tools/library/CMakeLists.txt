@@ -36,7 +36,7 @@ set(CUTLASS_BUILD_MONO_LIBRARY OFF CACHE BOOL
   "Determines whether the cutlass library is generated as a single file or multiple files.")
 
 option(CUTLASS_BUILD_SHARED_LIBS "Build shared libraries" ON)
-option(CUTLASS_BUILD_STATIC_LIBS "Build static libraries" OFF)
+option(CUTLASS_BUILD_STATIC_LIBS "Build static libraries" ON)
 
 ################################################################################
 
