@@ -1219,6 +1219,10 @@ struct MainloopIntelXeXMX16Group : MainloopIntelXeXMX16<Stages_, KernelScheduler
 };
 
 template<int Stages_, class KernelScheduler = KernelXePtrArrayCooperative>
+struct MainloopXeL1StagedGroup : MainloopIntelXeXMX16<Stages_, KernelScheduler> {
+};
+
+template<int Stages_, class KernelScheduler = KernelXePtrArrayCooperative>
 struct MainloopIntelXeXMX16GroupMixedPrecision : MainloopIntelXeXMX16<Stages_, KernelScheduler> {
 };
 
