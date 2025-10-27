@@ -35,6 +35,16 @@ set(TEST_PAGED "--use_paged_kv")
 foreach(HEAD_DIM 64 96 128 192)
 
   cutlass_example_add_executable(
+    06_xe_fmha_fwd_prefill_hdim${HEAD_DIM}
+    06_xe_fmha_fwd.cpp
+  )
+
+  cutlass_example_add_executable(
+    06_xe_fmha_fwd_decode_hdim${HEAD_DIM}
+    06_xe_fmha_fwd.cpp
+  )
+
+  cutlass_example_add_executable(
     06_bmg_prefill_attention_hdim${HEAD_DIM}
     06_bmg_prefill_attention.cpp
   )
@@ -72,4 +82,6 @@ foreach(HEAD_DIM 64 96 128 192)
   target_compile_definitions(06_bmg_decode_attention_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
   target_compile_definitions(06_bmg_prefill_attention_fp8_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
   target_compile_definitions(06_bmg_decode_attention_fp8_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
+  target_compile_definitions(06_xe_fmha_fwd_prefill_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} PREFILL SHOW_DIFF=1)
+  target_compile_definitions(06_xe_fmha_fwd_decode_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} DECODE SHOW_DIFF=1)
 endforeach()
