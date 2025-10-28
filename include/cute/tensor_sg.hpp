@@ -98,6 +98,8 @@ struct is_sg_tensor<SubgroupTensor<Engine,Layout,SubgroupTVLayout>> : true_type 
 template <class Engine, class Layout, class SubgroupTVLayout>
 struct is_tensor<SubgroupTensor<Engine,Layout,SubgroupTVLayout>> : true_type {};
 
+// Create a SubgroupTensor from its component parts:
+//   a regular rmem Tensor and the subgroup-scope TV-layout.
 template <class Engine,
           class Layout,
           class SubgroupTVLayout,
@@ -111,6 +113,9 @@ make_subgroup_tensor(Tensor<Engine, Layout> const& tensor, SubgroupTVLayout cons
   return static_cast<SubgroupTensor<Engine,Layout,SubgroupTVLayout> const&>(tensor);
 }
 
+// Create a new owning SubgroupTensor with the given subgroup-level layout.
+// Elements are assigned to threads following the normal Xe interleaved mapping
+//   (i.e. work-item i gets elements i, i + 16, i + 32, ...)
 template <typename T, class Shape, class Stride>
 CUTE_HOST_DEVICE
 constexpr auto
@@ -123,6 +128,8 @@ make_subgroup_tensor(Layout<Shape,Stride> const& sg_layout)
   return make_subgroup_tensor(make_fragment_like<T>(sv_layout(0,_)), sv_layout);
 }
 
+// Create a new owning SubgroupTensor with a subgroup-level layout, constructed
+//   from the argument list with make_layout.
 template <typename T, class... Args>
 CUTE_HOST_DEVICE
 constexpr auto

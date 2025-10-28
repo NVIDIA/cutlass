@@ -375,6 +375,8 @@ template <class FMHAKernel> struct ExampleRunner {
     auto head_size_qk = shape.head_size_qk = options.head_size_qk;
     auto head_size_vo = shape.head_size_vo = options.head_size_vo;
 
+    // Set up strides.
+    // These lines can be adjusted to support different data layouts, as needed.
     stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, num_heads_q,  batch));
     stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, num_heads_kv, batch));
     stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, num_heads_kv, batch));
