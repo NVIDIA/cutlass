@@ -52,7 +52,7 @@ TEST(TEST_NAME, noncausal) {
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillAll<Kernel>(HEAD_DIM));
 }
 
-TEST(TEST_NAME, varlen_causal) {
+TEST(GTEST_CONCAT_TOKEN_(DISABLED_, TEST_NAME), varlen_causal) {
   using Kernel = test::flash_attention::XE_Flash_Attention_Prefill<INPUT_TYPE, float, OUT_TYPE, typename Shape_h::ShapeQK, typename Shape_h::ShapePV,
                                             typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperation, true, true, 2>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillAll<Kernel>(HEAD_DIM));

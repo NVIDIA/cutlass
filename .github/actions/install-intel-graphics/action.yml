@@ -17,20 +17,22 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
+        if [[ "${{ inputs.GPU }}" == "BMG" || "${{ inputs.GPU }}" == "PVC" ]]; then
           sudo add-apt-repository ppa:kobuk-team/intel-graphics
           sudo apt update
         else
-          . /etc/os-release
-          wget https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          sudo apt install -y \
-            intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
-            libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev  \
-            libgles2-mesa-dev libigdgmm12 libxatracker2 mesa-va-drivers \
-            mesa-vdpau-drivers mesa-vulkan-drivers va-driver-all vainfo \
-            libigc-dev intel-igc-cm libigdfcl-dev libigfxcmrt-dev libze-dev hwinfo
+          # LTS PVC drivers
+          # . /etc/os-release
+          # wget https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          # chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          # sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
+          # sudo apt install -y \
+          #   intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
+          #   libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev  \
+          #   libgles2-mesa-dev libigdgmm12 libxatracker2 mesa-va-drivers \
+          #   mesa-vdpau-drivers mesa-vulkan-drivers va-driver-all vainfo \
+          #   libigc-dev intel-igc-cm libigdfcl-dev libigfxcmrt-dev libze-dev hwinfo
+          exit 1
         fi
         sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
           intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc g++
