@@ -4187,6 +4187,47 @@ bool TestXe(
   }  // m
   return passed;
 }
+
+template <typename Gemm, template <class T> class ActivationFunctor =
+                             cutlass::epilogue::thread::Identity>
+bool TestXe(
+    int m, int n, int k, int l,
+    double alpha = 1.0,
+    double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0,
+    CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+
+  Testbed3x<Gemm, ActivationFunctor, false,
+    typename Gemm::GemmKernel::ElementA,
+    typename Gemm::GemmKernel::ElementB,
+    typename Gemm::GemmKernel::ElementC,
+    typename Gemm::GemmKernel::ElementD> testbed(
+      check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
+
+  bool passed = true;
+  ProblemShapeType problem_size{m, n, k, l};
+  try {
+    passed = testbed.run(problem_size,
+                         cutlass::from_real<ElementScalar>(alpha),
+                         cutlass::from_real<ElementScalar>(beta));
+  }
+  catch (std::exception const& e) {
+    EXPECT_TRUE(false) << "TestXe: testbed.run threw an exception: " << e.what();
+    throw;
+  }
+  catch (...) {
+    EXPECT_TRUE(false) << "TestXe: testbed.run threw an unknown exception";Expand commentComment on lines R4216 to R4220ResolvedExpand commentComment on lines R4216 to R4220ResolvedCode has comments. Press enter to view.
+    throw;
+  }
+
+  EXPECT_TRUE(passed) << "TestXe: testbed.run failed for MNKL = "
+                      << m << " " << n << " " << k << " " << l
+                      << ", alpha: " << alpha << ", beta: " << beta;
+
+  return passed;
+}
+
 #endif
 
 template <typename Gemm>
