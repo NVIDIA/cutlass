@@ -198,7 +198,7 @@ template <
       using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
             DispatchPolicy,
             TileShape_MNK,
-            ElementAccumulator,
+            ElementC,
             StrideC,
             ElementD,
             StrideD,

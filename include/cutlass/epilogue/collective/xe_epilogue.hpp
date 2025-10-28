@@ -90,7 +90,6 @@ public:
   using CtaTileMNK = CtaTileMNK_;
   using FusionCallbacks = FusionCallbacks_;
   using ElementC = ElementC_;
-  using ElementAccumulator = ElementC_;
   using StrideC = StrideC_;
   using ElementD = ElementD_;
   using StrideD = StrideD_;
@@ -106,8 +105,8 @@ public:
   using GmemTiledCopyD = cute::conditional_t<not cute::is_void_v<ElementD> && not cute::is_void_v<CopyOpR2G>,
                                              CopyOpR2G, XE_2D_U32x8x16_ST_N>;
   using ElementOutput = ElementD;
-  using ElementCompute = ElementAccumulator;
-
+  using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
+  using ElementAccumulator = ElementCompute;
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
@@ -349,7 +348,7 @@ public:
     auto thread_xe_store_d = params.xe_store_d.get_thread_slice(thread_idx);
     Tensor tCgD = thread_xe_store_d.partition_D(gD);
 
-    Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
+    Tensor trC = make_tensor<ElementC>(Shape<Int<FragmentSize>>{});
     Tensor trD_compute = make_tensor<ElementCompute>(Shape<Int<FragmentSize>>{});
 
     // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
