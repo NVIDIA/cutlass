@@ -4217,7 +4217,8 @@ bool TestXe(
     throw;
   }
   catch (...) {
-    EXPECT_TRUE(false) << "TestXe: testbed.run threw an unknown exception";Expand commentComment on lines R4216 to R4220ResolvedExpand commentComment on lines R4216 to R4220ResolvedCode has comments. Press enter to view.
+    EXPECT_TRUE(false) << "TestXe: testbed.run threw an unknown exception for MNKL = "
+                        << m << " " << n << " " << k << " " << l;
     throw;
   }
 
