@@ -422,3 +422,5 @@ TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_1x16) {
 TEST(PVC_CuTe_Xe, MMA_DPAS_TESTS) {
   GTEST_SKIP() << "MMA DPAS tests require IGC version 2.18 or higher. skipped";
 }
+
+#endif
