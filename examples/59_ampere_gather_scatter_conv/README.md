@@ -23,7 +23,7 @@ This example demonstrates a few super cool features of CUTLASS and CuTe. It show
 The most common strategy for implementing high performance convolution kernels on the GPU is to transform
 the activation tensor in such a way that we can perform the computation as a GEMM. This is called the 
 image to column (im2col) transformation. [CUTLASS 2.x implementation of im2col based convolutions is
-documented separately](../../media/docs/implicit_gemm_convolution.md), and here we consider a fresh approach for CuTe.
+documented separately](../../media/docs/cpp/implicit_gemm_convolution.md), and here we consider a fresh approach for CuTe.
 
 A 3D convolution has the following input tensors:
 - Activation tensor (Act): `((N,(D,H,W)), (C,(1,1,1)))`

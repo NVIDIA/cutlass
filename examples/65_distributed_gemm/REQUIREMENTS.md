@@ -4,7 +4,7 @@
 
 ### Build
 Make sure to set up CUTLASS with
-support for [Programmatic Dependent Launch (PDL)](../../media/docs/dependent_kernel_launch.md),
+support for [Programmatic Dependent Launch (PDL)](../../media/docs/cpp/dependent_kernel_launch.md),
 that is with the `CUTLASS_ENABLE_GDC_FOR_SM90` flag.
 
 ```bash
