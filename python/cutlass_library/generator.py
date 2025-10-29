@@ -71,7 +71,7 @@ def _add_package_disablement_flag(argparser):
   argparser.add_argument("--disable-cutlass-package-imports", action='store_true', required=False,
                      help="Disable use of cutlass_library from Python package")
 
-_parser = argparse.ArgumentParser()
+_parser = argparse.ArgumentParser(add_help=False)
 _add_package_disablement_flag(_parser)
 _args, _ = _parser.parse_known_args()
 
