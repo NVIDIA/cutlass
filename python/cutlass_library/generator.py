@@ -1,6 +1,7 @@
 #################################################################################################
 #
 # Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -11769,7 +11770,292 @@ def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
 
 def GeneratePVC(manifest, cuda_version):
-    GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version)
+    """
+    Generate CUTLASS kernels for PVC (Ponte Vecchio) architecture.
+    
+    PVC is Intel's Xe-HPC GPU architecture with compute capability 12.
+    
+    This is a legacy wrapper that calls GenerateIntelXe with arch=12.
+    """
+    GenerateIntelXe(manifest, cuda_version, arch=12)
+
+###################################################################################################
+def GenerateXe_TensorOp_16b_DPAS_gemm(manifest, cuda_version, min_cc=20):
+    """Generate FP16/BF16 GEMM kernels for Intel Xe architecture using DPAS.
+    
+    :param min_cc: Architecture number (12 for PVC, 20 for BMG)
+    """
+    layout_list = [
+        [[LayoutType.RowMajor, 8], [LayoutType.RowMajor, 8], [LayoutType.RowMajor, 8]],
+        [[LayoutType.RowMajor, 8], [LayoutType.ColumnMajor, 8], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 8], [LayoutType.RowMajor, 8], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 8], [LayoutType.RowMajor, 8]],
+    ]
+
+    math_instructions = [
+        MathInstruction(
+            [8, 16, 16],
+            DataType.f16, DataType.f16, DataType.f32,
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+        MathInstruction(
+            [8, 16, 16],
+            DataType.f16, DataType.f16, DataType.f16,
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+        MathInstruction(
+            [8, 16, 16],
+            DataType.bf16, DataType.bf16, DataType.f32,
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+        MathInstruction(
+            [8, 16, 16],
+            DataType.bf16, DataType.bf16, DataType.bf16,
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add)
+    ]
+
+    max_cc = min_cc
+
+    for math_inst in math_instructions:
+        tile_descriptions = [
+            TileDescription([256, 256, 32],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 256, 32],
+                0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([256, 128, 32],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 128, 32],
+                0, [4, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([64, 128, 32],
+                0, [2, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        ]
+
+        data_type = {
+            "a_type": math_inst.element_a,
+            "b_type": math_inst.element_b,
+            "c_type": math_inst.element_accumulator,
+            "d_type": math_inst.element_accumulator,
+            "acc_type": math_inst.element_accumulator,
+            "epi_type": math_inst.element_accumulator
+        }
+
+        schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]]
+
+        CreateGemmUniversal3xOperator(manifest, layout_list, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
+
+
+def GenerateXe_TensorOp_fp8_DPAS_gemm(manifest, cuda_version, min_cc=20):
+    """Generate FP8 (E4M3/E5M2) GEMM kernels for Intel Xe architecture using DPAS.
+    
+    Supported combinations for regular GEMM:
+    - [e4m3, e4m3, fp32]: E4M3 x E4M3 -> FP32 (homogeneous)
+    - [e5m2, e5m2, fp32]: E5M2 x E5M2 -> FP32 (homogeneous)
+    
+    Note: Mixed precision (FP16/BF16 x FP8) requires grouped GEMM infrastructure
+    and is NOT supported for regular library generation.
+    
+    :param min_cc: Architecture number (12 for PVC, 20 for BMG)
+    """
+    layout_list = [
+        [[LayoutType.RowMajor, 16], [LayoutType.RowMajor, 16], [LayoutType.RowMajor, 8]],
+        [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 16], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 8]],
+    ]
+
+    # FP8 math instructions for Intel Xe
+    # Only homogeneous types (same A and B type) for regular GEMM
+    math_instructions = [
+        # Homogeneous FP8 (same type for A and B) - SUPPORTED
+        MathInstruction(
+            [8, 16, 32],
+            DataType.e4m3, DataType.e4m3, DataType.f32,  # E4M3 x E4M3 -> FP32
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+        MathInstruction(
+            [8, 16, 32],
+            DataType.e5m2, DataType.e5m2, DataType.f32,  # E5M2 x E5M2 -> FP32
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+        
+        # DISABLED: Mixed precision FP16/BF16 x FP8 requires grouped GEMM
+        # These would need MainloopIntelXeXMX16GroupMixedPrecision which is only
+        # activated when IsGroup=true (KernelXePtrArrayCooperative schedule).
+        # Regular library GEMMs use MainloopIntelXeXMX16 which requires ElementA == ElementB.
+        #
+        # MathInstruction([8, 16, 32], DataType.f16, DataType.e5m2, DataType.f32, ...),
+        # MathInstruction([8, 16, 32], DataType.f16, DataType.e4m3, DataType.f32, ...),
+        # MathInstruction([8, 16, 32], DataType.bf16, DataType.e5m2, DataType.f32, ...),
+        # MathInstruction([8, 16, 32], DataType.bf16, DataType.e4m3, DataType.f32, ...),
+    ]
+
+    max_cc = min_cc
+
+    for math_inst in math_instructions:
+        tile_descriptions = [
+            TileDescription([256, 256, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 256, 64],
+                0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([256, 128, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 128, 64],
+                0, [4, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        ]
+
+        data_type = {
+            "a_type": math_inst.element_a,
+            "b_type": math_inst.element_b,
+            "c_type": math_inst.element_accumulator,
+            "d_type": math_inst.element_accumulator,
+            "acc_type": math_inst.element_accumulator,
+            "epi_type": math_inst.element_accumulator
+        }
+
+        schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]]
+
+        CreateGemmUniversal3xOperator(manifest, layout_list, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
+
+def GenerateXe_TensorOp_int8_DPAS_gemm(manifest, cuda_version, min_cc=20):
+    """Generate INT8 GEMM kernels for Intel Xe architecture using DPAS.
+    
+    Supported: [int8, int8, int32] -> INT32 accumulator (hardware requirement)
+    
+    :param min_cc: Architecture number (12 for PVC, 20 for BMG)
+    """
+    layout_list = [
+        [[LayoutType.RowMajor, 16], [LayoutType.RowMajor, 16], [LayoutType.RowMajor, 4]],
+        [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 4]],
+        [[LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 16], [LayoutType.RowMajor, 4]],
+        [[LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.RowMajor, 4]],
+    ]
+
+    # INT8 x INT8 -> INT32 (hardware requirement for Intel Xe)
+    math_instructions = [
+        MathInstruction(
+            [8, 16, 32],
+            DataType.s8, DataType.s8, DataType.s32,  # Changed from f32 to s32
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+    ]
+
+    max_cc = min_cc
+
+    for math_inst in math_instructions:
+        tile_descriptions = [
+            TileDescription([256, 256, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 256, 64],
+                0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([256, 128, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 128, 64],
+                0, [4, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        ]
+
+        data_type = {
+            "a_type": math_inst.element_a,
+            "b_type": math_inst.element_b,
+            "c_type": math_inst.element_accumulator,
+            "d_type": math_inst.element_accumulator,
+            "acc_type": math_inst.element_accumulator,
+            "epi_type": math_inst.element_accumulator
+        }
+
+        schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]]
+
+        CreateGemmUniversal3xOperator(manifest, layout_list, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
+
+
+def GenerateXe_TensorOp_mixed_dtype_DPAS_gemm(manifest, cuda_version, min_cc=20):
+    """Generate mixed-precision GEMM kernels for Intel Xe architecture using DPAS.
+    
+    Supported: [fp16, int4, fp32] -> FP16 x INT4 with FP32 accumulator
+    
+    :param min_cc: Architecture number (12 for PVC, 20 for BMG)
+    """
+    layout_list = [
+        [[LayoutType.RowMajor, 8], [LayoutType.RowMajor, 32], [LayoutType.RowMajor, 8]],
+        [[LayoutType.RowMajor, 8], [LayoutType.ColumnMajor, 32], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 8], [LayoutType.RowMajor, 32], [LayoutType.RowMajor, 8]],
+        [[LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 32], [LayoutType.RowMajor, 8]],
+    ]
+
+    # Mixed precision: FP16 x INT4 -> FP32 (hardware requirement for Intel Xe)
+    math_instructions = [
+        MathInstruction(
+            [8, 16, 32],
+            DataType.f16, DataType.s4, DataType.f32,  # Changed from [s8, f16, f32] to [f16, s4, f32]
+            OpcodeClass.TensorOp,
+            MathOperation.multiply_add),
+    ]
+
+    max_cc = min_cc
+
+    for math_inst in math_instructions:
+        tile_descriptions = [
+            TileDescription([256, 256, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([128, 256, 64],
+                0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+            TileDescription([256, 128, 64],
+                0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        ]
+
+        data_type = {
+            "a_type": math_inst.element_a,
+            "b_type": math_inst.element_b,
+            "c_type": math_inst.element_accumulator,
+            "d_type": math_inst.element_accumulator,
+            "acc_type": math_inst.element_accumulator,
+            "epi_type": math_inst.element_accumulator
+        }
+
+        schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]]
+
+        CreateGemmUniversal3xOperator(manifest, layout_list, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
+
+
+def GenerateBMG(manifest, cuda_version):
+    """
+    Generate CUTLASS kernels for BMG (Battlemage/Xe2) architecture.
+    
+    BMG is Intel's Xe2 GPU architecture with compute capability 20.
+    Supports DPAS operations with FP16, BF16, FP8, and INT8 data types.
+    
+    This is a legacy wrapper that calls GenerateIntelXe with arch=20.
+    """
+    GenerateIntelXe(manifest, cuda_version, arch=20)
+
+def GenerateIntelXe(manifest, cuda_version, arch=20):
+    """
+    Unified generator for Intel Xe GPU architectures.
+    
+    Supports both PVC (arch 12) and BMG (arch 20) with the same generation code.
+    The operations are identical, only the architecture number differs.
+    
+    Supported data types:
+    - FP16/BF16: [fp16/bf16, fp16/bf16, fp32]
+    - INT8: [int8, int8, int32]
+    - FP8: [fp8, fp8, fp32] (E4M3 or E5M2, same types only)
+    - Mixed: [fp16, int4, fp32]
+    
+    :param manifest: Manifest object to add operations to
+    :param cuda_version: CUDA version string (used for compatibility)
+    :param arch: Architecture number (12 for PVC, 20 for BMG)
+    """
+    if arch not in [12, 20]:
+        raise ValueError(f"Unsupported Intel Xe architecture: {arch}. Supported: 12 (PVC), 20 (BMG)")
+    
+    # All Intel Xe architectures use the same generation functions
+    # Only the min_cc (architecture number) differs
+    GenerateXe_TensorOp_16b_DPAS_gemm(manifest, cuda_version, min_cc=arch)
+    GenerateXe_TensorOp_fp8_DPAS_gemm(manifest, cuda_version, min_cc=arch)
+    GenerateXe_TensorOp_int8_DPAS_gemm(manifest, cuda_version, min_cc=arch)
+    # DISABLED: Mixed precision (FP16 x INT4) requires grouped GEMM infrastructure
+    # Regular library generation uses MainloopIntelXeXMX16 which requires ElementA == ElementB
+    # GenerateXe_TensorOp_mixed_dtype_DPAS_gemm(manifest, cuda_version, min_cc=arch)
 
 ###################################################################################################
 
@@ -11864,6 +12150,21 @@ if __name__ == "__main__":
   if blackwell_enabled_arch:
     GenerateSM100(manifest, args.cuda_version)
     GenerateSM120(manifest, args.cuda_version)
+
+  # Intel Xe GPU architectures - unified handling for PVC and BMG
+  # Both architectures share the same generation code, just different arch numbers
+  
+  # Check for BMG (architecture 20)
+  bmg_arch_list = ["20", "bmg", "xe2", "intel_gpu_bmg_g21"]
+  bmg_enabled_arch = any(arch.lower() in [x.lower() for x in bmg_arch_list] for arch in archs)
+  if bmg_enabled_arch:
+    GenerateIntelXe(manifest, args.cuda_version, arch=20)
+
+  # Check for PVC (architecture 12)
+  pvc_arch_list = ["12", "pvc", "intel_gpu_pvc"]
+  pvc_enabled_arch = any(arch.lower() in [x.lower() for x in pvc_arch_list] for arch in archs)
+  if pvc_enabled_arch:
+    GenerateIntelXe(manifest, args.cuda_version, arch=12)
 
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)

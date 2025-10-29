@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,13 +37,18 @@
 #include "cutlass/cutlass.h"
 
 #include "cutlass/gemm/device/gemm.h"
+
+#if !defined(CUTLASS_ENABLE_SYCL)
+// CUDA-only kernel types - not compatible with SYCL
 #include "cutlass/gemm/device/gemm_sparse.h"
 #include "cutlass/gemm/device/gemm_complex.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include "cutlass/gemm/device/gemm_array.h"
+#include "cutlass/gemm/kernel/default_gemm_planar_complex_universal.h"
+#endif
+
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/default_gemm_universal.h"
-#include "cutlass/gemm/kernel/default_gemm_planar_complex_universal.h"
 
 #include "cutlass/library/library.h"
 #include "library_internal.h"

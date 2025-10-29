@@ -1,6 +1,7 @@
-
+#################################################################################################
 #
 # Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -47,8 +48,10 @@ try:
   if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
     raise ImportError("Disabling attempt to import cutlass_library")
   from cutlass_library.library import *
+  from cutlass_library.arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
 except ImportError:
   from library import *
+  from arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +90,8 @@ class GemmOperation:
     self.B = B
     self.C = C
     self.D = D
-    self.is_xe = self.arch == 11
+    # Intel Xe architectures: PVC (12), BMG/Xe2 (20), etc.
+    self.is_xe = self.arch >= INTEL_XE_ARCH_MIN and self.arch < INTEL_XE_ARCH_MAX
 
     if is_block_scaled(gemm_kind):
       self.ScaleFactorA = ScaleFactorA
@@ -388,6 +392,7 @@ class GemmOperation:
           l = self.layout_name(),
           a = str(max(self.A.alignment, self.B.alignment)))
     else:
+      # Intel Xe architectures use xe{cc} naming (e.g., xe20 for BMG, xe12 for PVC)
       threadblock = self.tile_description.procedural_name()
       return "cutlass{p}_xe{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
           p = self.prefix,
@@ -1156,9 +1161,11 @@ using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig
       'blockwise_prepare_code' : blockwise_prepare_code
     }
 
-    # Overriding values for Intel Xe
+    # Overriding values for Intel Xe architectures
     if operation.is_xe:
-      values['arch'] = "cutlass::arch::IntelXe"
+      # Use specific compute capability for Intel Xe GPUs
+      # e.g., cutlass::arch::Xe20 for BMG, cutlass::arch::Xe12 for PVC
+      values['arch'] = "cutlass::arch::Xe%d" % operation.arch
 
     return SubstituteTemplate(self.gemm_template, values)
 
@@ -1473,7 +1480,13 @@ ${compile_guard_end}
 class EmitGemmConfigurationLibrary:
   def __init__(self, operation_path, configuration_name):
     self.configuration_name = configuration_name
-    self.configuration_path = os.path.join(operation_path, "%s.cu" % configuration_name).replace('\\', '/')
+    
+    # Determine file extension based on architecture
+    # Intel Xe architectures (12=PVC, 20=BMG) use .cpp, CUDA uses .cu
+    # Check if operation_path contains /12/, /20/, xe12, or xe20
+    is_xe_arch = any(marker in operation_path for marker in ['/12/', '\\12\\', 'xe12', '/20/', '\\20\\', 'xe20'])
+    file_extension = "cpp" if is_xe_arch else "cu"
+    self.configuration_path = os.path.join(operation_path, "%s.%s" % (configuration_name, file_extension)).replace('\\', '/')
 
     self.instance_emitter = {
       GemmKind.Gemm: EmitGemmInstance,

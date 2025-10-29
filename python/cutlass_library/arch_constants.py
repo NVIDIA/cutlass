@@ -1,6 +1,5 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -31,17 +30,18 @@
 #
 #################################################################################################
 
-from setuptools import setup
+"""
+Architecture range constants for CUTLASS library generation.
+Shared across manifest.py and gemm_operation.py to avoid circular imports.
+"""
 
+###################################################################################################
+# Architecture range constants
+# Intel Xe architectures use the range [INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX)
+# CUDA architectures use values >= CUDA_ARCH_MIN
+###################################################################################################
+INTEL_XE_ARCH_MIN = 12  # Minimum Intel Xe architecture (PVC = 12, BMG = 20)
+INTEL_XE_ARCH_MAX = 50  # Upper bound (exclusive) for Intel Xe range
+CUDA_ARCH_MIN = 50      # Minimum CUDA architecture (sm_50, sm_60, etc.)
 
-def perform_setup():
-    setup(
-        name='cutlass_library_xe',
-        version='4.1.0',
-        description='SYL*TLA library generation scripts',
-        packages=['cutlass_library']
-    )
-
-
-if __name__ == '__main__':
-    perform_setup()
+###################################################################################################

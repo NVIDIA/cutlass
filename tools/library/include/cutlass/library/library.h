@@ -52,7 +52,10 @@
 #include <string>
 #include <cstdint>
 #include <stdexcept>
+
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime.h>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/types.h"
