@@ -36,6 +36,7 @@ set(CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  ${CUTLASS_TEST_LEVEL} CACHE STRING "
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
+
 function(cutlass_generate_kernel_filter_and_testlist_files)
 
   set(options)

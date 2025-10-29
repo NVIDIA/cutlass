@@ -79,7 +79,7 @@ enum class FpEncoding
   E8M23,  // float
   E5M2,   // FP8
   E4M3,   // FP8
-  UE4M3,  // FP8 
+  UE4M3,  // FP8
   UE8M0,  // FP8
   E3M2,   // FP6
   E2M3,   // FP6
@@ -869,7 +869,7 @@ CUTLASS_CONSTEXPR_IF_CXX17 auto fp_encoding_selector() {
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::UE4M3)   {   // FP8
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 4, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
   }
-  
+
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::UE8M0)   {   // FP8
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 8, 0, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
   }

@@ -607,6 +607,7 @@ struct alignment_of<double2> {
   enum { value = 16 };
 };
 
+
 #if !defined(CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED)
 #define CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED (__CUDACC_VER_MAJOR__ >= 13)
 #endif
@@ -675,6 +676,7 @@ struct alignment_of<double4> {
 };
 
 #endif
+
 
 // Specializations for volatile/const qualified types
 template <typename value_t>

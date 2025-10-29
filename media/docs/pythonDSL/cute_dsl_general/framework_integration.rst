@@ -63,7 +63,7 @@ The full signature of from_dlpack is as follows:
 
 .. code-block:: python
 
-    def from_dlpack(tensor, assumed_align=None):
+    def from_dlpack(tensor, assumed_align=None, use_32bit_stride=False):
 
 The ``assumed_align`` integer parameter specifies the alignment of the tensor in unit of bytes.
 The tensor's base address must be divisible by ``assumed_align``. When not provided explicitly,
@@ -71,6 +71,13 @@ the alignment is set to the natural alignment of the tensor's element type. Note
 information is part of the pointer type in the generated IR. Therefore, programs with different
 alignments have a different IR and identical IRs are required for hitting the kernel caching
 mechanism of |DSL|.
+
+The ``use_32bit_stride`` parameter determines whether to use 32-bit stride for the tensor's dynamic stride values.
+By default, it is set to False (64bit) to ensure that address calculations do not risk overflow. For smaller
+problem sizes (where ``cosize(layout_of_tensor) <= Int32_MAX``), users may set it to True (32bit) to improve performance
+by reducing register usage and the number of address calculation instructions. When ``use_32bit_stride`` is set
+to True, a runtime check is performed to ensure that the layout does not overflow. Please note that this parameter
+only has an effect when the tensor's layout is marked as dynamic.
 
 Code Example
 ~~~~~~~~~~~~
@@ -242,6 +249,10 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
     t7 = from_dlpack(b).mark_layout_dynamic(leading_dim=3)
     # Expected strides[leading_dim] == 1, but got 4
 
+    c = torch.empty(1000000000, 1000000000)
+    t8 = from_dlpack(c, use_32bit_stride=True).mark_layout_dynamic()
+    # Layout in DLTensorWrapper has int32 overflow risk. Please set use_32bit_stride to False.
+
 Mark the Tensor's Layout as Dynamic with ``mark_compact_shape_dynamic``
 -----------------------------------------------------------------------
 
@@ -397,6 +408,12 @@ The following example demonstrates how to use ``mark_compact_shape_dynamic`` to 
         mode=0, divisibility=1, stride_order=(2, 1, 3, 0, 4)
     )
     # The stride_order is not consistent with the layout
+
+    c = torch.empty(1000000000, 1000000000)
+    t13 = from_dlpack(c, use_32bit_stride=True).mark_compact_shape_dynamic(
+        mode=0, divisibility=1
+    )
+    # Layout in DLTensorWrapper has int32 overflow risk. Please set use_32bit_stride to False.
 
 
 Bypass the DLPack Protocol

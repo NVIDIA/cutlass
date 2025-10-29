@@ -69,7 +69,7 @@ class complex:
 class SharedStorage:
     # struct elements with natural alignment
     a: cute.struct.MemRange[cutlass.Float32, 32]  # array
-    b: cutlass.Int64  # saclar
+    b: cutlass.Int64  # scalar
     c: complex  # nested struct
     # struct elements with strict alignment
     x: cute.struct.Align[
@@ -93,6 +93,13 @@ def kernel(
     # Note: alignment of initial allocator base ptr is 1024
     allocator = cutlass.utils.SmemAllocator()
     # base ptr of allocator points at: SMEM_ADDR_START (the starting address of available shared memory)
+
+    # -- Allocate a scalar
+    int_ptr = allocator.allocate(cutlass.Int32)
+    # base ptr of allocator now points at: SMEM_ADDR_AFTER_INT = SMEM_ADDR_START + aligned_size(int)
+    assert int_ptr.dtype == cutlass.Int32, "Expected Int32, but got {}".format(
+        int_ptr.dtype
+    )
 
     # -- Allocate a struct --
     # Note: when specified alignment, max(alignment, alignof(struct)) will be applied
@@ -153,7 +160,7 @@ def kernel(
 
 
 @cute.jit
-def run_allocation_kernel(
+def host(
     const_a: cutlass.Constexpr,
     dst_a: cute.Tensor,
     const_b: cutlass.Constexpr,
@@ -161,22 +168,18 @@ def run_allocation_kernel(
     const_c: cutlass.Constexpr,
     dst_c: cute.Tensor,
 ):
-    # additional size for the example, 64(section) + 112(array) + 128(tensor) < 384
-    addtional_bytes = 384
-    # Note: launch shared memory size is: SMEM_SIZE = 512 + 384 = 896 bytes
+    # Note: Shared Memory size is automatically calculated now
     kernel(const_a, dst_a, const_b, dst_b, const_c, dst_c).launch(
-        grid=(1, 1, 1),
-        block=(1, 1, 1),
-        smem=SharedStorage.size_in_bytes() + addtional_bytes,
+        grid=(1, 1, 1), block=(1, 1, 1)
     )
 
 
-def veify_allocation_kernel(const_a, const_b, const_c):
+def run_and_verify(const_a, const_b, const_c):
     dst_a = torch.zeros((8, 4), dtype=torch.float32, device="cuda")
     dst_b = torch.zeros((8, 2), dtype=torch.float32, device="cuda")
     dst_c = torch.zeros((16, 2), dtype=torch.float32, device="cuda")
 
-    run_allocation_kernel(
+    host(
         const_a,
         from_dlpack(dst_a),
         const_b,
@@ -185,9 +188,15 @@ def veify_allocation_kernel(const_a, const_b, const_c):
         from_dlpack(dst_c),
     )
 
-    np.testing.assert_equal(const_a, dst_a.detach().cpu().numpy()[0])
-    np.testing.assert_equal(const_b, dst_b.detach().cpu().numpy()[0])
-    np.testing.assert_equal(const_c, dst_c.detach().cpu().numpy()[0])
+    assert const_a == dst_a.cpu()[0, 0], (
+        f"Expected {const_a}, but got {dst_a.cpu()[0, 0]}"
+    )
+    assert const_b == dst_b.cpu()[0, 0], (
+        f"Expected {const_b}, but got {dst_b.cpu()[0, 0]}"
+    )
+    assert const_c == dst_c.cpu()[0, 0], (
+        f"Expected {const_c}, but got {dst_c.cpu()[0, 0]}"
+    )
 
 
 if __name__ == "__main__":
@@ -197,4 +206,4 @@ if __name__ == "__main__":
     const_a = 0.5
     const_b = 1.0
     const_c = 2.0
-    veify_allocation_kernel(const_a, const_b, const_c)
+    run_and_verify(const_a, const_b, const_c)

@@ -12,12 +12,16 @@
 """
 This module provides jit executor related classes
 """
+
 import ctypes
 import inspect
 import io
-from typing import get_origin
-
-import numpy as np
+from typing import Union, Optional
+import weakref
+import threading
+import collections
+import os
+from dataclasses import dataclass
 
 # MLIR modules imports
 from .._mlir import ir
@@ -32,44 +36,178 @@ from .utils.logger import log
 from .utils.timer import timer
 
 
-class CudaSingleModule:
-    def __init__(self, cuda_module, kernel_ptr):
+class CudaModuleAndKernel:
+    """A loaded CUDA kernel and its metadata."""
+
+    def __init__(self, sym, cuda_module, kernel, attrs):
+        self.sym = sym
         self.cuda_module = cuda_module
-        self.kernel_ptr = kernel_ptr
+        self.kernel = kernel
+        self.attrs = attrs
 
 
-class CudaModules:
-    def __init__(self, modules, args):
-        # list of CudaSingleModule
-        self.modules = modules
-        # extra kernel ptr arguments for launch
-        self.args = args
+def get_escaped_cubin_bytes(cubin_data):
+    """This function escapes cubin data from mlir raw bytecode to executable binary bytes"""
+
+    def ishex(inp):
+        return (0x30 <= inp < 0x3A) or (0x41 <= inp < 0x47) or (0x61 <= inp < 0x67)
+
+    converted = bytearray()
+    idx = 0
+    while idx < len(cubin_data):
+        # escape the original bytes
+        if cubin_data[idx] == 0x5C:
+            # if data of idx is b'\\'
+            if ishex(cubin_data[idx + 1]) and ishex(cubin_data[idx + 2]):
+                converted += bytearray.fromhex(cubin_data[idx + 1 : idx + 3].decode())
+                idx += 3
+            elif cubin_data[idx + 1] == 0x5C:
+                converted.append(cubin_data[idx])
+                idx += 2
+        else:
+            # no escape, directly write
+            converted.append(cubin_data[idx])
+            idx += 1
+    return bytes(converted)
 
 
-class JitExecutor:
-    def __init__(
-        self,
-        dsl,
-        engine,
-        capi_func,
-        ir_module,
-        args_spec,
-        function_name,
-        cuda_modules: CudaModules = None,
-        jit_time_profiling=False,
-    ):
-        self.dsl = dsl
-        self.engine = engine
-        self.capi_func = capi_func
-        self.ir_module = ir_module
-        self.args_spec = args_spec
+def walk_module_and_get_cubin_data(module, sym, callback):
+    """This function is used to walk gpu binary op, extract the cubin inside, and process cubin data with callback."""
+
+    def walk_gpu_binary_op(op):
+        if op.name != "gpu.binary":
+            return ir.WalkResult.ADVANCE
+        s = io.BytesIO()
+        op.write_bytecode(s)
+        cubin_data = s.getvalue()
+        if sym.encode() not in cubin_data:
+            return ir.WalkResult.ADVANCE
+
+        if "kernels" != op.opview.sym_name.value and sym != op.opview.sym_name.value:
+            return ir.WalkResult.ADVANCE
+        # function symbol of kernel(gpu.launch_func) is equal to sym name in mlir
+        func_sym = sym
+        if sym == op.opview.sym_name.value and not sym.endswith("_kernel"):
+            func_sym = sym.rsplit("_", 1)[0]
+
+        cubin_data = cubin_data.split(b'bin = "')[1].split(b'">')[0]
+        cubin_data = get_escaped_cubin_bytes(cubin_data)
+        callback(sym, func_sym, cubin_data)
+        return ir.WalkResult.ADVANCE
+
+    module.operation.walk(walk_gpu_binary_op)
+
+
+def load_kernels_from_ir_module(module, kernel_info) -> list[CudaModuleAndKernel]:
+    """Loads all kernels from the IR module that match the given set of symbols."""
+    if not kernel_info:
+        return []  # no modules
+
+    # don't sort because the external kernel pointers are recorded in the order called in ir module.
+    kernel_symbols = tuple(kernel_info.keys())
+
+    # load cuda module/get function pointer from module and cache
+    kernel_modules = collections.OrderedDict()
+    for sym in kernel_symbols:
+        log().debug(f"Loading CUDA module for symbol: {sym}")
+
+        def walk_callback(sym, func_sym, cubin_data):
+            if sym in kernel_modules:
+                log().debug(f"Skipping already loaded symbol: {sym}")
+
+            cubin_module = cuda_helpers.load_library_data(cubin_data)
+            kernel = cuda_helpers.get_library_kernel(cubin_module, func_sym)
+
+            # Setup attributes we want applied to the loaded kernel functions.
+            # A copy is made so we can update one of the attributes.
+            attrs = dict(kernel_info[sym])
+            if cuda_helpers.get_driver_version() >= 11080:
+                attrs[
+                    cuda_helpers.cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED
+                ] = 1
+
+            kernel_modules[sym] = CudaModuleAndKernel(sym, cubin_module, kernel, attrs)
+
+        walk_module_and_get_cubin_data(module, sym, walk_callback)
+
+    return list(kernel_modules.values())
+
+
+class ExecutionArgs:
+    """Helper that wraps the function signature spec to filter exeuction and compile time arguments."""
+
+    def __init__(self, spec, function_name):
         self.function_name = function_name
-        if args_spec is not None:
-            self.original_args_spec = args_spec
-            self.args_spec = self.filter_runtime_arg_spec(args_spec)
-        # cuda kernels
-        self.cuda_modules = cuda_modules
-        self.jit_time_profiling = jit_time_profiling
+        self.args_spec = spec
+        if spec is not None:
+            self.args_spec = self.filter_runtime_arg_spec(spec)
+        self.original_args_spec = spec
+
+    def generate_execution_args(self, args, kwargs):
+        """
+        This function is the prune version of `generate_mlir_function_types` which only generates execution args
+        to get rid of mlir context.
+        """
+        args_spec = self.args_spec
+
+        # Process positional arguments with defaults
+        rectified_args = list(args)
+        if args_spec.defaults and len(args) < len(args_spec.args):
+            rectified_args.extend(args_spec.defaults[len(args) - len(args_spec.args) :])
+        for k, v in kwargs.items():
+            if k in args_spec.args:
+                idx = args_spec.args.index(k)
+                if idx < len(rectified_args):
+                    rectified_args[idx] = v
+                else:
+                    rectified_args.append(v)
+
+        # Process keyword arguments
+        rectified_kwargs = {k: v for k, v in kwargs.items() if k not in args_spec.args}
+        if args_spec.kwonlydefaults and len(rectified_kwargs) < len(
+            args_spec.kwonlyargs
+        ):
+            rectified_kwargs.update(args_spec.kwonlydefaults)
+
+        # args/kwargs must match arg_specs
+        if len(rectified_args) != len(args_spec.args) or len(rectified_kwargs) != len(
+            args_spec.kwonlyargs
+        ):
+            raise DSLRuntimeError(
+                "input args/kwargs length does not match runtime function signature!",
+                context={
+                    "input args length": len(rectified_args),
+                    "input kwargs length": len(rectified_kwargs),
+                    "function signature args length": len(args_spec.args),
+                    "function signature kwonlyargs length": len(args_spec.kwonlyargs),
+                },
+            )
+
+        exe_args = []
+        adapted_args = []
+        input_args = rectified_args + list(rectified_kwargs.values())
+        input_arg_names = args_spec.args + args_spec.kwonlyargs
+        for arg, arg_name in zip(input_args, input_arg_names):
+            # short-cut for args already converted
+            if hasattr(arg, "__c_pointers__"):
+                exe_args.extend(arg.__c_pointers__())
+                continue
+
+            arg_type = args_spec.annotations.get(arg_name, None)
+
+            # Implicit cast to NumericMeta
+            if isinstance(arg_type, t.NumericMeta):
+                arg = t.cast(arg, arg_type)
+            else:
+                # If not any known type, try registered adapter to do the conversion
+                adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
+                if adapter:
+                    arg = adapter(arg)
+                    adapted_args.append(arg)
+
+            exe_args.extend(get_c_pointers(arg))
+
+        return exe_args, adapted_args
 
     def filter_runtime_arg_spec(self, arg_spec: inspect.FullArgSpec):
         runtime_args = []
@@ -131,19 +269,13 @@ class JitExecutor:
             annotations=runtime_annotations,
         )
 
-    def __del__(self):
-        if self.cuda_modules:
-            cuda_modules = [module.cuda_module for module in self.cuda_modules.modules]
-            for module in set(cuda_modules):
-                cuda_helpers.unload_cubin_module(module)
-
-    def get_constexpr_args(self) -> list[dict[str, int | str]]:
+    def get_constexpr_args(self) -> list[dict[str, Union[int, str]]]:
         """
         This function returns the constexpr args that have been pruned from the original function signature.
         The return type is a list of dicts, each dict contains the argument index (argument_index) and argument name (argument_name).
 
         :return: list of dicts, each dict contains the argument index (argument_index) and argument name (argument_name).
-        :rtype: list[dict[str, int | str]]
+        :rtype: list[dict[str, Union[int, str]]]
         """
         if self.original_args_spec is None:
             return list()
@@ -160,198 +292,261 @@ class JitExecutor:
                     )
         return constexpr_args
 
-    def generate_execution_args(self, args, kwargs, args_spec: inspect.FullArgSpec):
-        """
-        This function is the prune version of `generate_mlir_function_types` which only generates execution args
-        to get rid of mlir context.
-        """
 
-        # Process positional arguments with defaults
-        rectified_args = list(args)
-        if args_spec.defaults and len(args) < len(args_spec.args):
-            rectified_args.extend(args_spec.defaults[len(args) - len(args_spec.args) :])
-        for k, v in kwargs.items():
-            if k in args_spec.args:
-                idx = args_spec.args.index(k)
-                if idx < len(rectified_args):
-                    rectified_args[idx] = v
-                else:
-                    rectified_args.append(v)
+class JitExecuteContext:
+    """Holds device specific context for execution."""
 
-        # Process keyword arguments
-        rectified_kwargs = {k: v for k, v in kwargs.items() if k not in args_spec.args}
-        if args_spec.kwonlydefaults and len(rectified_kwargs) < len(
-            args_spec.kwonlyargs
-        ):
-            rectified_kwargs.update(args_spec.kwonlydefaults)
+    def __init__(
+        self,
+        module: "JitModule",
+        kernel_fns=[],
+        context: Optional[cuda_helpers.DevicePrimaryContext] = None,
+    ):
+        self.module = module
+        self.kernel_functions = kernel_fns
+        self.kernel_functions_ptrs = [ctypes.c_void_p(k.getPtr()) for k in kernel_fns]
+        self.context = context
 
-        # args/kwargs must match arg_specs
-        if len(rectified_args) != len(args_spec.args) or len(rectified_kwargs) != len(
-            args_spec.kwonlyargs
-        ):
-            raise DSLRuntimeError(
-                "input args/kwargs length does not match runtime function signature!",
-                context={
-                    "input args length": len(rectified_args),
-                    "input kwargs length": len(rectified_kwargs),
-                    "function signature args length": len(args_spec.args),
-                    "function signature kwonlyargs length": len(args_spec.kwonlyargs),
-                },
-            )
 
-        exe_args = []
-        adapted_args = []
-        input_args = rectified_args + list(rectified_kwargs.values())
-        input_arg_names = args_spec.args + args_spec.kwonlyargs
-        for arg, arg_name in zip(input_args, input_arg_names):
-            # short-cut for args already converted
-            if hasattr(arg, "__c_pointers__"):
-                exe_args.extend(arg.__c_pointers__())
-                continue
+class JitModule:
+    """Holds the execution engine and cuda modules."""
 
-            arg_type = args_spec.annotations.get(arg_name, None)
+    def __init__(
+        self,
+        engine,
+        capi_func,
+        args_spec: ExecutionArgs,
+        modules: list[CudaModuleAndKernel],
+    ):
+        self.engine = engine
+        self.capi_func = capi_func
+        self.args_spec = args_spec
+        self.cuda_modules = modules
+        self._unloaded = False
 
-            # Implicit cast to NumericMeta
-            if isinstance(arg_type, t.NumericMeta):
-                arg = t.cast(arg, arg_type)
-            else:
-                # If not any known type, try registered adapter to do the conversion
-                adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
-                if adapter:
-                    arg = adapter(arg)
-                    adapted_args.append(arg)
+    def get_device_execute_context(self, device=None) -> JitExecuteContext:
+        if self._unloaded:
+            raise RuntimeError(f"Can not get executor for unloaded module.")
 
-            exe_args.extend(get_c_pointers(arg))
+        # Host only code no need to setup kernels
+        if not self.cuda_modules:
+            return JitExecuteContext(self)
 
-        return exe_args, adapted_args
+        # We need a device at this point so get one if not provided.
+        if device is None:
+            device = cuda_helpers.get_current_device()
+        elif isinstance(device, int):
+            device = cuda_helpers.get_device(device)
 
-    def __call__(self, *args, **kwargs):
-        exe_args, adapted_args = self.generate_execution_args(
-            args, kwargs, self.args_spec
-        )
+        # Activate a primary context for the device:
+        context = cuda_helpers.DevicePrimaryContext(device)
 
-        self.run_compiled_program(exe_args)
+        # Get kernel functions from the kernels
+        kernel_fns = []
+        for m in self.cuda_modules:
+            fn = cuda_helpers.get_function_from_kernel(m.kernel)
+            kernel_fns.append(fn)
+
+            # Set attributes for the kernel function
+            for attr, val in m.attrs.items():
+                cuda_helpers.set_kernel_attribute(fn, attr, val)
+
+        # This instance will "own" a reference to the primary device context.
+        # It will release the the reference once its no longer alive or
+        # an explicit call to unload is made.
+        #
+        # The default module loading mode is CU_MODULE_LAZY_LOADING so
+        # the module will not be loaded to the device until the first call
+        # to execute it. # This can be modified using CUDA_MODULE_LOADING
+        # environment variable.
+        return JitExecuteContext(self, kernel_fns, context)
+
+    def unload(self):
+        try:
+            for m in set([m.cuda_module for m in self.cuda_modules]):
+                cuda_helpers.unload_library(m)
+            self.cuda_modules.clear()
+        finally:
+            self._unloaded = True
+
+    def __del__(self):
+        self.unload()
+
+
+class JitExecutor:
+    """An executable function that can be called to launch a device kernel.
+
+    JitExecutor is tired to a specific device context and should only be called
+    in a context on that device.
+    """
+
+    def __init__(
+        self,
+        jit_module: JitModule,
+        exec_context: JitExecuteContext,
+        jit_time_profiling: bool,
+    ):
+        # JitExecutor will keep JitCompiledFunction alive so that the underlying
+        # ExecutionEngine and module data is not discarded until runtime callables
+        # are garbage collected.
+        self.jit_module = jit_module
+        self.exec_context = exec_context
+        self.profiler = timer(enable=jit_time_profiling)
 
     # Assume each execution args has type `c_void_p` to reduce the overhead of `ctypes.cast`.
-    def get_invoke_packed_args(self, exe_args):
-        if self.cuda_modules:
-            exe_args += self.cuda_modules.args
+    def _get_invoke_packed_args(self, exe_args):
+        exe_args += self.exec_context.kernel_functions_ptrs
         packed_args = (ctypes.c_void_p * len(exe_args))()
         for argNum in range(len(exe_args)):
             packed_args[argNum] = exe_args[argNum]
         return packed_args
 
+    def generate_execution_args(self, *args, **kwargs):
+        return self.jit_module.args_spec.generate_execution_args(args, kwargs)
+
     def run_compiled_program(self, exe_args):
-        if self.jit_time_profiling:
-            profiler = timer(enable=True)
+        try:
+            packed_args = self.profiler(self._get_invoke_packed_args)(exe_args)
+            self.profiler(self.jit_module.capi_func)(packed_args)
+        except Exception as e:
+            raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
+
+    def __call__(self, *args, **kwargs):
+        exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
+        self.run_compiled_program(exe_args)
+
+
+@dataclass
+class JitFunctionArtifacts:
+    """Holds artifacts for a JIT-compiled function."""
+
+    PTX: str
+    CUBIN: str
+    MLIR: str
+
+    def __post_init__(self):
+        if self.PTX is not None and os.path.exists(self.PTX):
             try:
-                packed_args = profiler(self.get_invoke_packed_args)(exe_args)
-                profiler(self.capi_func)(packed_args)
-            except Exception as e:
-                raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
-        else:
+                with open(self.PTX, "r") as f:
+                    self.PTX = f.read()
+            except (IOError, OSError) as e:
+                raise DSLRuntimeError(f"Failed to read PTX file '{self.PTX}': {e}")
+        if self.CUBIN is not None and os.path.exists(self.CUBIN):
             try:
-                packed_args = self.get_invoke_packed_args(exe_args)
-                self.capi_func(packed_args)
-            except Exception as e:
-                raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
+                with open(self.CUBIN, "rb") as f:
+                    self.CUBIN = f.read()
+            except (IOError, OSError) as e:
+                raise DSLRuntimeError(f"Failed to read CUBIN file '{self.CUBIN}': {e}")
+        if self.MLIR is not None and os.path.exists(self.MLIR):
+            try:
+                with open(self.MLIR, "r") as f:
+                    self.MLIR = f.read()
+            except (IOError, OSError) as e:
+                raise DSLRuntimeError(f"Failed to read MLIR file '{self.MLIR}': {e}")
 
-    def update_jit_cuda_modules(self, kernel_symbols):
-        # preload cuda module from compiled cubin in ir and store to jit_executor.kernels.
-        if len(kernel_symbols) > 0:
-            extra_args = []
-            module = self.ir_module
-            cuda_kernel_cache = dict()
-            cuda_driver_version = cuda_helpers.get_driver_version()
-            for sym in kernel_symbols:
-                if sym not in cuda_kernel_cache:
-                    log().debug(f"Loading CUDA module for symbol: {sym}")
 
-                    # load cuda module/get function pointer from module and cache
-                    def walk_callback(sym, func_sym, cubin_data):
-                        cubin_module = cuda_helpers.load_cubin_module_data(cubin_data)
-                        kernel_ptr = cuda_helpers.get_kernel_function(
-                            cubin_module, func_sym
-                        )
-                        # Enable non-portable cluster size for CUDA version 11.8 or higher.
-                        if cuda_driver_version >= 11080:
-                            cuda_helpers.set_kernel_attribute(
-                                kernel_ptr,
-                                cuda_helpers.cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED,
-                                1,
-                            )
-                        cuda_kernel_cache[sym] = CudaSingleModule(
-                            cubin_module, kernel_ptr
-                        )
+class JitCompiledFunction:
+    """Holds a compiled function."""
 
-                    self.walk_module_and_get_cubin_data(module, sym, walk_callback)
-                else:
-                    log().debug(f"Symbol {sym} already in cache")
-                # check if kernel is empty.
-                if sym in cuda_kernel_cache:
-                    extra_args.append(
-                        ctypes.c_void_p(cuda_kernel_cache[sym].kernel_ptr.getPtr())
-                    )
-            # store to the jit result if jit result is cached.
-            self.cuda_modules = CudaModules(cuda_kernel_cache.values(), extra_args)
+    def __init__(
+        self,
+        ir_module,
+        engine,
+        capi_func,
+        args_spec,
+        function_name,
+        kernel_info,
+        jit_time_profiling,
+        jit_function_artifacts,
+    ):
+        self.ir_module = ir_module
+        self.engine = engine
+        self.capi_func = capi_func
+        self.function_name = function_name
+        self.kernel_info = kernel_info
+        if args_spec is not None:
+            self.args_spec = ExecutionArgs(args_spec, self.function_name)
+        self.jit_time_profiling = jit_time_profiling
 
-        return self
+        assert (
+            isinstance(jit_function_artifacts, JitFunctionArtifacts)
+            or jit_function_artifacts is None
+        )
+        self.artifacts = jit_function_artifacts
 
-    def _get_escaped_cubin_bytes(self, cubin_data):
-        """This function escapes cubin data from mlir raw bytecode to executable binary bytes"""
+        # This runtime state is stored here so that we can preserve the module
+        # in the compiler cache. Callers can extend the lifetime of the module
+        # by creating and retaining the executor.
+        self.jit_module = None
+        self._executor_lock = threading.RLock()
+        self._default_executor = None
 
-        def ishex(inp):
-            return (
-                inp in range(0x30, 0x3A)
-                or inp in range(0x61, 0x67)
-                or inp in range(0x41, 0x47)
-            )
+    @property
+    def __ptx__(self):
+        """Returns the PTX code of the JIT-compiled function."""
+        return self.artifacts.PTX if self.artifacts is not None else None
 
-        converted = bytearray()
-        idx = 0
-        while idx < len(cubin_data):
-            # escape the original bytes
-            if cubin_data[idx] == 0x5C:
-                # if data of idx is b'\\'
-                if ishex(cubin_data[idx + 1]) and ishex(cubin_data[idx + 2]):
-                    converted += bytearray.fromhex(
-                        cubin_data[idx + 1 : idx + 3].decode()
-                    )
-                    idx += 3
-                elif cubin_data[idx + 1] == 0x5C:
-                    converted.append(cubin_data[idx])
-                    idx += 2
-            else:
-                # no escape, directly write
-                converted.append(cubin_data[idx])
-                idx += 1
-        return bytes(converted)
+    @property
+    def __cubin__(self):
+        """Returns the CUBIN data of the JIT-compiled function."""
+        return self.artifacts.CUBIN if self.artifacts is not None else None
 
-    def walk_module_and_get_cubin_data(self, module, sym, callback):
-        """This function is used to walk gpu binary op, extract the cubin inside, and process cubin data with callback."""
+    @property
+    def __mlir__(self):
+        """Returns the MLIR code of the JIT-compiled function."""
+        return self.artifacts.MLIR if self.artifacts is not None else None
 
-        def walk_gpu_binary_op(op):
-            if op.name != "gpu.binary":
-                return ir.WalkResult.ADVANCE
-            s = io.BytesIO()
-            op.write_bytecode(s)
-            cubin_data = s.getvalue()
-            if sym.encode() not in cubin_data:
-                return ir.WalkResult.ADVANCE
+    def to(self, device=None) -> JitExecutor:
+        """Returns an executable function bound to the given device.
 
-            if (
-                "kernels" != op.opview.sym_name.value
-                and sym != op.opview.sym_name.value
-            ):
-                return ir.WalkResult.ADVANCE
-            # function symbol of kernel(gpu.launch_func) is equal to sym name in mlir
-            func_sym = sym
-            if sym == op.opview.sym_name.value and not sym.endswith("_kernel"):
-                func_sym = sym.rsplit("_", 1)[0]
+        For multi-device execution this method can be called for each device where
+        the kernel will run.
 
-            cubin_data = cubin_data.split(b'bin = "')[1].split(b'">')[0]
-            cubin_data = self._get_escaped_cubin_bytes(cubin_data)
-            callback(sym, func_sym, cubin_data)
-            return ir.WalkResult.ADVANCE
+        :param device: Specifies the device for the executor. If None the current device is used.
+        :type device: Optional[Union[int, CUdevice]]
+        :return: A callable executor function.
+        :rtype: JitExecutor
+        """
+        with self._executor_lock:
+            # We need to ensure that the modules are loaded if not already
+            if self.jit_module is None:
+                cuda_modules = load_kernels_from_ir_module(
+                    self.ir_module, self.kernel_info
+                )
+                self.jit_module = JitModule(
+                    self.engine, self.capi_func, self.args_spec, cuda_modules
+                )
 
-        module.operation.walk(walk_gpu_binary_op)
+            # Create a new executor that will be tied to a device context
+            # n.b. host only moduels do not load device specific modules or context.
+            context = self.jit_module.get_device_execute_context(device)
+            return JitExecutor(self.jit_module, context, self.jit_time_profiling)
+
+    def generate_execution_args(self, *args, **kwargs):
+        return self.args_spec.generate_execution_args(args, kwargs)
+
+    def __call__(self, *args, **kwargs):
+        """Executes the jit-compiled function under the currently active CUDA context.
+
+        Calling this method multiple devices is not allowed and will result in unexpected
+        CUDA errors. If you need to call the kernel on multiple devices use `to`
+        to return a per-device function.
+        """
+        exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
+        return self.run_compiled_program(exe_args)
+
+    def run_compiled_program(self, exe_args):
+        """Executes the jit-compiled function under the currently active CUDA context.
+
+        Calling this method multiple devices is not allowed and will result in unexpected
+        CUDA errors. If you need to call the kernel on multiple devices use `to`
+        to return a per-device function.
+        """
+        with self._executor_lock:
+            if self._default_executor is None:
+                log().debug("Creating default executor.")
+                # We use a weak reference here so that this instance does not keep this
+                # object alive as it hold a reference to self.
+                proxy_self = weakref.proxy(self)
+                self._default_executor = proxy_self.to(None)
+        self._default_executor.run_compiled_program(exe_args)

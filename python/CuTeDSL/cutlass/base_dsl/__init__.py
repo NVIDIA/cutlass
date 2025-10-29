@@ -12,6 +12,6 @@
 # Local module imports
 from .dsl import *
 from .runtime import *
-from ._mlir_helpers import lru_cache_ir
+from ._mlir_helpers import lru_cache_ir, dsl_user_op
 from .env_manager import get_str_env_var, detect_gpu_arch
 

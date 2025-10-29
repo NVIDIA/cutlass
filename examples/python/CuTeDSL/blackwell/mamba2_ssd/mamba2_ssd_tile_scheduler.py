@@ -29,7 +29,6 @@
 from typing import Tuple
 
 from cutlass.cutlass_dsl import (
-    Boolean,
     Integer,
     Int32,
     min,
@@ -121,8 +120,8 @@ class Mamba2SSDTileScheduler:
         )
 
     # called by host
-    @dsl_user_op
     @staticmethod
+    @dsl_user_op
     def create(
         params: Mamba2SSDTileSchedulerParams,
         block_idx: Tuple[Integer, Integer, Integer],

@@ -35,6 +35,7 @@ from .sm90 import (
     PipelineTmaAsync,
     PipelineTmaMultiConsumersAsync,
     PipelineTmaStore,
+    PipelineOrder,
     PipelineProducer,
     PipelineConsumer,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "SyncObject",
     "MbarrierArray",
     "NamedBarrier",
+    "PipelineOrder",
     "TmaStoreFence",
     "PipelineUserType",
     "PipelineState",
@@ -65,4 +67,12 @@ __all__ = [
     "PipelineTmaStore",
     "PipelineProducer",
     "PipelineConsumer",
+    "make_pipeline_state",
+    "pipeline_init_wait",
+    "arrive",
+    "arrive_unaligned",
+    "wait",
+    "wait_unaligned",
+    "arrive_and_wait",
+    "sync",
 ]

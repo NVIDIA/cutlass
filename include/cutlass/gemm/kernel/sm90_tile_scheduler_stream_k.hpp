@@ -333,8 +333,10 @@ public:
     if (continue_current_work(work_tile_info)) {
       return false;
     }
+    // Create a copy to avoid unit_iter_start_ being modified
+    uint32_t unit_iter_start = unit_iter_start_;
     return not get_current_work_for_linear_idx(
-        unit_iter_start_,
+        unit_iter_start,
         current_work_linear_idx_ + (
           uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count)
           ),

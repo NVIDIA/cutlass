@@ -185,9 +185,11 @@ void fmha_mla_reference(
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         shared_mem);
     if (cudaSuccess != result) {
-      result = cudaGetLastError(); // to clear the error bit
-      throw std::runtime_error("couldn't perform smem option");
-    }
+      cudaGetLastError(); // Clear the error state
+      throw std::runtime_error("Failed to allocate " +
+                               std::to_string(shared_mem >> 10) + " KB dynamic smem for S/P tensor in ref. check - " +
+                               "please try reducing seq_len or skipping ref. check");
+    }    
   }
   fmha_mla_reference_kernel<<<grid, block, shared_mem>>>(
       problem_shape, mSeq, mPT, mQL, mQR, mCL, mKR, mO, mLSE, scale);
