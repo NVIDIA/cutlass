@@ -124,7 +124,7 @@ JIT function arguments with |CUSTOM_TYPES|
     - ``__extract_mlir_values__``: Generate a dynamic expression for the current object.
     - ``__new_from_mlir_values__``: Create a new object from MLIR values.
 
-Refer to `typing.py <https://github.com/NVIDIA/cutlass/tree/main/python/CuTeDSL/base_dsl/typing.py>`__ for more details on these protocol APIs.
+Refer to `typing.py <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/cutlass/base_dsl/typing.py>`__ for more details on these protocol APIs.
 
 Depending on different cases of the |CUSTOM_TYPES|, |DSL| provides easy ways to adopt |CUSTOM_TYPES| for JIT function arguments.
 
