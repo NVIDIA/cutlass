@@ -208,7 +208,7 @@ struct KernelArgument {
 
   virtual ~KernelArgument();
 
-  /// Returns true if the kernel argument iself is empty
+  /// Returns true if the kernel argument itself is empty
   virtual bool not_null() const =0;
 
   /// Returns a string name for debugging

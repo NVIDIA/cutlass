@@ -435,7 +435,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     size_t workspace_size {0};
     if (args.is_fused_reduction && args.split_kv > 1) {
       //  one exchange buffer for LSE max and another buffer for total LSE 
-      //  two locks per batch, frist lock is for CTA0 / H=0..63 and the second is for CTA1 / H=64..127
+      //  two locks per batch, first lock is for CTA0 / H=0..63 and the second is for CTA1 / H=64..127
       workspace_size = H * B * (sizeof(int) + sizeof(ElementLSE)) + 2 * B * sizeof(int);
     } else if (!args.is_fused_reduction && args.split_kv > 1) {
       workspace_size = (sizeof(ElementAcc) * D_latent + sizeof(ElementLSE)) * H * split_kv * B;

@@ -67,7 +67,7 @@ dtype_map = {v: k for k, v in DataTypeNames.items()}
 
 def serialize_heuristics_results_to_json(problems_with_configs, outfile_path):
   """
-  Utilitiy function to write heuristics results to a json file for debug
+  Utility function to write heuristics results to a json file for debug
 
   args:
     problems_with_configs: List of problems provided to the heuristic, with a list of operations added to each problem dict
@@ -142,7 +142,7 @@ def get_gemm_configs(problems, provider=None, count=1):
       - 'batch_count': Number of GEMM operations in batch (default: 1)
       - 'use_fast_acc': Enable fast accumulation for FP8 on Hopper (default: True)
     provider: Heuristics provider to use
-    count: Number of configurations to return per problem (defualt: 1)
+    count: Number of configurations to return per problem (default: 1)
       
   returns:
     A copy of the input dictionary, with key `configs` added containing the selected gemm configs

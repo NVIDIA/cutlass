@@ -377,7 +377,7 @@ class ReductionOperation:
         )
 
     def procedural_name(self):
-        """The full procedural name indicates architeture, extended name, tile size"""
+        """The full procedural name indicates architecture, extended name, tile size"""
         return self.configuration_name()
 
     def run(self, arguments: ReductionArguments) -> cuda.CUresult:

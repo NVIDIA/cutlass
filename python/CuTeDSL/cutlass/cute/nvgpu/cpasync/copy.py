@@ -29,7 +29,7 @@ from ..tcgen05.mma import CtaGroup
 
 ####################################################################################################
 #
-# Aynchronous copies
+# Asynchronous copies
 #
 ####################################################################################################
 
@@ -131,7 +131,7 @@ class TmaCopyOp(CopyOp):
 @dataclass(frozen=True)
 class CopyBulkTensorTileG2SOp(TmaCopyOp):
     """
-    Bulk tensor asynchrnous GMEM to SMEM Copy Operation using the TMA unit.
+    Bulk tensor asynchronous GMEM to SMEM Copy Operation using the TMA unit.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
     This Operation uses TMA in the ``.tile`` mode.
@@ -226,7 +226,7 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkTensorTileG2SMulticastOp(TmaCopyOp):
     """
-    Bulk tensor asynchrnous multicast GMEM to SMEM Copy Operation using the TMA unit.
+    Bulk tensor asynchronous multicast GMEM to SMEM Copy Operation using the TMA unit.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
     This Operation uses TMA in the ``.tile`` mode.
