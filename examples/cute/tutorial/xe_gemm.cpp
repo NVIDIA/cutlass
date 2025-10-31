@@ -414,6 +414,7 @@ int main(int argc, char** argv)
   test_case<int4_t, uint8_t, int32_t, 'R', 'C'>(Q, m, n, k);
 
   test_case<uint4_t, uint4_t, uint32_t, 'R', 'C'>(Q, m, n, k);
+  test_case<uint4_t, uint4_t, uint32_t, 'R', 'R'>(Q, m, n, k);
 
   // Upconversion cases
   test_case<half_t, float_e5m2_t, float, 'R', 'R'>(Q, m, n, k);
