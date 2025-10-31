@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -107,6 +108,54 @@ make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT, int64_t> s, cute::Shape
   }
   return s_copy;
 }
+
+// Strides with 2 batch modes.
+// All this code should be replaced with a generic implementation.
+
+template <class IntT>
+CUTLASS_HOST_DEVICE
+auto
+make_cute_packed_stride(cute::Stride<IntT,cute::Int<1>,int,int> s,
+                        cute::Shape<int,int,int,int> shape)
+{
+  using namespace cute;
+
+  static_assert(std::is_integral_v<IntT>,
+    "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
+  auto s_copy = s;
+
+  int batch_count0 = get<2>(shape);
+  int batch_count1 = get<3>(shape) * batch_count0;
+
+  get<0>(s_copy) = static_cast<IntT>(get<1>(shape));
+  get<2>(s_copy) = (batch_count0 <= 1) ? 0 : product(take<0,2>(shape));
+  get<3>(s_copy) = (batch_count1 <= 1) ? 0 : product(take<0,3>(shape));
+
+  return s_copy;
+}
+
+template <class IntT>
+CUTLASS_HOST_DEVICE
+auto
+make_cute_packed_stride(cute::Stride<cute::Int<1>,IntT,int,int> s,
+                        cute::Shape<int,int,int,int> shape)
+{
+  using namespace cute;
+
+  static_assert(std::is_integral_v<IntT>,
+    "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
+  auto s_copy = s;
+
+  int batch_count0 = get<2>(shape);
+  int batch_count1 = get<3>(shape) * batch_count0;
+
+  get<1>(s_copy) = static_cast<IntT>(get<0>(shape));
+  get<2>(s_copy) = (batch_count0 <= 1) ? 0 : product(take<0,2>(shape));
+  get<3>(s_copy) = (batch_count1 <= 1) ? 0 : product(take<0,3>(shape));
+
+  return s_copy;
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

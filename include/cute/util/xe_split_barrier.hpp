@@ -31,20 +31,52 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
-#define CUTE_ARCH_COPY_XE_ENABLED
+enum SPIRVScope {
+  ScopeCrossDevice = 0,
+  ScopeDevice = 1,
+  ScopeWorkgroup = 2,
+  ScopeSubgroup = 3,
+  ScopeInvocation = 4,
+};
+
+enum SPIRVMemorySemantics {
+  SemanticsNone = 0,
+  SemanticsAcquire = 0x2,
+  SemanticsRelease = 0x4,
+  SemanticsAcquireRelease = 0x8,
+  SemanticsSGMemory = 0x80,
+  SemanticsWGMemory = 0x100,
+  SemanticsCrossWGMemory = 0x200,
+};
+
+#ifdef __SYCL_DEVICE_ONLY__
+SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
+SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope, int memory_semantics);
 #endif
 
-#if defined(CUTE_ARCH_COPY_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
-#include <cute/arch/copy_xe_legacy_builtin.hpp>
-#elif defined(CUTE_ARCH_COPY_XE_ENABLED)
-#include <cute/arch/copy_xe_legacy_spirv.hpp>
+namespace cute
+{
+
+CUTE_HOST_DEVICE void barrier_arrive(SPIRVScope scope, int memory_semantics = SemanticsNone) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierArriveINTEL(scope, scope, memory_semantics);
 #endif
+}
+CUTE_HOST_DEVICE void barrier_wait(SPIRVScope scope, int memory_semantics = SemanticsNone) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierWaitINTEL(scope, scope, memory_semantics);
+#endif
+}
 
-#include <cute/arch/copy_xe_legacy_U4.hpp>
-#include <cute/arch/copy_xe_legacy_U8.hpp>
-#include <cute/arch/copy_xe_legacy_U16.hpp>
-#include <cute/arch/copy_xe_legacy_U32.hpp>
-#include <cute/arch/copy_xe_legacy_U64.hpp>
+CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = ScopeCrossDevice, int memory_semantics = SemanticsNone) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, memory_semantics);
+#endif
+}
+CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = ScopeCrossDevice, int memory_semantics = SemanticsNone) {
+#ifdef __SYCL_DEVICE_ONLY__
+  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, memory_semantics);
+#endif
+}
 
-#include <cute/util/xe_split_barrier.hpp>
+} // end namespace cute

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -29,22 +29,67 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+
 #pragma once
 
-#if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
-#define CUTE_ARCH_COPY_XE_ENABLED
-#endif
 
-#if defined(CUTE_ARCH_COPY_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
-#include <cute/arch/copy_xe_legacy_builtin.hpp>
-#elif defined(CUTE_ARCH_COPY_XE_ENABLED)
-#include <cute/arch/copy_xe_legacy_spirv.hpp>
-#endif
+#include "cutlass/cutlass.h"
+#include "cutlass/fast_math.h"
+#include "cutlass/kernel_hardware_info.h"
 
-#include <cute/arch/copy_xe_legacy_U4.hpp>
-#include <cute/arch/copy_xe_legacy_U8.hpp>
-#include <cute/arch/copy_xe_legacy_U16.hpp>
-#include <cute/arch/copy_xe_legacy_U32.hpp>
-#include <cute/arch/copy_xe_legacy_U64.hpp>
+namespace cutlass::fmha::kernel {
 
-#include <cute/util/xe_split_barrier.hpp>
+struct XeFHMAIndividualTileScheduler {
+
+  struct Params {
+    dim3 grid;
+    FastDivmod divmod_num_heads;
+  };
+
+  bool valid_ = true;
+  Params params;
+
+  CUTLASS_DEVICE
+  XeFHMAIndividualTileScheduler(Params const& params) : params(params) {}
+
+  template <class ProblemShape, class TileShape>
+  static Params to_underlying_arguments(
+      ProblemShape const& shape, KernelHardwareInfo hw_info,
+      TileShape const& tile_shape)
+  {
+    using namespace cute;
+
+    dim3 grid(size(ceil_div(shape.head_size_vo, get<1>(tile_shape))),     // V
+              size(ceil_div(shape.seq_len_qo,   get<0>(tile_shape))),     // Q
+              size(shape.batch * shape.num_heads_q));                     // (h,b) -- split later
+    return Params{grid, {shape.num_heads_q}};
+  }
+
+  template <int Num_SGs>
+  static dim3 get_grid_shape(Params const& params) {
+    return params.grid;
+  }
+
+  CUTLASS_DEVICE
+  bool is_valid() {
+    return valid_;
+  }
+
+  CUTLASS_DEVICE
+  auto get_block_coord() {
+    using namespace cute;
+    int idx_b = BlockIdxZ();
+    int head;
+    params.divmod_num_heads(idx_b, head, idx_b);
+    return make_coord(BlockIdxY(), BlockIdxX(), head, idx_b);
+  }
+
+  CUTLASS_DEVICE
+  XeFHMAIndividualTileScheduler& operator++() {
+    valid_ = false;
+    return *this;
+  }
+};
+
+}  // namespace cutlass::fmha::kernel
