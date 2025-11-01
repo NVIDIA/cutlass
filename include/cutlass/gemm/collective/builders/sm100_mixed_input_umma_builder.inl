@@ -152,6 +152,7 @@ constexpr int get_ScaleGranularityK() {
 
 // Mixed Input MMA kernels builder
 template <
+  class ArchTag,
   class ElementAOptionalTuple,
   class GmemLayoutATagTuple,
   int AlignmentA,
@@ -165,7 +166,7 @@ template <
   class KernelScheduleType
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     ElementAOptionalTuple, // ElementA
     GmemLayoutATagTuple,  // LayoutA 
@@ -179,6 +180,8 @@ struct CollectiveBuilder<
     StageCountType,
     KernelScheduleType,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       (cute::is_base_of_v<KernelScheduleSm100MixedInputGemm, KernelScheduleType>) &&
       ((sizeof(float) * AlignmentA) % detail::tma_alignment_bytes == 0) &&
       ((sizeof(float) * AlignmentB) % detail::tma_alignment_bytes == 0)>>
@@ -304,12 +307,12 @@ struct CollectiveBuilder<
                                                                TensorMapStorage);
 
   // Reduce SMEM capacity available for buffers considering extra B smem and barrier smem allocations
-  static constexpr int Sm100ReducedSmemCapacityBytes = detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   static constexpr int ScaleGranularityK = get_ScaleGranularityK<LayoutScale>();
-
   static constexpr auto stage_info = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_mixed_input<
-      Sm100ReducedSmemCapacityBytes, TmaElementA, ElementAMma, ElementScale, ElementZero, ElementB, CtaTileShape_MNK, TiledMma, KernelScheduleType, UmmaMajorA, ScaleGranularityK>(StageCountType{});
+  ReducedSmemCapacityBytes, TmaElementA, ElementAMma, ElementScale, ElementZero, ElementB, CtaTileShape_MNK, TiledMma, KernelScheduleType, UmmaMajorA, ScaleGranularityK>(StageCountType{});
   
   static constexpr int Load2TransformPipelineStageCount = get<0>(stage_info);
   static constexpr int Transform2MmaPipelineStageCount = get<1>(stage_info);

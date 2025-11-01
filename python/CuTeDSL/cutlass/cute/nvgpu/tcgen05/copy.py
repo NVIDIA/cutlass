@@ -13,14 +13,15 @@ import enum
 from dataclasses import dataclass
 from typing import Type
 
+from cutlass import cute
+from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import CuTeDSL
 
-import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError
-from ...core import CopyOp, Trait
+from ...atom import CopyOp, Trait
 from ...typing import Numeric
 
 from .mma import CtaGroup
@@ -45,24 +46,6 @@ class Repetition(enum.Enum):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
-
-    @classmethod
-    def _missing_(cls, value):
-        if isinstance(value, int):
-            if value == 1:
-                return Repetition.x1
-            elif value == 2:
-                return Repetition.x2
-            elif value == 8:
-                return Repetition.x8
-            elif value == 16:
-                return Repetition.x16
-            elif value == 32:
-                return Repetition.x32
-            elif value == 64:
-                return Repetition.x64
-            elif value == 128:
-                return Repetition.x128
 
 
 class Pack(enum.Enum):
@@ -97,17 +80,40 @@ class Unpack(enum.Enum):
 
 @dataclass(frozen=True)
 class _LdBase(CopyOp):
+    """
+    Base class for TMEM load operations in the tcgen05 instruction set.
+
+    This abstract base class provides common functionality and validation for tensor memory (TMEM)
+    load operations. It defines the fundamental parameters and architecture constraints that apply
+    to all load operation variants.
+
+    :param repeat: Number of repetitions for the load operation, defaults to Repetition.x1
+    :type repeat: Repetition, optional
+    :param pack: Packing pattern for TMEM to RMEM copies, defaults to Pack.NONE
+    :type pack: Pack, optional
+    :raises OpError: If the current architecture is not supported or if invalid parameters are provided
+    """
+
     repeat: Repetition = Repetition.x1
     pack: Pack = Pack.NONE
 
-    admissible_archs = [
-        "sm_100a",
-        "sm_100f",
-    ]
+    admissible_archs = Arch.filter(
+        lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
+    )
 
     def __post_init__(self) -> None:
+        """
+        Post-initialization validation for TMEM load operations.
+
+        Performs comprehensive validation of operation parameters and architecture compatibility.
+        This method is automatically called after object creation to ensure all constraints are met.
+
+        :raises OpError: If architecture is not supported
+        :raises OpError: If repeat parameter is not a Repetition instance
+        :raises OpError: If pack parameter is not a Pack instance
+        """
         # Arch verification
-        arch = CuTeDSL._get_dsl().envar.arch
+        arch = CuTeDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
             raise OpError(
                 self,
@@ -127,12 +133,21 @@ class _LdBase(CopyOp):
             )
 
     def __str__(self) -> str:
+        """
+        Generate a human-readable string representation of the load operation.
+
+        Creates a formatted description showing the operation type, repetition count,
+        and any special packing configuration.
+
+        :return: Multi-line string describing the operation configuration
+        :rtype: str
+        """
         res = (
             f"tcgen05 {self.__class__.__name__[:-2]} Copy Operation"
             + f"\n  number of repetitions = {self.repeat.value}"
         )
         if self.pack == Pack.PACK_16b_IN_32b:
-            res += f"\n  with 2x 16-bit to 32b packing"
+            res += "\n  with 2x 16-bit to 32b packing"
         return res
 
 
@@ -148,6 +163,24 @@ class Ld16x64bOp(_LdBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Ld16x64bTrait":
+        """
+        Create a trait object for the 16x64b TMEM load operation.
+
+        Constructs an MLIR-based trait that encapsulates the specific parameters and
+        characteristics of this load operation. The trait is used by the compiler
+        infrastructure to generate the appropriate low-level code.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments passed to the trait constructor
+        :type kwargs: dict
+        :return: A trait object that represents this specific load operation
+        :rtype: Ld16x64bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemLoadType.get(
             copy_internal_type.mlir_type,
             16,
@@ -155,7 +188,7 @@ class Ld16x64bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x64bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Ld16x64bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x64bTrait(Trait):
@@ -172,6 +205,15 @@ class Ld16x128bOp(_LdBase):
     """
 
     def __post_init__(self) -> None:
+        """
+        Additional validation specific to 16x128b load operations.
+
+        Extends the base class validation with operation-specific constraints.
+        The 16x128b operation has limitations on the maximum repetition count due to
+        hardware register and bandwidth constraints.
+
+        :raises OpError: If x128 repetition is specified
+        """
         super().__post_init__()
         if self.repeat == Repetition.x128:
             raise OpError(
@@ -183,6 +225,20 @@ class Ld16x128bOp(_LdBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Ld16x128bTrait":
+        """
+        Create a trait object for the 16x128b TMEM load operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: Ld16x128bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemLoadType.get(
             copy_internal_type.mlir_type,
             16,
@@ -190,7 +246,7 @@ class Ld16x128bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Ld16x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x128bTrait(Trait):
@@ -207,6 +263,15 @@ class Ld16x256bOp(_LdBase):
     """
 
     def __post_init__(self) -> None:
+        """
+        Additional validation specific to 16x256b load operations.
+
+        Extends the base class validation with operation-specific constraints.
+        The 16x256b operation has more restrictive limitations on repetition count due to
+        the larger data size per operation requiring more hardware resources.
+
+        :raises OpError: If x64 or x128 repetition is specified
+        """
         super().__post_init__()
         if self.repeat in (Repetition.x128, Repetition.x64):
             raise OpError(
@@ -218,6 +283,20 @@ class Ld16x256bOp(_LdBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Ld16x256bTrait":
+        """
+        Create a trait object for the 16x256b TMEM load operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: Ld16x256bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemLoadType.get(
             copy_internal_type.mlir_type,
             16,
@@ -225,7 +304,7 @@ class Ld16x256bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Ld16x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x256bTrait(Trait):
@@ -244,6 +323,20 @@ class Ld16x32bx2Op(_LdBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Ld16x32bx2Trait":
+        """
+        Create a trait object for the 16x32bx2 TMEM load operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: Ld16x32bx2Trait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemLoadType.get(
             copy_internal_type.mlir_type,
             16,
@@ -251,7 +344,7 @@ class Ld16x32bx2Op(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x32bx2Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Ld16x32bx2Trait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x32bx2Trait(Trait):
@@ -270,6 +363,20 @@ class Ld32x32bOp(_LdBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Ld32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: Ld32x32bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemLoadType.get(
             copy_internal_type.mlir_type,
             32,
@@ -277,7 +384,7 @@ class Ld32x32bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld32x32bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Ld32x32bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld32x32bTrait(Trait):
@@ -286,17 +393,30 @@ class Ld32x32bTrait(Trait):
 
 @dataclass(frozen=True)
 class _StBase(CopyOp):
+    """
+    Base class for TMEM store operations in the tcgen05 instruction set.
+
+    This abstract base class provides common functionality and validation for tensor memory (TMEM)
+    store operations. It defines the fundamental parameters and architecture constraints that apply
+    to all store operation variants.
+
+    :param repeat: Number of repetitions for the store operation (required parameter)
+    :type repeat: Repetition
+    :param unpack: Unpacking pattern for RMEM to TMEM copies, defaults to Unpack.NONE
+    :type unpack: Unpack, optional
+    :raises OpError: If the current architecture is not supported or if invalid parameters are provided
+    """
+
     repeat: Repetition
     unpack: Unpack = Unpack.NONE
 
-    admissible_archs = [
-        "sm_100a",
-        "sm_100f",
-    ]
+    admissible_archs = Arch.filter(
+        lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
+    )
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch = CuTeDSL._get_dsl().envar.arch
+        arch = CuTeDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
             raise OpError(
                 self,
@@ -312,7 +432,7 @@ class _StBase(CopyOp):
         if not isinstance(self.unpack, Unpack):
             raise OpError(
                 self,
-                "expects the 'pack' Op parameter to be a tcgen05.Unpack instance",
+                "expects the 'unpack' Op parameter to be a tcgen05.Unpack instance",
             )
 
     def __str__(self) -> str:
@@ -321,7 +441,7 @@ class _StBase(CopyOp):
             + f"\n  number of repetitions = {self.repeat.value}"
         )
         if self.unpack == Unpack.UNPACK_32b_IN_16b:
-            res += f"\n  with 32-bit to 2x 16b unpacking"
+            res += "\n  with 32-bit to 2x 16b unpacking"
         return res
 
 
@@ -337,6 +457,20 @@ class St16x64bOp(_StBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "St16x64bTrait":
+        """
+        Create a trait object for the 16x64b TMEM store operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this store operation
+        :rtype: St16x64bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100TmemStoreType.get(
             copy_internal_type.mlir_type,
             16,
@@ -344,7 +478,7 @@ class St16x64bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x64bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return St16x64bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x64bTrait(Trait):
@@ -379,7 +513,7 @@ class St16x128bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return St16x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x128bTrait(Trait):
@@ -414,7 +548,7 @@ class St16x256bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return St16x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x256bTrait(Trait):
@@ -440,7 +574,7 @@ class St16x32bx2Op(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x32bx2Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return St16x32bx2Trait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x32bx2Trait(Trait):
@@ -466,7 +600,7 @@ class St32x32bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St32x32bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return St32x32bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class St32x32bTrait(Trait):
@@ -475,20 +609,27 @@ class St32x32bTrait(Trait):
 
 @dataclass(frozen=True)
 class _S2TCopyBase(CopyOp):
-    cta_group: CtaGroup
+    """
+    Base class for SMEM to TMEM copy operations in the tcgen05 instruction set.
 
-    admissible_archs = [
-        "sm_100a",
-        "sm_100f",
-    ]
+    This abstract base class provides common functionality and validation for shared memory (SMEM)
+    to tensor memory (TMEM) copy operations. These operations are used for high-throughput data
+    movement between different memory hierarchies in modern GPU architectures.
+
+    :param cta_group: Cooperative Thread Array (CTA) group configuration
+    :type cta_group: CtaGroup
+    :raises OpError: If the current architecture is not SM100f family or if invalid parameters are provided
+    """
+
+    cta_group: CtaGroup
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch = CuTeDSL._get_dsl().envar.arch
-        if arch not in self.admissible_archs:
+        arch = CuTeDSL._get_dsl().get_arch_enum()
+        if not arch.is_family_of(Arch.sm_100f):
             raise OpError(
                 self,
-                f"expects arch to be one of {self.admissible_archs}, but got {arch}",
+                f"expects arch to be one of {Arch.filter(lambda arch: arch.is_family_of(Arch.sm_100f))}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         # Verify that the user provided enum values
@@ -519,6 +660,20 @@ class Cp128x256bOp(_S2TCopyBase):
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "Cp128x256bTrait":
+        """
+        Create a trait object for the 128x256b SMEM to TMEM copy operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this S2T copy operation
+        :rtype: Cp128x256bTrait
+        """
         ty = _cute_nvgpu_ir.CopyAtomSM100CopyS2TType.get(
             copy_internal_type.mlir_type,
             128,
@@ -526,7 +681,7 @@ class Cp128x256bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp128x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp128x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp128x256bTrait(Trait):
@@ -552,7 +707,7 @@ class Cp128x128bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp128x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp128x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp128x128bTrait(Trait):
@@ -578,7 +733,7 @@ class Cp4x256bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp4x256bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp4x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp4x256bTrait(Trait):
@@ -604,7 +759,7 @@ class Cp4x32x128bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.x4,
         )
-        return Cp4x32x128bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp4x32x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp4x32x128bTrait(Trait):
@@ -630,7 +785,7 @@ class Cp2x64x128b0213Op(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0213,
         )
-        return Cp2x64x128b0213Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp2x64x128b0213Trait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp2x64x128b0213Trait(Trait):
@@ -656,7 +811,7 @@ class Cp2x64x128b0123Op(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0123,
         )
-        return Cp2x64x128b0123Trait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return Cp2x64x128b0123Trait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp2x64x128b0123Trait(Trait):

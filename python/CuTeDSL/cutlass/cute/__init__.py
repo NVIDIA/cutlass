@@ -26,6 +26,7 @@ from .typing import (
     XTuple,
     Tiler,
     Layout,
+    ComposedLayout,
     Pointer,
     Tensor,
 )
@@ -35,47 +36,37 @@ from .typing import *
 
 from .core import (
     assume,
-    is_integer,
-    is_int_tuple,
     is_static,
     size,
+    static,
+    get_leaves,
     has_underscore,
     slice_,
     make_ptr,
     make_layout,
     recast_layout,
-    make_fragment_like,
     depth,
     rank,
-    flatten_to_tuple,
     flatten,
-    unflatten,
-    product,
-    product_like,
     shape,
     size_in_bytes,
     make_identity_layout,
     make_ordered_layout,
+    make_layout_like,
     make_composed_layout,
     make_layout_tv,
     make_swizzle,
+    make_sparse_elem,
     recast_ptr,
-    make_tensor,
-    make_identity_tensor,
-    make_fragment,
-    recast_tensor,
     get,
     select,
     front,
     is_major,
     leading_dim,
-    find,
-    find_if,
     coalesce,
     group_modes,
     cosize,
     dice,
-    product_each,
     prepend,
     append,
     prepend_ones,
@@ -83,9 +74,7 @@ from .core import (
     ceil_div,
     slice_and_offset,
     crd2idx,
-    domain_offset,
-    elem_less,
-    transform_leaf,
+    idx2crd,
     filter_zeros,
     filter,
     tile_to_shape,
@@ -109,7 +98,65 @@ from .core import (
     local_partition,
     local_tile,
     printf,
+    # Wrapper classes
+    Swizzle,
+    E,
+    # User defined struct
+    struct,
+    pretty_str,
+    make_layout_image_mask,
+    repeat,
+    repeat_as_tuple,
+    repeat_like,
+    round_up,
+    is_congruent,
+    is_weakly_congruent,
+    ScaledBasis,
+    get_divisibility,
+    Ratio,
+)
+
+from .tuple import (
+    transform_leaf,
+    find_if,
+    find,
+    flatten_to_tuple,
+    unflatten,
+    product,
+    product_like,
+    product_each,
+    elem_less,
+)
+from .tensor import (
+    TensorSSA,
+    ReductionOp,
+    make_tensor,
+    make_identity_tensor,
+    make_fragment,
+    make_fragment_like,
+    make_rmem_tensor_like,
+    make_rmem_tensor,
+    recast_tensor,
+    domain_offset,
     print_tensor,
+    full,
+    full_like,
+    empty_like,
+    ones_like,
+    zeros_like,
+    where,
+    any_,
+    all_,
+)
+from .atom import (
+    Atom,
+    MmaAtom,
+    CopyAtom,
+    TiledCopy,
+    TiledMma,
+    ThrMma,
+    ThrCopy,
+    make_atom,
     # tiled mma/tiled copy
     make_mma_atom,
     make_tiled_mma,
@@ -122,48 +169,16 @@ from .core import (
     make_tiled_copy_B,
     make_tiled_copy_C,
     make_tiled_copy_C_atom,
-    basic_copy,
-    basic_copy_if,
-    autovec_copy,
-    copy,
+    make_cotiled_copy,
     copy_atom_call,
-    gemm,
-    # Wrapper classes
-    ComposedLayout,
-    Swizzle,
-    E,
-    Atom,
-    MmaAtom,
-    CopyAtom,
-    TiledCopy,
-    TiledMma,
-    TensorSSA,
-    ReductionOp,
-    full,
-    full_like,
-    empty_like,
-    ones_like,
-    zeros_like,
-    where,
-    any_,
-    all_,
-    # User defined struct
-    struct,
-    pretty_str,
-    make_layout_image_mask,
-    repeat_like,
-    round_up,
-    is_congruent,
-    is_weakly_congruent,
-    ScaledBasis,
-    get_divisibility,
-    Ratio,
 )
+from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, prefetch
 
 from . import arch
 from . import nvgpu
 from . import testing
 from . import runtime
+from . import math
 
 # Export all math ops without "math."
 from .math import *
@@ -175,7 +190,15 @@ from .. import cutlass_dsl as _dsl
 jit = _dsl.CuTeDSL.jit
 kernel = _dsl.CuTeDSL.kernel
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
-compile = _dsl.compile
+compile = _dsl.CompileCallable()
+OptLevel = _dsl.OptLevel
+PtxasOptions = _dsl.PtxasOptions
+EnableAssertions = _dsl.EnableAssertions
+GenerateLineInfo = _dsl.GenerateLineInfo
+KeepCUBIN = _dsl.KeepCUBIN
+KeepPTX = _dsl.KeepPTX
+GPUArch = _dsl.GPUArch
+LinkLibraries = _dsl.LinkLibraries
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
@@ -186,22 +209,22 @@ __all__ = [
     "ComposedLayout",
     "Swizzle",
     "E",
+    "ScaledBasis",
     "Atom",
     "MmaAtom",
     "CopyAtom",
     "TiledCopy",
     "TiledMma",
+    "ThrMma",
+    "ThrCopy",
     "TensorSSA",
+    "ReductionOp",
     # Basic utility functions
     "assume",
     "is_integer",
     "is_int_tuple",
     "is_static",
-    "size",
     "has_underscore",
-    "slice_",
-    "depth",
-    "rank",
     "shape",
     "printf",
     "print_tensor",
@@ -211,6 +234,7 @@ __all__ = [
     "recast_layout",
     "make_identity_layout",
     "make_ordered_layout",
+    "make_layout_like",
     "make_composed_layout",
     "make_layout_tv",
     "make_layout_image_mask",
@@ -220,6 +244,8 @@ __all__ = [
     "make_identity_tensor",
     "make_fragment",
     "make_fragment_like",
+    "make_rmem_tensor",
+    "make_rmem_tensor_like",
     "recast_ptr",
     "recast_tensor",
     # Tensor manipulation
@@ -230,6 +256,7 @@ __all__ = [
     "leading_dim",
     "find",
     "find_if",
+    "transform_leaf",
     "coalesce",
     "group_modes",
     "cosize",
@@ -237,6 +264,7 @@ __all__ = [
     # Tuple operations
     "flatten_to_tuple",
     "flatten",
+    "unflatten",
     "product",
     "product_like",
     "product_each",
@@ -244,6 +272,7 @@ __all__ = [
     "append",
     "prepend_ones",
     "append_ones",
+    "elem_less",
     # Math operations
     "ceil_div",
     "round_up",
@@ -251,7 +280,6 @@ __all__ = [
     "slice_and_offset",
     "crd2idx",
     "domain_offset",
-    "elem_less",
     "filter_zeros",
     "filter",
     "tile_to_shape",
@@ -280,18 +308,27 @@ __all__ = [
     "tiled_divide",
     "local_partition",
     "local_tile",
-    # MMA and Copy operations
+    # MMA and Copy atom operations
+    "make_atom",
     "make_mma_atom",
     "make_tiled_mma",
     "make_copy_atom",
     "make_tiled_copy_tv",
     "make_tiled_copy",
+    "make_tiled_copy_S",
+    "make_tiled_copy_D",
+    "make_tiled_copy_A",
+    "make_tiled_copy_B",
+    "make_tiled_copy_C",
     "make_tiled_copy_C_atom",
+    "make_cotiled_copy",
+    "copy_atom_call",
+    # Algorithm operations
     "basic_copy",
     "basic_copy_if",
     "autovec_copy",
     "copy",
-    "copy_atom_call",
+    "prefetch",
     "gemm",
     # Tensor creation
     "full",
@@ -302,8 +339,9 @@ __all__ = [
     "where",
     "any_",
     "all_",
+    "repeat_as_tuple",
+    "repeat",
     "repeat_like",
-    "ScaledBasis",
     # User defined struct
     "struct",
     # Modules
@@ -311,6 +349,8 @@ __all__ = [
     "nvgpu",
     "testing",
     "runtime",
+    # Math utils
+    *math.__all__,
     # Decorators and code generation
     "jit",
     "kernel",

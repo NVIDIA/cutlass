@@ -128,11 +128,11 @@ public:
       scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
 
   // Returns the initial work tile info that will be computed over
-  template <typename ClusterShape>
+  template <typename ClusterShape, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
-  initial_work_tile_info(ClusterShape cluster_shape) {
-    return scheduler_sm90.initial_work_tile_info(cluster_shape);
+  initial_work_tile_info(ClusterShape cluster_shape, CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
+    return scheduler_sm90.initial_work_tile_info(cluster_shape, callback_before_commit);
   }
 
   template<class BlockShape, class ClusterShape>
@@ -189,15 +189,16 @@ public:
     );
   }
 
-  template <typename CLCPipeline, typename CLCPipelineState>
+  template <typename CLCPipeline, typename CLCPipelineState, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
   advance_to_next_work(
     CLCPipeline& clc_pipeline,
     CLCPipelineState clc_pipe_producer_state,
-    uint32_t advance_count = 1) {
+    uint32_t advance_count = 1,
+    CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
 
-    return scheduler_sm90.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, advance_count);
+    return scheduler_sm90.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, advance_count, callback_before_commit);
   }
 
   //
@@ -304,11 +305,11 @@ public:
   }
 
   // Kernel helper function to get next CLC ID
-  template <class CLCPipeline, class CLCPipelineState>
+  template <class WorkTileWithCallbackInfo, class CLCPipeline, class CLCPipelineState>
   CUTLASS_DEVICE
   auto
   fetch_next_work(
-    WorkTileInfo work_tile_info,
+    WorkTileWithCallbackInfo work_tile_info,
     CLCPipeline& clc_pipeline,
     CLCPipelineState clc_pipe_consumer_state) {
 
@@ -320,7 +321,7 @@ private:
   // Methods
   //
   [[nodiscard]] CUTLASS_DEVICE
-  static CLCResponse
+  static auto
   load_query_response(uint32_t smem_ptr) {
     return UnderlyingScheduler::load_query_response(smem_ptr);
   }

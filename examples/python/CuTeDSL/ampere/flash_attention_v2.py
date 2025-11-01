@@ -28,7 +28,7 @@
 
 import argparse
 from types import SimpleNamespace
-from typing import Type, Union, Callable
+from typing import Type, Callable
 
 import torch
 import cuda.bindings.driver as cuda
@@ -38,6 +38,7 @@ import cutlass.cute as cute
 from cutlass.cute.nvgpu import cpasync, warp
 import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
+import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 
 """
@@ -125,6 +126,10 @@ class FlashAttentionForwardAmpere:
         self._head_dim_padded = (head_dim + 31) // 32 * 32
         self._num_threads = num_threads
         self._is_causal = is_causal
+
+        self.cta_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=1, num_threads=num_threads
+        )
 
     @staticmethod
     def can_implement(
@@ -450,7 +455,7 @@ class FlashAttentionForwardAmpere:
         acc_shape_O = thr_mma.partition_shape_C(
             (self._m_block_size, self._head_dim_padded)
         )
-        acc_O = cute.make_fragment(acc_shape_O, cutlass.Float32)
+        acc_O = cute.make_rmem_tensor(acc_shape_O, cutlass.Float32)
         acc_O.fill(0.0)
 
         # ///////////////////////////////////////////////////////////////////////////////
@@ -506,7 +511,7 @@ class FlashAttentionForwardAmpere:
         tKVcKV = gmem_thr_copy_QKV.partition_S(cKV)
         # Allocate predicate tensors for m and n, here we only allocate the tile of k, and do special process for mn.
         # This is to reduce register pressure and gets 2-3% performance gain compared with allocating the whole tile.
-        tQpQ = cute.make_fragment(
+        tQpQ = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tQsQ.shape[0][1],
@@ -517,7 +522,7 @@ class FlashAttentionForwardAmpere:
             ),
             cutlass.Boolean,
         )
-        tKVpKV = cute.make_fragment(
+        tKVpKV = cute.make_rmem_tensor(
             cute.make_layout(
                 (
                     tKsK.shape[0][1],
@@ -571,11 +576,11 @@ class FlashAttentionForwardAmpere:
         # Softmax intermediate result: row_max and row_sum
         # ///////////////////////////////////////////////////////////////////////////////
         # shape: (atom_v_m * rest_m)
-        row_max = cute.make_fragment(
+        row_max = cute.make_rmem_tensor(
             (acc_O.shape[0][0] * acc_O.shape[1]), cutlass.Float32
         )
         # shape: (atom_v_m * rest_m)
-        row_sum = cute.make_fragment(
+        row_sum = cute.make_rmem_tensor(
             (acc_O.shape[0][0] * acc_O.shape[1]), cutlass.Float32
         )
         row_max.fill(-cutlass.Float32.inf)
@@ -710,7 +715,7 @@ class FlashAttentionForwardAmpere:
         tOgO = gmem_thr_copy_O.partition_D(gO)
         tOrO = cute.make_fragment_like(tOgO, self._dtype)
         # sync before all smem stores are done.
-        cute.arch.barrier()
+        self.cta_sync_barrier.arrive_and_wait()
         # load acc O from smem to rmem for wider vectorization
         cute.copy(
             gmem_tiled_copy_O,
@@ -724,7 +729,7 @@ class FlashAttentionForwardAmpere:
             (m_block, 0),
         )
         tOcO = gmem_thr_copy_O.partition_D(cO)
-        tOpO = cute.make_fragment(
+        tOpO = cute.make_rmem_tensor(
             cute.make_layout(
                 (tOgO.shape[0][1], tOgO.shape[1], tOgO.shape[2]),
                 stride=(tOgO.shape[2], 0, 1),
@@ -778,12 +783,12 @@ class FlashAttentionForwardAmpere:
         acc_shape_S = mma_params.thr_mma.partition_shape_C(
             (self._m_block_size, self._n_block_size)
         )
-        acc_S = cute.make_fragment(acc_shape_S, cutlass.Float32)
+        acc_S = cute.make_rmem_tensor(acc_shape_S, cutlass.Float32)
         acc_S.fill(0.0)
 
         # wait for smem tile QK before mma calculation for S
         cute.arch.cp_async_wait_group(0)
-        cute.arch.barrier()
+        self.cta_sync_barrier.arrive_and_wait()
         # load smem tile V for O, special process for the first tile to avoid loading nan.
         # The `if` here is a constexpr, won't be generated in the IR.
         if is_first_n_block:
@@ -847,7 +852,7 @@ class FlashAttentionForwardAmpere:
 
         # wait for smem tile V for O
         cute.arch.cp_async_wait_group(0)
-        cute.arch.barrier()
+        self.cta_sync_barrier.arrive_and_wait()
 
         if basic_params.n_block > 0:
             cute.copy(
@@ -1170,7 +1175,7 @@ def run(
             f"Unsupported testcase {dtype}, {head_dim}, {m_block_size}, {n_block_size}, {num_threads}, {is_causal}"
         )
 
-    print(f"Running Ampere SM80 FlashAttentionForward test with:")
+    print("Running Ampere SM80 FlashAttentionForward test with:")
     print(f"  dtype: {dtype}")
     print(f"  batch_size: {batch_size}")
     print(f"  seqlen_q: {seqlen_q}")
@@ -1284,6 +1289,7 @@ def run(
     )
 
     return avg_time_us  # Return execution time in microseconds
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

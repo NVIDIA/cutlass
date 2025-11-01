@@ -44,6 +44,7 @@ namespace detail {
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
 template <
+  int CapacityBytes,
   class ElementAMma,
   class ElementB,
   class ElementEMma,
@@ -62,6 +63,7 @@ sm100_compute_stage_count_or_override_blockscaled_sparse(StageCount<stages> stag
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count.
 template <
+  int CapacityBytes,
   class ElementAMma,
   class ElementB,
   class ElementEMma,
@@ -110,7 +112,7 @@ sm100_compute_stage_count_or_override_blockscaled_sparse(StageCountAutoCarveout<
 
   constexpr auto EpilogueSharedStorage = carveout_bytes;
 
-  constexpr auto Stages = (cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout - EpilogueSharedStorage) / 
+  constexpr auto Stages = (CapacityBytes - KernelSmemCarveout - EpilogueSharedStorage) / 
     (MainloopTensorStorage_per_Stage + MainloopPipelineStorage_per_Stage_aligned);
 
   return Stages;
@@ -121,6 +123,7 @@ sm100_compute_stage_count_or_override_blockscaled_sparse(StageCountAutoCarveout<
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementPairA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -134,7 +137,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassBlockScaledSparseTensorOp,
     ElementPairA,
     GmemLayoutATag,
@@ -148,6 +151,8 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       // Blockscaled Sparse Gemm
       cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>
        &&
@@ -272,7 +277,12 @@ struct CollectiveBuilder<
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
 
+  // Calculate SMEM capacity based on ArchTag
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes;
+
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockscaled_sparse<
+      ReducedSmemCapacityBytes,
       ElementAMma_SmemAllocType,
       ElementBMma_SmemAllocType,
       ElementEMma,

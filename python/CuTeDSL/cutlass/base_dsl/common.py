@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import os
-from typing import Any, Dict, Iterable, Optional, Union
+from typing import Any, Dict, Iterable, Optional, Union, Sequence
 
 """
 This module provides a Exception classes DSL class for any Dialect.
@@ -150,6 +150,9 @@ def _get_friendly_cuda_error_message(error_code, error_name):
         "CUDA_ERROR_NOT_INITIALIZED": (
             f"{Colors.RED}❌ CUDA context not initialized.{Colors.RESET}\n\n"
         ),
+        "CUDA_ERROR_INVALID_CONTEXT": (
+            f"{Colors.RED}❌ CUDA context not initialized.{Colors.RESET}\n\n"
+        ),
         "CUDA_ERROR_INVALID_VALUE": (
             f"{Colors.RED}⚠️ Invalid parameter passed to CUDA operation.{Colors.RESET}\n\n"
             f"{Colors.YELLOW}This is likely a bug - please report it with:{Colors.RESET}"
@@ -157,6 +160,10 @@ def _get_friendly_cuda_error_message(error_code, error_name):
     }
 
     error_suggestions = {
+        "CUDA_ERROR_INVALID_CONTEXT": (
+            f"1. Check if CUDA context is properly initialized under your environment",
+            f"2. Initialize CUDA context with `cuda.cuInit(0)` or `cutlass.cuda.initialize_cuda_context()`",
+        ),
         "CUDA_ERROR_INVALID_SOURCE": (
             f"1. Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             f"2. Clear the compilation cache and regenerate the kernel",
@@ -266,3 +273,44 @@ class DSLNotImplemented(DSLBaseError):
 
     # Useful for stubs in your DSL that you plan to implement in the future.
     pass
+
+
+class CudaDriverDependencyError(DSLRuntimeError):
+    """Custom error class for CUDA driver dependency issues"""
+
+    def __init__(
+        self,
+        message: str,
+    ):
+        # Create a detailed error message with instructions
+        detailed_message = f"""CUDA Driver Dependency Error
+
+{message}
+
+This error typically occurs when:
+• NVIDIA GPU drivers are not installed on your system
+• The installed drivers are incompatible with CUDA Toolkit 12.9 or latest version
+• The libcuda.so.1 library is not accessible"""
+
+        # Use DSLRuntimeError's structured approach
+        super().__init__(
+            detailed_message,
+            suggestion=[
+                "Install or update NVIDIA GPU drivers:",
+                "  • Visit: https://www.nvidia.com/Download/index.aspx",
+                "  • Download drivers compatible with CUDA Toolkit 12.9 or latest version",
+                "  • Follow the installation instructions for your OS",
+                "",
+                "Verify driver installation:",
+                "  • Run: nvidia-smi",
+                "  • This should display GPU information without errors",
+                "",
+                "Check CUDA library availability:",
+                "  • Run: ldconfig -p | grep libcuda",
+                "  • This should show libcuda.so.1 in the output",
+                "",
+                "For more information, see:",
+                "  • CUDA Toolkit documentation: https://docs.nvidia.com/cuda/",
+                "  • CUTLASS DSL requirements: nvidia-cutlass-dsl documentation",
+            ],
+        )

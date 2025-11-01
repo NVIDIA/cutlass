@@ -112,9 +112,9 @@ class Executor:
         unroll_full=False,
         prefetch_stages=None,
     ):
-        assert (
-            self._loop_execute_range_dynamic
-        ), "Functions must be set before execution."
+        assert self._loop_execute_range_dynamic, (
+            "Functions must be set before execution."
+        )
         log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
 
         return self._loop_execute_range_dynamic(
@@ -433,9 +433,9 @@ def compare_executor(left, comparators, ops):
     Raises:
         AssertionError: If the executor function is not set before execution
     """
-    assert (
-        executor._compare_executor is not None
-    ), "Function must be set before execution."
+    assert executor._compare_executor is not None, (
+        "Function must be set before execution."
+    )
     return executor._compare_executor(left, comparators, ops)
 
 
@@ -521,24 +521,6 @@ def range_value_check(*args):
         )
 
 
-def range_perf_warning(filename, lineno, *args):
-    has_dynamic_expr = False
-    for arg in args:
-        if executor._is_dynamic_expression(arg):
-            has_dynamic_expr = True
-            break
-    if not has_dynamic_expr:
-        warnings.warn_explicit(
-            (
-                "This loop is no longer unrolled and may cause performance regression. "
-                "Use `range(..., unroll_full=True)` for full unrolling, or switch to `range_constexpr` when bounds are compile-time constants."
-            ),
-            category=DSLOptimizationWarning,
-            filename=filename,
-            lineno=lineno,
-        )
-
-
 @lru_cache(maxsize=1)
 def _get_self_module():
     """
@@ -614,3 +596,15 @@ def get_locals_or_none(locals, symbols):
         else:
             variables.append(None)
     return variables
+
+
+def closure_check(closures):
+    """
+    Check if the closures have any captures
+    """
+    for closure in closures:
+        if closure.__closure__:
+            raise DSLRuntimeError(
+                f"Function `{closure.__name__}` is a closure that captures variables and is not supported in dynamic control flow",
+                suggestion="Please implicitly pass in captured variables as arguments",
+            )

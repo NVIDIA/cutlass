@@ -9,26 +9,19 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import enum
-from typing import Type, Tuple
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Union
-import warnings
+from typing import Optional
 
-import cutlass
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, Int32, if_generate
-
 from cutlass.pipeline import (
-    Agent,
     CooperativeGroup,
-    PipelineOp,
-    SyncObject,
     MbarrierArray,
-    TmaStoreFence,
-    PipelineUserType,
+    PipelineOp,
     PipelineState,
+    PipelineUserType,
+    SyncObject,
+    TmaStoreFence,
     make_pipeline_state,
     pipeline_init_wait,
 )
@@ -273,7 +266,6 @@ class PipelineAsync:
         return self.make_producer(), self.make_consumer()
 
 
-
 @dataclass(frozen=True)
 class PipelineCpAsync(PipelineAsync):
     """
@@ -338,7 +330,9 @@ class PipelineTmaAsync(PipelineAsync):
 
     @staticmethod
     @cute.jit
-    def init_empty_barrier_arrive_signal(cta_layout_vmnk: cute.Layout, tidx: Int32):
+    def init_empty_barrier_arrive_signal(
+        cta_layout_vmnk: cute.Layout, tidx: Int32, mcast_mode_mn: tuple[int, int]
+    ):
         """
         Initialize the empty barrier arrive signal
         This function returns the destination cta rank and a boolean indicating if the signalling thread is the same as the current thread
@@ -357,21 +351,27 @@ class PipelineTmaAsync(PipelineAsync):
         dst_cta_coord = cta_layout_vmnk.get_hier_coord(dst_rank)
         cur_cta_coord = cta_layout_vmnk.get_hier_coord(cta_rank_in_cluster)
 
-        is_same_row = (
+        is_mcast_mode_m = (
             dst_cta_coord[0] == cur_cta_coord[0]
             and dst_cta_coord[1] == cur_cta_coord[1]
             and dst_cta_coord[3] == cur_cta_coord[3]
         )
-        is_same_col = (
+        is_mcast_mode_n = (
             dst_cta_coord[0] == cur_cta_coord[0]
             and dst_cta_coord[2] == cur_cta_coord[2]
             and dst_cta_coord[3] == cur_cta_coord[3]
         )
 
-        is_same_row_or_col = is_same_row or is_same_col
-        is_signalling_thread_final = is_signalling_thread and is_same_row_or_col
+        assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
+        if mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 0:
+            is_signalling_thread = is_signalling_thread and is_mcast_mode_m
+        elif mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 1:
+            is_signalling_thread = is_signalling_thread and is_mcast_mode_n
+        elif mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 1:
+            is_mcast_mode_m_or_n = is_mcast_mode_m or is_mcast_mode_n
+            is_signalling_thread = is_signalling_thread and is_mcast_mode_m_or_n
 
-        return dst_rank, is_signalling_thread_final
+        return dst_rank, is_signalling_thread
 
     @staticmethod
     def create(
@@ -383,6 +383,7 @@ class PipelineTmaAsync(PipelineAsync):
         barrier_storage: cute.Pointer = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         tidx: Optional[Int32] = None,
+        mcast_mode_mn: tuple[int, int] = (1, 1),
     ):
         """
         This helper function computes any necessary attributes and returns an instance of PipelineTmaAsync.
@@ -400,6 +401,8 @@ class PipelineTmaAsync(PipelineAsync):
         :type cta_layout_vmnk: cute.Layout | None
         :param tidx: thread index to consumer async threads
         :type tidx: Int32 | None
+        :param mcast_mode_mn: Tuple of two integers, specifying whether mcast is enabled for the m and n modes. At least one of the two integers must be 1.
+        :type mcast_mode_mn: tuple[int, int]
         """
         if not isinstance(barrier_storage, cute.Pointer):
             raise ValueError(
@@ -425,7 +428,9 @@ class PipelineTmaAsync(PipelineAsync):
         (
             dst_rank,
             is_signalling_thread,
-        ) = PipelineTmaAsync.init_empty_barrier_arrive_signal(cta_layout_vmnk, tidx)
+        ) = PipelineTmaAsync.init_empty_barrier_arrive_signal(
+            cta_layout_vmnk, tidx, mcast_mode_mn
+        )
         if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
             dst_rank = None
         else:
@@ -653,11 +658,107 @@ class PipelineTmaStore(PipelineAsync):
         self.sync_object_full.tail()
 
 
+@dataclass(frozen=True)
+class PipelineOrder:
+    """
+    PipelineOrder is used for managing ordered pipeline execution with multiple groups.
+
+    This class implements a pipeline ordering mechanism where work is divided into groups
+    and stages, allowing for controlled progression through pipeline stages with proper
+    synchronization between different groups.
+
+    The pipeline ordering works as follows:
+    - The pipeline is divided into 'length' number of groups
+    - Each group has 'depth' number of stages
+    - Groups execute in a specific order with synchronization barriers
+    - Each group waits for the previous group to complete before proceeding
+
+    **Example:**
+
+    .. code-block:: python
+
+        # Create pipeline order with 3 groups, each with 2 stages
+        pipeline_order = PipelineOrder.create(
+            barrier_storage=smem_ptr,      # shared memory pointer for barriers
+            depth=2,                       # 2 stages per group
+            length=3,                      # 3 groups total
+            group_id=0,                    # current group ID (0, 1, or 2)
+            producer_group=producer_warp   # cooperative group for producers
+        )
+
+        # In the pipeline loop
+        for stage in range(num_stages):
+            pipeline_order.wait()          # Wait for previous group to complete
+            # Process current stage
+            pipeline_order.arrive()        # Signal completion to next group
+    """
+
+    sync_object_full: SyncObject
+    depth: int
+    length: int
+    group_id: int
+    state: PipelineState
+
+    @staticmethod
+    def create(
+        barrier_storage: cute.Pointer,
+        depth: int,
+        length: int,
+        group_id: int,
+        producer_group: CooperativeGroup,
+    ):
+        if not isinstance(barrier_storage, cute.Pointer):
+            raise ValueError(
+                f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
+            )
+
+        producer_type = PipelineOp.AsyncThread
+
+        producer = (producer_type, producer_group)
+
+        num_stages = depth * length
+
+        sync_object_full = PipelineAsync._make_sync_object(
+            barrier_storage.align(min_align=8), num_stages, producer
+        )
+
+        pipeline_init_wait()
+
+        return PipelineOrder(
+            sync_object_full,
+            depth,
+            length,
+            group_id,
+            PipelineState(
+                depth,
+                Int32(0),
+                Int32(0),
+                Int32(group_id == 0),  # phase
+            ),
+        )
+
+    def get_barrier_for_current_stage_idx(self, group_id):
+        return self.state.index * self.length + group_id
+
+    def arrive(self):
+        signalling_id = (self.group_id + 1) % self.length
+        idx = self.get_barrier_for_current_stage_idx(signalling_id)
+        cute.arch.mbarrier_arrive(self.sync_object_full.get_barrier(idx))
+        self.state.advance()
+
+    def wait(self):
+        idx = self.get_barrier_for_current_stage_idx(self.group_id)
+        cute.arch.mbarrier_wait(
+            self.sync_object_full.get_barrier(idx), self.state.phase
+        )
+
+
 #################################################################
 # Utilities to help user of pipeline to simplify the workflow
 #################################################################
 
 
+@dataclass(frozen=True)
 class ImmutableResourceHandle:
     __origin: PipelineAsync
     __immutable_state: PipelineState
@@ -703,10 +804,11 @@ class ImmutableResourceHandle:
             self.__origin, self.__immutable_state.__new_from_mlir_values__(values)
         )
 
+
 class PipelineProducer:
     """A class representing a producer in an asynchronous pipeline.
 
-    The Producer class manages the producer side of an asynchronous pipeline, handling
+    This class manages the producer side of an asynchronous pipeline, handling
     synchronization and state management for producing data. It provides methods for
     acquiring, committing, and advancing through pipeline stages.
 
@@ -719,22 +821,31 @@ class PipelineProducer:
 
     **Examples:**
 
-        .. code-block:: python
+    .. code-block:: python
 
-            pipeline = PipelineAsync.create(...)
-            producer = pipeline.create_producer(producer_group, stages)
-            for i in range(iterations):
-                handle = producer.acquire_and_advance()  # Wait for buffer to be empty
-                # Produce data
-                producer.commit(handle)   # Signal data is ready
-                # An alternative way to do this is:
-                # handle.commit()   # Signal data is ready
+        pipeline = PipelineAsync.create(...)
+        producer, consumer = pipeline.make_participants()
+        for i in range(iterations):
+            # Try to acquire the current buffer without blocking
+            try_acquire_token = producer.try_acquire()
+
+            # Do something else independently
+            ...
+
+            # Wait for current buffer to be empty & Move index to next stage
+            # If try_acquire_token is True, return immediately
+            # If try_acquire_token is False, block until buffer is empty
+            handle = producer.acquire_and_advance(try_acquire_token)
+
+            # Produce data
+            handle.commit()
     """
 
     __pipeline: PipelineAsync
     __state: PipelineState
     __group: CooperativeGroup
 
+    @dataclass(frozen=True)
     class ImmutableResourceHandle(ImmutableResourceHandle):
         @property
         def barrier(self):
@@ -749,6 +860,7 @@ class PipelineProducer:
 
         def commit(self):
             """Signal that data production is complete for the current stage.
+
             This allows consumers to start processing the data.
             """
             self.get_origin().producer_commit(
@@ -768,6 +880,10 @@ class PipelineProducer:
         self.__pipeline = pipeline
         self.__state = state
         self.__group = group
+
+    def reset(self):
+        """Reset the count of how many handles this producer has committed."""
+        self.__state.reset_count()
 
     def acquire(
         self,
@@ -794,13 +910,18 @@ class PipelineProducer:
     def acquire_and_advance(
         self, try_acquire_token: Optional[Boolean] = None
     ) -> ImmutableResourceHandle:
-        """Wait for the current buffer to be empty before producing data.
-        Then advance to the next stage.
-        This is a blocking operation.
+        """Acquire the current buffer and advance to the next pipeline stage.
 
-        :param try_acquire_token: Optional token to try to acquire the buffer
+        This method combines the acquire() and advance() operations into a single call.
+        It first waits for the current buffer to be empty before producing data,
+        then advances the pipeline to the next stage.
+
+        :param try_acquire_token: Token indicating whether to try non-blocking acquire.
+            If True, returns immediately without waiting. If False or None, blocks
+            until buffer is empty.
         :type try_acquire_token: Optional[Boolean]
-        :return: A handle to the producer for committing the data
+        :return: A handle to the producer that can be used to commit data to the
+            acquired buffer stage
         :rtype: ImmutableResourceHandle
         """
         handle = self.acquire(try_acquire_token)
@@ -808,27 +929,37 @@ class PipelineProducer:
         return handle
 
     def try_acquire(self) -> Boolean:
-        """Try to acquire the current buffer without blocking.
+        """Attempt to acquire the current buffer without blocking.
 
-        :return: True if acquisition was successful, False otherwise
+        This method tries to acquire the current buffer stage for producing data
+        without waiting. It can be used to check buffer availability before
+        committing to a blocking acquire operation.
+
+        :return: A boolean token indicating whether the buffer was successfully acquired
         :rtype: Boolean
         """
         return self.__pipeline.producer_try_acquire(self.__state)
 
     def commit(self, handle: Optional[ImmutableResourceHandle] = None):
         """Signal that data production is complete for the current stage.
+
         This allows consumers to start processing the data.
+
+        :param handle: Optional handle to commit, defaults to None
+        :type handle: Optional[ImmutableResourceHandle]
+        :raises AssertionError: If provided handle does not belong to this producer
         """
         if handle is not None:
-            assert (
-                handle.get_origin() is self
-            ), "ResourceHandle does not belong to this PipelineProducer instance"
+            assert handle.get_origin() is self, (
+                "ResourceHandle does not belong to this PipelineProducer instance"
+            )
             handle.commit()
         else:
             self.__pipeline.producer_commit(self.__state)
 
     def tail(self):
         """Ensure all used buffers are properly synchronized before producer exit.
+
         This should be called before the producer finishes to avoid dangling signals.
         """
         self.__pipeline.producer_tail(self.__state)
@@ -854,6 +985,7 @@ class PipelineProducer:
             self.__pipeline, self.__state.__new_from_mlir_values__(values), self.__group
         )
 
+
 class PipelineConsumer:
     """A class representing a consumer in an asynchronous pipeline.
 
@@ -869,22 +1001,35 @@ class PipelineConsumer:
     :type __group: CooperativeGroup
 
     **Examples:**
-        .. code-block:: python
 
-            pipeline = PipelineAsync.create(...)
-            consumer = pipeline.create_consumer(consumer_group, stages)
-            for i in range(iterations):
-                handle = consumer.wait_and_advance()     # Wait for data to be ready
-                # Consume data
-                consumer.release(handle)  # Signal buffer is empty
-                # An alternative way to do this is:
-                # handle.release()  # Signal buffer is empty
+    .. code-block:: python
+
+        pipeline = PipelineAsync.create(...)
+        producer, consumer = pipeline.make_participants()
+        for i in range(iterations):
+            # Try to wait for buffer to be full
+            try_wait_token = consumer.try_wait()
+
+            # Do something else independently
+            ...
+
+            # Wait for buffer to be full & Move index to next stage
+            # If try_wait_token is True, return immediately
+            # If try_wait_token is False, block until buffer is full
+            handle = consumer.wait_and_advance(try_wait_token)
+
+            # Consume data
+            handle.release(  )  # Signal buffer is empty
+
+            # Alternative way to do this is:
+            # handle.release()  # Signal buffer is empty
     """
 
     __pipeline: PipelineAsync
     __state: PipelineState
     __group: CooperativeGroup
 
+    @dataclass(frozen=True)
     class ImmutableResourceHandle(ImmutableResourceHandle):
         def release(self):
             """Signal that data production is complete for the current stage.
@@ -908,14 +1053,20 @@ class PipelineConsumer:
         self.__group = group
         self.__state = state
 
-    def wait(self, try_wait_token: Optional[Boolean] = None) -> ImmutableResourceHandle:
-        """Wait for data to be ready in the current buffer.
-        This is a blocking operation.
+    def reset(self):
+        """Reset the count of how many handles this consumer has consumed."""
+        self.__state.reset_count()
 
-        :param try_wait_token: Optional token to try to wait for the buffer
+    def wait(self, try_wait_token: Optional[Boolean] = None) -> ImmutableResourceHandle:
+        """Wait for data to be ready in the current buffer. This is a blocking operation
+        that will not return until data is available.
+
+        :param try_wait_token: Token used to attempt a non-blocking wait for the buffer.
+            If provided and True, returns immediately if buffer is not ready.
         :type try_wait_token: Optional[Boolean]
-        :return: A handle to the consumer for releasing the data
-        :rtype: PipelineConsumerHandle
+        :return: An immutable handle to the consumer that can be used to release the buffer
+            once data consumption is complete
+        :rtype: ImmutableResourceHandle
         """
         self.__pipeline.consumer_wait(self.__state, try_wait_token)
         handle = PipelineConsumer.ImmutableResourceHandle(
@@ -924,29 +1075,40 @@ class PipelineConsumer:
         return handle
 
     def advance(self):
-        """Move to the next pipeline stage."""
+        """Advance the consumer to the next pipeline stage.
+
+        This updates the internal state to point to the next buffer in the pipeline.
+        Should be called after consuming data from the current buffer.
+        """
         self.__state.advance()
 
     def wait_and_advance(
         self, try_wait_token: Optional[Boolean] = None
     ) -> ImmutableResourceHandle:
-        """Wait for data to be ready in the current buffer.
-        Then advance to the next stage.
-        This is a blocking operation.
+        """Atomically wait for data and advance to next pipeline stage.
 
-        :param try_wait_token: Optional token to try to wait for the buffer
+        This is a convenience method that combines wait() and advance() into a single
+        atomic operation. It will block until data is available in the current buffer,
+        then automatically advance to the next stage.
+
+        :param try_wait_token: Token used to attempt a non-blocking wait for the buffer.
+            If provided and True, returns immediately if buffer is not ready.
         :type try_wait_token: Optional[Boolean]
-        :return: A handle to the consumer for releasing the data
-        :rtype: PipelineConsumerHandle
+        :return: An immutable handle to the consumer that can be used to release the buffer
+            once data consumption is complete
+        :rtype: ImmutableResourceHandle
         """
         handle = self.wait(try_wait_token)
         self.advance()
         return handle
 
     def try_wait(self) -> Boolean:
-        """Try to check if data is ready without blocking.
+        """Non-blocking check if data is ready in the current buffer.
 
-        :return: True if data is ready, False otherwise
+        This method provides a way to test if data is available without blocking.
+        Unlike wait(), this will return immediately regardless of buffer state.
+
+        :return: True if data is ready to be consumed, False if the buffer is not yet ready
         :rtype: Boolean
         """
         return self.__pipeline.consumer_try_wait(self.__state)
@@ -956,9 +1118,9 @@ class PipelineConsumer:
         This allows producers to start producing new data.
         """
         if handle is not None:
-            assert (
-                handle.get_origin() is self
-            ), "ResourceHandle does not belong to this PipelineConsumer instance"
+            assert handle.get_origin() is self, (
+                "ResourceHandle does not belong to this PipelineConsumer instance"
+            )
             handle.release()
         else:
             self.__pipeline.consumer_release(self.__state)

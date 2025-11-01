@@ -16,7 +16,6 @@ It handles most of the mechanics for the DSL in an agnostic way,
 for example, it can handle various dialect-specific tasks.
 """
 
-
 # Standard library imports
 from dataclasses import dataclass, field
 import atexit
@@ -24,16 +23,15 @@ import os
 import io
 import sys
 import errno
-import ctypes
 import re
 import inspect
 import argparse
 import hashlib
 from functools import lru_cache, wraps
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from abc import ABC, abstractmethod
-from typing import Any, Union, Tuple, get_origin, get_args, List
-from types import FunctionType, SimpleNamespace
+from typing import Any, Callable, List
+from types import SimpleNamespace
 import warnings
 
 from . import typing as t
@@ -42,37 +40,28 @@ from .compiler import CompileOptions
 from .ast_helpers import DSLOptimizationWarning
 
 # =============================================================================
-# CUDA Python
-# =============================================================================
-
-from ..base_dsl._mlir_helpers.arith import const
-
-# =============================================================================
 # Local module imports
 # =============================================================================
 
 from .cache_helpers import *
-from .jit_executor import JitExecutor
+from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
 from .utils.timer import timer
-from .utils.logger import setup_log, log
+from .utils.logger import log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
 from .runtime.jit_arg_adapters import is_argument_constexpr, JitArgAdapterRegistry
 
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
-from .typing import (
-    get_c_pointers,
-    get_mlir_types,
-)
+from .typing import get_c_pointers, get_mlir_types, Integer
+from .arch import Arch
 
 # =============================================================================
 # MLIR modules
 # =============================================================================
 
 from .._mlir import ir
-from .._mlir import runtime as rt
 from .._mlir.extras import types as T
-from .._mlir.dialects import arith, math, func
+from .._mlir.dialects import func
 
 # =============================================================================
 # Global Variables
@@ -229,7 +218,6 @@ def new_from_mlir_values(obj, values):
             suggestion="Consider using a list or tuple instead",
         )
     elif is_dynamic_expression(obj):
-
         if len(values) == 0:
             return obj
 
@@ -260,6 +248,7 @@ class DSLCallable:
 
     def __init__(self, func):
         self.func = func
+        self.name = func.__name__
 
     def __call__(self, *args, **kwargs):
         ret = self.__func__(*args, **kwargs)
@@ -277,11 +266,12 @@ class DSLCallable:
 
     @property
     def __name__(self):
-        return self.__func__.__name__
+        return self.name
 
 
 class BaseDSL:
     gpu_module = None
+    _env_class = EnvironmentVarManager
 
     def __init__(
         self,
@@ -324,7 +314,7 @@ class BaseDSL:
         self.device_compilation_only = device_compilation_only
         self.num_kernels = 0
         # Read environment variables
-        self.envar = EnvironmentVarManager(self.name)
+        self.envar = self._env_class(self.name)
         self.enable_preprocessor = preprocess
         # This cache uses hash of original ir and env as key, allows dump/load to/from file. Enabled by default
         self.jit_cache = (
@@ -344,20 +334,10 @@ class BaseDSL:
         if self.envar.warnings_ignore:
             warnings.filterwarnings("ignore")
 
-        # Initialize logger
-        if self.envar.log_to_console == False and self.envar.jitTimeProfiling:
-            self.envar.log_to_console = True
-            self.envar.log_level = 20  # info level
-        setup_log(
-            self.name,
-            self.envar.log_to_console,
-            self.envar.log_to_file,
-            f"{self.name}.log",
-            self.envar.log_level,
-        )
-
-        # kernel symbols are temporary symbol string variables, their values are valid until the compilation is done.
-        self.kernel_symbols = []
+        # kernel info contains per kernel info including symbol string and CUfunction attributes to set
+        # It's valid until the compilation is done.
+        # {symbol_string: {CUfunction_attribute: value}}
+        self.kernel_info = OrderedDict()
         # used to generate unique name for gpu.launch
         self.launch_inner_count = 0
         # initialize default compile options
@@ -369,7 +349,7 @@ class BaseDSL:
         log().debug(f"Logger initialized for {self.name}")
 
         # Hook excepthook
-        if self.envar.filterStacktrace:
+        if self.envar.filter_stacktrace:
             origin_excepthook = sys.excepthook
             module_dir = walk_to_top_module(os.path.dirname(os.path.abspath(__file__)))
 
@@ -427,10 +407,13 @@ class BaseDSL:
         """
         Get the original function from the decorated function
         """
-        while fcn_ptr.__name__ != name:
+
+        while not hasattr(fcn_ptr, "__name__") or fcn_ptr.__name__ != name:
             # If the function is wrapped with functools, get from __wrapped__
             if hasattr(fcn_ptr, "__wrapped__"):
                 fcn_ptr = fcn_ptr.__wrapped__
+            elif isinstance(fcn_ptr, staticmethod):
+                fcn_ptr = fcn_ptr.__func__
             # If the function is wrapped manually, it's the first in clousure
             elif callable(fcn_ptr.__closure__[0].cell_contents):
                 fcn_ptr = fcn_ptr.__closure__[0].cell_contents
@@ -445,6 +428,19 @@ class BaseDSL:
         """
         Run ast transformation and return the materialized function pointer
         """
+
+        # Lazy initialization of DSL object if has not been initialized
+        if not hasattr(func, "_dsl_object"):
+            func._dsl_object = func._dsl_cls._get_dsl()
+            delattr(func, "_dsl_cls")
+
+        if not func._dsl_object.enable_preprocessor:
+            if hasattr(func, "_decorator_frame"):
+                delattr(func, "_decorator_frame")
+            if hasattr(func, "_transformed_ast"):
+                delattr(func, "_transformed_ast")
+            return func
+
         if hasattr(func, "_transformed_ast"):
             # If the function ptr is already materialized, use the existing one
             func._dsl_object.frame = func._decorator_frame
@@ -462,16 +458,17 @@ class BaseDSL:
             return DSLCallable(fcn_ptr)
         return func
 
-    def jit_runner(self, executor, frame, *dargs, **dkwargs):
+    @staticmethod
+    def jit_runner(cls, executor_name, frame, *dargs, **dkwargs):
         """
         Decorator to mark a function for JIT compilation.
         """
         log().info("jit_runner")
 
         def jit_runner_decorator(func):
-            func._dsl_object = self
             # Run preprocessor that alters AST
-            if self.enable_preprocessor and BaseDSL._can_preprocess(**dkwargs):
+            func._dsl_cls = cls
+            if BaseDSL._can_preprocess(**dkwargs):
                 # For an annotated function, add some DSL attributes
                 # When materializing the AST, we need decorator's frame
                 func._decorator_frame = frame
@@ -481,7 +478,9 @@ class BaseDSL:
             @wraps(func)
             def jit_wrapper(*args, **kwargs):
                 func_ptr = BaseDSL._preprocess_and_execute(func)
-                return executor(func_ptr, *args, **kwargs)
+                return getattr(func._dsl_object, executor_name)(
+                    func_ptr, *args, **kwargs
+                )
 
             return jit_wrapper
 
@@ -490,15 +489,22 @@ class BaseDSL:
         else:
             return jit_runner_decorator
 
+    @staticmethod
+    def _lazy_initialize_dsl(func):
+        """
+        Lazy initialization of DSL object if has not been initialized
+        """
+        if hasattr(func, "_dsl_cls"):
+            func._dsl_object = func._dsl_cls._get_dsl()
+            delattr(func, "_dsl_cls")
+
     @classmethod
     def jit(cls, *dargs, **dkwargs):
         """
         Decorator to mark a function for JIT compilation for Host code.
         """
         frame = inspect.currentframe().f_back
-        # Instantiate the DSL Class
-        main_dsl = cls._get_dsl()
-        return main_dsl.jit_runner(main_dsl._func, frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(cls, "_func", frame, *dargs, **dkwargs)
 
     @classmethod
     def kernel(cls, *dargs, **dkwargs):
@@ -506,9 +512,7 @@ class BaseDSL:
         Decorator to mark a function for JIT compilation for GPU.
         """
         frame = inspect.currentframe().f_back
-        # Instantiate the DSL Class
-        main_dsl = cls._get_dsl()
-        return main_dsl.jit_runner(main_dsl._kernel_helper, frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(cls, "_kernel_helper", frame, *dargs, **dkwargs)
 
     @abstractmethod
     def _kernel_helper(self, func, *args, **kwargs):
@@ -518,7 +522,7 @@ class BaseDSL:
         pass
 
     @abstractmethod
-    def _build_gpu_module(self, attrs):
+    def _build_gpu_module(self, attrs, loc=None):
         """
         Build the module op that contains the kernels.
         """
@@ -581,6 +585,7 @@ class BaseDSL:
         function_name = re.sub(r"\s+", " ", function_name)
         function_name = function_name.replace(" ", "_")
         function_name = function_name.replace("\n", "_")
+        function_name = function_name.replace("/", "_")
         # max fname is 256 character, leave space
         function_name = function_name[:180]
         log().info(f"Final mangled function name: {function_name}")
@@ -817,7 +822,7 @@ class BaseDSL:
                         pass
                     else:
                         raise DSLRuntimeError(
-                            f"failed to generate argument #{i+1} ({arg_name}) for JIT function '{function_name}'.",
+                            f"failed to generate argument #{i + 1} ({arg_name}) for JIT function '{function_name}'.",
                             context={
                                 f"Argument {arg_name}": "The DSL attempted to convert it into Dynamic Expression (aka MLIR values) but failed.",
                                 f"Call-site argument value": arg,
@@ -851,9 +856,9 @@ class BaseDSL:
         log().debug("Execution Arguments: %s", ", ".join(map(str, exe_args)))
         log().debug("Types: %s", ", ".join(map(str, types)))
 
-        assert len(exe_args) == len(
-            types
-        ), "expects the same number of arguments and function parameters"
+        assert len(exe_args) == len(types), (
+            "expects the same number of arguments and function parameters"
+        )
 
         return exe_args, types, adapted_args
 
@@ -866,13 +871,30 @@ class BaseDSL:
         async_deps: list = field(default_factory=list)
         has_cluster: bool = False
         min_blocks_per_mp: int = 0
+        use_pdl: bool = False
         auto_smem: bool = False
 
+        @staticmethod
+        def _check_and_canonicalize_dim(dim, name):
+            if not isinstance(dim, (list, tuple)):
+                dim = [dim]
+
+            if len(dim) > 3:
+                raise DSLRuntimeError(
+                    f"Expected {name} dimension to be less than or equal to 3, but got {len(dim)}"
+                )
+
+            if any(not isinstance(e, (Integer, int)) for e in dim):
+                raise DSLRuntimeError(
+                    f"Expected integer for {name} dimension, but got {type(e)}"
+                )
+
+            # Pad with 1s to 3-dim vector for grid or block dimensions
+            return list(dim) + [1] * (3 - len(dim))
+
         def __post_init__(self):
-            if len(self.grid) != 3:
-                raise DSLRuntimeError(f"Expect 3d grid!")
-            if len(self.block) != 3:
-                raise DSLRuntimeError(f"Expect 3d block!")
+            self.grid = self._check_and_canonicalize_dim(self.grid, "grid")
+            self.block = self._check_and_canonicalize_dim(self.block, "block")
 
             if self.smem is None:
                 self.smem = 0
@@ -916,20 +938,27 @@ class BaseDSL:
         else:
             ir._GlobalDebug.set_types(f"diagnostic-{args.diagnostic}")
 
-    def get_location(self):
+    def get_location(self, frame=None):
         """
         Get python location information and generate MLIR location
         """
-
-        if self.frame is None:
-            log().debug("Frame is None")
-            return None
+        frame = self.frame if frame is None else frame
+        frame = inspect.currentframe().f_back if frame is None else frame
+        frameInfo = inspect.getframeinfo(frame)
 
         file_loc = ir.Location.file(
-            self.frame.f_code.co_filename, self.frame.f_lineno, 0
+            frame.f_code.co_filename,
+            frame.f_lineno,
+            frameInfo.positions.col_offset if hasattr(frameInfo, "positions") else 0,
         )
-
-        loc = ir.Location.name(self.frame.f_code.co_name, childLoc=file_loc)
+        loc = ir.Location.name(
+            (
+                "".join([c.strip() for c in frameInfo.code_context])
+                if frameInfo.code_context
+                else frameInfo.function
+            ),
+            childLoc=file_loc,
+        )
         return loc
 
     def compile_and_jit(self, module, pipeline, shared_libs, function_name=""):
@@ -945,13 +974,18 @@ class BaseDSL:
             sys.stderr = redirect_stderr = io.StringIO()
             sys.stdout = redirect_stdout = io.StringIO()
 
+            compile_gpu_arch = (
+                self.envar.arch
+                if not self.compile_options.gpu_arch
+                else self.compile_options.gpu_arch
+            )
             try:
                 kernel = self.compiler_provider.compile_and_jit(
                     module,
                     pipeline,
                     shared_libs=shared_libs,
                     cuda_toolkit=self.envar.cuda_toolkit,
-                    arch=self.envar.arch,
+                    arch=compile_gpu_arch,
                 )
 
             finally:
@@ -971,7 +1005,6 @@ class BaseDSL:
             pass
 
     def preprocess_pipeline(self, pipeline, arch) -> str:
-
         if self.envar.cuda_toolkit is None:
             self.print_warning(
                 "CUDA_TOOLKIT_PATH environment variable is not set. Cannot set toolkitPath."
@@ -1046,14 +1079,18 @@ class BaseDSL:
         """
 
         # Save IR in a file
-        if self.envar.keepIR:
-            save_ir(self.name, module, function_name)
-
-        if self.envar.printIR:
-            print("\n//===--- ------ Generated IR ------ ---====\n")
-            module.operation.print(
-                enable_debug_info=self.envar.generate_source_location
+        if self.envar.keep_ir:
+            self.dump_mlir_path = save_ir(
+                self.name,
+                module,
+                function_name,
+                output_dir=self.envar.dump_dir,
             )
+
+        if self.envar.print_ir:
+            print("\n//===--- ------ Generated IR ------ ---====\n")
+            enable_debug_info = self.compile_options.generate_line_info
+            module.operation.print(enable_debug_info=enable_debug_info)
             print("\n//===--- --- End of Generated IR -- ---====\n")
 
         # Verify the module
@@ -1075,22 +1112,20 @@ class BaseDSL:
         gpu_module_attrs,
         args,
         args_spec,
+        frame=None,
     ):
-        # This location is set to None for now; otherwise, calls to the same
-        # function on different lines would produce different line numbers,
-        # which would break the cache.
-        loc = None  # self.get_location()
-
         def build_ir_module():
-            module = ir.Module.create(loc=loc)
+            module = ir.Module.create(loc=self.get_location(frame))
             unit_attr = ir.UnitAttr.get()
             module.operation.attributes["gpu.container_module"] = unit_attr
 
             with ir.InsertionPoint(module.body):
                 # Always generate gpu module. It's canonicalized by the compiler when it's not used.
-                self._build_gpu_module(gpu_module_attrs)
+                self._build_gpu_module(gpu_module_attrs, loc=self.get_location(frame))
 
-                fop = func.FuncOp(function_name, (func_types, []), loc=loc)
+                fop = func.FuncOp(
+                    function_name, (func_types, []), loc=self.get_location(frame)
+                )
                 fop.attributes["llvm.emit_c_interface"] = ir.UnitAttr.get()
                 log().debug("Generated Function OP [%s]", fop)
                 with ir.InsertionPoint(fop.add_entry_block()):
@@ -1100,7 +1135,7 @@ class BaseDSL:
                     # Call user function body
                     try:
                         result = funcBody(*ir_args, **ir_kwargs)
-                        func.ReturnOp([])
+                        func.ReturnOp([], loc=self.get_location(frame))
                     except NameError as name_error:
                         raise DSLRuntimeError(
                             f"💥💥💥 Error during runtime code generation for function `{funcBody.__name__}` 💥💥💥",
@@ -1113,7 +1148,7 @@ class BaseDSL:
             return module, result
 
         # Build IR module
-        profiler = timer(enable=self.envar.jitTimeProfiling)
+        profiler = timer(enable=self.envar.jit_time_profiling)
         module, result = profiler(build_ir_module)()
         module_hash = self.get_module_hash(module, function_name)
 
@@ -1122,12 +1157,29 @@ class BaseDSL:
         return module, module_hash, result
 
     def compile_and_cache(
-        self, module, module_hash, function_name, pipeline, args_spec, no_cache
+        self,
+        module,
+        module_hash,
+        function_name,
+        pipeline,
+        args_spec,
+        no_cache,
+        func_type=JitCompiledFunction,
     ):
-        arch = self.envar.arch
-        pipeline = self.preprocess_pipeline(self._get_pipeline(pipeline), arch)
+        # If `gpu-arch` is set by compile_options, use it. Otherwise, use the arch from the environment variable.
+        compile_gpu_arch = (
+            self.envar.arch
+            if not self.compile_options.gpu_arch
+            else self.compile_options.gpu_arch
+        )
+        # If no gpu kernels or compile_gpu_arch is same as the arch from the environment variable, generate a JIT engine. Otherwise, only do the compilation.
+        gen_jit_engine = self.num_kernels == 0 or compile_gpu_arch == self.envar.arch
+        # Preprocess the pipeline.
+        pipeline = self.preprocess_pipeline(
+            self._get_pipeline(pipeline), compile_gpu_arch
+        )
         shared_libs = self.get_shared_libs()
-        profiler = timer(enable=self.envar.jitTimeProfiling)
+        profiler = timer(enable=self.envar.jit_time_profiling)
         if (
             no_cache
             or module_hash not in self.jit_cache
@@ -1139,9 +1191,13 @@ class BaseDSL:
                 module_hash,
             )
             # Compile and JIT MLIR module
-            engine = profiler(self.compile_and_jit)(
-                module, pipeline, shared_libs, function_name=function_name
-            )
+            if gen_jit_engine:
+                engine = profiler(self.compile_and_jit)(
+                    module, pipeline, shared_libs, function_name=function_name
+                )
+            else:
+                profiler(self.compiler_provider.compile)(module, pipeline)
+                engine = None
         else:
             log().info(
                 "JIT cache hit IN-FILE function=[%s] module_hash=[%s]",
@@ -1149,29 +1205,38 @@ class BaseDSL:
                 module_hash,
             )
             module = self.jit_cache[module_hash].ir_module
-            engine = self.compiler_provider.jit(module, shared_libs=shared_libs)
-        capi_func = profiler(engine.lookup)(function_name)
-        jit_executor = JitExecutor(
-            self,
+            engine = (
+                self.compiler_provider.jit(module, shared_libs=shared_libs)
+                if gen_jit_engine
+                else None
+            )
+        capi_func = profiler(engine.lookup)(function_name) if engine else None
+
+        fn = JitCompiledFunction(
+            module,
             engine,
             capi_func,
-            module,
             args_spec,
             function_name,
-            jit_time_profiling=self.envar.jitTimeProfiling,
+            self.kernel_info,
+            jit_time_profiling=self.envar.jit_time_profiling,
+            jit_function_artifacts=JitFunctionArtifacts(
+                PTX=self.compile_options.dump_ptx_path,
+                CUBIN=self.compile_options.dump_cubin_path,
+                MLIR=(self.dump_mlir_path if self.envar.keep_ir else None),
+            ),
         )
-        jit_executor = jit_executor.update_jit_cuda_modules(self.kernel_symbols)
 
         if not no_cache:
             # module stored in cache is compiled.
-            self.jit_cache[module_hash] = jit_executor
+            self.jit_cache[module_hash] = fn
 
-        return jit_executor
+        return fn
 
     def post_compilation_cleanup(self):
         """Clean up some internal state after one compilation is completed."""
-        # clear the kernel symbols after the compilation is done.
-        self.kernel_symbols = []
+        # clear the kernel info after the compilation is done.
+        self.kernel_info = {}
         self.launch_inner_count = 0
         # reset num_kernels to 0 for next compilation.
         self.num_kernels = 0
@@ -1190,6 +1255,7 @@ class BaseDSL:
         no_cache,
         compile_only,
         loc=None,
+        frame=None,
     ):
         """Generate MLIR module and compile iself.T_provider."""
         with ir.Context(), ir.Location.unknown():
@@ -1209,6 +1275,7 @@ class BaseDSL:
                 gpu_module_attrs,
                 args,
                 args_spec,
+                frame=frame,
             )
 
             # dryrun is used to only generate IR
@@ -1221,7 +1288,7 @@ class BaseDSL:
                 or self.jit_cache[module_hash].capi_func is None
             ):
                 # no cache or cache miss, do ir generation/compilation/jit engine
-                jit_executor = self.compile_and_cache(
+                jit_function = self.compile_and_cache(
                     module, module_hash, function_name, pipeline, args_spec, no_cache
                 )
             else:
@@ -1231,14 +1298,16 @@ class BaseDSL:
                     function_name,
                     module_hash,
                 )
-                jit_executor = self.jit_cache[module_hash]
+                jit_function = self.jit_cache[module_hash]
 
             self.post_compilation_cleanup()
+
         # If compile_only is set, bypass execution return the jit_executor directly
         if compile_only:
-            return jit_executor
+            return jit_function
+
         # Run the compiled program
-        jit_executor.run_compiled_program(exe_args)
+        jit_function.run_compiled_program(exe_args)
 
         return result
 
@@ -1344,12 +1413,20 @@ class BaseDSL:
 
         pipeline = kwargs.pop("pipeline", None)
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
+        decorator_frame = kwargs.pop("_decorator_frame", None)
 
         # Disable cache
         no_cache = kwargs.pop("no_cache", False)
 
         # Always compile(disable cache) and return the result jit_executor
         compile_only = kwargs.pop("compile_only", False)
+
+        if not no_cache and (
+            self.envar.keep_ptx
+            or self.envar.keep_cubin
+        ):
+            no_cache = True
+            self.print_warning("Cache is disabled as user wants to generate PTX/ASM.")
 
         if not no_cache and compile_only:
             no_cache = True
@@ -1367,6 +1444,9 @@ class BaseDSL:
 
         # Simple name mangling
         function_name = self.mangle_name(function_name, canonicalized_args, args_spec)
+        self.compile_options.apply_envar_settings(self.envar, function_name)
+        if not self.compile_options.generate_line_info:
+            decorator_frame = None
 
         # Generate MLIR Context and start generating IR
         log().debug(f"Generating MLIR for function '{function_name}'")
@@ -1380,8 +1460,8 @@ class BaseDSL:
             pipeline,
             no_cache,
             compile_only,
+            frame=decorator_frame,
         )
-
         return result
 
     class _KernelGenHelper(ABC):
@@ -1465,22 +1545,7 @@ class BaseDSL:
         This function builds IR and execute the module using cuda driver.
         It doesn't use mlir's cuda runtime
         """
-        ret = None
-
-        # Step 1. Build IR
-        with ir.Context(), ir.Location.unknown():
-            loc = self.get_location()
-            module = ir.Module.create(loc=loc)
-            unit_attr = ir.UnitAttr.get()
-            module.operation.attributes["gpu.container_module"] = unit_attr
-            with ir.InsertionPoint(module.body):
-                self._build_gpu_module()
-                ret, kernel_name = kernel_generator()
-                log().debug(
-                    f"Kernel generator returned: ret={ret}, kernel_name={kernel_name}"
-                )
-
-        module = self.build_module(module, kernel_name)
+        ret, kernel_name, module = self._generate_kernel_module(kernel_generator)
 
         # dryrun is used to only generate IR
         if self.envar.dryrun:
@@ -1495,6 +1560,28 @@ class BaseDSL:
         )
 
         return ret
+
+    def _generate_kernel_module(self, kernel_generator):
+        """
+        Generates a module marked as GPU module which contains the kernel generated by :param kernel_generator:.
+
+        :return: A named tuple containing the launch function and function return, the kernel name and the MLIR module.
+        """
+        ret = None
+
+        with ir.Context(), ir.Location.unknown():
+            loc = self.get_location()
+            module = ir.Module.create(loc=loc)
+            unit_attr = ir.UnitAttr.get()
+            module.operation.attributes["gpu.container_module"] = unit_attr
+            with ir.InsertionPoint(module.body):
+                self._build_gpu_module({})
+                ret, kernel_name = kernel_generator()
+                log().debug(
+                    f"Kernel generator returned: ret={ret}, kernel_name={kernel_name}"
+                )
+
+        return ret, kernel_name, self.build_module(module, kernel_name)
 
     def generate_kernel_operands_and_types(
         self, kernel_func, kernel_name, args_spec, args, kwargs
@@ -1527,9 +1614,9 @@ class BaseDSL:
         log().debug("Final kernel_arg_types: %s", ", ".join(map(str, kernel_arg_types)))
         log().debug("Final kernel_arg_attrs: %s", ", ".join(map(str, kernel_arg_attrs)))
 
-        assert (
-            len(kernel_operands) == len(kernel_arg_types) == len(kernel_arg_attrs)
-        ), "Size of kernel_operands, kernel_arg_types and kernel_arg_attrs must be equal"
+        assert len(kernel_operands) == len(kernel_arg_types) == len(kernel_arg_attrs), (
+            "Size of kernel_operands, kernel_arg_types and kernel_arg_attrs must be equal"
+        )
 
         return kernel_operands, kernel_arg_types, kernel_arg_attrs
 
@@ -1600,9 +1687,9 @@ class BaseDSL:
                     if optionalArgs
                     else None
                 )
-                assert (
-                    kernelGenHelper is not None
-                ), "kernelGenHelper should be explicitly specified!"
+                assert kernelGenHelper is not None, (
+                    "kernelGenHelper should be explicitly specified!"
+                )
 
                 # check arguments
                 sig = self._check_arg_count(*args, **kwargs)
@@ -1622,6 +1709,7 @@ class BaseDSL:
                     )
                 )
 
+                loc = self.get_location()
                 with self._enter_gpu_module():
                     log().debug("Generating device kernel")
                     if self.device_compilation_only:
@@ -1638,7 +1726,6 @@ class BaseDSL:
                         )
 
                     helper = kernelGenHelper()
-                    loc = self.get_location()
                     fop = helper.generate_func_op(
                         kernel_types, kernel_arg_attrs, kernel_name, loc
                     )
@@ -1667,6 +1754,7 @@ class BaseDSL:
                     kernelOperands=kernel_operands,
                     requiredArgs=req_args,
                     optionalArgs=opt_args,
+                    loc=loc,
                 )
 
                 KernelReturns = namedtuple(
@@ -1684,3 +1772,21 @@ class BaseDSL:
             return decorator(dargs[0])
         else:
             return decorator
+
+    def get_arch_enum(self) -> Arch:
+        """
+        Get the arch enum from the environment variable
+        """
+        arch_option = self.compile_options.gpu_arch
+        return Arch.from_string(arch_option if arch_option else self.envar.arch)
+
+    def check_arch(self, criterion: Callable[[Arch], bool]) -> None:
+        """
+        Check the arch enum by criterion, raise DSLRuntimeError if the arch enum does not satisfy the criterion
+        """
+        arch = self.get_arch_enum()
+        if not criterion(arch):
+            raise DSLRuntimeError(
+                f"invalid arch, expected one of {Arch.filter(criterion)}, but got {arch}.",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )

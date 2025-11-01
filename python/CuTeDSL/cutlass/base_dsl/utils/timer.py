@@ -12,6 +12,7 @@
 """
 This module provides a timing helper functions
 """
+
 from functools import wraps
 
 from .logger import log

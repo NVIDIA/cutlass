@@ -12,7 +12,12 @@
 from typing import List, Tuple
 
 import cutlass.cute as cute
-from cutlass.cutlass_dsl import Int32, extract_mlir_values, new_from_mlir_values
+from cutlass.cutlass_dsl import (
+    Int32,
+    extract_mlir_values,
+    new_from_mlir_values,
+    const_expr,
+)
 from cutlass._mlir import ir
 
 from cutlass.utils.static_persistent_tile_scheduler import PersistentTileSchedulerParams
@@ -270,7 +275,7 @@ class GroupedGemmTileSchedulerHelper:
         clamp_value = 0
         idx = 1
         sum_per_thread = value_per_thread
-        while idx < cute.arch.WARP_SIZE:
+        while const_expr(idx < cute.arch.WARP_SIZE):
             value = cute.arch.shuffle_sync_up(
                 sum_per_thread, idx, mask_and_clamp=clamp_value
             )
@@ -292,7 +297,7 @@ class GroupedGemmTileSchedulerHelper:
         :return: The problem shape tensor for the specified group
         :rtype: cute.Tensor
         """
-        cur_problem_mnkl = cute.make_fragment(
+        cur_problem_mnkl = cute.make_rmem_tensor(
             cute.make_layout(4), problem_shape_mnkl.element_type
         )
         cute.autovec_copy(problem_shape_mnkl[(group_idx, None)], cur_problem_mnkl)

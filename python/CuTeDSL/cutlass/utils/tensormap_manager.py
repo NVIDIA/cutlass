@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Tuple
 
-from cutlass.cutlass_dsl import const_expr
-
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute
+from cutlass import const_expr
 
 
 class TensorMapUpdateMode(Enum):
@@ -47,10 +47,14 @@ class TensorMapManager:
 
     # convert given cute.Pointer or cutlass.Int64 to a cute.Pointer to tensormap.
     # address_space: the address space of the resulting tensormap pointer. It could be generic or gmem
+    @dsl_user_op
     def get_tensormap_ptr(
         self,
         ptr: cute.Pointer,
         address_space=_cute_ir.AddressSpace.gmem,
+        *,
+        loc=None,
+        ip=None,
     ) -> cute.Pointer:
         if address_space not in [
             _cute_ir.AddressSpace.gmem,
@@ -58,17 +62,19 @@ class TensorMapManager:
         ]:
             raise ValueError(f"Invalid address space: {address_space} for tensormap")
 
-        gmem_ptr_i64 = ptr.toint().ir_value()
+        gmem_ptr_i64 = ptr.toint().ir_value(loc=loc, ip=ip)
         gmem_ptr_i64_align_ty = _cute_ir.ConstrainedIntType.get(
             self.bytes_per_tensormap, gmem_ptr_i64.type.width
         )
-        gmem_ptr_i64_align = _cute_ir.assume(gmem_ptr_i64_align_ty, gmem_ptr_i64)
+        gmem_ptr_i64_align = _cute_ir.assume(
+            gmem_ptr_i64_align_ty, gmem_ptr_i64, loc=loc, ip=ip
+        )
         gmem_ptr_ty = _cute_ir.PtrType.get(
             _cute_nvgpu_ir.TmaDescriptorTiledType.get(),
             address_space,
             self.bytes_per_tensormap,
         )
-        return _cute_ir.inttoptr(gmem_ptr_ty, gmem_ptr_i64_align)
+        return _cute_ir.inttoptr(gmem_ptr_ty, gmem_ptr_i64_align, loc=loc, ip=ip)
 
     # init tensormap pointed by dst_ptr with the one inside copy_atom.
     # dst_ptr should be pointing to a global memory location or a smem location

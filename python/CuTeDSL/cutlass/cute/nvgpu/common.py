@@ -18,8 +18,9 @@ import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from .. import core
+from .. import atom
 from ..typing import Float16, Float32, Float64, Numeric
+from cutlass import cute
 
 
 class OpError(DSLBaseError):
@@ -28,7 +29,7 @@ class OpError(DSLBaseError):
     """
 
     def __init__(
-        self, op: core.Op, message: str, suggestion: Optional[str] = None
+        self, op: atom.Op, message: str, suggestion: Optional[str] = None
     ) -> None:
         if suggestion is None:
             # Default suggestion
@@ -48,7 +49,7 @@ class OpError(DSLBaseError):
 
 
 @dataclass(frozen=True)
-class MmaUniversalOp(core.MmaOp):
+class MmaUniversalOp(atom.MmaOp):
     """
     The universal MMA Operation.
 
@@ -65,7 +66,7 @@ class MmaUniversalOp(core.MmaOp):
         if self.abacc_dtype not in [Float16, Float32, Float64]:
             raise OpError(
                 self,
-                f"expects the 'abacc_dtype' Op parameter to be one of Float16, Float32, or Float64",
+                "expects the 'abacc_dtype' Op parameter to be one of Float16, Float32, or Float64",
             )
 
     def __str__(self) -> str:
@@ -75,14 +76,14 @@ class MmaUniversalOp(core.MmaOp):
         )
 
     def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaUniversalTrait":
-        shape_mnk_attr = ir.Attribute.parse(f'#cute.shape<"(1,1,1)">')
+        shape_mnk_attr = ir.Attribute.parse('#cute.shape<"(1,1,1)">')
         atom_ty = _cute_nvgpu_ir.UniversalFmaAtomType.get(
             shape_mnk_attr,
             self.abacc_dtype.mlir_type,
             self.abacc_dtype.mlir_type,
             self.abacc_dtype.mlir_type,
         )
-        return MmaUniversalTrait(_cute_ir.atom(atom_ty, loc=loc, ip=ip))
+        return MmaUniversalTrait(cute.make_atom(atom_ty, loc=loc, ip=ip))
 
     def _verify_fragment_A(self, input, *, loc=None, ip=None):
         pass
@@ -90,7 +91,8 @@ class MmaUniversalOp(core.MmaOp):
     def _verify_fragment_B(self, input, *, loc=None, ip=None):
         pass
 
-class MmaUniversalTrait(core.Trait):
+
+class MmaUniversalTrait(atom.Trait):
     pass
 
 
@@ -137,8 +139,9 @@ class MemoryScope(enum.Enum):
     def _to_ir(self) -> _cute_ir.MemScopeKind:
         return self.value
 
+
 @dataclass(frozen=True)
-class CopyUniversalOp(core.CopyOp):
+class CopyUniversalOp(atom.CopyOp):
     """
     The universal Copy Operation.
 
@@ -182,8 +185,8 @@ class CopyUniversalOp(core.CopyOp):
             memory_order._to_ir(),
             memory_scope._to_ir(),
         )
-        return CopyUniversalTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return CopyUniversalTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
-class CopyUniversalTrait(core.Trait):
+class CopyUniversalTrait(atom.Trait):
     pass
