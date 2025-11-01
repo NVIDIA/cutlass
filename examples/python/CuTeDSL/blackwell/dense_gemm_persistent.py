@@ -78,7 +78,7 @@ Input arguments to this example is same as dense_gemm.py.
 
 .. code-block:: bash
 
-    python examples/blackwell/dense_gemm_persistent.py                          \
+    python examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py                          \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                  \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                             \
       --mnkl 8192,8192,8192,1                                                   \
@@ -88,7 +88,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/dense_gemm_persistent.py                     \
+    ncu python examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py                     \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                 \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
       --mnkl 8192,8192,8192,1                                                  \

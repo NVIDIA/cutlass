@@ -66,7 +66,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/flash_attention_v2.py                                            \
+    python examples/python/CuTeDSL/ampere/flash_attention_v2.py                                            \
       --dtype Float16 --head_dim 128 --m_block_size 128 --n_block_size 128                  \
       --num_threads 128 --batch_size 1 --seqlen_q 1280 --seqlen_k 1536                      \
       --num_head 16 --softmax_scale 1.0 --is_causal
@@ -80,7 +80,7 @@ To collect the performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/ampere/flash_attention_v2.py                                        \
+    ncu python examples/python/CuTeDSL/ampere/flash_attention_v2.py                                        \
         --dtype Float16 --head_dim 128 --m_block_size 128 --n_block_size 128                \
         --num_threads 128 --batch_size 1 --seqlen_q 1280 --seqlen_k 1536                    \
         --num_head 16 --softmax_scale 1.0 --is_causal --skip_ref_check
