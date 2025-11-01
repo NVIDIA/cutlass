@@ -357,7 +357,7 @@ That is, the complement `R` of a layout `A` with respect to a Shape (IntTuple) `
 2. `R` is *ordered*.  That is, the strides of `R` are positive and increasing.  This means that `R` is unique.
 3. `A` and `R` have *disjoint* codomains. `R` attempts to "complete" the codomain of `A`.
 
-The `cotarget` parameter above is most commonly an integer -- you can see we only use `size(cotarget)` above. However, sometimes it is useful to specify an integer that has static properties. For example, `28` is a dynamic integer and `(_4,7)` is a shape with size `28` that is statically known to be divisible by `_4`. Both will produce the same `complement` mathematically, but the extra information can used by `complement` to preserve the staticness of the result as much as possible.
+The `cotarget` parameter above is most commonly an integer -- you can see we only use `size(cotarget)` above. However, sometimes it is useful to specify an integer that has static properties. For example, `28` is a dynamic integer and `(_4,7)` is a shape with size `28` that is statically known to be divisible by `_4`. Both will produce the same `complement` mathematically, but the extra information can used by `complement` to preserve the staticness of the result as much as possible. You can find the exact mathematical definition for the `complement` operation in section 2.1 of [this note](https://research.colfax-intl.com/wp-content/uploads/2024/01/layout_algebra.pdf).
 
 ### Complement Examples
 
