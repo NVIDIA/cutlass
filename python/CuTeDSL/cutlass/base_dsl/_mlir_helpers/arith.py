@@ -20,6 +20,7 @@ from ..common import *
 from ..._mlir import ir  # type: ignore
 from ..._mlir.extras import types as T  # type: ignore
 from ..._mlir.dialects import arith, nvgpu, math, builtin  # type: ignore
+from .op import dsl_user_op
 
 from .lru_cache_ir import lru_cache_ir
 
@@ -393,9 +394,10 @@ def _binary_op(op):
 class ArithValue(ir.Value):
     """Overloads operators for MLIR's Arith dialects binary operations."""
 
-    def __init__(self, v, signed: Union[bool, None] = None):
+    @dsl_user_op
+    def __init__(self, v, signed: Union[bool, None] = None, *, loc=None, ip=None):
         if isinstance(v, int):
-            v = arith.constant(self.type, v)
+            v = arith.constant(self.type, v, loc=loc, ip=ip)
         super().__init__(v)
 
         elem_ty = element_type(self.type)
@@ -406,6 +408,7 @@ class ArithValue(ir.Value):
     def with_signedness(self, signed: Union[bool, None]):
         return type(self)(self, signed)
 
+    @dsl_user_op
     def __neg__(self, *, loc=None, ip=None):
         if self.type == T.bool():
             raise TypeError(
@@ -418,6 +421,7 @@ class ArithValue(ir.Value):
             c0 = arith.constant(self.type, 0, loc=loc, ip=ip)
             return arith.subi(c0, self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __pow__(self, other, *, loc=None, ip=None) -> "ArithValue":
         if self.is_float and other.is_float:
@@ -433,12 +437,13 @@ class ArithValue(ir.Value):
         else:
             raise DSLNotImplemented(f"Unsupported '{self} ** {other}'")
 
+    @dsl_user_op
     @_binary_op
     def __rpow__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__pow__(self, loc=loc, ip=ip)
 
     # arith operators
-
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __add__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -447,6 +452,7 @@ class ArithValue(ir.Value):
         else:
             return arith.addi(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __sub__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -455,6 +461,7 @@ class ArithValue(ir.Value):
         else:
             return arith.subi(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __mul__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -463,6 +470,7 @@ class ArithValue(ir.Value):
         else:
             return arith.muli(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __truediv__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -473,6 +481,7 @@ class ArithValue(ir.Value):
             rhs = itofp(other, other.signed, T.f32(), loc=loc, ip=ip)
             return arith.divf(lhs, rhs, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __floordiv__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -484,6 +493,7 @@ class ArithValue(ir.Value):
         else:
             return arith.divui(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __mod__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -494,31 +504,38 @@ class ArithValue(ir.Value):
         else:
             return arith.remui(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __radd__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__add__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rsub__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__sub__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rmul__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__mul__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rtruediv__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__truediv__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rfloordiv__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__floordiv__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rmod__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__mod__(self, loc=loc, ip=ip)
 
     # Comparison operators (comparison doesn't have right-hand-side variants)
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __lt__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -529,6 +546,7 @@ class ArithValue(ir.Value):
         else:
             return arith.cmpi(arith.CmpIPredicate.ult, self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __le__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -539,6 +557,7 @@ class ArithValue(ir.Value):
         else:
             return arith.cmpi(arith.CmpIPredicate.ule, self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __eq__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -547,6 +566,7 @@ class ArithValue(ir.Value):
         else:
             return arith.cmpi(arith.CmpIPredicate.eq, self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __ne__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -556,6 +576,7 @@ class ArithValue(ir.Value):
         else:
             return arith.cmpi(arith.CmpIPredicate.ne, self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __gt__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -566,6 +587,7 @@ class ArithValue(ir.Value):
         else:
             return arith.cmpi(arith.CmpIPredicate.ugt, self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __ge__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -577,25 +599,30 @@ class ArithValue(ir.Value):
             return arith.cmpi(arith.CmpIPredicate.uge, self, other, loc=loc, ip=ip)
 
     # Unary operators
+    @dsl_user_op
     def __invert__(self, *, loc=None, ip=None) -> "ArithValue":
         return arith.xori(self, arith.constant(self.type, -1))
 
     # Bitwise operations
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __and__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.andi(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __or__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.ori(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __xor__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.xori(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __rshift__(self, other, *, loc=None, ip=None) -> "ArithValue":
@@ -604,27 +631,33 @@ class ArithValue(ir.Value):
         else:
             return arith.shrui(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_dispatch_to_rhs_r_op
     @_binary_op
     def __lshift__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.shli(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rand__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.andi(other, self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __ror__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.ori(other, self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rxor__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return arith.xori(other, self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rrshift__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__rshift__(self, loc=loc, ip=ip)
 
+    @dsl_user_op
     @_binary_op
     def __rlshift__(self, other, *, loc=None, ip=None) -> "ArithValue":
         return other.__lshift__(self, loc=loc, ip=ip)

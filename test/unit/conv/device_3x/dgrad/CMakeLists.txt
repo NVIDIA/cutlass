@@ -32,6 +32,7 @@ add_custom_target(
   cutlass_test_unit_conv_dgrad_device_tensorop_sm90
   cutlass_test_unit_conv_dgrad_device_tensorop_sm100
   cutlass_test_unit_conv_dgrad_device_tensorop_sm100_fusion
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100_streamk
 )
 
 cutlass_test_unit_add_executable(
@@ -86,6 +87,12 @@ cutlass_test_unit_add_executable(
   sm100_conv1d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
   sm100_conv2d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
   sm100_conv3d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_with_fusion.cu
+)
+
+cutlass_test_unit_add_executable_split_file(
+  cutlass_test_unit_conv_dgrad_device_tensorop_sm100_streamk
+
+  sm100_conv3d_dgrad_implicit_gemm_f16_f16_f16_tensorop_f16_streamk.cu
 )
 
 endif()

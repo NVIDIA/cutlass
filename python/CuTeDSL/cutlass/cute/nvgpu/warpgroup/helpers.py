@@ -15,7 +15,7 @@ from cutlass.cutlass_dsl import dsl_user_op
 
 from cutlass._mlir.dialects import nvvm
 
-from ...typing import Numeric, NumericMeta
+from ...typing import Numeric, NumericMeta, ComposedLayout
 from ... import core
 from .mma import SmemLayoutAtomKind
 
@@ -23,7 +23,7 @@ from .mma import SmemLayoutAtomKind
 @dsl_user_op
 def make_smem_layout_atom(
     kind: SmemLayoutAtomKind, element_type: Type[Numeric], *, loc=None, ip=None
-) -> core.ComposedLayout:
+) -> ComposedLayout:
     """
     Makes a SMEM layout Atom.
 
@@ -35,7 +35,7 @@ def make_smem_layout_atom(
     :param element_type: The element data type to construct the layout for
     :type element_type:  Type[Numeric]
     :return:             The SMEM layout atom
-    :rtype:              core.ComposedLayout
+    :rtype:              ComposedLayout
     """
     if not isinstance(element_type, NumericMeta):
         raise TypeError(f"element_type must be a Numeric, but got {element_type}")

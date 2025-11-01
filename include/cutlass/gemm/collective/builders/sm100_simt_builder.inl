@@ -96,6 +96,7 @@ sm100_make_simt_f32_tiled_mma() {
 } // namespace detail
 
 template <
+  class ArchTag,
   class GmemLayoutATag,
   int AlignmentA,
   class GmemLayoutBTag,
@@ -105,7 +106,7 @@ template <
   int stages,
   class BuilderScheduleTag>
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassSimt,
     float,
     GmemLayoutATag,
@@ -119,6 +120,8 @@ struct CollectiveBuilder<
     StageCount<stages>,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       (cute::is_same_v<BuilderScheduleTag, KernelMultistage> ||
        cute::is_same_v<BuilderScheduleTag, KernelPtrArrayMultistage> ||
        cute::is_same_v<BuilderScheduleTag, KernelScheduleAuto>) &&

@@ -35,6 +35,9 @@ include(GNUInstallDirs)
 set(CUTLASS_BUILD_MONO_LIBRARY OFF CACHE BOOL 
   "Determines whether the cutlass library is generated as a single file or multiple files.")
 
+option(CUTLASS_BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(CUTLASS_BUILD_STATIC_LIBS "Build static libraries" ON)
+
 ################################################################################
 
 add_library(cutlass_library_includes INTERFACE)
@@ -62,7 +65,7 @@ install(
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 
 add_library(cutlass_library_internal_interface INTERFACE)
@@ -123,88 +126,98 @@ function(cutlass_add_cutlass_library)
   if (CUTLASS_BUILD_MONO_LIBRARY AND __SUFFIX)
 
     # If we're only building a single monolithic library then we
-    # simply link the generated object files to the default library. 
+    # simply link the generated object files to the default library.
+    if(CUTLASS_BUILD_SHARED_LIBS)
+      target_link_libraries(${DEFAULT_NAME} PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
+    endif()
 
-    target_link_libraries(${DEFAULT_NAME} PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
-    target_link_libraries(${DEFAULT_NAME}_static PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
+    if(CUTLASS_BUILD_STATIC_LIBS)
+      target_link_libraries(${DEFAULT_NAME}_static PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
+    endif()
 
   else()
 
-    cutlass_add_library(
-      ${__NAME} 
-      SHARED
-      EXPORT_NAME ${__EXPORT_NAME}
-      ""
+    # Shared library (honors CMake's standard CUTLASS_BUILD_SHARED_LIBS)
+    if(CUTLASS_BUILD_SHARED_LIBS)
+      cutlass_add_library(
+        ${__NAME}
+        SHARED
+        EXPORT_NAME ${__EXPORT_NAME}
+        ""
       )
 
-    target_compile_features(${__NAME} INTERFACE cxx_std_17)
-    
-    set_target_properties(
-      ${__NAME}
-      PROPERTIES
-      OUTPUT_NAME ${__OUTPUT_NAME}
-      WINDOWS_EXPORT_ALL_SYMBOLS 1
-      )
-    
-    target_link_libraries(
-      ${__NAME}
-      PUBLIC cutlass_library_includes
-      PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
-      cuda_driver
-      )
-    
-    set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
-    
-    cutlass_add_library(
-      ${__NAME}_static
-      STATIC
-      EXPORT_NAME ${__EXPORT_NAME}_static
-      ""
+      target_compile_features(${__NAME} INTERFACE cxx_std_17)
+
+      set_target_properties(${__NAME}
+        PROPERTIES
+        OUTPUT_NAME ${__OUTPUT_NAME}
+        WINDOWS_EXPORT_ALL_SYMBOLS 1
+        DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}"
       )
 
-    target_compile_features(${__NAME}_static INTERFACE cxx_std_17)
-    
-    if (WIN32)
-      set(STATIC_OUTPUT_NAME ${__OUTPUT_NAME}.static)
-    else()
-      set(STATIC_OUTPUT_NAME ${__OUTPUT_NAME})
-    endif()
-    
-    set_target_properties(
-      ${__NAME}_static
-      PROPERTIES
-      OUTPUT_NAME ${STATIC_OUTPUT_NAME}
-      WINDOWS_EXPORT_ALL_SYMBOLS 1
+      target_link_libraries(${__NAME}
+        PUBLIC cutlass_library_includes
+        PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
+        cuda_driver
       )
-    
-    target_link_libraries(
-      ${__NAME}_static
-      PUBLIC cutlass_library_includes
-      PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
-      cuda_driver
+
+      install(
+        TARGETS ${__NAME}
+        EXPORT NvidiaCutlass
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
       )
-    
-    set_target_properties(${__NAME}_static PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
-    
-    install(
-      TARGETS ${__NAME} ${__NAME}_static
-      EXPORT NvidiaCutlass
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      )
-    
-    if (__SUFFIX)
-    
-      # The partial libraries generated will be registered as linked libraries
-      # to the main cutlass library so users automatically get the necessary link
-      # commands to pull in all kernels by default.
-    
-      target_link_libraries(${DEFAULT_NAME} PUBLIC ${__NAME})
-      target_link_libraries(${DEFAULT_NAME}_static PUBLIC ${__NAME}_static)
-    
+
+      if (__SUFFIX)
+        target_link_libraries(${DEFAULT_NAME} PUBLIC ${__NAME})
+      endif()
     endif()
 
+    # Static library
+    if(CUTLASS_BUILD_STATIC_LIBS)
+      cutlass_add_library(
+        ${__NAME}_static
+        STATIC
+        EXPORT_NAME ${__EXPORT_NAME}_static
+        ""
+      )
+
+      target_compile_features(${__NAME}_static INTERFACE cxx_std_17)
+
+      if (WIN32)
+        set(STATIC_OUTPUT_NAME ${__OUTPUT_NAME}.static)
+      else()
+        set(STATIC_OUTPUT_NAME ${__OUTPUT_NAME})
+      endif()
+
+      set_target_properties(
+        ${__NAME}_static
+        PROPERTIES
+        OUTPUT_NAME ${STATIC_OUTPUT_NAME}
+        WINDOWS_EXPORT_ALL_SYMBOLS 1
+        DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}"
+      )
+
+      target_link_libraries(
+        ${__NAME}_static
+        PUBLIC cutlass_library_includes
+        PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
+        cuda_driver
+      )
+
+      install(
+        TARGETS ${__NAME}_static
+        EXPORT NvidiaCutlass
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      )
+
+      if (__SUFFIX)
+        target_link_libraries(${DEFAULT_NAME}_static PUBLIC ${__NAME}_static)
+      endif()
+    endif()
   endif()
 
 endfunction()
@@ -268,8 +281,13 @@ cutlass_add_cutlass_library(
   )
 
 # For backward compatibility with the old name
-add_library(cutlass_lib ALIAS cutlass_library)
-add_library(cutlass_lib_static ALIAS cutlass_library_static)
+if(CUTLASS_BUILD_SHARED_LIBS)
+  add_library(cutlass_lib ALIAS cutlass_library)
+endif()
+
+if(CUTLASS_BUILD_STATIC_LIBS)
+  add_library(cutlass_lib_static ALIAS cutlass_library_static)
+endif()
 
 ################################################################################
 

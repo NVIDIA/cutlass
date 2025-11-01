@@ -46,11 +46,13 @@ struct Sm100DenseGemmTmaUmmaCarveout {
   // AccumulatorPipeline = PipelineUmmaAsync
   static constexpr auto AccumulatorPipelineStorage = sizeof(typename cutlass::PipelineUmmaAsync<AccumulatorPipelineStageCount>::SharedStorage);
   // CLCPipeline = PipelineCLCFetchAsync
-  static constexpr auto CLCPipelineStorage = sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape_MNK>::SharedStorage);
+  // For pointer-array and grouped GEMM, we have two CLC responses, one for TMA updater, one for the TMA/MMA/Epilogue warps.
+  static constexpr int NumCLCResponses = (IsArrayOfPointersGemm ? 2 : 1);
+  static constexpr auto CLCPipelineStorage = sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape_MNK>::SharedStorage) * NumCLCResponses;
   // LoadOrderBarrier = OrderedSequenceBarrier<1,2>
   static constexpr auto LoadOrderBarrierStorage = sizeof(typename cutlass::OrderedSequenceBarrier<1,2>::SharedStorage);
   // CLC (scheduler) response
-  static constexpr auto CLCResponseStorage = SchedulerPipelineStageCount * detail::CLCResponseSize;
+  static constexpr auto CLCResponseStorage = SchedulerPipelineStageCount * detail::CLCResponseSize * NumCLCResponses;
   // CLC Throttle pipeline storage
   static constexpr auto CLCThrottlePipelineStorage = sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage);
   // Tmem dealloc
@@ -59,8 +61,14 @@ struct Sm100DenseGemmTmaUmmaCarveout {
   static constexpr auto TmemBasePtrsStorage = SchedulerPipelineStageCount * sizeof(uint32_t);
   // Tensormap Storage
   static constexpr auto TensorMapStorage = 
-    IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * NumTensorMaps /* for A and B */ :
+    IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * NumTensorMaps * 5 /* We have five tensormaps smem */ :
     0;
+
+  // TensorMapReady pipeline storage (specific to grouped/array kernels)
+  static constexpr auto TensorMapReadyPipelineStorage = 
+    IsArrayOfPointersGemm ? sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage) :
+    0;
+
   // Smem usage that's not part of CollectiveEpilogue::SharedStorage & CollectiveMainloop::SharedStorage
   static constexpr auto KernelSmemCarveout = static_cast<int>( AccumulatorPipelineStorage +
                                                                CLCPipelineStorage +
@@ -69,7 +77,8 @@ struct Sm100DenseGemmTmaUmmaCarveout {
                                                                CLCThrottlePipelineStorage +
                                                                CLCResponseStorage +
                                                                TmemBasePtrsStorage +
-                                                               TensorMapStorage
+                                                               TensorMapStorage +
+                                                               TensorMapReadyPipelineStorage
                                                               );
 };
 

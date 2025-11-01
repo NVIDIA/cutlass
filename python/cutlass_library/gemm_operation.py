@@ -76,6 +76,7 @@ class GemmOperation:
       GemmKind.GroupedBlockScaledUniversal3x,
       GemmKind.BlockwiseUniversal3x,
       GemmKind.GroupedBlockwiseUniversal3x,
+      GemmKind.BlockScaledSparseUniversal3x,
     }
     self.is_3x = gemm_kind in kinds_3x
     self.prefix = "3x" if self.is_3x else ""
@@ -174,6 +175,7 @@ class GemmOperation:
       OpcodeClass.WmmaTensorOp,
       OpcodeClass.SparseTensorOp,
       OpcodeClass.BlockScaledTensorOp, 
+      OpcodeClass.BlockScaledSparseTensorOp,
     ]
 
     is_tensor_op = self.tile_description.math_instruction.opcode_class in tensor_ops
@@ -348,7 +350,7 @@ class GemmOperation:
     opcode_class_main = self.tile_description.math_instruction.opcode_class
     instruction_shape = self.tile_description.math_instruction.instruction_shape
     tile_shape_m, tile_shape_n, tile_shape_k = self.tile_description.tile_shape
-    if opcode_class_main in [OpcodeClass.TensorOp, OpcodeClass.BlockScaledTensorOp, OpcodeClass.SparseTensorOp]:
+    if opcode_class_main in [OpcodeClass.TensorOp, OpcodeClass.BlockScaledTensorOp, OpcodeClass.SparseTensorOp, OpcodeClass.BlockScaledSparseTensorOp]:
       tile_shape_m = instruction_shape[0]
       tile_shape_n = instruction_shape[1]
     return (tile_shape_m, tile_shape_n, tile_shape_k)
@@ -984,7 +986,7 @@ ${compile_guard_end}
     element_b = DataTypeTag[operation.B.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.B.element])},{str(ComplexTransformTag3x[operation.B.complex_transform])}>"
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
     
-    if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
+    if opcode_class_main == OpcodeClass.BlockScaledTensorOp or opcode_class_main == OpcodeClass.BlockScaledSparseTensorOp:
       grouped = is_grouped(operation.gemm_kind)
       if cta_n == 256 and operation.kernel_schedule == to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100, grouped):
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
@@ -1099,7 +1101,7 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
       sfn_vec_size = operation.ScaleFactorNVecSize
       sfk_vec_size = operation.ScaleFactorKVecSize
       blockwise_prepare_code = f"""
-using {operation_name_str}_ScaleConfig = cutlass::detail::Sm{operation.arch}BlockwiseScaleConfig<{sfm_vec_size}, {sfn_vec_size}, {sfk_vec_size}>;
+using {operation_name_str}_ScaleConfig = cutlass::detail::Sm{"90" if operation.arch == 90 else "1xx"}BlockwiseScaleConfig<{sfm_vec_size}, {sfn_vec_size}, {sfk_vec_size}>;
 using {operation_name_str}_LayoutSFA = decltype({operation_name_str}_ScaleConfig::deduce_layoutSFA());
 using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig::deduce_layoutSFB());
       """
@@ -1477,6 +1479,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.GroupedBlockScaledUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.BlockwiseUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.GroupedBlockwiseUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.BlockScaledSparseUniversal3x: EmitGemmUniversal3xInstance,
     }
 
     self.gemm_kind_wrappers = {
@@ -1493,6 +1496,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.GroupedBlockScaledUniversal3x: 'GroupedBlockScaledGemmUniversal3xOperation',
       GemmKind.BlockwiseUniversal3x: 'BlockwiseGemmUniversal3xOperation',
       GemmKind.GroupedBlockwiseUniversal3x: 'GroupedBlockwiseGemmUniversal3xOperation',
+      GemmKind.BlockScaledSparseUniversal3x: 'BlockScaledSparseGemmUniversal3xOperation',
     }
 
     self.wmma_guard_start = "#if defined(CUTLASS_ARCH_WMMA_SM${sm_number}_ENABLED)"

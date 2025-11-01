@@ -39,6 +39,7 @@ namespace cutlass::gemm::collective {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -52,7 +53,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     ElementA,
     GmemLayoutATag,
@@ -65,10 +66,13 @@ struct CollectiveBuilder<
     ClusterShape_MNK, // Static cluster shape or dynamic (int, int, _1)
     StageCountType,
     BuilderScheduleTag,
-    cute::enable_if_t<cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag> ||
-                      (cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag> &&
-                      (((sizeof(ElementA) * AlignmentA) % cutlass::gemm::collective::detail::tma_alignment_bytes != 0) ||
-                       ((sizeof(ElementB) * AlignmentB) % cutlass::gemm::collective::detail::tma_alignment_bytes != 0)))>
+    cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
+      (cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag> ||
+                        (cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag> &&
+                        (((sizeof(ElementA) * AlignmentA) % cutlass::gemm::collective::detail::tma_alignment_bytes != 0) ||
+                         ((sizeof(ElementB) * AlignmentB) % cutlass::gemm::collective::detail::tma_alignment_bytes != 0))))>
 >
 {
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
@@ -137,13 +141,15 @@ struct CollectiveBuilder<
                                                                CLCPipelineStorage +
                                                                CLCResponseStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
   using MainloopPipelineStorage = typename cutlass::PipelineUmmaConsumerAsync<1>::SharedStorage;
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, MainloopPipelineStorage>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, MainloopPipelineStorage>(StageCountType{});
 
   using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
       cutlass::gemm::MainloopSm100UmmaCpAsyncWarpSpecialized<

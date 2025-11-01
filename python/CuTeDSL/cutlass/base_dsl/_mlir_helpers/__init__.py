@@ -15,9 +15,9 @@ This module provides MLIR Dialect helper functions
 
 from . import arith
 from .lru_cache_ir import lru_cache_ir
+from .op import dsl_user_op
 
-
-__all__ = ["arith", "lru_cache_ir"]
+__all__ = ["arith", "lru_cache_ir", "dsl_user_op"]
 
 try:
     from . import gpu

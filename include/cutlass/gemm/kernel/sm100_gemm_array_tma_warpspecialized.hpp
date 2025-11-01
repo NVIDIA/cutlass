@@ -132,7 +132,10 @@ public:
   using AtomThrShapeMNK = typename CollectiveMainloop::AtomThrShapeMNK;
   using CtaShape_MNK = typename CollectiveMainloop::CtaShape_MNK;
 
-  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
+
+  //For the case of RCGroupedGemm we are still GroupedGemm but our StrideA will not match with InternalStrideA
+  // Hence it's better to take this decision based upon StrideB
+  static constexpr bool IsGroupedGemmKernel = !(cute::is_same_v<StrideB, InternalStrideB>);
   using TileSchedulerTag = cute::conditional_t<IsGroupedGemmKernel, GroupScheduler, TileSchedulerTag_>;
 
   using TileScheduler = typename detail::TileSchedulerSelector<
@@ -140,25 +143,40 @@ public:
   using TileSchedulerArguments = typename TileScheduler::Arguments;
   using TileSchedulerParams = typename TileScheduler::Params;
 
+  static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
+  static constexpr bool IsTensorMapUpdateAsync = not IsSchedDynamicPersistent;
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
   static constexpr uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // Warp specialization thread count per threadblock
-  static constexpr uint32_t NumSchedThreads        = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumMMAThreads          = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumMainloopLoadThreads = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumEpilogueLoadThreads = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumEpilogueThreads     = CollectiveEpilogue::ThreadCount;
-  static constexpr uint32_t NumEpilogueWarps       = NumEpilogueThreads / NumThreadsPerWarp;
+  static constexpr uint32_t NumSchedThreads             = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumTensorMapUpdaterThreads  = IsTensorMapUpdateAsync ? NumThreadsPerWarp * 4 : 0; // Four warps to update tensor maps and plumb updated tileId.
+  static constexpr uint32_t NumMMAThreads               = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumMainloopLoadThreads      = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumEpilogueLoadThreads      = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumEpilogueThreads          = CollectiveEpilogue::ThreadCount;
+  static constexpr uint32_t NumEpilogueWarps            = NumEpilogueThreads / NumThreadsPerWarp;
 
-  static constexpr uint32_t MaxThreadsPerBlock = NumSchedThreads +
+  static_assert(
+    SchedulerPipelineStageCount % (IsTensorMapUpdateAsync ? NumTensorMapUpdaterThreads / NumThreadsPerWarp : 1) == 0,
+    "SchedulerPipelineStageCount for async tensor map update kernels must be divisible by the number of asynchronous tensor map updater warps."
+  );
+
+  static_assert(
+    (!IsTensorMapUpdateAsync)
+    || CollectiveEpilogue::NumMaxSchedulerPipelineStageCount >= SchedulerPipelineStageCount,
+    "The epilog collective expected a less scheduler stage count. Consider relaxing its NumMaxSchedulerPipelineStageCount parameter."
+  );
+
+  static constexpr uint32_t MaxThreadsPerBlock = NumSchedThreads + NumTensorMapUpdaterThreads +
                                                  NumMainloopLoadThreads + NumMMAThreads +
                                                  NumEpilogueLoadThreads + NumEpilogueThreads;
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
   static constexpr uint32_t NumFixupBarriers = 1;
   static constexpr uint32_t CLCResponseSize = sizeof(typename TileScheduler::CLCResponse);
-  
-  static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
+
+  static constexpr uint32_t GenericRegisterRequirement = 136;
+  static constexpr uint32_t AccumRegisterRequirement = 232;
 
   // Pipeline and pipeline state types
   using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
@@ -179,17 +197,42 @@ public:
     cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>,
     cutlass::PipelineAsync<SchedulerPipelineStageCount>>;
   using CLCPipelineState = typename CLCPipeline::PipelineState;
+  using TensorMapReadyPipeline = cute::conditional_t<IsTensorMapUpdateAsync,
+    cutlass::PipelineAsync<SchedulerPipelineStageCount>,
+    CLCPipeline
+  >;
+  using TensorMapReadyPipelineState = typename TensorMapReadyPipeline::PipelineState;
   using CLCThrottlePipeline = cute::conditional_t<IsSchedDynamicPersistent,
     cutlass::PipelineAsync<SchedulerPipelineStageCount>,
     cutlass::PipelineEmpty>;
   using CLCThrottlePipelineState = typename CLCThrottlePipeline::PipelineState;
+
+  template <class BaseResponse>
+  struct WithTensorMapUpdateInfo : public BaseResponse {
+    uint16_t batch_changed = 0;
+    uint16_t TMA_stage = 0;
+    WithTensorMapUpdateInfo() = default;
+    CUTLASS_DEVICE WithTensorMapUpdateInfo(BaseResponse const& response) : BaseResponse(response) {}
+  };
+
+  using CLCResponseWithAdditionalInformation = cute::conditional_t<
+    IsTensorMapUpdateAsync,
+    WithTensorMapUpdateInfo<typename TileScheduler::CLCResponse>,
+    typename TileScheduler::CLCResponse
+  >;
 
   using TmemAllocator = cute::conditional_t<cute::size(cute::shape<0>(typename TiledMma::ThrLayoutVMNK{})) == 1,
       cute::TMEM::Allocator1Sm, cute::TMEM::Allocator2Sm>;
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct PipelineStorage : cute::aligned_struct<16, _1> {
+    // The PipelineStorageImplWithoutAsyncUpdate and PipelineStorageImplWithAsyncUpdate only differ in the
+    // presence of the TensorMapReadyPipelineStorage.
+    // We could use some other technique to avoid duplication for the common members, but any technique
+    // we tried would break the MSVC build.
+    // As a workaround, we just copied the code.
+    
+    struct PipelineStorageImplWithoutAsyncUpdate : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
       using LoadOrderBarrierStorage = typename LoadOrderBarrier::SharedStorage;
@@ -204,9 +247,34 @@ public:
       alignas(16) AccumulatorPipelineStorage accumulator;
       alignas(16) CLCThrottlePipelineStorage clc_throttle;
       alignas(16) arch::ClusterBarrier tmem_dealloc;
-    } pipelines;
+    };
 
-    alignas(16) typename TileScheduler::CLCResponse clc_response[SchedulerPipelineStageCount];
+    struct PipelineStorageImplWithAsyncUpdate : cute::aligned_struct<16, _1> {
+      using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
+      using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
+      using LoadOrderBarrierStorage = typename LoadOrderBarrier::SharedStorage;
+      using CLCPipelineStorage = typename CLCPipeline::SharedStorage;
+      using AccumulatorPipelineStorage = typename AccumulatorPipeline::SharedStorage;
+      using CLCThrottlePipelineStorage = typename CLCThrottlePipeline::SharedStorage;
+
+      alignas(16) MainloopPipelineStorage mainloop;
+      alignas(16) EpiLoadPipelineStorage epi_load;
+      alignas(16) LoadOrderBarrierStorage load_order;
+      alignas(16) CLCPipelineStorage clc;
+      alignas(16) AccumulatorPipelineStorage accumulator;
+      alignas(16) CLCThrottlePipelineStorage clc_throttle;
+      alignas(16) arch::ClusterBarrier tmem_dealloc;
+
+      // Below is the only difference between PipelineStorageImpl<false> and PipelineStorageImpl<true>
+      using TensorMapReadyPipelineStorage = typename TensorMapReadyPipeline::SharedStorage;
+      alignas(16) TensorMapReadyPipelineStorage tensor_map_ready;
+    };
+
+    using PipelineStorage = cute::conditional_t<IsTensorMapUpdateAsync, PipelineStorageImplWithAsyncUpdate, PipelineStorageImplWithoutAsyncUpdate>;
+
+    PipelineStorage pipelines;
+
+    alignas(16) CLCResponseWithAdditionalInformation clc_response[IsTensorMapUpdateAsync ? 2 : 1][SchedulerPipelineStageCount];
     uint32_t tmem_base_ptr;
 
     struct TensorMapStorage : cute::aligned_struct<128, _1> {
@@ -214,7 +282,7 @@ public:
       using MainloopTensorMapStorage = typename CollectiveMainloop::TensorMapStorage;
       alignas(128) EpilogueTensorMapStorage epilogue;
       alignas(128) MainloopTensorMapStorage mainloop;
-    } tensormaps;
+    } tensormaps[(NumTensorMapUpdaterThreads/NumThreadsPerWarp)+1];
 
     struct TensorStorage : cute::aligned_struct<128, _1> {
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
@@ -226,7 +294,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -253,7 +320,9 @@ public:
     Sched        = 1,
     MainloopLoad = 2,
     EpilogueLoad = 3,
-    Epilogue     = 4
+    Epilogue     = 4,
+    // TensorMapUpdater starts at 256 thread alignment
+    TensorMapUpdater = 8
   };
 
   struct IsParticipant {
@@ -262,6 +331,7 @@ public:
     uint32_t main_load = false;
     uint32_t epi_load  = false;
     uint32_t epilogue  = false;
+    uint32_t tensor_map_updater = false;
   };
 
   //
@@ -480,18 +550,20 @@ public:
     using namespace cute;
     using X = Underscore;
 
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     auto problem_shape = params.problem_shape;
 
     // Account for more than one epilogue warp
     int warp_idx = canonical_warp_idx_sync();
-    WarpCategory warp_category = warp_idx < static_cast<int>(WarpCategory::Epilogue) ? WarpCategory(warp_idx)
-                                                                                     : WarpCategory::Epilogue;
+    WarpCategory warp_category = warp_idx < static_cast<int>(WarpCategory::Epilogue)         ? WarpCategory(warp_idx)
+                               : warp_idx < static_cast<int>(WarpCategory::TensorMapUpdater) ? WarpCategory::Epilogue
+                                                                                             : WarpCategory::TensorMapUpdater;
 
     uint32_t lane_predicate = cute::elect_one_sync();
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{});
     int cluster_size = size(cluster_shape);
     uint32_t cta_rank_in_cluster = cute::block_rank_in_cluster();
-    bool is_first_cta_in_cluster = IsSchedDynamicPersistent ? (cta_rank_in_cluster == 0) : true;
+    bool is_first_cta_in_cluster = cta_rank_in_cluster == 0;
     int cta_coord_v = cta_rank_in_cluster % size<0>(typename TiledMma::AtomThrID{});
     bool is_mma_leader_cta = cta_coord_v == 0;
     constexpr bool has_mma_peer_cta = size(AtomThrShapeMNK{}) == 2;
@@ -508,11 +580,56 @@ public:
     bool is_epi_load_needed = collective_epilogue.is_producer_load_needed();
     IsParticipant is_participant = {
       (warp_category == WarpCategory::MMA),                                 // mma
-      (warp_category == WarpCategory::Sched) && is_first_cta_in_cluster,    // sched
+      (warp_category == WarpCategory::Sched) && (IsSchedDynamicPersistent ? is_first_cta_in_cluster : true),    // sched
       (warp_category == WarpCategory::MainloopLoad),                        // main_load
       (warp_category == WarpCategory::EpilogueLoad) && is_epi_load_needed,  // epi_load
-      (warp_category == WarpCategory::Epilogue)                             // epilogue
+      (warp_category == WarpCategory::Epilogue),                            // epilogue
+      (warp_category == WarpCategory::TensorMapUpdater) && IsTensorMapUpdateAsync    // tensor_map_updater
     };
+
+    int32_t sm_id = static_cast<int32_t>(cutlass::arch::SmId());
+    if constexpr (IsGroupedGemmKernel) {
+      // In case user wants to engage less SMs than available on device
+      sm_id = blockIdx.x + (blockIdx.y * gridDim.x);
+    }
+    auto tensormaps_init_main_load = [&] () {
+      if constexpr (IsTensorMapUpdateAsync) {
+        return collective_mainloop.template tensormaps_init<IsTensorMapUpdateAsync>(
+          params.mainloop,
+          shared_storage.tensormaps[0].mainloop,
+          params.hw_info.sm_count,
+          sm_id
+        );
+      }
+      else {
+        return nullptr;
+      }
+    };
+
+    auto tensormaps_init_epi_load = [&] () {
+      if constexpr (IsTensorMapUpdateAsync) {
+        return collective_epilogue.template tensormaps_init<true /*IsLoad*/, IsTensorMapUpdateAsync>(
+          params.epilogue,
+          shared_storage.tensormaps[0].epilogue,
+          params.hw_info.sm_count,
+          sm_id
+        );
+      }
+      else {
+        return nullptr;
+      }
+    };
+
+    decltype(tensormaps_init_main_load()) pre_init_main_load_tensormaps;
+    decltype(tensormaps_init_epi_load()) pre_init_epi_load_tensormaps;
+
+
+    if (is_participant.main_load) {
+      pre_init_main_load_tensormaps = tensormaps_init_main_load();
+    }
+    if (is_participant.epi_load) {
+      pre_init_epi_load_tensormaps = tensormaps_init_epi_load();
+    }
 
     // Mainloop Load pipeline
     typename MainloopPipeline::Params mainloop_pipeline_params;
@@ -581,9 +698,14 @@ public:
       clc_pipeline_params.transaction_bytes = CLCResponseSize;
     } 
     else {
-      clc_pipeline_params.consumer_arv_count = NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads;
-      if (is_epi_load_needed) {
-        clc_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+      if constexpr (IsTensorMapUpdateAsync) {
+        clc_pipeline_params.consumer_arv_count = NumThreadsPerWarp;
+      }
+      else {
+        clc_pipeline_params.consumer_arv_count = NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads;
+        if (is_epi_load_needed) {
+          clc_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+        }
       }
     }
     // Now declare the pipeline outside the if constexpr
@@ -593,6 +715,32 @@ public:
       }
       else {
         return CLCPipeline(shared_storage.pipelines.clc, clc_pipeline_params);
+      }
+    }();
+
+    auto tensor_map_ready_pipeline = [&] () {
+      if constexpr (IsGroupedGemmKernel) {
+        // TMA update ready pipeline
+        typename TensorMapReadyPipeline::Params tensor_map_ready_pipeline_params;
+
+        if (WarpCategory::TensorMapUpdater == warp_category) {
+          tensor_map_ready_pipeline_params.role = TensorMapReadyPipeline::ThreadCategory::Producer;
+        }
+        else {
+          tensor_map_ready_pipeline_params.role = TensorMapReadyPipeline::ThreadCategory::Consumer;
+        }
+
+        tensor_map_ready_pipeline_params.initializing_warp = 8;
+        tensor_map_ready_pipeline_params.producer_arv_count = NumThreadsPerWarp;
+
+        tensor_map_ready_pipeline_params.consumer_arv_count = NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads;
+        if (is_epi_load_needed) {
+          tensor_map_ready_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+        }
+        return TensorMapReadyPipeline(shared_storage.pipelines.tensor_map_ready, tensor_map_ready_pipeline_params);
+      }
+      else {
+        return clc_pipeline;
       }
     }();
 
@@ -672,19 +820,66 @@ public:
     CLCPipelineState clc_pipe_consumer_state;
     CLCPipelineState clc_pipe_producer_state = cutlass::make_producer_start_state<CLCPipeline>();
 
+    TensorMapReadyPipelineState tensor_map_ready_pipe_consumer_state;
+    TensorMapReadyPipelineState tensor_map_ready_pipe_producer_state = cutlass::make_producer_start_state<TensorMapReadyPipeline>();
+
     AccumulatorPipelineState accumulator_pipe_consumer_state;
     AccumulatorPipelineState accumulator_pipe_producer_state = cutlass::make_producer_start_state<AccumulatorPipeline>();
 
     dim3 block_id_in_cluster = cute::block_id_in_cluster();
-    int32_t sm_id = static_cast<int32_t>(cutlass::arch::SmId());
 
     // Calculate mask after cluster barrier arrival
     mainloop_pipeline.init_masks(cluster_shape, block_id_in_cluster);
     accumulator_pipeline.init_masks(cluster_shape, block_id_in_cluster);
 
     // TileID scheduler
-    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
+    TileScheduler scheduler(
+      (!IsTensorMapUpdateAsync || is_participant.sched || is_participant.tensor_map_updater)
+      ? &shared_storage.clc_response[0][0]
+      : &shared_storage.clc_response[1][0],
+      params.scheduler,
+      block_id_in_cluster
+    );
+
+    auto work_tile_info = [&] () {
+      if constexpr (!IsSchedDynamicPersistent) {
+        // Ensure that the prefetched kernel does not touch
+        // unflushed global memory prior to this instruction.
+        // For the static grouped scheduler, the problem shapes
+        // might be produced by a previous kernel in global memory.
+        cutlass::arch::wait_on_dependent_grids();
+      }
+      if constexpr (IsTensorMapUpdateAsync) {
+        return scheduler.initial_work_tile_info(cluster_shape, [] (typename TileScheduler::CLCResponse response) {
+          CLCResponseWithAdditionalInformation response_with_additional_info = response;
+          response_with_additional_info.TMA_stage = 0;
+          response_with_additional_info.batch_changed = 1;
+          return response_with_additional_info;
+        });
+      }
+      else {
+        return scheduler.initial_work_tile_info(cluster_shape);
+      }
+    } ();
+
+    auto get_tma_desc_offset = [] ([[maybe_unused]] const auto& tile_info) {
+      if constexpr (IsTensorMapUpdateAsync) {
+        return tile_info.TMA_stage;
+      }
+      else {
+        return 0;
+      }
+    };
+
+    auto get_tensormap = [] (auto& tensormaps, [[maybe_unused]] auto tma_desc_offset) {
+      if constexpr (IsTensorMapUpdateAsync) {
+        return tensormaps[tma_desc_offset];
+      }
+      else {
+        return tensormaps;
+      }
+    };
+
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
     
     //
@@ -698,44 +893,67 @@ public:
         // When problem shapes are only on device, the grid launched may be larger than the total number of blocks across groups
         return;
       }
-      // In case user wants to engage less SMs than available on device
-      sm_id = blockIdx.x + (blockIdx.y * gridDim.x);
     }
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
 
     if (is_participant.main_load) {
-    auto load_inputs = collective_mainloop.load_init(
-      problem_shape_MNKL, params.mainloop,
-      shared_storage.tensors.mainloop,
-      shared_storage.tensormaps.mainloop,
-      params.hw_info.sm_count, sm_id, work_tile_info.L_idx);
-
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
       cutlass::arch::wait_on_dependent_grids();
 
+      auto load_inputs = collective_mainloop.load_init<IsTensorMapUpdateAsync>(
+        problem_shape_MNKL, params.mainloop,
+        shared_storage.tensors.mainloop,
+        shared_storage.tensormaps[0].mainloop,
+        params.hw_info.sm_count, sm_id, problem_shape.groups(), work_tile_info.L_idx);
+
       bool do_load_order_arrive = is_epi_load_needed;
       Tensor gA_mkl = get<0>(load_inputs);
+
       // Fetch a copy of tensormaps for the CTA from Params
-      auto input_tensormaps = get<rank(load_inputs) - 1>(load_inputs);
+      auto input_tensormaps = [&] ([[maybe_unused]] auto inputs) {
+        if constexpr (IsTensorMapUpdateAsync) {
+          return pre_init_main_load_tensormaps;
+        }
+        else {
+          static constexpr size_t idx = rank(inputs) - 1;
+          return get<idx>(inputs);
+        }
+      } (load_inputs);
+
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
+      auto pad_inputs = [] (auto& inputs, [[maybe_unused]] auto tensormaps) {
+        if constexpr (IsTensorMapUpdateAsync) {
+          return cute::tuple_cat(inputs, cute::make_tuple(tensormaps));
+        }
+        else {
+          return inputs;
+        }
+      };
 
       // Initial batch's tensor address update
       // Even the first tile for a CTA can be from any of the batches.
       // And during initialization of the first TMA descriptor on host, we don't initialize to the first batch due to that args value being device-only.
+      bool is_first_iteration = true;
       bool did_batch_change = true;
       bool requires_clc_query = true;
 
       do {
+        auto tma_desc_offset = get_tma_desc_offset(work_tile_info);
         int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gA_mkl)); // Usually just returns work_tile_info.L_idx;
         if constexpr (IsGroupedGemmKernel) {
           problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(curr_batch), 1);
         }
-        if (did_batch_change) {
+        if (IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change) {
           collective_mainloop.tensormaps_perform_update(
-            shared_storage.tensormaps.mainloop,
+            shared_storage.tensormaps[0].mainloop,
             params.mainloop,
-            input_tensormaps,
+            get_tensormap(input_tensormaps, tma_desc_offset),
             problem_shape,
             curr_batch
           );
@@ -763,10 +981,11 @@ public:
           params.mainloop,
           mainloop_pipeline,
           mainloop_pipe_producer_state,
-          load_inputs,
+          pad_inputs(load_inputs, get_tensormap(input_tensormaps, tma_desc_offset)),
           cta_coord_mnk,
           k_tile_iter, k_tile_prologue,
-          did_batch_change
+          IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change, // did_batch_change
+          curr_batch
         );
         mainloop_pipe_producer_state = mainloop_producer_state_next;
 
@@ -779,10 +998,11 @@ public:
           params.mainloop,
           mainloop_pipeline,
           mainloop_pipe_producer_state,
-          load_inputs,
+          pad_inputs(load_inputs, get_tensormap(input_tensormaps, tma_desc_offset)),
           cta_coord_mnk,
           k_tile_iter_next, k_tile_count - k_tile_prologue,
-          false /* did_batch_change - prologue loads handle tensormap acquire */
+          false, /* did_batch_change - prologue loads handle tensormap acquire */
+          curr_batch
         );
         mainloop_pipe_producer_state = mainloop_producer_state_next_;
 
@@ -791,16 +1011,17 @@ public:
 
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
           work_tile_info,
-          clc_pipeline,
-          clc_pipe_consumer_state
+          tensor_map_ready_pipeline,
+          tensor_map_ready_pipe_consumer_state
         );
         work_tile_info = next_work_tile_info;
         cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
         requires_clc_query = increment_pipe;
         if (increment_pipe) {
-          ++clc_pipe_consumer_state;
+          ++tensor_map_ready_pipe_consumer_state;
         }
         // For subsequent tiles, check if batch changes and therefore, we need tensormap updates
+        is_first_iteration = false;
         did_batch_change = curr_batch != idx2crd(work_tile_info.L_idx, shape<4>(gA_mkl));
       } while (work_tile_info.is_valid());
       collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
@@ -808,6 +1029,12 @@ public:
     }
 
     else if (is_participant.sched) {
+
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
       // Grouped GEMM uses static tile scheduler
       if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
@@ -853,20 +1080,135 @@ public:
       }
       else {
 
-        cutlass::arch::wait_on_dependent_grids();
+        static_assert(IsTensorMapUpdateAsync || IsSchedDynamicPersistent, "We only support async tensor map update with static persistent scheduler");
+
+        auto update_tensor_map_stages = [&] (typename TileScheduler::CLCResponse next_work_tile_info_from_scheduler) {
+          if constexpr (IsTensorMapUpdateAsync) {
+            CLCResponseWithAdditionalInformation next_work_tile_info = next_work_tile_info_from_scheduler;
+            auto tensor_map_buffer_stage = work_tile_info.TMA_stage;
+            next_work_tile_info.batch_changed = work_tile_info.L_idx != next_work_tile_info.L_idx;
+            if (next_work_tile_info.batch_changed) {
+              ++tensor_map_buffer_stage;
+            }
+            next_work_tile_info.TMA_stage = tensor_map_buffer_stage;
+            return next_work_tile_info;
+          }
+        };
 
         do {
-          auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
+          auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, 1, update_tensor_map_stages);
           work_tile_info = next_work_tile_info;
           if (increment_pipe) {
             ++clc_pipe_producer_state;
           }
         } while (work_tile_info.is_valid());
-        clc_pipeline.producer_tail(clc_pipe_producer_state);
+
+        // Push additional invalid work items for all tensormap updater threads
+        for (int i = 0; i < NumTensorMapUpdaterThreads / NumThreadsPerWarp;) {
+          auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, 1, update_tensor_map_stages);
+          work_tile_info = next_work_tile_info;
+          if (increment_pipe) {
+            ++clc_pipe_producer_state;
+            ++i;
+          }
+        }
+      }
+    }
+
+    else if (is_participant.tensor_map_updater) {
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
+
+      if constexpr (IsTensorMapUpdateAsync) {
+        auto updater_id = canonical_warp_idx_sync() - static_cast<int>(WarpCategory::TensorMapUpdater);
+
+        clc_pipe_consumer_state += updater_id;
+        tensor_map_ready_pipe_producer_state += updater_id;
+
+        auto tensormaps_mainloop = collective_mainloop.tensormaps_init<IsTensorMapUpdateAsync>(
+          params.mainloop,shared_storage.tensormaps[updater_id+1].mainloop, params.hw_info.sm_count, sm_id);
+        auto tensormaps_epilogue_load = collective_epilogue.template tensormaps_init<true /*IsLoad*/, IsTensorMapUpdateAsync /*IsTmaAsyncUpdate*/>(
+          params.epilogue, shared_storage.tensormaps[updater_id+1].epilogue, params.hw_info.sm_count, sm_id);
+        auto tensormaps_epilogue_store = collective_epilogue.template tensormaps_init<false /*IsLoad*/, IsTensorMapUpdateAsync /*IsTmaAsyncUpdate*/>(
+          params.epilogue, shared_storage.tensormaps[updater_id+1].epilogue, params.hw_info.sm_count, sm_id);
+
+        auto update_tensor_map_and_increment_pipe_if_needed = [&] (auto &next_work_tile_info, auto &increment_pipe) {
+          auto next_batch = next_work_tile_info.L_idx;
+          auto did_batch_change = next_work_tile_info.batch_changed;
+
+          if (increment_pipe) {
+            tensor_map_ready_pipeline.producer_acquire(tensor_map_ready_pipe_producer_state);
+            if (next_work_tile_info.is_valid() && did_batch_change) {
+              auto tma_desc_offset = get_tma_desc_offset(next_work_tile_info);
+              collective_mainloop.template tensormaps_perform_update<false /*WaitForInflightTmaRequests*/>(
+                shared_storage.tensormaps[updater_id+1].mainloop,
+                params.mainloop,
+                tensormaps_mainloop[tma_desc_offset],
+                problem_shape,
+                next_batch
+              );
+
+              if (collective_epilogue.is_producer_load_needed()) {
+                collective_epilogue.template tensormaps_perform_update<true /*IsLoad*/, false /*WaitForInflightTmaRequests*/>(
+                  shared_storage.tensormaps[updater_id+1].epilogue,
+                  params.epilogue,
+                  tensormaps_epilogue_load[tma_desc_offset],
+                  problem_shape,
+                  next_batch
+                );
+              }
+
+              collective_epilogue.template tensormaps_perform_update<false /*IsLoad*/, false /*WaitForInflightTmaRequests*/>(
+                shared_storage.tensormaps[updater_id+1].epilogue,
+                params.epilogue,
+                tensormaps_epilogue_store[tma_desc_offset],
+                problem_shape,
+                next_batch
+              );
+              
+              collective_mainloop.tensormaps_fence_acquire(tensormaps_mainloop[tma_desc_offset]);
+
+              if (collective_epilogue.is_producer_load_needed()) {
+                collective_epilogue.template tensormaps_fence_acquire<true /* IsEpiLoad */>(tensormaps_epilogue_load[tma_desc_offset]);
+              }
+              collective_epilogue.template tensormaps_fence_acquire<false /* IsEpiLoad */>(tensormaps_epilogue_store[tma_desc_offset]);
+            }
+            if (cute::elect_one_sync()) {
+              cute::tma_desc_commit_group();
+              shared_storage.clc_response[1][tensor_map_ready_pipe_producer_state.index()] = next_work_tile_info;
+              cutlass::arch::fence_view_async_shared();
+              cute::tma_desc_wait_group();
+            }
+
+            // Signal the other warps that the TMA update is complete
+            tensor_map_ready_pipeline.producer_commit(tensor_map_ready_pipe_producer_state);
+            tensor_map_ready_pipe_producer_state += (NumTensorMapUpdaterThreads / NumThreadsPerWarp);
+            clc_pipe_consumer_state += (NumTensorMapUpdaterThreads / NumThreadsPerWarp);
+          }
+        };
+
+        do {
+
+          auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+            work_tile_info,
+            clc_pipeline,
+            clc_pipe_consumer_state
+          );
+          update_tensor_map_and_increment_pipe_if_needed(next_work_tile_info, increment_pipe);
+          work_tile_info = next_work_tile_info;
+
+        } while (work_tile_info.is_valid());
       }
     }
 
     else if (is_participant.mma) {
+
       // Tmem allocation sequence
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
@@ -875,18 +1217,12 @@ public:
       collective_mainloop.set_tmem_offsets(tmem_storage, tmem_base_ptr);
       auto mma_inputs = collective_mainloop.mma_init(tmem_storage, shared_storage.tensors.mainloop);
 
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
       do {
-
-        // Fetch next work tile
-        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
-          work_tile_info,
-          clc_pipeline,
-          clc_pipe_consumer_state
-        );
-
-        if (increment_pipe) {
-          ++clc_pipe_consumer_state;
-        }
 
         if constexpr (IsGroupedGemmKernel) {
           problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
@@ -914,6 +1250,17 @@ public:
           accumulator_pipeline.producer_commit(accumulator_pipe_producer_state);
         }
         ++accumulator_pipe_producer_state;
+
+        // Fetch next work tile
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+          work_tile_info,
+          tensor_map_ready_pipeline,
+          tensor_map_ready_pipe_consumer_state
+        );
+
+        if (increment_pipe) {
+          ++tensor_map_ready_pipe_consumer_state;
+        }
 
         work_tile_info = next_work_tile_info;
         cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
@@ -949,6 +1296,12 @@ public:
     }
 
     else if (is_participant.epi_load) {
+
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
       cutlass::arch::wait_on_dependent_grids();
@@ -958,37 +1311,42 @@ public:
       int current_wave = 0;
 
       // Fetch a copy of tensormaps for the CTA from Params
-      auto epi_load_tensormap = get<0>(collective_epilogue.load_init(
-          params.epilogue, shared_storage.tensormaps.epilogue, params.hw_info.sm_count, sm_id));
+      auto epi_load_tensormap = [&] () {
+        if constexpr (IsTensorMapUpdateAsync) {
+          collective_epilogue.template load_init<IsTensorMapUpdateAsync>(
+            params.epilogue,
+            shared_storage.tensormaps[0].epilogue,
+            params.hw_info.sm_count,
+            sm_id
+          );
+          return pre_init_epi_load_tensormaps;
+        }
+        else {
+          return get<0>(collective_epilogue.template load_init<IsTensorMapUpdateAsync>(
+            params.epilogue, shared_storage.tensormaps[0].epilogue, params.hw_info.sm_count, sm_id));
+        }
+      } ();
+
       // Initial batch's tensor address update
       // Even the first tile for a CTA can be from any of the batches.
       // And during initialization of the first TMA descriptor on host, we don't initialize to the first batch due to that args value being device-only.
+      bool is_first_iteration = true;
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = true;
 
       do {
         int32_t curr_batch = work_tile_info.L_idx;
-        if (did_batch_change) {
-          collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
-            shared_storage.tensormaps.epilogue,
+        auto tma_desc_offset = get_tma_desc_offset(work_tile_info);
+        if (IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change) {
+          collective_epilogue.template tensormaps_perform_update<IsEpiLoad, !IsTensorMapUpdateAsync>(
+            shared_storage.tensormaps[0].epilogue,
             params.epilogue,
-            epi_load_tensormap,
+            get_tensormap(epi_load_tensormap, tma_desc_offset),
             problem_shape,
             curr_batch
           );
         }
         bool compute_epilogue = TileScheduler::compute_epilogue(work_tile_info, params.scheduler);
-        // Get current work tile and fetch next work tile
-        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
-          work_tile_info,
-          clc_pipeline,
-          clc_pipe_consumer_state
-        );
-        work_tile_info = next_work_tile_info;
-
-        if (increment_pipe) {
-          ++clc_pipe_consumer_state;
-        }
 
         if (compute_epilogue) {
           if (do_load_order_wait) {
@@ -1009,7 +1367,7 @@ public:
             TileShape{},
             TiledMma{},
             shared_storage.tensors.epilogue,
-            cute::make_tuple(epi_load_tensormap, did_batch_change),
+            cute::make_tuple(get_tensormap(epi_load_tensormap, tma_desc_offset), IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change),
             reverse_epi_n
           );
 
@@ -1017,9 +1375,21 @@ public:
         }
         current_wave++;
 
+        // Fetch the next work tile
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+          work_tile_info,
+          tensor_map_ready_pipeline,
+          tensor_map_ready_pipe_consumer_state
+        );
+        work_tile_info = next_work_tile_info;
+
+        if (increment_pipe) {
+          ++tensor_map_ready_pipe_consumer_state;
+        }
         // Calculate the cta coordinates of the next work tile
         cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
         // For subsequent tiles, check if batch changes and therefore, we need tensormap updates
+        is_first_iteration = false;
         did_batch_change = curr_batch != work_tile_info.L_idx;
       } while (work_tile_info.is_valid());
 
@@ -1035,6 +1405,11 @@ public:
     }
 
     else if (is_participant.epilogue) {
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_alloc<AccumRegisterRequirement>();
+      }
+
       // Wait for tmem allocate here
       tmem_allocation_result_barrier.arrive_and_wait();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
@@ -1043,20 +1418,43 @@ public:
       auto warp_idx_in_epi = canonical_warp_idx_sync() - static_cast<int>(WarpCategory::Epilogue);
       bool do_tail_store = false;
       // Fetch a copy of tensormaps for the CTA from Params
-      auto epi_store_tensormap = get<0>(collective_epilogue.store_init(
-          params.epilogue, shared_storage.tensormaps.epilogue, params.hw_info.sm_count, sm_id));
+      auto epi_store_tensormap = [&] () {
+        if constexpr (IsTensorMapUpdateAsync) {
+          collective_epilogue.template store_init<IsTensorMapUpdateAsync /*IsTmaAsyncUpdate*/>(
+            params.epilogue,
+            shared_storage.tensormaps[0].epilogue,
+            params.hw_info.sm_count,
+            sm_id
+          );
+    
+          return collective_epilogue.template tensormaps_init<false /*IsLoad*/, IsTensorMapUpdateAsync /*IsTmaAsyncUpdate*/>(
+            params.epilogue,
+            shared_storage.tensormaps[0].epilogue,
+            params.hw_info.sm_count,
+            sm_id,
+            warp_idx_in_epi == 0
+          );
+        }
+        else {
+          return get<0>(collective_epilogue.template store_init<IsTensorMapUpdateAsync>(
+            params.epilogue, shared_storage.tensormaps[0].epilogue, params.hw_info.sm_count, sm_id));
+        }
+      } ();
+
       // Initial batch's tensor address update
       // Even the first tile for a CTA can be from any of the batches.
       // And during initialization of the first TMA descriptor on host, we don't initialize to the first batch due to that args value being device-only.
+      bool is_first_iteration = true;
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = false;
       do {
         int32_t curr_batch = work_tile_info.L_idx;
-        if (did_batch_change && warp_idx_in_epi == 0) {
-          collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
-            shared_storage.tensormaps.epilogue,
+        auto tma_desc_offset = get_tma_desc_offset(work_tile_info);
+        if ((IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change) && warp_idx_in_epi == 0) {
+          collective_epilogue.template tensormaps_perform_update<IsEpiLoad, !IsTensorMapUpdateAsync>(
+            shared_storage.tensormaps[0].epilogue,
             params.epilogue,
-            epi_store_tensormap,
+            get_tensormap(epi_store_tensormap, tma_desc_offset),
             problem_shape,
             curr_batch
           );
@@ -1064,12 +1462,12 @@ public:
         // Fetch next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
           work_tile_info,
-          clc_pipeline,
-          clc_pipe_consumer_state
+          tensor_map_ready_pipeline,
+          tensor_map_ready_pipe_consumer_state
         );
 
         if (increment_pipe) {
-          ++clc_pipe_consumer_state;
+          ++tensor_map_ready_pipe_consumer_state;
         }
 
         // Accumulator stage slice
@@ -1090,7 +1488,11 @@ public:
         //
         // Epilogue and write to gD
         //
-        auto [load_state_next, store_state_next, acc_state_next] = collective_epilogue.template store<IsOverlappingAccum>(
+        auto [
+          load_state_next,
+          store_state_next,
+          acc_state_next
+        ] = collective_epilogue.template store<IsOverlappingAccum>(
           epi_load_pipeline,
           epi_load_pipe_consumer_state,
           epi_store_pipeline,
@@ -1104,7 +1506,7 @@ public:
           TiledMma{},
           accumulator,
           shared_storage.tensors.epilogue,
-          cute::make_tuple(epi_store_tensormap, did_batch_change)
+          cute::make_tuple(get_tensormap(epi_store_tensormap, tma_desc_offset), IsTensorMapUpdateAsync ? is_first_iteration : did_batch_change)
         );
         epi_load_pipe_consumer_state = load_state_next;
         epi_store_pipe_producer_state = store_state_next;
@@ -1114,6 +1516,7 @@ public:
         work_tile_info = next_work_tile_info;
         cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
         // For subsequent tiles, check if batch changes and therefore, we need tensormap updates
+        is_first_iteration = false;
         did_batch_change = curr_batch != work_tile_info.L_idx;
       } while (work_tile_info.is_valid());
 
@@ -1138,6 +1541,11 @@ public:
     }
 
     else {
+      if constexpr (IsTensorMapUpdateAsync) {
+        // Register reconfiguration
+        arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      }
+
     }
   }
 };
