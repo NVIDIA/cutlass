@@ -65,7 +65,13 @@ GeneratorTargetNames = {
 
 ###################################################################################################
 
-#
+# Architecture constants import with fallback for relative imports
+try:
+  from cutlass_library.arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN, INTEL_XE12, INTEL_XE20
+except ImportError:
+  from arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN, INTEL_XE12, INTEL_XE20
+
+
 class DataType(enum.Enum):
   void = enum_auto()  # primarily used to disable C tensor for epilogues
   b1 = enum_auto()
@@ -1009,7 +1015,8 @@ class Target(enum.Enum):
   library = enum_auto()
 #
 ArchitectureNames = {
-  11: 'pvc',
+  INTEL_XE12: 'pvc',
+  INTEL_XE20: 'bmg',
   50: 'maxwell',
   60: 'pascal',
   61: 'pascal',
@@ -1022,7 +1029,8 @@ ArchitectureNames = {
 
 #
 SharedMemPerCC = {
-  11: 128, # 128 KiB of SMEM on Intel PVC
+  INTEL_XE12: 128, # 128 KiB of SMEM on Intel PVC
+  INTEL_XE20: 128, # 128 KiB of SMEM on Intel BMG
   70:  96, #  96KB of SMEM
   72:  96, #  96KB of SMEM
   75:  64, #  64KB of SMEM

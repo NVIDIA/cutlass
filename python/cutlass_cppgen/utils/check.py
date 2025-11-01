@@ -37,7 +37,14 @@ Utility functions for checking constraints on kernels and calculating kernel att
 import ctypes
 
 from cutlass_library import DataTypeSize, OperationKind, SharedMemPerCC
-
+from cutlass_library.arch_constants import (
+    INTEL_XE_ARCH_MIN, 
+    INTEL_XE_ARCH_MAX, 
+    INTEL_XE12, 
+    INTEL_XE20, 
+    INTEL_XE35,
+    is_intel_xe_arch
+)
 import cutlass_cppgen
 from cutlass_cppgen.backend.library import TileDescription
 
@@ -117,16 +124,16 @@ def valid_stage_count(
                 "result in compilation errors if the combination of tile shape, "
                 "stage count, and shared memory requirement of the epilogue exceeds "
                 "the available shared memory per SM.")
-
-    if kernel_cc == 11:
+    print(f"KernelCC: {kernel_cc}")
+    if is_intel_xe_arch(kernel_cc):
         if (td.stages is None or td.stages == 0):
-            # Support for Intel PVC GPU currently does not allow explicit
+            # Support for Intel Xe GPUs currently does not allow explicit
             # specification of the stage count. With None or 0, the 
             # CollectiveBuilder automatically determines the stage count to use.
             return (True, "")
         elif verbose:
-            cutlass.logger.warning(
-                "Setting an explicit stage count for Intel PVC GPU is currently "
+            cutlass_cppgen.logger.warning(
+                "Setting an explicit stage count for Intel Xe GPUs is currently "
                 "not supported.")
 
     if td.stages <= 0:

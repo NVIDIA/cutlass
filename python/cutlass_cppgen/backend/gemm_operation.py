@@ -39,6 +39,7 @@ from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart = lazy_import("cuda.cudart")
 from cutlass_library import SubstituteTemplate
+from cutlass_library.arch_constants import is_intel_xe_arch
 import numpy as np
 
 import dpctl
@@ -915,7 +916,7 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
         return 0
 
     def initialize(self):
-        if self.operation.arch == 11:
+        if is_intel_xe_arch(self.operation.arch):
             return
 
         err, = cuda.cuFuncSetAttribute(
@@ -1318,7 +1319,7 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
 
     def emit(self, operation):
         # Support built-in epilogue functors or user-defined functions
-        if operation.arch == 11:
+        if is_intel_xe_arch(operation.arch):
             stage_count_type = "cutlass::gemm::collective::StageCountAuto"
         elif operation.tile_description.stages is None or operation.tile_description.stages == 0:
             stage_count_type = "cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>"
@@ -1340,7 +1341,7 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
         if operation.tile_description.tile_scheduler is not None:
             tschedule = operation.tile_description.tile_scheduler
 
-        arch = "cutlass::arch::IntelXe" if operation.arch == 11 else f"cutlass::arch::Sm{operation.arch}"
+        arch = f"cutlass::arch::Xe{operation.arch}" if is_intel_xe_arch(operation.arch) else f"cutlass::arch::Sm{operation.arch}"
         values = {
             "operation_name": operation.procedural_name(),
             "operation_suffix": self.operation_suffix,
@@ -1718,10 +1719,15 @@ class GemmOperationBase:
     def procedural_name(self):
         """The full procedural name indicates architecture, extended name, tile size, and layout."""
         opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
-        if self.api == ApiVersion.v3x and (self.arch >= 90 or self.arch == 11):
-            kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
+        if self.api == ApiVersion.v3x and (self.arch >= 90 or is_intel_xe_arch(self.arch)):
+            arch_prefix="sm"
+            if is_intel_xe_arch(self.arch):
+                arch_prefix="Xe"
+            
+            kernel_name_template = "cutlass{p}_{sm_or_xe}{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
             return kernel_name_template.format(
                 p=self.prefix,
+                sm_or_xe=arch_prefix,
                 ar=self.arch,
                 op=opcode_class_name,
                 ex=self.extended_name_3x(),

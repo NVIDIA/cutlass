@@ -46,7 +46,7 @@ from cutlass_library import (
     OpcodeClass,
     TileSchedulerType
 )
-
+from cutlass_library.arch_constants import is_intel_xe_arch
 
 # The following block implements enum.auto() for Python 3.5 variants that don't include it such
 # as the default 3.5.2 on Ubuntu 16.04.
@@ -473,7 +473,7 @@ def api_version(arch, opclass, dtype):
     :return: API version to be used in code emission
     :rtype: ApiVersion
     """
-    if opclass == OpcodeClass.TensorOp and arch == 11:
+    if opclass == OpcodeClass.TensorOp and is_intel_xe_arch(arch):
         return ApiVersion.v3x
 
     if (arch >= 90 and

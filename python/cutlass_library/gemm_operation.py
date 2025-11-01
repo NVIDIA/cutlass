@@ -48,10 +48,16 @@ try:
   if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
     raise ImportError("Disabling attempt to import cutlass_library")
   from cutlass_library.library import *
-  from cutlass_library.arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
+  from cutlass_library.arch_constants import (
+    INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN,
+    INTEL_XE12, INTEL_XE20, INTEL_XE35
+  )
 except ImportError:
   from library import *
-  from arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
+  from arch_constants import (
+    INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN,
+    INTEL_XE12, INTEL_XE20, INTEL_XE35
+  )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -392,16 +398,48 @@ class GemmOperation:
           l = self.layout_name(),
           a = str(max(self.A.alignment, self.B.alignment)))
     else:
-      # Intel Xe architectures use xe{cc} naming (e.g., xe20 for BMG, xe12 for PVC)
-      threadblock = self.tile_description.procedural_name()
-      return "cutlass{p}_xe{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
-          p = self.prefix,
-          ar = self.arch,
-          op = opcode_class_name,
-          ex = self.extended_name(),
-          tb = threadblock,
-          l = self.layout_name(),
-          a = str(max(self.A.alignment, self.B.alignment)))
+      # Intel Xe architectures use xe{cc} naming with similar detail level as NVIDIA
+      # Format: cutlass{p}_xe{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}
+      if self.is_3x:
+        # Use 3x naming convention with full details like NVIDIA SM90+
+        tile_shape = self.get_collective_tile_shape()
+        extended = self.extended_name_3x()
+        
+        # Add D type suffix if different from C type to distinguish mixed precision variants
+        if self.D.element != self.C.element:
+          extended += f"_d{DataTypeNames[self.D.element]}"
+        
+        kernel_name_template = "cutlass{p}_xe{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}"
+        return kernel_name_template.format(
+            p = self.prefix,
+            ar = self.arch,
+            op = opcode_class_name,
+            ex = extended,
+            ct = '_' + 'x'.join([str(i) for i in tile_shape]) if tile_shape[0] > 0 else "",
+            cs = '_' + 'x'.join([str(i) for i in self.tile_description.cluster_shape]),
+            l = self.tile_description.stages,
+            s = self.layout_name_3x(),
+            al = str(max(self.A.alignment, self.B.alignment)),
+            t = TileSchedulerSuffixes[self.tile_scheduler],
+            k = self.kernel_schedule_name_3x(),
+            e = self.epilogue_schedule_name_3x())
+      else:
+        # Legacy naming for non-3x Intel Xe operations
+        threadblock = self.tile_description.procedural_name()
+        extended = self.extended_name()
+        
+        # Add D type suffix if different from C type to distinguish mixed precision variants
+        if self.D.element != self.C.element:
+          extended += f"_d{DataTypeNames[self.D.element]}"
+        
+        return "cutlass{p}_xe{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
+            p = self.prefix,
+            ar = self.arch,
+            op = opcode_class_name,
+            ex = extended,
+            tb = threadblock,
+            l = self.layout_name(),
+            a = str(max(self.A.alignment, self.B.alignment)))
 
   #
   def configuration_name(self):

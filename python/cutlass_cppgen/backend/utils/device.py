@@ -81,8 +81,8 @@ def device_cc(device: int = -1) -> int:
         device = cutlass_cppgen.device_id()
 
     if cutlass_cppgen._use_sycl:
-        # Using '11' to encode Intel PVC as an integer in the expected format.
-        return 11
+        # Using '12' to encode Intel PVC as an integer in the expected format.
+        return 12
 
     deviceProp = check_cuda_errors(cudart.cudaGetDeviceProperties(device))
     major = str(deviceProp.major)

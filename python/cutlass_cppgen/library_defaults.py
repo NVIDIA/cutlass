@@ -40,14 +40,24 @@ import os
 
 import cutlass_library
 from cutlass_library.library import ConvKind, IteratorAlgorithm, StrideSupport, GroupMode
+from cutlass_library.arch_constants import (
+    INTEL_XE_ARCH_MIN, 
+    INTEL_XE_ARCH_MAX, 
+    INTEL_XE12, 
+    INTEL_XE20, 
+    INTEL_XE35,
+    is_intel_xe_arch
+)
 
 import cutlass_cppgen
 from cutlass_cppgen.utils.check import valid_stage_count
 from cutlass_cppgen.utils.datatypes import td_from_profiler_td, td_from_profiler_op
 
 
-# The value '11' is used to encode Intel PVC GPU in the expected format.
-_generator_ccs = [11, 50, 60, 61, 70, 75, 80, 90]
+# Intel Xe architectures and supported NVIDIA architectures  
+# Intel Xe: 12 (PVC/Xe-HPC), 20 (BMG/Xe2), 30 (future)
+# NVIDIA architectures: 50, 60, 61, 70, 75, 80, 90
+_generator_ccs = [INTEL_XE12, INTEL_XE20] #50, 60, 61, 70, 75, 80, 90]
 
 class KernelsForDataType:
     """
@@ -261,7 +271,12 @@ class ArchOptions:
 
         # Identify the method within CUTLASS generator script that generates kernel
         # descriptions for the target CC
-        generate_function_name = "GeneratePVC" if kernel_cc == 11 else "GenerateSM" + str(kernel_cc)
+        # Intel Xe architectures use GenerateIntelXe, NVIDIA uses GenerateSM{cc}
+        if is_intel_xe_arch(kernel_cc):
+            generate_function_name = "GenerateIntelXe"
+        else:
+            generate_function_name = "GenerateSM" + str(kernel_cc)
+        
         if not hasattr(cutlass_library.generator, generate_function_name):
             cutlass_cppgen.logger.warning(f"No generator found for architecture {kernel_cc}")
             return
@@ -273,13 +288,20 @@ class ArchOptions:
             "--kernels=all",
             f"--log-level={logging.getLevelName(cutlass_cppgen.logger.level)}"
         ]
-        if self.cc == 11:
-          args.append("--architectures=11")
+        # For Intel Xe architectures, specify the architecture number
+        if is_intel_xe_arch(kernel_cc):
+            args.append(f"--architectures={kernel_cc}")
 
         manifest_args = cutlass_library.generator.define_parser().parse_args(args)
         manifest = cutlass_library.manifest.Manifest(manifest_args)
-        generate_function(manifest, cutlass_cppgen._nvcc_version)
-
+        
+        # For Intel Xe architectures, pass the architecture number to the generator
+        if is_intel_xe_arch(kernel_cc):
+            print(f"Calling {generate_function_name} with arch={kernel_cc}")
+            generate_function(manifest, cutlass_cppgen._nvcc_version, arch=kernel_cc)
+        else:
+            generate_function(manifest, cutlass_cppgen._nvcc_version)
+        
         if operation_kind not in manifest.operations:
             # No kernels generated for this architecture, this could be because the CUDA
             # toolkit is insufficient to support operations in this CC
@@ -554,8 +576,10 @@ class OptionRegistry:
     def __init__(self, target_cc: int):
         self.registry = {}
 
-        if target_cc > 90:
-            raise Exception(f"Unsupported compute capability {target_cc}. The CUTLASS Python interface only supports compute capabilities up to 90.")
+        # Intel Xe architectures: 12-20 (PVC, BMG, etc.)
+        # NVIDIA architectures: 50-90
+        if target_cc > 90 or (not is_intel_xe_arch(target_cc)):
+            raise Exception(f"Unsupported compute capability {target_cc}. Supported: NVIDIA SM 50-90, Intel Xe 12-20.")
 
         gemm_kinds = [cutlass_library.GemmKind.Universal, cutlass_library.GemmKind.Universal3x]
         operation_kinds = [cutlass_library.OperationKind.Gemm, cutlass_library.OperationKind.Conv2d]

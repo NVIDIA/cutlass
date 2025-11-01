@@ -70,9 +70,9 @@ _LOGGER = logging.getLogger(__name__)
 # Import architecture range constants from shared module
 ###################################################################################################
 try:
-  from cutlass_library.arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
+  from cutlass_library.arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN, INTEL_XE12, INTEL_XE20
 except ImportError:
-  from arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN
+  from arch_constants import INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN, INTEL_XE12, INTEL_XE20
 
 ###################################################################################################
 
@@ -595,13 +595,13 @@ class Manifest:
           # Map Intel Xe architectures to numeric identifiers for compatibility
           # PVC (Ponte Vecchio) -> 12
           # BMG (Battlemage/Xe2) -> 20  
-          if 'pvc' in arch_lower or arch_num == 12:
-            baseline_archs.append(12)
-          elif 'bmg' in arch_lower or 'xe2' in arch_lower or arch_num == 20:
-            baseline_archs.append(20)
+          if 'pvc' in arch_lower or arch_num == INTEL_XE12:
+            baseline_archs.append(INTEL_XE12)
+          elif 'bmg' in arch_lower or 'xe2' in arch_lower or arch_num == INTEL_XE20:
+            baseline_archs.append(INTEL_XE20)
           else:
             # Generic Intel GPU target - default to BMG
-            baseline_archs.append(20)
+            baseline_archs.append(INTEL_XE20)
         else:
           # CUDA SM architecture
           baseline_archs.append(arch_num if arch_num is not None else int(arch.split('a')[0].split('f')[0]))

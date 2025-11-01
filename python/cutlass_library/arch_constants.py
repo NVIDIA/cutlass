@@ -45,3 +45,41 @@ INTEL_XE_ARCH_MAX = 50  # Upper bound (exclusive) for Intel Xe range
 CUDA_ARCH_MIN = 50      # Minimum CUDA architecture (sm_50, sm_60, etc.)
 
 ###################################################################################################
+# Specific Intel Xe architecture constants
+###################################################################################################
+# Intel Xe12 - PVC (Ponte Vecchio) HPC architecture
+INTEL_XE12 = 12
+
+# Intel Xe20 - BMG (Battlemage) gaming architecture  
+INTEL_XE20 = 20
+
+# Intel Xe35 - Future architecture placeholder
+INTEL_XE35 = 35
+
+###################################################################################################
+# Architecture validation helpers
+###################################################################################################
+def is_intel_xe_arch(arch):
+    """Check if the given architecture is an Intel Xe architecture."""
+    return INTEL_XE_ARCH_MIN <= arch < INTEL_XE_ARCH_MAX
+
+def is_cuda_arch(arch):
+    """Check if the given architecture is a CUDA architecture."""
+    return arch >= CUDA_ARCH_MIN
+
+def get_arch_name(arch):
+    """Get a human-readable name for the architecture."""
+    if arch == INTEL_XE12:
+        return "Intel Xe12 (PVC)"
+    elif arch == INTEL_XE20:
+        return "Intel Xe20 (BMG)" 
+    elif arch == INTEL_XE35:
+        return "Intel Xe35 (CRI)"
+    elif is_intel_xe_arch(arch):
+        return f"Intel Xe{arch}"
+    elif is_cuda_arch(arch):
+        return f"CUDA SM{arch}"
+    else:
+        return f"Unknown({arch})"
+
+###################################################################################################

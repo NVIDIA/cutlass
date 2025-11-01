@@ -239,8 +239,8 @@ protected:
         return Status::kSuccess;
       }
       else if (arguments.pointer_mode == ScalarPointerMode::kDevice) {
-        fusion_args.alpha = 0;
-        fusion_args.beta = 0;
+        fusion_args.alpha = ElementCompute(0);
+        fusion_args.beta = ElementCompute(0);
         fusion_args.alpha_ptr = static_cast<ElementCompute const *>(arguments.alpha);
         fusion_args.beta_ptr = static_cast<ElementCompute const *>(arguments.beta);
 
