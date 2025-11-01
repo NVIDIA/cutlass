@@ -47,7 +47,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/call_bypass_dlpack.py
+    python examples/python/CuTeDSL/ampere/call_bypass_dlpack.py
 
 
 It's worth to mention that by-passing dlpack protocol can resolve the issue that dlpack doesn't handle shape-1

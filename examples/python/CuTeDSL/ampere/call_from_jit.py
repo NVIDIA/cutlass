@@ -44,7 +44,7 @@ Usage:
 
 .. code-block:: bash
 
-    python examples/ampere/call_from_jit.py
+    python examples/python/CuTeDSL/ampere/call_from_jit.py
 
 Default configuration:
 - Batch dimension (L): 16
