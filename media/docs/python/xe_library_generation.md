@@ -44,13 +44,6 @@ cmake .. -GNinja -DCUTLASS_NVCC_ARCHS="" -DCUTLASS_ENABLE_SYCL=ON -DSYCL_INTEL_T
 # Build libraries
 ninja cutlass_library
 
-# Test generation
-cd python/cutlass_library
-python3 test_simple_generation.py --build-dir ./test_build --arch 20
-```
-
-**Expected Output:** ✅ 24 operations, 31 .cpp files generated
-
 ---
 
 ## Architecture Support

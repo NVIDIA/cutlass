@@ -1,14 +1,15 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# SYCL* Templates for Linear Algebra (SYCL*TLA)
+# SYCL\* Templates for Linear Algebra (SYCL\*TLA)
 
 **This repository is forked from the NVIDIA CUTLASS repository and extends CUTLASS and CuTe API support to Intel GPUs through SYCL enablement.**
-**This project was previously referred to as CUTLASS-SYCL, you may see references to CUTLASS-SYCL in the code and documentation.**
-**For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)**
+*This project was previously referred to as CUTLASS-SYCL, you may see references to CUTLASS-SYCL in the code and documentation.*
+*For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)*
 
+*SYCL is a trademark of the Khronos Group Inc, Other names and brands may be claimed as the property of others.*
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/intel/sycl-tla/badge)](https://scorecard.dev/viewer/?uri=github.com/intel/sycl-tla)
 
-SYCL*TLA is a modular, header‑only C++ template framework for high‑performance 
+SYCL\*TLA is a modular, header‑only C++ template framework for high‑performance 
 GEMM, and fused epilogue kernels. It applies hierarchical tiling, composable policy 
 abstractions, and efficient data‑movement primitives to build flexible, reusable 
 building blocks for dense linear algebra. The SYCL implementation brings those 
@@ -16,13 +17,13 @@ optimizations to Intel GPUs with tuned kernels for modern execution units and me
 hierarchies. It adds mixed‑precision and epilogue fusion pathways designed to 
 simplify integrating advanced quantization and post‑processing into custom pipelines.
 
-To support a wide variety of applications, SYCL*TLA provides extensive
+To support a wide variety of applications, SYCL\*TLA provides extensive
 support for mixed-precision computations on Intel hardware, providing
 specialized data-movement and multiply-accumulate abstractions for FP64, FP32,
 FP16, BF16, 8b floating point types (E5M2 and E4M3 for FP8), narrow integer
 types (4 and 8b signed and unsigned integers with support for zero-point
 quantization), and mixed-precision operations with tensor-wise, channel-wise,
-and group-wise quantization support. SYCL*TLA demonstrates optimal matrix
+and group-wise quantization support. SYCL\*TLA demonstrates optimal matrix
 multiply operations targeting Intel's programmable, high-throughput execution
 units implemented in Intel Data Center GPU Max/Flex Series (Intel Xe
 architecture, codename: Ponte-Vecchio) and Intel Arc B580 GPUs.
@@ -42,34 +43,38 @@ Base NVIDIA CUTLASS Versions for SYCL*TLA releases:
 |0.2 | 3.9.2 |
 |0.3 | 3.9.2 |
 |0.5 | 4.2.0 |
+|0.6 | 4.2.0 |
 
-# What's New in SYCL*TLA 0.5 
+# What's New in SYCL*TLA 0.6 
 
+## [SYCL*TLA 0.6](https://github.com/intel/sycl-tla/releases/tag/v0.6) (2025-11-03)
 ### Major Architecture Changes
-- **Xe Rearchitecture ([#477](https://github.com/intel/cutlass-sycl/pull/477))**: Complete redesign of Xe CuTe atoms with new architecture
-  - New MMA atoms for improved performance
-  - Enhanced 2D copy atoms (loads, stores, prefetch with VNNI/transpose support)
-  - New 2D copy helpers (low-level `make_block_2d_copy` and high-level `make_block_2d_copy_{A,B,C}`)
-  - Generic and optimized reorder atoms for {int4, uint4, int8, uint8, e2m1, e4m3, e5m2} -> {half, bfloat16}
-  - Requires IGC version [v2.18.5](https://github.com/intel/intel-graphics-compiler/releases/tag/v2.18.5) or later
+- **Flash Attention Reimplementation ([#d02c58b](https://github.com/intel/sycl-tla/commit/d02c58b4))**: Complete rewrite of Flash Attention using new Xe atoms
+  - Enhanced performance with optimized memory access patterns
+  - Better integration with Intel Xe hardware capabilities
+- **CUTLASS Library Generation ([#578](https://github.com/intel/sycl-tla/pull/578))**: Full support for CUTLASS library generation and operations
+  - New Xe architecture support in library generation pipeline
+  - Automated kernel instantiation and compilation support
 
-### New Features  
-- **G++ Host Compiler Support ([#490](https://github.com/intel/cutlass-sycl/pull/490))**: Support for G++ 13 as host compiler
-- Migrated `syclcompat` to this repository as `cutlasscompat` for better compatibility
-  - Fixed compilation issues when using G++ instead of clang++
-  - Added new CI workflow for testing G++ host compiler builds
-  - Enhanced build system to support `-DDPCPP_HOST_COMPILER=g++` option
-- **Grouped GEMM for Mixed Dtype ([#457](https://github.com/intel/cutlass-sycl/pull/457))**: Extended grouped GEMM support to mixed precision operations
-  - Added support for BF16 + S8 mixed dtype grouped GEMM
-  - Added support for FP16 + U4 mixed dtype grouped GEMM
-  - New examples: `10_bmg_grouped_gemm_bf16_f16_s8.cpp` and `10_bmg_grouped_gemm_f16_u4.cpp`
+### Enhancements
+- **Python Operations Support ([#595](https://github.com/intel/sycl-tla/pull/595))**: Enhanced Python bindings with comprehensive test coverage
+  - Improved Python API stability and usability
+  - Enhanced test framework for Python operations
+- **CuTe Subgroup Extensions**: New subgroup-scope operations for Intel Xe
+  - Subgroup broadcast and reduction operations ([#9a6aa27](https://github.com/intel/sycl-tla/commit/9a6aa27c))
+  - `make_subgroup_tensor` helpers for improved tensor manipulation ([#21fb89a](https://github.com/intel/sycl-tla/commit/21fb89a8))
+- **Enhanced 2D Copy Operations**: Extended block 2D copy functionality
+  - New `make_block_2d_copy_{C,D}` variants with subtiling support ([#48d82e8](https://github.com/intel/sycl-tla/commit/48d82e87))
+  - Support for size-1 fragments in block 2D copies ([#2212f1b](https://github.com/intel/sycl-tla/commit/2212f1b9))
+- **4-bit VNNI Reorders ([#593](https://github.com/intel/sycl-tla/pull/593))**: New 4-bit unit stride to VNNI reorder operations
+- **Grouped GEMM with new APIs ([#574](https://github.com/intel/sycl-tla/pull/574))**: Enhanced grouped GEMM with new streamlined APIs
 
   **See the [CHANGELOG](CHANGELOG-SYCL.md) for details of all past releases and updates.**
 
 # CuTe
 
-SYCL*TLA supports the newly introduced core library, CuTe, to describe and manipulate tensors of threads and data.
-CuTe in SYCL*TLA is a collection of C++ SYCL template abstractions for
+SYCL\*TLA supports the newly introduced core library, CuTe, to describe and manipulate tensors of threads and data.
+CuTe in SYCL\*TLA is a collection of C++ SYCL template abstractions for
 defining and operating on hierarchically multidimensional layouts of threads and data.
 CuTe provides `Layout` and `Tensor` objects that compactly package the type,
 shape, memory space, and layout of data, while performing the complicated indexing for the user.
@@ -83,7 +88,7 @@ The representation of layouts is powerful enough to represent nearly
 everything we need to implement efficient dense linear algebra.
 Layouts can also be combined and manipulated via functional composition, on which we build a large set of common operations such as tiling and partitioning.
 
-SYCL*TLA and beyond adopts CuTe throughout the GEMM hierarchy in its templates.
+SYCL\*TLA and beyond adopts CuTe throughout the GEMM hierarchy in its templates.
 This greatly simplifies the design and improves code composability and readability.
 More documentation specific to CuTe can be found in its
 [dedicated documentation directory](./media/docs/cpp/cute/00_quickstart.md).
