@@ -98,9 +98,6 @@ struct CollectiveMma<MainloopXeL1StagedGroup<Stages, Schedule>, TileShape_, Elem
   static constexpr int Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
 
-  // using Copy_A = typename Copy_Traits<GmemTiledCopyA, InternalStrideA>::template DefaultTiledCopy<ElementA>;
-  // using Copy_B = typename Copy_Traits<GmemTiledCopyB, InternalStrideB>::template DefaultTiledCopy<ElementB>;
-
   using TensorMKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(0,0,0), InternalStrideA{}));   //(m, k)
   using TensorNKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(0,0,0), InternalStrideB{}));   //(n, k)
   using MainloopTensors = cute::tuple<TensorMKL, TensorNKL>;
