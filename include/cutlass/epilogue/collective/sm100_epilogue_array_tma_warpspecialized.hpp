@@ -666,6 +666,7 @@ public:
     int thread_idx = threadIdx.x % ThreadCount;
     int warp_idx = thread_idx / NumThreadsPerWarp;
     [[maybe_unused]] int lane_idx = thread_idx % NumThreadsPerWarp;
+    bool is_accumulator_needed = K > 0;
 
     // Check to see if tensormaps have been replaced in gmem
     // Only the first epilogue warp needs to perform TMA related operations
@@ -824,7 +825,7 @@ public:
     static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
 
     // The Epilogue Loop
-    auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+    auto epi_loop_fn = [&] (auto& cst_callbacks, bool is_accumulator_needed) CUTLASS_LAMBDA_FUNC_INLINE {
       bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
       bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
@@ -929,7 +930,7 @@ public:
             ++load_wait_state;
           }
 
-          if (is_first_iteration) {
+          if (is_first_iteration && is_accumulator_needed) {
             // Wait for mma warp to fill tmem buffer with accumulator results
             acc_pipeline.consumer_wait(acc_pipe_consumer_state, acc_wait_token);
           }
@@ -946,11 +947,15 @@ public:
 
           // Copy accumulator tile from tmem to register
           if (issue_tmem_load) {
-            copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+            if (is_accumulator_needed) {
+              copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+            } else {
+              fill(tTR_rAcc, 0);
+            }
           }
 
           // After the last tmem load, signal that tmem buffer is consumed and empty
-          if (do_acc_release) {
+          if (do_acc_release && is_accumulator_needed) {
             cutlass::arch::fence_view_async_tmem_load();
             acc_pipeline.consumer_release(acc_pipe_consumer_state);
             ++acc_pipe_consumer_state;
@@ -1021,7 +1026,7 @@ public:
     // BEGIN EPILOGUE
     //
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
-    epi_loop_fn(cst_callbacks);
+    epi_loop_fn(cst_callbacks, is_accumulator_needed);
     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_pipe_consumer_state);
   }
 

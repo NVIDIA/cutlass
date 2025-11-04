@@ -1238,7 +1238,7 @@ public:
           }
         }();
         auto accumulator = collective_mainloop.slice_accumulator(tmem_storage, acc_stage);
-        if (is_mma_leader_cta) {
+        if (is_mma_leader_cta && k_tile_count > 0) {
           mainloop_pipe_consumer_state = collective_mainloop.mma(
             cute::make_tuple(mainloop_pipeline, accumulator_pipeline),
             cute::make_tuple(mainloop_pipe_consumer_state, accumulator_pipe_producer_state),
@@ -1249,7 +1249,9 @@ public:
           );
           accumulator_pipeline.producer_commit(accumulator_pipe_producer_state);
         }
-        ++accumulator_pipe_producer_state;
+        if (k_tile_count > 0) {
+          ++accumulator_pipe_producer_state;
+        }
 
         // Fetch next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
@@ -1373,7 +1375,13 @@ public:
 
           do_tail_load = true;
         }
-        current_wave++;
+        // Relevant only for OverlappingAccum cases.
+        // Only increment the wave if the problem shape K dimension is not 0, otherwise accumulator will be skipped.
+        if constexpr (IsOverlappingAccum) {
+          if (size<2>(problem_shape_MNKL) > 0) {  
+            current_wave++;
+          }
+        }
 
         // Fetch the next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
