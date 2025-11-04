@@ -140,7 +140,7 @@ def valid_stage_count(
             f"Details:\n"
             f"Mainloop uses {smem_per_stage} bytes of shared memory per stage, and "
             f"{td.stages} stages for a total of {smem_usage_mainloop} bytes.\n"
-            f"The maxmium amount of shared memory that can be used per block on CC {cc} is {smem_arch}.")
+            f"The maximum amount of shared memory that can be used per block on CC {cc} is {smem_arch}.")
 
     return (True, "")
 

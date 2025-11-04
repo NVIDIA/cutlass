@@ -308,7 +308,7 @@ bool initialize_tensor(
     cutlass::reference::host::BlockFillSequential(view.data(), view.capacity());
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;
@@ -346,7 +346,7 @@ bool initialize_scale_tensor(
     cutlass::reference::host::BlockFillSequential(view.data(), view.capacity());
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;

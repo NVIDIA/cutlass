@@ -97,7 +97,7 @@ class B2bMmaBase {
                                Shape1::kN / WarpGemm1::kN,
                                Shape1::kK / WarpGemm1::kK>;
 
-  /// Number of warp-level GEMM oeprations
+  /// Number of warp-level GEMM operations
   static int const kWarpGemmIterations0 =
       (WarpGemm0::kK / Operator0::Policy::MmaShape::kK);
   static int const kWarpGemmIterations1 =

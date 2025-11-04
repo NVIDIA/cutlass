@@ -53,7 +53,7 @@ class PassLayoutManipulateElimination(EVTPassBase):
 
     def call(self):
         self.layout_nodes_worklist = self.get_all_layout_nodes()
-        # Run while loop utill all layout nodes are eliminated
+        # Run while loop until all layout nodes are eliminated
         while(len(self.layout_nodes_worklist) > 0):
             node = self.layout_nodes_worklist.pop(0)
             # for node in layout_nodes:
