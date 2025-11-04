@@ -130,18 +130,24 @@ public:
   static_assert(std::is_same_v<SmemLayoutAtomD, void>, "Copy operation to shared memory is not supported");
 
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
-  using Trait_C = Copy_Traits<GmemTiledCopyC, InternalStrideC>;
-  using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<Trait_C, ElementC>{},
-                                             Layout<CopyThreadShape>{},
-                                             make_layout(shape_div(typename Trait_C::BlockShape{}, CopyThreadShape{}))));
+  
   using Trait_D = Copy_Traits<GmemTiledCopyD, InternalStrideD>;
+  using val_layout_store_D = decltype(make_layout(shape_div(typename Trait_D::BlockShape{}, CopyThreadShape{})));
   using XE_Copy_D = decltype(make_tiled_copy(Copy_Atom<Trait_D, ElementD>{},
                                              Layout<CopyThreadShape>{},
-                                             make_layout(shape_div(typename Trait_D::BlockShape{}, CopyThreadShape{}))));
+                                             val_layout_store_D{}));
 private:
   constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
   constexpr static bool is_destination_supported = not cute::is_void_v<ElementD> && not cute::is_void_v<CopyOpR2G>;
-
+  
+  using NonVoidElementC = conditional_t<is_source_supported, ElementC, ElementD>;
+  using Trait_C = Copy_Traits<GmemTiledCopyC, InternalStrideC>;
+  using NonVoidTrait_C = conditional_t<is_source_supported, Trait_C, Trait_D>;
+  using val_layout_load_C = decltype(make_layout(shape_div(typename NonVoidTrait_C::BlockShape{}, CopyThreadShape{})));
+  using NonVoidValLayoutLoad_C = conditional_t<is_source_supported, val_layout_load_C, val_layout_store_D>;
+  using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<NonVoidTrait_C, NonVoidElementC>{},
+                                             Layout<CopyThreadShape>{},
+                                             NonVoidValLayoutLoad_C{}));
 public:
 
   using EmptyType = cute::tuple<>;
@@ -371,7 +377,7 @@ public:
     auto thread_xe_store_d = params.xe_store_d.get_thread_slice(thread_idx);
     Tensor tCgD = thread_xe_store_d.partition_D(gD);
 
-    Tensor trC = make_tensor<ElementC>(Shape<Int<FragmentSize>>{});
+    Tensor trC = make_tensor<NonVoidElementC>(Shape<Int<FragmentSize>>{});
     Tensor trD_compute = make_tensor<ElementCompute>(Shape<Int<FragmentSize>>{});
 
     // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
@@ -427,9 +433,13 @@ public:
       CUTLASS_PRAGMA_UNROLL
       for (int epi_m = 0; epi_m < FragsM; epi_m++) {
 
-        if (is_C_load_needed) {
-          //cordinates for C and D are the same
-          copy(params.xe_load_c.with(get<0>(load_store_tensors)), tCgD(_, epi_m, epi_n), trC);
+        //Instead of calling is_C_load_needed. We do heirachical check 
+        //so that runtime check not there when ElementC is void
+        if constexpr (is_source_supported) {
+          if (is_C_load_needed) {
+            //cordinates for C and D are the same
+            copy(params.xe_load_c.with(get<0>(load_store_tensors)), tCgD(_, epi_m, epi_n), trC);
+          }
         }
 
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);

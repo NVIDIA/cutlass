@@ -62,6 +62,18 @@ struct DefaultGemmConfigurationToCutlass3Types {
   static_assert(sizeof(ElementA) == 0, "No valid DefaultGemmConfigurationToCutlass3Types configuration exists.");
 };
 
+// This type is only intended to demonstrate porting 2.x kernels to 3.0
+template<
+  class OperatorClass, class ArchTag,
+  class ElementA, class LayoutA,
+  class ElementB, class LayoutB,
+  class ElementC, class LayoutC,
+  class ElementAccumulator,
+  class ElementOutput>
+struct XeDefaultGemmConfigurationToCutlass3Types {
+  static_assert(sizeof(ElementA) == 0, "No valid XeDefaultGemmConfigurationToCutlass3Types configuration exists.");
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
@@ -1485,6 +1497,141 @@ struct DefaultGemmConfigurationToCutlass3Types<
       EpilogueOp
     >::CollectiveOp;
 };
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Intel XE MMA F32BF16
+// ElementC - > void
+// ElementCompute and ElementOutput different in LinearCombination
+template <typename LayoutA, typename LayoutB, typename LayoutC, typename ElementOutput>
+struct DefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelXe,
+    bfloat16_t, LayoutA,
+    bfloat16_t, LayoutB,
+    void, LayoutC,
+    ElementOutput>
+{
+  using TileShape = Shape<_256, _256, _32>;
+
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+
+  // A
+  static constexpr int kAlignmentA = 32;
+  using DefaultOperandA = detail::DefaultGemm_TensorOpXe_OperandA<
+    bfloat16_t, LayoutA, kAlignmentA, 32>;
+  using GmemTiledCopyA = typename DefaultOperandA::GmemTiledCopy;
+
+  // B
+  static constexpr int kAlignmentB = 32;
+  using DefaultOperandB = detail::DefaultGemm_TensorOpXe_OperandB<
+    bfloat16_t, LayoutB, kAlignmentB, 32>;
+  using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+      cute::bfloat16_t, LayoutA, 1,
+      cute::bfloat16_t, LayoutB, 1,
+      float,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::gemm::collective::StageCountAuto,
+      cutlass::gemm::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  //using EpilogueOp = epilogue::fusion::LinearCombination<ElementOutput, float>;
+  using EpilogueOp = epilogue::fusion::LinearCombination<cute::bfloat16_t, float>;
+
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    EpilogueOp,
+    TileShape,
+    decltype(tile_shape(TiledMma()))
+  >;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      void, LayoutC, 1,
+      cute::bfloat16_t, LayoutC, 1,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      EpilogueOp
+    >::CollectiveOp;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Intel XE MMA F32BF16
+// D=Ax B + C;  => BF16=BF16xBF16+BF16 <=>BF16=FP32+BF16
+// ElementAccumulator and ElementC are different types.
+template <
+  typename LayoutA,
+  typename LayoutB,
+  typename LayoutC,
+  typename ElementAccumulator,
+  typename ElementOutput>
+struct XeDefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelXe,
+    bfloat16_t, LayoutA,
+    bfloat16_t, LayoutB,
+    bfloat16_t, LayoutC,
+    ElementAccumulator,
+    ElementOutput>
+{
+  using TileShape = Shape<_256, _256, _32>;
+
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+
+  // A
+  static constexpr int kAlignmentA = 32;
+  using DefaultOperandA = detail::DefaultGemm_TensorOpXe_OperandA<
+    bfloat16_t, LayoutA, kAlignmentA, 32>;
+  using GmemTiledCopyA = typename DefaultOperandA::GmemTiledCopy;
+
+  // B
+  static constexpr int kAlignmentB = 32;
+  using DefaultOperandB = detail::DefaultGemm_TensorOpXe_OperandB<
+    bfloat16_t, LayoutB, kAlignmentB, 32>;
+  using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+      cute::bfloat16_t, LayoutA, 1,
+      cute::bfloat16_t, LayoutB, 1,
+      ElementAccumulator,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::gemm::collective::StageCountAuto,
+      cutlass::gemm::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using EpilogueOp = epilogue::fusion::LinearCombination<ElementOutput, float>;
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    EpilogueOp,
+    TileShape,
+    decltype(tile_shape(TiledMma()))
+  >;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, float,
+      bfloat16_t, LayoutC, 1,
+      ElementOutput, LayoutC, 1,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      EpilogueOp
+    >::CollectiveOp;
+};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
