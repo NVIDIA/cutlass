@@ -857,9 +857,6 @@ public:
       TensorMap tensormap
       )
   {
-    // Wait for mma warp to fill tmem buffer with accumulator results
-    acc_pipeline.consumer_wait(acc_pipe_consumer_state);
-
     auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
         acc_pipeline,
         acc_pipe_consumer_state,
