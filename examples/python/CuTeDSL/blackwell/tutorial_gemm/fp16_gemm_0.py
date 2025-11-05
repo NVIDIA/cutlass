@@ -52,6 +52,7 @@ acc_stage = 1
 
 @cute.struct
 class SharedStorage:
+    # each stage has2 kinds of barrier, i.e. empty & full
     ab_mbar_ptr: cute.struct.MemRange[cutlass.Int64, ab_stages * 2]
     acc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, acc_stage * 2]
     tmem_holding_buf: cutlass.Int32
@@ -201,9 +202,9 @@ def kernel(
     tDgC = tmem_thr_copy.partition_D(gC_epi)
 
     # (TmemCpy,NumTmemCpy)
-    tCrAcc = cute.make_rmem_tensor(tDgC[None, None, 0].shape, acc_dtype)
+    tCrAcc = cute.make_rmem_tensor_like(tDgC[None, None, 0], acc_dtype)
     # (TmemCpy,NumTmemCpy)
-    tCrC = cute.make_rmem_tensor(tDgC[None, None, 0].shape, io_dtype)
+    tCrC = cute.make_rmem_tensor_like(tDgC[None, None, 0], io_dtype)
 
     #
     # 2. Main loop
