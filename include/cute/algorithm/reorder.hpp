@@ -165,21 +165,41 @@ reorder_impl(ReorderAtom               const& atom,
   constexpr int values = size(SLayout{}) / size<0>(SLayout{});
   constexpr int vchunk = sizeof_bits_v<RegistersSrc> / sizeof_bits_v<SType>;
 
-  // Calculate mapping from src val -> dst val on a chunk-by-chunk basis. Unlike a plain copy, there is no intrinsic
-  //   correspondence of src/dst values for subgroup reorders.
-  auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));                 // src index -> dst index
-  auto vrlayout = composition(composition(Layout<Shape<_SG, Int<values>>, Stride<_0, _1>>{},
-                                          rlayout),
-                              Layout<Shape<_1, Int<values>>, Stride<_0, _SG>>{});        // src val -> dst val
+  static constexpr bool has_broadcast = (size(DLayoutWI{}) > size(SLayoutWI{}));
 
-  CUTE_UNROLL
-  for (int sv = 0; sv < values; sv += vchunk) {
-    auto pS = recast_ptr<RegTypeSrc>(src.data() + sv);
-    auto pD = recast_ptr<RegTypeDst>(dst.data() + vrlayout(sv));
+  if (!has_broadcast) {
+    // Calculate mapping from src val -> dst val on a chunk-by-chunk basis. Unlike a plain copy, there is no intrinsic
+    //   correspondence of src/dst values for subgroup reorders.
+    auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));                 // src index -> dst index
+    auto vrlayout = composition(composition(Layout<Shape<_SG, Int<values>>, Stride<_0, _1>>{},
+                                            rlayout),
+                                Layout<Shape<_1, Int<values>>, Stride<_0, _SG>>{});        // src val -> dst val
 
-    detail::explode(detail::CallReorder<ReorderAtom>{},
-                    pS, make_int_sequence<RegNumSrc>{},
-                    pD, make_int_sequence<RegNumDst>{});
+    CUTE_UNROLL
+    for (int sv = 0; sv < values; sv += vchunk) {
+      auto pS = recast_ptr<RegTypeSrc>(src.data() + sv);
+      auto pD = recast_ptr<RegTypeDst>(dst.data() + vrlayout(sv));
+
+      detail::explode(detail::CallReorder<ReorderAtom>{},
+                      pS, make_int_sequence<RegNumSrc>{},
+                      pD, make_int_sequence<RegNumDst>{});
+    }
+  } else {
+    // If there is broadcast happening, then we need to loop over dst values instead.
+    auto rlayout = coalesce(composition(right_inverse(slayout), dlayout));                 // dst index -> src index
+    auto vrlayout = composition(composition(Layout<Shape<_SG, Int<values>>, Stride<_0, _1>>{},
+                                            rlayout),
+                                Layout<Shape<_1, Int<values>>, Stride<_0, _SG>>{});        // dst val -> src val
+
+    CUTE_UNROLL
+    for (int dv = 0; dv < values; dv += vchunk) {
+      auto pS = recast_ptr<RegTypeSrc>(src.data() + vrlayout(dv));
+      auto pD = recast_ptr<RegTypeDst>(dst.data() + dv);
+
+      detail::explode(detail::CallReorder<ReorderAtom>{},
+                      pS, make_int_sequence<RegNumSrc>{},
+                      pD, make_int_sequence<RegNumDst>{});
+    }
   }
 }
 
