@@ -34,12 +34,14 @@
 Compute the shared memory size in bytes
 """
 
+from math import gcd
+
 import cutlass_library
-from pycute import shape_div, product
+from pycute import flatten, shape_div, product
 
 import cutlass_cppgen
 from cutlass_cppgen.backend.evt.ir import TopoVisitorNode, DAGIR
-from cutlass_cppgen.backend.library import DataTypeSize
+from cutlass_cppgen.backend.library import DataType, DataTypeSize
 
 
 class GetSmemSize:
@@ -58,12 +60,15 @@ class GetSmemSize:
         # Get the epilogue tile size
         schedule = tile_description.epilogue_schedule
         if schedule == cutlass_library.EpilogueScheduleType.TmaWarpSpecialized:
-            epilogue_tile_mn = (64, 32)
+            element_d = self.dag_ir.get_node_meta("D").element
+            nperf = 64 if (DataTypeSize[element_d] == 8 and tile_description.threadblock_shape[1] % 64 == 0) else 32
+            epi_tile_m = min(64, tile_description.threadblock_shape[0])
+            epi_tile_n = gcd(min(nperf, tile_description.threadblock_shape[1]), tile_description.threadblock_shape[1])
+            epilogue_tile_mn = (epi_tile_m, epi_tile_n)
         elif schedule == cutlass_library.EpilogueScheduleType.TmaWarpSpecializedCooperative:
-            if tile_description.threadblock_shape[0] >= 128:
-                epilogue_tile_mn = (128, 32)
-            else:
-                epilogue_tile_mn = (64, 32)
+            epi_tile_m = min(128, tile_description.threadblock_shape[0])
+            epi_tile_n = gcd(min(32, tile_description.threadblock_shape[1]), tile_description.threadblock_shape[1])
+            epilogue_tile_mn = (epi_tile_m, epi_tile_n)
         else:
             raise NotImplementedError(f"Unsupported schedule: {schedule}")
 
@@ -93,11 +98,7 @@ class GetSmemSize:
         self.element_d = element_d
         self.is_source_supported = element_c is not None
 
-    def sm90_epilogue_smem_size(self, tile_description):
-        """
-        Compute the shared memory size of sm90 collective epilogue
-        """
-        self.sm90_epilogue_tile(tile_description)
+    def sm90_or_sm100_epilogue_smem_size(self, tile_description):
         # Get the Fusion Storage
         nodes = self.dag_ir.nodes_topological_order()
         self.smem_types = {}
@@ -138,6 +139,120 @@ class GetSmemSize:
         # get SharedStorage size
         smem_size = self.get_struct_size([tensor_smem_size, pipeline_smem_size])
         return smem_size[0]
+
+    def sm90_epilogue_smem_size(self, tile_description):
+        """
+        Compute the shared memory size of sm90 collective epilogue
+        """
+        self.sm90_epilogue_tile(tile_description)
+        return self.sm90_or_sm100_epilogue_smem_size(tile_description)
+
+    #
+    # Sm100 epilogue specific
+    #
+
+    def sm100_epilogue_tile(self, tile_description):
+        cta_tile = (tile_description.blackwell_threadblock_shape[0], tile_description.blackwell_threadblock_shape[1])
+        mma_tile = cta_tile
+
+        if tile_description.is_2sm:
+            cta_tile = (cta_tile[0] // 2, cta_tile[1])
+
+        if tile_description.is_2sm and mma_tile[0] == 128:
+            tmem_warps = (2, 2)
+        else:
+            tmem_warps = (4, 1)
+
+        if self.dag_ir.has_node("C"):
+            element_c = self.dag_ir.get_node_meta("C").element
+            element_c_size = DataTypeSize[element_c]
+        else:
+            element_c = None
+            element_c_size = 0
+
+        element_d = self.dag_ir.get_node_meta("D").element
+
+        DisableSource = element_c is None or not self.dag_ir.has_node("C") or self.dag_ir.get_node_meta("C").element == DataType.void
+
+        CtaM = cta_tile[0]
+        CtaN = cta_tile[1]
+        WarpM = tmem_warps[0]
+        WarpN = tmem_warps[1]
+        MaxBits = max(element_c_size, DataTypeSize[element_d])
+        DpFull = 32
+        M = min(CtaM, DpFull * WarpM)
+
+        if DisableSource:
+            # Epilogues w/o residual load are less sensitive to smem allocation
+            # Target a fixed amount of compute per epilogue iteration
+            if MaxBits == 4:
+                # Make epilogue tile larger to reduce the epilogue iterations.
+                # 64 is the experimental value. It will minimize epilogue iterations but keep the number of A/B buffers the same.
+                ComputeElts = 8192
+                Nperf = ComputeElts // M
+            else:
+                ComputeElts = 4096
+                Nperf = ComputeElts // M
+        else:
+            # Epilogues w/ residual load are more sensitive to smem allocation
+            # Target optimal smem distribution between epilogue+mainloop based on datatype+tilesize
+            if MaxBits == 32:
+                Nperf = 16 if CtaM > 64 and CtaN <= 128 else 32
+            elif MaxBits == 16:
+                Nperf = 32 if CtaN <= 128 else 64
+            else:
+                Nperf = 64
+
+        def is_m_major(layout):
+            return flatten(layout.stride[0]) == 1
+
+        if DisableSource or is_m_major(self.dag_ir.get_node_meta("C").tensor.layout):
+            N_min_C = 8 * WarpN
+        elif element_c_size == 6:
+            N_min_C = 128 * WarpN
+        else:
+            N_min_C = (128 // element_c_size) * WarpN
+
+        if is_m_major(self.dag_ir.get_node_meta("D").tensor.layout):
+            N_min_D = 8 * WarpN
+        elif DataTypeSize[element_d] == 6:
+            N_min_D = 128 * WarpN
+        else:
+            N_min_D = (128 // DataTypeSize[element_d]) * WarpN
+
+        N = min(CtaN, max(Nperf, N_min_C, N_min_D))
+
+        tile_m = M
+        tile_n_size = N // WarpN * WarpN
+
+        epilogue_tile_mn = (tile_m, tile_n_size)
+        epi_tiles = product(shape_div(tuple(tile_description.threadblock_shape)[:2], epilogue_tile_mn))
+
+        stages_d = min(epi_tiles, 2)
+        reuse_smem_c = (element_c_size > 8)
+
+        if reuse_smem_c:
+            stages_c = max(min(epi_tiles, 4), stages_d + 1)
+        else:
+            stages_c = min(epi_tiles, 4)
+
+        # Record the epilogue tile
+        self.cta_tile_mnk = tuple(tile_description.threadblock_shape)
+        self.epilogue_tile_mn = epilogue_tile_mn
+        self.epi_tiles = epi_tiles
+        self.stages_c = stages_c
+        self.stages_d = stages_d
+        self.reuse_smem_c = reuse_smem_c
+        self.element_c = element_c
+        self.element_d = element_d
+        self.is_source_supported = not DisableSource
+
+    def sm100_epilogue_smem_size(self, tile_description):
+        """
+        Compute the shared memory size of sm100 collective epilogue
+        """
+        self.sm100_epilogue_tile(tile_description)
+        return self.sm90_or_sm100_epilogue_smem_size(tile_description)
 
     def __call__(self, tile_description):
         return getattr(self, f"sm{self.cc}_epilogue_smem_size")(tile_description)

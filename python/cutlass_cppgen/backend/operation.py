@@ -47,7 +47,7 @@ def supports_cluster_launch():
     global _supports_cluster_launch
     if _supports_cluster_launch is None:
         major, minor = _version_splits[0], _version_splits[1]
-        _supports_cluster_launch = device_cc() >= 90 and (major > 11 or (major == 11 and minor >= 8))
+        _supports_cluster_launch = device_cc() in [90, 100, 101, 103] and (major > 11 or (major == 11 and minor >= 8))
     return _supports_cluster_launch
 
 

@@ -748,7 +748,7 @@ public:
       auto smem_tiled_copy_S = cute::get<0>(partitioned_transform_extra_info);
       auto&& scales          = cute::get<1>(partitioned_transform_extra_info);
       using ScaleType        = decltype(scales);
-      auto tSrS              = make_tensor(static_cast<ScaleType&&>(scales).data(), scales.layout());
+      auto tSrS              = make_tensor(scales.data(), scales.layout());
       auto tSsS              = cute::get<2>(partitioned_transform_extra_info);
       copy(smem_tiled_copy_S, tSsS(_,_,_,_,load2transform_consumer_index), tSrS);
 
@@ -757,7 +757,7 @@ public:
       } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         auto&& zeros           = cute::get<3>(partitioned_transform_extra_info);
         using ZeroType         = decltype(zeros);
-        auto tZrZ              = make_tensor(static_cast<ZeroType&&>(zeros).data(), zeros.layout());
+        auto tZrZ              = make_tensor(zeros.data(), zeros.layout());
         auto tZsZ              = cute::get<4>(partitioned_transform_extra_info);
         copy(smem_tiled_copy_S, tZsZ(_,_,_,_,load2transform_consumer_index), tZrZ);
 
@@ -1061,9 +1061,8 @@ public:
           using ScaleArray = cutlass::Array<ElementScale, pack>;
           auto scale_arr = recast<ScaleArray>(filter_zeros(scales));
 
-          if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
-            Tensor dst_vm = cute::group_modes<1,-1>(cute::zipped_divide(dst, pack));
-            Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
+        if constexpr (is_same_v<DstType, cutlass::bfloat16_t>){
+          Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, pack));
 
             for (int i = 0; i < size<1>(dst_vm); ++i){
               auto&& r       = cute::recast<RegArray>(dst_vm(_,i))(0);
@@ -1239,13 +1238,7 @@ public:
       Tensor tCsS = cta_mma.partition_A(sS);
       Tensor tSsS = smem_thr_copy_S.partition_S(tCsS);
       Tensor tSrS = make_tensor<ElementScale>(tSsS(_,_,_,_,0).shape());
-#if 0
-      if(cute::thread(128, 0)){
-        print("sS: ");print(sS);print("\n");
-        print("tSsS: ");print(tSsS);print("\n");
-        print("tSrS: ");print(tSrS);print("\n");
-      }
-#endif
+
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS);
       }
@@ -1254,16 +1247,6 @@ public:
         Tensor tCsZ = cta_mma.partition_A(sZ);
         Tensor tZsZ = smem_thr_copy_S.partition_S(tCsZ);
         Tensor tZrZ = make_tensor<ElementZero>(tZsZ(_,_,_,_,0).shape());
-#if 0
-        if(cute::thread(128, 0)){
-          print("sS: ");print(sS);print("\n");
-          print("tSsS: ");print(tSsS);print("\n");
-          print("tSrS: ");print(tSrS);print("\n");
-          print("sZ: ");print(sZ);print("\n");
-          print("tZsZ: ");print(tZsZ);print("\n");
-          print("tZrZ: ");print(tZrZ);print("\n");
-        }
-#endif
         return cute::make_tuple(smem_tiled_copy_S, tSrS, tSsS, tZrZ, tZsZ);
       }
       else {

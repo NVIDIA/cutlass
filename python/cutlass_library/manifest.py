@@ -655,7 +655,7 @@ class Manifest:
 
     self.kernel_filter_list.append(filter_re)
 
-  def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9992):
+  def get_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9992):
     # Non-negative integer which determines how many kernels are instantiated.
     # 0 = 0000 generates the fewest kernels, 9999 generates all possible combinations.
     # increasing first digit reduces schedule / mixed type pruning,

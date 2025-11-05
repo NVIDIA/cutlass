@@ -43,6 +43,28 @@ from cutlass_cppgen.backend.evt.ir.layout_algorithm import _list_to_tuple, _reve
 from cutlass_cppgen.backend.evt.ir.tensor import Tensor
 
 
+class TupleEmitter:
+    """
+    Emit the cute tuple to C++ code
+    """
+    def __init__(self, stride_dtype):
+        self.stride_dtype = stride_dtype
+
+    def emit(self, py_tuple):
+        if isinstance(py_tuple, int):
+            if py_tuple in [0, 1]:
+                return f"cute::Int<{py_tuple}>"
+            else:
+                return f"{self.stride_dtype}"
+        elif isinstance(py_tuple, tuple):
+            decl = "cute::Stride<"
+            for item in py_tuple:
+                decl += self.emit(item) + ", "
+            return decl[:-2] + ">"
+        else:
+            raise ValueError(f"TupleEmitter.emit only accepts tuple or int, got {type(py_tuple).__name__}")
+
+
 class ImplBase:
     """
     Base class for Node Implementation
@@ -52,7 +74,15 @@ class ImplBase:
         self.name = node.name
         self.tensor = node.tensor
         self._type_decl = None
-        self.stride_dtype = "int64_t"
+        self.tuple_emitter = TupleEmitter("int64_t")
+
+    @property
+    def stride_dtype(self):
+        return self.tuple_emitter.stride_dtype
+
+    @stride_dtype.setter
+    def stride_dtype(self, stride_dtype):
+        self.tuple_emitter.stride_dtype = stride_dtype
 
     @staticmethod
     def match(node, problem_size: tuple):
@@ -81,30 +111,13 @@ class ImplBase:
         """
         return sub(r"(_|-)+", " ", self.name).title().replace(" ", "")
 
-    def _emit_cute_tuple(self, py_tuple):
-        """
-        Emit the cute tuple to C++ code
-        """
-        if isinstance(py_tuple, int):
-            if py_tuple in [0, 1]:
-                return f"cute::Int<{py_tuple}>"
-            else:
-                return f"{self.stride_dtype}"
-        elif isinstance(py_tuple, tuple):
-            decl = "cute::Stride<"
-            for item in py_tuple:
-                decl += self._emit_cute_tuple(item) + ", "
-            return decl[:-2] + ">"
-        else:
-            raise ValueError(f"_emit_cute_tuple only accepts tuple or int, got {type(py_tuple).__name__}")
-
     @property
     def stride_mnl(self):
         """
         Typename StrideMNL
         """
         stride = _list_to_tuple([self.stride[-2], self.stride[-1]] + list(_reverse_tuple(tuple(self.stride[:-2]))))
-        return self._emit_cute_tuple(stride)
+        return self.tuple_emitter.emit(stride)
 
     def get_non_constant_stride(self, py_tuple):
         if isinstance(py_tuple, int):

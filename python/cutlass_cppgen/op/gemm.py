@@ -123,6 +123,7 @@ from cutlass_library import (
     DataType,
     DataTypeSize,
     GemmUniversalMode,
+    KernelScheduleSuffixes,
 )
 
 import cutlass_cppgen
@@ -324,8 +325,8 @@ class Gemm(OperationBase):
             if self.op_class == cutlass_cppgen.OpcodeClass.Simt:
                 raise Exception('ThreadblockSwizzleStreamK is currently only supported with opcode class TensorOp')
 
-            if self.current_cc == 90:
-                raise Exception('ThreadblockSwizzleStreamK is currently unsupported on SM90')
+            if self.current_cc in [90, 100, 101, 103]:
+                raise Exception('ThreadblockSwizzleStreamK is currently unsupported on SM90+')
         self._swizzling_functor = swizzling_functor
 
     #
@@ -395,6 +396,11 @@ class Gemm(OperationBase):
             return (valid, msg)
 
         valid, msg = check.valid_schedule(self.current_cc, td.kernel_schedule, td.epilogue_schedule, td.tile_scheduler)
+
+        if self.cc in [100, 101, 103] and td.kernel_schedule is not None and td.is_2sm and td.cluster_shape[0] % 2 != 0:
+            valid = False
+            msg = "Cluster shape must be divisible by 2 for 2SM kernels on SM100, SM101, and SM103"
+
         return valid, msg
 
     def tile_descriptions(self) -> list:

@@ -104,8 +104,8 @@ class CompilationOptions:
             arch_flag = f"-fsycl-targets={self.arch}"
         else:
             arch_flag = f"-arch=sm_{self.arch}"
-            if self.arch == 90 and int(cutlass_cppgen.nvcc_version().split('.')[0]) >= 12:
-                arch_flag += "a"
+            if self.arch in [90, 100, 101, 103, 120, 121] and int(cutlass_cppgen.nvcc_version().split('.')[0]) >= 12:
+               arch_flag += "a"
 
         opts.append(arch_flag)
 

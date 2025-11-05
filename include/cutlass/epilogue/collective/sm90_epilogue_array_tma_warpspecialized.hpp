@@ -507,8 +507,7 @@ public:
       int thread_idx,
       TensorStorage& shared_tensors,
       TensorMapC const& load_tensormap,
-      int subtile_idx=-1,
-      bool wait_until_load_finishes = false) {
+      int subtile_idx=-1) {
     using namespace cute;
 
     // Indexing variables
@@ -594,12 +593,6 @@ public:
 
     // Post-loop fusion callback entry point
     pld_callbacks.end();
-
-    if (wait_until_load_finishes && did_load) {
-      typename CollectiveEpilogue::LoadPipelineState epi_load_pipe_tma_consumer_state =
-        {last_load_producer_state.index(), !last_load_producer_state.phase(), last_load_producer_state.count()};
-      load_pipeline.consumer_wait(epi_load_pipe_tma_consumer_state);
-    }
 
     return load_pipe_producer_state;
   }

@@ -251,6 +251,9 @@ def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args, 
         _fields_ = [
             ("device_id", ctypes.c_int),
             ("sm_count", ctypes.c_int),
+            ("max_active_clusters", ctypes.c_int),
+            ("cluster_shape", dim3_),
+            ("cluster_shape_fallback", dim3_),
         ]
 
     class _GemmArguments(ctypes.Structure):

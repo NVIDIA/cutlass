@@ -189,7 +189,7 @@ class GemmArguments2x(ArgumentBase):
         if operation.C.layout in [LayoutType.RowMajorInterleaved32, LayoutType.ColumnMajorInterleaved32]:
             raise Exception("Interleaved layout not currently supported")
 
-        if hasattr(self.operation.epilogue_functor, "visitor") and operation.arch != 90:
+        if hasattr(self.operation.epilogue_functor, "visitor") and operation.arch not in [90, 100, 101, 103]:
             super().__init__(A, B, None, None, **kwargs)
         else:
             super().__init__(A, B, C, D, **kwargs)
@@ -574,7 +574,9 @@ class GemmArguments3x(GemmArguments2x):
 
         # Set hardware info
         hw_info_ = hw_info(
-            0, device_sm_count(),
+            0, device_sm_count(), 0,
+            dim3_(0,0,0),
+            dim3_(0,0,0),
         )
 
         self.arguments = argument_type(

@@ -41,6 +41,7 @@ from cutlass_library import (
     DataType,
     DataTypeSize,
     EpilogueScheduleType,
+    KernelScheduleSuffixes,
     KernelScheduleType,
     MathOperation,
     OpcodeClass,
@@ -238,6 +239,22 @@ class MathInstruction:
         self.math_operation = math_operation
 
 
+def to_blackwell_threadblock_shape(tile_description, cluster_shape, kernel_schedule):
+    blackwell_threadblock_shape = tile_description.threadblock_shape
+    is_2sm = False if kernel_schedule is None else ("2sm" in KernelScheduleSuffixes[kernel_schedule])
+    if cluster_shape[0] > 0:
+        blackwell_threadblock_shape = [
+            tile_description.threadblock_shape[0] // cluster_shape[0],
+            tile_description.threadblock_shape[1] // cluster_shape[1],
+            tile_description.threadblock_shape[2] // cluster_shape[2]
+        ]
+        if is_2sm:
+            blackwell_threadblock_shape[0] *= 2
+    else:
+        blackwell_threadblock_shape = tile_description.math_instruction.instruction_shape
+    return blackwell_threadblock_shape, is_2sm
+
+
 class TileDescription:
     """
     Description of a tile of computation to be performed in the kernel, encompassing threadblock, cluster, and warp shapes,
@@ -289,6 +306,8 @@ class TileDescription:
 
         # Number of warps along x, y, z directions
         self.warp_count = warp_count
+
+        self.blackwell_threadblock_shape, self.is_2sm = to_blackwell_threadblock_shape(self, self.cluster_shape, self.kernel_schedule)
 
     def clone_and_update(self, td: dict):
         attrs = {
@@ -476,7 +495,7 @@ def api_version(arch, opclass, dtype):
     if opclass == OpcodeClass.TensorOp and is_intel_xe_arch(arch):
         return ApiVersion.v3x
 
-    if (arch >= 90 and
+    if (arch in [90, 100, 101, 103] and
         opclass == OpcodeClass.TensorOp and
         (dtype != DataType.f64)):
         return ApiVersion.v3x

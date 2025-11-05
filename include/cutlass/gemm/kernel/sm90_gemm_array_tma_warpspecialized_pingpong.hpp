@@ -869,8 +869,6 @@ public:
               collective_epilogue.template tensormaps_fence_acquire<IsEpiLoad>(epi_load_tensormap);
             }
 
-            bool wait = work_tile_info.is_valid() && curr_batch != next_work_tile_info.L_idx;
-
             epi_load_pipe_producer_state = collective_epilogue.load(
               epi_load_pipeline,
               epi_load_pipe_producer_state,
@@ -881,8 +879,7 @@ public:
               lane_idx,
               shared_storage.tensors.epilogue,
               epi_load_tensormap,
-              work_tile_info.reduction_subtile_idx(),
-              wait
+              work_tile_info.reduction_subtile_idx()
             );
           }
 
