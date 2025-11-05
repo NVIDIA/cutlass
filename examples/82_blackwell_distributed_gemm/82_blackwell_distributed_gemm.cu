@@ -475,8 +475,8 @@ GemmArguments gemm_args_from_options(const Options &options) {
     }
   };
   // Preferred cluster can fail if these aren't set explicitly
-  arguments.hw_info.cluster_shape = dim3(1,1,1);
-  arguments.hw_info.cluster_shape_fallback = dim3(1,1,1);
+  arguments.hw_info.cluster_shape = dim3(2,1,1);
+  arguments.hw_info.cluster_shape_fallback = dim3(2,1,1);
 
   return arguments;
 }
@@ -551,8 +551,8 @@ DistGemmArguments dist_gemm_args_from_options(
     {}                                                                             // scheduler
   };
   // Preferred cluster can fail if these aren't set explicitly
-  arguments.hw_info.cluster_shape = dim3(1,1,1);
-  arguments.hw_info.cluster_shape_fallback = dim3(1,1,1);
+  arguments.hw_info.cluster_shape = dim3(2,1,1);
+  arguments.hw_info.cluster_shape_fallback = dim3(2,1,1);
 
   return arguments;
 }
