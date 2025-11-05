@@ -1,5 +1,5 @@
 name: Bug Report
-description: Create a bug report to help us improve CUTLASS
+description: Create a bug report to help us improve SYCL*TLA
 title: "[BUG] "
 labels: ["? - Needs Triage", "bug"]
 assignees: []
@@ -10,8 +10,9 @@ body:
     attributes:
       label: Which component has the problem?
       options:
-        - CuTe DSL
-        - CUTLASS C++
+        - CuTe APIs
+        - CUTLASS APIs
+        - Python (APIs or Pypi package)
     validations:
       required: true
   - type: textarea
