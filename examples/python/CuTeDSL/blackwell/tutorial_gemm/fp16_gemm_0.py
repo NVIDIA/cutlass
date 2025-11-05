@@ -52,7 +52,7 @@ acc_stage = 1
 
 @cute.struct
 class SharedStorage:
-    # each stage has2 kinds of barrier, i.e. empty & full
+    # each stage has 2 kinds of barrier, i.e. empty & full
     ab_mbar_ptr: cute.struct.MemRange[cutlass.Int64, ab_stages * 2]
     acc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, acc_stage * 2]
     tmem_holding_buf: cutlass.Int32
