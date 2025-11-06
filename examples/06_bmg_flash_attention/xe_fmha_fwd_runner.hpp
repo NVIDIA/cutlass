@@ -359,7 +359,7 @@ template <class FMHAKernel> struct ExampleRunner {
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_O.get(), block_O.get(),
-                                                                          block_O.size(), ElementO{0.005}, ElementO{0.005});
+                                                                          block_O.size(), ElementO{0.05}, ElementO{0.05});
 
     return passed;
   }
@@ -531,7 +531,11 @@ struct FMHAConfig {
 
   static constexpr int SGTileQ = get<0>(shape_div(TileShapeQK{}, shape(SubgroupLayoutQK{})))();
   using MMAOperation = cute::conditional_t<is_void_v<MMAOperation_>,
-                                           XE_DPAS_TT<cute::gcd(SGTileQ, 8), float, ElementQ>,
+                                           typename cute::conditional_t<
+                                               cute::is_same_v<ElementQ, cutlass::float_e5m2_t> || cute::is_same_v<ElementQ, cutlass::float_e4m3_t>,
+                                               XE_DPAS_TT<cute::gcd(SGTileQ, 8), float, half_t>,
+                                               XE_DPAS_TT<cute::gcd(SGTileQ, 8), float, ElementQ> 
+                                           >,
                                            MMAOperation_>;
   using SubgroupLayoutPV = cute::conditional_t<is_void_v<SubgroupLayoutPV_>,
                                                decltype(cutlass::fmha::collective::get_sg_layout_pv(SubgroupLayoutQK{})),

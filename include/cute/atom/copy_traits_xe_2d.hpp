@@ -1216,7 +1216,7 @@ make_block_2d_prefetch(const Shape&, Stride<Strides...> const& stride, const XMo
   constexpr auto shape_y = get<YMode::value>(Shape{});
 
   // Try to retrieve whole cache lines (contiguous dimension = x)
-  constexpr auto width = cute::min(shape_x, 512 / sizeof_bits_v<ValType>);
+  constexpr auto width = cute::gcd(shape_x, 512 / sizeof_bits_v<ValType>);
 
   // Do a preliminary tiling to choose appropriate height.
   constexpr int n_sg_x = cute::gcd(SGCount, ceil_div(shape_x, width));

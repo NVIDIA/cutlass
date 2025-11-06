@@ -147,6 +147,18 @@ int main(int argc, const char **argv) {
 #else
   constexpr int PipelineStages = 2;
 #endif
-
-  return FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages>::run(options);
+#ifdef IS_FLOAT_E5M2
+  using ElementQ = cutlass::float_e5m2_t;
+  using ElementK = cutlass::float_e5m2_t;
+  using ElementV = cutlass::float_e5m2_t;
+#elif defined(IS_FLOAT_E4M3)
+  using ElementQ = cutlass::float_e4m3_t;
+  using ElementK = cutlass::float_e4m3_t;
+  using ElementV = cutlass::float_e4m3_t;
+#else
+  using ElementQ = bfloat16_t;
+  using ElementK = bfloat16_t;
+  using ElementV = bfloat16_t;
+#endif
+  return FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages, ElementQ, ElementK, ElementV>::run(options);
 }
