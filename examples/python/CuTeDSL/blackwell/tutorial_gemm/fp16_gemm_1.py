@@ -22,7 +22,6 @@ import cutlass.utils as utils
 import cutlass.torch as cutlass_torch
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
-import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
 """
@@ -357,13 +356,13 @@ def host_function(
     tiled_mma = cute.make_tiled_mma(op)
 
     # Construct SMEM layouts for A and B
-    a_smem_layout = sm100_utils.make_smem_layout_a(
+    a_smem_layout = utils.sm100.make_smem_layout_a(
         tiled_mma,
         mma_tiler_mnk,
         a.element_type,
         ab_stages,
     )
-    b_smem_layout = sm100_utils.make_smem_layout_b(
+    b_smem_layout = utils.sm100.make_smem_layout_b(
         tiled_mma,
         mma_tiler_mnk,
         b.element_type,
