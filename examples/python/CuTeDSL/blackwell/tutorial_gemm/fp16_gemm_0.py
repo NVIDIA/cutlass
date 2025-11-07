@@ -32,8 +32,9 @@ with optimizations for challenges that may arise with other problem sizes.
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_gemm/fp16_gemm_0.py  \
-      --mnk 8192,8192,8192
+    python examples/blackwell/tutorial_fp16_gemm_0.py  \
+      --mnk 8192,8192,8192                             \
+      --tolerance 1e-01
 
 Constraints for this example:
 * The problem size of m and n must be divisible by the tile size m & n (128, 256)
@@ -52,7 +53,6 @@ acc_stage = 1
 
 @cute.struct
 class SharedStorage:
-    # each stage has 2 kinds of barrier, i.e. empty & full
     ab_mbar_ptr: cute.struct.MemRange[cutlass.Int64, ab_stages * 2]
     acc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, acc_stage * 2]
     tmem_holding_buf: cutlass.Int32
@@ -188,7 +188,7 @@ def kernel(
     # (EpiTile, NumTiles)
     gC_epi = cute.zipped_divide(tCgC, epi_tiler)
 
-    # Every thread loads 64 x fp32
+    # Every thread loads 32x128 bits
     tmem_atom = cute.make_copy_atom(
         tcgen05.Ld32x32bOp(tcgen05.Repetition.x64),
         cutlass.Float32,
@@ -202,9 +202,9 @@ def kernel(
     tDgC = tmem_thr_copy.partition_D(gC_epi)
 
     # (TmemCpy,NumTmemCpy)
-    tCrAcc = cute.make_rmem_tensor_like(tDgC[None, None, 0], acc_dtype)
+    tCrAcc = cute.make_rmem_tensor(tDgC[None, None, 0].shape, acc_dtype)
     # (TmemCpy,NumTmemCpy)
-    tCrC = cute.make_rmem_tensor_like(tDgC[None, None, 0], io_dtype)
+    tCrC = cute.make_rmem_tensor(tDgC[None, None, 0].shape, io_dtype)
 
     #
     # 2. Main loop
