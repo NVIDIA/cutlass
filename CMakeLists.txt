@@ -158,7 +158,6 @@ if (CUTLASS_ENABLE_SYCL)
     add_compile_definitions(CUTLASS_SYCL_BUILTIN_ENABLE)
   endif()
 
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)
 endif()
 find_package(Doxygen QUIET)
 
@@ -201,7 +200,7 @@ set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
 
 if(CUTLASS_ENABLE_HEADERS_ONLY)
   set(CUTLASS_ENABLE_EXAMPLES_INIT OFF)
-  set(CUTLASS_ENABLE_TOOLS_INIT ON)
+  set(CUTLASS_ENABLE_TOOLS_INIT OFF)
   set(CUTLASS_ENABLE_LIBRARY_INIT OFF)
   set(CUTLASS_ENABLE_TESTS_INIT OFF)
 else()
@@ -213,6 +212,9 @@ else()
   else()
     set(CUTLASS_ENABLE_TESTS_INIT OFF)
   endif()
+
+  # Not include MKL when headers only
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)
 endif()
 
 set(CUTLASS_TEST_UNIT_ENABLE_WARNINGS OFF CACHE BOOL "Enable warnings on waived unit tests.")
