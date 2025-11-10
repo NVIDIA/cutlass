@@ -1082,8 +1082,10 @@ struct CollectiveMma<
       }
     }
     else {
-      // Wait for tmem accumulator buffer to become empty with a flipped phase
-      accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+      if (k_tile_count > 0) {
+        // Wait for tmem accumulator buffer to become empty with a flipped phase
+        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+      }
     }
 
     CUTLASS_PRAGMA_NO_UNROLL

@@ -132,7 +132,7 @@ using namespace cute;
 using TP = _8;
 static constexpr int TP_ = TP{};
 
-#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && \
+#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && \
   (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
 
 // Distributed GEMM tiling/sharding schedule
@@ -254,7 +254,7 @@ HostTensorB tensor_B_arr[TP_];
 HostTensorD tensor_C_arr[TP_];
 HostTensorD tensor_D_arr[TP_];
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) &&
+#endif // (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) &&
        // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -347,8 +347,7 @@ struct Result {
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && \
-  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+#if ((__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -405,9 +404,9 @@ void initialize(const Options &options) {
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, shape_C);
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, shape_D);
 
-  auto a_coord = cutlass::make_Coord(size(shape_A), 1);
-  auto b_coord = cutlass::make_Coord(size(shape_B), 1);
-  auto c_coord = cutlass::make_Coord(size(shape_C), 1);
+  auto a_coord = cutlass::make_Coord(size<2>(shape_A)*size<0>(shape_A), size<1>(shape_A));
+  auto b_coord = cutlass::make_Coord(size<2>(shape_B)*size<0>(shape_B), size<1>(shape_B));
+  auto c_coord = cutlass::make_Coord(size<2>(shape_C)*size<0>(shape_C), size<1>(shape_C));
 
   tensor_A.resize(a_coord);
   tensor_B.resize(b_coord);
@@ -475,6 +474,9 @@ GemmArguments gemm_args_from_options(const Options &options) {
       tensor_ref_D.device_data(), stride_D
     }
   };
+  // Preferred cluster can fail if these aren't set explicitly
+  arguments.hw_info.cluster_shape = dim3(2,1,1);
+  arguments.hw_info.cluster_shape_fallback = dim3(2,1,1);
 
   return arguments;
 }
@@ -548,6 +550,9 @@ DistGemmArguments dist_gemm_args_from_options(
     {},                                                                            // hw_info
     {}                                                                             // scheduler
   };
+  // Preferred cluster can fail if these aren't set explicitly
+  arguments.hw_info.cluster_shape = dim3(2,1,1);
+  arguments.hw_info.cluster_shape_fallback = dim3(2,1,1);
 
   return arguments;
 }
@@ -652,7 +657,7 @@ int run(Options &options) {
     arguments_[device_idx] = dist_gemm_args_from_options(options, device_idx, stream_arr[device_idx]);
 
     // Using the arguments, query for extra workspace required for matrix multiplication computation
-    size_t workspace_size = DistGemm::get_workspace_size(arguments_[device_idx]);
+    size_t workspace_size = DistGemm::get_workspace_size(arguments_, device_idx);
     size_t exclusive_workspace_size = DistGemm::get_exclusive_workspace_size();
 
     workspace_arr[device_idx] = cutlass::device_memory::allocation<uint8_t>(workspace_size);
@@ -806,8 +811,7 @@ int run(Options &options) {
   return 0;
 }
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) &&
-       // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+#endif // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -861,7 +865,7 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)))
+#if ((__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)))
   run(options);
 #else
     std::cerr

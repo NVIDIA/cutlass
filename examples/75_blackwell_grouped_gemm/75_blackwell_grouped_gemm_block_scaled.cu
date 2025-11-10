@@ -379,14 +379,14 @@ struct Options {
       int m = cmd_line_m;
       int n = cmd_line_n;
       int k = cmd_line_k;
-      if (m < 1) {
-        m = alignment * ((rand() % 64) + 1);
+      if (m < 0) {
+        m = alignment * ((rand() % 64));
       }
-      if (n < 1) {
-        n = alignment * ((rand() % 64) + 1);
+      if (n < 0) {
+        n = alignment * ((rand() % 64));
       }
-      if (k < 1) {
-        k = alignment * ((rand() % 64) + 1);
+      if (k < 0) {
+        k = alignment * ((rand() % 64));
       }
       problem_sizes_host.push_back({m, n, k});
     }

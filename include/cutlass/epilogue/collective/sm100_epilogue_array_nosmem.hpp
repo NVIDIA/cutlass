@@ -194,11 +194,15 @@ public:
     static_assert(rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
 
     // Separate out problem shape for convenience
-    auto M = get<0>(problem_shape_mnkl);
-    auto N = get<1>(problem_shape_mnkl);
-    auto L = get<3>(problem_shape_mnkl);
+    auto [M, N, K, L] = problem_shape_mnkl;
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = cta_coord_mnkl;
+    bool is_accumulator_needed = K > 0;
+
+    if (is_accumulator_needed) {
+      // Wait for mma warp to fill tmem buffer with accumulator results
+      acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+    }
 
     // Batches are managed by using appropriate pointers to C and D matrices
     auto problem_shape_mnl = append<3>(make_shape(M,N),Int<1>{});
@@ -320,13 +324,17 @@ public:
     else {
       Tensor tAcc = accumulators(make_coord(_,_),_0{},_0{});                                           // (CTA_M,CTA_N)
       Tensor tTR_tAcc = thread_t2r.partition_S(tAcc);                                              // (T2R,T2R_M,T2R_N)
-
-      copy(tiled_t2r, tTR_tAcc, tTR_rAcc);
+      if (is_accumulator_needed) {
+        copy(tiled_t2r, tTR_tAcc, tTR_rAcc);
+      } else {
+        fill(tTR_rAcc, 0);
+      }
     }
-
-    cutlass::arch::fence_view_async_tmem_load();
-    acc_pipeline.consumer_release(acc_pipe_consumer_state);
-    ++acc_pipe_consumer_state;
+    if (is_accumulator_needed) {
+      cutlass::arch::fence_view_async_tmem_load();
+      acc_pipeline.consumer_release(acc_pipe_consumer_state);
+      ++acc_pipe_consumer_state;
+    }
 
     // 2. Apply element-wise operation and store to gmem
     // source is needed
@@ -628,12 +636,16 @@ public:
     static_assert(rank(CtaCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
     static_assert(cute::sizeof_bits_v<ElementD> != 6, "Output element requires smem");
 
-    auto M = get<0>(problem_shape_mnkl);
-    auto N = get<1>(problem_shape_mnkl);
-    auto L = get<3>(problem_shape_mnkl);
-
+    // Separate out problem shape for convenience
+    auto [M, N, K, L] = problem_shape_mnkl;
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = cta_coord_mnkl;
+    bool is_accumulator_needed = K > 0;
+
+    if (is_accumulator_needed) {
+      // Wait for mma warp to fill tmem buffer with accumulator results
+      acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+    }
 
     // Batches are managed by using appropriate pointers to C and D matrices
     auto problem_shape_mnl = append<3>(make_shape(M,N),Int<1>{});
@@ -740,7 +752,7 @@ public:
     auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // The Epilogue Loop
-    auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+    auto epi_loop_fn = [&] (auto& cst_callbacks, bool is_accumulator_needed) CUTLASS_LAMBDA_FUNC_INLINE {
       // Ensure there are no threads from the previous wave writing to shared memory being utilized for the current wave.
       synchronize();
       cst_callbacks.begin();
@@ -802,10 +814,15 @@ public:
 
         Tensor tTR_rAcc_frg = recast<Array<ElementAccumulator, FragmentSize>>(coalesce(tTR_rAcc));
 
-        copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+        if (is_accumulator_needed) {
+          copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+        }
+        else {
+          fill(tTR_rAcc, 0);
+        }
 
         // After the last tmem load, signal that tmem buffer is consumed and empty
-        if (do_acc_release) {
+        if (do_acc_release && is_accumulator_needed) {
           cutlass::arch::fence_view_async_tmem_load();
           acc_pipeline.consumer_release(acc_pipe_consumer_state);
           ++acc_pipe_consumer_state;
@@ -886,7 +903,7 @@ public:
     // BEGIN EPILOGUE
     //
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
-    epi_loop_fn(cst_callbacks);
+    epi_loop_fn(cst_callbacks, is_accumulator_needed);
     return cute::make_tuple(acc_pipe_consumer_state);
   }
 
