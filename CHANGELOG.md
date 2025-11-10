@@ -9,7 +9,6 @@
     - Supported source location tracking for DSL APIs
     - Supported dumping PTX and CUBIN code
 * More examples and notebooks to get started with CuTe DSL:
-    - [Kernel launch with Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py)
     - Improved performance of elementwise kernel (https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/ampere/elementwise_apply.py):
         + Generalize code to handle list of input tensors
         + Generalize TV layout computation to handle different data types
