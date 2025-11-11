@@ -1273,7 +1273,7 @@ struct Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::uchar4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t lshifts = 0x00000004;
     const uint32_t rshifts = 0x00040000;
     asm (     /* 9 cycles/output register */
@@ -1306,34 +1306,5 @@ struct Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t>
 
 template <> struct Xe_Reorder<ReorderKind::UV, int4_t, int4_t>             : Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t> {};
 template <> struct Xe_Reorder<ReorderKind::UV, float_e2m1_t, float_e2m1_t> : Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t> {};
-
-/****************/
-/* Downconverts */
-/****************/
-
-template <>
-struct Xe_Reorder<ReorderKind::UU, float, bfloat16_t>
-{
-  using SRegisters = intel::float2[1];
-  using DRegisters = intel::ushort2[1];
-
-  CUTE_HOST_DEVICE static void
-  reorder(intel::float2 const& src0, intel::ushort2& dst0)
-  {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
-    asm (     /* 2 cycles/output register */
-      "{\n"
-      ".decl IN_F   v_type=G type=F  num_elts=32 alias=<%1,0>\n"
-      ".decl OUT_BF v_type=G type=BF num_elts=32 alias=<%0,0>\n"
-      "mov (M1_NM, 32) OUT_BF(0,0)<1> IN_F(0,0)<1;1,0>\n"
-      "}\n"
-      : "=rw"(dst0)
-      : "rw"(src0)
-    );
-#else
-  CUTE_INVALID_CONTROL_PATH("Not Xe");
-#endif
-  }
-};
 
 } // end namespace cute

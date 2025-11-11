@@ -307,12 +307,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
 
       /* Apply softmax and scaling */
       softmax(K == 0, tSrS, tA_max, tA_sum, tArA);
-#if 0
       reorder(tSrS, tArP);
-#else
-      for (int i = 0; i < tArP.size(); i++)   // SYCL compiler currently is not correctly handling the above reorder.
-        tArP(i) = static_cast<typename TiledMMAPV::ValTypeA>(tSrS(i));
-#endif
 
       /* GEMM 2: A += P * V, split in v dimension */
       CUTLASS_PRAGMA_UNROLL
