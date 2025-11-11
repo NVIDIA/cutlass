@@ -308,6 +308,12 @@ struct IntelXeXMX16 {
 struct IntelXeXMX16Group {
   static constexpr int SubgroupSize = 16;
 };
+
+// Note: This dispatch policy is specifically added for CollectiveEpilogue to support
+// the integration of new MMA atoms (XE_DPAS_TT) and copy atoms for Intel XE architecture
+struct IntelXeGeneric {
+  static constexpr int SubgroupSize = 16;
+};
 #endif
 
 //////////////////////////////////////////////////////////////////////////////

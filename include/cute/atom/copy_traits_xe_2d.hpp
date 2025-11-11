@@ -1297,9 +1297,19 @@ template <class CopyOp, class TiledMMA, class CTensor>
 auto get_block_2d_copy_C(TiledMMA const& tiled_mma, CTensor const& c_tensor)
 {
   if constexpr (!std::is_void_v<CopyOp>) {
-    return make_block_2d_copy_C(CopyOp{}, tiled_mma, c_tensor);
+    return make_block_2d_copy_CD(CopyOp{}, tiled_mma, c_tensor);
   } else {
     return make_block_2d_copy_C(tiled_mma, c_tensor);
+  }
+}
+
+template <class CopyOp, class TiledMMA, class DTensor>
+auto get_block_2d_copy_D(TiledMMA const& tiled_mma, DTensor const& d_tensor)
+{
+  if constexpr (!std::is_void_v<CopyOp>) {
+    return make_block_2d_copy_CD(CopyOp{}, tiled_mma, d_tensor);
+  } else {
+    return make_block_2d_copy_D(tiled_mma, d_tensor);
   }
 }
 

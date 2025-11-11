@@ -350,6 +350,10 @@ int main(int argc, const char** argv)
   // Refer https://github.com/intel/sycl-tla/blob/main/media/docs/cpp/xe_rearchitecture.md
   using GmemTiledCopyA = void; //XE_LOAD_2D<16, 32, 32>;
   using GmemTiledCopyB = void; //XE_LOAD_2D_VNNI<16, 32, 32>;
+  using GmemTiledCopyC = XE_LOAD_2D<32, 8, 16>; 
+  using GmemTiledCopyD = XE_STORE_2D<32, 8, 16>; 
+  
+ 
 
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
@@ -369,9 +373,8 @@ int main(int argc, const char** argv)
 
   // For Intel BMG, PipelineStages defines how many k-blocks ahead to prefetch from A and B.
   constexpr int PipelineStages = 2;
-  // For older version of copy/mma atom, use cutlass::gemm::MainloopIntelXeXMX16 as dispatch policy
   using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1Staged<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGeneric;
 
   // This is the 'default' epilogue operation (Linear Combination) which performs everything in:
   // (D = alpha * (A*B) + beta * C)
@@ -394,9 +397,9 @@ int main(int argc, const char** argv)
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           FusionCallBacks,
-          XE_2D_U32x8x16_LD_N, // The copy atom used to load matrix C
+          GmemTiledCopyC, // The copy atom used to load matrix C
           void, void,
-          XE_2D_U32x8x16_ST_N, // The copy atom used to store matrix D
+          GmemTiledCopyD, // The copy atom used to store matrix D
           void, void>;
 
   // GEMM Mainloop - iteration over blocks in K dimension
