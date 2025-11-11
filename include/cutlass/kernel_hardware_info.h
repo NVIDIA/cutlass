@@ -72,6 +72,17 @@ struct KernelHardwareInfo {
 #endif
     return multiprocessor_count;
   }
+  // Query maximum number of active clusters that could co-exist on the target device
+  // based on kernel properties such as cluster dims and threadblock dims
+  // Return 0 for Intel Xe12 and Xe20 architectures for now
+  static inline int
+  query_device_max_active_clusters(
+      dim3 cluster_dims,
+      uint32_t threads_per_block,
+      void const* kernel_ptr) {
+    return 0;
+  }
+
 
 #elif !defined(__CUDACC_RTC__)
   static inline int

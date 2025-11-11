@@ -80,6 +80,8 @@ private:
 public:
   Manifest (Provider provider = library::Provider::kCUTLASS) : provider_(provider) { }
 
+  Provider get_provider() const { return provider_; }
+
   /// Top-level initialization
   Status initialize();
 

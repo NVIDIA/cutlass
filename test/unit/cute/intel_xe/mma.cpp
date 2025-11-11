@@ -414,4 +414,13 @@ TEST(PVC_CuTe_Xe, MMA_DPAS_TF32_1x16) {
            tfloat32_t, float>(512, 512, 256);
 }
 
+#else
+
+// For the fallback case
+#include "cutlass_unit_test.h"
+
+TEST(PVC_CuTe_Xe, MMA_DPAS_TESTS) {
+  GTEST_SKIP() << "MMA DPAS tests require IGC version 2.18 or higher. skipped";
+}
+
 #endif

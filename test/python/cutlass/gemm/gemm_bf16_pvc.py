@@ -1,6 +1,7 @@
 #################################################################################################
 #
 # Copyright (c) 2023 - 2025 Codeplay Software Limited. All rights reserved.
+# Copyright (c) 2025 Intel Corporation. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,16 +41,16 @@ import unittest
 
 import cutlass_cppgen
 from cutlass_cppgen.backend.utils.device import device_cc
-
+from cutlass_library.arch_constants import ( INTEL_XE12, is_intel_xe_arch)
 from utils import LayoutCombination, add_test_gemm
 
 
 cutlass_cppgen.set_log_level(logging.WARNING)
-cc = 11
+cc = INTEL_XE12  # PVC architecture is 12 (Xe-HPC)
 dtype = cutlass_cppgen.DataType.bf16
 
 
-@unittest.skipIf(device_cc() != cc, 'Device compute capability is insufficient for PVC tests.')
+@unittest.skipIf(not is_intel_xe_arch(device_cc()), 'Device compute capability is insufficient for PVC tests.')
 @unittest.skipIf(cutlass_cppgen.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
 class GemmBF16PVC(unittest.TestCase):
     """
@@ -58,7 +59,7 @@ class GemmBF16PVC(unittest.TestCase):
     pass
 
 
-add_test_pvc_bf16 = partial(add_test_gemm, cls=GemmBF16PVC, cc=11,
+add_test_pvc_bf16 = partial(add_test_gemm, cls=GemmBF16PVC, cc=INTEL_XE12,
                             element=dtype,
                             compilation_modes=["dpcpp"],
                             opclass=cutlass_cppgen.OpcodeClass.TensorOp,

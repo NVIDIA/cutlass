@@ -102,6 +102,9 @@ __global__ void
     Element b = cutlass::ReferenceFactory<Element>::get(ptr_B, idx);
 
     if (!relatively_equal(a, b, epsilon, nonzero_floor)) {
+#ifdef SHOW_DIFF
+      printf("[%zu]: %f vs %f\n", idx, (double) a, (double) b);
+#endif
       *equal = 0;
       return;
     }

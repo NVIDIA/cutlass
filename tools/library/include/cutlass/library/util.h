@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -224,21 +225,35 @@ NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type);
     }                                                                                              \
   } while (0)
 
-// RAII CUDA buffer container
+// RAII device buffer container (CUDA/SYCL compatible)
 class CudaBuffer {
 public:
   CudaBuffer() : size_(0), d_ptr_(nullptr) {}
 
   explicit CudaBuffer(size_t size) : size_(size), d_ptr_(nullptr) {
+#if defined(CUTLASS_ENABLE_SYCL)
+    // SYCL memory allocation using malloc_device
+    auto q = compat::get_default_queue();
+    d_ptr_ = sycl::malloc_device(size_, q);
+    if (d_ptr_ == nullptr) {
+      throw std::runtime_error("sycl::malloc_device failed");
+    }
+#else
     cudaError_t err = cudaMalloc(&d_ptr_, size_);
     if (err != cudaSuccess) {
       throw std::runtime_error("cudaMalloc failed: " + std::string(cudaGetErrorString(err)));
     }
+#endif
   }
 
   ~CudaBuffer() {
     if (d_ptr_) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      auto q = compat::get_default_queue();
+      sycl::free(d_ptr_, q);
+#else
       cudaFree(d_ptr_);
+#endif
     }
   }
 
@@ -253,7 +268,12 @@ public:
   CudaBuffer& operator=(CudaBuffer&& other) noexcept {
     if (this != &other) {
       if (d_ptr_) {
+#if defined(CUTLASS_ENABLE_SYCL)
+        auto q = compat::get_default_queue();
+        sycl::free(d_ptr_, q);
+#else
         cudaFree(d_ptr_);
+#endif
       }
       d_ptr_ = other.d_ptr_;
       size_ = other.size_;

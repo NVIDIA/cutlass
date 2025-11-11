@@ -123,6 +123,17 @@ struct IntelXe {
   static int const kMinComputeCapability = 0;
 };
 
+// Intel Xe architecture aliases for library generation compatibility
+// Xe12 = PVC (Ponte Vecchio)
+struct Xe12 : IntelXe {
+  static int const kIntelXeArch = 12;
+};
+
+// Xe20 = BMG (Battlemage) 
+struct Xe20 : IntelXe {
+  static int const kIntelXeArch = 20;
+};
+
 struct Agnostic {
   static int const kMinComputeCapability = 1;
 };

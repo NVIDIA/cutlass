@@ -33,6 +33,27 @@ set(TEST_NO_PAGED "")
 set(TEST_PAGED "--use_paged_kv")
 
 foreach(HEAD_DIM 64 96 128 192)
+  foreach(INPUT_TYPE bfloat16_t float_e5m2_t float_e4m3_t)
+    cutlass_example_add_executable(
+      06_xe_fmha_fwd_prefill_${INPUT_TYPE}_hdim${HEAD_DIM}
+      06_xe_fmha_fwd.cpp
+    )
+
+    cutlass_example_add_executable(
+      06_xe_fmha_fwd_decode_${INPUT_TYPE}_hdim${HEAD_DIM}
+      06_xe_fmha_fwd.cpp
+    )
+    if(INPUT_TYPE STREQUAL "bfloat16_t")
+      set(INPUT_MACRO "IS_BFLOAT16")
+    elseif(INPUT_TYPE STREQUAL "float_e5m2_t")
+      set(INPUT_MACRO "IS_FLOAT_E5M2")
+    elseif(INPUT_TYPE STREQUAL "float_e4m3_t")
+      set(INPUT_MACRO "IS_FLOAT_E4M3")
+    endif()
+
+    target_compile_definitions(06_xe_fmha_fwd_prefill_${INPUT_TYPE}_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} PREFILL SHOW_DIFF=1 INPUT_TYPE=${INPUT_TYPE} ${INPUT_MACRO})
+    target_compile_definitions(06_xe_fmha_fwd_decode_${INPUT_TYPE}_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} DECODE SHOW_DIFF=1 INPUT_TYPE=${INPUT_TYPE} ${INPUT_MACRO})
+  endforeach()
 
   cutlass_example_add_executable(
     06_bmg_prefill_attention_hdim${HEAD_DIM}

@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -163,8 +164,8 @@ template <
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, half_t, void>,
-        "ElementC needs to be one of: float, bfloat, half for the Intel pipeline");
+      static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, half_t, int32_t, void>,
+        "ElementC needs to be one of: float, bfloat, half, int32, or void for the Intel pipeline");
       
       using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>, 
                                                   IntelXeXMX16,
@@ -198,7 +199,7 @@ template <
       using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
             DispatchPolicy,
             TileShape_MNK,
-            ElementAccumulator,
+            ElementC,
             StrideC,
             ElementD,
             StrideD,
@@ -211,4 +212,110 @@ template <
             CopyOpR2S_
         >;
     };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Xe12 (PVC) Epilogue CollectiveBuilder - forwards to IntelXe
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  class TileShape_MNK,
+  class EpilogueTileType,
+  class ElementAccumulator,
+  class ElementCompute,
+  class ElementC,
+  class GmemLayoutTagC,
+  int AlignmentC,
+  class ElementD,
+  class GmemLayoutTagD,
+  int AlignmentD,
+  class EpilogueScheduleType,
+  class FusionOpOrCallbacks
+  >
+struct CollectiveBuilder<
+  arch::Xe12,
+  arch::OpClassTensorOp,
+  TileShape_MNK,
+  Shape<_1, _1, _1>,
+  EpilogueTileType,
+  ElementAccumulator,
+  ElementCompute,
+  ElementC,
+  GmemLayoutTagC,
+  AlignmentC,
+  ElementD,
+  GmemLayoutTagD,
+  AlignmentD,
+  EpilogueScheduleType,
+  FusionOpOrCallbacks
+  > : CollectiveBuilder<
+      arch::IntelXe,  // Forward to IntelXe
+      arch::OpClassTensorOp,
+      TileShape_MNK,
+      Shape<_1, _1, _1>,
+      EpilogueTileType,
+      ElementAccumulator,
+      ElementCompute,
+      ElementC,
+      GmemLayoutTagC,
+      AlignmentC,
+      ElementD,
+      GmemLayoutTagD,
+      AlignmentD,
+      EpilogueScheduleType,
+      FusionOpOrCallbacks
+  > {};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Xe20 (BMG) Epilogue CollectiveBuilder - forwards to IntelXe
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  class TileShape_MNK,
+  class EpilogueTileType,
+  class ElementAccumulator,
+  class ElementCompute,
+  class ElementC,
+  class GmemLayoutTagC,
+  int AlignmentC,
+  class ElementD,
+  class GmemLayoutTagD,
+  int AlignmentD,
+  class EpilogueScheduleType,
+  class FusionOpOrCallbacks
+  >
+struct CollectiveBuilder<
+  arch::Xe20,
+  arch::OpClassTensorOp,
+  TileShape_MNK,
+  Shape<_1, _1, _1>,
+  EpilogueTileType,
+  ElementAccumulator,
+  ElementCompute,
+  ElementC,
+  GmemLayoutTagC,
+  AlignmentC,
+  ElementD,
+  GmemLayoutTagD,
+  AlignmentD,
+  EpilogueScheduleType,
+  FusionOpOrCallbacks
+  > : CollectiveBuilder<
+      arch::IntelXe,  // Forward to IntelXe
+      arch::OpClassTensorOp,
+      TileShape_MNK,
+      Shape<_1, _1, _1>,
+      EpilogueTileType,
+      ElementAccumulator,
+      ElementCompute,
+      ElementC,
+      GmemLayoutTagC,
+      AlignmentC,
+      ElementD,
+      GmemLayoutTagD,
+      AlignmentD,
+      EpilogueScheduleType,
+      FusionOpOrCallbacks
+  > {};
+
 } // namespace cutlass::epilogue::collective
+

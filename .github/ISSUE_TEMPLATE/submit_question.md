@@ -1,6 +1,6 @@
 ---
 name: Submit question
-about: Ask a general question about CUTLASS
+about: Ask a general question about SYCL*TLA
 title: "[QST]"
 labels: "? - Needs Triage, question"
 assignees: ''

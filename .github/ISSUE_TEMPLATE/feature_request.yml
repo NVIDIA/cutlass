@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest an idea for CUTLASS
+description: Suggest an idea for SYCL*TLA
 title: "[FEA] "
 labels: ["? - Needs Triage", "feature request"]
 assignees: []
@@ -10,8 +10,9 @@ body:
     attributes:
       label: Which component requires the feature?
       options:
-        - CuTe DSL
-        - CUTLASS C++
+        - CuTe APIs
+        - CUTLASS APIs
+        - Python (APIs or Pypi package)
     validations:
       required: true
   - type: textarea
@@ -21,7 +22,7 @@ body:
       description: Please fill out all sections below
       value: |
         **Is your feature request related to a problem? Please describe.**
-        A clear and concise description of what the problem is. Ex. I wish I could use CUTLASS to do [...]
+        A clear and concise description of what the problem is. Ex. I wish I could use SYCL*TLA to do [...]
 
         **Describe the solution you'd like**
         A clear and concise description of what you want to happen.

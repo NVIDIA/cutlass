@@ -240,8 +240,8 @@ class GemmErrorTests(unittest.TestCase):
         """
         cc = device_cc()
 
-        # F64 Tensor Core operations are only avaiable on devices with CC >= 80
-        supports_tensorop_f64 = cc >= 80
+        # F64 Tensor Core operations are only avaiable on certain devices
+        supports_tensorop_f64 = cc in [80, 89, 90]
         plan = cutlass_cppgen.op.Gemm(cc=cc, element=cutlass_cppgen.DataType.f64, layout=cutlass_cppgen.LayoutType.RowMajor)
 
         error_msg = f'Incorrectly raised an exception for availability of TensorOp with F64 operands on SM{cc}'
@@ -288,7 +288,7 @@ class GemmErrorTests(unittest.TestCase):
             with ExpectException(cc < 80, f'Requested more than 2 stages on SM{cc}'):
                 td.stages = 3
                 plan.construct(td)
-        else:
+        elif cc == 90:
             original_kschedule = td.kernel_schedule
             original_eschedule = td.epilogue_schedule
             with ExpectException(False, f'Incorrectly flagged an error for insufficient shared memory'):
@@ -296,10 +296,13 @@ class GemmErrorTests(unittest.TestCase):
                 td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.NoSmemWarpSpecialized
                 td.stages = 3
                 plan.construct(td)
-
             # Reset schedules
             td.kernel_schedule = original_kschedule
             td.epilogue_schedule = original_eschedule
+        elif cc in [100, 101, 103]:
+            with ExpectException(False, f'Incorrectly flagged an error for insufficient shared memory'):
+                td.stages = 3
+                plan.construct(td)
 
         with ExpectException(True, f'Requested too many stages'):
             td.stages = 100
@@ -321,12 +324,12 @@ class GemmErrorTests(unittest.TestCase):
             td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized
             plan.construct(td)
 
-        with ExpectException(True, f'Requested a non-auto kernel schedule with an auto epilogue schedule'):
+        with ExpectException(cc == 90, f'Requested a non-auto kernel schedule with an auto epilogue schedule'):
             td.kernel_schedule = cutlass_cppgen.KernelScheduleType.TmaWarpSpecializedPingpong
             td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.ScheduleAuto
             plan.construct(td)
 
-        with ExpectException(True, f'Requested an auto kernel schedule with a non-auto epilogue schedule'):
+        with ExpectException(cc == 90, f'Requested an auto kernel schedule with a non-auto epilogue schedule'):
             td.kernel_schedule = cutlass_cppgen.KernelScheduleType.ScheduleAuto
             td.epilogue_schedule = cutlass_cppgen.EpilogueScheduleType.TmaWarpSpecialized
             plan.construct(td)

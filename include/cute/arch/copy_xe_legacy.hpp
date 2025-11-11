@@ -47,25 +47,4 @@
 #include <cute/arch/copy_xe_legacy_U32.hpp>
 #include <cute/arch/copy_xe_legacy_U64.hpp>
 
-// FIXME: these are not copy-related and should be declared elsewhere.
-#ifdef __SYCL_DEVICE_ONLY__
-SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
-SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope, int memory_semantics);
-#endif
-
-namespace cute
-{
-
-// scope = 3 is for subgroup, scop = 2 is for workgroup
-CUTE_HOST_DEVICE void barrier_arrive(int scope, int memory_scope = 0, int memory_semantics = 0) {
-#ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierArriveINTEL(scope, memory_scope, memory_semantics);
-#endif
-}
-CUTE_HOST_DEVICE void barrier_wait(int scope, int memory_scope = 0, int memory_semantics = 0) {
-#ifdef __SYCL_DEVICE_ONLY__
-  __spirv_ControlBarrierWaitINTEL(scope, memory_scope, memory_semantics);
-#endif
-}
-
-} // end namespace cute
+#include <cute/util/xe_split_barrier.hpp>

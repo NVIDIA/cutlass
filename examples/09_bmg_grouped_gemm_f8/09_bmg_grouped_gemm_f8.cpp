@@ -576,19 +576,24 @@ int launcher(Options& options)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;
-  using GmemTiledCopyB = XE_2D_U8x32x32_LD_V;
+  // When left unspecified, the MainloopXeL1Staged dispatch 
+  // automatically selects the appropriate 2D block copy op
+  using GmemTiledCopyA = void;
+  using GmemTiledCopyB = void;
 
   // Workgroup-level tile
-  using TileShape = Shape<_256, _256, _32>;
+  using TileShape = Shape<_256, _256, _16>;
 
   using TiledMma =
-      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<TileShape>,
-      Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+    typename TiledMMAHelper<
+      MMA_Atom<XE_DPAS_TT<8, float, half_t>>, // A,B=FP16; accumulator=FP32
+      Layout<TileShape>,
+      Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>
+    >::TiledMMA;
 
   constexpr int PipelineStages = 2;
   // Dispatch to grouped gemm algorithm
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16GroupFP8<PipelineStages>;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1StagedGroup<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16Group;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,

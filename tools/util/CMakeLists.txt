@@ -26,6 +26,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 cmake_policy(SET CMP0112 NEW)
+
+# Include oneMKL support for SYCL builds
+if (CUTLASS_ENABLE_SYCL)
+  include(${CMAKE_SOURCE_DIR}/cmake/onemkl.cmake)
+endif()
+
 add_library(cutlass_tools_util_includes INTERFACE)
 add_library(nvidia::cutlass::tools::util ALIAS cutlass_tools_util_includes)
 set_target_properties(cutlass_tools_util_includes PROPERTIES EXPORT_NAME tools::util)
@@ -42,6 +48,16 @@ target_link_libraries(
   INTERFACE
  	$<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:cublas>
   )
+
+# Add oneMKL for SYCL builds (sycl_tensor_fill.h needs oneapi/mkl/rng/device.hpp)
+if (CUTLASS_ENABLE_SYCL)
+  if (CUTLASS_USING_SYSTEM_ONEMKL)
+    target_link_libraries(cutlass_tools_util_includes INTERFACE MKL::MKL)
+  else()
+    target_include_directories(cutlass_tools_util_includes INTERFACE 
+      $<BUILD_INTERFACE:${ONEMKL_INCLUDE_DIR}>)
+  endif()
+endif()
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/

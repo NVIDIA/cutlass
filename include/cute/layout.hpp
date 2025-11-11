@@ -326,6 +326,9 @@ struct is_layout : false_type {};
 template <class Shape, class Stride>
 struct is_layout<Layout<Shape,Stride>> : true_type {};
 
+template <class Layout>
+static constexpr bool is_layout_v = is_layout<Layout>::value;
+
 //
 // Layout construction
 //
@@ -682,8 +685,10 @@ CUTE_HOST_DEVICE constexpr
 auto
 atuple_coshape(Layout<Shape, Stride> const& layout)
 {
+  auto _0E0 = ScaledBasis<C<0>,0>{};
   auto flayout = filter(flatten(layout));
-  return inner_product_atuple_max(shape(flayout), stride(flayout));
+  auto coshape = inner_product_atuple_max(shape(flayout), stride(flayout)) + _0E0 + _0E0;
+  return cute::transform(coshape, [](auto a) { return cute::max(a, _1{}); });
 }
 
 // Return the codomain size of a mode
@@ -1060,6 +1065,15 @@ group(Layout<Shape,Stride> const& layout)
 {
   return make_layout(group<B,E>(layout.shape()),
                      group<B,E>(layout.stride()));
+}
+
+template <int N, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+remove(Layout<Shape,Stride> const& layout)
+{
+  return make_layout(remove<N>(layout.shape()),
+                     remove<N>(layout.stride()));
 }
 
 //

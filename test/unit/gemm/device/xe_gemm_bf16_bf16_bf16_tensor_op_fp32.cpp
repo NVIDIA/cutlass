@@ -85,5 +85,51 @@ TEST(XE_Device_Gemm_bf16n_bf16n_bf16t_tensor_op_f32, 256x256x32) {
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
+
+// ElementC ---> void
+// ElementOutput != ElementCompute in LinearCombination
+
+template <typename LayoutA, typename LayoutB>
+struct XE_Device_Gemm_bf16_bf16_bf16_tensor_op_f32_void {
+  using Config =
+    gemm::device::DefaultGemmConfigurationToCutlass3Types<
+      arch::OpClassTensorOp, arch::IntelXe,
+      cute::bfloat16_t, LayoutA,
+      cute::bfloat16_t, LayoutB,
+      void, layout::RowMajor,
+      cute::bfloat16_t>;
+
+  using Gemm = gemm::device::GemmUniversalAdapter<
+    gemm::kernel::GemmUniversal<
+      cute::Shape<int,int,int,int>,
+      typename Config::CollectiveMainloop,
+      typename Config::CollectiveEpilogue>>;
+};
+
+TEST(XE_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32_void, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_f32_void<
+    layout::RowMajor, layout::RowMajor>::Gemm;
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+}
+
+TEST(XE_Device_Gemm_bf16n_bf16t_bf16t_tensor_op_f32_void, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_f32_void<
+    layout::ColumnMajor, layout::RowMajor>::Gemm;
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+}
+
+TEST(XE_Device_Gemm_bf16t_bf16n_bf16t_tensor_op_f32_void, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_f32_void<
+    layout::RowMajor, layout::ColumnMajor>::Gemm;
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+}
+
+TEST(XE_Device_Gemm_bf16n_bf16n_bf16t_tensor_op_f32_void, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_f32_void<
+    layout::ColumnMajor, layout::ColumnMajor>::Gemm;
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+}
+
+
 }
 } // namespace cutlass
