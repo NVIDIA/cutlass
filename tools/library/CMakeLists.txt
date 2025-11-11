@@ -83,6 +83,11 @@ target_link_libraries(
 
 ################################################################################
 
+function(cutlass_target_sources target)
+  # Wrapper function for target_sources to maintain compatibility with generated manifests
+  target_sources(${target} ${ARGN})
+endfunction()
+
 function(cutlass_add_cutlass_library)
 #
 # Generates static and shared libraries with the given SOURCES. The public CMake
@@ -120,6 +125,23 @@ function(cutlass_add_cutlass_library)
     PRIVATE cutlass_library_internal_interface
     )
 
+  # If oneMKL is provided via the downloaded ExternalProject (onemkl_project),
+  # ensure the generated object target depends on that project. Otherwise
+  # compilation of object files can run before the onemkl headers are available
+  # and cause "oneapi/mkl/rng/device.hpp file not found" errors.
+  if (CUTLASS_ENABLE_SYCL)
+    if (NOT CUTLASS_USING_SYSTEM_ONEMKL)
+      if (TARGET onemkl_project)
+        add_dependencies(${__NAME}_objs onemkl_project)
+      endif()
+    endif()
+  endif()
+
+  # Add SYCL-specific compile options when building for SYCL
+  if (CUTLASS_ENABLE_SYCL)
+    target_compile_options(${__NAME}_objs PRIVATE -fsycl)
+  endif()
+
   if (CUTLASS_BUILD_MONO_LIBRARY AND __SUFFIX)
 
     # If we're only building a single monolithic library then we
@@ -150,8 +172,28 @@ function(cutlass_add_cutlass_library)
       ${__NAME}
       PUBLIC cutlass_library_includes
       PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
-      cuda_driver
       )
+    
+    # Link with appropriate runtime library
+    if (CUTLASS_ENABLE_SYCL)
+      # For SYCL builds, explicitly link with libsycl.so
+      # We use find_library to locate it in the oneAPI installation
+      find_library(SYCL_LIBRARY NAMES sycl sycl8 PATHS ENV LD_LIBRARY_PATH NO_DEFAULT_PATH)
+      if(NOT SYCL_LIBRARY)
+        find_library(SYCL_LIBRARY NAMES sycl sycl8)
+      endif()
+      if(SYCL_LIBRARY)
+        target_link_libraries(${__NAME} PRIVATE ${SYCL_LIBRARY})
+      else()
+        message(WARNING "libsycl.so not found - runtime may fail to load")
+      endif()
+      
+      # Add oneMKL for SYCL builds (needed for sycl_tensor_fill.h runtime)
+      add_onemkl_to_target(TARGET ${__NAME})
+    else()
+      # For CUDA builds, link with cuda_driver
+      target_link_libraries(${__NAME} PRIVATE cuda_driver)
+    endif()
     
     set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
     
@@ -181,8 +223,19 @@ function(cutlass_add_cutlass_library)
       ${__NAME}_static
       PUBLIC cutlass_library_includes
       PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>
-      cuda_driver
       )
+    
+    # Link with appropriate runtime library
+    if (CUTLASS_ENABLE_SYCL)
+      # For SYCL builds, explicitly link with libsycl.so
+      # Note: SYCL_LIBRARY should already be found from shared library linking above
+      if(SYCL_LIBRARY)
+        target_link_libraries(${__NAME}_static PRIVATE ${SYCL_LIBRARY})
+      endif()
+    else()
+      # For CUDA builds, link with cuda_driver
+      target_link_libraries(${__NAME}_static PRIVATE cuda_driver)
+    endif()
     
     set_target_properties(${__NAME}_static PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
     
@@ -272,6 +325,24 @@ if (NOT CUTLASS_ENABLE_SYCL)
   # For backward compatibility with the old name
   add_library(cutlass_lib ALIAS cutlass_library)
   add_library(cutlass_lib_static ALIAS cutlass_library_static)
+
+else()
+  # SYCL-enabled library generation
+  # Create base library targets for SYCL that will be populated by generated kernels
+  # Note: .cu files will be compiled with SYCL compiler (icpx) for Intel Xe GPUs
+  
+  cutlass_add_cutlass_library(
+    src/handle.cu
+    src/manifest.cpp
+    src/operation_table.cu
+    src/singleton.cu
+    src/util.cu
+  )
+  
+  # For backward compatibility with the old name
+  add_library(cutlass_lib ALIAS cutlass_library)
+  add_library(cutlass_lib_static ALIAS cutlass_library_static)
+  
 endif()
 ################################################################################
 
@@ -307,6 +378,13 @@ if(CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
   endif()
 endif()
 
+# Set architecture parameter based on whether SYCL or CUDA is enabled
+if (CUTLASS_ENABLE_SYCL)
+  set(CUTLASS_LIBRARY_GENERATOR_ARCHS "20" CACHE STRING "Intel Xe architectures (12=PVC, 20=BMG)")
+else()
+  set(CUTLASS_LIBRARY_GENERATOR_ARCHS "${CUTLASS_NVCC_ARCHS_ENABLED}")
+endif()
+
 # --log-level is set to DEBUG to enable printing information about which kernels were excluded
 # from generation in /python/cutlass_library/manifest.py. To avoid having this information appear
 # in ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log, set this parameter to INFO
@@ -318,7 +396,7 @@ execute_process(
     --build-dir ${PROJECT_BINARY_DIR}
     --curr-build-dir ${CMAKE_CURRENT_BINARY_DIR}
     --generator-target library
-    --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
+    --architectures "${CUTLASS_LIBRARY_GENERATOR_ARCHS}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
     --instantiation-level "${CUTLASS_LIBRARY_INSTANTIATION_LEVEL}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
@@ -341,14 +419,13 @@ endif()
 
 message(STATUS "Completed generation of library instances. See ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log for more information.")
 
-if (NOT CUTLASS_ENABLE_SYCL)
-  # include auto-instantiated kernels in he CUTLASS Deliverables Library
-  set(CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated/manifest.cmake)
-  if(EXISTS "${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}")
-    include(${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE})
-  else()
-    message(STATUS "auto-generated library manifest cmake file (${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}) not found.")
-  endif()
+# Include auto-instantiated kernels in the CUTLASS Deliverables Library
+# Now enabled for both CUDA and SYCL
+set(CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated/manifest.cmake)
+if(EXISTS "${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}")
+  include(${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE})
+else()
+  message(STATUS "auto-generated library manifest cmake file (${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}) not found.")
 endif()
 
 ################################################################################

@@ -1,6 +1,7 @@
 #################################################################################################
 #
 # Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,9 +36,9 @@ from setuptools import setup
 
 def perform_setup():
     setup(
-        name='cutlass_library',
-        version='4.1.0',
-        description='CUTLASS library generation scripts',
+        name='cutlass_library_xe',
+        version='0.6.0',
+        description='SYCL*TLA library generation scripts',
         packages=['cutlass_library']
     )
 

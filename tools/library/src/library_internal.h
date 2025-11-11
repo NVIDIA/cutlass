@@ -181,7 +181,11 @@ template <> struct NumericTypeMap<cutlass::tfloat32_t> {
   static NumericTypeID const kId = NumericTypeID::kTF32;
 };
 
-
+// Handle cute::tuple-wrapped types (used in some collectives)
+template <typename T>
+struct NumericTypeMap<cute::tuple<T>> {
+  static NumericTypeID const kId = NumericTypeMap<T>::kId;
+};
 
 
 template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float8_t> {

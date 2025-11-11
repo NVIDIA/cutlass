@@ -1,6 +1,7 @@
 #################################################################################################
 #
 # Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -50,9 +51,9 @@ setup_pycute.perform_setup()
 
 
 setup(
-    name='cutlass_cppgen',
-    version='4.0.0',
-    description='CUTLASS Pythonic Interface',
+    name='sycl_tla_cppgen',
+    version='0.6.0',
+    description='SYCL*TLA Pythonic Interface based on CUTLASS',
     package_dir={'': '.'},
     packages=[
         'cutlass_cppgen',
@@ -65,7 +66,6 @@ setup(
     setup_requires=['pybind11'],
     install_requires=[
         'bfloat16',
-        'cuda-python>=11.8.0',
         'pybind11',
         'scikit-build',
         'treelib',

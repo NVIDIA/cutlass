@@ -64,7 +64,7 @@ struct Xe_Reorder<ReorderKind::UU, uint8_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 2 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -93,7 +93,7 @@ struct Xe_Reorder<ReorderKind::VV, uint8_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 2 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -122,7 +122,7 @@ struct Xe_Reorder<ReorderKind::UU, int8_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 2 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -151,7 +151,7 @@ struct Xe_Reorder<ReorderKind::VV, int8_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 2 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -192,7 +192,7 @@ struct Xe_Reorder<ReorderKind::UU, uint8_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 4 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -219,7 +219,7 @@ struct Xe_Reorder<ReorderKind::VV, uint8_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 4 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -259,7 +259,7 @@ struct Xe_Reorder<ReorderKind::UU, int8_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t scale = 0x7E000000;
     const uint32_t shift = 0xBF000000;
     asm (     /* 4 cycles/output register */
@@ -288,7 +288,7 @@ struct Xe_Reorder<ReorderKind::VV, int8_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t scale = 0x7E000000;
     const uint32_t shift = 0xBF000000;
     asm (     /* 4 cycles/output register */
@@ -317,7 +317,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e5m2_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 1 cycle/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -343,7 +343,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e5m2_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 1 cycle/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -380,7 +380,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e5m2_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 5 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -407,7 +407,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e5m2_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 5 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -453,7 +453,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e4m3_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 6 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -480,7 +480,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e4m3_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 6 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -525,7 +525,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e4m3_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 7 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -552,7 +552,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e4m3_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 7 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -592,7 +592,7 @@ struct Xe_Reorder<ReorderKind::UU, uint4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 3 cycles/output register */
       "{\n"
@@ -623,7 +623,7 @@ struct Xe_Reorder<ReorderKind::UV, uint4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -658,7 +658,7 @@ struct Xe_Reorder<ReorderKind::VV, uint4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 3 cycles/output register */
       "{\n"
@@ -702,7 +702,7 @@ struct Xe_Reorder<ReorderKind::UU, int4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 3 cycles/output register */
       "{\n"
@@ -733,7 +733,7 @@ struct Xe_Reorder<ReorderKind::UV, int4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -768,7 +768,7 @@ struct Xe_Reorder<ReorderKind::VV, int4_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 3 cycles/output register */
       "{\n"
@@ -812,7 +812,7 @@ struct Xe_Reorder<ReorderKind::UU, uint4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -843,7 +843,7 @@ struct Xe_Reorder<ReorderKind::UV, uint4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 5 cycles/output register */
       "{\n"
@@ -878,7 +878,7 @@ struct Xe_Reorder<ReorderKind::VV, uint4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -922,7 +922,7 @@ struct Xe_Reorder<ReorderKind::UU, int4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -953,7 +953,7 @@ struct Xe_Reorder<ReorderKind::UV, int4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 5 cycles/output register */
       "{\n"
@@ -988,7 +988,7 @@ struct Xe_Reorder<ReorderKind::VV, int4_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x00040000;
     asm (     /* 4 cycles/output register */
       "{\n"
@@ -1035,7 +1035,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e2m1_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (   /* 4 cycles/output register */
       "{\n"
@@ -1066,7 +1066,7 @@ struct Xe_Reorder<ReorderKind::UV, float_e2m1_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (     /* 5 cycles/output register */
       "{\n"
@@ -1101,7 +1101,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e2m1_t, half_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (   /* 4 cycles/output register */
       "{\n"
@@ -1148,7 +1148,7 @@ struct Xe_Reorder<ReorderKind::UU, float_e2m1_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (   /* 5 cycles/output register */
       "{\n"
@@ -1179,7 +1179,7 @@ struct Xe_Reorder<ReorderKind::UV, float_e2m1_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (     /* 6 cycles/output register */
       "{\n"
@@ -1214,7 +1214,7 @@ struct Xe_Reorder<ReorderKind::VV, float_e2m1_t, bfloat16_t>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::ushort8& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     const uint32_t shifts = 0x0008000C;
     asm (   /* 5 cycles/output register */
       "{\n"
@@ -1245,7 +1245,7 @@ struct Xe_Reorder<ReorderKind::UU, float_ue8m0_t, float>
   CUTE_HOST_DEVICE static void
   reorder(intel::uchar4 const& src0, intel::float4& dst0)
   {
-#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
     asm (     /* 2 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
@@ -1264,5 +1264,47 @@ struct Xe_Reorder<ReorderKind::UU, float_ue8m0_t, float>
   }
 };
 
+template <>
+struct Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t>
+{
+  using SRegisters = intel::uchar4[1];
+  using DRegisters = intel::uchar4[1];
+
+  CUTE_HOST_DEVICE static void
+  reorder(intel::uchar4 const& src0, intel::uchar4& dst0)
+  {
+#if defined(CUTE_ARCH_REORDER_XE_ENABLED)
+    const uint32_t lshifts = 0x00000004;
+    const uint32_t rshifts = 0x00040000;
+    asm (     /* 9 cycles/output register */
+      "{\n"
+      ".decl IN_UB  v_type=G type=UB num_elts=64 alias=<%1,0>\n"
+      ".decl OUT_UB v_type=G type=UB num_elts=64 alias=<%0,0>\n"
+      ".decl OUT_UW v_type=G type=UW num_elts=32 alias=<%0,0>\n"
+      ".decl LSHIFTS v_type=G type=UW num_elts=2 alias=<%2,0>\n"
+      ".decl RSHIFTS v_type=G type=UW num_elts=2 alias=<%3,0>\n"
+      ".decl TMP_UB v_type=G type=UB num_elts=64 align=64\n"
+      ".decl TMP_UW v_type=G type=UW num_elts=32 alias=<TMP_UB,0>\n"
+      "shr (M1_NM, 16) OUT_UB(0,0)<4> IN_UB(0, 0)<1;2,0> RSHIFTS(0,0)<0;2,1>\n"
+      "shr (M1_NM, 16) OUT_UB(0,1)<4> IN_UB(0,16)<1;2,0> RSHIFTS(0,0)<0;2,1>\n"
+      "shr (M1_NM, 16) OUT_UB(0,2)<4> IN_UB(0,32)<1;2,0> RSHIFTS(0,0)<0;2,1>\n"
+      "shr (M1_NM, 16) OUT_UB(0,3)<4> IN_UB(0,48)<1;2,0> RSHIFTS(0,0)<0;2,1>\n"
+      "shl (M1_NM, 16) TMP_UB(0,0)<4> IN_UB(0, 8)<1;2,0> LSHIFTS(0,0)<0;2,1>\n"
+      "shl (M1_NM, 16) TMP_UB(0,1)<4> IN_UB(0,24)<1;2,0> LSHIFTS(0,0)<0;2,1>\n"
+      "shl (M1_NM, 16) TMP_UB(0,2)<4> IN_UB(0,40)<1;2,0> LSHIFTS(0,0)<0;2,1>\n"
+      "shl (M1_NM, 16) TMP_UB(0,3)<4> IN_UB(0,56)<1;2,0> LSHIFTS(0,0)<0;2,1>\n"
+      "bfn.xCA (M1_NM, 32) OUT_UW(0,0)<1> OUT_UW(0,0)<1;1,0> TMP_UW(0,0)<1;1,0> 0xF0F0:uw\n"
+      "}\n"
+      : "=rw"(dst0)
+      : "rw"(src0), "rw.u"(lshifts), "rw.u"(rshifts)
+    );
+#else
+  CUTE_INVALID_CONTROL_PATH("Not Xe");
+#endif
+  }
+};
+
+template <> struct Xe_Reorder<ReorderKind::UV, int4_t, int4_t>             : Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t> {};
+template <> struct Xe_Reorder<ReorderKind::UV, float_e2m1_t, float_e2m1_t> : Xe_Reorder<ReorderKind::UV, uint4_t, uint4_t> {};
 
 } // end namespace cute

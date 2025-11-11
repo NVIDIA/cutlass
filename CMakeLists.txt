@@ -158,7 +158,6 @@ if (CUTLASS_ENABLE_SYCL)
     add_compile_definitions(CUTLASS_SYCL_BUILTIN_ENABLE)
   endif()
 
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)
 endif()
 find_package(Doxygen QUIET)
 
@@ -201,7 +200,7 @@ set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
 
 if(CUTLASS_ENABLE_HEADERS_ONLY)
   set(CUTLASS_ENABLE_EXAMPLES_INIT OFF)
-  set(CUTLASS_ENABLE_TOOLS_INIT ON)
+  set(CUTLASS_ENABLE_TOOLS_INIT OFF)
   set(CUTLASS_ENABLE_LIBRARY_INIT OFF)
   set(CUTLASS_ENABLE_TESTS_INIT OFF)
 else()
@@ -213,6 +212,9 @@ else()
   else()
     set(CUTLASS_ENABLE_TESTS_INIT OFF)
   endif()
+
+  # Not include MKL when headers only
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)
 endif()
 
 set(CUTLASS_TEST_UNIT_ENABLE_WARNINGS OFF CACHE BOOL "Enable warnings on waived unit tests.")
@@ -417,7 +419,7 @@ set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma-delimited list of opera
 set(CUTLASS_LIBRARY_KERNELS ${CUTLASS_LIBRARY_KERNELS_INIT} CACHE STRING "Comma-delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If the string 'all' is specified, all kernels are enabled.")
 set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option ONLY takes effect if CUTLASS_LIBRARY_KERNELS is set.")
 set(CUTLASS_LIBRARY_EXCLUDE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option always takes effect, whether or not CUTLASS_LIBRARY_KERNELS is set. It also can exclude kernels from the filter file (see KERNEL_FILTER_FILE).")
-set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
+set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 and SM100 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
 
 if(CUTLASS_LIBRARY_INSTANTIATION_LEVEL OR CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
   message(STATUS "Enable extended SM90 WGMMA instruction shapes for instantiation levels")

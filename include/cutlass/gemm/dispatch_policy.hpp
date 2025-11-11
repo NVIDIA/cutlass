@@ -127,10 +127,15 @@ struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 // FP8 related policies (including Blocked Scaled Accumulation)
-struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
-struct KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelTmaWarpSpecializedPingpong { };
-struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedCooperative { };
-struct KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperativeFP8Blockwise: KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedPingpongFP8Blockwise: KernelTmaWarpSpecializedPingpong { };
+struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise: KernelPtrArrayTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise: KernelPtrArrayTmaWarpSpecializedPingpong { };
+
+using KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum = KernelTmaWarpSpecializedCooperativeFP8Blockwise;
+using KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum = KernelTmaWarpSpecializedPingpongFP8Blockwise;
+using KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum = KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise;
+using KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum = KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise;
 
 // Policies to opt into mixed type GEMMs
 struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
@@ -322,17 +327,17 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
 
 
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
-// For FP8 kernels with Block Scaling
+// For FP8 kernels with Blockwise (Software) Scaling
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum
+  class KernelSchedule = KernelTmaWarpSpecializedCooperativeFP8Blockwise
 >
-struct MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8
+struct MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8
   : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum> ||
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum>,
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8Blockwise> ||
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpongFP8Blockwise>,
     "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
 
@@ -414,15 +419,15 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecializedMixedInput {
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise
 >
-struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling
+struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise
   : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
     cute::is_any_of_v<
       KernelSchedule,
-      KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum,
-      KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum
+      KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise,
+      KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise
     >,
     "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
@@ -439,6 +444,15 @@ template<
   int AccumulatorPipelineStageCount_
 >
 struct KernelWarpSpecializedSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelMixedTmaCpAsyncWarpSpecializedSm100 final {
   static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
@@ -656,7 +670,7 @@ template<
   class KernelSchedule
 >
 struct HasAuxiliaryLoad<
-  MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<
+  MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise<
     Stages,
     ClusterShape,
     KernelSchedule
@@ -669,7 +683,7 @@ template<
   class KernelSchedule
 >
 struct HasAuxiliaryLoad<
-  MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<
+  MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<
     Stages,
     ClusterShape,
     KernelSchedule
@@ -703,6 +717,7 @@ struct KernelScheduleSm100DenseGemm : KernelScheduleSm100 {};   // Base policy
 struct KernelTmaWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};  // Use for 1SM Dense GEMM Kernels for Collective Mainloop Builder
 struct KernelTmaWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100DenseGemm {};  // Use for 2SM Dense GEMM Kernels for Collective Mainloop Builder
 struct KernelWarpSpecialized1SmSm100    final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};  // Use for 1SM Dense GEMM Kernels for Collective Mainloop Builder Without TMA
+struct KernelMixedTmaCpAsyncWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Ptr-Array Dense GEMM Dispatch Policies
@@ -798,6 +813,8 @@ struct KernelTmaWarpSpecialized1SmMxf4Sm100              final : KernelSchedule1
 struct KernelTmaWarpSpecialized2SmMxf4Sm100              final : KernelSchedule2Sm, KernelScheduleMxNvf4Sm100 { };
 struct KernelTmaWarpSpecialized1SmMxf8f6f4Sm100          final : KernelSchedule1Sm, KernelScheduleMxf8f6f4Sm100 { };
 struct KernelTmaWarpSpecialized2SmMxf8f6f4Sm100          final : KernelSchedule2Sm, KernelScheduleMxf8f6f4Sm100 { };
+struct KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100 final : KernelSchedule1Sm, KernelScheduleBlockScaledGemmSm100 {};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 BlockScaled Ptr Array Dense GEMM Dispatch Policies
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -951,6 +968,34 @@ struct MainloopSm100UmmaCpAsyncWarpSpecialized {
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm100;
   using Schedule = KernelWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm100;
+  using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
+};
+
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecializedBlockScaled {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm100;
+  using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
 };
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule

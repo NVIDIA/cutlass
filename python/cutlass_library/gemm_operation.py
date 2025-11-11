@@ -1,6 +1,7 @@
-
+#################################################################################################
 #
 # Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (C) 2025 Intel Corporation, All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -47,8 +48,16 @@ try:
   if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
     raise ImportError("Disabling attempt to import cutlass_library")
   from cutlass_library.library import *
+  from cutlass_library.arch_constants import (
+    INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN,
+    INTEL_XE12, INTEL_XE20, INTEL_XE35
+  )
 except ImportError:
   from library import *
+  from arch_constants import (
+    INTEL_XE_ARCH_MIN, INTEL_XE_ARCH_MAX, CUDA_ARCH_MIN,
+    INTEL_XE12, INTEL_XE20, INTEL_XE35
+  )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +96,8 @@ class GemmOperation:
     self.B = B
     self.C = C
     self.D = D
-    self.is_xe = self.arch == 11
+    # Intel Xe architectures: PVC (12), BMG/Xe2 (20), etc.
+    self.is_xe = self.arch >= INTEL_XE_ARCH_MIN and self.arch < INTEL_XE_ARCH_MAX
 
     if is_block_scaled(gemm_kind):
       self.ScaleFactorA = ScaleFactorA
@@ -388,15 +398,48 @@ class GemmOperation:
           l = self.layout_name(),
           a = str(max(self.A.alignment, self.B.alignment)))
     else:
-      threadblock = self.tile_description.procedural_name()
-      return "cutlass{p}_xe{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
-          p = self.prefix,
-          ar = self.arch,
-          op = opcode_class_name,
-          ex = self.extended_name(),
-          tb = threadblock,
-          l = self.layout_name(),
-          a = str(max(self.A.alignment, self.B.alignment)))
+      # Intel Xe architectures use xe{cc} naming with similar detail level as NVIDIA
+      # Format: cutlass{p}_xe{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}
+      if self.is_3x:
+        # Use 3x naming convention with full details like NVIDIA SM90+
+        tile_shape = self.get_collective_tile_shape()
+        extended = self.extended_name_3x()
+        
+        # Add D type suffix if different from C type to distinguish mixed precision variants
+        if self.D.element != self.C.element:
+          extended += f"_d{DataTypeNames[self.D.element]}"
+        
+        kernel_name_template = "cutlass{p}_xe{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}"
+        return kernel_name_template.format(
+            p = self.prefix,
+            ar = self.arch,
+            op = opcode_class_name,
+            ex = extended,
+            ct = '_' + 'x'.join([str(i) for i in tile_shape]) if tile_shape[0] > 0 else "",
+            cs = '_' + 'x'.join([str(i) for i in self.tile_description.cluster_shape]),
+            l = self.tile_description.stages,
+            s = self.layout_name_3x(),
+            al = str(max(self.A.alignment, self.B.alignment)),
+            t = TileSchedulerSuffixes[self.tile_scheduler],
+            k = self.kernel_schedule_name_3x(),
+            e = self.epilogue_schedule_name_3x())
+      else:
+        # Legacy naming for non-3x Intel Xe operations
+        threadblock = self.tile_description.procedural_name()
+        extended = self.extended_name()
+        
+        # Add D type suffix if different from C type to distinguish mixed precision variants
+        if self.D.element != self.C.element:
+          extended += f"_d{DataTypeNames[self.D.element]}"
+        
+        return "cutlass{p}_xe{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
+            p = self.prefix,
+            ar = self.arch,
+            op = opcode_class_name,
+            ex = extended,
+            tb = threadblock,
+            l = self.layout_name(),
+            a = str(max(self.A.alignment, self.B.alignment)))
 
   #
   def configuration_name(self):
@@ -998,33 +1041,38 @@ ${compile_guard_end}
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
     
     if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
-      is_no_smem_epilogue = operation.epilogue_schedule in [EpilogueScheduleType.NoSmemWarpSpecialized1Sm, EpilogueScheduleType.NoSmemWarpSpecialized2Sm]
       grouped = is_grouped(operation.gemm_kind)
       if cta_n == 256 and operation.kernel_schedule == to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100, grouped):
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
+        if is_tma_epilogue(operation.epilogue_schedule):
           epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized1Sm, grouped)]
       if cta_n == 256 and operation.kernel_schedule == to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100, grouped):
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
+        if is_tma_epilogue(operation.epilogue_schedule):
           epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized2Sm, grouped)]
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103:
+      # SM103 FP4 Ultra
+      is_sm103_fp4_ultra_1sm_kernel_schedule = operation.kernel_schedule in [to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs16Sm103, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103DisablePrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs16Sm103DisablePrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs16Sm103TmaPrefetch, grouped)
+                                                                             ]
+      is_sm103_fp4_ultra_2sm_kernel_schedule = operation.kernel_schedule in [to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103DisablePrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103DisablePrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch, grouped),
+                                                                             to_grouped_schedule(KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103TmaPrefetch, grouped)
+                                                                             ]
+      if cta_n == 256 and is_sm103_fp4_ultra_1sm_kernel_schedule:
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103:
+        if is_tma_epilogue(operation.epilogue_schedule):
+          epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized1Sm, grouped)]
+      if cta_n == 256 and is_sm103_fp4_ultra_2sm_kernel_schedule:
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
-
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized1SmVs16Sm103:
-        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.BlockScaledMxNvf4UltraTmaWarpSpecialized2SmVs16Sm103:
-        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
-        if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+        if is_tma_epilogue(operation.epilogue_schedule):
+          epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized2Sm, grouped)]
 
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
@@ -1156,9 +1204,11 @@ using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig
       'blockwise_prepare_code' : blockwise_prepare_code
     }
 
-    # Overriding values for Intel Xe
+    # Overriding values for Intel Xe architectures
     if operation.is_xe:
-      values['arch'] = "cutlass::arch::IntelXe"
+      # Use specific compute capability for Intel Xe GPUs
+      # e.g., cutlass::arch::Xe20 for BMG, cutlass::arch::Xe12 for PVC
+      values['arch'] = "cutlass::arch::Xe%d" % operation.arch
 
     return SubstituteTemplate(self.gemm_template, values)
 
@@ -1473,7 +1523,13 @@ ${compile_guard_end}
 class EmitGemmConfigurationLibrary:
   def __init__(self, operation_path, configuration_name):
     self.configuration_name = configuration_name
-    self.configuration_path = os.path.join(operation_path, "%s.cu" % configuration_name).replace('\\', '/')
+    
+    # Determine file extension based on architecture
+    # Intel Xe architectures (12=PVC, 20=BMG) use .cpp, CUDA uses .cu
+    # Check if operation_path contains /12/, /20/, xe12, or xe20
+    is_xe_arch = any(marker in operation_path for marker in ['/12/', '\\12\\', 'xe12', '/20/', '\\20\\', 'xe20'])
+    file_extension = "cpp" if is_xe_arch else "cu"
+    self.configuration_path = os.path.join(operation_path, "%s.%s" % (configuration_name, file_extension)).replace('\\', '/')
 
     self.instance_emitter = {
       GemmKind.Gemm: EmitGemmInstance,

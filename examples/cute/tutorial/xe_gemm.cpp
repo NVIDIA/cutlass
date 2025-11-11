@@ -205,14 +205,22 @@ choose_tiled_mma(ATensor const& A, BTensor const& B, CTensor const&)
   auto op = choose_mma_op<TA,TB,TC>();
 
   constexpr bool byte = (cute::max(sizeof_bits_v<TA>, sizeof_bits_v<TB>) <= 8);
-  constexpr bool use_1x_dpas_per_k = is_constant_v<1, decltype(stride<0>(A))>             // Use one DPAS in k dimension for A^T case
-                                  || (byte && is_constant_v<1, decltype(stride<0>(B))>);  //  pending compiler improvements (also int8 B^N)
+  constexpr bool a_t = is_constant_v<1, decltype(stride<0>(A))>;
+  constexpr bool b_n = is_constant_v<1, decltype(stride<0>(B))>;
+
+  constexpr bool use_1x_dpas_per_k = a_t                                  // Use one DPAS in k dimension for A^T case
+                                  || (byte && b_n);                       //  pending compiler improvements (also int8 B^N).
+  constexpr bool use_4x8_sg = ((sizeof_bits_v<TB> < sizeof_bits_v<TA>)    // Use smaller B loads for expensive reorders.
+                                  && !(is_same_v<TB, cute::float_e5m2_t>))
+                           || (b_n && sizeof_bits_v<TB> < 8);
 
   using _K = conditional_t<use_1x_dpas_per_k,
                            C<op.K>, C<op.K*2>>;
 
   using WGTile = Shape<_256, _256, _K>;                               // 256x256 WG tile size
-  using SGLayout = Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>;     // 8x4 SG tiling, n-major
+  using SGLayout8x4 = Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>;  // 8x4 SG tiling, n-major
+  using SGLayout4x8 = Layout<Shape<_4, _8, _1>, Stride<_8, _1, _0>>;  // 4x8 SG tiling, n-major
+  using SGLayout = conditional_t<use_4x8_sg, SGLayout4x8, SGLayout8x4>;
 
   using MMA = typename TiledMMAHelper<MMA_Atom<decltype(op)>, Layout<WGTile>, SGLayout>::TiledMMA;
 
@@ -414,6 +422,7 @@ int main(int argc, char** argv)
   test_case<int4_t, uint8_t, int32_t, 'R', 'C'>(Q, m, n, k);
 
   test_case<uint4_t, uint4_t, uint32_t, 'R', 'C'>(Q, m, n, k);
+  test_case<uint4_t, uint4_t, uint32_t, 'R', 'R'>(Q, m, n, k);
 
   // Upconversion cases
   test_case<half_t, float_e5m2_t, float, 'R', 'R'>(Q, m, n, k);

@@ -115,8 +115,8 @@ constexpr ReorderKind classify_xe_reorder()
 
 template <class SType, class DType,
           class SLayout, class DLayout>
-constexpr auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> coord
-                                      DLayout const& dlayout) { // (dst thr, dst val) -> coord
+auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> coord
+                            DLayout const& dlayout) { // (dst thr, dst val) -> coord
   // Calculate data transformation, interleaving WI-owned values:
   //  (thr0,val0) ... (thr15,val0), (thr0,val1), ..., (thr15,val1), ...
   auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));          // src index -> dst index
@@ -190,6 +190,7 @@ reorder_impl(ReorderDispatchXeGeneric  const&,
   static constexpr int elems_per_grf = 64 / sizeof(SrcType);
   static constexpr int ds_vl = cute::min(32, cute::min(shape<0>(rlayout), elems_per_grf / stride<0>(rlayout)));
   static constexpr int ss_vl = cute::min(32, cute::min(shape<0>(ilayout), elems_per_grf / stride<0>(ilayout)));
+  static constexpr bool has_broadcast = (size(DLayoutWI{}) > size(SLayoutWI{}));
 
   // Make dst live, to prevent compiler from inserting its own initialization.
 #ifdef __SYCL_DEVICE_ONLY__
@@ -202,7 +203,7 @@ reorder_impl(ReorderDispatchXeGeneric  const&,
   }
 #endif
 
-  if constexpr (ss_vl >= ds_vl) {
+  if constexpr (ss_vl >= ds_vl || has_broadcast) {
     // Stride on src. For simplicity, take 1 GRF at a time.
     for_each(make_seq<size(SLayout{}) / ss_vl>{}, [&](auto i) {
       constexpr auto didx = i * ss_vl;

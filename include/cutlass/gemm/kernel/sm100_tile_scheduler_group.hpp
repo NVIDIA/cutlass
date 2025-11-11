@@ -240,6 +240,27 @@ public:
   void
   fixup(WorkTileInfo const&, FrgTensorC&, uint32_t, uint32_t, uint32_t = 1) const { }
 
+  template <
+    bool IsComplex,
+    class TiledMma,
+    class AccEngine,
+    class AccLayout,
+    class AccumulatorPipeline,
+    class AccumulatorPipelineState,
+    class CopyOpT2R
+  >
+  CUTLASS_DEVICE
+  AccumulatorPipelineState
+  fixup(
+      TiledMma const& ,
+      WorkTileInfo const&,
+      cute::Tensor<AccEngine, AccLayout>&,
+      AccumulatorPipeline,
+      AccumulatorPipelineState acc_pipe_consumer_state,
+      CopyOpT2R) const {
+    return acc_pipe_consumer_state;
+  }
+
   template <class ProblemShape, class ElementAccumulator>
   static size_t
   get_workspace_size(Arguments const& args, ProblemShape problem_shape, KernelHardwareInfo const& hw_info, uint32_t, uint32_t = 1, uint32_t = 1) {
