@@ -86,7 +86,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
   using TileShapeQK = decltype(TiledMMAQK{}.tile_mnk());
   using TileShapePV = decltype(TiledMMAPV{}.tile_mnk());
   static constexpr int VTiles = VTiles_;
-
+  using SubgroupLayoutQK = decltype(TiledMMAQK{}.get_atom_layout_mnk());
   using SGPerWG = decltype(product(take<1,4>(shape(typename TiledMMAQK::ThrLayoutVMNK{}))));
 
   using TensorQ = TensorQ_;
@@ -171,8 +171,10 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
              QVCoord          blk_qv,   // WG tile indices: (Q,V)
              int              blk_k0,   // K block range: [K0,K1)
              int              blk_k1,
-             int              thr_id) { // Work-item ID
-
+             int              thr_id,
+             int              seq_len,
+             int              full_tile_offset,
+             int              discard_seq_coord) {
     using namespace sycl::ext::oneapi::this_work_item;
 
     // Short dimension names:
@@ -266,7 +268,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
     }
 
     /* Check if */
-    bool check_remainder_k = (shape<0>(K_2D) % get<1>(TileShapeQK{}) != 0);
+    bool check_remainder_k = (seq_len % get<1>(TileShapeQK{}) != 0);
 
     /* Main loop, blocked in k. */
     for (int K = blk_k0; K < blk_k1; K++) {
@@ -288,22 +290,36 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
       /* V prefetch for GEMM 2 */
       prefetch(prefetch_v, pVgV(_,_,_,K));
 
+      /* Causal masking */
+      if constexpr (CausalMask) {
+        if (K == blk_k1 - 1) {
+          // Need to get global col and row indices to mask the elements
+          Tensor cPgP = make_identity_tensor(make_shape(seq_len, seq_len));
+          Tensor gP = local_tile(cPgP, take<0,2>(TileShapeQK{}), make_coord(get<0>(blk_qv), K));
+          auto cS_thread = thr_mma_qk.partition_C(gP);
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < tSrS.size(); ++i) {
+            int row_idx = get<0>(cS_thread(i));
+            int col_idx = get<1>(cS_thread(i));
+            if (col_idx - full_tile_offset > row_idx - discard_seq_coord) {
+              tSrS(i) = ElementS(-INFINITY);
+            }
+          }
+        }
+      }
       /* k masking for remainder tiles */
       if (check_remainder_k && K == blk_k1 - 1) {
         FragSRow k_rem_mask;
         int k = get<0>(tKgK(0,0,0,K,0)) + get_sub_group().get_local_id()[0];
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < k_rem_mask.size(); i++, k += intel::sg_size) {
-          k_rem_mask(i) = (k < shape<0>(K_2D)) ? ElementS(sycl::nan(0u)) : ElementS(-INFINITY);
+          k_rem_mask(i) = (k < seq_len) ? ElementS(sycl::nan(0u)) : ElementS(-INFINITY);
         }
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < tSrS.size(); i++) {
           tSrS(i) = sycl::fmin(tSrS(i), broadcast<1>(k_rem_mask, tSrS, i));
         }
       }
-
-      /* TODO: causal masking */
-      static_assert(!CausalMask, "Causal mask unimplemented");
 
       /* Apply softmax and scaling */
       softmax(K == 0, tSrS, tA_max, tA_sum, tArA);

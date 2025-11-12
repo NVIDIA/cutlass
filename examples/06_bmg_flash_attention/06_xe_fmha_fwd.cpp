@@ -160,5 +160,8 @@ int main(int argc, const char **argv) {
   using ElementK = bfloat16_t;
   using ElementV = bfloat16_t;
 #endif
-  return FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages, ElementQ, ElementK, ElementV>::run(options);
+
+  return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  ElementQ, ElementK, ElementV>::run(options)
+  : FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  ElementQ, ElementK, ElementV>::run(options);
+
 }

@@ -236,6 +236,11 @@ struct TiledMMA : MMA_Atom
     return thr_layout_vmnk_;
   }
 
+  CUTE_HOST_DEVICE constexpr auto
+  get_atom_layout_mnk() const {
+    return AtomLayoutMNK{};
+  }
+
   // Tile a tensor or a layout from shape
   //   (M,N,...)
   // to shape
