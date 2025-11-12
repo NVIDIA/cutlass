@@ -38,17 +38,20 @@
 
 #include "flash_attention_v2/collective/xe_fmha_fwd_mainloop.hpp"
 #include "flash_attention_v2/collective/xe_fmha_fwd_epilogue.hpp"
+#include "cute/util/type_traits.hpp"
+#include "flash_attention_v2/collective/fmha_fusion.hpp"
 
 namespace cutlass::fmha::kernel {
 
 using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////
-
+template <bool IsVarLen_ = false>
 struct FMHAProblemShape {
+  using SeqLenType = cute::conditional_t<IsVarLen_, cutlass::fmha::collective::VariableLength, int>;
   int batch;
   int num_heads_q, num_heads_kv;
-  int seq_len_qo, seq_len_kv;       // -> VariableLen to support variable-length-per-batch cases
+  SeqLenType seq_len_qo, seq_len_kv;
   int head_size_qk, head_size_vo;
 };
 
@@ -62,7 +65,8 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-
+  using VariableLength = cutlass::fmha::collective::VariableLength;
+  static constexpr bool is_var_len = cutlass::fmha::collective::is_variable_length_v<typename ProblemShape::SeqLenType>;
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using MainloopArguments = typename CollectiveMainloop::Arguments;
@@ -168,6 +172,14 @@ public:
 
   static dim3 get_block_shape() { return dim3(SGPerWG::value * intel::sg_size, 1, 1); }
 
+  CUTLASS_DEVICE
+  Shape<int, int> get_sequence_length_shape(ProblemShape const& problem_shape, int const& batch) {
+    if constexpr (is_var_len) {
+      return cutlass::fmha::collective::apply_variable_length(Shape<VariableLength, VariableLength>{problem_shape.seq_len_qo, problem_shape.seq_len_kv}, batch);
+    } else {
+      return Shape<int, int>{problem_shape.seq_len_qo, problem_shape.seq_len_kv};
+    }
+  }
 
   CUTLASS_DEVICE
   void operator()(Params const &params, char *smem_buf)
@@ -197,40 +209,62 @@ public:
       auto blk_qv = make_coord(blk_q, blk_v);
       int head = head_q / head_group_q;
 
-      auto offset = cute::min(s.seq_len_qo, s.seq_len_kv);
-      auto discard_seq_coord = s.seq_len_qo - offset;
-      auto full_tile_offset = s.seq_len_kv - offset;
+      auto sequence_length_shape = get_sequence_length_shape(s, idx_b);
+      auto [seq_len_qo, seq_len_kv] = sequence_length_shape;
+      if (blk_q * get<0>(TileShapeQK{}) >= seq_len_qo) continue;
 
-      int seq_coord = cute::min(s.seq_len_qo, (blk_q * get<0>(TileShapeQK{}) + q_offset_sg));
+      auto offset = cute::min(seq_len_qo, seq_len_kv);
+      auto discard_seq_coord = seq_len_qo - offset;
+      auto full_tile_offset = seq_len_kv - offset;
+      int seq_coord = cute::min(seq_len_qo, (blk_q * get<0>(TileShapeQK{}) + q_offset_sg));
 
       if (CollectiveMainloop::CausalMask && seq_coord < discard_seq_coord) continue;
-      
-      const int seq_len = CollectiveMainloop::CausalMask ? full_tile_offset + cute::min(s.seq_len_kv, seq_coord - discard_seq_coord) + q_sg_tile : s.seq_len_kv;
+      const int seq_len = CollectiveMainloop::CausalMask ? full_tile_offset + cute::min(seq_len_kv, seq_coord - discard_seq_coord) + q_sg_tile : seq_len_kv;
       const int k_blocks = cute::ceil_div(seq_len, get<1>(TileShapeQK{}));
 
-      auto shape_Q = make_shape(s.seq_len_qo, s.head_size_qk, s.num_heads_q,  s.batch);
-      auto shape_K = make_shape(s.seq_len_kv, s.head_size_qk, s.num_heads_kv, s.batch);
-      auto shape_V = make_shape(s.head_size_vo, s.seq_len_kv, s.num_heads_kv, s.batch);
-      auto shape_O = make_shape(s.seq_len_qo, s.head_size_vo, s.num_heads_kv, s.batch);
+      int offset_q = 0, offset_k = 0, offset_v = 0, offset_o = 0;
+      if constexpr (is_var_len) {
+        int group_heads_q = s.num_heads_q / s.num_heads_kv;
+        auto qo_cumulative = s.seq_len_qo.cumulative_length;
+        auto kv_cumulative = s.seq_len_kv.cumulative_length;
+        offset_q = s.num_heads_q * s.head_size_qk * qo_cumulative[idx_b];
+        offset_k = s.num_heads_kv * s.head_size_qk * kv_cumulative[idx_b];
+        offset_v = s.num_heads_kv * s.head_size_vo * kv_cumulative[idx_b];
+        offset_o = s.num_heads_q * s.head_size_vo * qo_cumulative[idx_b];
+      }
 
-      auto dcQ = const_cast<ElementQ*>(p.Q);  // de-const these for uniformity
-      auto dcK = const_cast<ElementK*>(p.K);
-      auto dcV = const_cast<ElementV*>(p.V);
+      auto batch_dim = is_var_len ? 1 : s.batch;
+      auto shape_Q = make_shape(seq_len_qo, s.head_size_qk, s.num_heads_q, batch_dim);
+      auto shape_K = make_shape(seq_len_kv, s.head_size_qk, s.num_heads_kv, batch_dim);
+      auto shape_V = make_shape(s.head_size_vo, seq_len_kv, s.num_heads_kv, batch_dim);
+      auto shape_O = make_shape(seq_len_qo, s.head_size_vo, s.num_heads_kv, batch_dim);
 
-      Tensor Q = make_tensor(make_gmem_ptr(dcQ), make_layout(shape_Q, p.dQ));    // (q,d,h,b)
-      Tensor K = make_tensor(make_gmem_ptr(dcK), make_layout(shape_K, p.dK));    // (k,d,h,b)
-      Tensor V = make_tensor(make_gmem_ptr(dcV), make_layout(shape_V, p.dV));    // (v,k,h,b)
-      Tensor O = make_tensor(make_gmem_ptr(p.O), make_layout(shape_O, p.dO));    // (q,v,h,b)
+      auto dcQ = const_cast<ElementQ*>(p.Q + offset_q);
+      auto dcK = const_cast<ElementK*>(p.K + offset_k);
+      auto dcV = const_cast<ElementV*>(p.V + offset_v);
+      auto ptrO = p.O + offset_o;
+
+      auto stride_q = is_var_len ? cutlass::make_cute_packed_stride(StrideQ{}, shape_Q) : p.dQ;
+      auto stride_k = is_var_len ? cutlass::make_cute_packed_stride(StrideK{}, shape_K) : p.dK;
+      auto stride_v = is_var_len ? cutlass::make_cute_packed_stride(StrideV{}, shape_V) : p.dV;
+      auto stride_o = is_var_len ? cutlass::make_cute_packed_stride(StrideO{}, shape_O) : p.dO;
+
+      Tensor Q = make_tensor(make_gmem_ptr(dcQ), make_layout(shape_Q, stride_q));
+      Tensor K = make_tensor(make_gmem_ptr(dcK), make_layout(shape_K, stride_k));
+      Tensor V = make_tensor(make_gmem_ptr(dcV), make_layout(shape_V, stride_v));
+      Tensor O = make_tensor(make_gmem_ptr(ptrO), make_layout(shape_O, stride_o));
+
 
       // O accumulator types
       FragA tArA;
       FragARow tA_max, tA_sum;
 
       // Main loop
+      int l_coord = is_var_len ? 0 : idx_b;
       CollectiveMainloop mainloop(params.mainloop, shared_storage.mainloop);
-      mainloop(Q(_,_,head_q,idx_b),
-               K(_,_,head,idx_b),
-               V(_,_,head,idx_b),
+      mainloop(Q(_,_,head_q,l_coord),
+               K(_,_,head,l_coord),
+               V(_,_,head,l_coord),
                tArA, tA_max, tA_sum,
                blk_qv, 0, k_blocks,
                thr_id, seq_len,
@@ -241,7 +275,7 @@ public:
 
       // Epilogue
       CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
-      epilogue(O(_,_,head_q,idx_b),
+      epilogue(O(_,_,head_q,l_coord),
                tArA, tA_max, tA_sum,
                blk_qv, thr_id);
     }

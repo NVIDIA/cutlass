@@ -159,7 +159,7 @@ using LayoutK = cutlass::layout::ColumnMajor;
 using LayoutV = cutlass::layout::RowMajor;
 using LayoutO = cutlass::layout::RowMajor;
 
-template <class FMHAKernel> struct ExampleRunner {
+template <class FMHAKernel, bool isVarLen = false> struct ExampleRunner {
 
   using StrideQ = typename FMHAKernel::StrideQ;
   using StrideK = typename FMHAKernel::StrideK;
@@ -174,7 +174,7 @@ template <class FMHAKernel> struct ExampleRunner {
   using CollectiveMainloop = typename FMHAKernel::CollectiveMainloop;
   using ElementS = typename CollectiveMainloop::ElementS;
 
-  using ProblemShapeType = typename FMHAKernel::ProblemShape;
+  using ProblemShapeType = cutlass::fmha::kernel::FMHAProblemShape<isVarLen>;
 
   //
   // Data members
@@ -193,19 +193,95 @@ template <class FMHAKernel> struct ExampleRunner {
   cutlass::DeviceAllocation<ElementO> block_O;
   cutlass::DeviceAllocation<ElementO> block_ref_O;
 
+  std::vector<int> cumulative_seqlen_q;
+  std::vector<int> cumulative_seqlen_kv;
+  cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
+  cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
+
   //
   // Methods
   //
 
+  template<class ProblemShape>
+  auto initialize_varlen(const ProblemShape& problem_size) {
+    int num_batches = get<0>(problem_size);
+
+    // generate Q as --b times
+    //    gaussian (--Q, --Q / 2) sampled positive
+    //    track cumulative 
+    std::mt19937 rng(0x202305151552ull);
+    std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
+    std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
+
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
+
+    auto generate_positive_int = [](auto& dist, auto& gen) {
+      int result = 0;
+      do {
+        result = static_cast<int>(dist(gen));
+      } while (result <= 0);
+      return result;
+    };
+
+    cumulative_seqlen_q = {0};
+    cumulative_seqlen_kv = {0};
+
+    int total_seqlen_q = 0;
+    int total_seqlen_kv = 0;
+    int max_seqlen_q = 0;
+    int max_seqlen_kv = 0;
+
+    for (int i = 0; i < num_batches; i++) {
+      int seqlen_q = cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ);
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
+
+      total_seqlen_q += seqlen_q;
+      total_seqlen_kv += seqlen_kv;
+
+      max_seqlen_q = std::max(max_seqlen_q, seqlen_q);
+      max_seqlen_kv = std::max(max_seqlen_kv, seqlen_kv);
+
+      cumulative_seqlen_q.push_back(cumulative_seqlen_q.back() + seqlen_q);
+      cumulative_seqlen_kv.push_back(cumulative_seqlen_kv.back() + seqlen_kv);
+    }
+
+    ProblemShape problem_size_for_init = problem_size;
+    get<0>(problem_size_for_init) = 1;
+    get<3>(problem_size_for_init) = total_seqlen_q;
+    get<4>(problem_size_for_init) = total_seqlen_kv;
+
+    ProblemShapeType problem_size_for_launch;
+    problem_size_for_launch.batch = get<0>(problem_size);
+    problem_size_for_launch.num_heads_q = get<1>(problem_size);
+    problem_size_for_launch.num_heads_kv = get<2>(problem_size);
+    problem_size_for_launch.seq_len_qo = cutlass::fmha::collective::VariableLength{max_seqlen_q};
+    problem_size_for_launch.seq_len_kv = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
+    problem_size_for_launch.head_size_qk = get<5>(problem_size);
+    problem_size_for_launch.head_size_vo = get<6>(problem_size);
+
+    return cute::make_tuple(problem_size_for_init, problem_size_for_launch);
+  }
+
+
+
   bool verify(ProblemShapeType shape, bool is_causal) {
+
+    if constexpr (isVarLen) {
+      int max_seq_len_q = shape.seq_len_qo;
+      int max_seq_len_kv = shape.seq_len_kv;
+      shape.seq_len_qo = cutlass::fmha::collective::VariableLength{max_seq_len_q, cumulative_seqlen_q.data()};
+      shape.seq_len_kv = cutlass::fmha::collective::VariableLength{max_seq_len_kv, cumulative_seqlen_kv.data()};
+    }
 
     auto batch = shape.batch;
     auto num_heads_q = shape.num_heads_q;
     auto num_heads_kv = shape.num_heads_kv;
     auto head_size_qk = shape.head_size_qk;
     auto head_size_vo = shape.head_size_vo;
-    auto seq_len_qo = shape.seq_len_qo;
-    auto seq_len_kv = shape.seq_len_kv;
+    int seq_len_qo, seq_len_kv;
 
     auto block_Q_ = in_memory(block_Q);
     auto block_K_ = in_memory(block_K);
@@ -222,6 +298,15 @@ template <class FMHAKernel> struct ExampleRunner {
     // to avoid the risk of running out of device memory
     int q_group_size = num_heads_q/num_heads_kv;
     for (int b = 0; b < batch; b++) {
+      if constexpr (isVarLen) {
+        auto logical_seq_shape = cutlass::fmha::collective::apply_variable_length(make_shape(shape.seq_len_qo, shape.seq_len_kv), b);
+        seq_len_qo = get<0>(logical_seq_shape);
+        seq_len_kv = get<1>(logical_seq_shape);
+      } else {
+        seq_len_qo = shape.seq_len_qo;
+        seq_len_kv = shape.seq_len_kv;
+      }
+
       int kv_group_update=1;
       for (int h = 0; h < num_heads_q; h++) {
         cutlass::DeviceAllocation<ElementS> block_S;
@@ -366,17 +451,27 @@ template <class FMHAKernel> struct ExampleRunner {
 
   /// Initialize operands to be used in the GEMM and reference GEMM
   ProblemShapeType initialize(const Options &options) {
+    auto problem_shape_in = cute::make_tuple(options.batch, options.num_heads_q, options.num_heads_kv, options.seq_len_qo, options.seq_len_kv, options.head_size_qk, options.head_size_vo);
     ProblemShapeType shape;
-    auto batch        = shape.batch        = options.batch;
-    auto num_heads_q  = shape.num_heads_q  = options.num_heads_q;
-    auto num_heads_kv = shape.num_heads_kv = options.num_heads_kv;
-    auto seq_len_qo   = shape.seq_len_qo   = options.seq_len_qo;
-    auto seq_len_kv   = shape.seq_len_kv   = options.seq_len_kv;
-    auto head_size_qk = shape.head_size_qk = options.head_size_qk;
-    auto head_size_vo = shape.head_size_vo = options.head_size_vo;
 
-    // Set up strides.
-    // These lines can be adjusted to support different data layouts, as needed.
+    decltype(problem_shape_in) problem_size;
+
+    if constexpr (isVarLen) {
+      auto [problem_shape_init, problem_shape_launch] = initialize_varlen(problem_shape_in);
+      problem_size = problem_shape_init;
+      shape = problem_shape_launch;
+    } else {
+      problem_size = problem_shape_in;
+      shape.batch        = options.batch;
+      shape.num_heads_q  = options.num_heads_q;
+      shape.num_heads_kv = options.num_heads_kv;
+      shape.seq_len_qo   = options.seq_len_qo;
+      shape.seq_len_kv   = options.seq_len_kv;
+      shape.head_size_qk = options.head_size_qk;
+      shape.head_size_vo = options.head_size_vo;
+    }
+
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
     stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, num_heads_q,  batch));
     stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, num_heads_kv, batch));
     stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, num_heads_kv, batch));
@@ -391,7 +486,20 @@ template <class FMHAKernel> struct ExampleRunner {
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
     initialize_block(block_V, seed + 2021);
+    
+    if (!cumulative_seqlen_q.empty()) {
+      device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
+      device_cumulative_seqlen_q.copy_from_host(cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
+    }
 
+    if (!cumulative_seqlen_kv.empty()) {
+      device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
+      device_cumulative_seqlen_kv.copy_from_host(cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
+    }
+    if constexpr (isVarLen) {
+      shape.seq_len_qo.cumulative_length = device_cumulative_seqlen_q.get();
+      shape.seq_len_kv.cumulative_length = device_cumulative_seqlen_kv.get();
+    }
     return shape;
   }
 
@@ -551,7 +659,7 @@ struct FMHAConfig {
     // information is used by the underlying kernel.
     cutlass::KernelHardwareInfo hw_info;
 
-    using ProblemShapeType = cutlass::fmha::kernel::FMHAProblemShape;
+    using ProblemShapeType = cutlass::fmha::kernel::FMHAProblemShape<isVarLen>;
 
     using TiledMMAQK = typename TiledMMAHelper<MMA_Atom<MMAOperation>, Layout<TileShapeQK>, SubgroupLayoutQK>::TiledMMA;
     using TiledMMAPV = typename TiledMMAHelper<MMA_Atom<MMAOperation>, Layout<TileShapePV>, SubgroupLayoutPV>::TiledMMA;
@@ -591,13 +699,17 @@ struct FMHAConfig {
         ProblemShapeType, CollectiveMainloop, CollectiveEpilogue, Scheduler
     >;
 
-    ExampleRunner<FMHAKernel> runner;
+    ExampleRunner<FMHAKernel, isVarLen> runner;
 
     CUTLASS_CHECK(runner.run(options, hw_info));
     return 0;
   }
 
   static int run(const Options &options) {
-    return run<false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    if (options.varlen) {
+      return run<true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    } else {
+      return run<false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    }
   }
 };
