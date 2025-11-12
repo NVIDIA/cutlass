@@ -38,6 +38,7 @@
 #include "cutlass/gemm/collective/sm70_mma_twostage.hpp"
 #include "cutlass/gemm/collective/sm80_mma_multistage.hpp"
 #include "cutlass/gemm/collective/sm80_mma_array_multistage.hpp"
+#include "cutlass/gemm/collective/sm80_mma_multistage_blockwise_scaling.hpp"
 #include "cutlass/gemm/collective/sm90_mma_multistage_gmma_ss_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm90_mma_multistage_gmma_rs_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss.hpp"
