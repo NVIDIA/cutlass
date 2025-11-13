@@ -91,7 +91,8 @@ jobs:
             -DIGC_VERSION_MINOR=${{ matrix.igc_version_minor }} \
             -DCUTLASS_SYCL_RUNNING_CI=ON \
             -DCMAKE_CXX_FLAGS="-Werror" \
-            -DDPCPP_HOST_COMPILER=g++-13
+            -DDPCPP_HOST_COMPILER=g++-13 \
+            -DDPCPP_HOST_COMPILER_OPTIONS="-Werror"
           cmake --build .
 
       - name: Unit test

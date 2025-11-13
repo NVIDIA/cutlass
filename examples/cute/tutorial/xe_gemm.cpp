@@ -46,8 +46,12 @@
 
 #include "../../common/sycl_cute_common.hpp"
 
-#pragma clang diagnostic ignored "-Wpass-failed"
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Wpass-failed"
+  #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 using namespace cute;
 

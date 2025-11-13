@@ -977,7 +977,7 @@ public:
           }
 
           bool reverse_epi_n = IsOverlappingAccum && (current_wave % 2 == 0);
-          epi_load_pipe_producer_state = collective_epilogue.load<IsOverlappingAccum>(
+          epi_load_pipe_producer_state = collective_epilogue.template load<IsOverlappingAccum>(
             epi_load_pipeline,
             epi_load_pipe_producer_state,
             problem_shape_MNKL,
