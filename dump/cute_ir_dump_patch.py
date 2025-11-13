@@ -4,7 +4,6 @@ cute_ir_dump_patch.py（单环境变量总开关版 - 修复版）
 - 只有一个环境变量：CUTE_DSL_ON
   * 未开启时：仍可通过 `python -m cute_ir_dump_patch your_script.py ...` 运行包装脚本，
     但不会启用“只编译/跳驱动/NOOP launch”这些强力补丁。
-
 - 一直保留：
   * Python 层 stdout/stderr 分别镜像到 {RUN_TAG}_stdout.log / {RUN_TAG}_stderr.log
   * 逐 pass IR 拆分（stderr 中的 MLIR pass After 段），默认开启
