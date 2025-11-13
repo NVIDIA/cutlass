@@ -264,10 +264,10 @@ In order to perform thread-level operations on subgroup-shared data, it's import
 ```math
     \text{thread\ } i\ \ \  \text{owns elements} \ \ \ i, i+16, i+32, \ldots
 ```
-That is to say, elements are assigned to threads in a round-robin fashion. Conversely, if we declare a vector variable (say `cute::intel::float8`) in SYCL, the compiler will interleave the vectors from each thread in the subgroup to form a length-128 (8 * 16) float array in registers.
+That is to say, elements are assigned to threads in a round-robin fashion. Conversely, if we declare a vector variable (say `cute::intel::float8`) in SYCL, the compiler will interleave the vectors from each thread in the subgroup to form a length-128 (8 * 16) float array in registers. Caveat: types smaller than a byte have special rules, to be discussed later.
 
 > [!IMPORTANT]
-> Note that the thread mapping _depends on the element data size._ If an array of 32-bit data, say, is reinterpreted _on a register level_ as an array of 16-bit data, data ownership will change -- i.e., in SIMT terms, it is a shuffle operation. Contrast this operation with a SIMT bitcast/reinterpret_cast, which does not change data ownership, but _does_ shuffle data in registers.
+> Note that the thread mapping _depends on the element data size._ If an array of 32-bit data, say, is reinterpreted _on a register level_ as an array of 16-bit data, data ownership will change &mdash; i.e., in SIMT terms, it is a shuffle operation. Contrast this operation with a SIMT bitcast/reinterpret_cast, which does not change data ownership, but _does_ shuffle data in registers.
 
 Now that we have the basic thread mapping rule, let's apply it to a simple block 2D load, with height = 8 rows and width = 4 columns. Recalling that the width dimension is contiguous in both memory and registers, we deduce the following mapping:
 ```math
@@ -327,6 +327,58 @@ As a more complicated example, let's consider a 16-bit VNNI load, with height = 
 ```
 
 The DPAS B matrix follows the same pattern.
+
+#### Sub-byte Types
+
+When the data type is smaller than a byte, we have to take special care with the interleaved data ownership rule. CUTLASS packs these elements into bytes, and these _bytes_ are interleaved between work-items. That is, work-item $i$ owns bytes $i$, $i+16$, $i+32$, etc.
+
+Here's how that looks for an 16x4 int4 block 2D load:
+
+```math
+    \begin{array}{c}
+    \text{Subgroup view}\\
+    \begin{array}{cccc}
+    0 & 1 & 2 & 3\\
+    4 & 5 & 6 & 7\\
+    8 & 9 & 10 & 11\\
+    12 & 13 & 14 & 15\\
+    16 & 17 & 18 & 19\\
+    20 & 21 & 22 & 23\\
+    24 & 25 & 26 & 27\\
+    28 & 29 & 30 & 31\\
+    32 & 33 & 34 & 35\\
+    36 & 37 & 38 & 39\\
+    40 & 41 & 42 & 43\\
+    44 & 45 & 46 & 47\\
+    48 & 49 & 50 & 51\\
+    52 & 53 & 54 & 55\\
+    56 & 57 & 58 & 59\\
+    60 & 61 & 62 & 63\\
+    \end{array}
+    \end{array}
+    \rightarrow
+    \begin{array}{c}
+    \text{Thread view}\\
+    \begin{array}{cccc}
+    \text{T0V0} & \text{T0V1} & \text{T1V0} & \text{T1V1}\\
+    \text{T2V0} & \text{T2V1} & \text{T3V0} & \text{T3V1}\\
+    \text{T4V0} & \text{T4V1} & \text{T5V0} & \text{T5V1}\\
+    \text{T6V0} & \text{T6V1} & \text{T7V0} & \text{T7V1}\\
+    \text{T8V0} & \text{T8V1} & \text{T9V0} & \text{T9V1}\\
+    \text{T10V0} & \text{T10V1} & \text{T11V0} & \text{T11V1}\\
+    \text{T12V0} & \text{T12V1} & \text{T13V0} & \text{T13V1}\\
+    \text{T12V0} & \text{T14V1} & \text{T15V0} & \text{T15V1}\\
+    \text{T0V2} & \text{T0V3} & \text{T1V2} & \text{T1V3}\\
+    \text{T2V2} & \text{T2V3} & \text{T3V2} & \text{T3V3}\\
+    \text{T4V2} & \text{T4V3} & \text{T5V2} & \text{T5V3}\\
+    \text{T6V2} & \text{T6V3} & \text{T7V2} & \text{T7V3}\\
+    \text{T8V2} & \text{T8V3} & \text{T9V2} & \text{T9V3}\\
+    \text{T10V2} & \text{T10V3} & \text{T11V2} & \text{T11V3}\\
+    \text{T12V2} & \text{T12V3} & \text{T13V2} & \text{T13V3}\\
+    \text{T12V2} & \text{T14V3} & \text{T15V2} & \text{T15V3}
+    \end{array}
+    \end{array}
+```
 
 
 ### The SubgroupTensor Class
