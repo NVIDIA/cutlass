@@ -17,7 +17,7 @@
 
     demonstrates CUTLASS Utilities for allocating and initializing tensors
 
-* [02_dump_reg_smem](02_dump_reg_smem/)
+* [02_dump_reg_shmem](02_dump_reg_shmem/)
 
     debugging utilities for printing register and shared memory contents
 
@@ -173,7 +173,7 @@
 
     example demonstrating CUTLASS with Python interface
 
-* [41_multi_head_attention](41_multi_head_attention/)
+* [41_fused_multi_head_attention](41_fused_multi_head_attention/)
 
     example demonstrating attention example with non-fixed sequence length input
 
@@ -185,7 +185,7 @@
 
     example demonstrating a Block-Ell sparse gemm
 
-* [44_fused_multi_head_attention](44_fused_multi_head_attention/)
+* [44_multi_gemm_ir_and_codegen](44_multi_gemm_ir_and_codegen/)
 
     example demonstrating fused multihead attention (fixed & variable) using shared memory
 
@@ -206,7 +206,7 @@
 
     Simple tensorop GEMM example using CUTLASS 3.0 APIs targeting NVIDIA Hopper architecture
 
-* [49_hopper_gemm_schedules_with_collective_builder](49_hopper_gemm_schedules_with_collective_builder/)
+* [49_hopper_gemm_with_collective_builder](49_hopper_gemm_with_collective_builder/)
 
     Hopper GEMM example leveraging collective operation builders to showcase the builder API and the various kernel scheduled supported in CUTLASS 3.0 such as warp specialized persistent mainloops.
 

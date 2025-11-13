@@ -468,7 +468,7 @@ Sometimes a function needs to return multiple values.  In that case, consider th
 
 Here is an example of the struct approach for named values.
 For a comparable example in the C++ Standard,
-please see [`std::allocate_at_least`](https://en.cppreference.com/w/cpp/memory/allocate_at_least),
+please see [`std::allocate_at_least`](https://en.cppreference.com/w/cpp/memory/allocator/allocate_at_least.html),
 which returns `std::allocation_result`.
 
 ```c++
