@@ -42,6 +42,8 @@ if(CUTLASS_ENABLE_SYCL)
       xe_gemm_tf32_tf32_fp32_tensor_op_fp32.cpp
       xe_gemm_f8_f8_fp32_tensor_op_fp32.cpp
       xe_gemm_fp16_s8_fp32_tensor_op_fp32.cpp
+      xe_gemm_epilogue_fusion_xe.cpp
+      xe_gemm_grouped_gemm_xe.cpp
       gemm_universal_bf16n_bf16t_f32n_tensor_op_f32_xe.cpp
     )
 
