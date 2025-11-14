@@ -365,10 +365,28 @@ CUTLASS_DEVICE T atomicAdd(T *address, T val) {
   return static_cast<T>(0);
 }
 
+template <typename T>
+CUTLASS_DEVICE T atomicSub(T *address, T val) {
+#if defined(__SYCL_DEVICE_ONLY__)
+  return compat::atomic_fetch_sub<sycl::access::address_space::global_space>(address, val);
+#endif
+  return static_cast<T>(0);
+}
+
+
 CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
   int result = 0;
 #if defined(__SYCL_DEVICE_ONLY__)
   result = compat::atomic_compare_exchange_strong(address, compare, val);
+#endif
+  return result;
+}
+
+CUTLASS_DEVICE int atomicLoad(int *address) {
+  int result = 0;
+#if defined(__SYCL_DEVICE_ONLY__)
+  auto atm = sycl::atomic_ref<int, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::generic_space>(address[0]);
+  result = atm.load();
 #endif
   return result;
 }

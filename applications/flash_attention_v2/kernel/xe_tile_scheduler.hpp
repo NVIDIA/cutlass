@@ -92,4 +92,72 @@ struct XeFHMAIndividualTileScheduler {
   }
 };
 
+struct XeFHMAIndividualPersistentTileScheduler {
+
+  struct Params {
+    dim3 grid;
+    FastDivmod divmod_num_heads;
+  };
+
+  bool valid_ = true;
+  Params params;
+  int kv_tile_size_;
+  // num of kv blocks for each head
+  int local_num_kv_blocks_;
+  int num_batch_heads_;
+
+  CUTLASS_DEVICE
+  XeFHMAIndividualPersistentTileScheduler(Params const& params, int kv_tile_size,
+    int local_num_kv_blocks, int num_batch_heads)
+    : params(params), kv_tile_size_(kv_tile_size), local_num_kv_blocks_(local_num_kv_blocks), num_batch_heads_(num_batch_heads) {}
+
+  template <class ProblemShape, class TileShape>
+  static Params to_underlying_arguments(
+      ProblemShape const& shape, KernelHardwareInfo hw_info,
+      TileShape const& tile_shape)
+  {
+    using namespace cute;
+
+    dim3 grid(size(ceil_div(shape.head_size_vo, get<1>(tile_shape))),     // V
+              size(ceil_div(shape.seq_len_qo,   get<0>(tile_shape))),     // Q
+              size(shape.batch * shape.num_heads_q));                     // (h,b) -- split later
+    int num_heads = shape.num_heads_q;
+    grid.z = hw_info.sm_count;
+
+    return Params{grid, {num_heads}};
+  }
+
+  template <int Num_SGs>
+  static dim3 get_grid_shape(Params const& params) {
+    return params.grid;
+  }
+
+  CUTLASS_DEVICE
+  bool is_valid() {
+    return valid_;
+  }
+
+  CUTLASS_DEVICE
+  auto get_block_coord() {
+    using namespace cute;
+    int wg_id = BlockIdxZ();
+
+    // total number of blocks need to be processed across all wgs
+    int total_num_kv_blocks = local_num_kv_blocks_ * num_batch_heads_;
+    // guarantee all wg process similar number of blocks of KV (load balance)
+    int num_blocks_per_wg = cute::ceil_div(total_num_kv_blocks, GridDimZ());
+
+    // compute start batch head id for current wg
+    int start_batch_head_id = wg_id * num_blocks_per_wg / local_num_kv_blocks_;
+
+    return make_coord(BlockIdxY(), BlockIdxX(), start_batch_head_id);
+  }
+
+  CUTLASS_DEVICE
+  XeFHMAIndividualPersistentTileScheduler& operator++() {
+    valid_ = false;
+    return *this;
+  }
+};
+
 }  // namespace cutlass::fmha::kernel

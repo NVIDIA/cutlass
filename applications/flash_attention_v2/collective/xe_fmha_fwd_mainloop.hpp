@@ -171,6 +171,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
              QVCoord          blk_qv,   // WG tile indices: (Q,V)
              int              blk_k0,   // K block range: [K0,K1)
              int              blk_k1,
+             int              total_blk, // Total # of K blocks
              int              thr_id,
              int              seq_len,
              int              full_tile_offset,
@@ -308,7 +309,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_,
         }
       }
       /* k masking for remainder tiles */
-      if (check_remainder_k && K == blk_k1 - 1) {
+      if (check_remainder_k && K == total_blk - 1) {
         FragSRow k_rem_mask;
         int k = get<0>(tKgK(0,0,0,K,0)) + get_sub_group().get_local_id()[0];
         CUTLASS_PRAGMA_UNROLL

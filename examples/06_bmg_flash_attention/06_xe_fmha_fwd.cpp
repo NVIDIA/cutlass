@@ -107,36 +107,45 @@ int main(int argc, const char **argv) {
 
 #endif
 #elif defined(DECODE)
+
+#if PERSISTENT
+#define NUM_SG _16
+#define KV_TILE_SIZE _256
+#else
+#define NUM_SG _8
+#define KV_TILE_SIZE _512
+#endif
+
 #if HEAD_DIM == 16
   /* Tiny config for testing */
   using ShapeQK = Shape<_1, _16, _16>;       // (q,k,d)
   using ShapePV = Shape<_1, _16, _16>;       // (q,v,k)
   using ShapeOut = Shape<_1, _16>;           // (q,v)
-  using SubgroupLayoutQK = Layout<Shape<_1, _2, _1>>;
+  using SubgroupLayoutQK = Layout<Shape<_1, NUM_SG, _1>>;
 
 #elif HEAD_DIM == 64
-    using ShapeQK = Shape<_1, _512, _64>;
-    using ShapePV = Shape<_1, _32, _512>;
+    using ShapeQK = Shape<_1, KV_TILE_SIZE, _64>;
+    using ShapePV = Shape<_1, _32, KV_TILE_SIZE>;
     using ShapeOut = Shape<_1, _64>;
-    using SubgroupLayoutQK = Layout<Shape<_1, _8, _1>>;
+    using SubgroupLayoutQK = Layout<Shape<_1, NUM_SG, _1>>;
 
 #elif HEAD_DIM == 96
-    using ShapeQK = Shape<_1, _512, _64>;
-    using ShapePV = Shape<_1, _32, _512>;
+    using ShapeQK = Shape<_1, KV_TILE_SIZE, _64>;
+    using ShapePV = Shape<_1, _32, KV_TILE_SIZE>;
     using ShapeOut = Shape<_1, _96>;
-    using SubgroupLayoutQK = Layout<Shape<_1, _8, _1>>;
+    using SubgroupLayoutQK = Layout<Shape<_1, NUM_SG, _1>>;
 
 #elif HEAD_DIM == 128
-    using ShapeQK = Shape<_1, _512, _64>;
-    using ShapePV = Shape<_1, _32, _512>;
+    using ShapeQK = Shape<_1, KV_TILE_SIZE, _64>;
+    using ShapePV = Shape<_1, _32, KV_TILE_SIZE>;
     using ShapeOut = Shape<_1, _128>;
-    using SubgroupLayoutQK = Layout<Shape<_1, _8, _1>>;
+    using SubgroupLayoutQK = Layout<Shape<_1, NUM_SG, _1>>;
 
 #elif HEAD_DIM == 192
-    using ShapeQK = Shape<_1, _512, _64>;
-    using ShapePV = Shape<_1, _32, _512>;
+    using ShapeQK = Shape<_1, KV_TILE_SIZE, _64>;
+    using ShapePV = Shape<_1, _32, KV_TILE_SIZE>;
     using ShapeOut = Shape<_1, _192>;
-    using SubgroupLayoutQK = Layout<Shape<_1, _8, _1>>;
+    using SubgroupLayoutQK = Layout<Shape<_1, NUM_SG, _1>>;
 #endif
 #else
 #error Either DECODE or PREFILL should be defined.
@@ -161,7 +170,10 @@ int main(int argc, const char **argv) {
   using ElementV = bfloat16_t;
 #endif
 
-  return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  ElementQ, ElementK, ElementV>::run(options)
-  : FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  ElementQ, ElementK, ElementV>::run(options);
-
+#if PERSISTENT
+  return FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages, /*persistent=*/true, ElementQ, ElementK, ElementV>::run(options);
+#else
+  return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  /*persistent=*/false, ElementQ, ElementK, ElementV>::run(options)
+  : FMHAConfig<false, ShapeQK, ShapePV, ShapeOut, SubgroupLayoutQK, void, PipelineStages,  /*persistent=*/false, ElementQ, ElementK, ElementV>::run(options);
+#endif
 }

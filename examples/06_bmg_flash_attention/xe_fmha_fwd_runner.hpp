@@ -88,10 +88,17 @@ struct Options {
 
     cmd.get_cmd_line_argument("scheduler", scheduler, std::string("Individual"));
 
+#ifdef PERSISTENT
+    cmd.get_cmd_line_argument("batch", batch, 1);
+    cmd.get_cmd_line_argument("num_heads_q", num_heads_q, 8);
+    cmd.get_cmd_line_argument("num_heads_kv", num_heads_kv, 1);
+    cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, 4096);
+#else
     cmd.get_cmd_line_argument("batch", batch, 32);
     cmd.get_cmd_line_argument("num_heads_q", num_heads_q, 16);
     cmd.get_cmd_line_argument("num_heads_kv", num_heads_kv, num_heads_q);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, 512);
+#endif
 #ifdef DECODE
     cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 1);
 #else
@@ -622,6 +629,7 @@ template <bool Causal,
           typename SubgroupLayoutQK,
           typename SubgroupLayoutPV_,      /* void -> default */
           int PipelineStages,
+          bool persistent,
           typename ElementQ = bfloat16_t,
           typename ElementK = bfloat16_t,
           typename ElementV = bfloat16_t,
@@ -658,6 +666,7 @@ struct FMHAConfig {
     // The KernelHardwareInfo struct holds the number of EUs on the GPU with a given device ID. This
     // information is used by the underlying kernel.
     cutlass::KernelHardwareInfo hw_info;
+    hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
     using ProblemShapeType = cutlass::fmha::kernel::FMHAProblemShape<isVarLen>;
 
@@ -695,9 +704,13 @@ struct FMHAConfig {
         GmemTiledCopyO
     >;
 
-    using FMHAKernel = cutlass::fmha::kernel::XeFMHAFwdKernel<
-        ProblemShapeType, CollectiveMainloop, CollectiveEpilogue, Scheduler
-    >;
+    static_assert(!(persistent & Causal), "persistent SDPA kernel not support Causal yet");
+    using FMHAKernel = conditional_t<is_same_v<Scheduler, cutlass::fmha::kernel::XeFHMAIndividualPersistentTileScheduler>,
+      cutlass::fmha::kernel::XeFMHAFwdDynamicSplitKernel<
+        ProblemShapeType, CollectiveMainloop, CollectiveEpilogue, Scheduler>,
+        cutlass::fmha::kernel::XeFMHAFwdKernel<
+        ProblemShapeType, CollectiveMainloop, CollectiveEpilogue, Scheduler>
+        >;
 
     ExampleRunner<FMHAKernel, isVarLen> runner;
 
@@ -709,7 +722,8 @@ struct FMHAConfig {
     if (options.varlen) {
       return run<true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
     } else {
-      return run<false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+      return persistent ? run<false, cutlass::fmha::kernel::XeFHMAIndividualPersistentTileScheduler>(options) :
+              run<false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
     }
   }
 };

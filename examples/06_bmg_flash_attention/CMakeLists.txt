@@ -43,6 +43,15 @@ foreach(HEAD_DIM 64 96 128 192)
       06_xe_fmha_fwd_decode_${INPUT_TYPE}_hdim${HEAD_DIM}
       06_xe_fmha_fwd.cpp
     )
+
+    if (NOT HEAD_DIM STREQUAL 192)
+      # specific test for persistent kernel
+      cutlass_example_add_executable(
+        06_xe_fmha_fwd_decode_persistent_${INPUT_TYPE}_hdim${HEAD_DIM}
+        06_xe_fmha_fwd.cpp
+      )
+    endif()
+
     if(INPUT_TYPE STREQUAL "bfloat16_t")
       set(INPUT_MACRO "IS_BFLOAT16")
     elseif(INPUT_TYPE STREQUAL "float_e5m2_t")
@@ -53,6 +62,9 @@ foreach(HEAD_DIM 64 96 128 192)
 
     target_compile_definitions(06_xe_fmha_fwd_prefill_${INPUT_TYPE}_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} PREFILL SHOW_DIFF=1 INPUT_TYPE=${INPUT_TYPE} ${INPUT_MACRO})
     target_compile_definitions(06_xe_fmha_fwd_decode_${INPUT_TYPE}_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} DECODE SHOW_DIFF=1 INPUT_TYPE=${INPUT_TYPE} ${INPUT_MACRO})
+    if (NOT HEAD_DIM STREQUAL 192)
+      target_compile_definitions(06_xe_fmha_fwd_decode_persistent_${INPUT_TYPE}_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM} DECODE PERSISTENT SHOW_DIFF=1 INPUT_TYPE=${INPUT_TYPE} ${INPUT_MACRO})
+    endif()
   endforeach()
 
   cutlass_example_add_executable(
