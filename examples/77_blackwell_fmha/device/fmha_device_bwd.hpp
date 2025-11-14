@@ -122,6 +122,9 @@ public:
 
     ElementAccumulator softmax_scale;
 
+    int window_size_left = -1;
+    int window_size_right = -1;
+
     cutlass::KernelHardwareInfo hw_info;
   };
 
@@ -219,7 +222,9 @@ private:
         scaled_lse, to_bwd_stride(stride_scaled_lse),
         sum_OdO, to_bwd_stride(stride_sum_OdO),
         dQ_acc, to_bwd_stride(stride_dQ),
-        args.softmax_scale },
+        args.softmax_scale,
+        args.window_size_left,
+        args.window_size_right },
       { args.ptr_dK, to_bwd_stride(args.stride_dK),
         args.ptr_dV, to_bwd_stride(args.stride_dV) },
       args.hw_info
