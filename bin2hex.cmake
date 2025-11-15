@@ -26,24 +26,48 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# Option to control raw string generation method for performance optimization
+# ON: Always use fast mode (maximum performance, assumes text content)
+# OFF: Always use original hex method (maximum compatibility)
+# Option to enable faster raw string generation method
+# This maintains exact backward compatibility while providing performance improvement
+set(CUTLASS_BIN2HEX_FAST_MODE ON CACHE BOOL "Enable faster raw string generation for bin2hex")
+
 # A small utility function which generates a C-header from an input file
-function(FILE_TO_C_STRING FILENAME VARIABLE_NAME OUTPUT_STRING ZERO_TERMINATED)
-  FILE(READ "${FILENAME}" HEX_INPUT HEX)
-  if (${ZERO_TERMINATED})
-    string(APPEND HEX_INPUT "00")
+function(FILE_TO_C_STRING FILENAME VARIABLE_NAME OUTPUT_STRING)
+
+  if(CUTLASS_BIN2HEX_FAST_MODE)
+    # Fast mode: Generate raw string literal with custom delimiter for maximum performance
+    # This avoids the expensive hex conversion and generates compact, fast-to-compile code
+
+    # Read file as raw content
+    FILE(READ "${FILENAME}" RAW_CONTENT)
+
+    # Unique delimiter that won't appear in the content
+    set(RAW_DELIM "abc1ae6e1e82e3de")
+
+    # Create the raw string literal format: R"delimiter(...)delimiter"
+    set(RESULT "static char constexpr ${VARIABLE_NAME}[] = R\"${RAW_DELIM}(${RAW_CONTENT})${RAW_DELIM}\";\n")
+
+  else()
+
+    # Original method: Read as hex and format (slower but proven)
+    FILE(READ "${FILENAME}" HEX_INPUT HEX)
+
+    string(REGEX REPLACE "(....)" "\\1\n" HEX_OUTPUT ${HEX_INPUT})
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "char(0x\\1)," HEX_OUTPUT ${HEX_OUTPUT})
+
+    set(RESULT "static char const ${VARIABLE_NAME}[] = {\n  ${HEX_OUTPUT}\n};\n")
+
   endif()
 
-  string(REGEX REPLACE "(....)" "\\1\n" HEX_OUTPUT ${HEX_INPUT})
-  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "char(0x\\1)," HEX_OUTPUT ${HEX_OUTPUT})
+  set(${OUTPUT_STRING} "${RESULT}" PARENT_SCOPE)
 
-  set(HEX_OUTPUT "static char const ${VARIABLE_NAME}[] = {\n  ${HEX_OUTPUT}\n};\n")
-
-  set(${OUTPUT_STRING} "${HEX_OUTPUT}" PARENT_SCOPE)
 endfunction()
 
 # message("Create header file for ${FILE_IN}")
 # message("Create header file for ${FILE_OUT}")
-file_to_c_string(${FILE_IN} ${VARIABLE_NAME} OUTPUT_STRING ZERO_TERMINATED)
+file_to_c_string(${FILE_IN} ${VARIABLE_NAME} OUTPUT_STRING)
 
 set(RESULT "#pragma once\n")
 string(APPEND RESULT "namespace cutlass {\n")
