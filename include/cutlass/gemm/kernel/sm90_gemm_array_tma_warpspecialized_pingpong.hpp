@@ -646,9 +646,10 @@ public:
     // Get pipeline stage increments from tensor shapes
     auto k_tile_count = size<3>(gA_mkl);
 
-    #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+    // Ensure that the kernel does not touch
+    // unflushed global memory prior to this instruction
     cutlass::arch::wait_on_dependent_grids();
-    #endif
+
     if (warp_group_role == WarpGroupRole::Producer) {
       cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
 
