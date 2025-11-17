@@ -608,15 +608,15 @@ public:
     // Get pipeline stage increments from tensor shapes
     auto k_tile_count = size<3>(gA_mkl);
 
+    #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+    cutlass::arch::wait_on_dependent_grids();
+    #endif
     if (warp_group_role == WarpGroupRole::Producer) {
       cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
 
       if (producer_warp_role == ProducerWarpRole::Scheduler) {
         // GroupScheduler requires a producer warp to iterate over the group infos and push
         // the work tile infos to the downstream pipelines.
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        cutlass::arch::wait_on_dependent_grids();
-        #endif
         if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
           do {
             auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(tile_scheduler_pipeline, tile_scheduler_pipe_producer_state);
@@ -630,9 +630,6 @@ public:
       }
       // Mainloop Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Mainloop) {
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        cutlass::arch::wait_on_dependent_grids();
-        #endif
         int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx;
         int32_t const mock_l_coord = 0;
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
@@ -797,9 +794,6 @@ public:
       } // Mainloop Auxiliary Load Producer Warp End
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        cutlass::arch::wait_on_dependent_grids();
-        #endif
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
         int32_t const sm_count = params.hw_info.sm_count;
 
