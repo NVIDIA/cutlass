@@ -1042,11 +1042,11 @@ public:
 
         // Get next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+
         if (!next_work_tile_info.is_valid()) {
           cutlass::arch::launch_dependent_grids();
         }
-        #endif
+
         work_tile_info = next_work_tile_info;
         if (increment_pipe) {
           ++tile_scheduler_pipe_consumer_state;
