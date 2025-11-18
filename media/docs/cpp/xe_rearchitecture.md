@@ -299,6 +299,9 @@ Now that we have the basic thread mapping rule, let's apply it to a simple block
     \end{array}
     \end{array}
 ```
+The subgroup view shows the data that the entire subgroup owns. The idea here is that the subgroup owns 32 values, enumerated in the order shown. These indices represent the order of elements in registers.
+Recall that Intel GPUs have no notion of a "register owned by a thread." Registers belong to subgroups, because it is a SIMD architecture.
+
 (Following CuTe convention, `TxVy` means thread `x`, value `y`.)
 
 An individual DPAS atom's A matrix follows the same pattern, with height ranging from 1 to 8, and width equal to 8 (tf32), 16 (f16/bf16), or 32 (s8/u8). The DPAS C matrix is also organized this way, except that its width is always 16.
