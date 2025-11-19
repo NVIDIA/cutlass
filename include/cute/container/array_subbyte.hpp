@@ -195,7 +195,7 @@ public:
 template <class T>
 CUTE_HOST_DEVICE
 void
-print(subbyte_reference<T> ref) {
+print(subbyte_reference<T>&& ref) {
   cute::print(ref.get());
 }
 
