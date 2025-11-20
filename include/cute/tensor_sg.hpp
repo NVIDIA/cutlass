@@ -105,12 +105,25 @@ template <class Engine,
           class SubgroupTVLayout,
           __CUTE_REQUIRES(is_layout<SubgroupTVLayout>::value)>
 CUTE_HOST_DEVICE
-constexpr auto
-make_subgroup_tensor(Tensor<Engine, Layout> const& tensor, SubgroupTVLayout const&)
+constexpr decltype(auto)
+make_subgroup_tensor(Tensor<Engine,Layout>& tensor, SubgroupTVLayout const& tv_layout)
 {
   static_assert(is_static_v<SubgroupTVLayout>, "Subgroup TV layout must be static");
   static_assert(is_rmem_v<Engine>, "Expected an rmem tensor");
-  return static_cast<SubgroupTensor<Engine,Layout,SubgroupTVLayout> const&>(tensor);
+  return make_subgroup_tensor(make_tensor(tensor.data(), tensor.layout()), tv_layout);
+}
+
+template <class Engine,
+          class Layout,
+          class SubgroupTVLayout,
+          __CUTE_REQUIRES(is_layout<SubgroupTVLayout>::value)>
+CUTE_HOST_DEVICE
+constexpr decltype(auto)
+make_subgroup_tensor(Tensor<Engine,Layout>&& tensor, SubgroupTVLayout const&)
+{
+  static_assert(is_static_v<SubgroupTVLayout>, "Subgroup TV layout must be static");
+  static_assert(is_rmem_v<Engine>, "Expected an rmem tensor");
+  return static_cast<SubgroupTensor<Engine,Layout,SubgroupTVLayout>&&>(tensor);
 }
 
 // Create a new owning SubgroupTensor with the given subgroup-level layout.

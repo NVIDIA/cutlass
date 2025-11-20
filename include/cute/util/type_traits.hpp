@@ -327,4 +327,10 @@ struct is_any_of {
 template <class T, class... Us>
 inline constexpr bool is_any_of_v = is_any_of<T, Us...>::value;
 
+//
+// replace_void_t
+//
+template <class T, class ReplacementTypeIfVoid>
+using replace_void_t = conditional_t<is_void_v<T>, ReplacementTypeIfVoid, T>;
+
 } // end namespace cute

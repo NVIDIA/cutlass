@@ -96,8 +96,6 @@ public:
   using StrideD  = typename CollectiveEpilogue::StrideD;
   using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
-  static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
-    "Mainloop and epilogue do not agree on accumulator value type.");
 
   // MSVC requires the cast to fix a warning-as-error.
   static constexpr int SharedStorageSize = 0;
@@ -109,7 +107,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
+    using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;   // FIXME: rename to SharedStorage
     EpilogueTensorStorage epilogue;
   };
 

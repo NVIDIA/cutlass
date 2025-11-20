@@ -154,13 +154,12 @@ struct ExampleRunner {
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
-  using ElementAcc = typename Gemm::ElementAccumulator;
+  using ElementAccumulator = typename Gemm::ElementAccumulator;
 
   using CollectiveEpilogue = typename Gemm::CollectiveEpilogue;
   using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
-  using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
@@ -343,17 +342,13 @@ int main(int argc, const char** argv)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  // [New Copy Atom] When left unspecified (void), MainloopXeL1Staged automatically selects 
-  // appropriate 2D block copy operations for matrices A and B. Alternatively, you can 
-  // explicitly specify new copy atom operations such as XE_LOAD_2D, XE_LOAD_2D_VNNI 
-  // (applicable only to matrix B), or XE_LOAD_2D_TRANSPOSE.
+  // [New Copy Atom] When left unspecified (void), MainloopXeL1Staged automatically selects
+  // appropriate 2D block copy operations for matrices A and B. Alternatively, you can
+  // explicitly specify new copy atom operations such as XE_LOAD_2D, XE_LOAD_2D_VNNI,
+  // or XE_LOAD_2D_TRANSPOSE.
   // Refer https://github.com/intel/sycl-tla/blob/main/media/docs/cpp/xe_rearchitecture.md
   using GmemTiledCopyA = void; //XE_LOAD_2D<16, 32, 32>;
   using GmemTiledCopyB = void; //XE_LOAD_2D_VNNI<16, 32, 32>;
-  using GmemTiledCopyC = XE_LOAD_2D<32, 8, 16>; 
-  using GmemTiledCopyD = XE_STORE_2D<32, 8, 16>; 
-  
- 
 
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
@@ -373,6 +368,7 @@ int main(int argc, const char** argv)
 
   // For Intel BMG, PipelineStages defines how many k-blocks ahead to prefetch from A and B.
   constexpr int PipelineStages = 2;
+  // For older version of copy/mma atom, use cutlass::gemm::MainloopIntelXeXMX16 as dispatch policy
   using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1Staged<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGeneric;
 
@@ -385,22 +381,21 @@ int main(int argc, const char** argv)
 
   // FusionCallbacks ties the EpilogueOp to an implementation (based on the dispatch
   // policy/architecture) and defines the epilogue arguments.
-  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
+  using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           decltype(tile_shape(TiledMma()))>;
   // GEMM Epilogue - loads & stores C/D matrices, performs epilogue operations & load/stores any
   // auxiliary data required
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
-          TileShape,
+          TiledMma,
+          void,                 // Epilogue tile (void = automatic)
           ElementAccumulator,
           cutlass::gemm::TagToStrideC_t<LayoutC>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
-          FusionCallBacks,
-          GmemTiledCopyC, // The copy atom used to load matrix C
-          void, void,
-          GmemTiledCopyD, // The copy atom used to store matrix D
-          void, void>;
+          FusionCallbacks,
+          void,                 // The copy atom used to load matrix C  (void = automatic)
+          void>;                // The copy atom used to store matrix D (void = automatic)
 
   // GEMM Mainloop - iteration over blocks in K dimension
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
@@ -417,9 +412,9 @@ int main(int argc, const char** argv)
 
   // Define the whole kernel (mainloop and epilogue)
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-  Shape<int, int, int, int>, // Defer global problem shape definition to runtime
-  CollectiveMainloop,
-  CollectiveEpilogue
+          Shape<int, int, int, int>, // Defer global problem shape definition to runtime
+          CollectiveMainloop,
+          CollectiveEpilogue
   >;
 
   // The GemmUniversalAdapter wraps the defined GEMM kernel and handles the launch, and e.g.

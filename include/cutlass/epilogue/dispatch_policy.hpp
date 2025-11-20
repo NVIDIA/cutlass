@@ -71,7 +71,7 @@ struct PtrArrayFastF32NoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1S
 struct PtrArrayFastF32NoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
 struct PtrArrayBlockwiseNoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1Sm {};
 struct PtrArrayBlockwiseNoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
-// Blackwell TMA schedules 
+// Blackwell TMA schedules
 struct TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2Sm {};
 struct PtrArrayTmaWarpSpecialized1Sm : TmaWarpSpecialized1Sm {};
@@ -298,20 +298,17 @@ struct Sm120PtrArrayTmaWarpSpecialized {
 };
 
 #if defined (SYCL_INTEL_TARGET)
-// Specialization of the GEMM Epilogue for Intel Xe architectures.
-// This version is tuned for operations with a subgroup size of 16.
-// Suitable for use with Intel Battlemage (Xe2) and PVC (Xe) architectures.
+// Standard Xe epilogue.
+struct IntelXeGeneric {
+  static constexpr int SubgroupSize = 16;
+};
+
+// Legacy epilogues.
 struct IntelXeXMX16 {
   static constexpr int SubgroupSize = 16;
 };
 
 struct IntelXeXMX16Group {
-  static constexpr int SubgroupSize = 16;
-};
-
-// Note: This dispatch policy is specifically added for CollectiveEpilogue to support
-// the integration of new MMA atoms (XE_DPAS_TT) and copy atoms for Intel XE architecture
-struct IntelXeGeneric {
   static constexpr int SubgroupSize = 16;
 };
 #endif
