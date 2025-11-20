@@ -71,6 +71,9 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     StrideK dK;
     const Element* ptr_V;
     StrideV dV;
+
+    int window_size_left = -1;
+    int window_size_right = -1;
   };
 
   using TMA_Q = typename CollectiveMmaQK::Params::TMA_A;
@@ -81,6 +84,8 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     TMA_Q tma_load_q;
     TMA_K tma_load_k;
     TMA_V tma_load_v;
+    int window_size_left;
+    int window_size_right;
   };
 
   template<class ProblemShape>
@@ -130,7 +135,9 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     return Params{
         params_qk.tma_load_a,
         params_qk.tma_load_b,
-        params_pv.tma_load_b
+        params_pv.tma_load_b,
+        args.window_size_left,
+        args.window_size_right
     };
   }
 
@@ -154,7 +161,9 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     BlkCoord blk_coord_q = blk_coord_in;
     BlkCoord blk_coord_kv = blk_coord_in;
 
-    int mask_tile_count = Mask{}.get_trip_count(blk_coord_in, TileShape{}, problem_shape);
+    auto min_max = Mask(params.window_size_left, params.window_size_right).get_n_block_min_max(blk_coord_in, TileShape{}, problem_shape);
+    int n_block_min = get<0>(min_max);
+    int n_block_max = get<1>(min_max);
 
     using X = Underscore;
 
@@ -247,7 +256,7 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     ++pipeline_q_producer_state;
 
     // K1
-    int k_index = 0;
+    int k_index = n_block_min;
     pipeline_kv.producer_acquire(pipeline_kv_producer_state);
     if (lane_predicate) {
       auto tma_barrier = pipeline_kv.producer_get_barrier(pipeline_kv_producer_state);
@@ -273,8 +282,7 @@ struct Sm100FmhaLoadTmaWarpspecialized {
     k_index += 1;
 
     // loop:
-    mask_tile_count -= 1;
-    for (; mask_tile_count > 0; mask_tile_count -= 1) {
+    for (; k_index < n_block_max; k_index += 1) {
 
       // Ki
       pipeline_kv.producer_acquire(pipeline_kv_producer_state);
@@ -291,7 +299,6 @@ struct Sm100FmhaLoadTmaWarpspecialized {
         copy(params.tma_load_v.with(*tma_barrier, 0), tVgV(_, k_index), tVsV(_, pipeline_kv_producer_state.index()));
       }
       ++pipeline_kv_producer_state;
-      k_index += 1;
     }
   }
 };

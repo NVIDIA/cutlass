@@ -39,6 +39,20 @@ namespace cutlass::fmha::collective {
 using namespace cute;
 
 struct NoMask {
+  CUTLASS_DEVICE
+  NoMask(int left = -1, int right = -1) {}
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  cute::tuple<int, int> get_n_block_min_max(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    const int n_block_max = ceil_div(get<1>(problem_size), get<1>(tile_shape));
+    return cute::make_tuple(0, n_block_max);
+  }
+
   template<class BlkCoord, class TileShape, class ProblemSize>
   CUTLASS_DEVICE
   int get_trip_count(
@@ -69,6 +83,26 @@ struct NoMask {
     return get_trip_count(blk_coord, tile_shape, problem_size);
   }
 
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_start_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return 0;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_stop_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return ceil_div(get<1>(problem_size), get<1>(tile_shape));
+  }
+
   template<class AccQK, class IndexQK, class ProblemSize>
   CUTLASS_DEVICE
   void apply_mask(
@@ -83,6 +117,21 @@ struct NoMask {
 struct ResidualMask : NoMask {
 
   using Base = NoMask;
+
+  CUTLASS_DEVICE
+  ResidualMask(int left = -1, int right = -1) : NoMask(left, right) {}
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  cute::tuple<int, int> get_n_block_min_max(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    const int n_block_min = 0;
+    const int n_block_max = ceil_div(get<1>(problem_size), get<1>(tile_shape));
+    return cute::make_tuple(n_block_min, n_block_max);
+  }
 
   template <class BlkCoord, class TileShape, class ProblemSize>
   CUTLASS_DEVICE int get_masked_trip_count(
@@ -110,6 +159,26 @@ struct ResidualMask : NoMask {
     return get_trip_count(blk_coord, tile_shape, problem_size);
   }
 
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_start_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return 0;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_stop_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return get_unmasked_trip_count(blk_coord, tile_shape, problem_size);
+  }
+
   template<class AccQK, class IndexQK, class ProblemSize>
   CUTLASS_DEVICE
   void apply_mask(
@@ -135,6 +204,9 @@ struct ResidualMask : NoMask {
 struct ResidualMaskForBackward : NoMask {
 
   using Base = NoMask;
+
+  CUTLASS_DEVICE
+  ResidualMaskForBackward(int left = -1, int right = -1) {}
 
   template <class BlkCoord, class TileShape, class ProblemSize>
   CUTLASS_DEVICE int get_masked_trip_count(
@@ -192,7 +264,35 @@ struct CausalMask : NoMask {
 
   using Base = NoMask;
 
+  CUTLASS_DEVICE
+  CausalMask(int left = -1, int right = -1) : NoMask(left, right) {}
+
   static constexpr bool IsQBegin = kIsQBegin;
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  cute::tuple<int, int> get_n_block_min_max(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    constexpr int n_block_min = 0;
+    int n_block_max;
+
+    // See note below on different ways to think about causal attention
+    // Again, we'd add the offset_q into the max_blocks_q calculation
+    int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
+    if constexpr (IsQBegin) {
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
+      n_block_max = std::min(max_blocks_k, max_blocks_q);
+    } else {
+      const int offset_q = get<1>(problem_size) - get<0>(problem_size);
+      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape) + offset_q, get<1>(tile_shape));
+      n_block_max = std::min(max_blocks_k, max_blocks_q);
+    }
+
+    return cute::make_tuple(n_block_min, n_block_max);
+  }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
   CUTLASS_DEVICE
@@ -201,17 +301,8 @@ struct CausalMask : NoMask {
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
 
-    // See note below on different ways to think about causal attention
-    // Again, we'd add the offset_q into the max_blocks_q calculation
-    int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
-    if constexpr (IsQBegin) {
-      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
-      return std::min(max_blocks_k, max_blocks_q);
-    } else {
-      const int offset_q = get<1>(problem_size) - get<0>(problem_size);
-      int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape) + offset_q, get<1>(tile_shape));
-      return std::min(max_blocks_k, max_blocks_q);
-    }
+    auto min_max = get_n_block_min_max(blk_coord, tile_shape, problem_size);
+    return get<1>(min_max);
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
@@ -220,7 +311,7 @@ struct CausalMask : NoMask {
       BlkCoord const& blk_coord,
       TileShape const& tile_shape,
       ProblemSize const& problem_size) {
-        
+
     int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
     if constexpr (IsQBegin) {
       return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
@@ -238,6 +329,26 @@ struct CausalMask : NoMask {
       ProblemSize const& problem_size) {
 
     return get_trip_count(blk_coord, tile_shape, problem_size) - get_masked_trip_count(blk_coord, tile_shape, problem_size);
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_start_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return 0;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_stop_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    return get_unmasked_trip_count(blk_coord, tile_shape, problem_size);
   }
 
   template<class AccQK, class IndexQK, class ProblemSize>
@@ -281,6 +392,9 @@ struct CausalForBackwardMask : CausalMask<kIsQBegin>, ResidualMaskForBackward {
 
   using Base = CausalMask<kIsQBegin>;
 
+  CUTLASS_DEVICE
+  CausalForBackwardMask(int left = -1, int right = -1) {}
+
   template<class AccQK, class IndexQK, class ProblemSize>
   CUTLASS_DEVICE
   void apply_mask(
@@ -311,6 +425,252 @@ struct CausalForBackwardMask : CausalMask<kIsQBegin>, ResidualMaskForBackward {
     }
   }
 
+};
+
+template<bool kIsQBegin = true>
+struct LocalMask : NoMask {
+
+  using Base = NoMask;
+
+  static constexpr bool IsQBegin = kIsQBegin;
+
+  int window_size_left;
+  int window_size_right;
+
+  CUTLASS_DEVICE
+  LocalMask(int left = -1, int right = -1)
+      : window_size_left(left), window_size_right(right) {}
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  cute::tuple<int, int> get_n_block_min_max(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    // tile shape
+    const int kBlockM = get<0>(tile_shape);
+    const int kBlockN = get<1>(tile_shape);
+    const int seq_len_k = get<1>(problem_size);
+
+    // max
+    const int m_block = get<0>(blk_coord);
+    const int m_idx_max = (m_block + 1) * kBlockM;
+    const int offset_q = get<1>(problem_size) - get<0>(problem_size);
+    int n_idx_max;
+    if constexpr (IsQBegin) {
+      n_idx_max = m_idx_max + window_size_right;
+    } else {
+      n_idx_max = m_idx_max + offset_q + window_size_right;
+    }
+    n_idx_max = std::min(n_idx_max, seq_len_k);
+    const int n_block_max = ceil_div(n_idx_max, kBlockN);
+
+    // min
+    const int m_idx_min = m_block * kBlockM;
+    int n_idx_min;
+    if constexpr (IsQBegin) {
+      n_idx_min = m_idx_min - window_size_left;
+    } else {
+      n_idx_min = m_idx_min + offset_q - window_size_left;
+    }
+    n_idx_min = std::max(n_idx_min, 0);
+    const int n_block_min = n_idx_min / kBlockN;
+
+    return cute::make_tuple(n_block_min, n_block_max);
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_trip_count(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    auto min_max = get_n_block_min_max(blk_coord, tile_shape, problem_size);
+    int n_block_min = get<0>(min_max);
+    int n_block_max = get<1>(min_max);
+
+    return n_block_max - n_block_min;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_masked_trip_count(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    // TODO: follow CausalMask to improve this
+
+    int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
+    return trip_count;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_unmasked_trip_count(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+
+    const int n_block_start_unmask = get_n_block_start_unmask(blk_coord, tile_shape, problem_size);
+    const int n_block_stop_unmask = get_n_block_stop_unmask(blk_coord, tile_shape, problem_size);
+
+    return n_block_stop_unmask - n_block_start_unmask;
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_start_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+    // this does not guarantee to be smaller than n_block_stop_unmask
+
+    const int kBlockM = get<0>(tile_shape);
+    const int kBlockN = get<1>(tile_shape);
+    const int seq_len_k = get<1>(problem_size);
+
+    const int m_block = get<0>(blk_coord);
+    const int offset_q = IsQBegin? 0 : get<1>(problem_size) - get<0>(problem_size);
+
+    const int m_idx_max = (m_block + 1) * kBlockM;
+
+    // -1 to make this inclusive
+    const int n_idx_max_left = std::max(m_idx_max + offset_q - window_size_left - 1, 0);
+
+    return ceil_div(n_idx_max_left, kBlockN);
+  }
+
+  template<class BlkCoord, class TileShape, class ProblemSize>
+  CUTLASS_DEVICE
+  int get_n_block_stop_unmask(
+      BlkCoord const& blk_coord,
+      TileShape const& tile_shape,
+      ProblemSize const& problem_size) {
+    // this does not guarantee to be larger than n_block_start_unmask
+
+    const int kBlockM = get<0>(tile_shape);
+    const int kBlockN = get<1>(tile_shape);
+    const int seq_len_k = get<1>(problem_size);
+
+    const int m_block = get<0>(blk_coord);
+    const int offset_q = IsQBegin? 0 : get<1>(problem_size) - get<0>(problem_size);
+
+    const int m_idx_min = m_block * kBlockM;
+    // +1 to make this exclusive
+    const int n_idx_min_right = std::min(m_idx_min + offset_q + window_size_right + 1, seq_len_k);
+
+    return n_idx_min_right / kBlockN;
+  }
+
+  template<class AccQK, class IndexQK, class ProblemSize>
+  CUTLASS_DEVICE
+  void apply_mask(
+      AccQK& acc_qk,
+      IndexQK const& index_qk,
+      ProblemSize const& problem_size) {
+
+    // There are two ways to do causal if N_Q != N_K
+    // (1) is to assume that the Q is at the beginning of the matrix
+    //    - this is the default setting.
+    // (2) is that it is at the end of the matrix
+    //    - this is usually what we want for inference settings
+    //      where we only compute the next row and use cache for the rest
+    //    - if you'd like this, you only need to set kIsQBegin=false
+
+    const int K = get<1>(problem_size);
+
+    if constexpr (IsQBegin) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        const int pos_i = get<0>(pos);
+        const int pos_j = get<1>(pos);
+
+        const int window_left_bound = pos_i - window_size_left;
+        const int window_right_bound = pos_i + window_size_right;
+
+        bool masked = (pos_j < window_left_bound) || (pos_j > window_right_bound) || (pos_j >= K);
+
+        acc_qk(i) = masked ? -INFINITY : acc_qk(i);
+      }
+    } else {
+      const auto offset_q = get<1>(problem_size) - get<0>(problem_size);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        const int pos_i = get<0>(pos);
+        const int pos_j = get<1>(pos);
+
+        const int offset_pos_i = pos_i + offset_q;
+
+        const int window_left_bound = offset_pos_i - window_size_left;
+        const int window_right_bound = offset_pos_i + window_size_right;
+
+        bool masked = (pos_j < window_left_bound) || (pos_j > window_right_bound) || (pos_j >= K);
+
+        acc_qk(i) = masked ? -INFINITY : acc_qk(i);
+      }
+    }
+  }
+};
+
+template<bool kIsQBegin = true>
+struct LocalMaskForBackward : LocalMask<kIsQBegin>, ResidualMaskForBackward {
+
+  using Base = LocalMask<kIsQBegin>;
+
+  static constexpr bool IsQBegin = kIsQBegin;
+
+  int window_size_left;
+  int window_size_right;
+
+  CUTLASS_DEVICE
+  LocalMaskForBackward(int left = -1, int right = -1)
+      : window_size_left(left), window_size_right(right) {}
+
+  template<class AccQK, class IndexQK, class ProblemSize>
+  CUTLASS_DEVICE
+  void apply_mask(
+      AccQK& acc_qk,
+      IndexQK const& index_qk,
+      ProblemSize const& problem_size) {
+
+    if constexpr (IsQBegin) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        const int pos_i = get<0>(pos);
+        const int pos_j = get<1>(pos);
+
+        const int window_left_bound = pos_i - window_size_left;
+        const int window_right_bound = pos_i + window_size_right;
+
+        bool masked = (pos_j < window_left_bound) || (pos_j > window_right_bound) || !elem_less(pos, problem_size);
+
+        acc_qk(i) = masked ? -INFINITY : acc_qk(i);
+      }
+    } else {
+      const auto offset_q = get<1>(problem_size) - get<0>(problem_size);
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(acc_qk); i++) {
+        auto pos = index_qk(i);
+        const int pos_i = get<0>(pos);
+        const int pos_j = get<1>(pos);
+
+        const int offset_pos_i = pos_i + offset_q;
+        const int window_left_bound = offset_pos_i - window_size_left;
+        const int window_right_bound = offset_pos_i + window_size_right;
+
+        bool masked = (pos_j < window_left_bound) || (pos_j > window_right_bound) || !elem_less(pos, problem_size);
+
+        acc_qk(i) = masked ? -INFINITY : acc_qk(i);
+      }
+    }
+  }
 };
 
 struct VariableLength {
