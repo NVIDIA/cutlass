@@ -1298,7 +1298,7 @@ SwizzlingFunctorTag = {
 
 #
 class GroupScheduleMode(enum.Enum):
-  Device = enum_auto(),
+  Device = enum_auto()
   Host = enum_auto()
 
 #
@@ -1451,39 +1451,6 @@ class TileDescription:
         s = self.stages)
     else:
       return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
-
-#
-class Direct2dConvFixedStrideDilationTileDescription:
-  def __init__(self, threadblock_output_shape, filter_shape, stages, stride, dilation, warp_count, math_instruction, min_compute, max_compute):
-    self.threadblock_shape = [threadblock_output_shape[0]*threadblock_output_shape[1]*threadblock_output_shape[2], threadblock_output_shape[3], filter_shape[0]*filter_shape[1]]
-    self.threadblock_output_shape = threadblock_output_shape
-    self.filter_shape = filter_shape
-    self.stages = stages
-    self.warp_count = warp_count
-    self.stride = stride
-    self.dilation =  dilation
-    self.math_instruction = math_instruction
-    self.minimum_compute_capability = min_compute
-    self.maximum_compute_capability = max_compute
-
-  def procedural_name(self):
-    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0],
-                                      self.threadblock_shape[1],
-                                      self.threadblock_shape[2],
-                                      self.threadblock_output_shape[0],
-                                      self.threadblock_output_shape[1],
-                                      self.threadblock_output_shape[2],
-                                      self.threadblock_output_shape[3],
-                                      self.stages,
-                                      self.filter_shape[0],
-                                      self.filter_shape[1])
-    # Fixed Strided and dilation
-    if self.stride != [-1, -1] and self.dilation != [-1, -1]:
-      str_name += "_stride%dx%d_dilation%dx%d" % (self.stride[0],
-                                                  self.stride[1],
-                                                  self.dilation[0],
-                                                  self.dilation[1])
-    return str_name
 
 #
 class Direct2dConvFixedStrideDilationTileDescription:
