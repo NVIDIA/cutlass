@@ -51,35 +51,54 @@ endif()
 set(DPCPP_COMPILE_ONLY_FLAGS "")
 set(DPCPP_LINK_ONLY_FLAGS "")
 
-if(NOT "${DPCPP_SYCL_TARGET}" STREQUAL "")
-  list(APPEND DPCPP_FLAGS "-fsycl-targets=${DPCPP_SYCL_TARGET};")
-endif()
-
 option(DPCPP_DISABLE_ITT_FOR_CUTLASS "Disables linking of the Instrumentation and Tracing Technology (ITT) device libraries for VTune" ON)
 
 if(NOT "${DPCPP_USER_FLAGS}" STREQUAL "")
   list(APPEND DPCPP_FLAGS "${DPCPP_USER_FLAGS};")
 endif()
 
+string(REPLACE "," ";" DPCPP_SYCL_TARGET_LIST "${DPCPP_SYCL_TARGET}")
+
 if(NOT "${DPCPP_SYCL_ARCH}" STREQUAL "")
-  if("${DPCPP_SYCL_TARGET}" STREQUAL "nvptx64-nvidia-cuda")
+  if(SYCL_NVIDIA_TARGET)
+    list(APPEND DPCPP_FLAGS "-fsycl-targets=nvptx64-nvidia-cuda;")
     list(APPEND DPCPP_FLAGS "-Xsycl-target-backend")
     list(APPEND DPCPP_FLAGS "--cuda-gpu-arch=${DPCPP_SYCL_ARCH}")
     list(APPEND DPCPP_COMPILE_ONLY_FLAGS; "-mllvm;-enable-global-offset=false;")
   endif()
 endif()
 
-if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc" OR
-   "${DPCPP_SYCL_TARGET}" STREQUAL "spir64" OR
-   "${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_bmg_g21")
-  if ((CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.2) OR CUTLASS_SYCL_BUILTIN_ENABLE)
-    list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
-  else()
-    list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate")
-  endif()
+if (SYCL_INTEL_TARGET)
   if(DPCPP_DISABLE_ITT_FOR_CUTLASS)
     list(APPEND DPCPP_FLAGS "-fno-sycl-instrument-device-code")
   endif()
+
+  set(SYCL_DEVICES)
+
+  foreach(TGT IN LISTS DPCPP_SYCL_TARGET_LIST)
+    if(TGT STREQUAL "intel_gpu_bmg_g21" OR TGT STREQUAL "bmg")
+      list(APPEND SYCL_DEVICES "bmg_g21")
+    elseif(TGT STREQUAL "intel_gpu_pvc" OR TGT STREQUAL "pvc")
+      list(APPEND SYCL_DEVICES "pvc")
+    endif()
+  endforeach()
+
+  list(REMOVE_DUPLICATES SYCL_DEVICES)
+
+  string(JOIN "," SYCL_DEVICES_STR ${SYCL_DEVICES})
+
+  list(APPEND DPCPP_LINK_ONLY_FLAGS "-fsycl-targets=spir64")
+  list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xs;-device ${SYCL_DEVICES_STR}")
+
+  list(APPEND DPCPP_LINK_ONLY_FLAGS "-Xspirv-translator")
+
+  if((CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" AND
+    CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.2) OR CUTLASS_SYCL_BUILTIN_ENABLE)
+    set(SPIRV_EXT "+SPV_INTEL_split_barrier")
+  else()
+    set(SPIRV_EXT "+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate")
+  endif()
+  list(APPEND DPCPP_LINK_ONLY_FLAGS "-spirv-ext=${SPIRV_EXT}")
 
 endif()
 
