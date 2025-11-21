@@ -241,8 +241,9 @@ struct CollectiveBuilder<
   static constexpr uint32_t AccumulatorPipelineStageCount = (MMA_N == 256) ? 1 : 2;
   static constexpr bool IsArrayOfPointersGemm = cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>;
   // Grouped GEMM(where Stride type is Stride*) uses specific static tile scheduler.  
-  static constexpr bool IsGroupGemm = !cute::is_same_v<StrideA, InternalStrideA>;
-  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm>(8, 2);
+  static constexpr bool IsGroupGemm = !(cute::is_same_v<StrideA, InternalStrideA>) && !(cute::is_same_v<StrideB, InternalStrideB>);
+  static constexpr bool IsRCGroupGemm = (cute::is_same_v<StrideA, InternalStrideA>) && !(cute::is_same_v<StrideB, InternalStrideB>);
+  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm || IsRCGroupGemm>(8, 2);
 
   static constexpr uint32_t KernelSmemCarveout = detail::Sm100DenseGemmTmaUmmaCarveout<
       ClusterShape_MNK,
@@ -265,13 +266,21 @@ struct CollectiveBuilder<
 
   using DispatchPolicy = 
     cute::conditional_t<IsArrayOfPointersGemm,
-      cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled<
-          PipelineStages,
-          SchedulerPipelineStageCount,
-          AccumulatorPipelineStageCount,
-          ClusterShape_MNK
-      >,
-      cutlass::gemm::MainloopSm100TmaUmmaWarpSpecializedBlockScaled<
+        cute::conditional_t<IsRCGroupGemm, 
+          cutlass::gemm::MainloopSm100RCGroupGemmTmaUmmaWarpSpecializedBlockScaled<
+            PipelineStages,
+            SchedulerPipelineStageCount,
+            AccumulatorPipelineStageCount,
+            ClusterShape_MNK
+          >,
+          cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled<
+            PipelineStages,
+            SchedulerPipelineStageCount,
+            AccumulatorPipelineStageCount,
+            ClusterShape_MNK
+          >
+        >,
+        cutlass::gemm::MainloopSm100TmaUmmaWarpSpecializedBlockScaled<
           PipelineStages,
           SchedulerPipelineStageCount,
           AccumulatorPipelineStageCount,
