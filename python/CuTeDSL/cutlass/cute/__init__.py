@@ -345,7 +345,6 @@ __all__ = [
     "repeat_like",
     # User defined struct
     "struct",
-    "cute_union",
     # Modules
     "arch",
     "nvgpu",
