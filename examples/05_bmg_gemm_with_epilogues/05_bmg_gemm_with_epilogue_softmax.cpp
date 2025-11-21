@@ -304,7 +304,7 @@ struct ExampleRunner {
     EpilogueArguments epilogue_arguments{
       {options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D};
     epilogue_arguments.thread.output_ptr = block_D.get();
-    
+
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
@@ -402,39 +402,45 @@ int main(int argc, const char** argv)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  using GmemTiledCopyA = XE_2D_U16x8x16_LD_N;
-  using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
+  // using GmemTiledCopyA = XE_2D_U16x8x16_LD_N;
+  using GmemTiledCopyA = XE_LOAD_2D<16, 8, 16>;
+  // using GmemTiledCopyA = void;
+  // using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
+  using GmemTiledCopyB = XE_LOAD_2D_VNNI<16, 16, 16>;
+  // using GmemTiledCopyB = void;
 
   // Workgroup-level tile
   using TileShape = Shape<_32, _512, _32>;
 
-  using TiledMma =
-      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
-                                    Layout<Shape<_2, _16, _1>, Stride<_16, _1, _0>>>::TiledMMA;
+  // using TiledMma =
+      // typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
+                                    // Layout<Shape<_2, _16, _1>, Stride<_16, _1, _0>>>::TiledMMA;
+  using TiledMma = typename TiledMMAHelper<MMA_Atom<XE_DPAS_TT<8, float, cute::bfloat16_t>>, Layout<TileShape>, Layout<Shape<_2, _16, _1>, Stride<_16, _1, _0>>>::TiledMMA;
 
   using EpilogueTile = Shape<_16, _32>;
   constexpr int PipelineStages = 3;
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1Staged<PipelineStages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGeneric;
 
   // Linear Combination + Row-wise Softmax Epilogue
   using EpilogueOp = cutlass::epilogue::fusion::LinCombSoftmaxRow<ElementOutput,
-          ElementComputeEpilogue, XE_2D_U32x8x16_ST_N, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
+          ElementComputeEpilogue, XE_STORE_2D<32, 8, 16>/*XE_2D_U32x8x16_ST_N*/, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
-  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
+  using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           EpilogueTile>;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
-          TileShape,
+          TiledMma,
+          void,
           ElementAccumulator,
           cutlass::gemm::TagToStrideC_t<LayoutC>,
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD>,
-          FusionCallBacks,
-          XE_2D_U32x8x16_LD_N,
-          void, void,
+          FusionCallbacks,
+          //XE_2D_U32x8x16_LD_N,
+          XE_STORE_2D<32, 8 ,16>,
           void,
-          void, void>;
+          void>;
 
 // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
