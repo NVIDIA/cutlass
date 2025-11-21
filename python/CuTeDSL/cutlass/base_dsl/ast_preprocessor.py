@@ -526,6 +526,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.generic_visit(node)
                 self.loop_nest_level -= 1
 
+            def visit_FunctionDef(self, node):
+                # Stop at nested function def
+                return
+
         checker = EarlyExitChecker(kind)
         checker.generic_visit(tree)
         if not checker.has_early_exit:
@@ -1325,6 +1329,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     node,
                 )
             elif func.id in ["min", "max"]:
+                self.import_top_module = True
                 return ast.copy_location(
                     ast.Call(
                         func=self._create_module_attribute(
@@ -1334,7 +1339,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                             lineno=node.lineno,
                             col_offset=node.col_offset,
                         ),
-                        args=[node.args[0], node.args[1]],
+                        args=node.args,
                         keywords=[],
                     ),
                     node,

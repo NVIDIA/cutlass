@@ -140,7 +140,7 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
         self.add_edge(rhs, name, weight=1)
         return name
 
-    def visit_Assign(self, node: ast.BinOp):
+    def visit_Assign(self, node: ast.Assign):
         target = self.visit(node.targets[0])
         value = self.visit(node.value)
         # Create the assign node

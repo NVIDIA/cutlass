@@ -592,6 +592,9 @@ struct GemmGroupedArguments {
   // underlying operation uses the one it needs.
   cute::Shape<int, int, int>* problem_sizes_3x;
   cute::Shape<int, int, int>* problem_sizes_3x_host;
+  std::vector<int32_t> max_problem_size_3x;
+  int32_t* tokens_per_expert{nullptr};
+  int32_t* tokens_per_expert_host{nullptr};
 };
 
 struct GroupedGemmBlockScaledArguments : GemmGroupedArguments {

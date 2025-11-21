@@ -1042,7 +1042,8 @@ sm100_dense_compute_tile_shape_or_override() {
     constexpr int N_min_D = (detail::is_m_major<GmemStrideTypeD>()) ? 8 * WarpN
                               : (sizeof_bits_v<ElementD> == 6) ? 128 * WarpN // TMA store only supports SW128B for FP6 data type
                                                               : 128 / sizeof_bits_v<ElementD> * WarpN;
-    constexpr int N = cute::min(CtaN, cute::max(N_perf, N_min_C, N_min_D));
+    constexpr int N_tmp = cute::min(CtaN, cute::max(N_perf, N_min_C, N_min_D));
+    constexpr int N = CtaN % N_tmp == 0 ? N_tmp : CtaN;
     static_assert(CtaN >= N_min_C && CtaN >= N_min_D, "CTA tile too small");
 
     // stride by tmem warp layout and return a by-mode tiler

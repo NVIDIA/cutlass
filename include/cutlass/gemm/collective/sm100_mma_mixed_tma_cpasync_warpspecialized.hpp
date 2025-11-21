@@ -247,9 +247,7 @@ struct CollectiveMma<
   // Host side kernel arguments
   struct Arguments {
     ArrayElementA const* ptr_A{nullptr};
-    StrideA dA{};
     ArrayElementB const* ptr_B{nullptr};
-    StrideB dB{};
     RuntimeDataTypeA runtime_data_type_a{};
     RuntimeDataTypeB runtime_data_type_b{};
   };
@@ -271,7 +269,6 @@ struct CollectiveMma<
     TMA_A tma_load_a;
 
     ArrayElementB const* ptr_B{nullptr};
-    StrideB dB{};
 
     RuntimeDataTypeA runtime_data_type_a;
     RuntimeDataTypeB runtime_data_type_b;
@@ -299,7 +296,9 @@ struct CollectiveMma<
     auto ptr_A = recast_ptr<TmaInternalElementA>(args.ptr_A);
     auto ptr_B = recast_ptr<ElementBMma>(args.ptr_B);
 
-    Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
+    auto shape_a = make_shape(M, K, L);
+    StrideA stride_a = cutlass::make_internal_packed_stride(StrideA{}, shape_a);
+    Tensor tensor_a = make_tensor(ptr_A, make_layout(shape_a, stride_a));
 
     auto cluster_layout_vmnk = tiled_divide(make_layout(ClusterShape{}), make_tile(typename TiledMma::AtomThrID{}));
 
@@ -314,7 +313,6 @@ struct CollectiveMma<
     return {
       tma_load_a,
       args.ptr_B,
-      args.dB,
       args.runtime_data_type_a,
       args.runtime_data_type_b
     };
@@ -443,7 +441,11 @@ struct CollectiveMma<
     auto [M,N,K,L] = problem_shape_MNKL;
 
     // Represent the full tensors
-    Tensor mB_nkl = make_tensor(make_gmem_ptr(params.ptr_B), make_shape(N,K,L), params.dB); //(n,k,l)
+
+    auto shape_b = make_shape(N, K, L);
+    StrideB stride_b = cutlass::make_internal_packed_stride(StrideB{}, shape_b);
+
+    Tensor mB_nkl = make_tensor(make_gmem_ptr(params.ptr_B), shape_b, stride_b); //(n,k,l)
     // Partition for cpasync
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{}); // (BLK_N,BLK_K,n,k,l)
 
@@ -570,14 +572,6 @@ struct CollectiveMma<
     KTileIterator k_tile_iter, int k_tile_count,
     ProblemShape_MNKL effective_shape
   ) {
-
-    // Unpack from load_inputs
-    // GTensorB tBgB_nkl = get<0>(load_inputs);
-    // CTensorB cgB_nk = get<1>(load_inputs);
-    // STensorB sB = get<2>(load_inputs);
-    // ProblemShape_MNKL problem_shape_MNKL = get<3>(load_inputs);
-    // TiledCopyB gmem_to_smem_b_tiled_copy = get<4>(load_inputs);
-    // ThreadCopyB thr_copy_b = get<5>(load_inputs);
 
     auto [
       tBgB_nkl, cgB_nk, sB, 

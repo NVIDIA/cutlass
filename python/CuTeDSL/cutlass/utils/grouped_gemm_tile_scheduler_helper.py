@@ -171,8 +171,18 @@ class GroupedGemmTileSchedulerHelper:
     def __new_from_mlir_values__(
         self, values: List[ir.Value]
     ) -> "GroupedGemmTileSchedulerHelper":
-        tile_sched_params = new_from_mlir_values(self.tile_sched_params, values)
-        search_state = new_from_mlir_values(self.search_state, values[1:])
+        # Reconstruct tile_sched_params and determine how many values it consumed.
+        # NOTE: tile_sched_params may contain FastDivmod divisors (when swizzle_size == 1),
+        # which adds extra MLIR values.
+        params_values = extract_mlir_values(self.tile_sched_params)
+        n_params_values = len(params_values)
+        tile_sched_params = new_from_mlir_values(
+            self.tile_sched_params, values[:n_params_values]
+        )
+
+        # Reconstruct search_state from remaining values
+        search_state = new_from_mlir_values(self.search_state, values[n_params_values:])
+
         return GroupedGemmTileSchedulerHelper(
             self.group_count,
             tile_sched_params,

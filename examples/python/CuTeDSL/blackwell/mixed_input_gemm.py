@@ -27,7 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-from enum import Enum, auto
 from math import log2, ceil
 from typing import Optional, Union
 
@@ -37,9 +36,12 @@ import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
+import cutlass.utils.mixed_input_helpers as mixed_input_utils
+from cutlass.utils.mixed_input_helpers import TransformMode
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
@@ -130,15 +132,6 @@ Besides the requirements from the Blackwell dense GEMM example, there are some c
 """
 
 
-class TransformMode(Enum):
-    """
-    An enumeration for the possible transform modes of a mixed-input GEMM.
-    """
-
-    ConvertOnly = auto()
-    ConvertScale = auto()
-
-
 class MixedInputGemmKernel:
     """
     Mixed-input GEMM kernel for NVIDIA Blackwell SM100 architecture.
@@ -226,7 +219,7 @@ class MixedInputGemmKernel:
             + 1
         )
 
-        # Set barrier id for cta sync, epilogue sync, tmem ptr sync, and transform sync
+        # Set barrier id for epilogue sync, tmem ptr sync, and transform sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
             1, 32 * len(self.epilog_warp_id)
         )
@@ -234,7 +227,6 @@ class MixedInputGemmKernel:
         self.transform_sync_barrier = pipeline.NamedBarrier(
             3, 32 * len(self.transform_warp_id)
         )
-        self.cta_sync_barrier = pipeline.NamedBarrier(4, self.threads_per_cta)
 
         self.smem_buffer_align_bytes = 1024
 
@@ -255,7 +247,9 @@ class MixedInputGemmKernel:
         - Computing tensor memory allocation columns
         """
         # Deduce where the transformed A tensor is stored, shared memory(SMEM) or tensor memory(TMEM)
-        self.transform_a_source = self._get_transform_a_source(self.a_major_mode)
+        self.transform_a_source = mixed_input_utils.get_transform_a_source(
+            self.a_major_mode
+        )
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.mma_dtype,
             self.a_major_mode,
@@ -346,7 +340,7 @@ class MixedInputGemmKernel:
             self.smem_layout_a,
             self.smem_layout_a_transform,
             self.smem_layout_b,
-        ) = self._compute_smem_layout(
+        ) = mixed_input_utils.compute_smem_layout(
             tiled_mma,
             self.mma_tiler,
             self.a_dtype,
@@ -358,11 +352,20 @@ class MixedInputGemmKernel:
         self.smem_layout_scale_per_stage = None
         self.smem_layout_scale = None
         if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
-            # Get smem layout for scale tensor
+            # Get scale tile shape and smem layout for scale tensor
             (
+                self.scale_tile_shape,
                 self.smem_layout_scale_per_stage,
                 self.smem_layout_scale,
-            ) = self.get_smem_layout_scale()
+            ) = mixed_input_utils.get_smem_layout_scale(
+                self.mma_tiler,
+                self.use_2cta_instrs,
+                self.scale_granularity_m,
+                self.scale_granularity_k,
+                self.scale_major_mode,
+                self.a_scale_dtype,
+                self.num_scale_load2trans_stage,
+            )
 
     def _validate_inputs(
         self,
@@ -448,7 +451,12 @@ class MixedInputGemmKernel:
         self.c_layout = utils.LayoutEnum.from_tensor(c)
         if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
             # Get gmem layout for scale tensor
-            self.gmem_layout_scale = self.get_gmem_layout_scale(a.shape)
+            self.gmem_layout_scale = mixed_input_utils.get_gmem_layout_scale(
+                a.shape,
+                self.scale_granularity_m,
+                self.scale_granularity_k,
+                self.scale_major_mode,
+            )
 
         # Validate inputs
         self._validate_inputs(a, a_scale, b, c)
@@ -466,8 +474,12 @@ class MixedInputGemmKernel:
             self.transform_a_source,
         )
         # Set up gmem copy atoms for A, scale, and B
-        a_op = self._get_tma_atom_kind(self.is_a_mcast, self.use_2cta_instrs, False)
-        b_op = self._get_tma_atom_kind(self.is_b_mcast, self.use_2cta_instrs, True)
+        a_op = mixed_input_utils.get_tma_atom_kind(
+            self.is_a_mcast, self.use_2cta_instrs, False
+        )
+        b_op = mixed_input_utils.get_tma_atom_kind(
+            self.is_b_mcast, self.use_2cta_instrs, True
+        )
         a_scale_op = a_op
         # Deduce TMA copy atom and TMA tensor for A, scale, and B
         smem_layout_a_per_stage = cute.slice_(self.smem_layout_a, (None, None, None, 0))
@@ -650,7 +662,6 @@ class MixedInputGemmKernel:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=(*self.cluster_shape_mn, 1),
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
             min_blocks_per_mp=1,
         )
@@ -730,6 +741,7 @@ class MixedInputGemmKernel:
             cta_layout_vmnk=cluster_layout_vmnk,
             tidx=transform_thread_idx,
             mcast_mode_mn=(1, 0),  # multicast for A will only happen on the M-mode
+            defer_sync=True,
         )
         # Initialize scale_load2trans pipeline, which tracks the dependencies between TMA's loading
         # of scale, and the transformation of A
@@ -753,6 +765,7 @@ class MixedInputGemmKernel:
                     1,
                     0,
                 ),  # multicast for scale_a will only happen on the M-mode
+                defer_sync=True,
             )
         # Initialize transform2mma pipeline, which tracks the dependencies between the transformation
         # of A and MMA's consumption of transformed A
@@ -766,6 +779,7 @@ class MixedInputGemmKernel:
             ),
             consumer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
         # Initialize pipeline for tensor B load to MMA
         # MMA warp informs TMA warp to proceed to load next tile of B tensor
@@ -779,6 +793,7 @@ class MixedInputGemmKernel:
             tx_count=self.num_tma_load_bytes_b,
             cta_layout_vmnk=cluster_layout_vmnk,
             mcast_mode_mn=(0, 1),  # multicast for B will only happen on the N-mode
+            defer_sync=True,
         )
         # Initialize accumulator pipeline, which tracks the dependencies between
         # MMA's computation of accumulators and epilogue warps' consumption of accumulators
@@ -790,6 +805,7 @@ class MixedInputGemmKernel:
                 pipeline.Agent.Thread, cta_v_size * len(self.epilog_warp_id)
             ),
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
 
         # Tensor memory dealloc barrier init
@@ -802,8 +818,7 @@ class MixedInputGemmKernel:
         )
 
         # Cluster arrive after barrier init
-        if cutlass.const_expr(cute.size(self.cluster_shape_mn) > 1):
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         # Setup smem tensor A/scale/B/C
         sC = (
@@ -897,7 +912,7 @@ class MixedInputGemmKernel:
             cute.dice(self.mma_tiler, (1, None, 1))
         )
         # Setup copy atom to store transformed A into tensor memory or shared memory
-        copy_atom_a_transform = self._get_copy_atom_a_transform(
+        copy_atom_a_transform = mixed_input_utils.get_copy_atom_a_transform(
             self.mma_dtype,
             self.use_2cta_instrs,
             self.transform_a_source,
@@ -928,7 +943,7 @@ class MixedInputGemmKernel:
             tCsS = thr_mma.partition_A(sS_input)
             # ((atom_v, rest_v), STAGE)
             # ((atom_v, rest_v), loopM, loopK, loopL)
-            tSsS, tSgS = self.scale_tma_partition(
+            tSsS, tSgS = mixed_input_utils.scale_tma_partition(
                 tCsS,
                 tCgS,
                 tma_atom_s,
@@ -959,10 +974,7 @@ class MixedInputGemmKernel:
         )
 
         # Cluster wait before TMEM alloc and ensure pipelines are ready
-        if cutlass.const_expr(cute.size(self.cluster_shape_mn) > 1):
-            cute.arch.cluster_wait()
-        else:
-            self.cta_sync_barrier.arrive_and_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         # TMEM allocation
         tmem.allocate(self.num_tmem_alloc_cols)
@@ -1145,7 +1157,7 @@ class MixedInputGemmKernel:
                 dst_copy_a,
                 tAsA_input,
                 tAsA_transform,
-            ) = self.transform_partition(
+            ) = mixed_input_utils.transform_partition(
                 self.transform_a_source,
                 self.scale_mode,
                 copy_atom_a_input,
@@ -1173,8 +1185,10 @@ class MixedInputGemmKernel:
             tSrS_copy = None
             tSrS = None
             if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
-                smem_thr_copy_S, tSsS_trans, tSrS_copy, tSrS = self.scale_partition(
-                    src_copy_a, tCsS, transform_local_tidx, self.mma_dtype
+                smem_thr_copy_S, tSsS_trans, tSrS_copy, tSrS = (
+                    mixed_input_utils.scale_partition(
+                        src_copy_a, tCsS, transform_local_tidx, self.mma_dtype
+                    )
                 )
                 assert cute.size(tSrS, mode=[0]) == cute.size(tArA, mode=[0]), (
                     "tSrS and tArA have different leading dimension"
@@ -1582,328 +1596,6 @@ class MixedInputGemmKernel:
             if cutlass.const_expr(self.use_tma_store):
                 c_pipeline.producer_tail()
 
-    def scale_tma_partition(
-        self,
-        tCsS: cute.Tensor,
-        tCgS: cute.Tensor,
-        tma_atom_s: cute.CopyAtom,
-        block_in_cluster_coord_vmnk: cute.Coord,
-        scale_cta_layout: cute.Layout,
-    ) -> tuple[cute.Tensor, cute.Tensor]:
-        """
-        Perform TMA partition for scale tensor.
-
-        This method partitions the gobal memory and shared memory buffer for scale tensor for TMA load.
-
-        :param tCsS: Input scale shared memory tensor
-        :type tCsS: cute.Tensor
-        :param tCgS: Input scale global memory tensor
-        :type tCgS: cute.Tensor
-        :param tma_atom_s: TMA copy atom for scale tensor
-        :type tma_atom_s: cute.CopyAtom
-        :param block_in_cluster_coord_vmnk: CTA coord in the cluster
-        :type block_in_cluster_coord_vmnk: cute.Coord
-        :param scale_cta_layout: Layout of CTA from the view of the scale tensor
-        :type scale_cta_layout: cute.Layout
-
-        :return: A tuple containing (tSsS, tSgS) where:
-            - tSsS: Partitioned scale tensor in shared memory
-            - tSgS: Partitioned scale tensor in global memory
-        :rtype: tuple[cute.Tensor, cute.Tensor]
-        """
-        tSsS, tSgS = cpasync.tma_partition(
-            tma_atom_s,
-            block_in_cluster_coord_vmnk[2],
-            scale_cta_layout,
-            cute.group_modes(tCsS, 0, 3),
-            cute.group_modes(tCgS, 0, 3),
-        )
-        # Add rest_v mode
-        # ((atom_v, rest_v), STAGE)
-        # ((atom_v, rest_v), loopM, loopK, loopL)
-        tSsS = cute.make_tensor(
-            tSsS.iterator,
-            cute.make_layout(
-                ((tSsS.layout.shape[0], 1), *tSsS.layout.shape[1:]),
-                stride=(
-                    (tSsS.layout.stride[0], 0),
-                    *tSsS.layout.stride[1:],
-                ),
-            ),
-        )
-        tSgS = cute.make_tensor(
-            tSgS.iterator,
-            cute.make_layout(
-                ((tSgS.layout.shape[0], 1), *tSgS.layout.shape[1:]),
-                stride=(
-                    (tSgS.layout.stride[0], 0),
-                    *tSgS.layout.stride[1:],
-                ),
-            ),
-        )
-        return tSsS, tSgS
-
-    def transform_partition(
-        self,
-        transform_a_source: tcgen05.OperandSource,
-        scale_mode: TransformMode,
-        copy_atom_a_input: cute.CopyAtom,
-        copy_atom_a_transform: cute.CopyAtom,
-        sA_input: cute.Tensor,
-        A_transform: cute.Tensor,
-        transform_local_tidx: cutlass.Int32,
-    ) -> tuple[cute.TiledCopy, cute.TiledCopy, cute.Tensor, cute.Tensor]:
-        """
-        Partition tensors for transform input and output.
-
-        This method sets up the copy atoms and partitions the shared/tensor memory
-        for the transformation of tensor A.
-
-        :param transform_a_source: Where the transformed tensor A is stored (TMEM or SMEM)
-        :type transform_a_source: tcgen05.OperandSource
-        :param scale_mode: The transform mode (ConvertOnly or ConvertScale)
-        :type scale_mode: TransformMode
-        :param copy_atom_a_input: Copy atom for loading A from shared memory
-        :type copy_atom_a_input: cute.CopyAtom
-        :param copy_atom_a_transform: Copy atom for storing transformed A
-        :type copy_atom_a_transform: cute.CopyAtom
-        :param sA_input: Input tensor A in shared memory
-        :type sA_input: cute.Tensor
-        :param A_transform: Transformed tensor A in tensor or shared memory
-        :type A_transform: cute.Tensor
-        :param transform_local_tidx: Local thread index for transformation warps
-        :type transform_local_tidx: cutlass.Int32
-
-        :return: A tuple containing (src_copy_a, dst_copy_a, tAsA_input, tA_transform) where:
-            - src_copy_a: Tiled copy for source tensor
-            - dst_copy_a: Tiled copy for destination tensor
-            - tAsA_input: Partitioned input tensor A
-            - tA_transform: Partitioned transformed tensor A
-        :rtype: tuple[cute.TiledCopy, cute.TiledCopy, cute.Tensor, cute.Tensor]
-        """
-        if cutlass.const_expr(transform_a_source == tcgen05.OperandSource.TMEM):
-            if cutlass.const_expr(
-                cute.size(A_transform, mode=[0, 0]) == 128
-                and cute.size(sA_input, mode=[0, 0]) == 64
-            ):
-                tensor_input = cute.make_tensor(
-                    sA_input.iterator,
-                    cute.logical_product(
-                        sA_input.layout,
-                        ((cute.make_layout(2, stride=0), None), None, None, None),
-                    ),
-                )
-            else:
-                tensor_input = sA_input
-            reg2tmem_tiled_copy = tcgen05.make_tmem_copy(
-                copy_atom_a_transform, A_transform[(None, None, None, 0)]
-            )
-            thr_reg2tmem_tiled_copy = reg2tmem_tiled_copy.get_slice(
-                transform_local_tidx
-            )
-            partitioned_tensor_input = thr_reg2tmem_tiled_copy.partition_S(tensor_input)
-            partitioned_tensor_transform = thr_reg2tmem_tiled_copy.partition_D(
-                A_transform
-            )
-            src_copy_a = (
-                cute.make_tiled_copy_S(copy_atom_a_input, reg2tmem_tiled_copy)
-                if scale_mode is TransformMode.ConvertScale
-                else None
-            )
-            dst_copy_a = reg2tmem_tiled_copy
-            tAsA_input = partitioned_tensor_input
-            tA_transform = partitioned_tensor_transform
-        elif cutlass.const_expr(transform_a_source == tcgen05.OperandSource.SMEM):
-            # Construct tiled_copy satisfying 8 contiguous elts per copy atom
-            reg2smem_tiled_copy = cute.make_cotiled_copy(
-                copy_atom_a_transform,
-                cute.make_layout((128, 8), stride=(8, 1)),
-                A_transform[(None, None, None, 0)].layout,
-            )
-            thr_reg2smem_tiled_copy = reg2smem_tiled_copy.get_slice(
-                transform_local_tidx
-            )
-            partitioned_tensor_input = thr_reg2smem_tiled_copy.partition_S(sA_input)
-            partitioned_tensor_transform = thr_reg2smem_tiled_copy.partition_D(
-                A_transform
-            )
-            src_copy_a = (
-                cute.make_tiled_copy_S(copy_atom_a_input, reg2smem_tiled_copy)
-                if scale_mode is TransformMode.ConvertScale
-                else None
-            )
-            # auto-vec copy is enough for copy from register to shared memory here
-            dst_copy_a = None
-            tAsA_input = partitioned_tensor_input
-            tA_transform = partitioned_tensor_transform
-        return src_copy_a, dst_copy_a, tAsA_input, tA_transform
-
-    def scale_partition(
-        self,
-        src_copy_a: cute.TiledCopy,
-        tCsS: cute.Tensor,
-        transform_local_tidx: cutlass.Int32,
-        mma_dtype: type[cutlass.Numeric],
-    ) -> tuple[cute.TiledCopy, cute.Tensor, cute.Tensor, cute.Tensor]:
-        """
-        Partition the scale tensor for transformation.
-
-        This method prepares the copy atom and partitions the shared memory for the scale tensor.
-
-        :param src_copy_a: Tiled copy for the source tensor
-        :type src_copy_a: cute.TiledCopy
-        :param tCsS: Scale tensor in shared memory
-        :type tCsS: cute.Tensor
-        :param transform_local_tidx: Local thread index for transformation warps
-        :type transform_local_tidx: cutlass.Int32
-        :param mma_dtype: Data type for the MMA operation
-        :type mma_dtype: type[cutlass.Numeric]
-
-        :return: A tuple containing (smem_thr_copy_S, tSsS_trans, tSrS) where:
-            - smem_thr_copy_S: Tiled copy for the scale tensor
-            - tSsS_trans: Partitioned scale tensor for transformation
-            - tSrS_copy: Register fragment for the scale tensor
-            - tSrS: view of scale tensor used for transformation computation
-        :rtype: tuple[cute.TiledCopy, cute.Tensor, cute.Tensor, cute.Tensor]
-        """
-        smem_thr_copy_S = None
-        tSsS_trans = None
-        tSrS = None
-        # Partition scale tensor
-        smem_thr_copy_S = src_copy_a.get_slice(transform_local_tidx)
-        tSsS_trans = smem_thr_copy_S.partition_S(tCsS)
-        # Construct register fragment for scale tensor
-        tSsS_layout_per_stage = tSsS_trans[(None, None, None, None, 0)].layout
-        # tSrS for copy
-        tSrS_copy = cute.make_rmem_tensor(
-            cute.filter_zeros(tSsS_layout_per_stage).shape, mma_dtype
-        )
-        # tSrS view for transformation computation
-        tSrS = cute.make_tensor(
-            tSrS_copy.iterator,
-            cute.make_layout(
-                tSsS_layout_per_stage.shape, stride=tSrS_copy.layout.stride
-            ),
-        )
-        return smem_thr_copy_S, tSsS_trans, tSrS_copy, tSrS
-
-    def get_gmem_layout_scale(
-        self, scale_shape_mkl: tuple[int, int, int]
-    ) -> cute.Layout:
-        """
-        Get the layout of the scale tensor in global memory.
-
-        :param scale_shape_mkl: The shape of the scale tensor (M, K, L).
-        :type scale_shape_mkl: tuple[int, int, int]
-
-        :return: The layout of the scale tensor in global memory.
-        :rtype: cute.Layout
-        """
-        m, k, l = scale_shape_mkl
-        shape_scale = (
-            (self.scale_granularity_m, cute.ceil_div(m, self.scale_granularity_m)),
-            (self.scale_granularity_k, cute.ceil_div(k, self.scale_granularity_k)),
-        )
-        if cutlass.const_expr(self.scale_major_mode == tcgen05.OperandMajorMode.MN):
-            layout_mk = cute.make_layout(
-                shape_scale,
-                stride=(
-                    (0, 1),
-                    (0, cute.size(shape_scale[0][1])),
-                ),
-            )
-        else:
-            layout_mk = cute.make_layout(
-                shape_scale,
-                stride=(
-                    (0, cute.size(shape_scale[1][1])),
-                    (0, 1),
-                ),
-            )
-        return cute.make_layout(
-            (*layout_mk.shape, l),
-            stride=(*layout_mk.stride, cute.cosize(layout_mk)),
-        )
-
-    def get_smem_layout_scale(self) -> tuple[cute.ComposedLayout, cute.ComposedLayout]:
-        """
-        Get the layout of the scale tensor in shared memory.
-
-        :return: A tuple containing:
-            - smem_layout_scale_per_stage: Shared memory layout for scale tensor per stage
-            - smem_layout_scale: Shared memory layout for scale tensor
-        :rtype: tuple[cute.ComposedLayout, cute.ComposedLayout]
-        """
-        self.scale_tile_shape = (
-            (
-                cute.size(self.mma_tiler[0]) // 2
-                if self.use_2cta_instrs
-                else cute.size(self.mma_tiler[0])
-            ),
-            cute.size(self.mma_tiler[2]),
-        )
-        size_mn = self.scale_tile_shape[0]
-        size_k = self.scale_tile_shape[1]
-        smem_size_mn = (
-            self.scale_granularity_m if self.scale_granularity_m < size_mn else size_mn
-        )
-        smem_size_k = (
-            self.scale_granularity_k if self.scale_granularity_k < size_k else size_k
-        )
-        div_mn = cute.ceil_div(size_mn, smem_size_mn)
-        div_k = cute.ceil_div(size_k, smem_size_k)
-        smem_atom_shape = (
-            (smem_size_mn, div_mn),
-            (smem_size_k, div_k),
-        )
-        if cutlass.const_expr(self.scale_major_mode == tcgen05.OperandMajorMode.MN):
-            outer_layout = cute.make_layout(
-                smem_atom_shape,
-                stride=(
-                    (0, 1),
-                    (0, div_mn),
-                ),
-            )
-        else:
-            outer_layout = cute.make_layout(
-                smem_atom_shape,
-                stride=(
-                    (0, div_k),
-                    (0, 1),
-                ),
-            )
-        # Apply a trivial swizzle to make it a composed layout, which could be used to construct TMA atom
-        smem_layout_scale_per_stage = cute.make_composed_layout(
-            cute.make_swizzle(0, 4, 3), 0, outer_layout
-        )
-        assert cute.rank(smem_layout_scale_per_stage) == 2, (
-            "Scale layout must be rank 2"
-        )
-
-        assert (
-            cute.size(self.mma_tiler[0])
-            % cute.size(smem_layout_scale_per_stage.outer[0])
-            == 0
-        ), "smem_layout_scale_per_stage must equal the tile shape."
-        assert (
-            cute.size(self.mma_tiler[2])
-            % cute.size(smem_layout_scale_per_stage.outer[1])
-            == 0
-        ), "smem_layout_scale_per_stage must evenly divide tile k shape."
-        # Shared memory buffer for scale must be at least 128B to satisfy TMA requirement
-        assert (
-            cute.size_in_bytes(self.a_scale_dtype, smem_layout_scale_per_stage) >= 128
-        ), "smem size for scale must be at least 128B"
-        # Scale layout in smem with multiple stages
-        smem_layout_scale = cute.append(
-            smem_layout_scale_per_stage,
-            cute.make_layout(
-                (self.num_scale_load2trans_stage),
-                stride=(cute.cosize(smem_layout_scale_per_stage.outer)),
-            ),
-        )
-        return smem_layout_scale_per_stage, smem_layout_scale
-
     def epilog_gmem_copy_and_partition(
         self,
         tidx: cutlass.Int32,
@@ -2286,126 +1978,6 @@ class MixedInputGemmKernel:
         )
 
     @staticmethod
-    def _compute_smem_layout(
-        tiled_mma: cute.TiledMma,
-        mma_tiler_mnk: tuple[int, int, int],
-        a_dtype: type[cutlass.Numeric],
-        b_dtype: type[cutlass.Numeric],
-        load2trans_stage_count: int,
-        trans2mma_stage_count: int,
-    ) -> tuple[
-        cute.ComposedLayout,
-        cute.ComposedLayout,
-        cute.ComposedLayout,
-    ]:
-        """
-        Compute shared memory layouts for tensor A, transformed A and tensor B.
-
-        :param tiled_mma: The tiled MMA object defining the core computation.
-        :type tiled_mma: cute.TiledMma
-        :param mma_tiler_mnk: The shape (M, N, K) of the MMA tiler.
-        :type mma_tiler_mnk: tuple[int, int, int]
-        :param a_dtype: Data type of operand A.
-        :type a_dtype: type[cutlass.Numeric]
-        :param b_dtype: Data type of operand B.
-        :type b_dtype: type[cutlass.Numeric]
-        :param load2trans_stage_count: Number of stages for load-to-transform pipeline.
-        :type load2trans_stage_count: int
-        :param trans2mma_stage_count: Number of stages for transform-to-MMA pipeline.
-        :type trans2mma_stage_count: int
-
-        :return: A tuple containing:
-            - smem_layout_a: Shared memory layout for tensor A
-            - smem_layout_a_transform: Shared memory layout for transformed tensor A
-            - smem_layout_b: Shared memory layout for tensor B
-        :rtype: tuple[cute.ComposedLayout, cute.ComposedLayout, cute.ComposedLayout]
-        """
-        smem_layout_a = sm100_utils.make_smem_layout_a(
-            tiled_mma,
-            mma_tiler_mnk,
-            a_dtype,
-            load2trans_stage_count,
-        )
-        smem_layout_a_transform = sm100_utils.make_smem_layout_a(
-            tiled_mma,
-            mma_tiler_mnk,
-            tiled_mma.op.a_dtype,
-            trans2mma_stage_count,
-        )
-        smem_layout_b = sm100_utils.make_smem_layout_b(
-            tiled_mma,
-            mma_tiler_mnk,
-            b_dtype,
-            load2trans_stage_count,
-        )
-        return (
-            smem_layout_a,
-            smem_layout_a_transform,
-            smem_layout_b,
-        )
-
-    @staticmethod
-    def _get_transform_a_source(
-        a_major_mode: tcgen05.OperandMajorMode,
-    ) -> tcgen05.OperandSource:
-        """
-        Determine the operand source for transformed A tensor based on the operand major mode.
-        """
-        if cutlass.const_expr(a_major_mode == tcgen05.OperandMajorMode.K):
-            return tcgen05.OperandSource.TMEM
-        else:
-            return tcgen05.OperandSource.SMEM
-
-    @staticmethod
-    def _get_tma_atom_kind(
-        mcast: cutlass.Boolean,
-        use_2cta_instrs: bool,
-        is_b: bool,
-    ) -> Union[
-        cpasync.CopyBulkTensorTileG2SMulticastOp, cpasync.CopyBulkTensorTileG2SOp
-    ]:
-        """
-        Get the TMA atom kind based on 1) whether it's a multicast operation,
-        2) whether 2CTA tcgen05.mma instruction is enabled, and
-        3) whether it's a B tensor
-        """
-        # Not using .2CTA instructions for tensor A as the consumer is threads on different CTAs
-        cta_group = (
-            tcgen05.CtaGroup.TWO if (use_2cta_instrs and is_b) else tcgen05.CtaGroup.ONE
-        )
-        if cutlass.const_expr(mcast):
-            return cpasync.CopyBulkTensorTileG2SMulticastOp(cta_group)
-        return cpasync.CopyBulkTensorTileG2SOp(cta_group)
-
-    @staticmethod
-    def _get_copy_atom_a_transform(
-        mma_dtype: type[cutlass.Numeric],
-        use_2cta_instrs: bool,
-        transform_a_source: tcgen05.OperandSource,
-        a_smem_shape: cute.Shape,
-        a_dtype: type[cutlass.Numeric],
-    ) -> cute.CopyAtom:
-        """
-        Determine the copy atom for transformed A tensor based on the operand source and tile size.
-        """
-        if cutlass.const_expr(transform_a_source == tcgen05.OperandSource.TMEM):
-            if cutlass.const_expr(
-                cute.size(a_smem_shape[0][0]) == 64 and (not use_2cta_instrs)
-            ):
-                copy_op_r2t = tcgen05.St16x256bOp(
-                    tcgen05.Repetition(1), tcgen05.Unpack.NONE
-                )
-            else:
-                copy_op_r2t = tcgen05.St32x32bOp(
-                    tcgen05.Repetition(8), tcgen05.Unpack.NONE
-                )
-            return cute.make_copy_atom(copy_op_r2t, mma_dtype)
-        else:
-            return cute.make_copy_atom(
-                cute.nvgpu.CopyUniversalOp(), a_dtype, num_bits_per_copy=32
-            )
-
-    @staticmethod
     def _compute_grid(
         c: cute.Tensor,
         cta_tile_shape_mnk: tuple[int, int, int],
@@ -2428,29 +2000,6 @@ class MixedInputGemmKernel:
         )
 
         return tile_sched_params, grid
-
-    def is_valid_scale_granularity(
-        scale_granularity_m: int,
-        scale_granularity_k: int,
-        a_dtype: type[cutlass.Numeric],
-        k: int,
-        mma_tiler_k: int,
-    ) -> bool:
-        """
-        Check if the scale granularity settings are valid for the given data type and problem size.
-        """
-        if a_dtype.width == 8:
-            # No scale tensor for 8bit data type A
-            if not (scale_granularity_m == 0 and scale_granularity_k == 0):
-                return False
-        elif a_dtype.width == 4:
-            if scale_granularity_m != 1 or (
-                scale_granularity_k == 0
-                or k % scale_granularity_k != 0
-                or scale_granularity_k % mma_tiler_k != 0
-            ):
-                return False
-        return True
 
     def is_valid_tensor_alignment(
         m: int,
@@ -2566,7 +2115,7 @@ class MixedInputGemmKernel:
             mma_tiler, cluster_shape_mn, use_2cta_instrs
         ):
             return False
-        if not MixedInputGemmKernel.is_valid_scale_granularity(
+        if not mixed_input_utils.is_valid_scale_granularity(
             scale_granularity_m, scale_granularity_k, a_dtype, k, mma_tiler[2]
         ):
             return False
@@ -2634,7 +2183,11 @@ def create_i4_tensor_and_scale(
         m, num_scales, scale_granularity_k, l
     )
     # Get elements with maximum absolute value to compute scaling factors
-    a_max = torch.maximum(ref / up_4b, ref / lb_4b)
+    a_max = (
+        torch.maximum(ref / up_4b, ref / lb_4b)
+        if dtype == cutlass.Int4
+        else torch.maximum(ref / up_4b)
+    )
     a_scales, _ = torch.max(a_max, dim=2, keepdim=True)
     a_scale_inv = torch.where(a_scales == 0, 0, 1 / a_scales)
     a_quant = ref * a_scale_inv
@@ -2668,17 +2221,6 @@ def create_i4_tensor_and_scale(
     )
 
 
-def get_divisibility(contiguous_dim_size: int, upper_bound: int = 128) -> int:
-    """
-    Calculate the largest power of 2 divisibility factor for memory alignment.
-    """
-    # Check the largest power of 2 factor of contiguous_dim_size
-    for i in range(int(log2(contiguous_dim_size)), 0, -1):
-        if contiguous_dim_size % (2**i) == 0:
-            return min(2**i, upper_bound)
-    return 1
-
-
 def create_tensor_a(
     l: int,
     m: int,
@@ -2688,7 +2230,7 @@ def create_tensor_a(
     scale_granularity_m: int = 0,
     scale_granularity_k: int = 0,
     transformed_dtype: Optional[type[cutlass.Numeric]] = None,
-) -> tuple[cute.Tensor, cute.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[cute.Tensor, Optional[cute.Tensor], torch.Tensor, Optional[torch.Tensor]]:
     """
     Create tensor A and scale tensor.
     """
@@ -2710,7 +2252,7 @@ def create_tensor_a(
             a_dtype,
             scale_granularity_m,
             scale_granularity_k,
-            divisibility=get_divisibility(m if a_major == "m" else k),
+            divisibility=mixed_input_utils.get_divisibility(m if a_major == "m" else k),
             transformed_dtype=transformed_dtype,
         )
     else:
@@ -2725,7 +2267,9 @@ def create_tensor_a(
             a_torch_cpu,
             a_dtype,
             is_dynamic_layout=True,
-            assumed_align=get_divisibility(m if a_major == "m" else k),
+            assumed_align=mixed_input_utils.get_divisibility(
+                m if a_major == "m" else k
+            ),
         )
     return a_tensor, a_scale_tensor, a_torch_cpu, a_scale_torch_cpu
 
@@ -2774,18 +2318,18 @@ def create_tensors(
         b_torch_cpu,
         b_dtype,
         is_dynamic_layout=True,
-        assumed_align=get_divisibility(n if b_major == "n" else k),
+        assumed_align=mixed_input_utils.get_divisibility(n if b_major == "n" else k),
     )
     c_tensor, c_torch_gpu = cutlass_torch.cute_tensor_like(
         c_torch_cpu,
         c_dtype,
         is_dynamic_layout=True,
-        assumed_align=get_divisibility(m if c_major == "m" else n),
+        assumed_align=mixed_input_utils.get_divisibility(m if c_major == "m" else n),
     )
     c_tensor = c_tensor.mark_compact_shape_dynamic(
         mode=(0 if c_major == "m" else 1),
         stride_order=(2, 1, 0) if c_major == "m" else (2, 0, 1),
-        divisibility=get_divisibility(m if c_major == "m" else n),
+        divisibility=mixed_input_utils.get_divisibility(m if c_major == "m" else n),
     )
 
     return (
@@ -2966,25 +2510,36 @@ def run(
 
     def generate_tensors():
         a_tensor, a_scale_tensor, a_torch_cpu, a_scale_torch_cpu = create_tensor_a(
-            l, m, k, a_major, a_dtype, scale_granularity_m, scale_granularity_k, b_dtype
+            l,
+            m,
+            k,
+            a_major,
+            a_dtype,
+            scale_granularity_m,
+            scale_granularity_k,
+            b_dtype,
         )
         b_tensor, _ = cutlass_torch.cute_tensor_like(
             b_torch_cpu,
             b_dtype,
             is_dynamic_layout=True,
-            assumed_align=get_divisibility(n if b_major == "n" else k),
+            assumed_align=mixed_input_utils.get_divisibility(
+                n if b_major == "n" else k
+            ),
         )
         c_torch_cpu = cutlass_torch.matrix(l, m, n, c_major == "m", c_dtype)
         c_tensor, c_torch_gpu = cutlass_torch.cute_tensor_like(
             c_torch_cpu,
             c_dtype,
             is_dynamic_layout=True,
-            assumed_align=get_divisibility(m if c_major == "m" else n),
+            assumed_align=mixed_input_utils.get_divisibility(
+                m if c_major == "m" else n
+            ),
         )
         c_tensor = c_tensor.mark_compact_shape_dynamic(
             mode=(0 if c_major == "m" else 1),
             stride_order=(2, 1, 0) if c_major == "m" else (2, 0, 1),
-            divisibility=get_divisibility(m if c_major == "m" else n),
+            divisibility=mixed_input_utils.get_divisibility(m if c_major == "m" else n),
         )
         return testing.JitArguments(
             a_tensor, a_scale_tensor, b_tensor, c_tensor, current_stream

@@ -17,9 +17,7 @@ the DSL.
 Notable unsupported features
 ----------------------------
 
-- GeForce RTX 50 Series support
 - Programmatic Dependent Launch (PDL)
-- narrow-precision data type support, including related tensor core instructions
 - convolutions
 - full support for ahead of time compilation
 - preferred clusters

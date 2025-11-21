@@ -9,7 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cuda.bindings import driver, nvrtc
+from cuda.bindings import driver, nvrtc, runtime
+from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitModule
+from cutlass.base_dsl.common import DSLRuntimeError
 
 import cutlass.cute as cute
 
@@ -51,7 +53,7 @@ class HardwareInfo:
                 f"Cluster size must be between 1 and 32, {cluster_size} is not supported"
             )
 
-        device_fn = self._get_device_function(self.device)
+        self._get_device_function(self.device)
 
         max_shared_memory_per_block = self._checkCudaErrors(
             driver.cuDeviceGetAttribute(
@@ -173,7 +175,14 @@ class HardwareInfo:
         )
 
     # get a empty kernel to compute occupancy
-    def _get_device_function(self, device) -> None:
+    def _get_device_function(self, device) -> driver.CUfunction:
         self.compiled_kernel = cute.compile(self._host_function).to(device)
-        self.kernel = self.compiled_kernel.exec_context.kernel_functions[0]
-        self.module = self.compiled_kernel.exec_context.module.cuda_modules[0]
+        assert isinstance(self.compiled_kernel.jit_module, CudaDialectJitModule)
+        err, kernels = runtime.cudaLibraryEnumerateKernels(
+            1, self.compiled_kernel.jit_module.cuda_library[0]
+        )
+        if err is not runtime.cudaError_t.cudaSuccess:
+            raise DSLRuntimeError(f"Failed to enumerate kernels: {err}")
+        self.kernel = kernels[0]
+        self.kernel = self._checkCudaErrors(driver.cuKernelGetFunction(self.kernel))
+        return self.kernel

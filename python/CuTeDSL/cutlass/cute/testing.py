@@ -1057,7 +1057,7 @@ def tune(
         except NotImplementedError as e:
             logger.info(f"   Encountered unimplemented error, abort execution: {e}")
             raise e
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, CantImplementError) as e:
             logger.info(f"   Configuration parameter skipping: {e}")
             continue
         except Exception as e:
@@ -1073,3 +1073,17 @@ def tune(
     logger.info(f"Best configuration: {best_config}, execution time: {min_time} us")
     logger.info(f"Total tuning time: {tuning_time} s")
     return best_config
+
+
+class CantImplementError(Exception):
+    """Exception raised when a function is not implemented."""
+
+    def __init__(self, message=None):
+        self.message = message or "The current config is invalid/unsupported"
+        super().__init__(self.message)
+
+    def __str__(self):
+        return self.message
+
+    def __repr__(self):
+        return self.message

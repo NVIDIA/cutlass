@@ -76,6 +76,11 @@ void initialize_block_scaled_gemm_reference_operations_fp4a_vs16(Manifest &manif
 
   make_block_scaled_gemm_tn<
     float_e2m1_t /*A*/, float_ue4m3_t /*SFA*/, float_e2m1_t /*B*/, float_ue4m3_t /*SFB*/,
+    void /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, bfloat16_t /*D*/, 16 /*SFVecSize*/
+  >(manifest);
+
+  make_block_scaled_gemm_tn<
+    float_e2m1_t /*A*/, float_ue4m3_t /*SFA*/, float_e2m1_t /*B*/, float_ue4m3_t /*SFB*/,
     half_t /*C*/, float /*Compute*/, float_ue8m0_t /*SFD*/, float /*Accum*/, float_e2m1_t /*D*/, 16 /*SFVecSize*/,
     32 /*EpilogueSFVecSize*/
   >(manifest);

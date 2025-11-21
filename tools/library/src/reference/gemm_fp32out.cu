@@ -55,8 +55,26 @@ void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    float,                                // ElementA
+    float,                                // ElementB
+    void,                                 // ElementC
+    float,                                // ElementScalar
+    float,                                // ElementAccumulator
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     tfloat32_t,
     tfloat32_t,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    tfloat32_t,
+    tfloat32_t,
+    void,
     float,
     float,
     float
@@ -68,6 +86,14 @@ void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
     tfloat32_t,
     float,
     float
+  >(manifest);
+  make_gemm_real_canonical_layouts<
+    tfloat32_t,
+    tfloat32_t,
+    void,
+    float,
+    float,
+    tfloat32_t
   >(manifest);
  
   make_gemm_real_canonical_layouts<
@@ -81,14 +107,40 @@ void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     half_t,
     half_t,
+    void,
+    float,
+    float,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
     half_t,
     float,
     float
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
+    void,
+    float,
+    float,
+    float
+  >(manifest);
+  make_gemm_real_canonical_layouts<
     bfloat16_t,
     bfloat16_t,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    bfloat16_t,
+    void,
     float,
     float,
     float
@@ -100,6 +152,15 @@ void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
     bfloat16_t,
     float,
     float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    bfloat16_t,
+    void,
+    float,
+    float,
+    bfloat16_t
   >(manifest);
 }
 

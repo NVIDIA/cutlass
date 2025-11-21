@@ -134,7 +134,7 @@ def _get_friendly_cuda_error_message(error_code, error_name):
     # Add target architecture info
     target_arch = os.getenv("CUTE_DSL_ARCH", "unknown")
 
-    error_messages = {
+    additional_info = {
         "CUDA_ERROR_INVALID_SOURCE": (
             f"{Colors.RED}❌ Failed to load CUDA kernel - likely architecture mismatch.{Colors.RESET}\n\n"
         ),
@@ -156,6 +156,9 @@ def _get_friendly_cuda_error_message(error_code, error_name):
         "CUDA_ERROR_INVALID_VALUE": (
             f"{Colors.RED}⚠️ Invalid parameter passed to CUDA operation.{Colors.RESET}\n\n"
             f"{Colors.YELLOW}This is likely a bug - please report it with:{Colors.RESET}"
+        ),
+        "CUDA_ERROR_INVALID_CLUSTER_SIZE": (
+            f"{Colors.RED}❌ Invalid cluster size.{Colors.RESET}\n\n"
         ),
     }
 
@@ -194,12 +197,12 @@ def _get_friendly_cuda_error_message(error_code, error_name):
         ),
     }
 
-    message = error_messages.get(
-        error_name, f"{Colors.RED}Unknown CUDA error{Colors.RESET}"
-    )
+    message = f"{error_name} (error code: {error_code}) \n" \
+              f"{additional_info.get(error_name, '')} \n\n{Colors.RESET}"
 
     # Add debug information
     debug_info = f"\n- {Colors.BOLD}Error name: {error_name}\n"
+    debug_info += f"- Error code: {error_code}\n"
     debug_info += f"- CUDA_TOOLKIT_PATH: {os.getenv('CUDA_TOOLKIT_PATH', 'not set')}\n"
     debug_info += (
         f"- Target SM ARCH: {os.getenv('CUTE_DSL_ARCH', 'not set')}{Colors.RESET}\n"

@@ -65,7 +65,7 @@ def print_tensor(t: cute.Tensor):
     cute.print_tensor(t)
 
 
-if __name__ == "__main__":
+def run():
     from torch._subclasses.fake_tensor import FakeTensorMode
 
     shape = (3, 4)
@@ -75,3 +75,7 @@ if __name__ == "__main__":
 
     real_tensor = torch.randn(shape, dtype=torch.float32)
     compiled_fn(from_dlpack(real_tensor))
+
+
+if __name__ == "__main__":
+    run()

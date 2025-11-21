@@ -90,6 +90,18 @@ public:
     int batch_count,
     size_t device_index);
 
+/// creates a reference tensor of existing memory, a given type, capacity (elements), and name
+  DeviceAllocation *create_ref_tensor(
+    Options const &options,
+    std::string const &name,
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
+    std::vector<int> const &extent,
+    std::vector<int64_t> const &stride,
+    void* ref_pointer_,
+    int batch_count,
+    size_t device_index);
+
   /// Allocates memory of a given type, capacity (elements), and name
   DeviceAllocation *allocate_and_initialize_tensor(
     Options const &options,

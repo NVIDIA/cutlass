@@ -43,6 +43,7 @@ import cutlass.cute.nvgpu.tcgen05 as tcgen05
 import cutlass.cute.nvgpu.cpasync as cpasync
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
@@ -970,7 +971,6 @@ class BlackwellMultiHeadLatentAttentionForward:
             num_tmem_dealloc_threads = self.threads_per_warp * self.num_compute_warps
             with cute.arch.elect_one():
                 cute.arch.mbarrier_init(tmem_dealloc_mbar_ptr, num_tmem_dealloc_threads)
-        cute.arch.mbarrier_init_fence()
 
         load_q_pipeline = self.make_and_init_load_qkv_pipeline(
             storage.load_q_mbar_ptr.data_ptr(),
@@ -1004,8 +1004,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             )
 
         # Cluster arrive after barrier init
-        if cutlass.const_expr(cute.size(self.cluster_shape_mnk) > 1):
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mnk, is_relaxed=True)
 
         # Generate smem tensor Q/KC/VC/exchange
         # (MMA, MMA_H, MMA_R, PIPE)
@@ -1035,10 +1034,7 @@ class BlackwellMultiHeadLatentAttentionForward:
         #
         # Cluster wait before tensor memory alloc
         #
-        if cutlass.const_expr(cute.size(self.cluster_shape_mnk) > 1):
-            cute.arch.cluster_wait()
-        else:
-            pipeline.sync(barrier_id=4)
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mnk)
 
         # ///////////////////////////////////////////////////////////////////////////////
         #  Load warps, including page table and data tensors
@@ -2046,8 +2042,9 @@ class BlackwellMultiHeadLatentAttentionForward:
 
         # wait cpasync arrive until the last stage
         load_kv_pipeline = common_params.load_kv_pipeline
-        if copy_in_flight_count == self.load_kv_stage:
-            cute.arch.cp_async_wait_group(self.load_kv_stage - 1)
+        release_distance = 2
+        if copy_in_flight_count == self.load_kv_stage - release_distance:
+            cute.arch.cp_async_wait_group(self.load_kv_stage - release_distance - 1)
             load_kv_pipeline.producer_commit(load_kv_commit_state)
             load_kv_commit_state.advance()
             copy_in_flight_count -= 1
@@ -3922,6 +3919,7 @@ class BlackwellMultiHeadLatentAttentionForward:
                 producer_group=load_qkv_producer_group,
                 consumer_group=load_qkv_consumer_group,
                 cta_layout_vmnk=cta_layout_vmnk,
+                defer_sync=True,
             )
         else:
             load_qkv_producer_group = pipeline.CooperativeGroup(
@@ -3937,6 +3935,7 @@ class BlackwellMultiHeadLatentAttentionForward:
                 consumer_group=load_qkv_consumer_group,
                 tx_count=tx_count,
                 cta_layout_vmnk=cta_layout_vmnk,
+                defer_sync=True,
             )
 
     def make_and_init_mma_s_pipeline(
@@ -3971,6 +3970,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             producer_group=mma_s_producer_group,
             consumer_group=mma_s_consumer_group,
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=True,
         )
 
     def make_and_init_p_mma_pipeline(
@@ -4005,6 +4005,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             producer_group=p_mma_producer_group,
             consumer_group=p_mma_consumer_group,
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=True,
         )
 
     def make_and_init_p_cor_pipeline(
@@ -4033,6 +4034,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             num_stages=self.p_cor_stage,
             producer_group=p_cor_producer_group,
             consumer_group=p_cor_consumer_group,
+            defer_sync=True,
         )
 
     def make_and_init_mma_o_pipeline(
@@ -4067,6 +4069,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             producer_group=mma_o_producer_group,
             consumer_group=mma_o_consumer_group,
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=True,
         )
 
     def make_and_init_load_pt_pipeline(self, load_pt_mbar_ptr):
@@ -4091,6 +4094,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             num_stages=self.load_pt_stage,
             producer_group=load_pt_producer_group,
             consumer_group=load_pt_consumer_group,
+            defer_sync=True,
         )
 
     @staticmethod

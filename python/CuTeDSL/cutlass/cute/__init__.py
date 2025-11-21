@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 # Use the auto-generated enum AddressSpace
-from cutlass._mlir.dialects.cute import AddressSpace
+from cutlass._mlir.dialects.cute import AddressSpace, CacheEvictionPriority
 
 # Explicitly import types that might be directly used by other modules.
 # This is a fix for using Sphinx to generate documentation
@@ -29,6 +29,7 @@ from .typing import (
     ComposedLayout,
     Pointer,
     Tensor,
+    SymInt,
 )
 
 # Import everything else
@@ -114,6 +115,9 @@ from .core import (
     ScaledBasis,
     get_divisibility,
     Ratio,
+    # FastDivmod operations
+    FastDivmodDivisor,
+    fast_divmod_create_divisor,
 )
 
 from .tuple import (
@@ -175,6 +179,8 @@ from .atom import (
 from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, prefetch
 
 from . import arch
+
+from . import export
 from . import nvgpu
 from . import testing
 from . import runtime
@@ -200,10 +206,16 @@ KeepPTX = _dsl.KeepPTX
 GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 
+# attach the TVM FFI ABI interface postprocessor to the DSL
+from . import _tvm_ffi_args_spec_converter
+
+_tvm_ffi_args_spec_converter.attach_args_spec_converter()
+
 # Explicitly export all symbols for documentation generation
 __all__ = [
     # Core types
     "AddressSpace",
+    "CacheEvictionPriority",
     "Tensor",
     "Layout",
     "ComposedLayout",
@@ -219,6 +231,7 @@ __all__ = [
     "ThrCopy",
     "TensorSSA",
     "ReductionOp",
+    "SymInt",
     # Basic utility functions
     "assume",
     "is_integer",
@@ -344,8 +357,12 @@ __all__ = [
     "repeat_like",
     # User defined struct
     "struct",
+    # FastDivmod operations
+    "FastDivmodDivisor",
+    "fast_divmod_create_divisor",
     # Modules
     "arch",
+    "export",
     "nvgpu",
     "testing",
     "runtime",

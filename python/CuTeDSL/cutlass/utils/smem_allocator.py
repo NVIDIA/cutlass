@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 from typing import Optional, Type, Union, overload
+import inspect
 
 import cutlass.cute as cute
 from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
@@ -284,5 +285,12 @@ class SmemAllocator:
         ptr = cute.recast_ptr(ptr, swizzle, dtype=element_type, loc=loc, ip=ip)
         return cute.make_tensor(ptr, layout, loc=loc, ip=ip)
 
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+SmemAllocator.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]
+)
 
 get_smem_capacity_in_bytes = SmemAllocator.capacity_in_bytes

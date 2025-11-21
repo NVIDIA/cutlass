@@ -10,7 +10,9 @@
 # is strictly prohibited.
 
 
-from cutlass.cutlass_dsl import dsl_user_op
+from cutlass.base_dsl.arch import Arch
+from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.cutlass_dsl import CuTeDSL, dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import builtin, arith, llvm, vector
 
@@ -34,15 +36,15 @@ from ..typing import (
     Int8,
     Int32,
     Float16,
+    Float32,
     BFloat16,
     Float32,
 )
 
-
 @dsl_user_op
 def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
     """
-    Convert a vector of int8 to a vector of bfloat16.
+    Fast conversion from int8 to bfloat16. It converts a vector of int8 to a vector of bfloat16.
 
     :param vec_i8: The input vector of int8.
     :type vec_i8: 1D vector of int8
@@ -51,6 +53,9 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
     :return: The output 1D vector of bfloat16 with the same length as the input vector.
     :rtype: 1D vector of bfloat16
     """
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    if not arch in cvt_i8_bf16_intrinsic.supported_archs:
+        raise DSLRuntimeError(f"cvt_i8_bf16_intrinsic is not supported on {arch}")
     src_pos = 0
     vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
     vec_i8x2_type = ir.VectorType.get([2], Int8.mlir_type, loc=loc)
@@ -116,7 +121,7 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
 @dsl_user_op
 def cvt_i4_bf16_intrinsic(vec_i4, length, *, loc=None, ip=None):
     """
-    Convert a vector of int4 to a vector of bfloat16.
+    Fast conversion from int4 to bfloat16. It converts a vector of int4 to a vector of bfloat16.
 
     :param vec_i4: The input vector of int4.
     :type vec_i4: 1D vector of int4
@@ -125,6 +130,9 @@ def cvt_i4_bf16_intrinsic(vec_i4, length, *, loc=None, ip=None):
     :return: The output 1D vector of bfloat16 with the same length as the input vector.
     :rtype: 1D vector of bfloat16
     """
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    if not arch in cvt_i4_bf16_intrinsic.supported_archs:
+        raise DSLRuntimeError(f"cvt_i4_bf16_intrinsic is not supported on {arch}")
     src_pos = 0
     vec_i4x8_type = ir.VectorType.get([8], Int4.mlir_type, loc=loc)
     vec_i4x4_type = ir.VectorType.get([4], Int4.mlir_type, loc=loc)
@@ -261,3 +269,18 @@ def cvt_f4e2m1_f16_intrinsic(vec_f4e2m1, length, *, loc=None, ip=None):
             ip=ip,
         )
     return vec_dst
+
+
+# Expose supported architectures via the intrinsic symbol
+cvt_i8_bf16_intrinsic.supported_archs = (
+    *Arch.AmpereArchs(),
+    *Arch.AdaArchs(),
+    *Arch.HopperArchs(),
+    *Arch.BlackwellArchs(),
+)
+cvt_i4_bf16_intrinsic.supported_archs = (
+    Arch.sm_100a,
+    Arch.sm_110a,
+    Arch.sm_120a,
+    Arch.sm_121a,
+)

@@ -97,7 +97,46 @@ void initialize_gemm_reference_operations_f4_f4_f32(Manifest &manifest) {
     float,                                  // ElementAccumulator
     float                                   // ElementD
   >(manifest);
+  
+  // 1.
+  make_gemm_real_canonical_layouts<
+    float_e2m1_t,                           // ElementA
+    float_e2m1_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
 
+  // 2.
+  make_gemm_real_canonical_layouts<
+    float_e2m1_t,                           // ElementA
+    float_e2m1_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  // 3.
+  make_gemm_real_canonical_layouts<
+    float_e2m1_t,                           // ElementA
+    float_e2m1_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    half_t                                  // ElementD
+  >(manifest);
+
+  // 4.
+  make_gemm_real_canonical_layouts<
+    float_e2m1_t,                           // ElementA
+    float_e2m1_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

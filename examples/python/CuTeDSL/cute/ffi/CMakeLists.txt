@@ -35,20 +35,26 @@ find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # Get Python site-packages directory using Python
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
-    OUTPUT_VARIABLE Python_SITE_PACKAGES
+    COMMAND ${Python3_EXECUTABLE} -c "import sys, sysconfig; print(';'.join([sysconfig.get_paths()['purelib'],sysconfig.get_paths(vars={'base': sys.base_prefix, 'platbase': sys.base_prefix})['purelib']]))"
+    OUTPUT_VARIABLE Python_SITE_PACKAGES_PATHS
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-message(STATUS "Python site-packages directory: ${Python_SITE_PACKAGES}")
+message(STATUS "Python site-packages directories: ${Python_SITE_PACKAGES_PATHS}")
 
 # Add nanobind path to CMAKE_PREFIX_PATH
-list(APPEND CMAKE_PREFIX_PATH ${Python_SITE_PACKAGES}/nanobind/cmake)
+foreach(path IN LISTS Python_SITE_PACKAGES_PATHS)
+    if(EXISTS "${path}/nanobind/cmake")
+        message(STATUS "Adding nanobind cmake path: ${path}/nanobind/cmake")
+        list(APPEND CMAKE_PREFIX_PATH "${path}/nanobind/cmake")
+        break()
+    endif()
+endforeach()
 
 # Find nanobind
 find_package(nanobind)
 if(NOT nanobind_FOUND)
-    message(FATAL_ERROR 
+    message(FATAL_ERROR
         "nanobind not found!\n"
         "Please install nanobind with: pip install nanobind\n"
     )

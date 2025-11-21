@@ -67,10 +67,11 @@ import cutlass.cute as cute
 from cutlass.torch import dtype as torch_dtype
 from cutlass.cute.runtime import make_ptr
 
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
 
-# Add the current directory to sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from tensorop_gemm import TensorOpGemm
+from ampere.tensorop_gemm import TensorOpGemm
 
 
 class BufferWithLayout:

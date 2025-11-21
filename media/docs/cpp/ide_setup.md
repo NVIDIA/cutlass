@@ -23,7 +23,7 @@ and you might see faster responses and more stable performance with clangd.
     1. Enter "C/C++" to filter results
     1. Select "C/C++ Edit Configurations (UI)" (or "... (JSON)" if you feel like editing the raw JSON)
     1. View the documentation for these settings
-       [here](https://code.visualstudio.com/docs/cpp/c-cpp-properties-schema-reference)
+       [here](https://code.visualstudio.com/docs/cpp/customize-cpp-settings)
 1. Edit "Include Path" to set up **include paths**. For CUTLASS, this includes the following:
     * `${workspaceFolder}/include`
     * `${workspaceFolder}/tools/util/include`

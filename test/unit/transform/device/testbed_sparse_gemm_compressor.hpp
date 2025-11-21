@@ -107,6 +107,10 @@ initialize_tensor(cutlass::TensorView<Element, Layout> view, cutlass::Distributi
       scope_max = 2;
       scope_min = 0;
     }
+    else if (bits_input <= 6) {
+      scope_max = 2;
+      scope_min = -2;
+    }
     else if (bits_input <= 8) {
         scope_max = 1;
         scope_min = -1;
@@ -155,9 +159,11 @@ public:
   using ElementA = typename CompressorKernel::ElementA;
   using LayoutATag = typename CompressorKernel::LayoutATag;
   using StrideA = typename CompressorKernel::StrideA;
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
   using ArrayElementA = 
-    ElementA
-  ;
+    cute::conditional_t<IsRuntimeDataTypeA,
+                        cute::uint_bit_t<cute::sizeof_bits_v<ElementA>>,
+    ElementA>;
 
   using ElementE = typename CompressorKernel::ElementEMmaRaw;
   using LayoutETag = cutlass::layout::RowMajor;  // We don't care about the major here, just to allocate tensor

@@ -57,14 +57,50 @@ void initialize_gemm_reference_operations_fp_other(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     half_t,
     half_t,
+    void,
+    half_t,
+    half_t,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
     float,
     half_t,
     half_t
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
+    float,
+    float,
+    float,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    bfloat16_t,
+    float,
+    float,
+    float,
+    bfloat16_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     double,
     double,
+    double,
+    double,
+    double
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    double,
+    double,
+    void,
     double,
     double,
     double
@@ -79,8 +115,26 @@ void initialize_gemm_reference_operations_fp_other(Manifest &manifest) {
   >(manifest);
 
   make_gemm_complex_canonical_layouts<
+    complex<float>,
+    complex<float>,
+    void,
+    complex<float>,
+    complex<float>,
+    complex<float>
+  >(manifest);
+
+  make_gemm_complex_canonical_layouts<
     complex<double>,
     complex<double>,
+    complex<double>,
+    complex<double>,
+    complex<double>
+  >(manifest);
+
+  make_gemm_complex_canonical_layouts<
+    complex<double>,
+    complex<double>,
+    void,
     complex<double>,
     complex<double>,
     complex<double>

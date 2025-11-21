@@ -245,8 +245,15 @@ def get_prefix_dsl_libs(prefix: str):
             ]
 
             libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
+
+            optional_libs_cand = find_libs_in_ancestors(
+                start, {"cuda_dialect_runtime"}, lib_folder_guesses
+            )
+
             if libs_cand:
                 dsl_libs = ":".join(libs_cand)
+                if optional_libs_cand:
+                    dsl_libs += ":" + ":".join(optional_libs_cand)
                 return dsl_libs
 
             return None
@@ -312,6 +319,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
     - [DSL_NAME]_FILE_CACHING_CAPACITY: Limits the number of the cache save/load files (default: 1000)
     - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
+    - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
     """
 
     def __init__(self, prefix="DSL"):
@@ -358,3 +366,5 @@ class EnvironmentVarManager(LogEnvironmentManager):
 
         # whether to enable assert in host and device code
         self.enable_assertions = get_bool_env_var(f"{prefix}_ENABLE_ASSERTIONS", False)
+
+        self.enable_tvm_ffi = get_bool_env_var(f"{prefix}_ENABLE_TVM_FFI", False)

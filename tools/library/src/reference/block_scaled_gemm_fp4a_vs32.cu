@@ -73,6 +73,15 @@ void initialize_block_scaled_gemm_reference_operations_fp4a_vs32(Manifest &manif
     half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, float_e3m2_t /*D*/, 32 /*SFVecSize*/
   >(manifest);
 
+  make_block_scaled_gemm<
+    float_e2m1_t /*A*/, float_ue8m0_t /*SFA*/, float_e2m1_t /*B*/, float_ue8m0_t /*SFB*/,
+    bfloat16_t  /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, bfloat16_t /*D*/, 32 /*SFVecSize*/
+  >(manifest);
+  make_block_scaled_gemm<
+    float_e2m1_t /*A*/, float_ue8m0_t /*SFA*/, float_e2m1_t /*B*/, float_ue8m0_t /*SFB*/,
+    void  /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, bfloat16_t /*D*/, 32 /*SFVecSize*/
+  >(manifest);
+
   // With SF generation reference
   make_block_scaled_gemm<
     float_e2m1_t /*A*/, float_ue8m0_t /*SFA*/, float_e2m1_t /*B*/, float_ue8m0_t /*SFB*/,
