@@ -103,6 +103,7 @@ from .core import (
     E,
     # User defined struct
     struct,
+    union,
     pretty_str,
     make_layout_image_mask,
     repeat,
@@ -344,6 +345,7 @@ __all__ = [
     "repeat_like",
     # User defined struct
     "struct",
+    "cute_union",
     # Modules
     "arch",
     "nvgpu",
