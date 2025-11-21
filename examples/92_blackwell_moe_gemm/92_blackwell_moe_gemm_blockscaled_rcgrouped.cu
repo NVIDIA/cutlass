@@ -41,21 +41,19 @@
 
       $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_blockscaled_rcgrouped --m=128 --k=128 --groups=10
 
-      The above example command makes all 10 groups to be sized at the given m, n, k sizes.
-      Skipping any of the problem dimensions randomizes it across the different groups.
-      Same applies for alpha and beta values that are randomized across the different groups.
+      The above example command makes all 10 groups to be sized at the given m, n, k sizes. 
+      Note that m and k remain consistent across groups and only n is randomized if it's not provided through the args.
+      Alpha and beta values are randomized across the different groups.
 
     To run this example for a set of problems using the benchmark option:
 
       $ ./examples/92_blackwell_grouped_gemm/92_blackwell_moe_gemm_blockscaled_rcgrouped --benchmark=./test_benchmark.txt
 
       Where the test_benchmark.txt may look as such:
-        0 256x512x128
-        1 256x512x512
-        2 512x256x128
-        3 256x256x128
-        4 256x512x1024
-        5 1024x512x128 and so on
+        0 256x512x256
+        1 256x128x256
+        2 256x256x256 and so on
+      Note that one must keep m and k consistent across groups in the benchmark file.
 */
 
 #include <iostream>
