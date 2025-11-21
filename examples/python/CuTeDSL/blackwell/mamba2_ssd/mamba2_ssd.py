@@ -27,6 +27,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+import os
+import sys
 import argparse
 from typing import List, Type, Tuple, Optional
 import cuda.bindings.driver as cuda
@@ -39,21 +41,22 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
-import sys
-from pathlib import Path
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, "../.."))
 
-sys.path.append(str(Path(__file__).resolve().parent))
-from mamba2_ssd_reference import (
+from blackwell.mamba2_ssd.mamba2_ssd_reference import (
     ssd_reference_fp32_all,
     ssd_reference_lowprecision_intermediates,
     analyze_relative_diffs,
 )
-from mamba2_ssd_tile_scheduler import (
+from blackwell.mamba2_ssd.mamba2_ssd_tile_scheduler import (
     Mamba2SSDTileSchedulerParams,
     Mamba2SSDTileScheduler,
 )
@@ -811,12 +814,10 @@ class SSDKernel:
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mnk) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mnk, is_relaxed=True)
 
         # Cluster wait before tmem alloc
-        if cute.size(self.cluster_shape_mnk) > 1:
-            cute.arch.cluster_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mnk)
 
         tmem_alloc_barrier = pipeline.NamedBarrier(
             barrier_id=0,
@@ -2574,6 +2575,7 @@ class SSDKernel:
                 consumer_group=x_consumer_group,
                 tx_count=self.num_x_load_bytes,
                 barrier_storage=x_full_mbar_ptr,
+                defer_sync=True,
             )
         else:
             x_consumer_group_umma = pipeline.CooperativeGroup(
@@ -2590,6 +2592,7 @@ class SSDKernel:
                 consumer_group_async=x_consumer_group_async,
                 tx_count=self.num_x_load_bytes,
                 barrier_storage=x_full_mbar_ptr,
+                defer_sync=True,
             )
 
     def make_and_init_b_pipeline(self, b_full_mbar_ptr):
@@ -2609,6 +2612,7 @@ class SSDKernel:
             consumer_group_async=b_consumer_group_async,
             tx_count=self.num_b_load_bytes,
             barrier_storage=b_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_c_pipeline(self, c_full_mbar_ptr):
@@ -2624,6 +2628,7 @@ class SSDKernel:
             consumer_group=c_consumer_group,
             tx_count=self.num_c_load_bytes,
             barrier_storage=c_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_deltas_pipeline(self, deltas_full_mbar_ptr):
@@ -2643,6 +2648,7 @@ class SSDKernel:
             consumer_group=deltas_consumer_group,
             tx_count=self.num_delta_load_bytes + self.num_cumsum_delta_load_bytes,
             barrier_storage=deltas_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_d_pipeline(self, d_full_mbar_ptr):
@@ -2662,6 +2668,7 @@ class SSDKernel:
                 consumer_group=d_consumer_group,
                 tx_count=self.num_d_load_bytes,
                 barrier_storage=d_full_mbar_ptr,
+                defer_sync=True,
             )
 
     def make_and_init_intra1_acc_pipeline(self, intra1_acc_full_mbar_ptr):
@@ -2676,6 +2683,7 @@ class SSDKernel:
             producer_group=intra1_acc_producer_group,
             consumer_group=intra1_acc_consumer_group,
             barrier_storage=intra1_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_intra2_q_pipeline(self, intra2_q_full_mbar_ptr):
@@ -2690,6 +2698,7 @@ class SSDKernel:
             producer_group=intra2_q_producer_group,
             consumer_group=intra2_q_consumer_group,
             barrier_storage=intra2_q_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_intra2_acc_pipeline(self, intra2_acc_full_mbar_ptr):
@@ -2704,6 +2713,7 @@ class SSDKernel:
             producer_group=intra2_acc_producer_group,
             consumer_group=intra2_acc_consumer_group,
             barrier_storage=intra2_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter1_b_pipeline(self, inter1_b_full_mbar_ptr):
@@ -2718,6 +2728,7 @@ class SSDKernel:
             producer_group=inter1_b_producer_group,
             consumer_group=inter1_b_consumer_group,
             barrier_storage=inter1_b_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter1_acc_pipeline(self, inter1_acc_full_mbar_ptr):
@@ -2732,6 +2743,7 @@ class SSDKernel:
             producer_group=inter1_acc_producer_group,
             consumer_group=inter1_acc_consumer_group,
             barrier_storage=inter1_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter2_p_pipeline(self, inter2_p_full_mbar_ptr):
@@ -2746,6 +2758,7 @@ class SSDKernel:
             producer_group=inter2_p_producer_group,
             consumer_group=inter2_p_consumer_group,
             barrier_storage=inter2_p_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter2_acc_pipeline(self, inter2_acc_full_mbar_ptr):
@@ -2760,6 +2773,7 @@ class SSDKernel:
             producer_group=inter2_acc_producer_group,
             consumer_group=inter2_acc_consumer_group,
             barrier_storage=inter2_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def tma_partition_for_mma_b_operand(

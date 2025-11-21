@@ -17,11 +17,12 @@ import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, if_generate
 
 from cutlass.pipeline import (
+    Agent,
     CooperativeGroup,
     PipelineOp,
     PipelineState,
-    pipeline_init_wait,
     PipelineAsync,
+    agent_sync,
 )
 
 ##############################################################################
@@ -106,23 +107,27 @@ class PipelineTmaUmma(PipelineAsync):
         barrier_storage: cute.Pointer = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         mcast_mode_mn: tuple[int, int] = (1, 1),
+        defer_sync: bool = False,
     ):
-        """
-        This helper function computes any necessary attributes and returns an instance of PipelineTmaUmma.
-        :param barrier_storage: Pointer to the smem address for this pipeline's mbarriers
-        :type barrier_storage: cute.Pointer
+        """Creates and initializes a new PipelineTmaUmma instance.
+
         :param num_stages: Number of buffer stages for this pipeline
-        :type num_stages: Int32
-        :param producer_group: `CooperativeGroup` for the producer agent
+        :type num_stages: int
+        :param producer_group: CooperativeGroup for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: `CooperativeGroup` for the consumer agent
+        :param consumer_group: CooperativeGroup for the consumer agent
         :type consumer_group: CooperativeGroup
         :param tx_count: Number of bytes expected to be written to the transaction barrier for one stage
         :type tx_count: int
+        :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
+        :type barrier_storage: cute.Pointer, optional
         :param cta_layout_vmnk: Layout of the cluster shape
-        :type cta_layout_vmnk: cute.Layout | None
-        :param mcast_mode_mn: Tuple of two integers, specifying whether mcast is enabled for the m and n modes. At least one of the two integers must be 1.
-        :type mcast_mode_mn: tuple[int, int]
+        :type cta_layout_vmnk: cute.Layout, optional
+        :param mcast_mode_mn: Tuple specifying multicast modes for m and n dimensions (each 0 or 1)
+        :type mcast_mode_mn: tuple[int, int], optional
+        :raises ValueError: If barrier_storage is not a cute.Pointer instance
+        :return: A new PipelineTmaUmma instance configured with the provided parameters
+        :rtype: PipelineTmaUmma
         """
         if not isinstance(barrier_storage, cute.Pointer):
             raise ValueError(
@@ -161,7 +166,12 @@ class PipelineTmaUmma(PipelineAsync):
 
         consumer_mask = producer_mask
 
-        pipeline_init_wait(cta_layout_vmnk)
+        if not defer_sync:
+            cute.arch.mbarrier_init_fence()
+            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
+                agent_sync(Agent.ThreadBlock)
+            else:
+                agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
 
         return PipelineTmaUmma(
             sync_object_full,
@@ -262,19 +272,23 @@ class PipelineAsyncUmma(PipelineAsync):
         consumer_group: CooperativeGroup,
         barrier_storage: cute.Pointer = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
+        defer_sync: bool = False,
     ):
-        """
-        This helper function computes any necessary attributes and returns an instance of PipelineAsyncUmma.
-        :param barrier_storage: Pointer to the smem address for this pipeline's mbarriers
-        :type barrier_storage: cute.Pointer
+        """Creates and initializes a new PipelineAsyncUmma instance.
+
         :param num_stages: Number of buffer stages for this pipeline
-        :type num_stages: Int32
-        :param producer_group: `CooperativeGroup` for the producer agent
+        :type num_stages: int
+        :param producer_group: CooperativeGroup for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: `CooperativeGroup` for the consumer agent
+        :param consumer_group: CooperativeGroup for the consumer agent
         :type consumer_group: CooperativeGroup
+        :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
+        :type barrier_storage: cute.Pointer, optional
         :param cta_layout_vmnk: Layout of the cluster shape
-        :type cta_layout_vmnk: cute.Layout | None
+        :type cta_layout_vmnk: cute.Layout, optional
+        :raises ValueError: If barrier_storage is not a cute.Pointer instance
+        :return: A new PipelineAsyncUmma instance configured with the provided parameters
+        :rtype: PipelineAsyncUmma
         """
         if not isinstance(barrier_storage, cute.Pointer):
             raise ValueError(
@@ -315,7 +329,12 @@ class PipelineAsyncUmma(PipelineAsync):
             # consumer needs to get the mask to signal
             consumer_mask = PipelineAsyncUmma._compute_peer_cta_mask(cta_layout_vmnk)
 
-        pipeline_init_wait(cta_layout_vmnk)
+        if not defer_sync:
+            cute.arch.mbarrier_init_fence()
+            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
+                agent_sync(Agent.ThreadBlock)
+            else:
+                agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
 
         return PipelineAsyncUmma(
             sync_object_full,
@@ -372,19 +391,23 @@ class PipelineUmmaAsync(PipelineAsync):
         consumer_group: CooperativeGroup,
         barrier_storage: cute.Pointer = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
+        defer_sync: bool = False,
     ):
-        """
-        This helper function computes any necessary attributes and returns an instance of PipelineUmmaAsync.
-        :param barrier_storage: Pointer to the smem address for this pipeline's mbarriers
-        :type barrier_storage: cute.Pointer
+        """Creates an instance of PipelineUmmaAsync with computed attributes.
+
         :param num_stages: Number of buffer stages for this pipeline
-        :type num_stages: Int32
-        :param producer_group: `CooperativeGroup` for the producer agent
+        :type num_stages: int
+        :param producer_group: ``CooperativeGroup`` for the producer agent
         :type producer_group: CooperativeGroup
-        :param consumer_group: `CooperativeGroup` for the consumer agent
+        :param consumer_group: ``CooperativeGroup`` for the consumer agent
         :type consumer_group: CooperativeGroup
+        :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
+        :type barrier_storage: cute.Pointer, optional
         :param cta_layout_vmnk: Layout of the cluster shape
-        :type cta_layout_vmnk: cute.Layout | None
+        :type cta_layout_vmnk: cute.Layout, optional
+        :raises ValueError: If barrier_storage is not a cute.Pointer instance
+        :return: New instance of ``PipelineUmmaAsync``
+        :rtype: PipelineUmmaAsync
         """
         if not isinstance(barrier_storage, cute.Pointer):
             raise ValueError(
@@ -411,7 +434,7 @@ class PipelineUmmaAsync(PipelineAsync):
             producer_mask = PipelineUmmaAsync._compute_tmem_sync_mask(cta_layout_vmnk)
 
         if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1:
-            # Set mask to None if not using 2CTA intructions
+            # Set mask to None if not using 2CTA instructions
             consumer_mask = None
         else:
             consumer_mask = PipelineUmmaAsync._compute_peer_cta_rank()
@@ -422,7 +445,12 @@ class PipelineUmmaAsync(PipelineAsync):
             else cute.nvgpu.tcgen05.CtaGroup.TWO
         )
 
-        pipeline_init_wait(cta_layout_vmnk)
+        if not defer_sync:
+            cute.arch.mbarrier_init_fence()
+            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
+                agent_sync(Agent.ThreadBlock)
+            else:
+                agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
 
         return PipelineUmmaAsync(
             sync_object_full,

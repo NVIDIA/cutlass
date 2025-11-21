@@ -51,15 +51,14 @@ class PassPreprocessRed(EVTPassBase):
         # Step 1: find the compute nodes with op=red
         red_compute_nodes = []
         for node_meta in self.dag_ir.nodes_meta:
-            if isinstance(node_meta, ComputeNode):
-                if type(node_meta.fn) == tuple:
-                    # To keep the frontend simple, the reduction nodes
-                    # are parsed into compute nodes by default
-                    # The simple heuristic to distinguish between compute
-                    # and reduction node is that compute node is a single function,
-                    # while the reduction node is a tuple of functions for
-                    # in-register reduction and atomic global memory reduction
-                    red_compute_nodes.append(node_meta.name)
+            if isinstance(node_meta, ComputeNode) and type(node_meta.fn) == tuple:
+                # To keep the frontend simple, the reduction nodes
+                # are parsed into compute nodes by default
+                # The simple heuristic to distinguish between compute
+                # and reduction node is that compute node is a single function,
+                # while the reduction node is a tuple of functions for
+                # in-register reduction and atomic global memory reduction
+                red_compute_nodes.append(node_meta.name)
 
         # Step 2: for each compute, merge it with the succeeding store
         for node in red_compute_nodes:

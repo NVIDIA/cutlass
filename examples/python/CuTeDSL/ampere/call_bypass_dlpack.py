@@ -74,9 +74,11 @@ with stride-1 which propagate alignment incorrectly.
 
 """
 
-# Add the current directory to sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from tensorop_gemm import TensorOpGemm
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
+from ampere.tensorop_gemm import TensorOpGemm
 
 
 @cute.jit

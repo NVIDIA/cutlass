@@ -39,6 +39,7 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.torch as cutlass_torch
@@ -153,22 +154,18 @@ class GroupedGemmKernel:
         self.threads_per_cta = 32 * len(
             (self.mma_warp_id, self.tma_warp_id, *self.epilog_warp_id)
         )
-        # Set barrier for cta sync, epilog sync, tmem ptr sync and tensormap update sync
-        self.cta_sync_barrier = pipeline.NamedBarrier(
-            barrier_id=1,
-            num_threads=self.threads_per_cta,
-        )
+        # Set barrier for epilog sync, tmem ptr sync and tensormap update sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
-            barrier_id=2,
+            barrier_id=1,
             num_threads=32 * len(self.epilog_warp_id),
         )
         self.tmem_alloc_barrier = pipeline.NamedBarrier(
-            barrier_id=3,
+            barrier_id=2,
             num_threads=32 * len((self.mma_warp_id, *self.epilog_warp_id)),
         )
         # Barrier used by MMA/TMA warps to signal A/B tensormap initialization completion
         self.tensormap_ab_init_barrier = pipeline.NamedBarrier(
-            barrier_id=4,
+            barrier_id=3,
             num_threads=32 * (len(self.epilog_warp_id) + 1),
         )
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
@@ -586,11 +583,9 @@ class GroupedGemmKernel:
             is_two_cta=use_2cta_instrs,
             two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
         )
-        cute.arch.mbarrier_init_fence()
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         #
         # Setup smem tensor A/B/C
@@ -718,10 +713,7 @@ class GroupedGemmKernel:
         #
         # Cluster wait before tensor memory alloc
         #
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
-        else:
-            self.cta_sync_barrier.arrive_and_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         #
         # Get tensormap buffer address

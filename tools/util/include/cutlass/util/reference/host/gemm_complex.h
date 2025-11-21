@@ -154,10 +154,11 @@ void GemmComplex(
             MatrixCoord coord = MatrixCoord(row, col);
 
             if (row < M && col < N) {
-
-              tensor_d.at(coord) = convert_op(
-                alpha * ScalarType(accum[i][j]) + 
-                beta * ScalarType(tensor_c.at(coord)));
+              ScalarType epilog = alpha * ScalarType(accum[i][j]);
+              if(tensor_c.data()) {
+                epilog += beta * ScalarType(tensor_c.at(coord));
+              }
+              tensor_d.at(coord) = convert_op(epilog);
             }
           }
         }
@@ -167,7 +168,9 @@ void GemmComplex(
 
     tensor_a.add_pointer_offset(batch_stride_A);
     tensor_b.add_pointer_offset(batch_stride_B);
-    tensor_c.add_pointer_offset(batch_stride_C);
+    if(tensor_c.data()) {
+      tensor_c.add_pointer_offset(batch_stride_C);
+    }
     tensor_d.add_pointer_offset(batch_stride_D);
 
   } // for (batch_idx)

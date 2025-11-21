@@ -10,13 +10,18 @@
 # is strictly prohibited.
 
 from functools import partial
-from typing import Optional, Tuple, Union, Callable
+from typing import Optional, Tuple, Union, Callable, TYPE_CHECKING
 from typing_extensions import deprecated
 
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cutlass_dsl import T, dsl_user_op, cutlass_arith
+
+import cutlass.cutlass_dsl as cutlass_dsl
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, llvm, nvvm, vector
+
+if TYPE_CHECKING:
+    from cutlass.tensor import TensorSSA
 
 # Forward nvvm enums
 from cutlass._mlir.dialects.nvvm import (
@@ -26,6 +31,8 @@ from cutlass._mlir.dialects.nvvm import (
     SetMaxRegisterAction,
     RoundingModeKind,
 )
+
+from ..core import size
 
 from ..typing import (
     Int,
@@ -184,7 +191,7 @@ def block_idx_in_cluster(*, loc=None, ip=None) -> Int32:
 
 @dsl_user_op
 def shuffle_sync_op(
-    value: Numeric,
+    value: Union[Numeric, "TensorSSA"],
     offset: Int,
     mask: Int = FULL_MASK,
     mask_and_clamp: Int = WARP_SIZE - 1,
@@ -192,12 +199,12 @@ def shuffle_sync_op(
     *,
     loc=None,
     ip=None,
-) -> Numeric:
+) -> Union[Numeric, "TensorSSA"]:
     """
     Shuffles a value within the threads of a warp.
 
     :param value:          The value to shuffle
-    :type value:           Numeric
+    :type value:           Numeric or TensorSSA
     :param mask:           A mask describing the threads participating in this operation
     :type mask:            Int
     :param offset:         A source lane or a source lane offset depending on kind
@@ -211,12 +218,37 @@ def shuffle_sync_op(
     :return:               The shuffled value
     :rtype:                Numeric
     """
+    from ..tensor import TensorSSA
+
+    if isinstance(value, TensorSSA):
+        bit_width = value.dtype.width * size(value.shape)
+        if bit_width == 32:
+            i32_val = llvm.bitcast(
+                T.i32(), value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+            )
+            i32_res = nvvm.shfl_sync(
+                T.i32(),
+                Int32(mask).ir_value(loc=loc, ip=ip),
+                i32_val,
+                Int32(offset).ir_value(loc=loc, ip=ip),
+                Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+                kind,
+                loc=loc,
+                ip=ip,
+            )
+            result_vec = llvm.bitcast(value.type, i32_res, loc=loc, ip=ip)
+            return TensorSSA(result_vec, value.shape, value.dtype)
+        else:
+            raise ValueError(f"shuffle_sync only supports 32 bit, but got {value.type}")
+
     if not isinstance(value, Numeric):
         value = as_numeric(value)
+
     if value.width > 64:
         raise ValueError("shuffle_sync only supports values up to 64 bits")
 
     orig_type = type(value)
+
     if value.width < 32:
         if value.dtype.is_float:
             value = value.to(Float32)
@@ -331,6 +363,7 @@ def warp_reduction(
     :rtype: cutlass.Numeric
     """
     offset = threads_in_group // 2
+
     while offset > 0:
         val = op(
             val,
@@ -343,7 +376,8 @@ def warp_reduction(
 
 
 warp_reduction_max = partial(
-    warp_reduction, op=lambda x, y: fmax(x, y) if isinstance(x, Float32) else max(x, y)
+    warp_reduction,
+    op=lambda x, y: fmax(x, y) if isinstance(x, Float32) else cutlass_dsl.max(x, y),
 )
 warp_reduction_sum = partial(warp_reduction, op=lambda x, y: x + y)
 
@@ -796,11 +830,11 @@ add_packed_f32x2 = partial(
     calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
 )
 
-
 @dsl_user_op
 def fmax(
     a: Union[float, Float32], b: Union[float, Float32], *, loc=None, ip=None
 ) -> Float32:
+
     return Float32(
         nvvm.fmax(
             T.f32(),
@@ -810,7 +844,6 @@ def fmax(
             ip=ip,
         )
     )
-
 
 @dsl_user_op
 def rcp_approx(a: Union[float, Float32], *, loc=None, ip=None):

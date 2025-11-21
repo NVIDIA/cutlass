@@ -84,6 +84,8 @@ private:
   /// The device ID where the allocation is made
   int device_;
 
+  /// Whether to free the memory when the object is destroyed
+  bool free_memory_{true};
 public:
   //
   // Static member functions
@@ -139,6 +141,16 @@ public:
     std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1,
     int device = -1);
+
+  DeviceAllocation(
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
+    std::vector<int> const &extent,
+    std::vector<int64_t> const &stride,
+    void* ref_pointer_,
+    int batch_count,
+    int device
+  );
 
   ~DeviceAllocation();
 

@@ -58,6 +58,15 @@ void initialize_gemm_reference_operations_e5m2a_e5m2out(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
     float_e5m2_t,                           // ElementB
     half_t,                                 // ElementC
     float,                                  // ElementScalar

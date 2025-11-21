@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 from functools import partial, reduce
+import inspect
 from inspect import isclass
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, overload
 
@@ -304,9 +305,10 @@ class IntValue(cutlass_arith.ArithValue):
     def __str__(self):
         if self.divisibility == 1:
             return "?"
-        else:
+        elif self.type.width == 32:
             return f"?{{div={self.divisibility}}}"
-
+        else:
+            return f"?{{i{self.type.width} div={self.divisibility}}}"
     def __repr__(self):
         parent_name = cutlass_arith.ArithValue.__name__
         return super().__str__().replace(parent_name, IntValue.__name__)
@@ -913,8 +915,8 @@ class _Layout(Layout):
 
             layout = make_layout((4, 8), stride=(8, 1))
 
-            # map linear index back to coordinate: 5 -> (1, 1)
-            coord = get_hier_coord(5, layout)
+            # map linear index back to coordinate: 9 -> (1, 1)
+            coord = layout.get_hier_coord(9)
         """
         idx_val = Int32(idx).ir_value(loc=loc, ip=ip)
         crd = _cute_ir.get_hier_coord(idx_val, self, loc=loc, ip=ip)
@@ -3116,12 +3118,6 @@ def make_ptr(
     if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
         value = llvm.ptrtoint(T.i64(), value)
 
-    if not isinstance(mem_space, AddressSpace):
-        raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
-
-    if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
-        value = llvm.ptrtoint(T.i64(), value)
-
     if not is_integer(value):
         raise TypeError(f"expects integer value, but got {type(value)}")
     value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
@@ -3611,9 +3607,9 @@ def make_layout_image_mask(
     sliced_lay, offset = slice_and_offset(slicer, lay, loc=loc, ip=ip)
     # Given that we replace only one mode with _, the rank of the slice should be 1
     assert rank(sliced_lay) == 1
-
-    if not is_static(sliced_lay):
-        raise ValueError("make_layout_image_mask requires the layout to be static")
+    assert is_static(
+        sliced_lay
+    ), "make_layout_image_mask requires the layout to be static"
 
     # Create the mask of the image
     mcast_mask = Int16(0)
@@ -4125,3 +4121,166 @@ class ThrMma(_ThrMma):
 @deprecated("cute.core.ThrCopy is deprecated, use cute.ThrCopy instead")
 class ThrCopy(_ThrCopy):
     pass
+
+
+#
+# FastDivmod operations for optimized division and modulus
+#
+class FastDivmodDivisor:
+    """
+    First-class FastDivmod divisor with operator overloading support.
+
+    This class wraps a FastDivmod divisor and enables natural Python operator syntax:
+        quotient, remainder = divmod(dividend, divisor)
+        quotient = dividend // divisor
+        remainder = dividend % divisor
+
+    :ivar _divisor: The FastDivmod divisor MLIR value
+    """
+
+    @dsl_user_op
+    def __init__(
+        self,
+        divisor: Integer,
+        is_power_of_2: bool = None,
+        *,
+        loc=None,
+        ip=None,
+    ):
+        """
+        Create a FastDivmod divisor for optimized division operations.
+
+        :param divisor: The divisor value (should be runtime-dynamic value)
+        :param is_power_of_2: Whether divisor is known to be a power of 2.
+                              Defaults to False.
+        """
+        # Convert divisor to ir.Value for MLIR operation
+        if isinstance(divisor, ir.Value):
+            divisor_val = divisor
+        else:
+            divisor_val = Int32(divisor).ir_value()
+
+        # Use user-provided flag or default to False
+        # Power-of-2 optimization should be handled by compiler passes at IR level
+        if is_power_of_2 is None:
+            is_power_of_2 = False
+
+        # Create FastDivmod divisor
+        fast_divmod_divisor_type = _cute_ir.FastDivmodDivisorType.get(32, is_power_of_2)
+        self._divisor = _cute_ir.fast_divmod_create_divisor(
+            fast_divmod_divisor_type, divisor_val, loc=loc, ip=ip
+        )
+
+    @dsl_user_op
+    def __rdivmod__(
+        self, dividend: Integer, *, loc=None, ip=None
+    ) -> Tuple[Integer, Integer]:
+        """
+        Overload for: divmod(dividend, self)
+        Returns (quotient, remainder).
+
+        :param dividend: The dividend value
+        :param loc: Source location for MLIR
+        :param ip: Insertion point for MLIR
+        :return: Tuple of (quotient, remainder)
+        """
+        # Convert dividend to ir.Value for MLIR operation
+        if isinstance(dividend, ir.Value):
+            dividend_val = dividend
+        else:
+            dividend_val = Int32(dividend).ir_value()
+
+        quotient_type = dividend_val.type
+        remainder_type = dividend_val.type
+
+        results = _cute_ir.fast_divmod_compute(
+            quotient_type,
+            remainder_type,
+            dividend_val,
+            self._divisor,
+            loc=loc,
+            ip=ip,
+        )
+        return (IntValue(results[0]), IntValue(results[1]))
+
+    @dsl_user_op
+    def __rfloordiv__(self, dividend: Integer, *, loc=None, ip=None) -> Integer:
+        """
+        Overload for: dividend // self
+        Returns quotient only.
+
+        :param dividend: The dividend value
+        :param loc: Source location for MLIR
+        :param ip: Insertion point for MLIR
+        :return: The quotient
+        """
+        quotient, _ = self.__rdivmod__(dividend, loc=loc, ip=ip)
+        return quotient
+
+    @dsl_user_op
+    def __rmod__(self, dividend: Integer, *, loc=None, ip=None) -> Integer:
+        """
+        Overload for: dividend % self
+        Returns remainder only.
+
+        :param dividend: The dividend value
+        :param loc: Source location for MLIR
+        :param ip: Insertion point for MLIR
+        :return: The remainder
+        """
+        _, remainder = self.__rdivmod__(dividend, loc=loc, ip=ip)
+        return remainder
+
+    def __extract_mlir_values__(self):
+        """Extract MLIR values for Host->Device transfer."""
+        return [self._divisor]
+
+    def __new_from_mlir_values__(self, values):
+        """Reconstruct FastDivmodDivisor from MLIR values."""
+        new_obj = object.__new__(FastDivmodDivisor)
+        new_obj._divisor = values[0]
+        return new_obj
+    def __repr__(self):
+        return f"FastDivmodDivisor({self._divisor.type})"
+
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+FastDivmodDivisor.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter(
+            "divisor",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=Integer,
+        ),
+        inspect.Parameter(
+            "is_power_of_2",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=bool,
+        ),
+    ]
+)
+
+
+@dsl_user_op
+def fast_divmod_create_divisor(
+    divisor: Integer, *, loc=None, ip=None
+) -> FastDivmodDivisor:
+    """Create a FastDivmod divisor for optimized division operations.
+
+    This function creates a FastDivmod divisor that precomputes auxiliary values
+    to enable fast division and modulus operations without using division instructions.
+
+    The returned FastDivmodDivisor object supports natural Python operator syntax:
+        divisor = fast_divmod_create_divisor(batch_size)
+        quotient, remainder = divmod(linear_idx, divisor)
+        quotient = linear_idx // divisor
+        remainder = linear_idx % divisor
+
+    :param divisor: The divisor value (should be runtime-dynamic value)
+    :type divisor: Integer
+    :return: FastDivmodDivisor object with operator overloading support
+    :rtype: FastDivmodDivisor
+    """
+    return FastDivmodDivisor(divisor, loc=loc, ip=ip)

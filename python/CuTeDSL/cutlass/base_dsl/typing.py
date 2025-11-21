@@ -239,6 +239,19 @@ def get_c_pointers(obj):
     return []
 
 
+def arg_compatible_with_tvm_ffi(arg):
+    """
+    Given the `arg`, check if it is a compatible argument for TVM FFI
+    """
+    import tvm_ffi
+
+    return (
+        hasattr(arg, "__tvm_ffi_object__")
+        or isinstance(arg, (int, float, bool))
+        or isinstance(arg, tvm_ffi.Shape)
+    )
+
+
 def get_mlir_types(obj):
     """
     Given the `obj`, recursively go through it to extract all contained MLIR types
@@ -1416,6 +1429,9 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     def __rxor__(self, other, *, loc=None, ip=None):
         return self.__xor__(other, loc=loc, ip=ip)
 
+    def __tvm_ffi_int__(self):
+        return self.value
+
 
 class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     """A class representing floating-point values.
@@ -1495,6 +1511,9 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
             Float.__init__(self, x.value)
         else:
             raise DSLRuntimeError(f"{x} to Float conversion is not supported")
+
+    def __tvm_ffi_float__(self):
+        return self.value
 
 
 class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.bool):

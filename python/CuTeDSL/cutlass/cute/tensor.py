@@ -20,6 +20,7 @@ from cutlass.cutlass_dsl import (
     T,
     cutlass_arith,
     _binary_op_type_promote,
+    CuTeDSL,
 )
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -33,6 +34,7 @@ from .core import (
     _pack_coord,
     _pack_shape,
     _ComposedLayout,
+    _ComposedLayoutWithInnerFunc,
     is_static,
     is_weakly_congruent,
     rank,
@@ -250,7 +252,7 @@ class _Tensor(Tensor):
             val = tensor[0]  # Error: sub-byte scalar dereference not supported
         """
         if has_underscore(crd):
-            return slice_(self.value, crd, loc=loc, ip=ip)
+            return slice_(self, crd, loc=loc, ip=ip)
         elif isinstance(self.type, _cute_ir.CoordTensorType):
             res = _cute_ir.get_iter(
                 slice_(self, crd, loc=loc, ip=ip).value, loc=loc, ip=ip
@@ -448,7 +450,7 @@ class _Tensor(Tensor):
 
         self._check_can_load_store()
 
-        res_vect = _cute_ir.memref_load_vec(self.value, row_major=True, loc=loc, ip=ip)
+        res_vect = _cute_ir.memref_load_vec(self.value, loc=loc, ip=ip)
         if self.element_type is Boolean:
             assert res_vect.type.element_type == T.i8(), (
                 f"Boolean tensor must be stored as i8 in memory, but got {res_vect.type.element_type}"
@@ -501,9 +503,7 @@ class _Tensor(Tensor):
         # Implicit upcast to wider type
         new_data = self._cvt_to_dest(data, loc=loc, ip=ip)
 
-        return _cute_ir.memref_store_vec(
-            new_data, self.value, row_major=True, loc=loc, ip=ip
-        )
+        return _cute_ir.memref_store_vec(new_data, self.value, loc=loc, ip=ip)
 
     @dsl_user_op
     def fill(self, value: Numeric, *, loc=None, ip=None) -> None:
@@ -555,6 +555,11 @@ class _Tensor(Tensor):
         ):
             raise ValueError(f"{self} doesn't support load and store")
 
+        if self.type.is_swizzled:
+            raise NotImplementedError(
+                f"load & store swizzled memory is not supported yet: {self}"
+            )
+
     def _check_can_dereference(self):
         # Check for sub-byte types and raise error if needed
         if self.element_type.width % 8 != 0 and self.element_type is not Boolean:
@@ -579,11 +584,16 @@ def make_tensor(
     evaluates coordinates by applying the layout mapping and dereferencing the engine
     at the resulting offset.
 
-    :param iterator: Engine component (pointer, iterator, or counting iterator) that provides
-                    data access capabilities
-    :type iterator: Union[Pointer, IntTuple]
+    :param iterator: Engine component that provides data access capabilities. Can be:
+                    - A pointer (Pointer type)
+                    - An integer or integer tuple for coordinate tensors
+                    - A shared memory descriptor (SmemDescType)
+    :type iterator: Union[Pointer, IntTuple, ir.Value]
     :param layout: Layout component that defines the mapping from logical coordinates to
-                  physical offsets
+                  physical offsets. Can be:
+                  - A shape tuple that will be converted to a layout
+                  - A Layout object
+                  - A ComposedLayout object (must be a normal layout)
     :type layout: Union[Shape, Layout, ComposedLayout]
     :param loc: Source location for MLIR operation tracking, defaults to None
     :type loc: Optional[Location]
@@ -592,30 +602,40 @@ def make_tensor(
     :return: A tensor object representing the composition E ∘ L
     :rtype: Tensor
 
-    :raises ValueError: If iterator type is not supported
+    :raises TypeError: If iterator type is not a supported type
+    :raises ValueError: If layout is a composed layout with customized inner functions
 
     **Examples:**
 
     .. code-block:: python
 
-        # Create a tensor with row-major layout
+        # Create a tensor with row-major layout from a pointer
+        ptr = make_ptr(Float32, base_ptr, AddressSpace.gmem)
         layout = make_layout((64, 128), stride=(128, 1))
         tensor = make_tensor(ptr, layout)
 
-        # Create a tensor with hierarchical layout
+        # Create a tensor with hierarchical layout in shared memory
+        smem_ptr = make_ptr(Float16, base_ptr, AddressSpace.smem)
         layout = make_layout(((128, 8), (1, 4, 1)), stride=((32, 1), (0, 8, 4096)))
         tensor = make_tensor(smem_ptr, layout)
 
-        # Create a coord tensor
+        # Create a coordinate tensor
         layout = make_layout(2, stride=16 * E(0))
-        tensor = make_tensor(5, layout)
+        tensor = make_tensor(5, layout)  # coordinate tensor with iterator starting at 5
 
     Notes:
         - The engine (iterator) must support random access operations
         - Common engine types include raw pointers, arrays, and random-access iterators
         - The layout defines both the shape (logical dimensions) and stride (physical mapping)
         - Supports both direct coordinate evaluation T(c) and partial evaluation (slicing)
+        - ComposedLayouts must be "normal" layouts (no inner functions)
+        - For coordinate tensors, the iterator is converted to a counting sequence
     """
+    if isinstance(layout, _ComposedLayoutWithInnerFunc):
+        raise ValueError(
+            "CuTe DSL tensor does not support composed layouts with inner functions: {layout}"
+        )
+
     if not isinstance(layout, (Layout, ComposedLayout)):
         layout = make_layout(layout, loc=loc, ip=ip)
     # Automatic decay to normal layout
@@ -964,6 +984,65 @@ def print_tensor(
     _cute_ir.print_view(tensor.value, verbose=verbose, is_signed=signed, loc=loc, ip=ip)
 
 
+def _get_row_and_col_map(col_maj_shape_1d: tuple, is_row_to_col: bool):
+    """
+    Create an index mapping mask for converting between row-major and column-major vector ordering.
+    """
+
+    # create row-major layout with compact row-major stride
+    if col_maj_shape_1d is None:
+        raise ValueError("vector shape for row/col map cannot be None")
+    if isinstance(col_maj_shape_1d, tuple):
+        row_maj_shape_1d = tuple(reversed(flatten(col_maj_shape_1d)))
+    else:
+        # Single dimension
+        row_maj_shape_1d = col_maj_shape_1d
+
+    flat_shape = flatten(row_maj_shape_1d)
+    if isinstance(flat_shape, tuple):
+        strides = []
+        current_stride = 1
+        flat_shape = tuple(reversed(flat_shape))
+        for dim in flat_shape:
+            strides.append(current_stride)
+            current_stride *= dim
+        row_maj_stride = tuple(reversed(strides))
+    else:
+        # Single dimension
+        row_maj_stride = 1
+
+    row_maj_lay_1d = make_layout(row_maj_shape_1d, stride=row_maj_stride)
+
+    # get idx map
+    shape_size = size(row_maj_shape_1d)
+    mask = [0] * shape_size
+
+    for col_index in range(shape_size):
+        row_index = crd2idx(col_index, row_maj_lay_1d)
+        if is_row_to_col:
+            mask[row_index] = col_index
+        else:
+            mask[col_index] = row_index
+
+    return mask
+
+
+def _row2col(vec: ir.Value, *, shape, loc=None, ip=None) -> ir.Value:
+    """
+    Convert a vector or tensor from row-major order to column-major order.
+    """
+    row_and_col_map = _get_row_and_col_map(shape, is_row_to_col=True)
+    return vector.shuffle(vec, vec, row_and_col_map, loc=loc, ip=ip)
+
+
+def _col2row(vec: ir.Value, *, shape, loc=None, ip=None) -> ir.Value:
+    """
+    Convert a vector or tensor from column-major order to row-major order.
+    """
+    row_and_col_map = _get_row_and_col_map(shape, is_row_to_col=False)
+    return vector.shuffle(vec, vec, row_and_col_map, loc=loc, ip=ip)
+
+
 def _infer_broadcast_shape(*shapes: Shape) -> Shape:
     """
     Infer the broadcasted shape from multiple input shapes according to broadcasting rules.
@@ -1130,6 +1209,32 @@ class TensorSSA(cutlass_arith.ArithValue):
         return res
 
     @dsl_user_op
+    def apply_op(self, op, other, flip=False, *, loc=None, ip=None) -> "TensorSSA":
+        """
+        Apply a binary operation to this tensor and another operand.
+
+        This is a public interface to the internal _apply_op method, providing
+        a stable API for external users who need to apply custom operations.
+
+        Args:
+            op: The operation function (e.g., operator.add, operator.mul, etc.)
+            other: The other operand (TensorSSA, ArithValue, or scalar)
+            flip: Whether to flip the operands (for right-hand operations)
+            loc: MLIR location (optional)
+            ip: MLIR insertion point (optional)
+
+        Returns:
+            TensorSSA: The result of the operation
+
+        Example:
+            >>> tensor1 = cute.Tensor(...)
+            >>> tensor2 = cute.Tensor(...)
+            >>> result = tensor1.apply_op(operator.add, tensor2)
+            >>> # Equivalent to: tensor1 + tensor2
+        """
+        return self._apply_op(op, other, flip=flip, loc=loc, ip=ip)
+
+    @dsl_user_op
     def broadcast_to(self, target_shape: Shape, *, loc=None, ip=None) -> "TensorSSA":
         """
         Broadcast the tensor to the target shape.
@@ -1147,20 +1252,21 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         transform_leaf(_check_broadcast, shape, target_shape)
 
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=shape, loc=loc, ip=ip)
         # reshape to flatten N-D vector
         flat_shp = flatten_to_tuple(shape)
         temp_ty = ir.VectorType.get(list(flat_shp), self.dtype.mlir_type)
-        temp_vect = vector.shape_cast(temp_ty, self, loc=loc, ip=ip)
+        temp_vect = vector.shape_cast(temp_ty, row_major_vec, loc=loc, ip=ip)
 
         # broadcast to result N-D vector
         flat_tgt_shp = flatten_to_tuple(target_shape)
         temp_tgt_ty = ir.VectorType.get(list(flat_tgt_shp), self.dtype.mlir_type)
         temp_tgt_vect = vector.broadcast(temp_tgt_ty, temp_vect, loc=loc, ip=ip)
 
-        res_1d_ty = ir.VectorType.get([size(target_shape)], self.dtype.mlir_type)  # type: ignore
-        res_1d_vect = vector.shape_cast(res_1d_ty, temp_tgt_vect, loc=loc, ip=ip)
-
-        return TensorSSA(res_1d_vect, target_shape, self.dtype)
+        return self._build_result(
+            temp_tgt_vect, target_shape, row_major=True, loc=loc, ip=ip
+        )
 
     @dsl_user_op
     def __pow__(self, other, *, loc=None, ip=None) -> "TensorSSA":
@@ -1499,14 +1605,42 @@ class TensorSSA(cutlass_arith.ArithValue):
         assert isinstance(flat_crd, tuple) and is_static(flat_crd)
         return flat_shp, flat_crd
 
-    def _build_result(self, res_vect, res_shp, *, loc=None, ip=None):
+    def _build_result(self, res_vect, res_shp, *, row_major=False, loc=None, ip=None):
         if isinstance(res_shp, ir.Value):
             raise ValueError(f"Expected static shape, but got {self._shape}")
 
         # cast back to 1D vector
         res_1d_ty = ir.VectorType.get([size(res_shp)], self.type.element_type)
         res_1d_vect = vector.shape_cast(res_1d_ty, res_vect, loc=loc, ip=ip)
+
+        if row_major:
+            res_1d_vect = _row2col(res_1d_vect, shape=res_shp, loc=loc, ip=ip)
+
         return TensorSSA(res_1d_vect, res_shp, self.dtype)
+
+    @dsl_user_op
+    def reshape(self, shape: Shape, *, loc=None, ip=None) -> "TensorSSA":
+        """Reshape the tensor to a new shape.
+
+        :param shape: The new shape to reshape to.
+        :type shape: Shape
+        :return: A new tensor with the same elements but with the new shape.
+        :rtype: TensorSSA
+        :raises NotImplementedError: If dynamic size is not supported
+        :raises ValueError: If the new shape is not compatible with the current shape
+        """
+
+        cur_size = size(self.shape, loc=loc, ip=ip)
+        shp_size = size(shape, loc=loc, ip=ip)
+
+        if type(shp_size) is not int:
+            raise NotImplementedError(f"dynamic shape is not supported: {shape}")
+        if cur_size != shp_size:
+            raise ValueError(
+                f"expected reshaped size to be the same: {self.shape} -> {shape}"
+            )
+
+        return TensorSSA(self, shape, self.dtype)
 
     @dsl_user_op
     def __getitem__(
@@ -1562,9 +1696,11 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         flat_shp, flat_crd = self._flatten_shape_and_coord(crd, loc=loc, ip=ip)
 
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=self._shape, loc=loc, ip=ip)
         multi_dim_ty = ir.VectorType.get(list(flat_shp), self.type.element_type)
         # vector<NxTy> -> vector<N_0xN_1x...xTy>
-        tmp_vect = vector.shape_cast(multi_dim_ty, self, loc=loc, ip=ip)
+        tmp_vect = vector.shape_cast(multi_dim_ty, row_major_vec, loc=loc, ip=ip)
 
         # Slice and keep dims matching `_` or None
         res_shp = slice_(self._shape, crd, loc=loc, ip=ip)
@@ -1593,7 +1729,7 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         # Slice and keep dims matching `_` or None
         res_shp = slice_(self._shape, crd, loc=loc, ip=ip)
-        return self._build_result(res_vect, res_shp, loc=loc, ip=ip)
+        return self._build_result(res_vect, res_shp, row_major=True, loc=loc, ip=ip)
 
     @dsl_user_op
     def to(self, dtype: Type[Numeric], *, loc=None, ip=None):
@@ -1634,11 +1770,15 @@ class TensorSSA(cutlass_arith.ArithValue):
                 src, dtype.signed, dtype.mlir_type, loc=loc, ip=ip
             )
         elif issubclass(src_dtype, Integer) and dtype.is_float:
-            # fast conversion path for supported combinations
+            # check if there is a fast conversion path for given data types and arch
+            fast_cvt_func = None
             if src_dtype in (Int8, Uint8) and dtype == BFloat16:
-                res_vect = cvt_i8_bf16_intrinsic(src, size(self.shape), loc=loc, ip=ip)
+                fast_cvt_func = cvt_i8_bf16_intrinsic
             elif src_dtype == Int4 and dtype == BFloat16:
-                res_vect = cvt_i4_bf16_intrinsic(src, size(self.shape), loc=loc, ip=ip)
+                fast_cvt_func = cvt_i4_bf16_intrinsic
+            arch = CuTeDSL._get_dsl().get_arch_enum()
+            if fast_cvt_func is not None and arch in fast_cvt_func.supported_archs:
+                res_vect = fast_cvt_func(src, size(self.shape), loc=loc, ip=ip)
             else:
                 res_vect = cutlass_arith.itofp(
                     src, src_dtype.signed, dtype.mlir_type, loc=loc, ip=ip
@@ -1748,8 +1888,10 @@ class TensorSSA(cutlass_arith.ArithValue):
         assert depth(flat_shp) == 1 and depth(flat_prof) == 1
         assert rank(flat_shp) == rank(flat_prof)
 
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=self._shape, loc=loc, ip=ip)
         temp_ty = ir.VectorType.get(list(flat_shp), elem_type.mlir_type)
-        temp_vect = vector.shape_cast(temp_ty, self, loc=loc, ip=ip)
+        temp_vect = vector.shape_cast(temp_ty, row_major_vec, loc=loc, ip=ip)
 
         red_dims = [i for i, x in enumerate(flat_prof) if x is not None]
 
@@ -1763,7 +1905,7 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         # Slice and keep dims matching `_` or None
         res_shp = slice_(self.shape, reduction_profile, loc=loc, ip=ip)
-        return self._build_result(res_vect, res_shp, loc=loc, ip=ip)
+        return self._build_result(res_vect, res_shp, row_major=True, loc=loc, ip=ip)
 
 
 @dsl_user_op

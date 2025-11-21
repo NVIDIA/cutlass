@@ -285,7 +285,9 @@ def find_tmem_tensor_col_offset(tmem_tensor: Tensor, *, loc=None, ip=None) -> In
     """
     tmem_col_mask = 0x0000FFFF
     offset = (
-        core.cosize(recast_tensor(tmem_tensor, Int32).layout, loc=loc, ip=ip)
+        core.cosize(
+            recast_tensor(tmem_tensor, Int32, loc=loc, ip=ip).layout, loc=loc, ip=ip
+        )
         & tmem_col_mask
     )
     if isinstance(offset, int):

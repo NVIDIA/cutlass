@@ -689,7 +689,7 @@ def make_smem_layout_a(
 
     is_k_major = tiled_mma.op.a_major_mode == OperandMajorMode.K
     a_smem_shape = tiled_mma.partition_shape_A(
-        cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip)
+        cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
     a_smem_shape_mn_k = (
         cute.size(a_smem_shape[0][0], loc=loc, ip=ip) * a_smem_shape[1],
@@ -741,7 +741,7 @@ def make_smem_layout_b(
 
     is_k_major = tiled_mma.op.b_major_mode == OperandMajorMode.K
     b_smem_shape = tiled_mma.partition_shape_B(
-        cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip)
+        cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
     b_smem_shape_nk = (
         cute.size(b_smem_shape[0][0], loc=loc, ip=ip) * b_smem_shape[1],
@@ -939,7 +939,9 @@ def make_trivial_tiled_mma(
     else:
         raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
 
-    return cute.make_tiled_mma(cute.make_mma_atom(mma_op), loc=loc, ip=ip)
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -1009,7 +1011,9 @@ def make_blockscaled_trivial_tiled_mma(
     else:
         raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
 
-    return cute.make_tiled_mma(cute.make_mma_atom(mma_op), loc=loc, ip=ip)
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
 
 
 @dsl_user_op

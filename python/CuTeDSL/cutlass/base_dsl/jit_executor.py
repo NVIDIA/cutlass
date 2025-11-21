@@ -28,13 +28,12 @@ from .._mlir import ir
 
 # Local modules imports
 from . import typing as t
-from .common import DSLRuntimeError
+from .common import DSLRuntimeError, DSLCudaRuntimeError
 from .runtime import cuda as cuda_helpers
 from .runtime.jit_arg_adapters import JitArgAdapterRegistry, is_arg_spec_constexpr
 from .typing import get_c_pointers
 from .utils.logger import log
 from .utils.timer import timer
-
 
 class CudaModuleAndKernel:
     """A loaded CUDA kernel and its metadata."""
@@ -143,13 +142,11 @@ class ExecutionArgs:
             self.args_spec = self.filter_runtime_arg_spec(spec)
         self.original_args_spec = spec
 
-    def generate_execution_args(self, args, kwargs):
+    def get_rectified_args(self, args, kwargs):
         """
-        This function is the prune version of `generate_mlir_function_types` which only generates execution args
-        to get rid of mlir context.
+        This function is used to rectify the args and kwargs to a final runtime argument list according to the args_spec.
         """
         args_spec = self.args_spec
-
         # Process positional arguments with defaults
         rectified_args = list(args)
         if args_spec.defaults and len(args) < len(args_spec.args):
@@ -163,7 +160,9 @@ class ExecutionArgs:
                     rectified_args.append(v)
 
         # Process keyword arguments
-        rectified_kwargs = {k: v for k, v in kwargs.items() if k not in args_spec.args}
+        rectified_kwargs = collections.OrderedDict(
+            (k, v) for k, v in kwargs.items() if k not in args_spec.args
+        )
         if args_spec.kwonlydefaults and len(rectified_kwargs) < len(
             args_spec.kwonlyargs
         ):
@@ -182,10 +181,18 @@ class ExecutionArgs:
                     "function signature kwonlyargs length": len(args_spec.kwonlyargs),
                 },
             )
+        return rectified_args + list(rectified_kwargs.values())
+
+    def generate_execution_args(self, args, kwargs):
+        """
+        This function is the prune version of `generate_mlir_function_types` which only generates execution args
+        to get rid of mlir context.
+        """
+        args_spec = self.args_spec
 
         exe_args = []
         adapted_args = []
-        input_args = rectified_args + list(rectified_kwargs.values())
+        input_args = self.get_rectified_args(args, kwargs)
         input_arg_names = args_spec.args + args_spec.kwonlyargs
         for arg, arg_name in zip(input_args, input_arg_names):
             # short-cut for args already converted
@@ -243,7 +250,7 @@ class ExecutionArgs:
         runtime_kwonlydefaults = {}
 
         if arg_spec.kwonlyargs:
-            for kwarg in arg_spec.kwonlyargs:
+            for i, kwarg in enumerate(arg_spec.kwonlyargs):
                 arg_type = arg_spec.annotations.get(kwarg, None)
 
                 # Apply same filtering logic
@@ -366,6 +373,8 @@ class JitModule:
             for m in set([m.cuda_module for m in self.cuda_modules]):
                 cuda_helpers.unload_library(m)
             self.cuda_modules.clear()
+        except Exception as e:
+            pass
         finally:
             self._unloaded = True
 
@@ -382,8 +391,8 @@ class JitExecutor:
 
     def __init__(
         self,
-        jit_module: JitModule,
-        exec_context: JitExecuteContext,
+        jit_module: Union[JitModule, "CudaDialectJitModule"],
+        exec_context: Optional[JitExecuteContext],
         jit_time_profiling: bool,
     ):
         # JitExecutor will keep JitCompiledFunction alive so that the underlying
@@ -393,12 +402,25 @@ class JitExecutor:
         self.exec_context = exec_context
         self.profiler = timer(enable=jit_time_profiling)
 
+        # Get the cuda result type from the capi function.
+        # This is only set to i32 if CudaDialectJitModule is used.
+        cuda_result_type = self.jit_module.capi_func.restype
+        self.cuda_result = cuda_result_type() if cuda_result_type is not None else None
+
     # Assume each execution args has type `c_void_p` to reduce the overhead of `ctypes.cast`.
     def _get_invoke_packed_args(self, exe_args):
-        exe_args += self.exec_context.kernel_functions_ptrs
+        # If expecting a cuda result, add a pointer to exe_args
+        if self.cuda_result is not None:
+            exe_args.append(ctypes.addressof(self.cuda_result))
+        if self.exec_context is not None:
+            exe_args += self.exec_context.kernel_functions_ptrs
         packed_args = (ctypes.c_void_p * len(exe_args))()
         for argNum in range(len(exe_args)):
-            packed_args[argNum] = exe_args[argNum]
+            arg = exe_args[argNum]
+            if isinstance(arg, ctypes.c_void_p):
+                packed_args[argNum] = arg
+            else:
+                packed_args[argNum] = ctypes.c_void_p(arg).value
         return packed_args
 
     def generate_execution_args(self, *args, **kwargs):
@@ -408,6 +430,17 @@ class JitExecutor:
         try:
             packed_args = self.profiler(self._get_invoke_packed_args)(exe_args)
             self.profiler(self.jit_module.capi_func)(packed_args)
+            if self.cuda_result is not None:
+                if self.cuda_result.value != 0:
+                    error_code = self.cuda_result.value
+                    error_name = cuda_helpers._cudaGetErrorEnum(
+                        cuda_helpers.cuda.CUresult(error_code)
+                    )
+                    raise DSLCudaRuntimeError(error_code, error_name)
+                return self.cuda_result.value
+            return None
+        except DSLCudaRuntimeError as e:
+            raise e
         except Exception as e:
             raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
 
@@ -458,6 +491,8 @@ class JitCompiledFunction:
         kernel_info,
         jit_time_profiling,
         jit_function_artifacts,
+        prefix=None,
+        load_from_binary=False,
     ):
         self.ir_module = ir_module
         self.engine = engine
@@ -473,6 +508,8 @@ class JitCompiledFunction:
             or jit_function_artifacts is None
         )
         self.artifacts = jit_function_artifacts
+        self.prefix = prefix
+        self.load_from_binary = load_from_binary
 
         # This runtime state is stored here so that we can preserve the module
         # in the compiler cache. Callers can extend the lifetime of the module
@@ -496,6 +533,35 @@ class JitCompiledFunction:
         """Returns the MLIR code of the JIT-compiled function."""
         return self.artifacts.MLIR if self.artifacts is not None else None
 
+    def _deserializer(self):
+        """Load the cuda module from the binary execution engine. This function will be injected as the
+        JitCompiledFunction method which will be called by the jit executor to load the cuda module by AOT flow.
+        @param self: The JitCompiledFunction object. This is the JitCompiledFunction object to load the cuda module.
+        @param name: The name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
+        @param execution_engine: The binary execution engine. This is the execution engine to load the cuda module.
+        @param kernel_info: The kernel info. This is the kernel info to load the cuda module.
+        @return: The list of cuda modules.
+        """
+        cubin_suffix = "cubin"
+        if self.prefix is None:
+            raise DSLRuntimeError("prefix is required to be set for binary loading")
+        cubin_data = self.engine.lookup("_".join([self.prefix, cubin_suffix]))
+        if not cubin_data:
+            raise RuntimeError(
+                "Unknown function " + "_".join([self.prefix, cubin_suffix])
+            )
+        cubin_module = cuda_helpers.load_library_data(cubin_data)
+        # load cuda module/get function pointer from module and cache
+        kernel_modules = collections.OrderedDict()
+        for sym, attrs in self.kernel_info.items():
+            kernel = cuda_helpers.get_library_kernel(cubin_module, sym)
+            if cuda_helpers.get_driver_version() >= 11080:
+                attrs[
+                    cuda_helpers.cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED
+                ] = 1
+            kernel_modules[sym] = CudaModuleAndKernel(sym, cubin_module, kernel, attrs)
+        return list(kernel_modules.values())
+
     def to(self, device=None) -> JitExecutor:
         """Returns an executable function bound to the given device.
 
@@ -510,9 +576,10 @@ class JitCompiledFunction:
         with self._executor_lock:
             # We need to ensure that the modules are loaded if not already
             if self.jit_module is None:
-                cuda_modules = load_kernels_from_ir_module(
-                    self.ir_module, self.kernel_info
-                )
+                if self.ir_module is not None:
+                    cuda_modules = load_kernels_from_ir_module(
+                        self.ir_module, self.kernel_info
+                    )
                 self.jit_module = JitModule(
                     self.engine, self.capi_func, self.args_spec, cuda_modules
                 )
@@ -521,6 +588,11 @@ class JitCompiledFunction:
             # n.b. host only moduels do not load device specific modules or context.
             context = self.jit_module.get_device_execute_context(device)
             return JitExecutor(self.jit_module, context, self.jit_time_profiling)
+
+    def set_dynamic_args(self, dynamic_args, dynamic_kwargs):
+        """Sets the dynamic argument information required for export to c code generation."""
+        self.dynamic_args = dynamic_args
+        self.dynamic_kwargs = dynamic_kwargs
 
     def generate_execution_args(self, *args, **kwargs):
         return self.args_spec.generate_execution_args(args, kwargs)

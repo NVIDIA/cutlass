@@ -38,6 +38,7 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
 import cutlass.utils.hopper_helpers as sm90_utils
@@ -624,11 +625,11 @@ class HopperWgmmaGemmKernel:
             consumer_group=mainloop_pipeline_consumer_group,
             tx_count=tma_copy_bytes,
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=True,
         )
 
         #  Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         # ///////////////////////////////////////////////////////////////////////////////
         #  Generate smem tensor A/B
@@ -717,10 +718,7 @@ class HopperWgmmaGemmKernel:
         #  Cluster wait
         # ///////////////////////////////////////////////////////////////////////////////
         # cluster wait for barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
-        else:
-            cute.arch.sync_threads()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
         # /////////////////////////////////////////////////////////////////////////////
         #  Prefetch
         # /////////////////////////////////////////////////////////////////////////////

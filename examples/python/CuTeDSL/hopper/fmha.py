@@ -95,15 +95,18 @@ import cutlass.cute.testing as testing
 import cutlass.cute.nvgpu.warpgroup as warpgroup
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
 from cutlass._mlir.dialects import math as _math
 
 import cutlass.utils.hopper_helpers as sm90_utils
 from cutlass.cute.runtime import from_dlpack
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(current_dir, ".."))
-from utils import fmha_helpers as fmha_utils
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
+from helpers import fmha_helpers as fmha_utils
 
 
 class HopperFusedMultiHeadAttentionForward:
@@ -648,11 +651,8 @@ class HopperFusedMultiHeadAttentionForward:
         # We need this to guarantee that the Pipeline init is visible
         # To all producers and consumer blocks in the Cluster
         # and to finish smem init
-        if cute.size(self.cluster_shape_mnk) > 1:
-            cute.arch.cluster_arrive_relaxed()
-            cute.arch.cluster_wait()
-        else:
-            cute.arch.sync_threads()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mnk, is_relaxed=True)
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mnk)
 
         if warp_idx == 0:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_q)
@@ -1646,6 +1646,7 @@ class HopperFusedMultiHeadAttentionForward:
             producer_group=load_q_producer_group,
             consumer_group=load_q_consumer_group,
             tx_count=self.tma_copy_q_bytes,
+            defer_sync=True,
         ).make_participants()
 
     def make_and_init_load_kv_pipeline(self, load_kv_mbar_ptr):
@@ -1663,6 +1664,7 @@ class HopperFusedMultiHeadAttentionForward:
             producer_group=load_kv_producer_group,
             consumer_group=load_kv_consumer_group,
             tx_count=self.tma_copy_kv_bytes,
+            defer_sync=True,
         ).make_participants()
 
     def make_and_init_tma_store_pipeline(self):
@@ -1686,6 +1688,7 @@ class HopperFusedMultiHeadAttentionForward:
                 pipeline.Agent.Thread,
                 self.num_threads_per_warp_group,
             ),
+            defer_sync=True,
         )
 
     @staticmethod

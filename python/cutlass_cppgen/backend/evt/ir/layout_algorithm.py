@@ -119,8 +119,8 @@ def _get_first_rhs_nonzero_stride(stride_list, idx):
     for i in range(idx+1, len(stride_list)):
         if stride_list[i] != 0:
             return i
-        else:
-            return None
+    else:
+        return None
 
 def reshape(layout, new_shape):
     """

@@ -689,7 +689,21 @@ def _min(lhs, rhs, *, loc=None, ip=None):
         if not is_dynamic_expression(rhs):
             rhs = arith.constant(lhs.type, rhs, loc=loc, ip=ip)
 
-    if arith._is_integer_like_type(lhs.type):
+    # Handle vector types
+    if isinstance(lhs.type, T.VectorType):
+        elem_type = lhs.type.element_type
+        if arith._is_integer_like_type(elem_type):
+            assert hasattr(
+                lhs, "signed"
+            ), "Should have attribute `signed`, must be a bug"
+            if lhs.signed != False:
+                return arith.minsi(lhs, rhs, loc=loc, ip=ip)
+            else:
+                return arith.minui(lhs, rhs, loc=loc, ip=ip)
+        else:
+            return arith.minimumf(lhs, rhs, loc=loc, ip=ip)
+    elif arith._is_integer_like_type(lhs.type):
+        assert hasattr(lhs, "signed"), "Should have attribute `signed`, must be a bug"
         if lhs.signed != False:
             return arith.minsi(lhs, rhs, loc=loc, ip=ip)
         else:
@@ -705,7 +719,6 @@ def _max(lhs, rhs, *, loc=None, ip=None):
     Assuming the operands have the same type
     """
     from ..dsl import is_dynamic_expression
-
     if not is_dynamic_expression(lhs):
         if not is_dynamic_expression(rhs):
             return max(lhs, rhs)
@@ -714,8 +727,21 @@ def _max(lhs, rhs, *, loc=None, ip=None):
     else:
         if not is_dynamic_expression(rhs):
             rhs = arith.constant(lhs.type, rhs, loc=loc, ip=ip)
-
-    if arith._is_integer_like_type(lhs.type):
+    # Handle vector types
+    if isinstance(lhs.type, T.VectorType):
+        elem_type = lhs.type.element_type
+        if isinstance(elem_type, ir.IntegerType):
+            assert hasattr(
+                lhs, "signed"
+            ), "Should have attribute `signed`, must be a bug"
+            if lhs.signed != False:
+                return arith.maxsi(lhs, rhs, loc=loc, ip=ip)
+            else:
+                return arith.maxui(lhs, rhs, loc=loc, ip=ip)
+        else:
+            return arith.maximumf(lhs, rhs, loc=loc, ip=ip)
+    elif arith._is_integer_like_type(lhs.type):
+        assert hasattr(lhs, "signed"), "Should have attribute `signed`, must be a bug"
         if lhs.signed != False:
             return arith.maxsi(lhs, rhs, loc=loc, ip=ip)
         else:

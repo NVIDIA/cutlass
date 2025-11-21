@@ -283,7 +283,7 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_and_wait_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
-    asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads) : "memory");
     cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -293,7 +293,7 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_and_wait_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
-    asm volatile("barrier.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    asm volatile("barrier.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads) : "memory");
     cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -304,7 +304,7 @@ class NamedBarrier {
   static void arrive_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
-    asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads) : "memory");
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -314,7 +314,7 @@ class NamedBarrier {
   static void arrive_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
-    asm volatile("barrier.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    asm volatile("barrier.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads) : "memory");
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -396,7 +396,8 @@ public:
         "mbarrier.init.shared::cta.b64 [%1], %0; \n"
         "}"
         :
-        : "r"(arrive_count), "r"(smem_addr));
+        : "r"(arrive_count), "r"(smem_addr)
+        : "memory");
     cutlass::arch::synclog_emit_cluster_barrier_init(__LINE__, smem_addr, arrive_count);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -421,7 +422,8 @@ public:
         "DONE: \n\t"
         "}"
         :
-        : "r"(smem_addr), "r"(phase), "r"(ticks));
+        : "r"(smem_addr), "r"(phase), "r"(ticks)
+        : "memory");
 
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -444,7 +446,8 @@ public:
         "selp.b32 %0, 1, 0, P1; \n\t"
         "}"
         : "=r"(waitComplete)
-        : "r"(smem_addr), "r"(phase), "r"(pred));
+        : "r"(smem_addr), "r"(phase), "r"(pred)
+        : "memory");
 
     return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
@@ -467,7 +470,8 @@ public:
         "selp.b32 %0, 1, 0, P1; \n\t"
         "}"
         : "=r"(waitComplete)
-        : "r"(smem_addr), "r"(phase));
+        : "r"(smem_addr), "r"(phase)
+        : "memory");
 
     return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
@@ -489,7 +493,8 @@ public:
           "mbarrier.arrive.shared::cluster.b64  _, [remAddr32];\n\t"
           "}"
           :
-          : "r"(smem_addr), "r"(cta_id));
+          : "r"(smem_addr), "r"(cta_id)
+          : "memory");
     }
 
     cutlass::arch::synclog_emit_cluster_barrier_arrive_cluster(__LINE__, smem_addr, cta_id, pred);
@@ -508,7 +513,8 @@ public:
         "mbarrier.arrive.shared::cta.b64 _, [%0];\n\t"
         "}"
         :
-        : "r"(smem_addr));
+        : "r"(smem_addr)
+        : "memory");
     cutlass::arch::synclog_emit_cluster_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -524,7 +530,8 @@ public:
         "mbarrier.inval.shared::cta.b64 [%0]; \n\t"
         "}"
         :
-        : "r"(smem_addr));
+        : "r"(smem_addr)
+        : "memory");
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -585,7 +592,8 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "mbarrier.arrive.expect_tx.shared::cta.b64 _, [%1], %0; \n\t"
         "}"
         :
-        : "r"(transaction_bytes), "r"(smem_addr));
+        : "r"(transaction_bytes), "r"(smem_addr)
+        : "memory");
     cutlass::arch::synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -607,7 +615,8 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "@p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], %3;\n\t"
         "}"
         :
-        : "r"(smem_addr), "r"(cta_id), "r"(pred), "r"(transaction_bytes));
+        : "r"(smem_addr), "r"(cta_id), "r"(pred), "r"(transaction_bytes)
+        : "memory");
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -623,7 +632,8 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "mbarrier.expect_tx.shared::cta.b64 [%1], %0; \n\t"
         "}"
         :
-        : "r"(transaction_bytes), "r"(smem_addr));
+        : "r"(transaction_bytes), "r"(smem_addr)
+        : "memory");
     cutlass::arch::synclog_emit_cluster_transaction_barrier_expect_transaction(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -644,7 +654,8 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "@p mbarrier.complete_tx.shared::cluster.relaxed.cluster.b64   [%1], %0;"
         "}"
         :
-        : "r"(transaction_bytes), "r"(smem_addr), "r"(pred));
+        : "r"(transaction_bytes), "r"(smem_addr), "r"(pred)
+        : "memory");
     cutlass::arch::synclog_emit_cluster_transaction_barrier_complete_transaction(__LINE__, smem_addr, dst_cta_id, transaction_bytes, pred);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
@@ -704,7 +715,8 @@ void fence_barrier_init() {
       "{\n\t"
       "fence.mbarrier_init.release.cluster; \n"
       "}"
-      ::);
+      ::
+      : "memory");
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif
@@ -719,7 +731,8 @@ void fence_view_async_shared() {
         "{\n\t"
         "fence.proxy.async.shared::cta; \n"
         "}"
-        ::);
+        ::
+        : "memory");
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif
@@ -735,7 +748,8 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
     "cp.async.mbarrier.arrive.shared::cta.b64 [%0];\n\t"
     "}"
     :
-    : "r"(smem_addr));
+    : "r"(smem_addr)
+    : "memory");
   cutlass::arch::synclog_emit_cpasync_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -752,7 +766,8 @@ void cpasync_barrier_arrive_noinc(uint64_t const* smem_ptr) {
     "cp.async.mbarrier.arrive.noinc.shared::cta.b64 [%0];\n\t"
     "}"
     :
-    : "r"(smem_addr));
+    : "r"(smem_addr)
+    : "memory");
   cutlass::arch::synclog_emit_cpasync_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -769,7 +784,8 @@ void umma_arrive(uint64_t const* smem_ptr) {
   if (cute::elect_one_sync()) {
     asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];"
       :
-      :"r"(bar_intptr));
+      :"r"(bar_intptr)
+      : "memory");
   }
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -784,7 +800,8 @@ void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
   if (cute::elect_one_sync()) {
     asm volatile("tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.b64 [%0];"
       :
-      :"r"(bar_intptr));
+      :"r"(bar_intptr)
+      : "memory");
   }
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -802,7 +819,8 @@ void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
       "}" 
       :
-      :"r"(bar_intptr), "h"(cta_mask));
+      :"r"(bar_intptr), "h"(cta_mask)
+      : "memory");
   }
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -820,7 +838,8 @@ void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
       "}" 
       :
-      :"r"(bar_intptr), "h"(cta_mask));
+      :"r"(bar_intptr), "h"(cta_mask)
+      : "memory");
   }
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -840,7 +859,8 @@ void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask)
       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
       "}" 
       :
-      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+      :"r"(bar_intptr), "r"(uint32_t(cta_mask))
+      : "memory");
 #elif defined(__CUDA_ARCH__)
   CUTLASS_NOT_IMPLEMENTED();
 #endif
@@ -859,7 +879,8 @@ void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta
       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
       "}" 
       :
-      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+      :"r"(bar_intptr), "r"(uint32_t(cta_mask))
+      : "memory");
 #else
   CUTLASS_NOT_IMPLEMENTED();
 #endif
@@ -875,7 +896,8 @@ void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
     "mbarrier.arrive.shared::cluster.b64 _, [%0];\n\t"
     "}"
     :
-    : "r"(bar_intptr));
+    : "r"(bar_intptr)
+    : "memory");
 
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
@@ -888,7 +910,8 @@ CUTE_DEVICE static void fence_view_async_tmem_load() {
     "{\n\t"
     "tcgen05.wait::ld.sync.aligned; \n"
     "}"
-    ::);
+    ::
+    : "memory");
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif
@@ -900,7 +923,8 @@ CUTE_DEVICE static void fence_view_async_tmem_store() {
     "{\n\t"
     "tcgen05.wait::st.sync.aligned; \n"
     "}"
-    ::);
+    ::
+    : "memory");
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif

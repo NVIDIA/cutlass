@@ -47,6 +47,11 @@ def dtype(ty: Type[Numeric]):
         Float8E4M3FN: torch.float8_e4m3fn,
         Float8E4M3B11FNUZ: torch.float8_e4m3fnuz,
     }
+
+    # float8_e8m0fnu is introduced in latest version of torch
+    if hasattr(torch, "float8_e8m0fnu"):
+        torch_type_map[Float8E8M0FNU] = torch.float8_e8m0fnu
+
     if torch_dtype is None:
         torch_dtype = torch_type_map.get(ty)
 

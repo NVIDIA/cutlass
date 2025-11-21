@@ -77,6 +77,8 @@ class GemmOperation:
       GemmKind.BlockwiseUniversal3x,
       GemmKind.GroupedBlockwiseUniversal3x,
       GemmKind.BlockScaledSparseUniversal3x,
+      GemmKind.MoeGroupedUniversal3x,
+      GemmKind.BlockScaledMoeGroupedUniversal3x,
     }
     self.is_3x = gemm_kind in kinds_3x
     self.prefix = "3x" if self.is_3x else ""
@@ -927,8 +929,14 @@ ${compile_guard_end}
     gemm_shape_type = "cute::Shape<int,int,int,int>"
     grouped_gemm_shape_type = "cute::Shape<int,int,int>"
     grouped_gemm_shape_type = "cutlass::gemm::GroupProblemShape<" + grouped_gemm_shape_type + ">"
-
-    return gemm_shape_type if not is_grouped(operation.gemm_kind) else grouped_gemm_shape_type
+    moe_gemm_shape_type = "cute::Shape<int,int,int>"
+    moe_gemm_shape_type = "cutlass::gemm::MoEProblemShape<" + moe_gemm_shape_type + ">"
+    if is_moe(operation.gemm_kind):
+      return moe_gemm_shape_type
+    elif is_grouped(operation.gemm_kind):
+      return grouped_gemm_shape_type 
+    else:
+      return gemm_shape_type
 
   def emit(self, operation):
     _LOGGER.debug("*** EmitGemmConfigurationLibrary::emit(operation)")
@@ -943,6 +951,7 @@ ${compile_guard_end}
     instruction_shape = operation.tile_description.math_instruction.instruction_shape
     cluster_m = operation.tile_description.cluster_shape[0]
     cluster_n = operation.tile_description.cluster_shape[1]
+    cta_m = tile_shape[0] // cluster_m if cluster_m > 0 else tile_shape[0]
     cta_n = tile_shape[1] // cluster_n if cluster_n > 0 else tile_shape[1]
     tile_shape_m, tile_shape_n, tile_shape_k = operation.get_collective_tile_shape()
  
@@ -1022,6 +1031,13 @@ ${compile_guard_end}
 
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
+
+      if is_moe(operation.gemm_kind):
+        if DataTypeSize[operation.A.element] == 4 and operation.ScaleFactorA == DataType.ue4m3:
+          element_a = f"cutlass::nv_float4_t<{DataTypeTag[operation.A.element]}>"
+
+        if DataTypeSize[operation.B.element] == 4 and operation.ScaleFactorB == DataType.ue4m3:
+          element_b = f"cutlass::nv_float4_t<{DataTypeTag[operation.B.element] }>"
 
     alignment_c = get_tma_alignment(operation.C.element) \
                   if is_tma_epilogue(operation.epilogue_schedule) and opcode_class_epi != OpcodeClass.Simt \
@@ -1480,6 +1496,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.BlockwiseUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.GroupedBlockwiseUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.BlockScaledSparseUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.MoeGroupedUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.BlockScaledMoeGroupedUniversal3x: EmitGemmUniversal3xInstance,
     }
 
     self.gemm_kind_wrappers = {
@@ -1497,6 +1515,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.BlockwiseUniversal3x: 'BlockwiseGemmUniversal3xOperation',
       GemmKind.GroupedBlockwiseUniversal3x: 'GroupedBlockwiseGemmUniversal3xOperation',
       GemmKind.BlockScaledSparseUniversal3x: 'BlockScaledSparseGemmUniversal3xOperation',
+      GemmKind.MoeGroupedUniversal3x: 'MoeGroupedGemmUniversal3xOperation',
+      GemmKind.BlockScaledMoeGroupedUniversal3x: 'BlockScaledMoeGroupedGemmUniversal3xOperation',
     }
 
     self.wmma_guard_start = "#if defined(CUTLASS_ARCH_WMMA_SM${sm_number}_ENABLED)"

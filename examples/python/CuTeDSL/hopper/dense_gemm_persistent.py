@@ -37,6 +37,7 @@ import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.hopper_helpers as sm90_utils
@@ -634,11 +635,11 @@ class HopperWgmmaGemmPersistentKernel:
             consumer_group=mainloop_pipeline_consumer_group,
             tx_count=tma_copy_bytes,
             cta_layout_vmnk=cute.make_layout((1, *cta_layout_mnk.shape)),
+            defer_sync=True,
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         # Generate smem tensor A/B
         sA = storage.sA.get_tensor(
@@ -718,10 +719,7 @@ class HopperWgmmaGemmPersistentKernel:
         k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
         # Cluster wait for barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
-        else:
-            cute.arch.sync_threads()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         is_dma_warp_group = warp_group_idx < self.num_dma_warp_groups
         if is_dma_warp_group:

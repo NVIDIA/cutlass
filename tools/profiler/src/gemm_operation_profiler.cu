@@ -1264,7 +1264,7 @@ bool GemmOperationProfiler::verify_cutlass(
     }
   }
 
-  // if verification.required is set, then return success iff at least one ref-check was run
+  // if verification.required is set, then return success if at least one ref-check was run
   if (options.verification.required) {
     bool did_any_verification_run = false;
     for (auto provider : options.verification.providers) {

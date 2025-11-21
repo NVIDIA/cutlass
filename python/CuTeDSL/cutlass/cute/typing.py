@@ -10,15 +10,77 @@
 # is strictly prohibited.
 
 from abc import ABC, abstractmethod
-from typing import ForwardRef, Tuple, Union, Any, Type, List, Optional
+import ctypes
+from typing import ForwardRef, Tuple, Union, Any, Type, List, Optional, Literal
+from functools import lru_cache
 
 from cutlass.base_dsl.typing import *
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects.cute import AddressSpace, ConstrainedIntType
+from cutlass.base_dsl.typing import JitArgument
 
 
 Int = Union[int, Integer]
+
+
+class SymInt:
+    def __init__(self, width: Literal[32, 64] = 32, *, divisibility=1):
+        if width not in [32, 64]:
+            raise ValueError(f"Unsupported width: {width}")
+        self._width = width
+        self._divisibility = divisibility
+
+    @property
+    def width(self):
+        return self._width
+
+    @property
+    def divisibility(self):
+        return self._divisibility
+
+    def __str__(self) -> str:
+        return f"?{{i{self._width} div={self._divisibility}}}"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, SymInt):
+            return False
+        return all(
+            [self._width == other._width, self._divisibility == other._divisibility]
+        )
+
+    def __c_pointers__(self):
+        return [ctypes.c_void_p(0).value]
+
+    def __get_mlir_types__(self) -> List[ir.Type]:
+        res_ty = ir.Type.parse(
+            f'!cute.int_tuple<"?{{i{self.width} div={self.divisibility}}}">'
+        )
+        return [res_ty]
+
+    def __new_from_mlir_values__(self, values) -> "SymInt":
+        from .core import IntValue
+
+        if self.width == 32:
+            return Int32(IntValue(values[0]))
+        elif self.width == 64:
+            return Int64(IntValue(values[0]))
+        else:
+            assert False, f"Unsupported width: {self.width}"
+            return self
+def sym_int(width: Literal[32, 64] = 32, *, divisibility=1) -> SymInt:
+    return SymInt(width, divisibility=divisibility)
+
+
+def sym_int32(divisibility=1) -> SymInt:
+    return sym_int(32, divisibility=divisibility)
+
+
+def sym_int64(divisibility=1) -> SymInt:
+    return sym_int(64, divisibility=divisibility)
 
 
 ScaledBasis = ForwardRef("ScaledBasis")
@@ -288,7 +350,10 @@ def is_int_tuple(a) -> bool:
 
 
 __all__ = [
-    "Coord",
+    "SymInt",
+    "sym_int",
+    "sym_int32",
+    "sym_int64",
     "Numeric",
     "Integer",
     "Boolean",
@@ -317,13 +382,14 @@ __all__ = [
     "Float6E3M2FN",
     "IntTuple",
     "Layout",
-    "Pointer",
+    "Coord",
     "Shape",
     "Stride",
-    "Tensor",
     "Tile",
     "Tiler",
     "XTuple",
     "is_integer",
     "is_int_tuple",
+    "Pointer",
+    "Tensor",
 ]

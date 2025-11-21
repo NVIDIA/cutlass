@@ -99,6 +99,9 @@ class Trait(ABC):
     def unpack(self, *, loc=None, ip=None, **kwargs) -> ir.Value:
         return self.value
 
+    def with_(self, *, loc=None, ip=None, **kwargs) -> "Trait":
+        return self.__class__(self.unpack(loc=loc, ip=ip, **kwargs))
+
 
 def make_atom(ty, values=None, *, loc=None, ip=None):
     """
@@ -185,6 +188,21 @@ class Atom(ABC):
         """
         return self._trait.get(field, loc=loc, ip=ip)
 
+    def with_(self, *, loc=None, ip=None, **kwargs) -> "Atom":
+        """
+        Returns a new Atom with the new Operation and Trait with the given runtime state. The runtime state
+        is provided as keyword arguments and it is Atom-specific.
+
+        .. code-block:: python
+
+            tiled_copy = cute.make_tiled_copy(tma_copy_op)
+            new_tiled_copy = tiled_copy.with_(tma_bar_ptr=tma_bar_ptr, cache_policy=cute.CacheEvictionPriority.EVICT_LAST)
+
+        The ``with_`` method provides a way to the user to modify such runtime state or create an executable Atom
+        (e.g. an Executable TMA Load Atom).
+        """
+        return self.__class__(self.op, self._trait.with_(loc=loc, ip=ip, **kwargs))
+
     def _unpack(self, *, loc=None, ip=None, **kwargs) -> ir.Value:
         return self._trait.unpack(loc=loc, ip=ip, **kwargs)
 
@@ -215,23 +233,28 @@ class MmaAtom(Atom):
     #
 
     @property
-    def thr_id(self) -> Layout:
-        return static(self._trait.value.type.thr_id)
+    @dsl_user_op
+    def thr_id(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.thr_id, loc=loc, ip=ip)
 
     @property
-    def shape_mnk(self) -> Shape:
-        return _unpack_x_tuple(self._trait.value.type.shape_mnk)
+    @dsl_user_op
+    def shape_mnk(self, *, loc=None, ip=None) -> Shape:
+        return _unpack_x_tuple(self._trait.value.type.shape_mnk, loc=loc, ip=ip)
 
     @property
-    def tv_layout_A(self) -> Layout:
-        return static(self._trait.value.type.layout_a_tv)
+    @dsl_user_op
+    def tv_layout_A(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_a_tv, loc=loc, ip=ip)
 
     @property
-    def tv_layout_B(self) -> Layout:
-        return static(self._trait.value.type.layout_b_tv)
+    @dsl_user_op
+    def tv_layout_B(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_b_tv, loc=loc, ip=ip)
 
     @property
-    def tv_layout_C(self) -> Layout:
+    @dsl_user_op
+    def tv_layout_C(self, *, loc=None, ip=None) -> Layout:
         return static(self._trait.value.type.layout_c_tv)
 
     #

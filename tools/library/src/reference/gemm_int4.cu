@@ -59,7 +59,28 @@ void initialize_gemm_reference_operations_int4(Manifest &manifest) {
     64,
     int4b_t,
     int4b_t,
+    void,
     int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    int4b_t,
+    int4b_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    int4b_t,
+    int4b_t,
+    void,
     float,
     int32_t,
     int32_t,
@@ -79,6 +100,17 @@ void initialize_gemm_reference_operations_int4(Manifest &manifest) {
 
   make_gemm_interleaved_layouts<
     64,
+    int4b_t,
+    int4b_t,
+    void,
+    float,
+    int32_t,
+    int4b_t,
+    NumericConverterClamp<int4b_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
     uint4b_t,
     uint4b_t,
     int32_t,
@@ -90,7 +122,28 @@ void initialize_gemm_reference_operations_int4(Manifest &manifest) {
     64,
     uint4b_t,
     uint4b_t,
+    void,
     int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    void,
     float,
     int32_t,
     int32_t,
@@ -112,7 +165,29 @@ void initialize_gemm_reference_operations_int4(Manifest &manifest) {
     64,
     uint4b_t,
     uint4b_t,
+    void,
+    float,
+    int32_t,
+    uint4b_t,
+    NumericConverterClamp<uint4b_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
     int4b_t,
+    float,
+    int32_t,
+    int4b_t,
+    NumericConverterClamp<int4b_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    void,
     float,
     int32_t,
     int4b_t,

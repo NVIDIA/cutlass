@@ -751,13 +751,13 @@ public:
       ++store_pipe_producer_state;
       ++issued_stores;
 
-      // Wait for the next smem buffer to be available
-      if (issue_tma_store) {
-        store_pipeline.producer_acquire(store_pipe_producer_state);
-      }
-      synchronize();
-
       if constexpr (ReuseSmemC) {
+
+        // Wait for the next smem buffer to be available
+        if (issue_tma_store) {
+          store_pipeline.producer_acquire(store_pipe_producer_state);
+        }
+        synchronize();
         // producer_acquire returns when at most StagesD-1 committed stores are pending
         bool store_finished = issued_stores > StorePipeline::UnacquiredStages;
         // Let dma warp know earliest smem buffer is consumed and empty after StagesD producer commits
@@ -866,7 +866,13 @@ public:
           epi_m_prev = epi_m;
           epi_n_prev = epi_n;
         }
-
+        if constexpr (not ReuseSmemC) {
+          // Wait for the smem buffer to be available
+          if (issue_tma_store) {
+            store_pipeline.producer_acquire(store_pipe_producer_state);
+          }
+          synchronize();
+        }
         // Smem reduction callback entry point using current store buffer for workspace
         cst_callbacks.reduce(sD_epi(_,_,store_pipe_producer_state.index()),
                               synchronize, epi_m, epi_n, is_last_iteration, tRS_rCompute_frg);
@@ -885,7 +891,6 @@ public:
         for (int i = 0; i < size(tRS_rD_frg); ++i) {
           tRS_rD_frg(i) = cutlass::NumericArrayConverter<SmemElementD, RegisterElementD, FragmentSize>{}(tRS_rCompute_frg(i));
         }
-
         // Copy tile from register to smem
         if constexpr (is_destination_supported) {
           copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
