@@ -4107,6 +4107,168 @@ class struct:
         return (offset + (align - 1)) & ~(align - 1)
 
 
+class union(struct):
+    """
+    Decorator to abstract C union in Python DSL.
+
+    Similar to cute.struct, but lays out objects as a union:
+    - All objects start at offset 0
+    - The alignment is the maximum alignment of all objects
+    - The size is the maximum size of all objects
+
+    **Usage:**
+
+    .. code-block:: python
+
+        # Define a union with scalar int/float elements:
+        @cute.union
+        class value_union:
+            as_int : cutlass.Int32
+            as_float : cutlass.Float32
+
+
+        @cute.union
+        class data_union:
+            small : cutlass.Int16
+            medium : cutlass.Int32
+            large : cutlass.Int64
+
+
+        # Supports alignment for its elements:
+        @cute.union
+        class aligned_union:
+            a: cute.struct.Align[cutlass.Float32, 16]
+            b: cute.struct.Align[cutlass.Int32, 8]
+
+
+        # Statically get size and alignment:
+        size = data_union.__sizeof__()
+        align = data_union.__alignof__()
+
+        # Allocate and reference elements:
+        allocator = cutlass.utils.SmemAllocator()
+        value = allocator.allocate(data_union)
+
+        # Access union members (all at the same offset):
+        value.small ...
+        value.medium ...
+        value.large ...
+
+    :param cls: The union class with annotations.
+    :return: The decorated union class.
+    """
+
+    def __init__(self, cls):
+        """
+        Initializes a new cute.union decorator instance.
+
+        :param cls: The class representing the union data type.
+        :raises TypeError: If the union is empty.
+        """
+        self._cls = cls
+        self.__name__ = f"cute.union::{cls.__name__}"
+        # Get the class annotations
+        self._annotations = getattr(cls, "__annotations__", {})
+        # Create a dictionary to store the offsets (all zeros for union)
+        self._offsets: Dict[str, int] = {}
+
+        # Calculate the maximum size and alignment
+        max_size = 0
+        max_alignment = 1
+        if len(self._annotations) == 0:
+            raise TypeError("Empty union is not supported!")
+
+        for name, object in self._annotations.items():
+            # All offsets are 0 for a union
+            self._offsets[name] = 0
+
+            # Get alignment of object
+            sub_align = 1
+            if isinstance(object, struct._AlignMeta):
+                sub_align = object.align
+                object = object.dtype
+
+            # Calculate size and alignment based on object type
+            if struct._is_scalar_type(object):
+                dtype_size = max(1, object.width // 8)
+                sub_align = max(dtype_size, sub_align)
+                max_size = max(max_size, dtype_size)
+            elif isinstance(object, struct._MemRangeMeta):
+                sub_align = max(object.elem_width // 8, sub_align)
+                max_size = max(max_size, object.size_in_bytes)
+            elif isinstance(object, struct):
+                sub_align = max(object.__alignof__(), sub_align)
+                max_size = max(max_size, object.__sizeof__())
+            else:
+                raise TypeError(
+                    f"Union element only support struct/array/base_dsl scalar, "
+                    f"but got {object}"
+                )
+            # Union alignment is the maximum alignment of all members
+            max_alignment = max(max_alignment, sub_align)
+
+        # Union size is the maximum size, aligned to the maximum alignment
+        self._align_of = max_alignment
+        self._size_of = struct.align_offset(max_size, max_alignment)
+
+    def __call__(self, base: Any) -> None:
+        """
+        Creates a new instance of the decorated union.
+
+        :param base: The base address of the union.
+        :return: An instance of the decorated union.
+        :raises TypeError: If the base pointer is not byte-sized.
+        """
+        if base.type.value_type.width != 8:
+            raise TypeError("union base ptr value type must be byte sized.")
+        # Make a new object of user-defined decorated union
+        cls = self._cls()
+        setattr(cls, "_base", base)
+        for name, off in self._offsets.items():
+            obj = self._annotations[name]
+            if isinstance(obj, struct._AlignMeta):
+                obj = obj.dtype
+            if struct._is_scalar_type(obj):
+                new_obj = recast_ptr(base + off, dtype=obj)
+                setattr(cls, name, new_obj)
+            elif isinstance(obj, struct._MemRangeMeta):
+                new_obj = struct._MemRangeData(obj._dtype, obj._size, base + off)
+                setattr(cls, name, new_obj)
+            elif isinstance(obj, struct):
+                new_obj = obj(base + off)
+                setattr(cls, name, new_obj)
+            else:
+                raise TypeError(
+                    f"Union element only support struct/array/base_dsl scalar, "
+                    f"but got {obj}"
+                )
+        return cls
+
+    def size_in_bytes(self) -> int:
+        """
+        Returns the size of the union in bytes.
+
+        :return: The size of the union.
+        """
+        return self._size_of
+
+    def __sizeof__(self) -> int:
+        """
+        Returns the size of the union in bytes.
+
+        :return: The size of the union.
+        """
+        return self._size_of
+
+    def __alignof__(self) -> int:
+        """
+        Returns the alignment of the union in bytes.
+
+        :return: The alignment of the union.
+        """
+        return self._align_of
+
+
 # Deprecated usage but keep them to avoid breaking some examples uses `cute.core.ThrMma`
 
 from .atom import ThrCopy as _ThrCopy
