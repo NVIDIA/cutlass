@@ -336,6 +336,7 @@ struct Options {
     if (!benchmark_path.empty()) {
       if (!benchmark_problems()) {
         problem_sizes_host.clear();
+        tokens_per_expert_host.clear();
         return;
       }
     }
@@ -408,7 +409,11 @@ struct Options {
         extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
+      tokens_per_expert_host.push_back(extent.n());
     }
+    groups = static_cast<int>(problem_sizes_host.size());
+    m = get<0>(problem_sizes_host.at(0));
+    k = get<2>(problem_sizes_host.at(0));
 
     return true;
   }
@@ -628,7 +633,7 @@ void initialize(const Options &options) {
 
 /// Populates a Gemm::Arguments structure from the given commandline options
 template <typename Gemm>
-typename Gemm::Arguments args_from_options(Options &options, bool host_problem_shapes_available = true)
+typename Gemm::Arguments args_from_options(Options &options)
 {
   cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
@@ -746,7 +751,7 @@ bool verify(const Options &options) {
     block_D.at(i).sync_host();
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     passed &= cutlass::reference::host::TensorEquals(block_ref_D.at(i).host_view(), block_D.at(i).host_view());
-
+    
   }
   return passed;
 }
@@ -766,7 +771,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
   Gemm gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options<Gemm>(options, host_problem_shapes_available);
+  auto arguments = args_from_options<Gemm>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -871,9 +876,9 @@ int main(int argc, char const **args) {
   //
 
   std::cout << "Running kernel with 1SM MMA config:" << std::endl;
-  run<Gemm1SM>(options /*host_problem_shapes_available*/);
+  run<Gemm1SM>(options);
   std::cout << "Running kernel with 2SM MMA config:" << std::endl;
-  run<Gemm2SM>(options /*host_problem_shapes_available*/);
+  run<Gemm2SM>(options);
 #endif
 
   return 0;
