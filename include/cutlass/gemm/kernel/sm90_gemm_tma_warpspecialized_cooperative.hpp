@@ -804,7 +804,7 @@ public:
           // Update starting mainloop pipeline state for the next tile
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
         }
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+
         if (scheduler.is_last_tile(work_tile_info)) {
           // Hint on an early release of global memory resources.
           // The timing of calling this function only influences performance,
@@ -812,7 +812,6 @@ public:
           cutlass::arch::launch_dependent_grids();
 
         }
-        #endif
 
         // Index of warp group within consumer warp groups
         int consumer_warp_group_idx = canonical_warp_group_idx() - NumLoadWarpGroups;
