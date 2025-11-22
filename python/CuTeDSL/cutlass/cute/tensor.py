@@ -462,7 +462,7 @@ class _Tensor(Tensor):
         return TensorSSA(res_vect, self.shape, self.element_type)
 
     @dsl_user_op
-    def store(self, data: "TensorSSA", *, loc=None, ip=None):
+    def store(self, data: "TensorSSA", allowed_swizzled: bool = False, *, loc=None, ip=None):
         """Store vector data into tensor.
 
         Stores vector data into the tensor, assuming matching shapes and a memory space
@@ -485,7 +485,7 @@ class _Tensor(Tensor):
         if not is_static(self.shape):
             raise ValueError("Dynamic layout doesn't support vectorized store")
 
-        self._check_can_load_store()
+        self._check_can_load_store(allowed_swizzled)
 
         n_elems = size(self.shape, loc=loc, ip=ip)
         if n_elems != size(data.shape, loc=loc, ip=ip):
@@ -532,7 +532,7 @@ class _Tensor(Tensor):
             # Fill tensor with constant value
             tensor.fill(0.5)  # All elements become 0.5
         """
-        self._check_can_load_store()
+        self._check_can_load_store(allowed_swizzled=True)
 
         sz = size(self, loc=loc, ip=ip)
         if type(sz) is not int:
@@ -544,9 +544,9 @@ class _Tensor(Tensor):
         vect_val = full(
             self.shape, fill_value=scalar_val, dtype=dst_type, loc=loc, ip=ip
         )
-        self.store(vect_val, loc=loc, ip=ip)
+        self.store(vect_val, allowed_swizzled=True, loc=loc, ip=ip)
 
-    def _check_can_load_store(self):
+    def _check_can_load_store(self, allowed_swizzled: bool = False):
         if not isinstance(self.type, _cute_ir.MemRefType) or self.memspace not in (
             AddressSpace.rmem,
             AddressSpace.smem,
@@ -555,7 +555,7 @@ class _Tensor(Tensor):
         ):
             raise ValueError(f"{self} doesn't support load and store")
 
-        if self.type.is_swizzled:
+        if not allowed_swizzled and self.type.is_swizzled:
             raise NotImplementedError(
                 f"load & store swizzled memory is not supported yet: {self}"
             )
