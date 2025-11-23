@@ -224,7 +224,7 @@ int const kN = 16;
 Array<int8_t, kN> destination;
 Array<int,    kN> source;
 
-NumericConverter<descltype(destination), decltype(source)> convert;
+NumericArrayConverter<int8_t, int, kN> convert;
 
 destination = convert(source);
 ```
