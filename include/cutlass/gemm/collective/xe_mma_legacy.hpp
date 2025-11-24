@@ -56,9 +56,9 @@ struct CollectiveMma<MainloopIntelXeXMX16<Stages, Schedule>, TileShape_, Element
   using DispatchPolicy = MainloopIntelXeXMX16<Stages, Schedule>;
   using WorkgroupTileShape = TileShape_;
   using ElementA = ElementA_;
-  using StrideA = StrideA_;
+  using StrideA = cute::remove_pointer_t<StrideA_>;
   using ElementB = ElementB_;
-  using StrideB = StrideB_;
+  using StrideB = cute::remove_pointer_t<StrideB_>;
   using TiledMma = TiledMma_;
   using ElementAccumulator = typename TiledMma::ValTypeC;
   using GmemTiledCopyA = GmemTiledCopyA_;

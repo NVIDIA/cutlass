@@ -107,7 +107,6 @@ public:
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
 
-  using MainloopTensors = typename CollectiveMainloop::MainloopTensors;
   using EpilogueTensors = typename CollectiveEpilogue::EpilogueTensors;
 
   // Kernel level shared memory storage
@@ -255,7 +254,7 @@ public:
     int32_t curr_group = -1;
     using ProblemShapeMNKL = Shape<int, int, int, int>;
     ProblemShapeMNKL problem_shape_MNKL;
-    MainloopTensors AB_tensors;
+    typename CollectiveMainloop::Base::Params base_params;
     EpilogueTensors CD_tensors;
 
     if (work_tile_info.is_valid()) {
@@ -280,7 +279,9 @@ public:
 
       CollectiveMainloop collective_mma;
       if(did_group_change) {
-        AB_tensors = collective_mma.update_tensor_shape_stride(params.mainloop, curr_group, problem_shape_MNKL);
+        base_params = CollectiveMainloop::Base::to_underlying_arguments(problem_shape_MNKL,
+                                                         CollectiveMainloop::to_base_arguments(params.mainloop, curr_group),
+                                                         params.workspace);
       }
       auto tile_coord = make_coord(m_coord, n_coord, _, 0);
 
@@ -302,8 +303,7 @@ public:
         tile_coord,
         K,
         thread_idx,
-        params.mainloop,
-        AB_tensors
+        base_params
       );
 
       TileScheduler::fixup(
