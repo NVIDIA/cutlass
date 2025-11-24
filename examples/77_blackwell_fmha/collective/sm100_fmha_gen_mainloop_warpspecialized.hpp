@@ -44,6 +44,8 @@
 namespace cutlass::fmha::collective {
 
 using namespace cute;
+using namespace constexpr_type_map;
+using namespace constexpr_constexpr_map;
 
 template<
   class Element_,
@@ -85,7 +87,12 @@ struct Sm100FmhaGenMainloopWarpspecialized {
   using Mask = Mask_;
 
   static constexpr int StageCountQ = get<1>(TileShape{}) == 256 ? 1 : 2;
-  static constexpr int StageCountKV = 256 * 11 / get<1>(TileShape{});
+  using StageCountKVSelector = kValValMap<
+        65536 /* default, arbitrarily large to trigger smem OOM error */,
+        kValValPair<1, 11>, // fp8
+        kValValPair<2, 5>  // bf16/fp16
+  >;
+  static constexpr int StageCountKV = StageCountQ * StageCountKVSelector::template query<sizeof(Element)>;
 
   using StagesQ = cutlass::gemm::collective::StageCount<StageCountQ>;
   using StagesKV = cutlass::gemm::collective::StageCount<StageCountKV>;
@@ -540,8 +547,14 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
 
     // Each thread owns a single row
-    using TMEM_LOAD = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_LOAD_32dp32b8x, SM100_TMEM_LOAD_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
-    using TMEM_STORE = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_STORE_32dp32b8x, SM100_TMEM_STORE_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
+    constexpr int kTMEMOpsPerRow = 2; // each thread processes an entire row, but convert+store half at a time to reduce reg pressure.
+    static_assert(size<1>(TileShapeQK{}) % kTMEMOpsPerRow == 0);
+    constexpr int kTmemLoadNcells = size<1>(TileShapeQK{}) / kTMEMOpsPerRow;
+    constexpr int kTmemStoreNcells = kTmemLoadNcells * sizeof_bits_v<Element> / sizeof_bits_v<float>;
+    using TMEM_LOAD_1xOP = SM100_TMEM_LOAD_32dp32b1x;
+    using TMEM_STORE_1xOP = decltype(TMEM::tmem_load_to_store(TMEM_LOAD_1xOP{}));
+    using TMEM_LOAD = decltype(TMEM::op_repeater<TMEM_LOAD_1xOP, kTmemLoadNcells * 32>());
+    using TMEM_STORE = decltype(TMEM::op_repeater<TMEM_STORE_1xOP, kTmemStoreNcells * 32>());
     using TMEM_STORE_V = SM100_TMEM_STORE_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
 
     int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);
