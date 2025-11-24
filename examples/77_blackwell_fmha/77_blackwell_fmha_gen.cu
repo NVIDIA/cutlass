@@ -794,6 +794,14 @@ int main_single(int argc, char const **args) {
     )
 
   if (options.d == 128) {
+    // MTile=64
+    RUN(UMMA_I, 64, 64, 128, 1, 2, 1);
+    RUN(UMMA_I, 64, 128, 128, 1, 2, 1);
+    RUN(UMMA_I, 64, 256, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 64, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 128, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 256, 128, 1, 2, 1);
+    // MTile=128
     RUN(UMMA_I, 128, 64, 128, 1, 2, 1);
     RUN(UMMA_I, 128, 128, 128, 1, 2, 1);
     RUN(UMMA_I, 128, 256, 128, 1, 2, 1);
