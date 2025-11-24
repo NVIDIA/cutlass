@@ -104,6 +104,7 @@ from .core import (
     E,
     # User defined struct
     struct,
+    union,
     pretty_str,
     make_layout_image_mask,
     repeat,
