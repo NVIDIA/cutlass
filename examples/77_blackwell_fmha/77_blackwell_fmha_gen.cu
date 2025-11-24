@@ -323,10 +323,14 @@ enum class KernelType {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<KernelType kKernelType, class TileShape, class ThreadShape>
+#if defined(FP16)
+using ElementType = cutlass::half_t;
+#else
+using ElementType = cutlass::float_e5m2_t;
+#endif
+template<KernelType kKernelType, class TileShape, class ThreadShape, typename Element = ElementType>
 struct ExampleRunner {
 
-  using Element = cutlass::float_e5m2_t;
   using ElementAcc = float;
   using ElementOut = cutlass::half_t;
 
@@ -346,7 +350,8 @@ struct ExampleRunner {
         Element, ElementAcc, ElementAcc, ElementOut,
         TileShape,
         StrideQ, StrideNewK, StrideNewV,
-        StrideCacheK, StrideCacheV, StrideO
+        StrideCacheK, StrideCacheV, StrideO,
+        cutlass::fmha::collective::ResidualMask, ThreadShape
       >,
       cutlass::fmha::collective::Sm100FmhaGenEpilogueWarpspecialized<ElementOut, StrideO>,
       std::conditional_t<kKernelType == KernelType::UMMA_P,
@@ -766,7 +771,7 @@ int main_single(int argc, char const **args) {
     hw_info.sm_count = options.sm_count;
   }
 
-  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " K " << options.k << " D " << options.d << " ";
+  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " K " << options.k << " D " << options.d << " sizeof(dtype) " << sizeof(ElementType) << " ";
   std::cout << "Gen" << " " << (options.varlen ? "Variable" : "Uniform") << " " << (options.remap ? "Remap" : "Linear") << " ";
   std::cout << "#SM " << hw_info.sm_count << std::endl;
 
@@ -789,12 +794,12 @@ int main_single(int argc, char const **args) {
     )
 
   if (options.d == 128) {
-    RUN(UMMA_I, 128, 64, 128, 1, 1, 1);
-    RUN(UMMA_I, 128, 128, 128, 1, 1, 1);
-    RUN(UMMA_I, 128, 256, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 64, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 128, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 256, 128, 1, 1, 1);
+    RUN(UMMA_I, 128, 64, 128, 1, 2, 1);
+    RUN(UMMA_I, 128, 128, 128, 1, 2, 1);
+    RUN(UMMA_I, 128, 256, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 64, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 128, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 256, 128, 1, 2, 1);
   }
   else {
     std::cout << "Head Dimension != 128 is not supported for the fmha_gen example\n";
