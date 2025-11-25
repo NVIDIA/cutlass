@@ -1715,7 +1715,6 @@ def compile_bmm(
     max_active_clusters: cutlass.Constexpr,
     stream: cuda.CUstream,
     epilogue_op: cutlass.Constexpr = lambda x: x,
-    options: str = "",
 ):
     from cutlass.cute.runtime import make_fake_compact_tensor
 
@@ -1749,7 +1748,15 @@ def compile_bmm(
     )
 
     return cute.compile(
-        bmm, gemm_op, a, b, c, max_active_clusters, stream, epilogue_op, options=options
+        bmm,
+        gemm_op,
+        a,
+        b,
+        c,
+        max_active_clusters,
+        stream,
+        epilogue_op,
+        options="--enable-tvm-ffi",
     )
 
 
@@ -1811,7 +1818,6 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    use_tvm_ffi: bool = False,
     benchmark: bool = False,
     **kwargs,
 ):
@@ -1853,8 +1859,6 @@ def run(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
     :type use_cold_l2: bool, optional
-    :param use_tvm_ffi: Whether to use TVM FFI for the kernel, defaults to False.
-    :type use_tvm_ffi: bool, optional
     :param benchmark: Whether to only benchmark the kernel, defaults to False.
     :type benchmark: bool, optional
     :raises RuntimeError: If CUDA GPU is not available.
@@ -1874,7 +1878,7 @@ def run(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-    print(f"Use TVM FFI: {'True' if use_tvm_ffi else 'False'}")
+    print(f"Use TVM FFI")
 
     import torch
     from cutlass.torch import dtype as torch_dtype
@@ -1906,10 +1910,6 @@ def run(
         cluster_shape_mn[0] * cluster_shape_mn[1]
     )
 
-    options = []
-    if use_tvm_ffi:
-        options.append("--enable-tvm-ffi")
-
     compiled_fn = compile_bmm(
         gemm,
         ab_dtype,
@@ -1920,7 +1920,6 @@ def run(
         c_major,
         max_active_clusters,
         current_stream,
-        options=",".join(options),
     )
 
     # Run and verify BMM with torch
@@ -2043,12 +2042,6 @@ def prepare_parser():
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
-    parser.add_argument(
-        "--use_tvm_ffi",
-        action="store_true",
-        default=False,
-        help="Enable TVM FFI for the kernel, defaults to False using CuTe DSL's native runtime",
-    )
 
     return parser
 
@@ -2090,7 +2083,6 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        args.use_tvm_ffi,
         args.benchmark,
     )
     print("PASS")

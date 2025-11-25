@@ -4,7 +4,8 @@
 Compile with TVM FFI
 ====================
 
-Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in the `official documentation <https://tvm.apache.org/ffi/>`_.
+Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in 
+the `official documentation <https://tvm.apache.org/ffi/>`_.
 
 To install TVM FFI, you can run the following command:
 
@@ -14,7 +15,9 @@ To install TVM FFI, you can run the following command:
    # optional package for improved torch tensor calling performance
    pip install torch-c-dlpack-ext
 
-In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster JIT function invocation and provides better interoperability with machine learning frameworks (e.g., directly take ``torch.Tensor`` as arguments).
+In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster 
+JIT function invocation and provides better interoperability with machine learning frameworks 
+(e.g., directly take ``torch.Tensor`` as arguments).
 
 
 Enable Apache TVM FFI in |DSL|
@@ -40,7 +43,8 @@ There are two ways to enable TVM FFI in |DSL|:
 
 Note that the object returned by ``cute.compile`` is a Python function specific to TVM FFI.
 
-2. Alternatively, you can enable TVM FFI globally by setting the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. Please note that this setting will apply to all JIT compilations within the environment.
+2. Alternatively, you can enable TVM FFI globally by setting the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. 
+Please note that this setting will apply to all JIT compilations within the environment.
 
 
 Minimizing Host Overhead
@@ -129,7 +133,8 @@ stride via the ``stride`` argument in the ``make_fake_tensor`` API.
 ``cute.Tensor`` adapter for TVM FFI
 -----------------------------------
 
-To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the ``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
+To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the 
+``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
 
 .. code-block:: python
 
@@ -286,6 +291,33 @@ composed of the types that are supported by TVM FFI. The example below shows how
       print(b_torch)
 
    example_add_one_with_tuple()
+
+
+Limitations
+-----------
+
+The Fake Tensor flow is ONLY compatible with TVM FFI because TVM FFI support more flexible constraints on Tensor arguments.
+For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which is not supported by 
+existing `from_dlpack` flow. It's expected that JIT function compiled with fake tensor may have different ABI with
+tensor converted by `from_dlpack`.
+
+.. code-block:: python
+
+   import cutlass.cute as cute
+   import torch
+
+   n = cute.sym_int()
+   # Dynamic Shape
+   fake_a = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
+
+   # Compile without tvm-ffi
+   compiled_fn = cute.compile(foo, fake_a)
+
+   # Wrong, in compatible ABI
+   compiled_fn(from_dlpack(a))
+
+
+In order to avoid such issue, it's recommended fake tensor is only used with TVM FFI.
 
 
 Supported types
