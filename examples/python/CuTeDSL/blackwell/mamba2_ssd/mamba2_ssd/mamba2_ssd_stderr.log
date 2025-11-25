@@ -1,0 +1,14 @@
+/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/pipeline/helpers.py:313: UserWarning: NamedBarrier ID 0 is by other driver APIs (i.e. sync_threads()) and should not be used.
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py", line 3753, in <module>
+    run(
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd.py", line 3545, in run
+    torch.testing.assert_close(
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1519, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 77809925 / 83886080 (92.8%)
+Greatest absolute difference: 4.1875 at index (79, 25, 16, 52, 3) (up to 0.05 allowed)
+Greatest relative difference: inf at index (0, 0, 0, 65, 3) (up to 0.01 allowed)

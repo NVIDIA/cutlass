@@ -1,0 +1,102 @@
+[INFO] Run tag: mamba2_ssd
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running B100 Mamba2 SSD with:
+GBEHCDLN: [2, 4, 2, 40, 32, 64, 128, 128]
+Input/Output dtype: BFloat16, Intermediate delta dtype: Float32, Acc dtype: Float32
+Has D (True means fuse Y+=X*D): True, D has Hdim (True means D.shape DxEH, False means 1xEH): True
+Tolerance: 0.05
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+[COMPILE-ONLY] Mocking HardwareInfo.get_max_active_clusters -> 1 (skipping occupancy check)
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_0_.mlir (10332 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_001_CuteRemoveStaticArgs.mlir (10347 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_002_MaterializeTmaMulticast.mlir (10347 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_003_SoftwarePipelinePass.mlir (10347 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_004_CuteDesugar.mlir (11912 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_005_CuteExpandOps.mlir (16358 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_006_CuteFoldStatic.mlir (11186 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_007_InsertRangeInformation.mlir (11186 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_008_Canonicalizer.mlir (7662 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_009_CSE.mlir (6648 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_010_LoopInvariantCodeMotion.mlir (6648 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_011_LoopStrengthReductionPass.mlir (6648 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_012_ConvertVectorToSCF.mlir (6648 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_013_ConvertCuteTypesInScfOps.mlir (6664 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_014_SCFToControlFlow.mlir (7508 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_015_ArithExpandOpsPass.mlir (7599 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_016_ConvertMathToFuncs.mlir (7599 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_017_GpuLaunchSinkIndexComputations.mlir (7599 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_018_ConvertToLLVMPass.mlir (18251 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_019_ReconcileUnrealizedCasts.mlir (17439 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_020_GpuKernelOutlining.mlir (17439 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_021_SCFToControlFlow.mlir (17469 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_022_ReconcileUnrealizedCasts.mlir (17469 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_023_ConvertToLLVMPass.mlir (17469 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_024_Canonicalizer.mlir (9726 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_025_CSE.mlir (8439 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_026_ConvertVectorToLLVMPass.mlir (9802 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_027_ConvertNVVMToLLVMPass.mlir (9814 lines)
+[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_028_GpuNVVMAttachTarget.mlir (9814 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_029_FinalizeMemRefToLLVMConversionPass.mlir (9814 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_030_ExpandStridedMetadata.mlir (8712 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_031_ArithToLLVMConversionPass.mlir (8712 lines)
+[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_032_StripDebugInfo.mlir (7731 lines)
+[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_033_ConvertFastmathOps.mlir (7993 lines)
+[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_034_ConvertGpuOpsToNVVMOps.mlir (7863 lines)
+[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_035_StoreGpuLaunchAttribute.mlir (8845 lines)
+[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_036_GpuToLLVMConversionPass.mlir (8838 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_037_StoreGpuLaunchAttribute.mlir (8837 lines)
+[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_038_ConvertMathToLLVMPass.mlir (8837 lines)
+[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_039_Canonicalizer.mlir (8814 lines)
+[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_040_CSE.mlir (8814 lines)
+[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_041_ReconcileUnrealizedCasts.mlir (8814 lines)
+[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_042_CutlassModuleToBinaryPass.mlir (947 lines)
+[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_043_ExternalKernelForGpuLaunchPass.mlir (1122 lines)
+[DUMP] per-pass IR split -> 43 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+[COMPILE-ONLY] Skipping CUDA kernel loading (compile-only mode, 1 kernels)
+
+Y's Relative diffs:
+Maximum relative difference:
+Position: 522
+Value: 2.000000e+00
+Actual value: -0.328125
+Expected value: 0.328125
+NaN values: 0 (0.00%)
+Inf values: 0 (0.00%)
+
+Elements with rtol <= 1e-05: 58026 (0.07%)
+Elements with 1e-05 < rtol <= 1e-04: 0 (0.00%)
+Elements with 1e-04 < rtol <= 1e-03: 0 (0.00%)
+Elements with 1e-03 < rtol <= 1e-02: 148676 (0.18%)
+Elements with 1e-02 < rtol <= 5e-02: 849637 (1.01%)
+Elements with 5e-02 < rtol <= 1e-01: 1113026 (1.33%)
+Elements with rtol > 1e-01: 81716715 (97.41%)
+
+
+Fstate's Relative diffs:
+Maximum relative difference:
+Position: 2017
+Value: 2.000000e+00
+Actual value: -0.00677490234375
+Expected value: 0.006744384765625
+NaN values: 0 (0.00%)
+Inf values: 0 (0.00%)
+
+Elements with rtol <= 1e-05: 274 (0.01%)
+Elements with 1e-05 < rtol <= 1e-04: 0 (0.00%)
+Elements with 1e-04 < rtol <= 1e-03: 0 (0.00%)
+Elements with 1e-03 < rtol <= 1e-02: 643 (0.02%)
+Elements with 1e-02 < rtol <= 5e-02: 3971 (0.15%)
+Elements with 5e-02 < rtol <= 1e-01: 5276 (0.20%)
+Elements with rtol > 1e-01: 2611276 (99.61%)
+

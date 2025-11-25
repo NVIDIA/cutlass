@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-cute_ir_dump_patch.py（单环境变量总开关版 - 修复版 v2）
-- 修复了 COMPILE-ONLY 模式下 HardwareInfo 因无法获取 kernel 而崩溃的问题 (IndexError)
-
+cute_ir_dump_patch.py（单环境变量总开关版）
 - 只有一个环境变量：CUTE_DSL_ON
   * 未开启时：仍可通过 `python -m cute_ir_dump_patch your_script.py ...` 运行包装脚本，
     但不会启用"只编译/跳驱动/NOOP launch"这些强力补丁。
@@ -25,13 +23,10 @@ import os
 import re
 import atexit
 import sys
-import shlex
 import runpy
 import tempfile
-import datetime as dt
 from pathlib import Path
 from contextlib import contextmanager
-from collections import Counter
 
 # 单一总开关
 _ENV_ON = str(os.getenv("CUTE_DSL_ON", "")).strip().lower() not in ("", "0", "false", "no")
@@ -107,8 +102,7 @@ def _ensure_dump_dir():
 class Tee:
     def __init__(self, *streams): self.streams = streams
     def write(self, data):
-        for s in self.streams:
-            s.write(data); s.flush()
+        for s in self.streams: s.write(data)
     def flush(self):
         for s in self.streams: s.flush()
 
@@ -127,10 +121,11 @@ class SplitStdoutTee:
 
     def _ensure_mlir_open(self):
         if self.mlir_f is None:
-            self.mlir_f = open(self.mlir_path, "w", buffering=1)
+            self.mlir_f = open(self.mlir_path, "w")  # Default buffering
 
     def write(self, data):
-        self.console.write(data); self.console.flush()
+        # Removed aggressive flush() for performance
+        self.console.write(data)
         self.buf += data
         while True:
             if not self.capturing:
@@ -138,13 +133,13 @@ class SplitStdoutTee:
                 if idx == -1:
                     safe_len = max(0, len(self.buf) - self._safe_tail_keep_normal)
                     if safe_len > 0:
-                        self.out.write(self.buf[:safe_len]); self.out.flush()
+                        self.out.write(self.buf[:safe_len])
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     pre = self.buf[:idx]
                     if pre:
-                        self.out.write(pre); self.out.flush()
+                        self.out.write(pre)
                     self.buf = self.buf[idx + len(self.start):]
                     self.capturing = True
                     self._ensure_mlir_open()
@@ -154,32 +149,34 @@ class SplitStdoutTee:
                     safe_len = max(0, len(self.buf) - self._safe_tail_keep_capture)
                     if safe_len > 0:
                         if self.mlir_f:
-                            self.mlir_f.write(self.buf[:safe_len]); self.mlir_f.flush()
+                            self.mlir_f.write(self.buf[:safe_len])
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     seg = self.buf[:idx2]
                     if seg and self.mlir_f:
-                        self.mlir_f.write(seg); self.mlir_f.flush()
+                        self.mlir_f.write(seg)
                     self.buf = self.buf[idx2 + len(self.end):]
                     self.capturing = False
         return len(data)
 
     def flush(self):
-        self.console.flush(); self.out.flush()
+        self.console.flush()
+        self.out.flush()
         if self.mlir_f: self.mlir_f.flush()
 
     def drain(self):
         if not self.buf: return
         if self.capturing:
             self._ensure_mlir_open()
-            if self.mlir_f: self.mlir_f.write(self.buf); self.mlir_f.flush()
+            if self.mlir_f: self.mlir_f.write(self.buf)
         else:
-            self.out.write(self.buf); self.out.flush()
+            self.out.write(self.buf)
         self.buf = ""
 
     def close(self):
         self.drain()
+        self.flush()
         try:
             if self.mlir_f: self.mlir_f.close()
         except Exception:
@@ -201,7 +198,8 @@ def redirect_fds(stdout_path=None, stderr_path=None):
     finally:
         _os.dup2(old_out, 1); _os.dup2(old_err, 2)
         _os.close(old_out); _os.close(old_err)
-        f_out and f_out.close(); f_err and f_err.close()
+        if f_out: f_out.close()
+        if f_err: f_err.close()
 
 def _op_to_text(module_or_op) -> str:
     op = getattr(module_or_op, "operation", module_or_op)
@@ -214,7 +212,7 @@ def _save_text(tag: str, content: str, suffix="txt") -> str:
     _ensure_dump_dir()
     name = f"{RUN_TAG}_{tag}.{suffix}"
     fn = DUMP_DIR / name
-    fn.write_text(content)
+    fn.write_text(content, encoding='utf-8')
     print(f"[DUMP] {tag} -> {fn} ({content.count(os.linesep)+1} lines)")
     return str(fn)
 
@@ -222,37 +220,33 @@ def _save_ir(tag, module_or_op) -> str:
     return _save_text(tag, _op_to_text(module_or_op), "mlir")
 
 def _split_pass_text_to_files(text: str) -> list[str]:
-    lines = text.splitlines()
-    re_marker = re.compile(
-        r"""^\s*//\s*-{2,}\s*//\s*IR\s+Dump\s+After\s+([^(]+?)\s*\(([^)]*)\)\s*//\s*-{2,}\s*//\s*$"""
+    # Simplified and optimized using regex split instead of line-by-line iteration
+    if not text.strip():
+        return []
+
+    # Matches markers: //----- // IR Dump After <name> (<arg>) //----- //
+    # Captures: 1=name, 2=arg
+    pat = re.compile(
+        r"^\s*//\s*-{2,}\s*//\s*IR\s+Dump\s+After\s+([^(]+?)\s*\(([^)]*)\)\s*//\s*-{2,}\s*//\s*$",
+        re.MULTILINE
     )
-    sections, cur_name, buf = [], None, []
-
-    def flush():
-        nonlocal buf, cur_name
-        if cur_name and buf:
-            mlir_txt = "\n".join(buf).strip() + "\n"
-            sections.append((cur_name, mlir_txt))
-        buf = []
-
-    for line in lines:
-        m = re_marker.match(line)
-        if m:
-            flush()
-            cur_name = m.group(1).strip()
-            continue
-        if cur_name is not None:
-            buf.append(line)
-    flush()
-
+    parts = pat.split(text)
+    
+    # parts format: [pre_text, name1, arg1, content1, name2, arg2, content2, ...]
     out_files = []
-    for idx, (pretty_name, mlir_txt) in enumerate(sections, start=1):
-        tag = f"{idx:03d}_{_sanitize_for_fs(pretty_name)}"
-        out_files.append(_save_text(tag, mlir_txt, "mlir"))
-
-    if not out_files and text.strip():
+    if len(parts) < 4:
         out_files.append(_save_text("pass_dump_unparsed", text, "txt"))
         print("[WARN] per-pass markers not detected; wrote raw dump as TXT.")
+    else:
+        for i in range(1, len(parts), 3):
+            pass_name = parts[i].strip()
+            # parts[i+1] is arg, currently unused
+            content = parts[i+2].strip() + "\n"
+            
+            idx = (i // 3) + 1
+            tag = f"{idx:03d}_{_sanitize_for_fs(pass_name)}"
+            out_files.append(_save_text(tag, content, "mlir"))
+            
     print(f"[DUMP] per-pass IR split -> {len(out_files)} files")
     return out_files
 
@@ -261,42 +255,36 @@ def _split_pass_text_to_files(text: str) -> list[str]:
 # -------------------------
 class _DummyJIT:
     def __getattr__(self, name):
-        def _noop(*args, **kwargs):
-            print(f"[NOEXEC] {name} called in COMPILE-ONLY mode; ignored.")
-            return None
-        return _noop
+        return lambda *a, **kw: print(f"[NOEXEC] {name} called in COMPILE-ONLY mode; ignored.")
 
 # -------------------------
 # 只编译模式：跳过架构兼容性检查
 # -------------------------
-def _checkCudaErrors_compile_only(result):
-    if isinstance(result, (tuple, list)) and len(result) > 0:
-        first = result[0]
-    else:
-        first = result
-
-    error_code = getattr(first, "value", first)
-
-    if error_code == 209: # CUDA_ERROR_NO_BINARY_FOR_GPU
-        print("[COMPILE-ONLY] Ignoring CUDA_ERROR_NO_BINARY_FOR_GPU (arch mismatch) in compile-only mode")
-        if isinstance(result, (tuple, list)):
-            if len(result) <= 1: return None
-            elif len(result) == 2: return result[1]
-            else: return result[1:]
-        return None
-
-    orig = getattr(_patch_cuda_runtime_for_compile_only, "_original_checkCudaErrors", None)
-    if orig is not None:
-        return orig(result)
-
-    if error_code not in (0, None):
-        raise RuntimeError(f"CUDA error code {error_code}")
-    
+def _get_result_payload(result):
+    """Helper to extract payload from potential (status, payload) tuple"""
     if isinstance(result, (tuple, list)):
         if len(result) <= 1: return None
         elif len(result) == 2: return result[1]
         else: return result[1:]
     return None
+
+def _checkCudaErrors_compile_only(result):
+    # Handle specific error code extraction if it's an object with .value
+    first = result[0] if isinstance(result, (tuple, list)) and len(result) > 0 else result
+    error_code = getattr(first, "value", first)
+
+    if error_code == 209: # CUDA_ERROR_NO_BINARY_FOR_GPU
+        print("[COMPILE-ONLY] Ignoring CUDA_ERROR_NO_BINARY_FOR_GPU (arch mismatch) in compile-only mode")
+        return _get_result_payload(result)
+
+    orig = getattr(_patch_cuda_runtime_for_compile_only, "_original_checkCudaErrors", None)
+    if orig:
+        return orig(result)
+
+    if error_code not in (0, None):
+        raise RuntimeError(f"CUDA error code {error_code}")
+    
+    return _get_result_payload(result)
 
 def _load_kernels_from_ir_module_compile_only(module, kernel_info):
     print(f"[COMPILE-ONLY] Skipping CUDA kernel loading (compile-only mode, {len(kernel_info) if kernel_info else 0} kernels)")
@@ -308,7 +296,7 @@ def _patch_cuda_runtime_for_compile_only():
         import cutlass.base_dsl.runtime.cuda as _cuda_rt
         import cutlass.base_dsl.jit_executor as _jit_exec
     except Exception as e:
-        print(f"[WARN] import cutlass modules for compile-only patch failed: {repr(e)}")
+        print(f"[WARN] import cutlass modules for compile-only patch failed: {e}")
         return
     
     if not hasattr(_patch_cuda_runtime_for_compile_only, "_patched"):
@@ -319,10 +307,6 @@ def _patch_cuda_runtime_for_compile_only():
         print("[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)")
 
 def _patch_hardware_info_for_compile_only():
-    """
-    Mock HardwareInfo.get_max_active_clusters to avoid IndexError when 
-    accessing empty kernel list in COMPILE-ONLY mode.
-    """
     if not _ENV_ON: return
     try:
         import cutlass.utils.hardware_info as _hwi
@@ -330,12 +314,9 @@ def _patch_hardware_info_for_compile_only():
         print("[WARN] Could not import cutlass.utils.hardware_info to patch occupancy check.")
         return
 
-    def _mock_get_max_active_clusters(self, *args, **kwargs):
-        print("[COMPILE-ONLY] Mocking HardwareInfo.get_max_active_clusters -> 1 (skipping occupancy check)")
-        return 1
-
     if hasattr(_hwi, "HardwareInfo"):
-        _hwi.HardwareInfo.get_max_active_clusters = _mock_get_max_active_clusters
+        # Mock get_max_active_clusters to always return 1
+        _hwi.HardwareInfo.get_max_active_clusters = lambda self, *args, **kwargs: 1
         print("[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode")
 
 # -------------------------
@@ -344,46 +325,57 @@ def _patch_hardware_info_for_compile_only():
 def compile_and_dump(self, module, pipeline, *args, **kwargs):
     print("[PATCH] hit Compiler.compile")
     _save_ir("0_", module)
+    
     pm = self.passmanager.PassManager.parse(pipeline)
     
-    try: pm.enable_ir_printing(print_after_only=True)
-    except TypeError:
-        try: pm.enable_ir_printing()
+    # Try various methods to enable IR printing
+    for method in ["enable_ir_printing", "print_ir_after_all"]:
+        try:
+            attr = getattr(pm, method)
+            # Try calling with print_after_only=True if it's enable_ir_printing
+            if method == "enable_ir_printing":
+                try: attr(print_after_only=True)
+                except TypeError: attr()
+            else:
+                attr(True)
+            break
         except Exception:
-            try: pm.print_ir_after_all(True)
-            except Exception: pass
+            continue
 
     tmp_file = None
     text = ""
     try:
         _ensure_dump_dir()
+        # Use default temp file handling
         with tempfile.NamedTemporaryFile(prefix=f"{RUN_TAG}_pass_", suffix=".tmp", dir=str(DUMP_DIR), delete=False) as tf:
             tmp_file = tf.name
+        
         with redirect_fds(stderr_path=tmp_file):
             pm.enable_verifier(kwargs.get("enable_verifier", False))
             pm.run(module.operation)
+            
         try: text = Path(tmp_file).read_text(errors="ignore")
         except Exception: pass
     finally:
         if tmp_file: Path(tmp_file).unlink(missing_ok=True)
 
     try: _split_pass_text_to_files(text)
-    except Exception as _e: print("[WARN] split per-pass text failed:", repr(_e))
+    except Exception as _e: print(f"[WARN] split per-pass text failed: {_e}")
 
     if _ENV_ON:
         print("[INFO] COMPILE-ONLY mode: skip JIT & execution completely.")
         return _DummyJIT()
 
     try:
-        ret = self.jit(module, opt_level=kwargs.get("opt_level", 2), shared_libs=kwargs.get("shared_libs", ()))
+        return self.jit(module, opt_level=kwargs.get("opt_level", 2), shared_libs=kwargs.get("shared_libs", ()))
     except Exception as e:
-        print("[ERROR] compile/jit failed:", repr(e))
+        print(f"[ERROR] compile/jit failed: {e}")
         raise
-    return ret
 
 def _patch_compiler_compile():
     try: import cutlass.base_dsl.compiler as _cbc
-    except Exception as e: print("[WARN] import cutlass.base_dsl.compiler failed:", repr(e)); return
+    except Exception as e: print(f"[WARN] import cutlass.base_dsl.compiler failed: {e}"); return
+    
     if getattr(_patch_compiler_compile, "_installed", False): return
     _cbc.Compiler.compile = compile_and_dump
     _patch_compiler_compile._installed = True
@@ -406,8 +398,10 @@ def install(run_tag: str | None = None):
     _SYS_STDOUT_ORIG, _SYS_STDERR_ORIG = sys.stdout, sys.stderr
     _STD_LOG_PATH = DUMP_DIR / f"{RUN_TAG}_stdout.log"
     _ERR_LOG_PATH = DUMP_DIR / f"{RUN_TAG}_stderr.log"
-    _STD_LOG_F = open(_STD_LOG_PATH, "w", buffering=1)
-    _ERR_LOG_F = open(_ERR_LOG_PATH, "w", buffering=1)
+    
+    # Use default buffering for performance (not 1=line buffered)
+    _STD_LOG_F = open(_STD_LOG_PATH, "w")
+    _ERR_LOG_F = open(_ERR_LOG_PATH, "w")
 
     mlir_out_path = DUMP_DIR / _stdout_ir_mlir_filename()
     _STD_SPLIT_TEE = SplitStdoutTee(_SYS_STDOUT_ORIG, _STD_LOG_F, mlir_out_path)
@@ -421,7 +415,7 @@ def install(run_tag: str | None = None):
 
     _patch_compiler_compile()
     _patch_cuda_runtime_for_compile_only()
-    _patch_hardware_info_for_compile_only() # <--- Added this
+    _patch_hardware_info_for_compile_only()
 
     _INSTALLED = True
     print("[INFO] cute_ir_dump_patch installed.")
@@ -448,26 +442,21 @@ def _finalize_report():
     try:
         if _STD_SPLIT_TEE:
             _STD_SPLIT_TEE.flush()
-            # 这里的 drain 是为了把最后残留在 buffer 里的 IR 片段写进文件
             _STD_SPLIT_TEE.drain()
         
         if _STD_LOG_F: _STD_LOG_F.flush()
         if _ERR_LOG_F: _ERR_LOG_F.flush()
         
-        # 刷新原生流
         if _SYS_STDOUT_ORIG: _SYS_STDOUT_ORIG.flush()
         if _SYS_STDERR_ORIG: _SYS_STDERR_ORIG.flush()
-        
     except Exception:
         pass
 
-    # 2. 只有在非 COMPILE-ONLY 模式下，才尝试还原 stdout (为了交互式环境等)
-    # 在 COMPILE-ONLY 下，我们不需要还原，因为马上就要核平退出了
+    # 2. 只有在非 COMPILE-ONLY 模式下，才尝试还原 stdout
     if not _ENV_ON:
         try:
             if _SYS_STDOUT_ORIG: sys.stdout = _SYS_STDOUT_ORIG
             if _SYS_STDERR_ORIG: sys.stderr = _SYS_STDERR_ORIG
-            # 只有正常模式才关闭文件，Compile 模式下不关，交给 OS
             if _STD_SPLIT_TEE: _STD_SPLIT_TEE.close()
             if _STD_LOG_F: _STD_LOG_F.close()
             if _ERR_LOG_F: _ERR_LOG_F.close()
@@ -475,10 +464,7 @@ def _finalize_report():
             pass
 
     # 3. [核选项] COMPILE-ONLY 模式下，直接调用 os._exit(0)
-    # 这会立即终止进程，跳过 Python 的垃圾回收和 C++ 的静态析构。
-    # 这是防止 Segmentation Fault 的唯一有效手段。
     if _ENV_ON:
-        # print("[INFO] COMPILE-ONLY finished. Force exiting.")
         os._exit(0)
 
 if __name__ == "__main__":
@@ -486,4 +472,4 @@ if __name__ == "__main__":
 
 if _ENV_ON:
     try: install()
-    except Exception as e: print("[WARN] AUTOINSTALL failed:", repr(e))
+    except Exception as e: print(f"[WARN] AUTOINSTALL failed: {e}")
