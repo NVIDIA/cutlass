@@ -1,0 +1,82 @@
+[INFO] Run tag: mla
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running Blackwell MLA test with:
+  batch_size: 1
+  seq_len: 128
+  num_heads: 128
+  latent_dim: 512
+  rope_dim: 64
+  in_dtype: Float8E4M3FN
+  out_dtype: Float16
+  acc_dtype: Float32
+  mma_qk_tiler_mn: (128, 128)
+  mma_pv_tiler_mn: (128, 256)
+  split_kv: -1
+  is_persistent: False
+  is_cpasync: False
+  is_var_seq: False
+  is_var_split_kv: False
+  use_page_table: False
+  page_size: 128
+  softmax_scale: 1.0
+  output_scale: 1.0
+  tolerance: 0.01
+  warmup_iterations: 0
+  iterations: 1
+  skip_ref_check: False
+  use_cold_l2: False
+[COMPILE-ONLY] Mocking HardwareInfo.get_max_active_clusters -> 1 (skipping occupancy check)
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_0_.mlir (406 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_001_CuteRemoveStaticArgs.mlir (408 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_002_MaterializeTmaMulticast.mlir (408 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_003_SoftwarePipelinePass.mlir (408 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_004_CuteDesugar.mlir (547 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_005_CuteExpandOps.mlir (615 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_006_CuteFoldStatic.mlir (292 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_007_InsertRangeInformation.mlir (292 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_008_Canonicalizer.mlir (191 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_009_CSE.mlir (185 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_010_LoopInvariantCodeMotion.mlir (185 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_011_LoopStrengthReductionPass.mlir (185 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_012_ConvertVectorToSCF.mlir (185 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_013_ConvertCuteTypesInScfOps.mlir (185 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_014_SCFToControlFlow.mlir (199 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_015_ArithExpandOpsPass.mlir (253 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_016_ConvertMathToFuncs.mlir (253 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_017_GpuLaunchSinkIndexComputations.mlir (253 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_018_ConvertToLLVMPass.mlir (453 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_019_ReconcileUnrealizedCasts.mlir (433 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_020_GpuKernelOutlining.mlir (433 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_021_SCFToControlFlow.mlir (433 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_022_ReconcileUnrealizedCasts.mlir (433 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_023_ConvertToLLVMPass.mlir (433 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_024_Canonicalizer.mlir (279 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_025_CSE.mlir (276 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_026_ConvertVectorToLLVMPass.mlir (276 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_027_ConvertNVVMToLLVMPass.mlir (276 lines)
+[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_028_GpuNVVMAttachTarget.mlir (276 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_029_FinalizeMemRefToLLVMConversionPass.mlir (276 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_030_ExpandStridedMetadata.mlir (276 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_031_ArithToLLVMConversionPass.mlir (276 lines)
+[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_032_StripDebugInfo.mlir (145 lines)
+[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_033_ConvertFastmathOps.mlir (145 lines)
+[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_034_ConvertGpuOpsToNVVMOps.mlir (145 lines)
+[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_035_StoreGpuLaunchAttribute.mlir (277 lines)
+[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_036_GpuToLLVMConversionPass.mlir (269 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_037_StoreGpuLaunchAttribute.mlir (268 lines)
+[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_038_ConvertMathToLLVMPass.mlir (268 lines)
+[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_039_Canonicalizer.mlir (268 lines)
+[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_040_CSE.mlir (268 lines)
+[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_041_ReconcileUnrealizedCasts.mlir (268 lines)
+[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_042_CutlassModuleToBinaryPass.mlir (123 lines)
+[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mla/mla_043_ExternalKernelForGpuLaunchPass.mlir (181 lines)
+[DUMP] per-pass IR split -> 43 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+[COMPILE-ONLY] Skipping CUDA kern
