@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py", line 527, in <module>
+    run_dense_gemm(
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py", line 493, in run_dense_gemm
+    torch.testing.assert_close(
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1519, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 67108864 / 67108864 (100.0%)
+Greatest absolute difference: 2786.0 at index (612, 1155) (up to 0.1 allowed)
+Greatest relative difference: 1.0009765625 at index (0, 1) (up to 1e-05 allowed)
