@@ -303,6 +303,9 @@ struct IntelXeGeneric {
   static constexpr int SubgroupSize = 16;
 };
 
+struct IntelXeGenericGroup {
+  static constexpr int SubgroupSize = 16;
+};
 // Legacy epilogues.
 struct IntelXeXMX16 {
   static constexpr int SubgroupSize = 16;

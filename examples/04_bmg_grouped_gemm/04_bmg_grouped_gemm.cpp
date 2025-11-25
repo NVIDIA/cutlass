@@ -578,7 +578,7 @@ int main(int argc, const char** argv)
   constexpr int PipelineStages = 2;
   // Dispatch to grouped gemm algorithm
   using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1StagedGroup<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16Group;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGenericGroup;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
@@ -587,15 +587,16 @@ int main(int argc, const char** argv)
           decltype(tile_shape(TiledMma()))>;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
+          TiledMma,
           TileShape,
           ElementAccumulator,
           cutlass::gemm::TagToStrideC_t<LayoutC*>,
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD*>,
           FusionCallBacks,
-          XE_2D_U32x8x16_LD_N,
+          void,
           void, void,
-          XE_2D_U32x8x16_ST_N,
+          void,
           void, void>;
 
 // Mainloop
