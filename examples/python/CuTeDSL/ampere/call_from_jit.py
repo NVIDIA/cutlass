@@ -58,6 +58,10 @@ Requirements:
 
 import os
 import sys
+sys.path.append("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/dump")
+
+import cute_ir_dump_patch as cid
+cid.install()
 from typing import Type, Tuple
 
 import torch

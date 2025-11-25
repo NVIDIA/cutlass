@@ -1,0 +1,110 @@
+[INFO] Run tag: dynamic_smem_size
+[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_stdout.log
+[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_stderr.log
+[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] cute_ir_dump_patch installed.
+Launching kernel with auto smem size. (launch config `smem=None`)
+Kernel recorded internal smem usage: 2368
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_0_.mlir (69 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_001_CuteRemoveStaticArgs.mlir (69 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_002_MaterializeTmaMulticast.mlir (69 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_003_SoftwarePipelinePass.mlir (69 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_004_CuteDesugar.mlir (69 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_005_CuteExpandOps.mlir (65 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_006_CuteFoldStatic.mlir (15 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_007_InsertRangeInformation.mlir (15 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_008_Canonicalizer.mlir (14 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_009_CSE.mlir (14 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_010_LoopInvariantCodeMotion.mlir (14 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_011_LoopStrengthReductionPass.mlir (14 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_012_ConvertVectorToSCF.mlir (14 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_013_ConvertCuteTypesInScfOps.mlir (14 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_014_SCFToControlFlow.mlir (14 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_015_ArithExpandOpsPass.mlir (14 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_016_ConvertMathToFuncs.mlir (14 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_017_GpuLaunchSinkIndexComputations.mlir (14 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_018_ConvertToLLVMPass.mlir (19 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_019_ReconcileUnrealizedCasts.mlir (19 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_020_GpuKernelOutlining.mlir (19 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_021_SCFToControlFlow.mlir (19 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_022_ReconcileUnrealizedCasts.mlir (19 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_023_ConvertToLLVMPass.mlir (19 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_024_Canonicalizer.mlir (19 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_025_CSE.mlir (19 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_026_ConvertVectorToLLVMPass.mlir (19 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_027_ConvertNVVMToLLVMPass.mlir (19 lines)
+[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_028_GpuNVVMAttachTarget.mlir (19 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_029_FinalizeMemRefToLLVMConversionPass.mlir (19 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_030_ExpandStridedMetadata.mlir (19 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_031_ArithToLLVMConversionPass.mlir (19 lines)
+[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_032_StripDebugInfo.mlir (6 lines)
+[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_033_ConvertFastmathOps.mlir (6 lines)
+[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_034_ConvertGpuOpsToNVVMOps.mlir (6 lines)
+[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_035_StoreGpuLaunchAttribute.mlir (20 lines)
+[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_036_GpuToLLVMConversionPass.mlir (19 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_037_StoreGpuLaunchAttribute.mlir (18 lines)
+[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_038_ConvertMathToLLVMPass.mlir (18 lines)
+[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_039_Canonicalizer.mlir (18 lines)
+[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_040_CSE.mlir (18 lines)
+[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_041_ReconcileUnrealizedCasts.mlir (18 lines)
+[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_042_CutlassModuleToBinaryPass.mlir (14 lines)
+[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_043_ExternalKernelForGpuLaunchPass.mlir (42 lines)
+[DUMP] per-pass IR split -> 43 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+Kernel recorded internal smem usage: 0
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_0_.mlir (22 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_001_CuteRemoveStaticArgs.mlir (22 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_002_MaterializeTmaMulticast.mlir (22 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_003_SoftwarePipelinePass.mlir (22 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_004_CuteDesugar.mlir (22 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_005_CuteExpandOps.mlir (22 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_006_CuteFoldStatic.mlir (20 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_007_InsertRangeInformation.mlir (20 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_008_Canonicalizer.mlir (20 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_009_CSE.mlir (20 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_010_LoopInvariantCodeMotion.mlir (20 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_011_LoopStrengthReductionPass.mlir (20 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_012_ConvertVectorToSCF.mlir (20 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_013_ConvertCuteTypesInScfOps.mlir (20 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_014_SCFToControlFlow.mlir (22 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_015_ArithExpandOpsPass.mlir (22 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_016_ConvertMathToFuncs.mlir (22 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_017_GpuLaunchSinkIndexComputations.mlir (22 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_018_ConvertToLLVMPass.mlir (27 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_019_ReconcileUnrealizedCasts.mlir (27 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_020_GpuKernelOutlining.mlir (27 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_021_SCFToControlFlow.mlir (27 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_022_ReconcileUnrealizedCasts.mlir (27 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_023_ConvertToLLVMPass.mlir (27 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_024_Canonicalizer.mlir (27 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_025_CSE.mlir (27 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_026_ConvertVectorToLLVMPass.mlir (27 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_027_ConvertNVVMToLLVMPass.mlir (27 lines)
+[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_028_GpuNVVMAttachTarget.mlir (27 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_029_FinalizeMemRefToLLVMConversionPass.mlir (27 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_030_ExpandStridedMetadata.mlir (27 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_031_ArithToLLVMConversionPass.mlir (27 lines)
+[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_032_StripDebugInfo.mlir (14 lines)
+[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_033_ConvertFastmathOps.mlir (14 lines)
+[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_034_ConvertGpuOpsToNVVMOps.mlir (20 lines)
+[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_035_StoreGpuLaunchAttribute.mlir (34 lines)
+[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_036_GpuToLLVMConversionPass.mlir (33 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_037_StoreGpuLaunchAttribute.mlir (32 lines)
+[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_038_ConvertMathToLLVMPass.mlir (32 lines)
+[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_039_Canonicalizer.mlir (32 lines)
+[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_040_CSE.mlir (32 lines)
+[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_041_ReconcileUnrealizedCasts.mlir (32 lines)
+[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_042_CutlassModuleToBinaryPass.mlir (14 lines)
+[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/dynamic_smem_size/dynamic_smem_size_043_ExternalKernelForGpuLaunchPass.mlir (42 lines)
+[DUMP] per-pass IR split -> 43 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+PASS

@@ -1,0 +1,68 @@
+[INFO] Run tag: dense_gemm_software_pipeline
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running Blackwell Software Pipeline Dense GEMM test with:
+mnkl: (256, 256, 512, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_0_.mlir (1728 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_001_CuteRemoveStaticArgs.mlir (1731 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_002_MaterializeTmaMulticast.mlir (1731 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_003_SoftwarePipelinePass.mlir (1689 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_004_CuteDesugar.mlir (2074 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_005_CuteExpandOps.mlir (3875 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_006_CuteFoldStatic.mlir (2614 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_007_InsertRangeInformation.mlir (2614 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_008_Canonicalizer.mlir (1870 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_009_CSE.mlir (1702 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_010_LoopInvariantCodeMotion.mlir (1702 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_011_LoopStrengthReductionPass.mlir (1702 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_012_ConvertVectorToSCF.mlir (1702 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_013_ConvertCuteTypesInScfOps.mlir (1705 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_014_SCFToControlFlow.mlir (1835 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_015_ArithExpandOpsPass.mlir (1990 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_016_ConvertMathToFuncs.mlir (1990 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_017_GpuLaunchSinkIndexComputations.mlir (1990 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_018_ConvertToLLVMPass.mlir (2899 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_019_ReconcileUnrealizedCasts.mlir (2330 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_020_GpuKernelOutlining.mlir (2330 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_021_SCFToControlFlow.mlir (2340 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_022_ReconcileUnrealizedCasts.mlir (2340 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_023_ConvertToLLVMPass.mlir (2340 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_024_Canonicalizer.mlir (1494 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_025_CSE.mlir (1486 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_026_ConvertVectorToLLVMPass.mlir (1482 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_027_ConvertNVVMToLLVMPass.mlir (1484 lines)
+[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_028_GpuNVVMAttachTarget.mlir (1484 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_029_FinalizeMemRefToLLVMConversionPass.mlir (1484 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_030_ExpandStridedMetadata.mlir (1482 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_031_ArithToLLVMConversionPass.mlir (1482 lines)
+[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_032_StripDebugInfo.mlir (1159 lines)
+[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_033_ConvertFastmathOps.mlir (1159 lines)
+[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_034_ConvertGpuOpsToNVVMOps.mlir (1159 lines)
+[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_035_StoreGpuLaunchAttribute.mlir (1483 lines)
+[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_036_GpuToLLVMConversionPass.mlir (1479 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_037_StoreGpuLaunchAttribute.mlir (1478 lines)
+[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_038_ConvertMathToLLVMPass.mlir (1478 lines)
+[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_039_Canonicalizer.mlir (1470 lines)
+[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_040_CSE.mlir (1470 lines)
+[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_041_ReconcileUnrealizedCasts.mlir (1470 lines)
+[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_042_CutlassModuleToBinaryPass.mlir (309 lines)
+[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_software_pipeline/dense_gemm_software_pipeline_043_ExternalKernelForGpuLaunchPass.mlir (419 lines)
+[DUMP] per-pass IR split -> 43 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+[COMPILE-ONLY] Skipping CUDA kern
