@@ -26,9 +26,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import sys
+sys.path.append("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/dump")
 
 import os
-import sys
+import cute_ir_dump_patch as cid
+cid.install()
 import argparse
 from typing import List, Type, Tuple, Optional
 import cuda.bindings.driver as cuda
