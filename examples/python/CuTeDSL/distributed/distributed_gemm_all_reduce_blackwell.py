@@ -1102,9 +1102,7 @@ class PersistentDenseGemmKernel:
                 # we want 128bit ld/st for better performance
                 atom_val = 128 // c_mc.element_type.width
                 atom_thr_n = self.mma_tiler[1] // atom_val
-                atom_thr_m = len(self.all_reduce_warp_id) * (
-                    cute.arch.WARP_SIZE // atom_thr_n
-                )
+                atom_thr_m = len(self.all_reduce_warp_id) * cute.arch.WARP_SIZE // atom_thr_n
                 thr_layout = cute.make_layout(
                     (atom_thr_m, atom_thr_n), stride=(atom_thr_n, 1)
                 )
@@ -1119,6 +1117,8 @@ class PersistentDenseGemmKernel:
                 thr_copy_fake = tiled_copy_fake.get_slice(
                     tidx - self.all_reduce_warp_id[0] * 32
                 )
+                # predicate tensor
+                idC = cute.make_identity_tensor(c_mc.shape)
 
                 while work_tile.is_valid_tile:
                     cur_tile_coord = work_tile.tile_idx
@@ -1151,8 +1151,14 @@ class PersistentDenseGemmKernel:
                         cute.slice_(self.mma_tiler, (None, None, 0)),
                         (None, None, None),
                     )
+                    cC = cute.local_tile(
+                        idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
+                    )
+                    
                     tCgC_mc = thr_mma.partition_C(gC_mc)
+                    tCpC = thr_mma.partition_C(cC)
                     tCgC_mc_slice = tCgC_mc[((None, None), 0, 0, *mma_tile_coord_mnl)]
+                    tCpC_slice = tCpC[((None, None), 0, 0, *mma_tile_coord_mnl)]
 
                     # partition based on the number of GPUs
                     cta_mma_tile_m = self.mma_tiler[0] // cute.size(
@@ -1162,38 +1168,42 @@ class PersistentDenseGemmKernel:
                     tCgC_mc_slice_partitioned = cute.zipped_divide(
                         tCgC_mc_slice, (m_local_rank, self.mma_tiler[1])
                     )
+                    tCpC_slice_partitioned = cute.zipped_divide(tCpC_slice, (m_local_rank, self.mma_tiler[1]))
                     tCgC_mc_local_rank = cute.slice_(
                         tCgC_mc_slice_partitioned, ((None, None), (rank_id, 0))
                     )
+                    tCpC_local_rank = cute.slice_(tCpC_slice_partitioned, ((None, None), (rank_id, 0)))
 
                     # partition at thread level
                     frgC_mc = thr_copy_fake.partition_S(tCgC_mc_local_rank)
+                    frpC = thr_copy_fake.partition_S(tCpC_local_rank)
                     atom, loop_m, loop_n = frgC_mc.shape
                     for i in cutlass.range_constexpr(loop_m):
                         for j in cutlass.range_constexpr(loop_n):
-                            mc_ptr = frgC_mc[None, i, j].iterator
-                            x, y, z, w = 0, 0, 0, 0
-                            if cutlass.const_expr(self.c_dtype == Float16):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(
-                                    mc_ptr
-                                )
-                            elif cutlass.const_expr(self.c_dtype == Float32):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(
-                                    mc_ptr
-                                )
-                            elif cutlass.const_expr(self.c_dtype == BFloat16):
-                                x, y, z, w = (
-                                    utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
-                                )
-                            elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
-                                x, y, z, w = (
-                                    utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
-                                )
-                            elif cutlass.const_expr(self.c_dtype == Float8E5M2):
-                                x, y, z, w = (
-                                    utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
-                                )
-                            utils.distributed.multimem_st_4xb32(mc_ptr, x, y, z, w)
+                            if cute.elem_less(frpC[0, i, j], c_mc.shape):
+                                mc_ptr = frgC_mc[None, i, j].iterator
+                                x, y, z, w = 0, 0, 0, 0
+                                if cutlass.const_expr(self.c_dtype == Float16):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(
+                                        mc_ptr
+                                    )
+                                elif cutlass.const_expr(self.c_dtype == Float32):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(
+                                        mc_ptr
+                                    )
+                                elif cutlass.const_expr(self.c_dtype == BFloat16):
+                                    x, y, z, w = (
+                                        utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
+                                    )
+                                elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
+                                    x, y, z, w = (
+                                        utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
+                                    )
+                                elif cutlass.const_expr(self.c_dtype == Float8E5M2):
+                                    x, y, z, w = (
+                                        utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
+                                    )
+                                utils.distributed.multimem_st_4xb32(mc_ptr, x, y, z, w)
                     # Advance to next tile
                     tile_sched.advance_to_next_work()
                     work_tile = tile_sched.get_current_work()
@@ -1862,10 +1872,6 @@ class PersistentDenseGemmKernel:
             or not check_contigous_16B_alignment(ab_dtype, b_major == "n", (n, k, l))
             or not check_contigous_16B_alignment(c_dtype, c_major == "m", (m, n, l))
         ):
-            is_valid = False
-
-        # currently only support output tensor that can be divided by 128
-        if m % 128 != 0 and n % 128 != 0:
             is_valid = False
 
         return is_valid

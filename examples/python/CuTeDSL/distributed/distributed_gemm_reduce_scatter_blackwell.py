@@ -84,7 +84,7 @@ This GEMM works as follows:
       or directly store C matrix from registers (RMEM) to global memory (GMEM) without TMA operations.
     - Optionally accept an elementwise lambda function epilogue_op to apply to the output tensor:
       e.g., relu can set epilogue_op = lambda x: cute.where(x > 0, x, cute.full_like(x, 0))
-4. All reduce epilogue:
+4. Reduce scatter epilogue:
     - Load and reduce the 128bit data from all ranks by multimem instructions.
     - Broadcast the reduced data to all ranks by multimem instructions.
     - current implementation only supports two_shot all-reduce which means each rank only computes a portion of 
@@ -106,7 +106,7 @@ Input arguments to this example is same as dense_gemm.py.
       --ab_dtype Float8E4M3FN --c_dtype Float16 --acc_dtype Float32                                                 \
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                            \
       --mnkl 16384,4096,4096,1 --warmup_iterations 3 --iterations 10                                                                               \
-      --use_tma_store --use_2cta_instrs --all_reduce two_shot 
+      --use_tma_store --use_2cta_instrs --reduce_scatter two_shot 
 
 To collect performance with NSYS profiler:
 
@@ -118,7 +118,7 @@ To collect performance with NSYS profiler:
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                              \
       --mnkl 16384,4096,4096,1                                                                                    \
       --use_tma_store --use_2cta_instrs --warmup_iterations 3 --iterations 10                                    \
-      --all_reduce two_shot
+      --reduce_scatter two_shot
 
 
 Constraints are same as dense_gemm_persistent.py:
@@ -133,7 +133,7 @@ Constraints are same as dense_gemm_persistent.py:
   i.e, number of elements is a multiple of 4, 8, and 16 for TFloat32,
   Float16/BFloat16, and Int8/Uint8/Float8, respectively.
 * OOB tiles are not allowed when TMA store is disabled
-* when all_reduce is not "none", M and N must be multiple of 128, world_size must be 8
+* when reduce_scatter, M must be multiple of 128, world_size must be 2, 4, 8
 
 """
 
@@ -152,8 +152,8 @@ class PersistentDenseGemmKernel:
     :type cluster_shape_mn: Tuple[int, int]
     :param use_tma_store: Whether to use Tensor Memory Access (TMA) for storing results
     :type use_tma_store: bool
-    :param all_reduce: All-reduce mode, can be "none", "two_shot"
-    :type all_reduce: str
+    :param reduce_scatter: reduce scatter mode, can be "two_shot"
+    :type reduce_scatter: str
 
     :note: In current version, A and B tensor must have the same data type
         - i.e., Float8E4M3FN for A and Float8E5M2 for B is not supported
@@ -199,7 +199,7 @@ class PersistentDenseGemmKernel:
         mma_tiler_mn: Tuple[int, int],
         cluster_shape_mn: Tuple[int, int],
         use_tma_store: bool,
-        all_reduce="none",
+        reduce_scatter="two_shot",
     ):
         """Initializes the configuration for a Blackwell dense GEMM kernel.
 
@@ -227,8 +227,8 @@ class PersistentDenseGemmKernel:
         :type cluster_shape_mn: Tuple[int, int]
         :param use_tma_store: Use Tensor Memory Access (TMA) or normal store for output C tensor.
         :type use_tma_store: bool
-        :param all_reduce: All-reduce mode, can be "none", "two_shot"
-        :type all_reduce: str
+        :param reduce_scatter: reduce scatter mode, can be "two_shot"
+        :type reduce_scatter: str
         """
 
         self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
@@ -243,7 +243,7 @@ class PersistentDenseGemmKernel:
             tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
         )
 
-        self.all_reduce = all_reduce
+        self.reduce_scatter = reduce_scatter
 
         self.occupancy = 1
         # Set specialized warp ids
@@ -255,31 +255,27 @@ class PersistentDenseGemmKernel:
         )
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.all_reduce_warp_id = ()
-        self.all_reduce = "none"
-        if all_reduce != "none":
-            self.all_reduce = all_reduce
-            self.all_reduce_warp_id = (6, 7, 8, 9)
+        self.reduce_scatter = reduce_scatter
+        self.reduce_scatter_warp_id = (6, 7, 8, 9)
         self.threads_per_cta = 32 * len(
             (
                 self.mma_warp_id,
                 self.tma_warp_id,
                 *self.epilog_warp_id,
-                *self.all_reduce_warp_id,
+                *self.reduce_scatter_warp_id,
             )
         )
         # Set barrier id for cta sync, epilogue sync and tmem ptr sync
         self.cta_sync_bar_id = 0
         self.epilog_sync_bar_id = 1
         self.tmem_ptr_sync_bar_id = 2
-        self.all_reduce_sync_bar_id = 3
+        self.reduce_scatter_sync_bar_id = 3
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
 
         self.num_ranks = 1
         self.rank_id = 0
-        if all_reduce != "none":
-            self.num_ranks = torch.distributed.get_world_size()
-            self.rank_id = torch.distributed.get_rank()
+        self.num_ranks = torch.distributed.get_world_size()
+        self.rank_id = torch.distributed.get_rank()
 
     def is_valid(self):
         mma_m, mma_n = self.mma_tile_shape_mn
@@ -1265,15 +1261,15 @@ class PersistentDenseGemmKernel:
                     acc_pipeline.consumer_release(acc_consumer_state)
                 acc_consumer_state.advance()
 
-                # Allreduce
-                if cutlass.const_expr(self.all_reduce == "two_shot"):
+                # Reduce Scatter
+                if cutlass.const_expr(self.reduce_scatter == "two_shot"):
                     tile_id = Int32(
                         tile_sched._current_work_linear_idx
                         * cute.size(self.cluster_shape_mn) + cute.arch.block_idx_in_cluster()
                     )
                     if warp_idx == self.epilog_warp_id[0]:
                         cute.arch.cp_async_bulk_wait_group(0, read=False)
-                        # System barrier to make sure that data from each GPU is in memory before allreduce
+                        # System barrier to make sure that data from each GPU is in memory before reduce scatter
                         with cute.arch.elect_one():
                             flag = barrier_flag_mc.iterator + tile_id
                             utils.distributed.multimem_red_add1(
@@ -1313,10 +1309,10 @@ class PersistentDenseGemmKernel:
                 c_pipeline.producer_tail()
 
         # ///////////////////////////////////////////////////////////////////////////////
-        #  Allreduce warps
+        #  Reduce Scatter warps
         # ///////////////////////////////////////////////////////////////////////////////
-        if cutlass.const_expr(self.all_reduce == "two_shot"):
-            if warp_idx >= self.all_reduce_warp_id[0]:
+        if cutlass.const_expr(self.reduce_scatter == "two_shot"):
+            if warp_idx >= self.reduce_scatter_warp_id[0]:
                 # ///////////////////////////////////////////////////////////////////////////////
                 # Add persistent tile loop
                 # ///////////////////////////////////////////////////////////////////////////////
@@ -1333,17 +1329,23 @@ class PersistentDenseGemmKernel:
                 # we want 128bit ld/st for better performance
                 atom_val = 128 // c_mc.element_type.width
                 atom_thr_n = self.mma_tiler[1] // atom_val
-                atom_thr_m = len(self.all_reduce_warp_id) * (cute.arch.WARP_SIZE // atom_thr_n)
+                atom_thr_m = len(self.reduce_scatter_warp_id) * cute.arch.WARP_SIZE // atom_thr_n
                 thr_layout = cute.make_layout((atom_thr_m, atom_thr_n), stride=(atom_thr_n, 1))
                 val_layout = cute.make_layout((1, atom_val), stride=(atom_val, 1))
 
                 copy_atom_load = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), c_mc.element_type)
                 tiled_copy_fake = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
-                thr_copy_fake = tiled_copy_fake.get_slice(tidx-self.all_reduce_warp_id[0]*32)
+                thr_copy_fake = tiled_copy_fake.get_slice(tidx-self.reduce_scatter_warp_id[0]*32)
 
+                # predicate tensor
+                idC = cute.make_identity_tensor(c_mc.shape)
+                
                 # partition and slice at tile level
                 gC_mc = cute.local_tile(
                     c_mc, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
+                )
+                cC = cute.local_tile(
+                    idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
                 )
 
                 m_tiles_in_total = gC_mc.shape[2]
@@ -1366,19 +1368,19 @@ class PersistentDenseGemmKernel:
                     if not is_leader_cta:
                         tile_id = tile_id + 1
 
-                    # System barrier to make sure that data from each GPU is in memory before allreduce
+                    # System barrier to make sure that data from each GPU is in memory before Reduce Scatter
                     flag = barrier_flag.iterator + tile_id
                     
-                    if warp_idx == self.all_reduce_warp_id[0]:
+                    if warp_idx == self.reduce_scatter_warp_id[0]:
                         if lane_id == 0:
                             res = 0
                             while res < self.num_ranks:
                                 res = nvvm.load_ext(T.i32(), flag.llvm_ptr, order=MemOrderKind.RELAXED, scope=MemScopeKind.GPU)
                     cute.arch.barrier(
-                        barrier_id=self.all_reduce_sync_bar_id,
-                        number_of_threads=32 * len(self.all_reduce_warp_id),
+                        barrier_id=self.reduce_scatter_sync_bar_id,
+                        number_of_threads=32 * len(self.reduce_scatter_warp_id),
                     )
-                    if warp_idx == self.all_reduce_warp_id[0]:
+                    if warp_idx == self.reduce_scatter_warp_id[0]:
                         if lane_id == 0:
                             res = nvvm.atomicrmw(
                                 T.i32(),
@@ -1392,13 +1394,21 @@ class PersistentDenseGemmKernel:
                             if res == self.num_ranks*2:
                                 nvvm.store_ext(Int32(0), flag.llvm_ptr, order=MemOrderKind.RELAXED, scope=MemScopeKind.SYS)
                     tCgC_mc = thr_mma.partition_C(gC_mc)
+                    tCpC = thr_mma.partition_C(cC)
+
                     tCgC_mc_slice = tCgC_mc[((None, None), 0, 0, *mma_tile_coord_mnl)]
+                    tCpC_slice = tCpC[((None, None), 0, 0, *mma_tile_coord_mnl)]
+
                     cta_mma_tile_m = self.mma_tiler[0] // cute.size(tiled_mma.thr_id.shape)
                     m_local_rank = int(cta_mma_tile_m / self.num_ranks)
                     tCgC_mc_slice_partitioned = cute.zipped_divide(tCgC_mc_slice, (m_local_rank, self.mma_tiler[1]))
+                    tCpC_slice_partitioned = cute.zipped_divide(tCpC_slice, (m_local_rank, self.mma_tiler[1]))
+
                     tCgC_mc_local_rank = cute.slice_(tCgC_mc_slice_partitioned, ((None, None), (chunk_id, 0)))
+                    tCpC_local_rank = cute.slice_(tCpC_slice_partitioned, ((None, None), (chunk_id, 0)))
                     frgC_mc = thr_copy_fake.partition_S(tCgC_mc_local_rank)
-                    
+                    frpC = thr_copy_fake.partition_S(tCpC_local_rank)
+
                     m_idx = gC_mc.shape[0] * mma_tile_coord_mnl[0]
                     m_per_rank = c_mc.shape[0] // self.num_ranks
                     dst_rank_this_tile = m_idx // m_per_rank
@@ -1417,49 +1427,57 @@ class PersistentDenseGemmKernel:
                     frgC_peer = thr_copy_fake.partition_S(tCgC_peer_local_rank)
 
                     atom, loop_m, loop_n = frgC_mc.shape
-                    tmp_results = []
+                    tmp_results = cute.make_rmem_tensor((4, loop_m, loop_n), cutlass.Int32)
+                    local_chunk_lower_bound = (rank_id * m_per_rank, c_mc.shape[1], c_mc.shape[2])
+                    local_chunk_upper_bound = ((rank_id + 1) * m_per_rank, c_mc.shape[1], c_mc.shape[2])
+
                     for i in cutlass.range_constexpr(loop_m):
                         for j in cutlass.range_constexpr(loop_n):
-                            mc_ptr = frgC_mc[None, i, j].iterator
                             x, y, z, w = 0, 0, 0, 0
-                            if cutlass.const_expr(self.c_dtype == Float16):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(mc_ptr)
-                            elif cutlass.const_expr(self.c_dtype == Float32):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(mc_ptr)
-                            elif cutlass.const_expr(self.c_dtype == BFloat16):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
-                            elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
-                            elif cutlass.const_expr(self.c_dtype == Float8E5M2):
-                                x, y, z, w = utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
-                            tmp_results.append((x, y, z, w))
+                            if cute.elem_less(frpC[0, i, j], local_chunk_upper_bound) and not cute.elem_less(frpC[0, i, j], local_chunk_lower_bound): 
+                                    mc_ptr = frgC_mc[None, i, j].iterator
+                                    if cutlass.const_expr(self.c_dtype == Float16):
+                                        x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(mc_ptr)
+                                    elif cutlass.const_expr(self.c_dtype == Float32):
+                                        x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(mc_ptr)
+                                    elif cutlass.const_expr(self.c_dtype == BFloat16):
+                                        x, y, z, w = utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
+                                    elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
+                                        x, y, z, w = utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
+                                    elif cutlass.const_expr(self.c_dtype == Float8E5M2):
+                                        x, y, z, w = utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
+                                    tmp_results[0, i, j] = x
+                                    tmp_results[1, i, j] = y
+                                    tmp_results[2, i, j] = z
+                                    tmp_results[3, i, j] = w
                             
                     for i in cutlass.range_constexpr(loop_m):
                         for j in cutlass.range_constexpr(loop_n):
-                            ptr_int = frgC_peer[None, i, j].iterator.toint().ir_value()
-                            x, y, z, w = tmp_results[i*loop_n + j]
-                            llvm.inline_asm(
-                                T.i32(),
-                                [ptr_int, x, y, z, w],
-                                "st.global.sys.relaxed.v4.f32 [$1], {$2, $3, $4, $5};",
-                                "=r,l,r,r,r,r",
-                                has_side_effects=True,
-                                asm_dialect=0
-                            )
+                            if cute.elem_less(frpC[0, i, j], local_chunk_upper_bound) and not cute.elem_less(frpC[0, i, j], local_chunk_lower_bound):
+                                ptr_int = frgC_peer[None, i, j].iterator.toint().ir_value()
+                                x, y, z, w = tmp_results[0, i, j].ir_value(), tmp_results[1, i, j].ir_value(), tmp_results[2, i, j].ir_value(), tmp_results[3, i, j].ir_value()
+                                llvm.inline_asm(
+                                    T.i32(),
+                                    [ptr_int, x, y, z, w],
+                                    "st.global.sys.relaxed.v4.f32 [$1], {$2, $3, $4, $5};",
+                                    "=r,l,r,r,r,r",
+                                    has_side_effects=True,
+                                    asm_dialect=0
+                                )
 
                     # Advance to next tile
                     tile_sched.advance_to_next_work()
                     work_tile = tile_sched.get_current_work()
 
                 cute.arch.barrier(
-                    barrier_id=self.all_reduce_sync_bar_id,
-                    number_of_threads=32 * len(self.all_reduce_warp_id),
+                    barrier_id=self.reduce_scatter_sync_bar_id,
+                    number_of_threads=32 * len(self.reduce_scatter_warp_id),
                 )
                 # System barrier to make sure all the peer memory transfers are completed.
                 last_flag_idx = cute.size(
                     tile_sched.params.problem_layout_ncluster_mnl
                 ) * cute.size(self.cluster_shape_mn)
-                if warp_idx == self.all_reduce_warp_id[0]:
+                if warp_idx == self.reduce_scatter_warp_id[0]:
                     with cute.arch.elect_one():
                         # Offset to last tile flag idx
                         last_tile_id_linear = cute.size(
@@ -1900,7 +1918,7 @@ class PersistentDenseGemmKernel:
             return False
 
         # check if c_dtype is supported by multimem all-reduce
-        if cutlass.const_expr(self.all_reduce != "none" and c_dtype not in {cutlass.Float16, cutlass.Float32, cutlass.BFloat16, cutlass.Float8E4M3FN, cutlass.Float8E5M2}):
+        if cutlass.const_expr(c_dtype not in {cutlass.Float16, cutlass.Float32, cutlass.BFloat16, cutlass.Float8E4M3FN, cutlass.Float8E5M2}):
             return False
 
         return True
@@ -1986,13 +2004,6 @@ class PersistentDenseGemmKernel:
             or not check_contigous_16B_alignment(c_dtype, c_major == "m", (m, n, l))
         ):
             is_valid = False
-        
-        if (
-            self.all_reduce != "none" 
-            and m % 128 != 0
-            and n % 128 != 0
-        ):
-            is_valid = False
 
         return is_valid
 
@@ -2062,8 +2073,12 @@ class PersistentDenseGemmKernel:
         # Skip invalid epilogue store option
         if not self.is_valid_epilog_store_option(m, n):
             can_implement = False
-        if dist.get_world_size() not in [2, 4, 8] and self.all_reduce != "none":
+        if dist.get_world_size() not in [2, 4, 8]:
             can_implement = False
+        if m % 128 != 0:
+            # cannot support OOB tiles when m is not divisible by 128
+            can_implement = False
+
         return can_implement
 
 
@@ -2096,7 +2111,7 @@ def create_mc_tensor(torch_tensor_cpu, dtype, leading_dim, is_dynamic_layout=Tru
 
 
 def create_tensors(
-    l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype, is_all_reduce=False
+    l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype
 ):
     torch.manual_seed(1111)
 
@@ -2114,13 +2129,9 @@ def create_tensors(
         c_torch_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
     )
 
-    c_tensor_mc = None
-    c_peer_tensors = None
-    c_peer_memrefs = None
-    if is_all_reduce:
-        c_tensor, c_tensor_mc, c_torch_gpu, c_torch_gpu_mc, c_peer_torch_tensors, c_peer_tensors = create_mc_tensor(
-            c_torch_cpu, c_dtype, (1 if c_major == "n" else 0), is_dynamic_layout=True
-        )
+    c_tensor, c_tensor_mc, c_torch_gpu, c_torch_gpu_mc, c_peer_torch_tensors, c_peer_tensors = create_mc_tensor(
+        c_torch_cpu, c_dtype, (1 if c_major == "n" else 0), is_dynamic_layout=True
+    )
 
     return (
         a_tensor,
@@ -2138,7 +2149,7 @@ def create_tensors(
 
 
 def compare(
-    a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance, do_all_reduce=False
+    a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance
 ):
     # Copy gpu result back
     kernel_result = c_torch_gpu.cpu()
@@ -2154,8 +2165,7 @@ def compare(
         ref = ref.to(torch.float16).cuda()
     else:
         ref = ref.cuda()
-    if do_all_reduce:
-        torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
+    torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
     if c_dtype == cutlass.Float8E5M2:
         ref = ref.to(torch.float8_e5m2fnuz)
     elif c_dtype == cutlass.Float8E4M3FN:
@@ -2194,7 +2204,7 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    all_reduce: str = "none",
+    reduce_scatter: str = "two_shot",
     **kwargs,
 ):
     """Execute a persistent batched dense GEMM operation on Blackwell architecture with performance benchmarking.
@@ -2234,8 +2244,8 @@ def run(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
     :type use_cold_l2: bool, optional
-    :param all_reduce: All-reduce mode, can be "none", "two_shot"
-    :type all_reduce: str, optional
+    :param reduce_scatter: reduce scatter mode, can be "two_shot"
+    :type reduce_scatter: str, optional
     :raises RuntimeError: If CUDA GPU is not available
     :raises ValueError: If the configuration is invalid or unsupported by the kernel
     :return: Execution time of the GEMM kernel
@@ -2253,7 +2263,7 @@ def run(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-    print(f"Fused AllReduce Op: {all_reduce}")
+    print(f"Fused Reduce Scatter Op: {reduce_scatter}")
 
     # Unpack parameters
     m, n, k, l = mnkl
@@ -2278,7 +2288,7 @@ def run(
         c_peer_torch_tensors,
         c_peer_tensors,
     ) = create_tensors(
-        l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype, all_reduce != "none"
+        l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype
     )
 
     # Build GEMM object
@@ -2288,7 +2298,7 @@ def run(
         mma_tiler_mn,
         cluster_shape_mn,
         use_tma_store,
-        all_reduce=all_reduce,
+        reduce_scatter=reduce_scatter,
     )
 
     # Check if configuration can be implemented
@@ -2324,59 +2334,47 @@ def run(
         barrier_flag_mc = barrier_flag_mc.mark_layout_dynamic()
 
         return barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc
-    
-    compiled_gemm = None
-    if all_reduce == "none":
-        compiled_gemm = cute.compile(
-            gemm, a_tensor, b_tensor, c_tensor, max_active_clusters, current_stream
-        )
-    else:
-        barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc = create_barrier_flags()
-        compiled_gemm = cute.compile(
-            gemm,
+
+    barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc = create_barrier_flags()
+    compiled_gemm = cute.compile(
+        gemm,
+        a_tensor,
+        b_tensor,
+        c_tensor,
+        max_active_clusters,
+        current_stream,
+        c_mc=c_tensor_mc,
+        c_peer_tensors=c_peer_tensors,
+        barrier_flag=barrier_flag,
+        barrier_flag_mc=barrier_flag_mc,
+    )
+
+    if not skip_ref_check:
+        compiled_gemm(
             a_tensor,
             b_tensor,
             c_tensor,
-            max_active_clusters,
             current_stream,
             c_mc=c_tensor_mc,
             c_peer_tensors=c_peer_tensors,
             barrier_flag=barrier_flag,
             barrier_flag_mc=barrier_flag_mc,
         )
-
-    if not skip_ref_check:
-        if all_reduce == "none":
-            compiled_gemm(a_tensor, b_tensor, c_tensor, current_stream)
-        else:
-            compiled_gemm(
-                a_tensor,
-                b_tensor,
-                c_tensor,
-                current_stream,
-                c_mc=c_tensor_mc,
-                c_peer_tensors=c_peer_tensors,
-                barrier_flag=barrier_flag,
-                barrier_flag_mc=barrier_flag_mc,
-            )
         compare(
             a_torch_cpu,
             b_torch_cpu,
             c_torch_gpu,
             c_dtype,
             tolerance,
-            do_all_reduce=all_reduce != "none",
         )
     
-    if all_reduce != "none":
-        nvshmem.core.free_tensor(c_torch_gpu_mc)
-        nvshmem.core.free_tensor(c_torch_gpu)
-        for i in range(len(c_peer_tensors)):
-            if i != dist.get_rank():
-                nvshmem.core.free_tensor(c_peer_torch_tensors[i])
-        nvshmem.core.free_tensor(barrier_flag_torch_mc)
-        nvshmem.core.free_tensor(barrier_flag_torch)
-
+    nvshmem.core.free_tensor(c_torch_gpu_mc)
+    nvshmem.core.free_tensor(c_torch_gpu)
+    for i in range(len(c_peer_tensors)):
+        if i != dist.get_rank():
+            nvshmem.core.free_tensor(c_peer_torch_tensors[i])
+    nvshmem.core.free_tensor(barrier_flag_torch_mc)
+    nvshmem.core.free_tensor(barrier_flag_torch)
 
     free_func_and_tensor_pairs = []
     def add_free_func_and_tensor(free_func, tensor):
@@ -2392,33 +2390,30 @@ def run(
         c_tensor, _ = cutlass_torch.cute_tensor_like(
             c_torch_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
         )
-        if all_reduce != "none":
-            c_tensor, c_tensor_mc, c_torch_gpu, c_torch_gpu_mc, c_peer_torch_tensors, c_peer_tensors = create_mc_tensor(
-                c_torch_cpu,
-                c_dtype,
-                (1 if c_major == "n" else 0),
-                is_dynamic_layout=True,
-            )
-            barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc = create_barrier_flags()
-            add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu_mc)
-            add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu)
-            for i in range(len(c_peer_torch_tensors)):
-                if i != dist.get_rank():
-                    add_free_func_and_tensor(nvshmem.core.free_tensor, c_peer_torch_tensors[i])
-            add_free_func_and_tensor(nvshmem.core.free_tensor, barrier_flag_torch_mc)
-            add_free_func_and_tensor(nvshmem.core.free_tensor, barrier_flag_torch)
-            return testing.JitArguments(
-                a_tensor,
-                b_tensor,
-                c_tensor,
-                current_stream,
-                c_mc=c_tensor_mc,
-                c_peer_tensors=c_peer_tensors,
-                barrier_flag=barrier_flag,
-                barrier_flag_mc=barrier_flag_mc,
-            )
-        else:
-            return testing.JitArguments(a_tensor, b_tensor, c_tensor, current_stream)
+        c_tensor, c_tensor_mc, c_torch_gpu, c_torch_gpu_mc, c_peer_torch_tensors, c_peer_tensors = create_mc_tensor(
+            c_torch_cpu,
+            c_dtype,
+            (1 if c_major == "n" else 0),
+            is_dynamic_layout=True,
+        )
+        barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc = create_barrier_flags()
+        add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu_mc)
+        add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu)
+        for i in range(len(c_peer_torch_tensors)):
+            if i != dist.get_rank():
+                add_free_func_and_tensor(nvshmem.core.free_tensor, c_peer_torch_tensors[i])
+        add_free_func_and_tensor(nvshmem.core.free_tensor, barrier_flag_torch_mc)
+        add_free_func_and_tensor(nvshmem.core.free_tensor, barrier_flag_torch)
+        return testing.JitArguments(
+            a_tensor,
+            b_tensor,
+            c_tensor,
+            current_stream,
+            c_mc=c_tensor_mc,
+            c_peer_tensors=c_peer_tensors,
+            barrier_flag=barrier_flag,
+            barrier_flag_mc=barrier_flag_mc,
+        )
 
     workspace_count = 1
     if use_cold_l2:
@@ -2554,11 +2549,11 @@ if __name__ == "__main__":
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
     parser.add_argument(
-        "--all_reduce",
-        choices=["none", "two_shot"],
+        "--reduce_scatter",
+        choices=["two_shot"],
         type=str,
-        default="none",
-        help="Allreduce algorithm to fuse with gemm",
+        default="two_shot",
+        help="Reduce Scatter algorithm to fuse with gemm",
     )
 
     args = parser.parse_args()
@@ -2593,7 +2588,7 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        all_reduce=args.all_reduce,
+        reduce_scatter=args.reduce_scatter,
     )
 
     torchrun_finalize()
