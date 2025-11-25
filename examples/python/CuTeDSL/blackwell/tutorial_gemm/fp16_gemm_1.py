@@ -10,7 +10,11 @@
 
 # This is the second tutorial GEMM. It builds on the first tutorial by adding 2CTA MMA
 # instructions with a 2x1 cluster.
+import sys
+sys.path.append("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/dump")
 
+import cute_ir_dump_patch as cid
+cid.install()
 
 import argparse
 import torch
