@@ -296,7 +296,9 @@ composed of the types that are supported by TVM FFI. The example below shows how
 Limitations
 -----------
 
-The Fake Tensor flow is ONLY compatible with TVM FFI because TVM FFI support more flexible constraints on Tensor arguments.
+The Fake Tensor flow supports more flexible constraints on Tensor arguments than the `from_dlpack` flow.
+TVM FFI backend is recommended when fake tensor is used as TVM FFI support flexible constraints on Tensor arguments.
+
 For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which is not supported by 
 existing `from_dlpack` flow. It's expected that JIT function compiled with fake tensor may have different ABI with
 tensor converted by `from_dlpack`.
