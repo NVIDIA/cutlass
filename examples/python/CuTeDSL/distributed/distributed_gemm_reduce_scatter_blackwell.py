@@ -49,7 +49,7 @@ import cutlass.pipeline as pipeline
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
-from cutlass.cute.typing import Pointer, Int32, Float16, BFloat16, Float32, Uint32
+from cutlass.cute.typing import Pointer, Int32, Float16, BFloat16, Float32, Uint32, Float8E4M3FN, Float8E5M2
 from cutlass.cutlass_dsl import dsl_user_op, T
 from cutlass._mlir.dialects import llvm, nvvm
 from cutlass._mlir.dialects.nvvm import (
@@ -1452,23 +1452,22 @@ class PersistentDenseGemmKernel:
 
                     for i in cutlass.range_constexpr(loop_m):
                         for j in cutlass.range_constexpr(loop_n):
-                            x, y, z, w = 0, 0, 0, 0
                             if cute.elem_less(frpC[0, i, j], local_chunk_upper_bound) and not cute.elem_less(frpC[0, i, j], local_chunk_lower_bound): 
-                                    mc_ptr = frgC_mc[None, i, j].iterator
-                                    if cutlass.const_expr(self.c_dtype == Float16):
-                                        x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(mc_ptr)
-                                    elif cutlass.const_expr(self.c_dtype == Float32):
-                                        x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(mc_ptr)
-                                    elif cutlass.const_expr(self.c_dtype == BFloat16):
-                                        x, y, z, w = utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
-                                    elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
-                                        x, y, z, w = utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
-                                    elif cutlass.const_expr(self.c_dtype == Float8E5M2):
-                                        x, y, z, w = utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
-                                    tmp_results[0, i, j] = x
-                                    tmp_results[1, i, j] = y
-                                    tmp_results[2, i, j] = z
-                                    tmp_results[3, i, j] = w
+                                mc_ptr = frgC_mc[None, i, j].iterator
+                                if cutlass.const_expr(self.c_dtype == Float16):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_8xf16(mc_ptr)
+                                elif cutlass.const_expr(self.c_dtype == Float32):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_4xf32(mc_ptr)
+                                elif cutlass.const_expr(self.c_dtype == BFloat16):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_8xbf16(mc_ptr)
+                                elif cutlass.const_expr(self.c_dtype == Float8E4M3FN):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_16xe4m3(mc_ptr)
+                                elif cutlass.const_expr(self.c_dtype == Float8E5M2):
+                                    x, y, z, w = utils.distributed.multimem_ld_reduce_16xe5m2(mc_ptr)
+                                tmp_results[0, i, j] = x
+                                tmp_results[1, i, j] = y
+                                tmp_results[2, i, j] = z
+                                tmp_results[3, i, j] = w
                             
                     for i in cutlass.range_constexpr(loop_m):
                         for j in cutlass.range_constexpr(loop_n):
@@ -2134,8 +2133,8 @@ def create_tensors(
 ):
     torch.manual_seed(1111)
 
-    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
-    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype)
+    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype).to(torch.float32).normal_().round_().to(dtype=cutlass_torch.dtype(ab_dtype))
+    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype).to(torch.float32).normal_().round_().to(dtype=cutlass_torch.dtype(ab_dtype))
     c_torch_cpu = cutlass_torch.matrix(l, m, n, c_major == "m", c_dtype)
 
     a_tensor, _ = cutlass_torch.cute_tensor_like(
@@ -2180,22 +2179,23 @@ def compare(
         b_torch_cpu.to(dtype=torch.float32),
     )
 
-    if c_dtype == cutlass.Float8E5M2 or c_dtype == cutlass.Float8E4M3FN:
-        ref = ref.to(torch.float16).cuda()
-    else:
-        ref = ref.cuda()
+    acc_type = cutlass.Float32
+    if c_dtype.width == 16:
+        acc_dtype = cutlass.Float32
+    elif c_dtype.width == 8:
+        acc_dtype = cutlass.Float16
+
+    ref = ref.to(cutlass_torch.dtype(acc_dtype)).cuda()
     torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
-    if c_dtype == cutlass.Float8E5M2:
-        ref = ref.to(torch.float8_e5m2fnuz)
-    elif c_dtype == cutlass.Float8E4M3FN:
-        ref = ref.to(torch.float8_e4m3fn)
+    ref = ref.to(cutlass_torch.dtype(c_dtype))
 
-    # Convert ref to c_dtype
-    _, ref_torch_gpu = cutlass_torch.cute_tensor_like(
-        ref, c_dtype, is_dynamic_layout=True, assumed_align=16
-    )
+    ref_result = ref.cpu().to(cutlass_torch.dtype(acc_dtype))
+    kernel_result = c_torch_gpu.view(cutlass_torch.dtype(c_dtype)).cpu().to(cutlass_torch.dtype(acc_dtype))
 
-    ref_result = ref_torch_gpu.cpu()
+    max_val = torch.finfo(kernel_result.dtype).max
+    min_val = torch.finfo(kernel_result.dtype).min
+    kernel_result = torch.nan_to_num(kernel_result, nan=max_val, posinf=max_val, neginf=min_val)
+    ref_result = torch.nan_to_num(ref_result, nan=max_val, posinf=max_val, neginf=min_val)
 
     rank_id = dist.get_rank()
     chunk_per_rank = kernel_result.shape[0] // dist.get_world_size()
@@ -2585,6 +2585,10 @@ if __name__ == "__main__":
 
     if len(args.cluster_shape_mn) != 2:
         parser.error("--cluster_shape_mn must contain exactly 2 values")
+    
+    if args.c_dtype.width == 8:
+        import warnings
+        warnings.warn("f8 output is easy to overflow and can be nan here")
 
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)

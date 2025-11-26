@@ -46,7 +46,7 @@ import cutlass.pipeline as pipeline
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
-from cutlass.cute.typing import Int32, Float16, BFloat16, Float32
+from cutlass.cute.typing import Int32, Float16, BFloat16, Float32, Float8E5M2, Float8E4M3FN
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 
 try:
@@ -1972,6 +1972,9 @@ def create_mc_tensor(torch_tensor_cpu, dtype, leading_dim, is_dynamic_layout=Tru
     cute_tensor_mc = from_dlpack(torch_tensor_gpu_mc, assumed_align=16)
     cute_tensor = from_dlpack(torch_tensor_gpu_local, assumed_align=16)
 
+    cute_tensor.element_type = dtype
+    cute_tensor_mc.element_type = dtype
+
     if is_dynamic_layout:
         cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
         cute_tensor_mc = cute_tensor_mc.mark_layout_dynamic(leading_dim=leading_dim)
@@ -1991,8 +1994,8 @@ def create_tensors(
     num_tiles = problem_shape_ntile_mn[0] * problem_shape_ntile_mn[1]
     num_sms = torch.cuda.get_device_properties("cuda").multi_processor_count
 
-    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
-    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype)
+    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype).to(torch.float32).normal_().round_().to(dtype=cutlass_torch.dtype(ab_dtype))
+    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype).to(torch.float32).normal_().round_().to(dtype=cutlass_torch.dtype(ab_dtype))
     c_torch_cpu = cutlass_torch.matrix(l, m, n, c_major == "m", c_dtype)
     barrier_flag_torch_cpu = torch.zeros(num_tiles+num_sms, device="cuda", dtype=torch.int32)
 
@@ -2006,7 +2009,7 @@ def create_tensors(
         c_torch_cpu, c_dtype, (1 if c_major == "n" else 0), is_dynamic_layout=True
     )
     barrier_flag, barrier_flag_mc, barrier_flag_torch_gpu, barrier_flag_torch_gpu_mc = create_mc_tensor(
-        barrier_flag_torch_cpu, torch.int32, 0, is_dynamic_layout=True
+        barrier_flag_torch_cpu, cutlass.Int32, 0, is_dynamic_layout=True
     )
 
     return (
@@ -2028,10 +2031,8 @@ def create_tensors(
 
 
 def compare(
-    a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance
+    a_torch_cpu, b_torch_cpu, c_torch_gpu, ab_dtype, c_dtype, tolerance
 ):
-    # Copy gpu result back
-    kernel_result = c_torch_gpu.cpu()
 
     # Compute reference result
     ref = torch.einsum(
@@ -2040,21 +2041,23 @@ def compare(
         b_torch_cpu.to(dtype=torch.float32),
     )
 
-    if c_dtype == cutlass.Float8E5M2 or c_dtype == cutlass.Float8E4M3FN:
-        ref = ref.to(torch.float16).cuda()
-    else:
-        ref = ref.cuda()
-    torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
-    if c_dtype == cutlass.Float8E5M2:
-        ref = ref.to(torch.float8_e5m2fnuz)
-    elif c_dtype == cutlass.Float8E4M3FN:
-        ref = ref.to(torch.float8_e4m3fn)
+    acc_type = cutlass.Float32
+    if c_dtype.width == 16:
+        acc_dtype = cutlass.Float32
+    elif c_dtype.width == 8:
+        acc_dtype = cutlass.Float16
 
-    # Convert ref to c_dtype
-    _, ref_torch_gpu = cutlass_torch.cute_tensor_like(
-        ref, c_dtype, is_dynamic_layout=True, assumed_align=16
-    )
-    ref_result = ref_torch_gpu.cpu()
+    ref = ref.to(cutlass_torch.dtype(acc_dtype)).cuda()
+    torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
+    ref = ref.to(cutlass_torch.dtype(c_dtype))
+
+    ref_result = ref.cpu().to(cutlass_torch.dtype(acc_dtype))
+    kernel_result = c_torch_gpu.view(cutlass_torch.dtype(c_dtype)).cpu().to(cutlass_torch.dtype(acc_dtype))
+
+    max_val = torch.finfo(kernel_result.dtype).max
+    min_val = torch.finfo(kernel_result.dtype).min
+    kernel_result = torch.nan_to_num(kernel_result, nan=max_val, posinf=max_val, neginf=min_val)
+    ref_result = torch.nan_to_num(ref_result, nan=max_val, posinf=max_val, neginf=min_val)
 
     # Assert close results
     if dist.get_rank() == 0:
@@ -2220,6 +2223,7 @@ def run(
             a_torch_cpu,
             b_torch_cpu,
             c_torch_gpu,
+            ab_dtype,
             c_dtype,
             tolerance,
         )
@@ -2245,7 +2249,7 @@ def run(
             c_torch_cpu, c_dtype, (1 if c_major == "n" else 0), is_dynamic_layout=True
         )
         barrier_flag, barrier_flag_mc, barrier_flag_torch_gpu, barrier_flag_torch_gpu_mc = create_mc_tensor(
-            barrier_flag_torch_cpu, torch.int32, 0, is_dynamic_layout=True
+            barrier_flag_torch_cpu, cutlass.Int32, 0, is_dynamic_layout=True
         )
 
         ja = testing.JitArguments(
@@ -2416,6 +2420,10 @@ if __name__ == "__main__":
 
     if len(args.cluster_shape_mn) != 2:
         parser.error("--cluster_shape_mn must contain exactly 2 values")
+    
+    if args.c_dtype.width == 8:
+        import warnings
+        warnings.warn("f8 output is easy to overflow and can be nan here")
 
     torchrun_uid_init_bcast()
 
