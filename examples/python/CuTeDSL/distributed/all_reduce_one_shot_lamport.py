@@ -68,6 +68,10 @@ A Distributed One-Shot All-Reduce Example using CuTe DSL and fine-grained memory
 existing tensorrt_llm kernel:
 https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/communicationKernels/allReduceFusionKernels.cu
 
+In Lamport terminology this is a classic flag-based busy-wait: every participant keeps polling the shared slot until the
+flag changes from the sentinel (negative zero) to real data, which indicates that the Lamport-style logical ordering has
+advanced and the payload is safe to consume.
+
 This example kernel demonstrates a one-shot all-reduce operation using the CuTe DSL with fine-grained memory control.
 It uses dedicated communication buffers for data exchange, and these buffers act as ping-pong buffers. During the 
 process, the kernel uses one buffer for communication and initializes the next buffer to all negative zeros.
