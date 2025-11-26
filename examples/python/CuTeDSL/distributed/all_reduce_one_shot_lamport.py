@@ -31,11 +31,11 @@ import torch
 import argparse
 
 import numpy as np
-import nvshmem.core
 import torch.distributed as dist
 import torch.distributed._symmetric_memory as symm_mem
 import cuda.bindings.driver as cuda
 from cuda.core.experimental import Device
+from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
 import cutlass.cute as cute
@@ -43,6 +43,25 @@ import cutlass.cute.testing as testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import T
 from cutlass._mlir.dialects import vector
+
+try:
+    import nvshmem.core
+except ImportError as exc:
+    raise ImportError(
+        "nvshmem4py is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvshmem4py-cu12\n"
+        "  For CUDA 13: pip install nvshmem4py-cu13\n"
+        "Note: nvshmem4py version >= 0.1.3 is recommended."
+    ) from None
+
+try:
+    load_nvidia_dynamic_lib("nvshmem_host")
+except RuntimeError as exc:
+    raise ImportError(
+        "nvshmem lib is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvidia-nvshmem-cu12\n"
+        "  For CUDA 13: pip install nvidia-nvshmem-cu13\n"
+    ) from None
 
 """
 A Distributed One-Shot All-Reduce Example using CuTe DSL and fine-grained memory control. This is a mirrored version of the 

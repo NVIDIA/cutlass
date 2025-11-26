@@ -31,11 +31,11 @@ import argparse
 from typing import Optional, Tuple, Type, Union
 
 import numpy as np
-import nvshmem.core
 import torch
 import torch.distributed as dist
 import cuda.bindings.driver as cuda
 from cuda.core.experimental import Device
+from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
 import cutlass.cute as cute
@@ -48,6 +48,25 @@ from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cute.typing import Int32, Float16, BFloat16, Float32
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
+
+try:
+    import nvshmem.core
+except ImportError as exc:
+    raise ImportError(
+        "nvshmem4py is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvshmem4py-cu12\n"
+        "  For CUDA 13: pip install nvshmem4py-cu13\n"
+        "Note: nvshmem4py version >= 0.1.3 is recommended."
+    ) from None
+
+try:
+    load_nvidia_dynamic_lib("nvshmem_host")
+except RuntimeError as exc:
+    raise ImportError(
+        "nvshmem lib is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvidia-nvshmem-cu12\n"
+        "  For CUDA 13: pip install nvidia-nvshmem-cu13\n"
+    ) from None
 
 """
 A high-performance persistent batched dense GEMM AR example for the NVIDIA Blackwell SM100 architecture
@@ -96,7 +115,7 @@ Input arguments to this example is same as dense_gemm.py.
     torchrun --nproc-per-node 8 examples/distributed/distributed_dense_gemm_persistent_all_reduce.py  \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
-      --mnkl 1024,1024,1024,1 --warmup_iterations 3 --iterations 10                                   \
+      --mnkl 1024,1000,1024,1 --warmup_iterations 3 --iterations 10                                   \
       --use_tma_store --use_2cta_instrs --all_reduce LDMCxSTMC
 
 To collect performance with NSYS profiler:

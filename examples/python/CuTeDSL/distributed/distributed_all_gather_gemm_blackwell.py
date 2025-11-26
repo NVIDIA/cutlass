@@ -31,13 +31,13 @@ import os
 from typing import Optional, Tuple, Type, Union
 
 import numpy as np
-import nvshmem.core
 import torch
 import torch.distributed._symmetric_memory as symm_mem
 import torch.distributed as dist
 import cuda.bindings.driver as cuda
 from cuda.bindings import driver
 from cuda.core.experimental import Device
+from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
 import cutlass.cute as cute
@@ -49,6 +49,25 @@ import cutlass.utils.distributed as dist_helpers
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
+
+try:
+    import nvshmem.core
+except ImportError as exc:
+    raise ImportError(
+        "nvshmem4py is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvshmem4py-cu12\n"
+        "  For CUDA 13: pip install nvshmem4py-cu13\n"
+        "Note: nvshmem4py version >= 0.1.3 is recommended."
+    ) from None
+
+try:
+    load_nvidia_dynamic_lib("nvshmem_host")
+except RuntimeError as exc:
+    raise ImportError(
+        "nvshmem lib is required but not installed. Please install it using:\n"
+        "  For CUDA 12: pip install nvidia-nvshmem-cu12\n"
+        "  For CUDA 13: pip install nvidia-nvshmem-cu13\n"
+    ) from None
 
 """
 A high-performance All gather + dense GEMM example for the NVIDIA Blackwell SM100 architecture
