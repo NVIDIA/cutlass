@@ -2184,13 +2184,18 @@ def compare(
         acc_dtype = cutlass.Float32
     elif c_dtype.width == 8:
         acc_dtype = cutlass.Float16
+    
+    torch_acc_dtype = cutlass_torch.dtype(acc_dtype)
+    torch_c_dtype = cutlass_torch.dtype(c_dtype)
 
-    ref = ref.to(cutlass_torch.dtype(acc_dtype)).cuda()
+    # note that in this example, f8 reduce sum is done by f16 acc precision and f16 by f32
+    ref = ref.to(torch_c_dtype).to(torch_acc_dtype).cuda()
     torch.distributed.all_reduce(ref, op=torch.distributed.ReduceOp.SUM)
-    ref = ref.to(cutlass_torch.dtype(c_dtype))
+    ref = ref.to(torch_c_dtype)
 
-    ref_result = ref.cpu().to(cutlass_torch.dtype(acc_dtype))
-    kernel_result = c_torch_gpu.view(cutlass_torch.dtype(c_dtype)).cpu().to(cutlass_torch.dtype(acc_dtype))
+    # convert to higher precision to satisfy assert_close function
+    ref_result = ref.cpu().to(torch_acc_dtype)
+    kernel_result = c_torch_gpu.view(torch_c_dtype).cpu().to(torch_acc_dtype)
 
     max_val = torch.finfo(kernel_result.dtype).max
     min_val = torch.finfo(kernel_result.dtype).min
