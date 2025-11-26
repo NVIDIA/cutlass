@@ -48,6 +48,9 @@ cutlass_test_unit_add_executable(
   mma.cpp
   tiled_mma.cpp
   xe_copy_2d_test.cpp
+  xe_copy_prefetch_2d.cpp
+  xe_vnni_2d.cpp
+  xe_transpose_2d.cpp
 )
 else()
 cutlass_test_unit_add_executable(
