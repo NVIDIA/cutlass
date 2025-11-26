@@ -4492,6 +4492,9 @@ class struct:
                 )
         return cls
 
+    def __repr__(self) -> str:
+        return f"<union {self._cls.__name__} size={self._size_of} align={self._align_of}>"
+
     # get size
     def size_in_bytes(self) -> int:
         """
@@ -4519,6 +4522,11 @@ class struct:
             "align should be a strictly positive power of 2."
         )
         return (offset + (align - 1)) & ~(align - 1)
+
+
+##############################################################################
+# User defined struct
+##############################################################################
 
 
 class union(struct):
@@ -4625,7 +4633,8 @@ class union(struct):
         self._align_of = max_alignment
         self._size_of = struct.align_offset(max_size, max_alignment)
 
-    def __call__(self, base: Any) -> None:
+    @dsl_user_op
+    def __call__(self, base: Any, *, loc=None, ip=None) -> None:
         """
         Creates a new instance of the decorated union.
 
@@ -4643,7 +4652,7 @@ class union(struct):
             if isinstance(obj, struct._AlignMeta):
                 obj = obj.dtype
             if struct._is_scalar_type(obj):
-                new_obj = recast_ptr(base + off, dtype=obj)
+                new_obj = recast_ptr(base + off, dtype=obj, loc=loc, ip=ip)
                 setattr(cls, name, new_obj)
             elif isinstance(obj, struct._MemRangeMeta):
                 new_obj = struct._MemRangeData(obj._dtype, obj._size, base + off)
@@ -4657,6 +4666,11 @@ class union(struct):
                     f"but got {obj}"
                 )
         return cls
+
+    def __setattr__(self, name, value):
+        raise TypeError(
+            "Cannot add a new field after initialization"
+        )
 
     def size_in_bytes(self) -> int:
         """
