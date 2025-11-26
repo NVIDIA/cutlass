@@ -351,18 +351,6 @@ The TVM FFI function supports the following |DSL|-specific types as arguments:
      - Python tuple of corresponding call-time types.
 
 
-Note on Stride Order
-~~~~~~~~~~~~~~~~~~~~
-
-Note that cute's convention is to write the stride order for dimensions from left to right,
-where a lower order number means higher priority.
-For shape ``(2, 3, 4)`` and stride order ``(0, 1, 2)``, the stride is ``(1, 2, 6)``. This is typically also known
-as column major order. If you want to create a fake tensor with compact row major order,
-you should explicitly pass in ``stride_order=reversed(range(len(shape)))``
-to ``make_fake_compact_tensor``. Alternatively, you can always precisely control the
-stride via the ``stride`` argument in the ``make_fake_tensor`` API.
-
-
 Error handling
 --------------
 
