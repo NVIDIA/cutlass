@@ -29,7 +29,6 @@
 import sys
 import os
 import torch
-import time
 
 import cutlass
 import cutlass.cute as cute
@@ -43,7 +42,7 @@ This example shows how to compile CuTe JIT function with fake tensors then run i
 if __name__ == "__main__":
     # Add the current directory to sys.path
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, os.path.join(current_dir, ".."))
+    sys.path.insert(0, os.path.join(current_dir, "..", ".."))
 from ampere.tensorop_gemm import TensorOpGemm
 
 
