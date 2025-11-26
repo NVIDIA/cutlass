@@ -118,6 +118,37 @@ The fake tensor is a placeholder that mimics the interface of a real tensor but 
 It is used in compilation or testing scenarios where only shape/type/layout information is needed.
 All attempts to access or mutate data will raise errors.
 
+
+Interoperability with `from_dlpack`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Fake Tensor flow supports more flexible constraints on Tensor arguments than the `from_dlpack` flow.
+When fake tensor is used, it's recommended to use TVM FFI backend as it supports more flexible constraints on 
+Tensor arguments than the `from_dlpack` flow.
+
+For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which is not supported by 
+`from_dlpack`. It's expected that JIT function compiled with fake tensor may have different ABI with tensor converted 
+with `from_dlpack`.
+
+.. code-block:: python
+
+   import cutlass.cute as cute
+   import torch
+
+   n = cute.sym_int()
+   # Dynamic Shape
+   fake_a = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
+
+   # Compile without tvm-ffi
+   compiled_fn = cute.compile(foo, fake_a)
+
+   # Wrong, in compatible ABI
+   compiled_fn(from_dlpack(a))
+
+
+In order to avoid mismatched ABI, it's recommended to use TVM FFI when fake tensor is used for compilation.
+
+
 Note on Stride Order
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -292,34 +323,6 @@ composed of the types that are supported by TVM FFI. The example below shows how
 
    example_add_one_with_tuple()
 
-
-Limitations
------------
-
-The Fake Tensor flow supports more flexible constraints on Tensor arguments than the `from_dlpack` flow.
-TVM FFI backend is recommended when fake tensor is used as TVM FFI support flexible constraints on Tensor arguments.
-
-For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which is not supported by 
-existing `from_dlpack` flow. It's expected that JIT function compiled with fake tensor may have different ABI with
-tensor converted by `from_dlpack`.
-
-.. code-block:: python
-
-   import cutlass.cute as cute
-   import torch
-
-   n = cute.sym_int()
-   # Dynamic Shape
-   fake_a = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
-
-   # Compile without tvm-ffi
-   compiled_fn = cute.compile(foo, fake_a)
-
-   # Wrong, in compatible ABI
-   compiled_fn(from_dlpack(a))
-
-
-In order to avoid such issue, it's recommended fake tensor is only used with TVM FFI.
 
 
 Supported types
