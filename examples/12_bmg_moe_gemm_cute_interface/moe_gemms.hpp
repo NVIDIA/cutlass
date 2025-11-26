@@ -74,10 +74,10 @@ CUTE_DEVICE void moe_gemm(ATensor const &A, // (M,K)
                           DTensor &D,       // (M,N)
                           Coord<int, int, cute::Underscore, int> blk_coord,
                           TiledMMA const &mma) {
-  auto item = sycl::ext::oneapi::this_work_item::get_nd_item<2>();
+  auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+  auto local_id = item.get_local_linear_id();
   auto wg_m = get<0>(blk_coord);
   auto wg_n = get<1>(blk_coord);
-  auto local_id = int(item.get_local_id(0));
 
   Tensor cA = make_identity_tensor(A.shape()); // (M,K)
   Tensor cB = make_identity_tensor(B.shape()); // (N,K)
@@ -94,7 +94,7 @@ CUTE_DEVICE void moe_gemm(ATensor const &A, // (M,K)
 
   auto tiled_copy_a = get_block_2d_copy_A<GmemTiledCopyA>(mma, A);
   auto tiled_copy_b = get_block_2d_copy_B<GmemTiledCopyB>(mma, B);
-  auto tiled_copy_d = make_block_2d_copy_CD(GmemTiledCopyD{}, mma, D);
+  auto tiled_copy_d = get_block_2d_copy_D<GmemTiledCopyD>(mma, D);
 
   auto thr_copy_a = tiled_copy_a.get_slice(local_id);
   auto thr_copy_b = tiled_copy_b.get_slice(local_id);

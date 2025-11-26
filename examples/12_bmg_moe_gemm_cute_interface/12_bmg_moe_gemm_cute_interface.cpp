@@ -205,9 +205,9 @@ template <class TA, class TB> auto choose_tiled_mma(TA *A, TB *B) {
   using TB_non_CV = cutlass::platform::remove_cv_t<TB>;
   auto op = XE_DPAS_TT<8, float, TA_non_CV, TB_non_CV>{};
 
-  using WGTile = Shape<_256, _256, _32>; // 256x256 WG tile size
+  using WGTile = Shape<_256, _128, _32>; // 256x128 WG tile size
   using SGLayout =
-      Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>; // 8x4 SG tiling, n-major
+      Layout<Shape<_8, _2, _1>, Stride<_2, _1, _0>>; // 8x2 SG tiling, n-major
 
   using MMA = typename TiledMMAHelper<MMA_Atom<decltype(op)>, Layout<WGTile>,
                                       SGLayout>::TiledMMA;
@@ -243,7 +243,7 @@ void MoEGEMMLauncher(const ElementA *activations, const ElementB *weights,
   auto dummy_group_problem_shape =
       cutlass::gemm::GroupProblemShape<Shape<int, int, int>>{
           1, &dummy_problem_shape, nullptr};
-  using TileShape = Shape<_256, _256, _32>;
+  using TileShape = Shape<_256, _128, _32>;
   using ClusterShape = Shape<_1, _1, _1>;
   auto scheduler_params =
       PersistentTileSchedulerXeMoE<ProblemShape>::to_underlying_arguments(
@@ -260,9 +260,9 @@ void MoEGEMMLauncher(const ElementA *activations, const ElementB *weights,
   auto MaxThreadsPerWorkgroup = size(mma);
   dim3 local_range{MaxThreadsPerWorkgroup, 1, 1};
 
-  sycl::range<3> local = {local_range.x, local_range.y, local_range.z};
-  sycl::range<3> groups = {group_distribution.x, group_distribution.y,
-                           group_distribution.z};
+  sycl::range<3> local = {local_range.z, local_range.y, local_range.x};
+  sycl::range<3> groups = {group_distribution.z, group_distribution.y,
+                           group_distribution.x};
   sycl::range<3> global = {local[0] * groups[0], local[1] * groups[1],
                            local[2] * groups[2]};
 
@@ -272,11 +272,14 @@ void MoEGEMMLauncher(const ElementA *activations, const ElementB *weights,
   syclex::properties kernel_props{syclex::sub_group_size<16>,
                                   intelex::grf_size<256>};
   sycl::queue Q = compat::get_default_queue();
+
   GPU_Clock timer;
   timer.start();
   auto event = Q.parallel_for<
       GemmCuteName<ElementA, ElementB, ElementD, layoutA, layoutB>>(
       sycl::nd_range<3>(global, local), kernel_props, [=](auto) {
+        // Can also use void for copy atoms.
+        // In that case, they will be chosen automatically.
         MoE::MoEGEMM<XE_LOAD_2D<16, 32, 32, 16>,
                      XE_LOAD_2D_VNNI<16, 32, 16, 16>, XE_STORE_2D<16, 8, 32>,
                      'R', 'R', 'R'>(activations, weights, scales, outputs, mma,
@@ -290,7 +293,9 @@ void MoEGEMMLauncher(const ElementA *activations, const ElementB *weights,
 
   VerificationHelper helper;
   helper.parse(num_experts, num_tokens_per_expert_host, gemm_n, gemm_k);
-  assert(helper.verify(activations, weights, outputs));
+  if (helper.verify(activations, weights, outputs) == false) {
+    std::cout << "\n\nFailed accuracy verification :(\n\n";
+  }
 
   auto [gflops, mem_bw_util, projected_time] =
       helper.gflops(cute_average_time / 1000.0, helper.problem_sizes_host);
@@ -299,6 +304,8 @@ void MoEGEMMLauncher(const ElementA *activations, const ElementB *weights,
   for (int32_t i = 0; i < num_experts; ++i) {
     std::cout << "    " << num_tokens_per_expert_host[i] << std::endl;
   }
+  std::cout << "  N      : " << gemm_n << std::endl;
+  std::cout << "  K      : " << gemm_k << std::endl;
   std::cout << "  Groups      : " << num_experts << std::endl;
   std::cout << "  Avg runtime : " << cute_average_time << " ms" << std::endl;
   std::cout << "  GFLOPS      : " << gflops << std::endl;
@@ -413,7 +420,8 @@ int main(int argc, const char **argv) {
       {6, 13, 123, 28, 197,  0, 202, 69,   0, 6,  0,  21, 1434, 1582, 11, 0, 6,
        0, 7,  190, 4,  1700, 6, 434, 1886, 0, 14, 28, 8,  30,   25,   18},
       {5,  27, 1442, 18, 0,  6, 0, 73,  6,    781, 0,  1915, 291, 649, 98,  4,
-       33, 77, 6,    22, 73, 9, 8, 587, 1486, 32,  10, 244,  37,  0,   100, 9}};
+       33, 77, 6,    22, 73, 9, 8, 587, 1486, 32,  10, 244,  37,  0,   100, 9}
+       };
 
   for (int i = 0; i < num_layers; i++) {
     launcher(total_rows_for_each_expert[i], 5760, 2880, num_experts);

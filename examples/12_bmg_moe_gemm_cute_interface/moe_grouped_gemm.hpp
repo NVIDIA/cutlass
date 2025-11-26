@@ -136,8 +136,7 @@ MoEGEMM(const ElementA *Activations, const ElementB *Weights,
         A_tensor, B_tensor, D_tensor, tile_coord, mma);
 
     // Get next work tile
-    auto next_work_tile_info = scheduler.fetch_next_work(work_tile_info);
-    work_tile_info = next_work_tile_info;
+    work_tile_info = scheduler.fetch_next_work(work_tile_info);
     did_group_change = curr_group != work_tile_info.L_idx;
   } // end while loop
 }
