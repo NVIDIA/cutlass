@@ -54,6 +54,7 @@
         1 256x128x256
         2 256x256x256 and so on
       Note that one must keep m and k consistent across groups in the benchmark file.
+
 */
 
 #include <iostream>
@@ -334,7 +335,6 @@ struct Options {
     if (!benchmark_path.empty()) {
       if (!benchmark_problems()) {
         problem_sizes_host.clear();
-        tokens_per_expert_host.clear();
         return;
       }
     }
@@ -378,6 +378,7 @@ struct Options {
       problem_sizes_host.push_back({m, n, k});
       tokens_per_expert_host.push_back(n);
     }
+    groups = static_cast<int>(problem_sizes_host.size());
   }
 
   /// Load a benchmark
@@ -409,6 +410,7 @@ struct Options {
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
       tokens_per_expert_host.push_back(extent.n());
     }
+
     groups = static_cast<int>(problem_sizes_host.size());
     m = get<0>(problem_sizes_host.at(0));
     k = get<2>(problem_sizes_host.at(0));
@@ -631,8 +633,7 @@ void initialize(const Options &options) {
 
 /// Populates a Gemm::Arguments structure from the given commandline options
 template <typename Gemm>
-typename Gemm::Arguments args_from_options(Options &options)
-{
+typename Gemm::Arguments args_from_options(Options &options) {
   cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
   // to use a GPU other than that with device ID 0.
@@ -749,14 +750,14 @@ bool verify(const Options &options) {
     block_D.at(i).sync_host();
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     passed &= cutlass::reference::host::TensorEquals(block_ref_D.at(i).host_view(), block_D.at(i).host_view());
-    
+
   }
   return passed;
 }
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
-int run(Options &options, bool host_problem_shapes_available = true)
+int run(Options &options)
 {
   std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
   for (int32_t i = 0; i < options.groups; ++i) {
@@ -836,7 +837,9 @@ int main(int argc, char const **args) {
 
   // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
   if (__CUDACC_VER_MAJOR__ < 12 ||
-       ((__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8))) {
+       ((__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)
+       )
+     ) {
     std::cerr << "This example requires CUDA 12.8 or newer.\n";
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
@@ -847,7 +850,9 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3
+       )
+     ) {
     std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }

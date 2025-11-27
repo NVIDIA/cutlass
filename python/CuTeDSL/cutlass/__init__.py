@@ -9,6 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from ._mlir._mlir_libs import _cutlass_ir
+
+_cutlass_ir.populate(_cutlass_ir)
+
 from .cutlass_dsl import (
     Constexpr,
     dsl_user_op,

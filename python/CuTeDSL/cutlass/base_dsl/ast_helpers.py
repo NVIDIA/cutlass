@@ -529,6 +529,7 @@ def _get_self_module():
     return inspect.getmodule(_get_self_module)
 
 
+@lru_cache(maxsize=16)
 def cf_symbol_check(symbol):
     """
     Check if the symbol is control flow symbol from current module.

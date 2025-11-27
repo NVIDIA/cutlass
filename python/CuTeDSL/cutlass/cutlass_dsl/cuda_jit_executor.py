@@ -21,7 +21,12 @@ import cuda.bindings.runtime as cuda_runtime
 import cuda.bindings.driver as cuda_driver
 
 # Local modules imports
-from ..base_dsl.jit_executor import JitExecutor, ExecutionArgs, JitFunctionArtifacts
+from ..base_dsl.jit_executor import (
+    JitExecutor,
+    JitCompiledFunction,
+    ExecutionArgs,
+    JitFunctionArtifacts,
+)
 from ..base_dsl.utils.logger import log
 from ..base_dsl.common import DSLCudaRuntimeError, DSLRuntimeError
 from ..base_dsl.typing import Int32
@@ -57,7 +62,7 @@ class CudaDialectJitModule:
         self.unload()
 
 
-class CudaDialectJitCompiledFunction:
+class CudaDialectJitCompiledFunction(JitCompiledFunction):
     """Holds a compiled function and its module."""
 
     def __init__(
@@ -102,21 +107,6 @@ class CudaDialectJitCompiledFunction:
         self.jit_module = None
         self._executor_lock = threading.RLock()
         self._default_executor = None
-
-    @property
-    def __ptx__(self):
-        """Returns the PTX code of the JIT-compiled function."""
-        return self.artifacts.PTX if self.artifacts is not None else None
-
-    @property
-    def __cubin__(self):
-        """Returns the CUBIN data of the JIT-compiled function."""
-        return self.artifacts.CUBIN if self.artifacts is not None else None
-
-    @property
-    def __mlir__(self):
-        """Returns the MLIR code of the JIT-compiled function."""
-        return self.artifacts.MLIR if self.artifacts is not None else None
 
     @functools.cached_property
     def num_devices(self):
@@ -285,6 +275,7 @@ class CudaDialectJitCompiledFunction:
         :return: A callable executor function.
         :rtype: JitExecutor
         """
+        super()._validate_engine()
         with self._executor_lock:
             # We need to ensure that the modules are loaded if not already
             if self.jit_module is None or self.jit_module.is_unloaded():
@@ -297,37 +288,3 @@ class CudaDialectJitCompiledFunction:
                 )
 
             return JitExecutor(self.jit_module, None, self.jit_time_profiling)
-
-    def generate_execution_args(self, *args, **kwargs):
-        return self.args_spec.generate_execution_args(args, kwargs)
-
-    def set_dynamic_args(self, dynamic_args, dynamic_kwargs):
-        """Sets the dynamic argument information required for export to c code generation."""
-        self.dynamic_args = dynamic_args
-        self.dynamic_kwargs = dynamic_kwargs
-
-    def __call__(self, *args, **kwargs):
-        """Executes the jit-compiled function under the currently active CUDA context.
-
-        Calling this method multiple devices is not allowed and will result in unexpected
-        CUDA errors. If you need to call the kernel on multiple devices use `to`
-        to return a per-device function.
-        """
-        exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
-        return self.run_compiled_program(exe_args)
-
-    def run_compiled_program(self, exe_args):
-        """Executes the jit-compiled function under the currently active CUDA context.
-
-        Calling this method multiple devices is not allowed and will result in unexpected
-        CUDA errors. If you need to call the kernel on multiple devices use `to`
-        to return a per-device function.
-        """
-        with self._executor_lock:
-            if self._default_executor is None:
-                log().debug("Creating default executor.")
-                # We use a weak reference here so that this instance does not keep this
-                # object alive as it hold a reference to self.
-                proxy_self = weakref.proxy(self)
-                self._default_executor = proxy_self.to(None)
-        return self._default_executor.run_compiled_program(exe_args)

@@ -330,7 +330,10 @@ class HSTUAttentionForwardAmpere(object):
 
         if cutlass.const_expr(self._is_causal):
             n_block = (
-                cute.ceil_div((m_block + 1) * self._m_block_size, self._n_block_size)
+                cute.ceil_div(
+                    min((m_block + 1) * self._m_block_size, mK.shape[1]),
+                    self._n_block_size,
+                )
                 - 1
             )  # for causal case, only process the first n_block tiles
         else:
@@ -652,7 +655,7 @@ class HSTUAttentionForwardAmpere(object):
                 # m residue handling for RAB
                 for m in cutlass.range_constexpr(cute.size(tRABcRAB.shape[1])):
                     if cute.elem_less(
-                        tRABcRAB[0, m, 0, n_block][1], mRAB.layout.shape[2]
+                        tRABcRAB[0, m, 0, n_block_idx - 1][1], mRAB.layout.shape[2]
                     ):
                         cute.copy(
                             gmem_tiled_copy_QKV,

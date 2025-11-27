@@ -10,7 +10,6 @@
 # is strictly prohibited.
 
 import ctypes
-import os
 import sys
 from pathlib import Path
 from functools import lru_cache
@@ -20,6 +19,7 @@ from typing import Union, Optional, Type, List
 
 # MLIR modules imports
 from cutlass._mlir import ir
+from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cuda as _cuda_dialect
 
@@ -144,6 +144,7 @@ class _Tensor(Tensor):
 
             self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor)
             self._dlpack_data = self._tvm_ffi_tensor.__dlpack__()
+
         self._dltensor_wrapper = None
         self._assumed_align = assumed_align
         self._is_dynamic = False
@@ -387,7 +388,16 @@ class _Tensor(Tensor):
         return CoreTensor(values[0].value, self._dtype)
 
     def __tvm_ffi_object__(self):
-        return self._tvm_ffi_tensor
+        try:
+            return self._tvm_ffi_tensor
+        except AttributeError:
+            raise DSLRuntimeError(
+                (
+                    "runtime._Tensor is not a TVM-FFI tensor. "
+                    "Enable TVM-FFI with `from_dlpack(..., enable_tvm_ffi=True)` "
+                    "or `CUTE_DSL_ENABLE_TVM_FFI=1`."
+                )
+            )
 
 
 def _get_cute_type_str(inp):
@@ -411,7 +421,8 @@ class _FakeCompactTensor(Tensor):
         self._dtype = dtype
         self._shape = shape
         self._stride_order = stride_order or tuple(range(len(shape)))
-        self._memspace = memspace or AddressSpace.gmem
+        # cannot use memspace or AddressSpace.gmem because AddressSpace.generic is 0
+        self._memspace = memspace if memspace is not None else AddressSpace.gmem
         self._assumed_align = assumed_align or -(-dtype.width // 8)
         self._use_32bit_stride = use_32bit_stride
 
@@ -510,7 +521,8 @@ class _FakeTensor(Tensor):
         self._dtype = dtype
         self._shape = shape
         self._stride = stride
-        self._memspace = memspace or AddressSpace.generic
+        # cannot use memspace or AddressSpace.generic because AddressSpace.generic is 0
+        self._memspace = memspace if memspace is not None else AddressSpace.gmem
         self._assumed_align = assumed_align
         if assumed_align is None:
             # use the bytes width of the element dtype. The alignment is at least one byte align.
@@ -605,7 +617,7 @@ def make_fake_compact_tensor(
     :param shape: Shape of the tensor.
     :type shape: tuple[int, ...]
     :param stride_order: Order in which strides (memory layout) are assigned to the tensor dimensions.
-        If None, the default layout is row-major. Otherwise, it should be a permutation of the dimension indices.
+        If None, the default layout is col-major. Otherwise, it should be a permutation of the dimension indices.
     :type stride_order: tuple[int, ...], optional
     :param memspace: Memory space where the fake tensor resides. Optional.
     :type memspace: str, optional
@@ -643,6 +655,7 @@ def make_fake_compact_tensor(
         assumed_align=assumed_align,
         use_32bit_stride=use_32bit_stride,
     )
+
 
 def make_fake_tensor(dtype, shape, stride, *, memspace=None, assumed_align=None):
     """
@@ -859,20 +872,21 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
     """
 
     def _get_cuda_dialect_runtime_path():
-        libs = os.environ.get("CUTE_DSL_LIBS")
-        if libs:
-            sep = ";" if sys.platform.startswith("win32") else ":"
-            for path in libs.split(sep):
-                if path.endswith("libcuda_dialect_runtime.so"):
-                    return path
-        try:
-            # find package library from wheel package
-            pkg_base = Path(__file__).resolve().parent.parent
-            lib_path = pkg_base / "lib" / "libcuda_dialect_runtime.so"
-            if lib_path.is_file():
-                return str(lib_path)
-        except OSError:
+        libs = get_prefix_dsl_libs("CUTE_DSL")
+        if libs is None:
             return None
+
+        # check if the separator is ; for windows
+        if sys.platform.startswith("win32") and ";" in libs:
+            libs = libs.split(";")
+        else:
+            libs = libs.split(":")
+
+        for path in libs:
+            if path.endswith("libcuda_dialect_runtime.so"):
+                return path
+
+        return None
 
     libs = []
     cuda_dialect_runtime_path = _get_cuda_dialect_runtime_path()

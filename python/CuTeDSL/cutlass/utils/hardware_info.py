@@ -8,12 +8,10 @@
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
-
-from cuda.bindings import driver, nvrtc, runtime
-from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitModule
+from cuda.bindings import driver, runtime
 from cutlass.base_dsl.common import DSLRuntimeError
-
-import cutlass.cute as cute
+from cutlass import cute
+import tempfile
 
 """
 This class is used to get the hardware info of given GPU device.
@@ -53,8 +51,8 @@ class HardwareInfo:
                 f"Cluster size must be between 1 and 32, {cluster_size} is not supported"
             )
 
-        self._get_device_function(self.device)
-
+        # must do get kernel after set device so runtime context is set correctly
+        self.kernel = self._get_device_function()
         max_shared_memory_per_block = self._checkCudaErrors(
             driver.cuDeviceGetAttribute(
                 driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
@@ -152,8 +150,6 @@ class HardwareInfo:
         if isinstance(error, driver.CUresult):
             err, name = driver.cuGetErrorName(error)
             return name if err == driver.CUresult.CUDA_SUCCESS else "<unknown>"
-        elif isinstance(error, nvrtc.nvrtcResult):
-            return nvrtc.nvrtcGetErrorString(error)[1]
         else:
             raise RuntimeError("Unknown error type: {}".format(error))
 
@@ -175,14 +171,20 @@ class HardwareInfo:
         )
 
     # get a empty kernel to compute occupancy
-    def _get_device_function(self, device) -> driver.CUfunction:
-        self.compiled_kernel = cute.compile(self._host_function).to(device)
-        assert isinstance(self.compiled_kernel.jit_module, CudaDialectJitModule)
-        err, kernels = runtime.cudaLibraryEnumerateKernels(
-            1, self.compiled_kernel.jit_module.cuda_library[0]
-        )
-        if err is not runtime.cudaError_t.cudaSuccess:
-            raise DSLRuntimeError(f"Failed to enumerate kernels: {err}")
-        self.kernel = kernels[0]
-        self.kernel = self._checkCudaErrors(driver.cuKernelGetFunction(self.kernel))
-        return self.kernel
+    def _get_device_function(self) -> driver.CUfunction:
+        """
+        Get a device function by compiling a dummy kernel using cuteDSL pipeline.
+        """
+        # Create a temporary directory for dumping artifacts
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # keep-cubin will keep the cubin in the artifacts
+            compiled_func = cute.compile(self._host_function, options=f"--dump-dir={temp_dir} --keep-cubin")
+            # Get the CUBIN from artifacts
+            cubin_data = compiled_func.artifacts.CUBIN
+            cuda_library = self._checkCudaErrors(
+                driver.cuLibraryLoadData(cubin_data, None, None, 0, None, None, 0)
+            )
+            # Enumerate kernels from the library
+            kernels = self._checkCudaErrors(driver.cuLibraryEnumerateKernels(1, cuda_library))
+            # Get the function from the kernel
+            return self._checkCudaErrors(driver.cuKernelGetFunction(kernels[0]))

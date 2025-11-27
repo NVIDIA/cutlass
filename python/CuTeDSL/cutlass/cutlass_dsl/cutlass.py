@@ -32,6 +32,7 @@ import pkgutil
 from dataclasses import is_dataclass, fields
 from math import ceil
 from itertools import chain
+from pathlib import Path
 from collections.abc import Sequence
 import builtins
 import ctypes
@@ -334,8 +335,15 @@ class CutlassBaseDSL(BaseDSL):
                 )
         try:
             # update the version hash of the cutlass shared library
+            giant_dso_name = str(
+                next(
+                    (Path(dsl_path) / "_mlir" / "_mlir_libs").glob(
+                        "_cutlass_ir.cpython*"
+                    )
+                ).name
+            )
             with open(
-                os.path.join(dsl_path, "_mlir/_mlir_libs/libCutlassIRPythonCAPI.so"),
+                os.path.join(dsl_path, f"_mlir/_mlir_libs/{giant_dso_name}"),
                 "rb",
             ) as f:
                 while True:
@@ -345,7 +353,7 @@ class CutlassBaseDSL(BaseDSL):
                     version_hash.update(chunk)
         except Exception:
             raise DSLRuntimeError(
-                "Failed to read the shared library file libCutlassIRPythonCAPI.so."
+                f"Failed to read the shared library file {giant_dso_name}."
                 "The file may not exist or may not be readable."
                 "Please re-install the package."
             )
@@ -386,6 +394,8 @@ class CutlassBaseDSL(BaseDSL):
         args_spec,
         no_cache,
         *,
+        full_args=None,
+        full_kwargs=None,
         dynamic_args=None,
         dynamic_kwargs=None,
         original_function_name=None,
@@ -399,6 +409,8 @@ class CutlassBaseDSL(BaseDSL):
         :param pipeline: The pipeline to use for compilation.
         :param args_spec: The args spec to use for compilation.
         :param no_cache: Whether to cache the result.
+        :param full_args: The full arguments to use for compilation.
+        :param full_kwargs: The full keyword arguments to use for compilation.
         :param dynamic_args: The dynamic arguments to use for compilation.
         :param dynamic_kwargs: The dynamic keyword arguments to use for compilation.
         :param original_function_name: The name of the original function without mangling.
@@ -415,7 +427,7 @@ class CutlassBaseDSL(BaseDSL):
 
             assert self._tvm_ffi_args_spec_converter is not None
             tvm_ffi_spec_params = self._tvm_ffi_args_spec_converter(
-                function_name, args_spec, dynamic_args, dynamic_kwargs
+                function_name, args_spec, full_args, full_kwargs
             )
             tvm_ffi_provider = TVMFFICuteCallProvider(function_name)
 
@@ -445,6 +457,8 @@ class CutlassBaseDSL(BaseDSL):
                     args_spec,
                     no_cache,
                     TVMFFIJitCompiledFunction,
+                    full_args=full_args,
+                    full_kwargs=full_kwargs,
                     dynamic_args=dynamic_args,
                     dynamic_kwargs=dynamic_kwargs,
                 )
@@ -457,6 +471,8 @@ class CutlassBaseDSL(BaseDSL):
             args_spec,
             no_cache,
             CudaDialectJitCompiledFunction,
+            full_args=full_args,
+            full_kwargs=full_kwargs,
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
             original_function_name=original_function_name,
