@@ -135,7 +135,10 @@ You will also need to install the required dependencies:
 
 ```bash
 # Install dpctl (Intel Data Parallel Control library)
-pip install dpctl
+pip install dpctl 
+
+# Install dpctl for Pytorch 2.9 
+pip install dpctl intel-cmplr-lib-rt==2025.2.1
 
 # Install Intel PyTorch XPU support (optional, for PyTorch integration)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/test/xpu
