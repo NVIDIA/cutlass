@@ -209,6 +209,7 @@ def mbarrier_conditional_try_wait(
 def mbarrier_arrive(
     mbar_ptr: Pointer,
     peer_cta_rank_in_cluster: Optional[Int] = None,
+    arrive_count: Int = 1,
     *,
     loc=None,
     ip=None,
@@ -239,7 +240,7 @@ def mbarrier_arrive(
 
     nvvm.mbarrier_txn(
         mbar_llvm_ptr,
-        Int32(1).ir_value(loc=loc, ip=ip),
+        Int32(arrive_count).ir_value(loc=loc, ip=ip),
         kind=nvvm.MBarrierTxnKind.ARRIVE,
         space=space,
         loc=loc,

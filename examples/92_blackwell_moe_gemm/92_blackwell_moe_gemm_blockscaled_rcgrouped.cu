@@ -32,40 +32,36 @@
 
 
 /*! \file
-    \brief Ragged Contiguous Grouped GEMM example using CUTLASS 3 APIs for the NVIDIA Blackwell SM100 architecture.
+    \brief Ragged Contiguous Blockscaled Grouped GEMM example using CUTLASS 3 APIs for the NVIDIA Blackwell SM100 architecture.
 
-    This example demonstrates an implementation of Ragged Contiguous Grouped GEMM using a TMA+TMA Blackwell 
-    SM100 TensorOp-based warp-specialized kernel. In Ragged Contiguous Grouped Gemms, weights are of same size for each group, 
-    i.e. matrix A, whereas Activations differ in shape and stride between groups. Therefore, we used a Batched TMA Load 
-    to load Weights matrix into the shared memory for MMA. The Activations are loaded using a PtrArray logic with updates to TMA descriptors.
+    This example demonstrates an implementation of Ragged Contiguous Grouped GEMM using a TMA + Blackwell SM100 TensorOp-based warp-specialized kernel for narrow precisions (FP4) with Scale Factors (In and Out).
+    For this example all scheduling work is performed on the device.
 
     To run this example:
 
-      $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_rcgrouped --m=128 --k=128 --groups=10
+      $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_blockscaled_rcgrouped --m=128 --k=128 --groups=10
 
-      The above example command makes all 10 groups to be sized at the given m, n, k sizes.
-      Skipping any of the problem dimensions randomizes it across the different groups.
-      Same applies for alpha and beta values that are randomized across the different groups.
+      The above example command makes all 10 groups to be sized at the given m, n, k sizes. 
+      Note that m and k remain consistent across groups and only n is randomized if it's not provided through the args.
+      Alpha and beta values are randomized across the different groups.
 
     To run this example for a set of problems using the benchmark option:
 
-      $ ./examples/92_blackwell_grouped_gemm/92_blackwell_moe_gemm_rcgrouped --benchmark=./test_benchmark.txt
+      $ ./examples/92_blackwell_grouped_gemm/92_blackwell_moe_gemm_blockscaled_rcgrouped --benchmark=./test_benchmark.txt
 
       Where the test_benchmark.txt may look as such:
-        0 256x512x128
-        1 256x512x512
-        2 512x256x128
-        3 256x256x128
-        4 256x512x1024
-        5 1024x512x128 and so on
+        0 256x512x256
+        1 256x128x256
+        2 256x256x256 and so on
+      Note that one must keep m and k consistent across groups in the benchmark file.
+
 */
 
 #include <iostream>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <vector>
-#include <random>
-#include <algorithm>
 #include <float.h>
 
 #include "cutlass/cutlass.h"
@@ -88,37 +84,54 @@
 #include "cutlass/util/tensor_view_io.h"
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "cutlass/util/reference/device/tensor_fill.h"
+#include "cutlass/util/reference/host/tensor_fill.h"
+#include "cutlass/util/reference/host/gett.hpp"
+#include "cutlass/util/reference/host/tensor_norm.h"
+#include "cutlass/util/reference/host/tensor_compare.h"
 
 #include "helper.h"
 using namespace cute;
 
 using ProblemShape = cutlass::gemm::MoEProblemShape<Shape<int,int,int>>; // <M,N,K> per group
-
-using ElementA = cutlass::float_e4m3_t;                                    // Element type for A matrix operand
-using ElementB = cutlass::float_e4m3_t;                                    // Element type for B matrix operand
-using ElementC = cutlass::half_t;                                          // Element type for C and D matrix operands
+using ElementInput = cutlass::float_e4m3_t;                                // Element type for Input matrix operands
+using ElementSF    = cutlass::float_ue8m0_t;                               // Element type for SF matrix operands
+using ElementC     = cutlass::bfloat16_t;                                      // Element type for C matrix operands
 
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // A matrix configuration
-using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
-constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Alignment of A matrix in units of elements (up to 16 bytes)
+using ElementA = cutlass::mx_float8_t<ElementInput>;                        // Element type for A matrix operand
+using LayoutA  = cutlass::layout::RowMajor;                                 // Layout type for A matrix operand
+constexpr int AlignmentA  = 16;                                             // Alignment of A matrix in units of elements (up to 16 bytes)
 
 // B matrix configuration
-using         LayoutB     = cutlass::layout::ColumnMajor;                   // Layout type for B matrix operand
-constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Alignment of B matrix in units of elements (up to 16 bytes)
+using ElementB = cutlass::mx_float8_t<ElementInput>;                        // Element type for A matrix operand
+using LayoutB = cutlass::layout::ColumnMajor;                               // Layout type for B matrix operand
+constexpr int AlignmentB  = 16;                                             // Alignment of A matrix in units of elements (up to 16 bytes)
 
 // C/D matrix configuration
-using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
+using ElementD = ElementC;                                                  // Element type for D matrix operands
+using         LayoutC     = cutlass::layout::RowMajor;                      // Layout type for C and D matrix operands
 constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Alignment of C matrix in units of elements (up to 16 bytes)
+constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // Alignment of D matrix in units of elements (up to 16 bytes)
+using ElementAccumulator  = float;                                          // Element type for internal accumulation
+
+using ElementSFD  = cutlass::float_ue4m3_t;                                 // Element type for SF Output operands
+constexpr int OutputSFVectorSize = 16;
+using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor<
+    cutlass::epilogue::thread::SiLu,
+    OutputSFVectorSize,
+    ElementD,
+    ElementAccumulator,
+    ElementSFD,
+    LayoutC,
+    ElementC>;
 
 // Core kernel configurations
-using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                           // Tag indicating the minimum SM that supports the intended feature
-using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
+using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;            // Operator class tag
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
 
 // Runtime Cluster Shape
@@ -126,111 +139,138 @@ using ClusterShape = Shape<int32_t,int32_t,_1>;
 
 // Different configs for 1SM and 2SM MMA kernel
 struct MMA1SMConfig {
-  using MmaTileShape     = Shape<_128,_128,_64>;
-  using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
-  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
+  using MmaTileShape     = Shape<_128,_256,_128>;
+  using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmMxf8f6f4Sm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;              // Epilogue to launch
 };
 
 struct MMA2SMConfig {
-  using MmaTileShape     = Shape<_256,_256,_64>;
-  using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
-  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
+  using MmaTileShape     = Shape<_256,_256,_128>;
+  using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmMxf8f6f4Sm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;              // Epilogue to launch
 };
 
-template <typename ScheduleConfig>
-struct GivenGemmSchedule {
-  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    typename ScheduleConfig::MmaTileShape, ClusterShape,
-    cutlass::epilogue::collective::EpilogueTileAuto,
+    typename MMA1SMConfig::MmaTileShape, ClusterShape,
+    Shape<_128,_64>,
     ElementAccumulator, ElementAccumulator,
-    ElementC, LayoutC *, AlignmentC,
-    ElementC, LayoutC *, AlignmentC,
-    typename ScheduleConfig::EpilogueSchedule,
-    cutlass::epilogue::fusion::LinearCombination<ElementC, ElementAccumulator>
-  >::CollectiveOp;
-
-  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,
-      ElementA, LayoutA, AlignmentA,
-      ElementB, LayoutB *, AlignmentB,
-    ElementAccumulator,
-    typename ScheduleConfig::MmaTileShape, ClusterShape,
+    ElementC, LayoutC *, AlignmentC, // Set ElementC as void here to run kernel as void-C case
+    ElementD, LayoutC *, AlignmentD,
+    typename MMA1SMConfig::EpilogueSchedule
+    // , FusionOperation  // Enable for SF Output
+>::CollectiveOp;
+using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+  ArchTag, OperatorClass,
+  ElementA, LayoutA, AlignmentA,
+  ElementB, LayoutB *, AlignmentB,
+  ElementAccumulator,
+    typename MMA1SMConfig::MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
-    typename ScheduleConfig::KernelSchedule
-  >::CollectiveOp;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      ProblemShape,
-      CollectiveMainloop,
-      CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-};
-
-using GemmKernel1SM = GivenGemmSchedule<MMA1SMConfig>::GemmKernel;
-using Gemm1SM = GivenGemmSchedule<MMA1SMConfig>::Gemm;
+    typename MMA1SMConfig::KernelSchedule
+>::CollectiveOp;
+using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloop,
+    CollectiveEpilogue
+>;
+using Gemm1SM = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 using Gemm = Gemm1SM;
 
-using GemmKernel2SM = GivenGemmSchedule<MMA2SMConfig>::GemmKernel;
-using Gemm2SM = GivenGemmSchedule<MMA2SMConfig>::Gemm;
-
-// Reference device GEMM implementation type
-using DeviceGemmReference = cutlass::reference::device::Gemm<
-  ElementA,
-  LayoutA,
-  ElementB,
-  LayoutB,
-  ElementC,
-  LayoutC,
+using CollectiveEpilogue2SM = typename cutlass::epilogue::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    typename MMA2SMConfig::MmaTileShape, ClusterShape,
+    Shape<_128,_64>,
+    ElementAccumulator, ElementAccumulator,
+    ElementC, LayoutC *, AlignmentC, // Set ElementC as void here to run kernel as void-C case
+    ElementD, LayoutC *, AlignmentD,
+    typename MMA2SMConfig::EpilogueSchedule
+    // , FusionOperation  // Enable for SF Output
+>::CollectiveOp;
+using CollectiveMainloop2SM = typename cutlass::gemm::collective::CollectiveBuilder<
+  ArchTag, OperatorClass,
+  ElementA, LayoutA, AlignmentA,
+  ElementB, LayoutB *, AlignmentB,
   ElementAccumulator,
-  ElementAccumulator>;
+    typename MMA2SMConfig::MmaTileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue2SM::SharedStorage))>,
+    typename MMA2SMConfig::KernelSchedule
+>::CollectiveOp;
+using GemmKernel2SM = cutlass::gemm::kernel::GemmUniversal<
+    ProblemShape,
+    CollectiveMainloop2SM,
+    CollectiveEpilogue2SM
+>;
+using Gemm2SM = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel2SM>;
 
 using StrideA = cutlass::detail::TagToStrideA_t<LayoutA>;
 using StrideB = typename Gemm::GemmKernel::InternalStrideB;
 using StrideC = typename Gemm::GemmKernel::InternalStrideC;
 using StrideD = typename Gemm::GemmKernel::InternalStrideD;
 
+using LayoutSFA = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFA;
+using LayoutSFB = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFB;
+using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
+using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
+                                        OutputSFVectorSize,
+                                        cute::is_same_v<typename FusionOperation::GmemLayoutTagScalefactor,
+                                            cutlass::layout::RowMajor> ? cute::UMMA::Major::K : cute::UMMA::Major::MN
+                                     >;
+using OutputSFAtom = typename Sm1xxBlockScaledOutputConfig::SfAtom;
+using LayoutSFD = typename Sm1xxBlockScaledOutputConfig::LayoutSF;
+
 // Host-side allocations
-std::vector<int64_t> offset_B;
-std::vector<int64_t> offset_C;
-std::vector<int64_t> offset_D;
-
-std::vector<StrideC> stride_C_host;
-std::vector<StrideD> stride_D_host;
-
 std::vector<ElementAccumulator> alpha_host;
 std::vector<ElementAccumulator> beta_host;
+
+using HostTensorA = cutlass::HostTensor<typename Gemm::ElementA, cutlass::layout::PackedVectorLayout>;
+using HostTensorB = cutlass::HostTensor<typename Gemm::ElementB, cutlass::layout::PackedVectorLayout>;
+using HostTensorSF = cutlass::HostTensor<typename Gemm::GemmKernel::ElementSF, cutlass::layout::PackedVectorLayout>;
+using HostTensorC = cutlass::HostTensor<typename Gemm::ElementC, cutlass::layout::PackedVectorLayout>;
+using HostTensorD = cutlass::HostTensor<typename Gemm::EpilogueOutputOp::ElementOutput, cutlass::layout::PackedVectorLayout>;
+
+HostTensorA block_A;
+HostTensorSF block_SFA;
+std::vector<HostTensorB> block_B;
+std::vector<HostTensorSF> block_SFB;
+std::vector<HostTensorC> block_C;
+std::vector<HostTensorD> block_D;
+std::vector<HostTensorSF> block_SFD;
+std::vector<HostTensorD> block_ref_D;
 
 // Device-side allocations
 cutlass::DeviceAllocation<int32_t> tokens_per_expert;
 
-cutlass::DeviceAllocation<typename Gemm::ElementA> block_A;
-cutlass::DeviceAllocation<typename Gemm::ElementB> block_B;
-cutlass::DeviceAllocation<typename Gemm::ElementC> block_C;
-cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_D;
-cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_ref_D;
-
-cutlass::HostTensor<typename Gemm::EpilogueOutputOp::ElementOutput, cutlass::layout::PackedVectorLayout> tensor_D;
-cutlass::HostTensor<typename Gemm::EpilogueOutputOp::ElementOutput, cutlass::layout::PackedVectorLayout> tensor_ref_D;
-
+cutlass::DeviceAllocation<const typename Gemm::ElementA *> ptr_A;
 cutlass::DeviceAllocation<const typename Gemm::ElementB *> ptr_B;
+cutlass::DeviceAllocation<const typename Gemm::GemmKernel::ElementSF *> ptr_SFA;
+cutlass::DeviceAllocation<const typename Gemm::GemmKernel::ElementSF *> ptr_SFB;
 cutlass::DeviceAllocation<const typename Gemm::ElementC *> ptr_C;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput *> ptr_D;
+cutlass::DeviceAllocation<typename Gemm::GemmKernel::ElementSF *> ptr_SFD;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput *> ptr_ref_D;
 
-cutlass::DeviceAllocation<StrideC> stride_C;
-cutlass::DeviceAllocation<StrideD> stride_D;
+StrideA stride_A;
+LayoutSFA layout_SFA;
 
 // Note, this is an array of pointers to alpha and beta scaling values per group
 cutlass::DeviceAllocation<ElementAccumulator*> alpha_device;
 cutlass::DeviceAllocation<ElementAccumulator*> beta_device;
 cutlass::DeviceAllocation<ElementAccumulator> block_alpha;
 cutlass::DeviceAllocation<ElementAccumulator> block_beta;
+// A matrix wide constant value to scale the output matrix
+// Avoids generating small FP4 values.
+// NormConst is a single device-side constant value, its not per-batch or per-group
+cutlass::DeviceAllocation<ElementAccumulator> norm_constant_device;
 
 #endif // defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
+
+template <typename T>
+auto make_iterator(T* ptr) {
+  return cute::recast_ptr<T>(ptr);
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -241,24 +281,24 @@ using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 struct Options {
 
   bool help = false;
+  bool verification = true;
   bool use_pdl = false;
-  bool sparse_test = false;
 
   float alpha = FLT_MAX;
   float beta  = FLT_MAX;
-  int iterations = 1000;
+  float norm_constant = 1.0;
   int warmup = 1000;
-  int m = 128, n = 128, k = 128, groups = 10;
-  double sparse_prob = 0.1;
-  dim3 cluster_shape = dim3(4,2,1);
+  int iterations = 1000;
+  int m = 1024, n = 2048, k = 512, groups = 10;
+  dim3 cluster_shape = dim3(2,1,1);
   dim3 cluster_shape_fallback = dim3(2,1,1);
-  RasterOrderOptions raster_order = RasterOrderOptions::AlongM;
+  RasterOrderOptions raster_order = RasterOrderOptions::AlongN;
   int max_sm_count = INT_MAX;
   std::string benchmark_path;
   std::vector<int32_t> tokens_per_expert_host;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
   int const tma_alignment_bits = 128;
-  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementInput>::value;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -268,12 +308,11 @@ struct Options {
       help = true;
       return;
     }
+    if (cmd.check_cmd_line_flag("no_verif")) {
+      verification = false;
+    }
     if (cmd.check_cmd_line_flag("use_pdl")) {
       use_pdl = true;
-    }
-    if (cmd.check_cmd_line_flag("sparse_test")) {
-      sparse_test = true;
-      cmd.get_cmd_line_argument("sparse_prob", sparse_prob);
     }
 
     cmd.get_cmd_line_argument("m", m);
@@ -282,8 +321,9 @@ struct Options {
     cmd.get_cmd_line_argument("groups", groups);
     cmd.get_cmd_line_argument("alpha", alpha, FLT_MAX);
     cmd.get_cmd_line_argument("beta",  beta,  FLT_MAX);
-    cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("norm_constant",  norm_constant,  float(1.0));
     cmd.get_cmd_line_argument("warmup", warmup);
+    cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("benchmark", benchmark_path);
     cmd.get_cmd_line_argument("cluster_m", cluster_shape.x);
     cmd.get_cmd_line_argument("cluster_n", cluster_shape.y);
@@ -297,10 +337,6 @@ struct Options {
         problem_sizes_host.clear();
         return;
       }
-    }
-    else if(sparse_test){
-      std::cout << "Running sparse test" << std::endl;
-      randomize_sparse_problems(cmd, sparse_prob);
     }
     else {
       randomize_problems(cmd);
@@ -342,60 +378,8 @@ struct Options {
       problem_sizes_host.push_back({m, n, k});
       tokens_per_expert_host.push_back(n);
     }
+    groups = static_cast<int>(problem_sizes_host.size());
   }
-
-  void randomize_sparse_problems(cutlass::CommandLine &cmd, double prob) {
-    int cmd_line_m = -1, cmd_line_n = -1, cmd_line_k = -1;
-    cmd.get_cmd_line_argument("m", cmd_line_m);
-    cmd.get_cmd_line_argument("n", cmd_line_n);
-    cmd.get_cmd_line_argument("k", cmd_line_k);
-
-    int num_to_set = int(prob * groups);
-
-    std::vector<bool> set_to_zero(groups, false);
-    std::vector<int> indices(groups, false);
-    
-    int index=0;
-    for(auto it = indices.begin(); it != indices.end(); ++it){
-      *it = index++;
-    }
-
-    // Shuffle indices
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::shuffle(indices.begin(), indices.end(), gen);
-    
-    // Set first num_to_set entries to true
-    for (int i = 0; i < num_to_set; ++i)
-      set_to_zero[indices[i]] = true;
-
-    problem_sizes_host.reserve(groups);
-
-    m = cmd_line_m;
-    k = cmd_line_k;
-    if (m < 1) {
-      m = alignment * ((rand() % 64) + 1);
-    }
-    if (k < 1) {
-      k = alignment * ((rand() % 64) + 1);
-    }
-
-    for (int i = groups; i > 0; i--) {
-      int n = cmd_line_n;
-      if (!set_to_zero[i]){
-        if (n < 0) {
-          n = alignment * ((rand() % 64) + 1);
-        }
-      } 
-      else{
-        n = 0;   
-      }
-
-      problem_sizes_host.push_back({m, n, k});
-      tokens_per_expert_host.push_back(n);
-    }
-  }
-
 
   /// Load a benchmark
   bool benchmark_problems() {
@@ -426,6 +410,7 @@ struct Options {
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
       tokens_per_expert_host.push_back(extent.n());
     }
+
     groups = static_cast<int>(problem_sizes_host.size());
     m = get<0>(problem_sizes_host.at(0));
     k = get<2>(problem_sizes_host.at(0));
@@ -436,8 +421,8 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "92_blackwell_moe_gemm_rcgrouped\n\n"
-      << "  Blackwell FP8 Grouped GEMM using a Warp Specialized kernel.\n\n"
+    out << "92_blackwell_moe_gemm_blockscaled_rcgrouped\n\n"
+      << "  Blackwell Block Scaled Narrow Precision Ragged Contiguous Grouped GEMM using a Warp Specialized kernel.\n\n"
       << "Options:\n\n"
       << "  --help                                                       If specified, displays this usage statement\n\n"
       << "  --m=<int>                                                    Sets the M extent of the GEMM for all groups\n"
@@ -445,18 +430,20 @@ struct Options {
       << "  --k=<int>                                                    Sets the K extent of the GEMM for all groups\n"
       << "  --groups=<int>                                               Sets the number of individual GEMM problems for Grouped GEMM\n"
       << "  --alpha=<f32>                                                Epilogue scalar alpha\n"
-      << "  --beta=<f32>                                                 Epilogue scalar beta\n\n"
+      << "  --beta=<f32>                                                 Epilogue scalar beta\n"
+      << "  --norm_constant=<f32>                                        Epilogue scalar normalization constant for the output matrix\n\n"
       << "  --cluster_m=<int>          and --cluster_n=<int>             Sets the X,Y dims of the preferred cluster shape\n"
       << "  --cluster_fallback_m=<int> and --cluster_fallback_n=<int>    Sets the X,Y dims of the fallback cluster shape\n\n"
       << "  --raster=<char>                                              CTA Rasterization direction (N for along N, M for along M)\n\n"
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
       << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
+      << "  --no_verif                                                   Do not run (host-side) verification kernels\n"
       << "  --use_pdl                                                    Launch kernel with PDL (Programmatic Dependent Launch) enabled\n";
-                                                                                             
+
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "92_blackwell_moe_gemm_rcgrouped" << " --m=1024 --n=512 --k=1024 --groups=10 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "92_blackwell_moe_gemm_blockscaled_rcgrouped" << " --m=1024 --n=512 --k=1024 --groups=10 --alpha=2 --beta=0.707 \n\n";
 
     return out;
   }
@@ -496,76 +483,74 @@ struct Result
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper to initialize a block of device data
-template <class Element>
+template <typename Element, typename Layout>
 bool initialize_block(
-  cutlass::DeviceAllocation<Element>& block,
-  uint64_t seed=2023) {
+  cutlass::TensorView<Element, Layout> view,
+  uint64_t seed) {
 
-  Element scope_max, scope_min;
-  int bits_input = cutlass::sizeof_bits<Element>::value;
+  double scope_max, scope_min;
+  constexpr int bits_input = cutlass::sizeof_bits<Element>::value;
 
-  if (bits_input == 1) {
-    scope_max = static_cast<Element>(2);
-    scope_min = static_cast<Element>(0);
-  } else if (bits_input <= 8) {
-    scope_max = static_cast<Element>(2);
-    scope_min = static_cast<Element>(-2);
-  } else {
-    scope_max = static_cast<Element>(8);
-    scope_min = static_cast<Element>(-8);
+  if constexpr (bits_input == 1) {
+    scope_max = 2;
+    scope_min = 0;
+  }
+  else if constexpr (bits_input <= 6) {
+    scope_max = 2;
+    scope_min = -2;
+  }
+  else if constexpr (bits_input <= 8) {
+    if constexpr (cute::is_same_v<Element, cutlass::float_ue8m0_t>) {
+      scope_max = 4;
+      scope_min = 1;
+    }
+    else {
+      scope_max = 1;
+      scope_min = -1;
+    }
+  }
+  else{
+    scope_max = 4;
+    scope_min = -4;
   }
 
-  cutlass::reference::device::BlockFillRandomUniform(
-    block.get(), block.size(), seed, scope_max, scope_min, 0);
+  cutlass::reference::host::TensorFillRandomUniform(
+    view, seed, scope_max, scope_min, 0);
 
   return true;
 }
 
 /// Allocates device-side data
 void allocate(const Options &options) {
-  int64_t total_elements_B = 0;
-  int64_t total_elements_C = 0;
-  int64_t total_elements_D = 0;
-
   for (int32_t i = 0; i < options.groups; ++i) {
-
     auto problem = options.problem_sizes_host.at(i);
     auto M = get<0>(problem);
     auto N = get<1>(problem);
     auto K = get<2>(problem);
 
-    offset_B.push_back(total_elements_B);
-    offset_C.push_back(total_elements_C);
-    offset_D.push_back(total_elements_D);
+    auto stride_B = cutlass::make_cute_packed_stride(StrideB{}, {N, K, 1});
+    auto stride_C = cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1});
+    auto stride_D = cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1});
 
-    int64_t elements_B = K * N;
-    int64_t elements_C = M * N;
-    int64_t elements_D = M * N;
+    auto layout_B = make_layout(make_shape(N, K, 1), stride_B);
+    auto layout_C = make_layout(make_shape(M, N, 1), stride_C);
+    auto layout_D = make_layout(make_shape(M, N, 1), stride_D);
+    auto layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
+    auto layout_SFD = Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
 
-    total_elements_B += elements_B;
-    total_elements_C += elements_C;
-    total_elements_D += elements_D;
-
-    stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1}));
-    stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1}));
-
+    block_B.push_back(HostTensorB(cutlass::make_Coord(size(layout_B))));
+    block_SFB.push_back(HostTensorSF(cutlass::make_Coord(size(filter_zeros(layout_SFB)))));
+    block_C.push_back(HostTensorC(cutlass::make_Coord(size(layout_C))));
+    block_D.push_back(HostTensorD(cutlass::make_Coord(size(layout_D))));
+    block_SFD.push_back(HostTensorSF(cutlass::make_Coord(size(filter_zeros(layout_SFD)))));
+    block_ref_D.push_back(HostTensorD(cutlass::make_Coord(size(layout_D))));
   }
-
-  block_B.reset(total_elements_B);
-  block_C.reset(total_elements_C);
-  block_D.reset(total_elements_D);
-  block_ref_D.reset(total_elements_D);
   block_alpha.reset(options.groups);
   block_beta.reset(options.groups);
-
-  auto a_coord = cutlass::make_Coord(options.m * options.groups, options.k);
-  block_A.reset(a_coord.product());
-
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
-
   uint64_t seed = 2020;
 
   // Setting up tokens_per_expert array
@@ -576,16 +561,43 @@ void initialize(const Options &options) {
   // Assign pointers
   //
 
-  std::vector<ElementB *> ptr_B_host(options.groups);
-  std::vector<ElementC *> ptr_C_host(options.groups);
-  std::vector<ElementC *> ptr_D_host(options.groups);
+  std::vector<typename Gemm::ElementB *> ptr_B_host(options.groups);
+  std::vector<typename Gemm::GemmKernel::ElementSF *> ptr_SFB_host(options.groups);
+  std::vector<typename Gemm::ElementC *> ptr_C_host(options.groups);
+  std::vector<typename Gemm::EpilogueOutputOp::ElementOutput *> ptr_D_host(options.groups);
+  std::vector<typename Gemm::GemmKernel::ElementSF *> ptr_SFD_host(options.groups);
   std::vector<ElementAccumulator *> ptr_alpha_host(options.groups);
   std::vector<ElementAccumulator *> ptr_beta_host(options.groups);
 
+  layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(options.m, options.n, options.k, options.groups));
+
+  stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, options.groups});
+  auto layout_A = make_layout(make_shape(options.m, options.k, options.groups), stride_A);
+  block_A.reset(cutlass::make_Coord(size(layout_A)));
+
+  block_SFA.reset(cutlass::make_Coord(size(filter_zeros(layout_SFA))));
+  initialize_block(block_A.host_view(), seed + 2022);
+  initialize_block(block_SFA.host_view(), seed + 2024);
+
+  block_A.sync_device();
+  block_SFA.sync_device();
+
   for (int32_t i = 0; i < options.groups; ++i) {
-    ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
-    ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
-    ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
+
+    initialize_block(block_B.at(i).host_view(), seed + 2022);
+    initialize_block(block_C.at(i).host_view(), seed + 2023);
+    initialize_block(block_SFB.at(i).host_view(), seed + 2025);
+
+    block_B.at(i).sync_device();
+    block_C.at(i).sync_device();
+    block_SFB.at(i).sync_device();
+
+    ptr_B_host.at(i) = block_B.at(i).device_data();
+    ptr_SFB_host.at(i) = block_SFB.at(i).device_data();
+    ptr_C_host.at(i) = block_C.at(i).device_data();
+    ptr_D_host.at(i) = block_D.at(i).device_data();
+    ptr_SFD_host.at(i) = block_SFD.at(i).device_data();
+
     alpha_host.push_back((options.alpha == FLT_MAX) ? static_cast<ElementAccumulator>((rand() % 5) + 1) : options.alpha);
     beta_host.push_back((options.beta == FLT_MAX) ? static_cast<ElementAccumulator>(rand() % 5) : options.beta);
     ptr_alpha_host.at(i) = block_alpha.get() + i;
@@ -595,34 +607,33 @@ void initialize(const Options &options) {
   ptr_B.reset(options.groups);
   ptr_B.copy_from_host(ptr_B_host.data());
 
+  ptr_SFB.reset(options.groups);
+  ptr_SFB.copy_from_host(ptr_SFB_host.data());
+
   ptr_C.reset(options.groups);
   ptr_C.copy_from_host(ptr_C_host.data());
 
   ptr_D.reset(options.groups);
   ptr_D.copy_from_host(ptr_D_host.data());
 
-  stride_C.reset(options.groups);
-  stride_C.copy_from_host(stride_C_host.data());
-
-  stride_D.reset(options.groups);
-  stride_D.copy_from_host(stride_D_host.data());
+  ptr_SFD.reset(options.groups);
+  ptr_SFD.copy_from_host(ptr_SFD_host.data());
 
   alpha_device.reset(options.groups);
   alpha_device.copy_from_host(ptr_alpha_host.data());
   beta_device.reset(options.groups);
   beta_device.copy_from_host(ptr_beta_host.data());
 
-  initialize_block(block_A, seed + 2023);
-  initialize_block(block_B, seed + 2022);
-  initialize_block(block_C, seed + 2021);
   block_alpha.copy_from_host(alpha_host.data());
   block_beta.copy_from_host(beta_host.data());
+
+  norm_constant_device.reset(1);
+  norm_constant_device.copy_from_host(&options.norm_constant);
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
 template <typename Gemm>
-typename Gemm::Arguments args_from_options(Options &options)
-{
+typename Gemm::Arguments args_from_options(Options &options) {
   cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
   // to use a GPU other than that with device ID 0.
@@ -633,6 +644,7 @@ typename Gemm::Arguments args_from_options(Options &options)
     if (size<0>(typename Gemm::GemmKernel::CollectiveMainloop::AtomThrShapeMNK{}) == 2 &&
         (options.cluster_shape.x < 2 || options.cluster_shape_fallback.x < 2)) {
       std::cout << "Error: MMA2SMConfig kernel config needs cluster_dim.x >= 2" << std::endl;
+      exit(-1);
     }
     hw_info.cluster_shape = options.cluster_shape;
     hw_info.cluster_shape_fallback = options.cluster_shape_fallback;
@@ -643,8 +655,8 @@ typename Gemm::Arguments args_from_options(Options &options)
   fusion_args.alpha_ptr = nullptr;
   fusion_args.beta_ptr = nullptr;
 
-  // If alpha/beta are provided (via cmd line args) and are scalar, then same alpha/beta applies to all batches.
-  // If pointers to alpha/beta are provided, then alpha/beta can differ between batches/groups.
+  // If alpha/beta are provided (via cmd line args) and are scalar, i.e., same alpha/beta applies to all batches.
+  // If pointers to alpha/beta are provided, i.e., alpha/beta can differ between batches/groups.
   if (options.alpha != FLT_MAX){
     // Single alpha for all groups
     fusion_args.alpha = options.alpha;
@@ -676,7 +688,8 @@ typename Gemm::Arguments args_from_options(Options &options)
   arguments = typename Gemm::Arguments {
     cutlass::gemm::GemmUniversalMode::kGrouped,
     {options.m, options.n, options.k, options.groups, tokens_per_expert.get()},
-    {block_A.get(), ptr_B.get()},
+    {block_A.device_data(), ptr_B.get(), 
+     block_SFA.device_data(), ptr_SFB.get()},
     {fusion_args, ptr_C.get(), nullptr, ptr_D.get(), nullptr},
     hw_info, scheduler
   };
@@ -685,39 +698,58 @@ typename Gemm::Arguments args_from_options(Options &options)
 }
 
 bool verify(const Options &options) {
+  using namespace cute;
   bool passed = true;
   for (int32_t i = 0; i < options.groups; ++i) {
     auto problem = options.problem_sizes_host.at(i);
     auto M = get<0>(problem);
     auto N = get<1>(problem);
     auto K = get<2>(problem);
-    cutlass::TensorRef ref_A(block_A.get() + size_t(1) * i * M * K, Gemm::LayoutA::packed({M, K}));
-    cutlass::TensorRef ref_B(block_B.get() + offset_B.at(i), Gemm::LayoutB::packed({K, N}));
-    cutlass::TensorRef ref_C(block_C.get() + offset_C.at(i), Gemm::LayoutC::packed({M, N}));
-    cutlass::TensorRef ref_D(block_ref_D.get() + offset_D.at(i), Gemm::LayoutD::packed({M, N}));
 
-    //
-    // Compute reference output
-    //
+    auto stride_A = cutlass::make_cute_packed_stride(StrideA{}, {M, K, 1});
+    auto stride_B = cutlass::make_cute_packed_stride(StrideB{}, {N, K, 1});
+    auto stride_C = cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1});
+    auto stride_D = cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1});
+    auto layout_A = make_layout(make_shape(M, K, 1), stride_A);
+    auto layout_B = make_layout(make_shape(N, K, 1), stride_B);
+    auto layout_C = make_layout(make_shape(M, N, 1), stride_C);
+    auto layout_D = make_layout(make_shape(M, N, 1), stride_D);
+    auto layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
+    auto layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
+    auto layout_SFD = Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
 
-    // Create instantiation for device reference gemm kernel
-    DeviceGemmReference gemm_reference;
+    // Create the arguments for host reference implementation
+    Tensor tensor_A = make_tensor(make_iterator(block_A.host_data()) + size_t(1) * i * size(layout_A), layout_A);
+    Tensor tensor_SFA = make_tensor(block_SFA.host_data() + size_t(1) * i * size(filter_zeros(layout_SFA)), layout_SFA);
+    Tensor tensor_B = make_tensor(make_iterator(block_B.at(i).host_data()), layout_B);
+    Tensor tensor_SFB = make_tensor(block_SFB.at(i).host_data(), layout_SFB);
+    cutlass::reference::host::GettBlockScalingMainloopParams<ElementAccumulator,
+        decltype(tensor_A),
+        decltype(tensor_SFA),
+        decltype(tensor_B),
+        decltype(tensor_SFB)
+      >
+    mainloop_params{tensor_A, tensor_SFA, tensor_B, tensor_SFB};
 
-    // Launch device reference gemm kernel
-    gemm_reference(
-      {M, N, K},
-      ElementAccumulator(alpha_host.at(i)),
-      ref_A,
-      ref_B,
-      ElementAccumulator(beta_host.at(i)),
-      ref_C,
-      ref_D);
+    auto tensor_C = cute::make_tensor(make_iterator(block_C.at(i).host_data()), layout_C);
+    auto tensor_ref_D = cute::make_tensor(make_iterator(block_ref_D.at(i).host_data()), layout_D);
 
-    // Wait for kernel to finish
-    CUDA_CHECK(cudaDeviceSynchronize());
+    cutlass::reference::host::GettEpilogueParams<
+        float, float,
+        ElementAccumulator, ElementAccumulator,
+        decltype(tensor_C), decltype(tensor_ref_D)
+      > epilogue_params{};
 
+    epilogue_params.C = tensor_C;
+    epilogue_params.D = tensor_ref_D;
+    epilogue_params.alpha = alpha_host.at(i);
+    epilogue_params.beta = beta_host.at(i);
+
+    cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
+
+    block_D.at(i).sync_host();
     // Check if output from CUTLASS kernel and reference kernel are equal or not
-    passed &= cutlass::reference::device::BlockCompareEqual(block_ref_D.get() + offset_D.at(i), block_D.get() + offset_D.at(i), M * N);
+    passed &= cutlass::reference::host::TensorEquals(block_ref_D.at(i).host_view(), block_D.at(i).host_view());
 
   }
   return passed;
@@ -725,7 +757,7 @@ bool verify(const Options &options) {
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
-int run(Options &options, bool host_problem_shapes_available = true)
+int run(Options &options)
 {
   std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
   for (int32_t i = 0; i < options.groups; ++i) {
@@ -755,19 +787,24 @@ int run(Options &options, bool host_problem_shapes_available = true)
   // Correctness / Warmup iteration
   CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
 
+  cudaDeviceSynchronize();
+
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options);
-
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
-
-  if (!result.passed) {
-    exit(-1);
+  if (options.verification) {
+    std::cout << "  Host-side verification is now running - may be very slow for large cases." << std::endl;
+    result.passed = verify(options);
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    if (!result.passed) {
+      exit(-1);
+    }
+  }
+  else {
+    std::cout << "  Verification is turned off for this run." << std::endl;
   }
 
   // Run profiling loop
-  if (options.iterations > 0)
-  {
+  if (options.iterations > 0) {
     for (int iter = 0; iter < options.warmup; ++iter) {
       CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
       CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
@@ -813,7 +850,9 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3
+       )
+     ) {
     std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
@@ -842,7 +881,7 @@ int main(int argc, char const **args) {
   std::cout << "Running kernel with 1SM MMA config:" << std::endl;
   run<Gemm1SM>(options);
   std::cout << "Running kernel with 2SM MMA config:" << std::endl;
-  run<Gemm2SM>(options);     
+  run<Gemm2SM>(options);
 #endif
 
   return 0;

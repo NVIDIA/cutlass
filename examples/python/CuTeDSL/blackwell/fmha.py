@@ -247,7 +247,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         k_iter: cute.Pointer,
         v_iter: cute.Pointer,
         o_iter: cute.Pointer,
-        problem_size: Tuple[Int32, Int32, Int32, Int32, Int32, Int32],
+        problem_size: Tuple[Int32, Int32, Int32, Int32, Int32, Int32, Int32],
         cum_seqlen_q: Optional[cute.Tensor],
         cum_seqlen_k: Optional[cute.Tensor],
         lse_iter: Optional[cute.Pointer],
