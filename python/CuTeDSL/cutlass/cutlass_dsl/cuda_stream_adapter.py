@@ -42,3 +42,7 @@ class CudaDialectStreamAdapter:
 
     def __get_mlir_types__(self):
         return [cuda.StreamType.get()]
+
+    def __cuda_stream__(self):
+        # support cuda stream protocol
+        return (0, int(self._arg))

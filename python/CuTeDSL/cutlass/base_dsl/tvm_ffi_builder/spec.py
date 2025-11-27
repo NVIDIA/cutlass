@@ -136,7 +136,10 @@ class Shape(Param):
     name: str
     shape: list[Union[int, Var]]
 
-    def __init__(self, name: str, shape: list[Union[int, Var]]) -> None:
+    def __init__(
+        self,
+        name: str, shape: list[Union[int, Var]],
+    ) -> None:
         """Initialize a Shape parameter.
 
         Parameters
@@ -146,6 +149,9 @@ class Shape(Param):
         shape : list[int | Var]
             The shape of the parameter.
 
+        unpack_shape: bool
+            Whether to unpack the shape into list of arguments when calling
+            the call provider function.
         """
         self.name = name
         self.shape = shape
@@ -301,6 +307,106 @@ class DataPointer(Param):
         self.address_space = address_space
 
 
+class ConstNone(Param):
+    """ConstNone parameter.
+
+    Parameters
+    ----------
+    name : str
+        The parameter name.
+    """
+    name: str
+
+    def __init__(self, name: str) -> None:
+        """Initialize a ConstExpr parameter.
+
+        Parameters
+        ----------
+        name : str
+            The parameter name.
+        """
+        self.name = name
+
+
+class TupleParam(Param):
+    """Tuple parameter.
+
+    Parameters
+    ----------
+    name : str
+        The parameter name.
+    """
+    name: str
+    params: list[Param]
+
+    def __init__(self, name: str, params: list[Param]) -> None:
+        """Initialize a TupleParam parameter.
+
+        Parameters
+        ----------
+        name : str
+            The parameter name.
+        params : list[Param]
+            The parameters of the tuple.
+        """
+        self.name = name
+        self.params = params
+
+
+def format_param_type(param: Param) -> str:
+    """Format a parameter type as a string, recursively handling nested types.
+
+    Parameters
+    ----------
+    param : Param
+        The parameter to format.
+
+    Returns
+    -------
+    str
+        The formatted type string.
+
+    Raises
+    ------
+    TypeError
+        If an unsupported parameter type is encountered.
+    """
+    if isinstance(param, Var):
+        return str(param.dtype)
+    elif isinstance(param, Tensor):
+        # Format tensor shape
+        shape_strs = []
+        for dim in param.shape:
+            if isinstance(dim, Var):
+                shape_strs.append(dim.name)
+            else:
+                shape_strs.append(str(dim))
+        shape_str = "[" + ", ".join(shape_strs) + "]"
+        return f"Tensor({shape_str}, {param.dtype})"
+    elif isinstance(param, Shape):
+        # Format shape parameter
+        shape_strs = []
+        for dim in param.shape:
+            if isinstance(dim, Var):
+                shape_strs.append(dim.name)
+            else:
+                shape_strs.append(str(dim))
+        shape_str = "[" + ", ".join(shape_strs) + "]"
+        return f"Shape({shape_str})"
+    elif isinstance(param, Stream):
+        return "Stream"
+    elif isinstance(param, DataPointer):
+        return "DataPointer"
+    elif isinstance(param, ConstNone):
+        return "None"
+    elif isinstance(param, TupleParam):
+        # Recursively format tuple elements
+        element_types = [format_param_type(p) for p in param.params]
+        return f"Tuple[{', '.join(element_types)}]"
+    else:
+        raise TypeError(f"Unsupported parameter type: {type(param)}")
+
+
 def signature(name: str, params: list[Param]) -> str:
     """Generate a function signature string from name and parameters.
 
@@ -325,39 +431,13 @@ def signature(name: str, params: list[Param]) -> str:
     param_strs = []
 
     for param in params:
-        if isinstance(param, Var):
-            param_str = f"{param.name}: {param.dtype}"
-        elif isinstance(param, Tensor):
-            # Format tensor shape
-            shape_strs = []
-            for dim in param.shape:
-                if isinstance(dim, Var):
-                    shape_strs.append(dim.name)
-                else:
-                    shape_strs.append(str(dim))
-            shape_str = "[" + ", ".join(shape_strs) + "]"
-            param_str = f"{param.name}: Tensor({shape_str}, {param.dtype})"
-        elif isinstance(param, Shape):
-            # Format shape parameter
-            shape_strs = []
-            for dim in param.shape:
-                if isinstance(dim, Var):
-                    shape_strs.append(dim.name)
-                else:
-                    shape_strs.append(str(dim))
-            shape_str = "[" + ", ".join(shape_strs) + "]"
-            param_str = f"{param.name}: Shape({shape_str})"
-        elif isinstance(param, Stream):
-            param_str = f"{param.name}: Stream"
-        elif isinstance(param, DataPointer):
-            param_str = f"{param.name}: DataPointer"
-        elif isinstance(param, EnvStream):
+        if isinstance(param, EnvStream):
             # env stream is not part of the FFI function signature
             # continue to skip append
             continue
-        else:
-            raise TypeError(f"Unsupported parameter type: {type(param)}")
 
+        param_type = format_param_type(param)
+        param_str = f"{param.name}: {param_type}"
         param_strs.append(param_str)
 
     return f"{name}({', '.join(param_strs)})"

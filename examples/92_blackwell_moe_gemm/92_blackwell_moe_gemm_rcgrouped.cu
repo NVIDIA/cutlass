@@ -392,6 +392,7 @@ struct Options {
       }
 
       problem_sizes_host.push_back({m, n, k});
+      tokens_per_expert_host.push_back(n);
     }
   }
 
@@ -423,8 +424,11 @@ struct Options {
         extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
+      tokens_per_expert_host.push_back(extent.n());
     }
     groups = static_cast<int>(problem_sizes_host.size());
+    m = get<0>(problem_sizes_host.at(0));
+    k = get<2>(problem_sizes_host.at(0));
 
     return true;
   }

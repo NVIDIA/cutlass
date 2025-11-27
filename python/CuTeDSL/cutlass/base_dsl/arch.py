@@ -32,6 +32,9 @@ class Arch(Enum):
     sm_101 = (10, 1, "")
     sm_101a = (10, 1, "a")
     sm_101f = (10, 1, "f")
+    sm_103 = (10, 3, "")
+    sm_103a = (10, 3, "a")
+    sm_103f = (10, 3, "f")
     sm_110 = (11, 0, "")
     sm_110a = (11, 0, "a")
     sm_110f = (11, 0, "f")
@@ -80,6 +83,9 @@ class Arch(Enum):
             Arch.sm_101,
             Arch.sm_101a,
             Arch.sm_101f,
+            Arch.sm_103,
+            Arch.sm_103a,
+            Arch.sm_103f,
             Arch.sm_110,
             Arch.sm_110a,
             Arch.sm_110f,

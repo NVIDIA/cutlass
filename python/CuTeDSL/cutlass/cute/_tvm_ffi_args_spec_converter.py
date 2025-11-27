@@ -42,7 +42,7 @@ from .typing import (
 )
 import cuda.bindings.driver as cuda
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, get_origin, get_args
 import inspect
 
 NumericToTVMFFIDtype = {
@@ -91,6 +91,11 @@ def _get_llvm_address_space_from_memspace(
         return 1
     return None
 
+def _is_gpu_memspace(
+    memspace: _cute_ir.AddressSpace,
+) -> bool:
+    return memspace != _cute_ir.AddressSpace.generic
+
 
 class SymIntId:
     def __init__(self, sym_int: SymInt):
@@ -103,118 +108,187 @@ class SymIntId:
         return self.sym_int is other.sym_int
 
 
-def _tvm_ffi_args_spec_converter(
-    function_name: str,
-    args_spec: inspect.FullArgSpec,
-    dynamic_args: List[Any],
-    dynamic_kwargs: Dict[str, Any],
-):
-    """Convert cute algebra args to tvm ffi spec params.
 
-    This function converts the cute arguments specs to tvm ffi spec params.
-    """
-    exec_args = ExecutionArgs(args_spec, function_name)
-    rectified_args = exec_args.get_rectified_args(dynamic_args, dynamic_kwargs)
-    arg_names = exec_args.args_spec.args + exec_args.args_spec.kwonlyargs
+class ConverterContext:
+    """Context for managing variable allocation during TVM FFI args conversion."""
 
-    params = []
-    num_dyn_shape_vars = 0
-    num_dyn_stride_vars = 0
-    sym_int_id_mapping = {}
+    def __init__(self):
+        self.num_dyn_shape_vars = 0
+        self.num_dyn_stride_vars = 0
+        self.sym_int_id_mapping = {}
 
-
-    def alloc_shape_name():
-        nonlocal num_dyn_shape_vars
-        name = f"n{num_dyn_shape_vars}"
-        num_dyn_shape_vars += 1
+    def alloc_shape_name(self) -> str:
+        """Allocate a new dynamic shape variable name."""
+        name = f"n{self.num_dyn_shape_vars}"
+        self.num_dyn_shape_vars += 1
         return name
 
-    def alloc_stride_name():
-        nonlocal num_dyn_stride_vars
-        name = f"s{num_dyn_stride_vars}"
-        num_dyn_stride_vars += 1
+    def alloc_stride_name(self) -> str:
+        """Allocate a new dynamic stride variable name."""
+        name = f"s{self.num_dyn_stride_vars}"
+        self.num_dyn_stride_vars += 1
         return name
 
-    def alloc_or_reuse_symint_var(value, name_alloc_func):
-        nonlocal sym_int_id_mapping
+    def alloc_or_reuse_symint_var(self, value: SymInt, name_alloc_func):
+        """Allocate or reuse a symbolic integer variable."""
         sym_int_id = SymIntId(value)
-        if sym_int_id in sym_int_id_mapping:
-            return sym_int_id_mapping[sym_int_id]
+        if sym_int_id in self.sym_int_id_mapping:
+            return self.sym_int_id_mapping[sym_int_id]
         name = name_alloc_func()
         if value.width == 32:
             dtype = NumericToTVMFFIDtype[Int32]
         else:
             dtype = NumericToTVMFFIDtype[Int64]
         var = spec.Var(name, dtype, divisibility=value.divisibility)
-        sym_int_id_mapping[sym_int_id] = var
+        self.sym_int_id_mapping[sym_int_id] = var
         return var
 
-    for arg, arg_name in zip(rectified_args, arg_names):
-        arg_type = args_spec.annotations.get(arg_name, None)
-        if isinstance(arg, Numeric) and arg.dtype in AcceptableNumericTypesForScalar:
-            params.append(spec.Var(arg_name, NumericToTVMFFIDtype[arg.dtype]))
-        elif is_cute_algebra_type(arg_type):
-            shape = []
-            for i in range(len(arg)):
-                if isinstance(arg[i], int):
-                    shape.append(arg[i])
-                elif isinstance(arg[i], SymInt):
-                    shape.append(alloc_or_reuse_symint_var(arg[i], alloc_shape_name))
-                else:
-                    shape.append(spec.Var(alloc_shape_name(), NumericToTVMFFIDtype[arg[i].dtype]))
-            params.append(spec.Shape(arg_name, shape))
-        elif isinstance(arg, Tensor):
-            shapes = []
-            for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):
-                if not dyn_mask:
-                    shapes.append(arg.shape[i])
-                elif isinstance(arg.shape[i], SymInt):
-                    shapes.append(alloc_or_reuse_symint_var(arg.shape[i], alloc_shape_name))
-                else:
-                    shapes.append(spec.Var(alloc_shape_name(), NumericToTVMFFIDtype[Int32]))
-            strides = []
 
-            for i, dyn_mask in enumerate(arg.dynamic_strides_mask):
-                if not dyn_mask:
-                    strides.append(arg.stride[i])
-                elif isinstance(arg.stride[i], SymInt):
-                    strides.append(alloc_or_reuse_symint_var(arg.stride[i], alloc_stride_name))
-                else:
-                    if hasattr(arg, "_use_32bit_stride") and arg._use_32bit_stride:
-                        dtype = NumericToTVMFFIDtype[Int32]
-                    else:
-                        dtype = NumericToTVMFFIDtype[Int64]
-                    strides.append(spec.Var(alloc_stride_name(), dtype))
+def _convert_single_arg(
+    arg,
+    arg_name: str,
+    arg_type,
+    ctx: ConverterContext
+) -> spec.Param:
+    """Convert a single argument to a spec.Param.
 
+    Parameters
+    ----------
+    arg : Any
+        The argument value to convert.
+    arg_name : str
+        The name of the argument.
+    arg_type : type
+        The type annotation of the argument.
+    ctx : ConverterContext
+        The converter context for managing variable allocation.
+
+    Returns
+    -------
+    spec.Param
+        The converted parameter specification.
+    """
+    if arg is None:
+        return spec.ConstNone(arg_name)
+    elif (isinstance(arg, Numeric) and arg.dtype in AcceptableNumericTypesForScalar):
+        return spec.Var(arg_name, NumericToTVMFFIDtype[arg.dtype])
+    elif arg_type in AcceptableNumericTypesForScalar:
+        return spec.Var(arg_name, NumericToTVMFFIDtype[arg_type])
+    elif is_cute_algebra_type(arg_type):
+        shape = []
+        for i in range(len(arg)):
+            if isinstance(arg[i], int):
+                shape.append(arg[i])
+            elif isinstance(arg[i], SymInt):
+                shape.append(ctx.alloc_or_reuse_symint_var(arg[i], ctx.alloc_shape_name))
+            else:
+                shape.append(spec.Var(ctx.alloc_shape_name(), NumericToTVMFFIDtype[arg[i].dtype]))
+        return spec.Shape(arg_name, shape)
+    elif isinstance(arg, Tensor):
+        shapes = []
+        for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):
+            if not dyn_mask:
+                shapes.append(arg.shape[i])
+            elif isinstance(arg.shape[i], SymInt):
+                shapes.append(ctx.alloc_or_reuse_symint_var(arg.shape[i], ctx.alloc_shape_name))
+            else:
+                shapes.append(spec.Var(ctx.alloc_shape_name(), NumericToTVMFFIDtype[Int32]))
+        strides = []
+
+        for i, dyn_mask in enumerate(arg.dynamic_strides_mask):
+            if not dyn_mask:
+                strides.append(arg.stride[i])
+            elif isinstance(arg.stride[i], SymInt):
+                strides.append(ctx.alloc_or_reuse_symint_var(arg.stride[i], ctx.alloc_stride_name))
+            else:
+                if hasattr(arg, "_use_32bit_stride") and arg._use_32bit_stride:
+                    dtype = NumericToTVMFFIDtype[Int32]
+                else:
+                    dtype = NumericToTVMFFIDtype[Int64]
+                strides.append(spec.Var(ctx.alloc_stride_name(), dtype))
+        if hasattr(arg, "_tvm_ffi_tensor"):
+            tvm_ffi_tensor = arg._tvm_ffi_tensor
+            dtype = tvm_ffi_tensor.dtype
+            tvm_ffi_cute_tensor = spec.Tensor(
+                arg_name,
+                shapes,
+                arg._tvm_ffi_tensor.dtype,
+                strides=strides,
+                data_alignment=arg._assumed_align,
+                device_type=tvm_ffi_tensor.device.type
+            )
+        else:
+            # for FakeTensor, strictly follow the shape and stride from the cute tensor
+            device_type = "cuda" if _is_gpu_memspace(arg.memspace) else "cpu"
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
                 shapes,
                 NumericToTVMFFIDtype[arg.element_type],
                 strides=strides,
                 data_alignment=arg._assumed_align,
+                device_type=device_type,
             )
             if arg.element_type == Float4E2M1FN:
                 tvm_ffi_cute_tensor = spec.create_map_tensor_dtype_f4x2_to_f4_spec(
                     tvm_ffi_cute_tensor
                 )
-            params.append(tvm_ffi_cute_tensor)
-        elif isinstance(arg, Pointer):
-            address_space = None
-            if hasattr(arg, "memspace"):
-                address_space = _get_llvm_address_space_from_memspace(arg.memspace)
-            params.append(spec.DataPointer(arg_name, address_space=address_space))
-        elif isinstance(arg, _FakeStream):
-            if arg.use_tvm_ffi_env_stream:
-                params.append(spec.EnvStream(arg_name))
-            else:
-                params.append(spec.Stream(arg_name))
-        elif isinstance(arg, cuda.CUstream):
-            params.append(spec.Stream(arg_name))
+        return tvm_ffi_cute_tensor
+    elif isinstance(arg, Pointer) or arg_type == Pointer:
+        address_space = None
+        if hasattr(arg, "memspace"):
+            address_space = _get_llvm_address_space_from_memspace(arg.memspace)
+        return spec.DataPointer(arg_name, address_space=address_space)
+    elif isinstance(arg, _FakeStream):
+        if arg.use_tvm_ffi_env_stream:
+            return spec.EnvStream(arg_name)
         else:
-            raise DSLRuntimeError(f"Unsupported argument type: {type(arg)}")
-    # The following code can obtain signature of the function
-    # that maybe useful for future debugging and usecases.
-    # signature = spec.signature(function_name, params)
+            return spec.Stream(arg_name)
+    elif isinstance(arg, cuda.CUstream):
+        return spec.Stream(arg_name)
+    elif arg_type is not None and get_origin(arg_type) is tuple:
+        # Handle Tuple[X, Y, ...] type annotations
+        tuple_element_types = get_args(arg_type)
+        if not isinstance(arg, (tuple, list)):
+            raise DSLRuntimeError(f"Expected tuple for argument {arg_name}, got {type(arg)}")
+        if len(arg) != len(tuple_element_types):
+            raise DSLRuntimeError(
+                f"Tuple length mismatch for argument {arg_name}: "
+                f"expected {len(tuple_element_types)}, got {len(arg)}"
+            )
+
+        # Recursively convert each tuple element
+        tuple_params = []
+        for i, (elem, elem_type) in enumerate(zip(arg, tuple_element_types)):
+            elem_name = f"{arg_name}[{i}]"
+            elem_param = _convert_single_arg(elem, elem_name, elem_type, ctx)
+            tuple_params.append(elem_param)
+
+        return spec.TupleParam(arg_name, tuple_params)
+    else:
+        raise DSLRuntimeError(f"Unsupported argument type: {type(arg)}")
+
+
+def _tvm_ffi_args_spec_converter(
+    function_name: str,
+    args_spec: inspect.FullArgSpec,
+    full_args: List[Any],
+    full_kwargs: Dict[str, Any],
+):
+    """Convert cute algebra args to tvm ffi spec params.
+
+    This function converts the cute arguments specs to tvm ffi spec params.
+    """
+    exec_args = ExecutionArgs(args_spec, function_name)
+    rectified_args = exec_args.get_rectified_args_from_original_args(full_args, full_kwargs)
+    arg_names = exec_args.args_spec.args + exec_args.args_spec.kwonlyargs
+    params = []
+    ctx = ConverterContext()
+
+    for arg, arg_name in zip(rectified_args, arg_names):
+        arg_type = args_spec.annotations.get(arg_name, None)
+        param = _convert_single_arg(arg, arg_name, arg_type, ctx)
+        params.append(param)
+
     return params
 
 

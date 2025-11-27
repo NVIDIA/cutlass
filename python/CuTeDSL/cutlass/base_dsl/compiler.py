@@ -356,7 +356,11 @@ class GPUArch(StringCompileOption):
 
 
 class EnableTVMFFI(EmptyCompileOption):
-    option_name = "enable-tvm-ffi"
+    pass
+
+
+class DumpDir(EmptyCompileOption):
+    option_name = "dump-dir"
 
 
 class CompileOptions:
@@ -380,6 +384,7 @@ class CompileOptions:
             GPUArch: GPUArch(""),
             LinkLibraries: LinkLibraries(""),
             EnableTVMFFI: EnableTVMFFI(False),
+            DumpDir: DumpDir(""),
         }
 
         if options is not None:
@@ -416,19 +421,24 @@ class CompileOptions:
             if self.options[GPUArch].value == ""
             else self.options[GPUArch].value
         )
+        dump_dir = (
+            envar.dump_dir
+            if self.options[DumpDir].value == ""
+            else self.options[DumpDir].value
+        )
         if self.options[KeepPTX].value:
             self.options[KeepPTX].dump_path = os.path.join(
-                envar.dump_dir, f"{function_name}"
+                dump_dir, f"{function_name}"
             )
             self.options[KeepPTX].full_ptx_path = os.path.join(
-                envar.dump_dir, f"{function_name}.{arch}.ptx"
+                dump_dir, f"{function_name}.{arch}.ptx"
             )
         if self.options[KeepCUBIN].value:
             self.options[KeepCUBIN].dump_path = os.path.join(
-                envar.dump_dir, f"{function_name}"
+                dump_dir, f"{function_name}"
             )
             self.options[KeepCUBIN].full_cubin_path = os.path.join(
-                envar.dump_dir, f"{function_name}.{arch}.cubin"
+                dump_dir, f"{function_name}.{arch}.cubin"
             )
 
     @property
@@ -504,6 +514,7 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
             "keep_ptx": KeepPTX,
             "gpu_arch": GPUArch,
             "enable_tvm_ffi": EnableTVMFFI,
+            "dump_dir": DumpDir,
         }
         return mapping[option_str]
 
@@ -520,6 +531,7 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
     parser.add_argument("--ptxas-options", type=str, default="")
     parser.add_argument("--gpu-arch", type=str, default="")
     parser.add_argument("--enable-tvm-ffi", action="store_true", default=False)
+    parser.add_argument("--dump-dir", type=str, default="")
     compile_options = CompileOptions()
     try:
         # Use shlex to properly handle options with spaces
@@ -545,7 +557,7 @@ class CompileCallable:
     def __init__(self, options=None):
         def preprocess_options(option):
             if type(option) is type and issubclass(
-                option, (BooleanCompileOption, BooleanBasedFileDumpOption)
+                option, (BooleanCompileOption, BooleanBasedFileDumpOption, EnableTVMFFI)
             ):
                 # Automatically creates a True instance of the option
                 return option(True)

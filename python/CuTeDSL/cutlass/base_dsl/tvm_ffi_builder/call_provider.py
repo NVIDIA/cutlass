@@ -20,6 +20,18 @@ from ..._mlir.dialects import llvm
 from .tvm_ffi_builder import CallContext, CallProvider, TVMFFIBuilder
 
 
+def _flatten_tuple_params(params: list[spec.Param]) -> list[spec.Param]:
+    """Recursively flatten TupleParam into list of params."""
+    flattened = []
+    for param in params:
+        if isinstance(param, spec.TupleParam):
+            # Recursively flatten nested tuples
+            flattened.extend(_flatten_tuple_params(param.params))
+        else:
+            flattened.append(param)
+    return flattened
+
+
 class NopCallProvider(CallProvider):
     """No-op call provider for testing purposes."""
 
@@ -53,7 +65,11 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
     """
 
     def __init__(
-        self, target_func: str, include_num_args: bool = False, struct_call: bool = False,
+        self,
+        target_func: str,
+        include_num_args: bool = False,
+        struct_call: bool = False,
+        flatten_tuple_params: bool = True,
     ) -> None:
         import tvm_ffi
 
@@ -61,7 +77,11 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
         self.target_func = target_func
         self.include_num_args = include_num_args
         self.struct_call = struct_call
+        self.flatten_tuple_params = flatten_tuple_params
         self.float4x2_dtype = tvm_ffi.dtype("float4_e2m1fnx2")
+
+        if not self.flatten_tuple_params:
+            raise RuntimeError("flatten_tuple_params=False is not supported yet")
 
     def get_callee_struct_for_param_tensor(
         self,
@@ -157,8 +177,15 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
         self, current_block: ir.Block, context: CallContext
     ) -> list[tuple[ir.Type, ir.Value]]:
         """Pack a parameter to a struct."""
+        # Flatten TupleParam into list of params if enabled
+        if self.flatten_tuple_params:
+            flattened_params = _flatten_tuple_params(context.params)
+        else:
+            flattened_params = context.params
+
+        # Pack each parameter
         packed_params = []
-        for param in context.params:
+        for param in flattened_params:
             if isinstance(param, spec.Tensor):
                 packed_params.append(
                     self.pack_param_tensor(current_block, context, param)
@@ -177,6 +204,9 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                 packed_params.append(
                     self.pack_param_var(current_block, context, param.var)
                 )
+            elif isinstance(param, spec.ConstNone):
+                # const none is not packed
+                continue
             else:
                 raise NotImplementedError(f"Unsupported parameter type: {type(param)}")
         return packed_params
