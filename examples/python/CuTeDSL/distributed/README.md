@@ -1,6 +1,6 @@
 # CuTeDSL Distributed Examples
 
-This directory contains distributed examples using CuTeDSL with NVSHMEM for multi-GPU communication. Currently, we only use NVSHMEM host functions for memory allocation and management. 
+This directory contains distributed examples using CuTeDSL with NVSHMEM for multi-GPU communication. Currently, we do not support to use NVSHMEM for any device side copy/put/get impl, only use the host side setup and allocations.
 
 ## NVSHMEM Dependency
 
