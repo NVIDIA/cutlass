@@ -1246,14 +1246,16 @@ struct Xe_Reorder<ReorderKind::UU, float_ue8m0_t, float>
   reorder(intel::uchar4 const& src0, intel::float4& dst0)
   {
 #if defined(CUTE_ARCH_REORDER_XE_ENABLED)
-    asm (     /* 2 cycles/output register */
+    asm (     /* 3 cycles/output register */
       "{\n"
       ".decl IN_UB v_type=G type=UB num_elts=64 alias=<%1,0>\n"
       ".decl OUT_UW v_type=G type=UW num_elts=128 alias=<%0,0>\n"
-      "shl (M1_NM, 32) OUT_UW(0,1)<2> IN_UB(0,0)<1;1,0>   7:uw\n"
-      "shl (M1_NM, 32) OUT_UW(2,1)<2> IN_UB(0,32)<1;1,0>  7:uw\n"
-      "add.sat (M1_NM, 32) OUT_UW(0,0)<2> IN_UB(0,0)<1;1,0>  -254:w\n"
-      "add.sat (M1_NM, 32) OUT_UW(2,0)<2> IN_UB(0,32)<1;1,0> -254:w\n"
+      "shl (M1_NM, 32)     OUT_UW(0,1)<2>  IN_UB(0,0)<1;1,0>   7:uw\n"
+      "shl (M1_NM, 32)     OUT_UW(2,1)<2>  IN_UB(0,32)<1;1,0>  7:uw\n"
+      "add.sat (M1_NM, 32) OUT_UW(0,0)<2>  IN_UB(0,0)<1;1,0>   -254:w\n"
+      "add.sat (M1_NM, 32) OUT_UW(2,0)<2>  IN_UB(0,32)<1;1,0>  -254:w\n"
+      "max (M1_NM, 32)     OUT_UW(0,1)<2>  OUT_UW(0,1)<2>      0x40:uw\n"
+      "max (M1_NM, 32)     OUT_UW(2,1)<2>  OUT_UW(2,1)<2>      0x40:uw\n"
       "}\n"
       : "=rw"(dst0)
       : "rw"(src0)

@@ -135,7 +135,7 @@ auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> c
   else if constexpr (is_subbyte_v<DType>)
     return ReorderDispatchRelayoutConvert{};
   else if constexpr (!is_same_v<remove_cv_t<SType>, remove_cv_t<DType>>)
-    return ReorderDispatchRelayoutConvert{};
+    return ReorderDispatchConvertRelayout{};
   else
     return ReorderDispatchXeGeneric{};
 }
@@ -176,21 +176,30 @@ void
 reorder_impl(ReorderDispatchXeGeneric  const&,
              Tensor<SEngine,SLayoutWI> const& src,       // WI fragment
              Tensor<DEngine,DLayoutWI> &      dst,       // WI fragment
-             SLayout                   const& slayout,   // (src thr, src val) -> coord
-             DLayout                   const& dlayout)   // (dst thr, dst val) -> coord
+             SLayout                   const&,           // (src thr, src val) -> coord
+             DLayout                   const&)           // (dst thr, dst val) -> coord
 {
   using SrcType = typename SEngine::element_type;
   using DstType = typename DEngine::element_type;
   static_assert(is_same_v<SrcType, DstType>, "No type conversions allowed on this path");
 
-  auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));          // src index -> dst index
-  auto ilayout = coalesce(composition(right_inverse(slayout), dlayout));          // dst index -> src index
+  static constexpr SLayout slayout{};
+  static constexpr DLayout dlayout{};
+  static constexpr auto rlayout = coalesce(composition(right_inverse(dlayout), slayout));      // src index -> dst index
+  static constexpr auto ilayout = coalesce(composition(right_inverse(slayout), dlayout));      // dst index -> src index
+
+  // Check for broadcast cases. This path allows a single src element to be copied
+  //   to multiple dst elements (useful for grouped quantization cases).
+  // Broadcast in (flattened) mode 0 requires special handling.
+  static constexpr bool has_broadcast = (size(DLayoutWI{}) > size(SLayoutWI{}));
+  static constexpr bool mode0_broadcast = has_broadcast && (stride<0>(ilayout) == _0{});
 
   // Decide whether to stride on src or dst, depending on which allows a longer vector length.
   static constexpr int elems_per_grf = 64 / sizeof(SrcType);
-  static constexpr int ds_vl = cute::min(32, cute::min(shape<0>(rlayout), elems_per_grf / stride<0>(rlayout)));
-  static constexpr int ss_vl = cute::min(32, cute::min(shape<0>(ilayout), elems_per_grf / stride<0>(ilayout)));
-  static constexpr bool has_broadcast = (size(DLayoutWI{}) > size(SLayoutWI{}));
+  static constexpr auto dstride = stride<0>(rlayout);
+  static constexpr int sstride = mode0_broadcast ? 1 : stride<0>(ilayout);
+  static constexpr int ds_vl = cute::min(32, cute::min(shape<0>(rlayout), elems_per_grf / dstride));
+  static constexpr int ss_vl = cute::min(32, cute::min(shape<0>(ilayout), elems_per_grf / sstride));
 
   // Make dst live, to prevent compiler from inserting its own initialization.
 #ifdef __SYCL_DEVICE_ONLY__
@@ -203,19 +212,28 @@ reorder_impl(ReorderDispatchXeGeneric  const&,
   }
 #endif
 
-  if constexpr (ss_vl >= ds_vl || has_broadcast) {
+  if constexpr (mode0_broadcast) {
+    // Stride on dst, with mode-0 broadcast.
+    for_each(make_seq<size<0>(ilayout)>{}, [&](auto j) {
+      for_each(make_seq<size(SLayout{}) / ds_vl>{}, [&](auto i) {
+        constexpr auto sidx = i * ds_vl;
+        constexpr auto didx = rlayout(sidx) + j;
+        reorder_span<ds_vl, 1, dstride, sidx, didx>(src, dst);
+      });
+    });
+  } else if constexpr (ss_vl >= ds_vl || has_broadcast) {
     // Stride on src. For simplicity, take 1 GRF at a time.
     for_each(make_seq<size(SLayout{}) / ss_vl>{}, [&](auto i) {
       constexpr auto didx = i * ss_vl;
       constexpr auto sidx = ilayout(didx);
-      reorder_span<ss_vl, stride<0>(decltype(ilayout){}), 1, sidx, didx>(src, dst);
+      reorder_span<ss_vl, sstride, 1, sidx, didx>(src, dst);
     });
   } else {
     // Stride on dst.
     for_each(make_seq<size(SLayout{}) / ds_vl>{}, [&](auto i) {
       constexpr auto sidx = i * ds_vl;
       constexpr auto didx = rlayout(sidx);
-      reorder_span<ds_vl, 1, stride<0>(decltype(rlayout){}), sidx, didx>(src, dst);
+      reorder_span<ds_vl, 1, dstride, sidx, didx>(src, dst);
     });
   }
 }

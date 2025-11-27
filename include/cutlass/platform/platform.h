@@ -855,6 +855,7 @@ struct numeric_limits<int32_t> {
   static constexpr int32_t max() noexcept { return 2147483647;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = true;
 };
 
 template <>
@@ -865,6 +866,7 @@ struct numeric_limits<int16_t> {
   static constexpr int16_t max() noexcept { return 32767;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = true;
 };
 
 template <>
@@ -875,6 +877,7 @@ struct numeric_limits<int8_t> {
   static constexpr int8_t max() noexcept { return 127;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = true;
 };
 
 
@@ -886,6 +889,7 @@ struct numeric_limits<uint32_t> {
   static constexpr uint32_t max() noexcept { return 4294967295U;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = false;
 };
 
 template <>
@@ -896,6 +900,7 @@ struct numeric_limits<uint16_t> {
   static constexpr uint16_t max() noexcept { return 65535U;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = false;
 };
 
 template <>
@@ -906,6 +911,7 @@ struct numeric_limits<uint8_t> {
   static constexpr uint8_t max() noexcept { return 255U;}
   static constexpr bool is_integer = true;
   static constexpr bool has_infinity = false;
+  static constexpr bool is_signed = false;
 };
 
 template <>
@@ -918,6 +924,7 @@ struct numeric_limits<float> {
   static constexpr float max() noexcept { return bit_cast<float, int32_t>(0x7f7fffff);}
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
+  static constexpr bool is_signed = true;
 };
 
 /// Returns a value that curries the `std::maximum()` function into the identity
