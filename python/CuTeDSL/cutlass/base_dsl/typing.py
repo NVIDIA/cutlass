@@ -239,19 +239,6 @@ def get_c_pointers(obj):
     return []
 
 
-def arg_compatible_with_tvm_ffi(arg):
-    """
-    Given the `arg`, check if it is a compatible argument for TVM FFI
-    """
-    import tvm_ffi
-
-    return (
-        hasattr(arg, "__tvm_ffi_object__")
-        or isinstance(arg, (int, float, bool))
-        or isinstance(arg, tvm_ffi.Shape)
-    )
-
-
 def get_mlir_types(obj):
     """
     Given the `obj`, recursively go through it to extract all contained MLIR types

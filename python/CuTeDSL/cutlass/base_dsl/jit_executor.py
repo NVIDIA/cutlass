@@ -216,6 +216,69 @@ class ExecutionArgs:
 
         return exe_args, adapted_args
 
+    def get_rectified_args_from_original_args(self, full_args, full_kwargs):
+        """
+        This function is used to rectify the original arguments to the runtime
+        arguments that matched the original args_spec.
+
+        :param full_args: The original full arguments to filter.
+        :param full_kwargs: The original full keyword arguments to filter.
+        :return: The filtered arguments and keyword arguments.
+        """
+        arg_spec = self.original_args_spec
+
+        if arg_spec.defaults:
+            defaults_start_idx = len(arg_spec.args) - len(arg_spec.defaults)
+        else:
+            defaults_start_idx = len(arg_spec.args)
+
+        runtime_args = []
+        # Filter arguments and maintain their properties
+        for i, arg_name in enumerate(arg_spec.args):
+            arg_type = arg_spec.annotations.get(arg_name, None)
+
+            # Skip compile-time arguments
+            if is_arg_spec_constexpr(arg_type, arg_name, i, self.function_name):
+                continue
+
+            # Keep corresponding default if it exists
+            if i >= defaults_start_idx:
+                default_idx = i - defaults_start_idx
+                runtime_args.append(arg_spec.defaults[default_idx])
+            else:
+                runtime_args.append(full_args[i])
+
+        # Filter keyword-only arguments
+        runtime_kwargs = {}
+        if arg_spec.kwonlyargs:
+            for i, kwarg in enumerate(arg_spec.kwonlyargs):
+                arg_type = arg_spec.annotations.get(kwarg, None)
+
+                # Skip compile-time arguments
+                if is_arg_spec_constexpr(arg_type, kwarg, i, self.function_name):
+                    continue
+
+                # Keep runtime keyword-only arguments
+                if kwarg in full_kwargs:
+                    runtime_kwargs[kwarg] = full_kwargs[kwarg]
+                elif arg_spec.kwonlydefaults and kwarg in arg_spec.kwonlydefaults:
+                    runtime_kwargs[kwarg] = arg_spec.kwonlydefaults[kwarg]
+
+        if (len(runtime_args) != len(self.args_spec.args) or
+            len(runtime_kwargs) != len(self.args_spec.kwonlyargs)):
+            raise DSLRuntimeError(
+                "input args/kwargs length does not match runtime function signature!",
+                context={
+                    "input args length": len(runtime_args),
+                    "input kwargs length": len(runtime_kwargs),
+                    "function signature args length": len(self.args_spec.args),
+                    "function signature kwonlyargs length": len(self.args_spec.kwonlyargs),
+                },
+            )
+
+        return runtime_args + list(runtime_kwargs.values())
+
+
     def filter_runtime_arg_spec(self, arg_spec: inspect.FullArgSpec):
         runtime_args = []
         runtime_annotations = {}
@@ -562,6 +625,13 @@ class JitCompiledFunction:
             kernel_modules[sym] = CudaModuleAndKernel(sym, cubin_module, kernel, attrs)
         return list(kernel_modules.values())
 
+    def _validate_engine(self):
+        if self.engine is None:
+            raise DSLRuntimeError(
+                "The compiled function does not have a valid execution engine.",
+                suggestion="For cross-compilation, please use `cute.export.export_to_c` to serialize the compiled function and load/execute it on target device.",
+            )
+
     def to(self, device=None) -> JitExecutor:
         """Returns an executable function bound to the given device.
 
@@ -573,6 +643,7 @@ class JitCompiledFunction:
         :return: A callable executor function.
         :rtype: JitExecutor
         """
+        self._validate_engine()
         with self._executor_lock:
             # We need to ensure that the modules are loaded if not already
             if self.jit_module is None:
@@ -621,4 +692,4 @@ class JitCompiledFunction:
                 # object alive as it hold a reference to self.
                 proxy_self = weakref.proxy(self)
                 self._default_executor = proxy_self.to(None)
-        self._default_executor.run_compiled_program(exe_args)
+        return self._default_executor.run_compiled_program(exe_args)

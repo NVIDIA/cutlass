@@ -52,6 +52,7 @@ from ..base_dsl.compiler import (
     KeepPTX,
     GPUArch,
     LinkLibraries,
+    EnableTVMFFI,
 )
 from ..base_dsl.runtime.jit_arg_adapters import *
 

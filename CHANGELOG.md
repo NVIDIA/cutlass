@@ -2,6 +2,20 @@
 
 # CUTLASS 4.x
 
+## [4.3.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.1) (2025-11-26)
+
+### CuTe DSL
+* New features
+    - Added Blackwell SM103 support
+    - Multiple dependent DSOs in the wheel have been merged into one single DSO
+* Bug fixing and improvements
+    - Fixed device reset issue with tvm-ffi
+    - Fixed tvm-ffi export compiled function
+
+### CUTLASS C++
+* Support blockscaled variant of ragged contiguous grouped gemm with the new simplified MoE API in [example 92](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm/).
+    - The new example works for all microscaling types.
+
 ## [4.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.0) (2025-11-21)
 
 ### CuTe DSL

@@ -77,6 +77,7 @@ def main():
     # compile the kernel with "--enable-tvm-ffi" option
     compiled_add_one = cute.compile(add_one, a_cute, b_cute, options="--enable-tvm-ffi")
 
+    os.makedirs("./build", exist_ok=True)
     object_file_path = "./build/add_one.o"
     lib_path = "./build/add_one.so"
     compiled_add_one.export_to_c(object_file_path, function_name="add_one")

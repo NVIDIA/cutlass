@@ -774,7 +774,8 @@ struct CollectiveMma<
 
     if constexpr (IsTensorMapUpdateAsync) {
       return ret;
-    } else {
+    } 
+    else {
       // Fetch a copy of tensormaps for the CTA from Params
       auto input_tensormaps = tensormaps_init(params, shared_tensormaps, sm_count, sm_idx);
       return cute::tuple_cat(ret, cute::make_tuple(input_tensormaps));

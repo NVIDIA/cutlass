@@ -1977,15 +1977,9 @@ class BlockwiseGemmKernel:
                 tcgen05.copy.Ld16x256bOp(tcgen05.copy.Repetition(8)),
                 self.acc_dtype,
             )
-        elif cutlass.const_expr(self.mma_tiler[0] == 128):
+        else:
             tmem_load_atom = cute.make_copy_atom(
                 tcgen05.copy.Ld32x32bOp(tcgen05.copy.Repetition(32)),
-                self.acc_dtype,
-            )
-        else:
-            # default: 16dp
-            tmem_load_atom = cute.make_copy_atom(
-                tcgen05.copy.Ld16x256bOp(tcgen05.copy.Repetition(1)),
                 self.acc_dtype,
             )
         if cutlass.const_expr(self.mma_tiler[0] == 64):
@@ -1993,15 +1987,9 @@ class BlockwiseGemmKernel:
                 tcgen05.copy.St16x256bOp(tcgen05.copy.Repetition(8)),
                 self.acc_dtype,
             )
-        elif cutlass.const_expr(self.mma_tiler[0] == 128):
+        else:
             tmem_store_atom = cute.make_copy_atom(
                 tcgen05.copy.St32x32bOp(tcgen05.copy.Repetition(32)),
-                self.acc_dtype,
-            )
-        else:
-            # default: 16dp
-            tmem_store_atom = cute.make_copy_atom(
-                tcgen05.copy.St16x256bOp(tcgen05.copy.Repetition(1)),
                 self.acc_dtype,
             )
 

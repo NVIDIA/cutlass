@@ -664,6 +664,7 @@ def make_smem_layout_a(
     a_dtype: Type[Numeric],
     num_stages: int,
     *,
+    is_k_major=None,
     loc=None,
     ip=None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
@@ -687,7 +688,8 @@ def make_smem_layout_a(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = tiled_mma.op.a_major_mode == OperandMajorMode.K
+    is_k_major = (tiled_mma.op.a_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    a_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     a_smem_shape = tiled_mma.partition_shape_A(
         cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
@@ -696,7 +698,7 @@ def make_smem_layout_a(
         cute.size(a_smem_shape[0][1], loc=loc, ip=ip) * a_smem_shape[2],
     )
     smem_layout_atom_kind = get_smem_layout_atom_ab(
-        tiled_mma.op.a_major_mode, a_dtype, a_smem_shape_mn_k, loc=loc, ip=ip
+        a_major_mode, a_dtype, a_smem_shape_mn_k, loc=loc, ip=ip
     )
     a_smem_layout_atom = make_smem_layout_atom(
         smem_layout_atom_kind, a_dtype, loc=loc, ip=ip
@@ -716,6 +718,7 @@ def make_smem_layout_b(
     b_dtype: Type[Numeric],
     num_stages: int,
     *,
+    is_k_major=None,
     loc=None,
     ip=None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
@@ -739,7 +742,8 @@ def make_smem_layout_b(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = tiled_mma.op.b_major_mode == OperandMajorMode.K
+    is_k_major = (tiled_mma.op.b_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    b_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     b_smem_shape = tiled_mma.partition_shape_B(
         cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
@@ -749,7 +753,7 @@ def make_smem_layout_b(
     )
 
     smem_layout_atom_kind = get_smem_layout_atom_ab(
-        tiled_mma.op.b_major_mode, b_dtype, b_smem_shape_nk, loc=loc, ip=ip
+        b_major_mode, b_dtype, b_smem_shape_nk, loc=loc, ip=ip
     )
     b_smem_layout_atom = make_smem_layout_atom(
         smem_layout_atom_kind, b_dtype, loc=loc, ip=ip
