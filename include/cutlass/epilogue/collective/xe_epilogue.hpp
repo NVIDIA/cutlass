@@ -35,6 +35,7 @@
 #include <sycl/sycl.hpp>
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/dispatch_policy.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/collective_epilogue.hpp"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
@@ -52,7 +53,7 @@ namespace collective {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  class TiledMMA_,
+  class WGTileMNK_,
   class EpilogueTile_,
   class ElementC_,
   class StrideC_,
@@ -64,7 +65,7 @@ template <
 >
 class CollectiveEpilogue<
     IntelXeGeneric,
-    TiledMMA_,
+    WGTileMNK_,
     EpilogueTile_,
     ElementC_,
     StrideC_,
@@ -79,47 +80,39 @@ public:
   // Type Aliases
   //
   using DispatchPolicy = IntelXeXMX16;
-  using TiledMMA = TiledMMA_;
-  using FusionCallbacks = FusionCallbacks_;
+
+  using WGTileMNK = WGTileMNK_;
   using ElementC = ElementC_;
   using StrideC = StrideC_;
   using ElementD = ElementD_;
   using StrideD = StrideD_;
+  using FusionCallbacks = FusionCallbacks_;
   using CopyOpG2R = CopyOpG2R_;
   using CopyOpR2G = CopyOpR2G_;
 
-  using WGTileMNK = decltype(TiledMMA{}.tile_mnk());
-  using MMATile = decltype(take<0,2>(typename TiledMMA::AtomShape_MNK{}));
-
-  static auto default_epi_tile_helper() {
-    constexpr int R_preferred = 8;
-    constexpr int C_preferred = 512 / cute::min(sizeof_bits_v<ElementC>, sizeof_bits_v<ElementD>);    // 1 cache line
-    constexpr int R = cute::gcd(R_preferred, get<0>(MMATile{}));
-    constexpr int C = cute::gcd(C_preferred, get<1>(MMATile{}));
-    return Shape<Int<R>, Int<C>>{};
-  }
-
-  using DefaultEpilogueTile = decltype(default_epi_tile_helper());
-  using EpilogueTile = replace_void_t<EpilogueTile_, DefaultEpilogueTile>;
+  using NonVoidElementC = replace_void_t<ElementC, ElementD>;
 
   using ThreadEpilogueOp = typename fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
   using ElementOutput = ElementD;
 
-  static constexpr int CopyBitsC = cute::min(sizeof(ElementC) * 8, 64);
+  static constexpr int CopyBitsC = cute::min(sizeof(NonVoidElementC) * 8, 64);
   static constexpr int CopyBitsD = cute::min(sizeof(ElementD) * 8, 64);
-  using DefaultCopyOpG2R =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
-  using DefaultCopyOpR2G = XE_STORE_2D<CopyBitsD, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsD, get<1>(EpilogueTile{}))>;
 
-  using GmemTiledCopyC = replace_void_t<CopyOpG2R, DefaultCopyOpG2R>;
-  using GmemTiledCopyD = replace_void_t<CopyOpR2G, DefaultCopyOpR2G>;
+  // NOTE: GmemTiledCopy* may not be the actual C/D copy operations. They are declared here only so
+  //         that GemmUniversalAdapter can inspect their alignment requirements.
+  //       The real C/D copy operations are deduced inside operator() once we have access to
+  //         the TiledMMA.
+  using GmemTiledCopyC = replace_void_t<CopyOpG2R,  XE_LOAD_2D<CopyBitsC, 8, 512 / CopyBitsC>>;
+  using GmemTiledCopyD = replace_void_t<CopyOpR2G, XE_STORE_2D<CopyBitsD, 8, 512 / CopyBitsD>>;
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
+  static_assert(cute::rank(WGTileMNK{}) == 3, "WGTileMNK must be rank-3: [M, N, K]");
   static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
   static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
 
-  using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<ElementC const*>(nullptr)),
+  using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<NonVoidElementC const*>(nullptr)),
                                        Layout<Shape<int,int,int>, StrideC>{}));
 
   using TensorD = decltype(make_tensor(make_gmem_ptr(static_cast<ElementD*>(nullptr)),
@@ -168,8 +161,9 @@ public:
     auto shape_CD = select<0,1,3>(problem_shape_MNKL);        // (M,N,L)
 
     // Create C/D tensors here; delay TiledCopy creation to the kernel.
-    auto mC = make_tensor(make_gmem_ptr(args.ptr_C), make_layout(shape_CD, args.dC));
-    auto mD = make_tensor(make_gmem_ptr(args.ptr_D), make_layout(shape_CD, args.dD));
+    auto non_void_ptr_C = reinterpret_cast<const NonVoidElementC*>(args.ptr_C);
+    auto mC = make_tensor(make_gmem_ptr(non_void_ptr_C), make_layout(shape_CD, args.dC));
+    auto mD = make_tensor(make_gmem_ptr(args.ptr_D),     make_layout(shape_CD, args.dD));
 
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
@@ -196,6 +190,8 @@ public:
   can_implement(
       ProblemShape const& problem_shapes,
       Arguments const& args) {
+
+    // TODO: all these checks should be pushed down to individual copy atoms
     constexpr int copy_alignment_bits = 128;
     constexpr int batch_alignment_bits = 512;
     auto problem_shape_MNKL = append<4>(problem_shapes, 1);
@@ -249,7 +245,8 @@ public:
     class ProblemShapeMNKL,
     class TileShapeMNK, /* compatibility with legacy epilogues */
     class TileCoordMNKL,
-    class Accumulator
+    class Accumulator,
+    class TiledMMA
   >
   CUTLASS_DEVICE void
   operator() (
@@ -257,10 +254,28 @@ public:
       TileShapeMNK,     /* compatibility with legacy epilogues */
       TileCoordMNKL tile_coord_mnkl,
       Accumulator accumulators,
-      TiledMMA,         /* compatibility with legacy epilogues */
+      TiledMMA,
       int thread_idx) {
 
     using namespace cute;
+
+    using MMATile = decltype(take<0,2>(typename TiledMMA::AtomShape_MNK{}));
+
+    static constexpr int EpiRPreferred = 8;
+    static constexpr int EpiCPreferred = 512 / cute::min(sizeof_bits_v<NonVoidElementC>, sizeof_bits_v<ElementD>);    // 1 cache line
+    static constexpr int EpiR = cute::gcd(EpiRPreferred, get<0>(MMATile{}));
+    static constexpr int EpiC = cute::gcd(EpiCPreferred, get<1>(MMATile{}));
+
+    using DefaultEpilogueTile = Shape<Int<EpiR>, Int<EpiC>>;
+    using EpilogueTile = conditional_t<is_void_v<EpilogueTile_> || is_same_v<EpilogueTile_, EpilogueTileAuto>,
+                                       DefaultEpilogueTile,
+                                       EpilogueTile_>;
+
+    using DefaultCopyOpG2R =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
+    using DefaultCopyOpR2G = XE_STORE_2D<CopyBitsD, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsD, get<1>(EpilogueTile{}))>;
+
+    using ActualGmemTiledCopyC = replace_void_t<CopyOpG2R, DefaultCopyOpG2R>;
+    using ActualGmemTiledCopyD = replace_void_t<CopyOpR2G, DefaultCopyOpR2G>;
 
     auto batch_idx = get<3>(tile_coord_mnkl);
 
@@ -290,8 +305,8 @@ public:
     //   - compute fragments (same layout as accumulator)
     // Both copy and compute fragments are SubgroupTensors, holding coordinate mappings
     //   within the epilogue tile.
-    auto copy_c = make_block_2d_copy(GmemTiledCopyC{}, params.mC(_,_,batch_idx));
-    auto copy_d = make_block_2d_copy(GmemTiledCopyD{}, params.mD(_,_,batch_idx));
+    auto copy_c = make_block_2d_copy(ActualGmemTiledCopyC{}, params.mC(_,_,batch_idx));
+    auto copy_d = make_block_2d_copy(ActualGmemTiledCopyD{}, params.mD(_,_,batch_idx));
 
     int wi_idx = thread_idx % intel::sg_size;
     auto thr_copy_c = copy_c.get_slice(wi_idx);
@@ -313,8 +328,6 @@ public:
     using AccTVLayout = decltype(thr_mma.partition_sg_fragment_C(gCD).tv_layout());
     auto cd_compute_tv = make_layout(get<0>(AccTVLayout{}),
                                      sg_v_coord(_,_,_,_0{},_0{}));
-
-    using NonVoidElementC = replace_void_t<ElementC, int>;
 
     auto tCrC_compute_wi = make_fragment_like<NonVoidElementC>(tiled_acc(_,_0{},_0{}));
     auto tCrC_compute = make_subgroup_tensor(tCrC_compute_wi, cd_compute_tv);           // (mma_v,mma_m,mma_n)

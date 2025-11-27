@@ -189,7 +189,7 @@ struct XeAuxLoad {
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     auto xe_copy_aux = params_ptr->xe_load_aux;
-    Tensor trAux = make_tensor_like<Element>(args.tCrC);
+    Tensor trAux = make_tensor_like<Element>(args.tCrC.tensor());
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
@@ -430,7 +430,7 @@ struct XeRowBroadcast {
     Tensor tCgRow_static = sm90_partition_for_epilogue<ReferenceSrc>(                  // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
       mRow_static, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, id_in_sg);
     Tensor tCrRow = make_tensor_like<ElementCompute>(tCgRow_static);                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    
+
     return ConsumerStoreCallbacks(tCgRow, tCrRow, args.tCcD, args.residue_tCcD, params);
   }
 };

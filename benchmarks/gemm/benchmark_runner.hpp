@@ -172,7 +172,7 @@ struct BenchmarkRunnerGemm {
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
-  using ElementAcc = typename Gemm::ElementAccumulator;
+  using ElementAccumulator = typename Gemm::ElementAccumulator;
 
   using CollectiveMainloop = typename Gemm::GemmKernel::CollectiveMainloop;
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
@@ -187,7 +187,6 @@ struct BenchmarkRunnerGemm {
   using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
-  using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
@@ -660,7 +659,7 @@ struct BenchmarkRunnerGemm {
               stride_S, block_zero.get(), stride_Z, 128};
     }
 
-    arguments.epilogue = {{ElementAcc(options.alpha), ElementAcc(options.beta)}, block_C[0].get(), stride_C, block_D.get(), stride_D};
+    arguments.epilogue = {{ElementAccumulator(options.alpha), ElementAccumulator(options.beta)}, block_C[0].get(), stride_C, block_D.get(), stride_D};
     arguments.hw_info = hw_info;
 
     if constexpr(epi_is_deeltactmul){
@@ -748,7 +747,7 @@ struct BenchmarkRunnerGemm {
         gemm::GemmUniversalMode::kGemm,
         problem_size,
         {block_A[input_num].get(), stride_A, block_B[input_num].get(), stride_B},
-        {{ElementAcc(options.alpha), ElementAcc(options.beta)}, block_C[input_num].get(), stride_C, block_D.get(), stride_D},
+        {{ElementAccumulator(options.alpha), ElementAccumulator(options.beta)}, block_C[input_num].get(), stride_C, block_D.get(), stride_D},
         hw_info
       };
       if constexpr (is_mixed_dtype<DispatchPolicy>) {

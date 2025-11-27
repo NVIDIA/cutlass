@@ -71,7 +71,6 @@ struct CollectiveMma<MainloopXeL1Staged<Stages, Schedule>, TileShape_, ElementA_
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
-  static_assert(platform::is_same<ElementA, ElementB>::value, "MainloopXeL1Staged requires that A and B have same type.");
   static_assert(std::is_same_v<TransformA, cute::identity>, "Transformation for A is not currently supported on Intel PVC");
   static_assert(std::is_same_v<TransformB, cute::identity>, "Transformation for B is not currently supported on Intel PVC");
 
@@ -214,11 +213,11 @@ struct CollectiveMma<MainloopXeL1Staged<Stages, Schedule>, TileShape_, ElementA_
     /* Partition global tensor (proxies) for copies */
     Tensor tAgA = thr_copy_a.partition_S(gA);
     Tensor tBgB = thr_copy_b.partition_S(gB);
-    
+
     /* Create prefetch TiledCopy instances */
     auto prefetch_a = make_block_2d_prefetch(copy_a);
     auto prefetch_b = make_block_2d_prefetch(copy_b);
-      
+
     auto thr_prefetch_A = prefetch_a.get_slice(thread_idx);
     auto thr_prefetch_B = prefetch_b.get_slice(thread_idx);
 

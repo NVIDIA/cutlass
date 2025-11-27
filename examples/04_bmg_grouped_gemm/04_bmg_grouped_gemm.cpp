@@ -587,17 +587,15 @@ int main(int argc, const char** argv)
           decltype(tile_shape(TiledMma()))>;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
-          TiledMma,
           TileShape,
+          void,               // Epilogue tile (void = automatic)
           ElementAccumulator,
           cutlass::gemm::TagToStrideC_t<LayoutC*>,
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD*>,
           FusionCallBacks,
-          void,
-          void, void,
-          void,
-          void, void>;
+          void,               // The copy atom used to load matrix C  (void = automatic)
+          void>;              // The copy atom used to store matrix D (void = automatic)
 
 // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<

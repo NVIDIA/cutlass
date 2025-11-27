@@ -90,7 +90,7 @@ struct DefaultGemmGroupConfiguration<
   using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
 
   using FusionCallBacks = epilogue::fusion::FusionCallbacks<
-    epilogue::IntelXeXMX16Group,
+    epilogue::IntelXeGenericGroup,
     EpilogueOp,
     TileShape,
     decltype(tile_shape(TiledMma()))
@@ -103,7 +103,7 @@ struct DefaultGemmGroupConfiguration<
       float, float,
       float, LayoutC, 1,
       ElementOutput, LayoutC, 1,
-      epilogue::IntelXeXMX16Group,
+      epilogue::IntelXeGenericGroup,
       EpilogueOp
     >::CollectiveOp;
 };

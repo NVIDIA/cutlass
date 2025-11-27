@@ -174,18 +174,6 @@ gemm_device(ATensor   const& A,         // (M,K)
   copy(copy_c, tCrC, tCgC);
 }
 
-
-
-template <typename T, size_t = 0>
-struct is_complete : std::false_type {};
-
-template <typename T>
-struct is_complete<T, 0 * sizeof(T)> : std::true_type {};
-
-template <typename T>
-static constexpr bool is_complete_v = is_complete<T>::value;
-
-
 template <typename TA, typename TB, typename TC>
 auto
 choose_mma_op()

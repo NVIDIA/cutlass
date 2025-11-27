@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,6 +38,7 @@
 #include <sycl/sycl.hpp>
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/dispatch_policy.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/collective_epilogue.hpp"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
@@ -55,128 +57,85 @@ namespace collective {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  class TiledMMA_,
-  class CtaTileMNK_,
+  class WGTileMNK_,
+  class EpilogueTile_,
   class ElementC_,
   class StrideC_,
   class ElementD_,
   class StrideD_,
   class FusionCallbacks_,
   class CopyOpG2R_,
-  class SmemLayoutAtomC_,
-  class CopyOpS2R_,
-  class CopyOpR2G_,
-  class SmemLayoutAtomD_,
-  class CopyOpR2S_
+  class CopyOpR2G_
 >
 class CollectiveEpilogue<
     IntelXeGenericGroup,
-    TiledMMA_,
-    CtaTileMNK_,
+    WGTileMNK_,
+    EpilogueTile_,
     ElementC_,
     StrideC_,
     ElementD_,
     StrideD_,
     FusionCallbacks_,
     CopyOpG2R_,
-    SmemLayoutAtomC_,
-    CopyOpS2R_,
-    CopyOpR2G_,
-    SmemLayoutAtomD_,
-    CopyOpR2S_
+    CopyOpR2G_
 > {
 public:
   //
   // Type Aliases
   //
   using DispatchPolicy = IntelXeXMX16Group;
-  using TiledMMA = TiledMMA_;
-  using CtaTileMNK = CtaTileMNK_;
-  using FusionCallbacks = FusionCallbacks_;
+
+  using WGTileMNK = WGTileMNK_;
   using ElementC = ElementC_;
   using StrideC = StrideC_;
   using InternalStrideC = cute::remove_pointer_t<StrideC>;
   using ElementD = ElementD_;
   using StrideD = StrideD_;
   using InternalStrideD = cute::remove_pointer_t<StrideD>;
+  using FusionCallbacks = FusionCallbacks_;
   using CopyOpG2R = CopyOpG2R_;
-  using SmemLayoutAtomC = SmemLayoutAtomC_;
-  using CopyOpS2R = CopyOpS2R_;
   using CopyOpR2G = CopyOpR2G_;
-  using SmemLayoutAtomD = SmemLayoutAtomD_;
-  using CopyOpR2S = CopyOpR2S_;
 
-  using WGTileMNK = decltype(TiledMMA{}.tile_mnk());
-  using MMATile = decltype(take<0,2>(typename TiledMMA::AtomShape_MNK{}));
-
-  static auto default_epi_tile_helper() {
-    constexpr int R_preferred = 8;
-    constexpr int C_preferred = 512 / cute::min(sizeof_bits_v<ElementC>, sizeof_bits_v<ElementD>);    // 1 cache line
-    constexpr int R = cute::gcd(R_preferred, get<0>(MMATile{}));
-    constexpr int C = cute::gcd(C_preferred, get<1>(MMATile{}));
-    return Shape<Int<R>, Int<C>>{};
-  }
-
-  using DefaultEpilogueTile = decltype(default_epi_tile_helper());
-  using EpilogueTile = DefaultEpilogueTile;
+  using NonVoidElementC = replace_void_t<ElementC, ElementD>;
 
   using ThreadEpilogueOp = typename fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
   using ElementOutput = ElementD;
 
-  static constexpr int CopyBitsC = cute::min(sizeof(ElementC) * 8, 64);
+  static constexpr int CopyBitsC = cute::min(sizeof(NonVoidElementC) * 8, 64);
   static constexpr int CopyBitsD = cute::min(sizeof(ElementD) * 8, 64);
-  using DefaultCopyOpG2R =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
-  using DefaultCopyOpR2G = XE_STORE_2D<CopyBitsD, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsD, get<1>(EpilogueTile{}))>;
 
-  using GmemTiledCopyC = replace_void_t<CopyOpG2R, DefaultCopyOpG2R>;
-  using GmemTiledCopyD = replace_void_t<CopyOpR2G, DefaultCopyOpR2G>;
-
-  using ElementAccumulator = ElementCompute;
-  using ElementSource = typename FusionCallbacks::ElementSource;
-  using ElementScalar = typename FusionCallbacks::ElementScalar;
-  static constexpr FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest;
-
-  static_assert(cute::is_same_v<typename FusionCallbacks::Operation, 
-                                fusion::LinearCombination<ElementAccumulator, ElementCompute, ElementSource, ElementScalar, RoundStyle>>,
-  "Only Linear Combination Epilogue is supported for Grouped GEMM at the moment.");
+  // NOTE: GmemTiledCopy* may not be the actual C/D copy operations. They are declared here only so
+  //         that GemmUniversalAdapter can inspect their alignment requirements.
+  //       The real C/D copy operations are deduced inside operator() once we have access to
+  //         the TiledMMA.
+  using GmemTiledCopyC = replace_void_t<CopyOpG2R,  XE_LOAD_2D<CopyBitsC, 8, 512 / CopyBitsC>>;
+  using GmemTiledCopyD = replace_void_t<CopyOpR2G, XE_STORE_2D<CopyBitsD, 8, 512 / CopyBitsD>>;
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
-  static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
+  static_assert(cute::rank(WGTileMNK{}) == 3, "WGTileMNK must be rank-3: [M, N, K]");
   static_assert(cute::rank(InternalStrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
   static_assert(cute::rank(InternalStrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
 
-  static_assert(std::is_same_v<CopyOpS2R, void>, "Copy operation to shared memory is not supported");
-  static_assert(std::is_same_v<CopyOpR2S, void>, "Copy operation to shared memory is not supported");
-  static_assert(std::is_same_v<SmemLayoutAtomC, void>, "Copy operation to shared memory is not supported");
-  static_assert(std::is_same_v<SmemLayoutAtomD, void>, "Copy operation to shared memory is not supported");
+  using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<NonVoidElementC const*>(nullptr)),
+                                       Layout<Shape<int,int,int>, InternalStrideC>{}));
+
+  using TensorD = decltype(make_tensor(make_gmem_ptr(static_cast<ElementD*>(nullptr)),
+                                       Layout<Shape<int,int,int>, InternalStrideD>{}));
+
+  using EpilogueTensors = cute::tuple<TensorC, TensorD>;
 
 private:
   constexpr static bool is_source_supported      = not is_void_v<ElementC>;
   constexpr static bool is_destination_supported = not is_void_v<ElementD>;
 
 public:
-
-  using EmptyType = cute::tuple<>;
-  using SmemCStorage = EmptyType;
-  using SmemDStorage = EmptyType;
-
-  struct TensorStorageImpl: cute::tuple<SmemCStorage, SmemDStorage> {
-    using FusionStorage = typename FusionCallbacks::SharedStorage;
-    FusionStorage thread;
-  };
-
   struct SharedStorage {
-    using TensorStorage = TensorStorageImpl;
-
-    TensorStorage tensors;
+    using FusionSharedStorage = typename FusionCallbacks::SharedStorage;
+    FusionSharedStorage thread;
   };
-  using TensorStorage = typename SharedStorage::TensorStorage;
-
-  using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<ElementC const*>(nullptr)), make_shape(0,0,0), InternalStrideC{}));   //(m, n)
-  using TensorD = decltype(make_tensor(make_gmem_ptr(static_cast<ElementD*>(nullptr)), make_shape(0,0,0), InternalStrideD{}));         //(m, n)
-  using EpilogueTensors = cute::tuple<TensorC, TensorD>;
+  using TensorStorage = SharedStorage;    // Compatibility with legacy epilogues
 
   // Host side epilogue arguments
   struct Arguments {
@@ -226,7 +185,7 @@ public:
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream, 
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
     CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
   }
@@ -293,6 +252,7 @@ public:
     class TileShapeMNK,
     class TileCoordMNKL,
     class Accumulator,
+    class TiledMMA,
     class LoadStoreTensor
   >
   CUTLASS_DEVICE void
@@ -300,12 +260,30 @@ public:
       ProblemShapeMNKL problem_shape_mnkl,
       TileShapeMNK,     /* compatibility with legacy epilogues */
       TileCoordMNKL tile_coord_mnkl,
-      Accumulator accumulators, 
-      TiledMMA,         /* compatibility with legacy epilogues */
+      Accumulator accumulators,
+      TiledMMA,
       int thread_idx,
       LoadStoreTensor const& load_store_tensors) {
-    
+
     using namespace cute;
+
+    using MMATile = decltype(take<0,2>(typename TiledMMA::AtomShape_MNK{}));
+
+    static constexpr int EpiRPreferred = 8;
+    static constexpr int EpiCPreferred = 512 / cute::min(sizeof_bits_v<ElementC>, sizeof_bits_v<ElementD>);    // 1 cache line
+    static constexpr int EpiR = cute::gcd(EpiRPreferred, get<0>(MMATile{}));
+    static constexpr int EpiC = cute::gcd(EpiCPreferred, get<1>(MMATile{}));
+
+    using DefaultEpilogueTile = Shape<Int<EpiR>, Int<EpiC>>;
+    using EpilogueTile = conditional_t<is_void_v<EpilogueTile_> || is_same_v<EpilogueTile_, EpilogueTileAuto>,
+                                       DefaultEpilogueTile,
+                                       EpilogueTile_>;
+
+    using DefaultCopyOpG2R =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
+    using DefaultCopyOpR2G = XE_STORE_2D<CopyBitsD, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsD, get<1>(EpilogueTile{}))>;
+
+    using ActualGmemTiledCopyC = replace_void_t<CopyOpG2R, DefaultCopyOpG2R>;
+    using ActualGmemTiledCopyD = replace_void_t<CopyOpR2G, DefaultCopyOpR2G>;
 
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
@@ -333,8 +311,8 @@ public:
     //   - compute fragments (same layout as accumulator)
     // Both copy and compute fragments are SubgroupTensors, holding coordinate mappings
     //   within the epilogue tile.
-    auto copy_c = make_block_2d_copy(GmemTiledCopyC{}, get<0>(load_store_tensors)(_,_,0));
-    auto copy_d = make_block_2d_copy(GmemTiledCopyD{}, get<1>(load_store_tensors)(_,_,0));
+    auto copy_c = make_block_2d_copy(ActualGmemTiledCopyC{}, get<0>(load_store_tensors)(_,_,0));
+    auto copy_d = make_block_2d_copy(ActualGmemTiledCopyD{}, get<1>(load_store_tensors)(_,_,0));
 
     int wi_idx = thread_idx % intel::sg_size;
     auto thr_copy_c = copy_c.get_slice(wi_idx);
@@ -356,8 +334,6 @@ public:
     using AccTVLayout = decltype(thr_mma.partition_sg_fragment_C(gCD).tv_layout());
     auto cd_compute_tv = make_layout(get<0>(AccTVLayout{}),
                                      sg_v_coord(_,_,_,_0{},_0{}));
-
-    using NonVoidElementC = replace_void_t<ElementC, int>;
 
     auto tCrC_compute_wi = make_fragment_like<NonVoidElementC>(tiled_acc(_,_0{},_0{}));
     auto tCrC_compute = make_subgroup_tensor(tCrC_compute_wi, cd_compute_tv);           // (mma_v,mma_m,mma_n)
@@ -457,12 +433,12 @@ public:
       TensorC mC_mnl;
       TensorD mD_mnl;
       if constexpr (is_source_supported) {
-        ElementC const* ptr_C_curr_batch = reinterpret_cast<ElementC const*>(params.ptr_C[next_group]);
+        auto ptr_C_curr_batch = reinterpret_cast<NonVoidElementC const*>(params.ptr_C[next_group]);
         mC_mnl = make_tensor(make_gmem_ptr(ptr_C_curr_batch), make_layout(make_shape(M, N, L), params.dC[next_group]));
       }
 
       if constexpr (is_destination_supported) {
-        ElementD* ptr_D_curr_batch = reinterpret_cast<ElementD*>(params.ptr_D[next_group]);
+        auto ptr_D_curr_batch = reinterpret_cast<ElementD*>(params.ptr_D[next_group]);
         mD_mnl = make_tensor(make_gmem_ptr(ptr_D_curr_batch), make_layout(make_shape(M, N, L), params.dD[next_group]));
       }
       return cute::make_tuple(mC_mnl, mD_mnl);

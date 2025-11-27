@@ -39,122 +39,31 @@
 
 namespace cutlass::gemm::collective {
 
-  // Intel Xe 3 stage pipeline, using prefetch
-  // Also the auto builder
-
-template<typename MMAAtom, typename T_m, typename T_n>
-constexpr auto get_num_atoms(T_m tile_m, T_n tile_n){
-  constexpr auto atom_m = get<0>(typename MMAAtom::Shape_MNK{});
-  constexpr auto atom_n = get<1>(typename MMAAtom::Shape_MNK{});
-  // try to create the biggest number of atoms possible, up to 32, trying to fit the most, up to 8 in m dimension
-  auto atoms_m_tmp = cute::min(tile_m / atom_m, _8{}); // at most 8
-  auto atoms_n = cute::min(tile_n / atom_n, _32{} / atoms_m_tmp); // at most however many are not in m out of 32
-  auto atoms_m = cute::min(tile_m / atom_m, _32{} / atoms_n);  // at most however many are not in n out of 32
-  return make_shape(atoms_m, atoms_n);
+// Choose an appropriate XE_DPAS_TT overload for a given
+//   combination of types.
+template <int M, typename TA, typename TB, typename TC>
+auto
+xe_dpas_tt_op_selector() {
+  if constexpr (is_complete_v<XE_DPAS_TT<M, TC, TA, TB>>)
+    return XE_DPAS_TT<M, TC, TA, TB>{};
+  else if constexpr (is_same_v<TA, cute::bfloat16_t>)
+    return XE_DPAS_TT<M, float, cute::bfloat16_t>{};
+  else  /* Use f16 by default as upconversion sequences are typically faster */
+    return XE_DPAS_TT<M, float, cute::half_t>{};
 }
 
-template<bool is_t, bool is_v, typename T_m, typename T_n>
-constexpr auto select_copy_atom_16b(T_m tile_m, T_n tile_n){
-  // Extract compile-time constant values from cute::Int<> types
-  //constexpr int tile_m_val = decltype(tile_m)::value;
-  //constexpr int tile_n_val = decltype(tile_n)::value;
-  
-  #define RETURN_ATOM(WIDTH, HEIGHT, LETTER) \
-    return XE_2D_U16x##WIDTH##x##HEIGHT##_LD_##LETTER {};
-
-  if constexpr(is_t){
-    // tile_m and tile_n have swapped role in case of _T
-    static_assert(tile_n % 16 == 0 && "Invalid tile_m");
-    if constexpr(tile_m == 8){
-      RETURN_ATOM(16, 8, T)
-    } else if constexpr(tile_m % 16 == 0){
-      RETURN_ATOM(16, 16, T)
-    } else{
-      static_assert(dependent_false<T_m> && "Invalid tile_n");
-    }
-  } else if constexpr(is_v){
-    #define SELECT_HEIGHT_V(WIDTH) \
-      if constexpr(tile_n == 16){ \
-        RETURN_ATOM(WIDTH, 16, V) \
-      } else if constexpr(tile_n % 32 == 0){ \
-        RETURN_ATOM(WIDTH, 32, V) \
-      } else{ \
-        static_assert(dependent_false<T_n> && "Invalid tile_n"); \
-      }
-
-    if constexpr(tile_m == 16){
-      SELECT_HEIGHT_V(16)
-    } else if constexpr(tile_m % 32 == 0){
-      SELECT_HEIGHT_V(32)
-    } else{
-      static_assert(dependent_false<T_m> && "Invalid tile_m");
-    }
-    #undef SELECT_HEIGHT_V
-  } else{ // _N
-    #define SELECT_WIDTH_N(HEIGHT) \
-      if constexpr(tile_m == 1){ \
-        RETURN_ATOM(1, HEIGHT, N) \
-      } else if constexpr(tile_m == 2){ \
-        RETURN_ATOM(2, HEIGHT, N) \
-      } else if constexpr(tile_m == 4){ \
-        RETURN_ATOM(4, HEIGHT, N) \
-      } else if constexpr(tile_m == 8){ \
-        RETURN_ATOM(8, HEIGHT, N) \
-      } else if constexpr(tile_m == 16){ \
-        RETURN_ATOM(16, HEIGHT, N) \
-      } else if constexpr(tile_m % 32 == 0){ \
-        RETURN_ATOM(32, HEIGHT, N) \
-      } else { \
-        static_assert(dependent_false<T_m> && "Invalid tile_m"); \
-      }
-
-    if constexpr(tile_n == 16){
-      SELECT_WIDTH_N(16)
-    } else if constexpr(tile_n % 32 == 0){
-      SELECT_WIDTH_N(32)
-    } else {
-      static_assert(dependent_false<T_n> && "Invalid tile_n");
-    }
-    #undef SELECT_WIDTH_N
-  }
-  #undef RETURN_ATOM
-}
-
-namespace {
-template <typename ElementAB, typename ElementCD>
-struct pick_mma_atom{
-  static_assert(dependent_false<ElementAB> && "no mma atom for this combination of types");
-};
-
-#define PICK_MMA(ElementAB, ElementCD, ATOM)             \
-template <> struct pick_mma_atom<ElementAB, ElementCD> { \
-  using atom = MMA_Atom<ATOM>;                           \
-};
-
-PICK_MMA(bfloat16_t, float, XE_8x16x16_F32BF16BF16F32_TT);
-PICK_MMA(bfloat16_t, bfloat16_t, XE_8x16x16_BF16BF16BF16BF16_TT);
-PICK_MMA(half_t, float, XE_8x16x16_F32F16F16F32_TT);
-PICK_MMA(half_t, half_t, XE_8x16x16_F16F16F16F16_TT);
-// FP8 types use FP16 accumulation, the conversion happens in the collective
-PICK_MMA(float_e4m3_t, float, XE_8x16x16_F32F16F16F32_TT);
-PICK_MMA(float_e5m2_t, float, XE_8x16x16_F32F16F16F32_TT);
-// INT8 types use INT32 accumulation (note: K=32 for INT8, not K=16)
-PICK_MMA(int8_t, int32_t, XE_8x16x32_S32S8S8S32_TT);
-
-#undef PICK_MMA
-}
 
 template <
-  class ElementA,
-  class GmemLayoutATag,
-  int AlignmentA,
-  class ElementB,
-  class GmemLayoutBTag,
-  int AlignmentB,
-  class ElementAccumulator,
-  class TileShape_MNK,
-  class KernelScheduleType
-  >
+    class ElementA,
+    class GmemLayoutATag,
+    int AlignmentA,
+    class ElementB,
+    class GmemLayoutBTag,
+    int AlignmentB,
+    class ElementAccumulator,
+    class TileShape_MNK,
+    class KernelScheduleType
+>
 struct CollectiveBuilder<
   arch::IntelXe,
   arch::OpClassTensorOp,   // Reusing opClassTensorOp for Intel devices
@@ -169,174 +78,94 @@ struct CollectiveBuilder<
   Shape<_1, _1, _1>,    // Cluster Shape
   cutlass::gemm::collective::StageCountAuto,
   KernelScheduleType,
-  cute::enable_if_t<
-    cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelXe, KernelXeCooperative, KernelXePtrArrayCooperative> &&
-    cute::is_any_of_v<ElementA, bfloat16_t, half_t, cute::float_e5m2_t, cute::float_e4m3_t, cute::int8_t> &&
-    cute::is_any_of_v<ElementB, bfloat16_t, half_t, cute::float_e5m2_t, cute::float_e4m3_t, cute::int8_t, cute::uint4_t>
-  >
-    >{
+  cute::enable_if_t<cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelXe, KernelXeCooperative, KernelXePtrArrayCooperative>>
+> {
+#ifdef SYCL_NVIDIA_TARGET
+  static_assert(cutlass::detail::dependent_false<arch::IntelXe>,
+    "Trying to use Xe pipeline on non-Xe hardware");
+#endif
+  static_assert(is_static<TileShape_MNK>::value);
 
-      #ifdef SYCL_NVIDIA_TARGET
-        static_assert(cutlass::detail::dependent_false<arch::IntelXe>,
-          "Trying to use Intel pipeline on Non Intel hardware");
-      #endif
-      static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_any_of_v<ElementAccumulator, float, bfloat16_t, half_t, int32_t>,
-        "Intel multi-stage pipeline requires ElementC to be of type float, bfloat, half, or int32");
+  using DPAS_M = decltype(cute::gcd(_8{}, get<0>(TileShape_MNK{})));
+  using MMAAtom = MMA_Atom<decltype(xe_dpas_tt_op_selector<DPAS_M::value, ElementA, ElementB, ElementAccumulator>())>;
 
-      static constexpr bool isAtypeBig = cute::sizeof_bits_v<ElementA> > cute::sizeof_bits_v<ElementB>;
-      using MMAType = std::conditional_t<isAtypeBig, ElementA, ElementB>;
-      using MMAAtom = typename pick_mma_atom<MMAType, ElementAccumulator>::atom;
+  static constexpr auto MMAAtomGrid = shape_div(TileShape_MNK{}, typename MMAAtom::Shape_MNK{});
 
-      static constexpr auto tile_M = get<0>(TileShape_MNK{});
-      static constexpr auto tile_N = get<1>(TileShape_MNK{});
-      static constexpr auto tile_K = get<2>(TileShape_MNK{});
+  // Choose subgroup configuration.
+  static constexpr int MaxSG = 32;
+  static constexpr int SG_M0 = cute::min(get<0>(MMAAtomGrid), 8);
+  static constexpr int SG_N = cute::min(get<1>(MMAAtomGrid), MaxSG / SG_M0);
+  static constexpr int SG_M = cute::min(get<0>(MMAAtomGrid), MaxSG / SG_N);
 
-      static constexpr auto n_atoms = get_num_atoms<MMAAtom>(tile_M, tile_N);
-      using atoms_M = decltype(get<0>(n_atoms));
-      using atoms_N = decltype(get<1>(n_atoms));
-      using TiledMma =
-          typename TiledMMAHelper<MMAAtom,
-                                  Layout<TileShape_MNK>,
-                                  Layout<Shape<atoms_M, atoms_N, _1>, Stride<atoms_N, _1, _0>>>::TiledMMA;
+  using TiledMMA =
+      typename TiledMMAHelper<MMAAtom,
+                              Layout<TileShape_MNK>,
+                              Layout<Shape<C<SG_M>, C<SG_N>, _1>, Stride<C<SG_N>, _1, _0>>>::TiledMMA;
 
-      static constexpr bool IsGroup = cute::is_same_v<KernelScheduleType, KernelXePtrArrayCooperative>;
+  using KernelSchedule = std::conditional_t<cute::is_same_v<KernelScheduleType, KernelScheduleAuto>, KernelXe, KernelScheduleType>;
 
-      using KernelSchedule = std::conditional_t<cute::is_same_v<KernelScheduleType, KernelScheduleAuto>, KernelXe, KernelScheduleType>;
-      static constexpr int PipelineStages = IsGroup ? 2 : 3;
-      using DispatchPolicy = std::conditional_t<!IsGroup, cutlass::gemm::MainloopIntelXeXMX16<PipelineStages, KernelSchedule>,
-                                                std::conditional_t<cute::is_same_v<ElementA, ElementB>, cutlass::gemm::MainloopIntelXeXMX16Group<PipelineStages, KernelSchedule>,
-                                                                   cutlass::gemm::MainloopIntelXeXMX16GroupMixedPrecision<PipelineStages, KernelSchedule>>>;
+  static constexpr bool IsGroup = cute::is_same_v<KernelScheduleType, KernelXePtrArrayCooperative>;
+  static constexpr int PipelineStages = IsGroup ? 2 : 3;
+  using DispatchPolicy = std::conditional_t<!IsGroup, cutlass::gemm::MainloopXeL1Staged<PipelineStages, KernelSchedule>,
+                                                      cutlass::gemm::MainloopXeL1StagedGroup<PipelineStages, KernelSchedule>>;
 
-      static constexpr bool isAtransposed = cute::is_same_v<GmemLayoutATag, cutlass::layout::ColumnMajor>;
-      static constexpr bool isBtransposed = cute::is_same_v<GmemLayoutBTag, cutlass::layout::ColumnMajor>;
-      using GmemTiledCopyA = std::conditional_t<cute::sizeof_bits_v<ElementA> == 8, std::conditional_t<isAtransposed, cute::XE_2D_U8x16x16_LD_T, cute::XE_2D_U8x32x32_LD_N>, 
-                                                decltype(select_copy_atom_16b<isAtransposed, false>(tile_M/atoms_M{}, tile_K))>;
-      using GmemTiledCopyB = std::conditional_t<cute::sizeof_bits_v<ElementB> == 4, std::conditional_t<isBtransposed, cute::XE_2D_U4x16x16_LD_T, cute::XE_2D_U4x32x64_LD_N>, 
-                                                std::conditional_t<cute::sizeof_bits_v<ElementB> == 8, std::conditional_t<isBtransposed, cute::XE_2D_U8x16x16_LD_T, cute::XE_2D_U8x32x32_LD_N>, 
-                                                                   decltype(select_copy_atom_16b<isBtransposed, true>(tile_K, tile_N/atoms_N{}))>>;
+  using GmemTiledCopyA = void;    // autoselect
+  using GmemTiledCopyB = void;    // autoselect
 
-      // Xe pipeline does not use shared memory
-      using SmemLayoutAtomA = void;
-      using SmemLayoutAtomB = void;
-      using SmemCopyAtomA = void;
-      using SmemCopyAtomB = void;
+  using SmemLayoutAtomA = void;   // No shared memory usage
+  using SmemLayoutAtomB = void;
+  using SmemCopyAtomA = void;
+  using SmemCopyAtomB = void;
 
-      using TransformA = cute::identity;
-      using TransformB = cute::identity;
+  using TransformA = cute::identity;
+  using TransformB = cute::identity;
 
-      using ElementA_ = std::conditional_t<cute::sizeof_bits_v<ElementA> <= 8, cute::tuple<ElementA>, ElementA>;
-      using ElementB_ = std::conditional_t<cute::sizeof_bits_v<ElementB> <= 8, cute::tuple<ElementB>, ElementB>;
+  using ElementA_ = ElementA;
+  using ElementB_ = ElementB;
 
 
-      using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
-              DispatchPolicy,
-              TileShape_MNK,
-              ElementA_,
-              cutlass::gemm::TagToStrideA_t<std::conditional_t<IsGroup, GmemLayoutATag*, GmemLayoutATag>>,
-              ElementB_,
-              cutlass::gemm::TagToStrideB_t<std::conditional_t<IsGroup, GmemLayoutBTag*, GmemLayoutBTag>>,
-              TiledMma,
-              GmemTiledCopyA,
-              SmemLayoutAtomA,
-              SmemCopyAtomA,
-              TransformA,
-              GmemTiledCopyB,
-              SmemLayoutAtomB,
-              SmemCopyAtomB,
-              TransformB
-          >;
-    };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-// Xe12 (PVC) CollectiveBuilder - forwards to IntelXe
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-  class ElementA,
-  class GmemLayoutATag,
-  int AlignmentA,
-  class ElementB,
-  class GmemLayoutBTag,
-  int AlignmentB,
-  class ElementAccumulator,
-  class TileShape_MNK,
-  class KernelScheduleType
-  >
-struct CollectiveBuilder<
-  arch::Xe12,
-  arch::OpClassTensorOp,
-  ElementA,
-  GmemLayoutATag,
-  AlignmentA,
-  ElementB,
-  GmemLayoutBTag,
-  AlignmentB,
-  ElementAccumulator,
-  TileShape_MNK,
-  Shape<_1, _1, _1>,    
-  cutlass::gemm::collective::StageCountAuto,
-  KernelScheduleType
-  > : CollectiveBuilder<
-      arch::IntelXe,  // Forward to IntelXe
-      arch::OpClassTensorOp,
-      ElementA,
-      GmemLayoutATag,
-      AlignmentA,
-      ElementB,
-      GmemLayoutBTag,
-      AlignmentB,
-      ElementAccumulator,
+  using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
+      DispatchPolicy,
       TileShape_MNK,
-      Shape<_1, _1, _1>,
-      cutlass::gemm::collective::StageCountAuto,
-      KernelScheduleType
-  > {};
+      ElementA_,
+      cutlass::gemm::TagToStrideA_t<std::conditional_t<IsGroup, GmemLayoutATag*, GmemLayoutATag>>,
+      ElementB_,
+      cutlass::gemm::TagToStrideB_t<std::conditional_t<IsGroup, GmemLayoutBTag*, GmemLayoutBTag>>,
+      TiledMMA,
+      GmemTiledCopyA,
+      SmemLayoutAtomA,
+      SmemCopyAtomA,
+      TransformA,
+      GmemTiledCopyB,
+      SmemLayoutAtomB,
+      SmemCopyAtomB,
+      TransformB
+  >;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-// Xe20 (BMG) CollectiveBuilder - forwards to IntelXe
+// Forward Xe12/Xe20 builders to IntelXe
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
-  class ElementA,
-  class GmemLayoutATag,
-  int AlignmentA,
-  class ElementB,
-  class GmemLayoutBTag,
-  int AlignmentB,
-  class ElementAccumulator,
-  class TileShape_MNK,
-  class KernelScheduleType
-  >
-struct CollectiveBuilder<
-  arch::Xe20,
-  arch::OpClassTensorOp,
-  ElementA,
-  GmemLayoutATag,
-  AlignmentA,
-  ElementB,
-  GmemLayoutBTag,
-  AlignmentB,
-  ElementAccumulator,
-  TileShape_MNK,
-  Shape<_1, _1, _1>,    
-  cutlass::gemm::collective::StageCountAuto,
-  KernelScheduleType
-  > : CollectiveBuilder<
-      arch::IntelXe,  // Forward to IntelXe
-      arch::OpClassTensorOp,
-      ElementA,
-      GmemLayoutATag,
-      AlignmentA,
-      ElementB,
-      GmemLayoutBTag,
-      AlignmentB,
-      ElementAccumulator,
-      TileShape_MNK,
-      Shape<_1, _1, _1>,
-      cutlass::gemm::collective::StageCountAuto,
-      KernelScheduleType
-  > {};
+#define CUTLASS_FORWARD_XE_MMA_BUILDER(Arch)                                             \
+template <class ElementA, class GmemLayoutATag, int AlignmentA,                          \
+          class ElementB, class GmemLayoutBTag, int AlignmentB,                          \
+          class ElementAccumulator, class TileShape_MNK, class KernelScheduleType>       \
+struct CollectiveBuilder<arch::Arch, arch::OpClassTensorOp,                              \
+                         ElementA, GmemLayoutATag, AlignmentA,                           \
+                         ElementB, GmemLayoutBTag, AlignmentB,                           \
+                         ElementAccumulator, TileShape_MNK, Shape<_1, _1, _1>,           \
+                         cutlass::gemm::collective::StageCountAuto, KernelScheduleType>  \
+     : CollectiveBuilder<arch::IntelXe, arch::OpClassTensorOp,                           \
+                         ElementA, GmemLayoutATag, AlignmentA,                           \
+                         ElementB, GmemLayoutBTag, AlignmentB,                           \
+                         ElementAccumulator, TileShape_MNK, Shape<_1, _1, _1>,           \
+                         cutlass::gemm::collective::StageCountAuto, KernelScheduleType> {};
 
-}
+CUTLASS_FORWARD_XE_MMA_BUILDER(Xe12)
+CUTLASS_FORWARD_XE_MMA_BUILDER(Xe20)
+
+#undef CUTLASS_FORWARD_XE_MMA_BUILDER
+
+} // namespace cutlass::gemm::collective
 

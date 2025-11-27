@@ -56,58 +56,6 @@ namespace cutlass::epilogue::fusion {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
-  class ElementOutput_,
-  class ElementCompute_,
-  class ElementSource_,
-  class ElementScalar_,
-  FloatRoundStyle RoundStyle_,
-  class CtaTileShapeMNK_,
-  class EpilogueTile_
->
-struct FusionCallbacks<
-    epilogue::IntelXeXMX16,
-    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
-    CtaTileShapeMNK_,
-    EpilogueTile_
-> : Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_> {
-
-  using Impl = Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>;
-  using ElementOutput = ElementOutput_;
-  using ElementCompute = ElementCompute_;
-  using ElementSource = ElementSource_;
-  using ElementScalar = ElementScalar_;
-  using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource_, ElementScalar, RoundStyle_>;
-
-  struct Arguments {
-    ElementScalar alpha = ElementScalar(1);
-    ElementScalar beta = ElementScalar(0);
-    ElementScalar const* alpha_ptr = nullptr;
-    ElementScalar const* beta_ptr = nullptr;
-
-    using StrideAlpha = Stride<_0,_0,int64_t>;
-    using StrideBeta  = Stride<_0,_0,int64_t>;
-    StrideAlpha dAlpha = {_0{}, _0{}, 0};
-    StrideBeta  dBeta  = {_0{}, _0{}, 0};
-
-    operator typename Impl::Arguments() const {
-      return
-        {    // ternary op : beta * C + (alpha * acc)
-          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
-          {},                   // leaf args : C
-          {                     // binary op : alpha * acc
-            {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
-            {},                     // leaf args : acc
-            {}                  // binary args : multiplies
-          },                    // end binary op
-          {} // ternary args : multiply_add
-        };   // end ternary op
-    }
-  };
-
-  // Ctor inheritance
-  using Impl::Impl;
-};
 
 template <
   class ElementOutput_,
@@ -162,7 +110,6 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
-
 template <
   template <class> class ActivationFn_,
   class ElementOutput_,
@@ -174,7 +121,7 @@ template <
   class EpilogueTile_
 >
 struct FusionCallbacks<
-    epilogue::IntelXeXMX16,
+    epilogue::IntelXeGeneric,
     fusion::LinCombEltAct<ActivationFn_, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
     CtaTileShapeMNK_,
     EpilogueTile_
@@ -240,6 +187,7 @@ using XeLinCombSplitK =
     Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
   >;
 
+// TODO: update split-k for new epilogues
 template <
   // int FragmentSize,
   class ElementOutput_,
@@ -298,6 +246,7 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+// TODO: update softmax for new epilogues
 // D = softmax(alpha * acc + beta * C)
 template<
   // int FragmentSize,
@@ -405,7 +354,7 @@ template <
   class CopyOpG2R
 >
 struct FusionCallbacks<
-    epilogue::IntelXeXMX16,
+    epilogue::IntelXeGeneric,
     fusion::LinCombDeEltAct<
       GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
       ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
@@ -473,6 +422,45 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+// Temporary: provide default G2R operation for LinCombDeEltAct, for CollectiveBuilder.
+// This will be removed once XeAuxLoad moves to new atoms and autodetects copy op.
+template <typename ElementSource>
+using XeAuxLoadDefaultCopyOpG2R = conditional_t<sizeof_bits_v<ElementSource> == 32, XE_2D_U32x8x16_LD_N, XE_2D_U16x8x16_LD_N>;
+
+template <
+  class GmemLayoutTagAux, template <class> class ActivationFn,
+  class ElementOutput_, class ElementCompute_, class ElementAux, class ElementSource, class ElementScalar,
+  int AlignmentAux, FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK, class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    XeAuxLoadDefaultCopyOpG2R<ElementSource>
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric, fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK, EpilogueTile, XeAuxLoadDefaultCopyOpG2R<ElementSource>
+  >::FusionCallbacks;
+};
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // D = alpha * acc + beta * C + per-row bias
 template <
@@ -487,7 +475,7 @@ template <
   class EpilogueTile_
 >
 struct FusionCallbacks<
-    epilogue::IntelXeXMX16,
+    epilogue::IntelXeGeneric,
     fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
     CtaTileShapeMNK_,
     EpilogueTile_
@@ -577,7 +565,7 @@ template <
   class EpilogueTile_
 >
 struct FusionCallbacks<
-    epilogue::IntelXeXMX16,
+    epilogue::IntelXeGeneric,
     fusion::LinCombPerColBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
     CtaTileShapeMNK_,
     EpilogueTile_
@@ -586,7 +574,7 @@ struct FusionCallbacks<
   using Impl = XeLinCombPerColBias<
       _1{},
       CtaTileShapeMNK_,
-      EpilogueTile_, 
+      EpilogueTile_,
       typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type,
       ElementCompute_, ElementBias_, ElementSource_, ElementScalar_,
       AlignmentBias_, RoundStyle_>;
@@ -633,6 +621,7 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+// TODO: move to new epilogue
 template <
   int TopK,
   class ElementOutput_,
@@ -655,8 +644,8 @@ struct FusionCallbacks<
   using ElementCompute = ElementCompute_;
   using ElementSource = ElementSource_;
   using ElementScalar = ElementScalar_;
-  using Impl = Sm90LinCombTopKSoftmaxCol<TopK, FragmentSize, CtaTileShapeMNK, EpilogueTile, 
-                                        typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+  using Impl = Sm90LinCombTopKSoftmaxCol<TopK, FragmentSize, CtaTileShapeMNK, EpilogueTile,
+                                        typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type,
                                         ElementCompute, ElementSource, ElementScalar, RoundStyle>;
   using Operation = fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
 
@@ -708,7 +697,7 @@ template <
   class EpilogueTile_
 >
 struct FusionCallbacks<
-     epilogue::IntelXeXMX16,
+     epilogue::IntelXeGeneric,
     fusion::LinCombPerRowBiasEltAct<
       ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
     >,
@@ -786,62 +775,6 @@ template <
   class EpilogueTile_
 >
 struct FusionCallbacks<
-    epilogue::IntelXeXMX16Group,
-    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
-    CtaTileShapeMNK_,
-    EpilogueTile_
-> : Sm90LinearCombinationPtrArray<typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_> {
-
-  using Impl = Sm90LinearCombinationPtrArray<typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>;
-  using ElementOutput = ElementOutput_;
-  using ElementCompute = ElementCompute_;
-  using ElementSource = ElementSource_;
-  using ElementScalar = ElementScalar_;
-  using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle_>;
-
-  struct Arguments {
-    ElementScalar alpha = ElementScalar(1);
-    ElementScalar beta = ElementScalar(0);
-    ElementScalar const* alpha_ptr = nullptr;
-    ElementScalar const* beta_ptr = nullptr;
-    ElementScalar const* const* alpha_ptr_array = nullptr;
-    ElementScalar const* const* beta_ptr_array = nullptr;
-
-    using StrideAlpha = Stride<_0,_0,int64_t>;
-    using StrideBeta  = Stride<_0,_0,int64_t>;
-    StrideAlpha dAlpha = {_0{}, _0{}, 0};
-    StrideBeta  dBeta  = {_0{}, _0{}, 0};
-
-    operator typename Impl::Arguments() const {
-      return
-        {    // ternary op : beta * C + (alpha * acc)
-          {{beta}, {beta_ptr}, {beta_ptr_array}, {dBeta}}, // leaf args : beta
-          {},                   // leaf args : C
-          {                     // binary op : alpha * acc
-            {{alpha}, {alpha_ptr}, {alpha_ptr_array}, {dAlpha}}, // leaf args : alpha
-            {},                     // leaf args : acc
-            {}                  // binary args : multiplies
-          },                    // end binary op
-          {} // ternary args : multiply_add
-        };   // end ternary op
-    }
-  };
-
-  // Ctor inheritance
-  using Impl::Impl;
-};
-
-
-template <
-  class ElementOutput_,
-  class ElementCompute_,
-  class ElementSource_,
-  class ElementScalar_,
-  FloatRoundStyle RoundStyle_,
-  class CtaTileShapeMNK_,
-  class EpilogueTile_
->
-struct FusionCallbacks<
     epilogue::IntelXeGenericGroup,
     fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
     CtaTileShapeMNK_,
@@ -886,7 +819,235 @@ struct FusionCallbacks<
   // Ctor inheritance
   using Impl::Impl;
 };
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Callbacks for legacy epilogues (deprecated).
+
+template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_>::FusionCallbacks;
+};
+
+template <
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombEltAct<ActivationFn_, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombEltAct<ActivationFn_, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombEltAct<ActivationFn_, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_>::FusionCallbacks;
+};
+
+template <
+  class GmemLayoutTagAux,
+  template <class> class ActivationFn,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementAux,
+  class ElementSource,
+  class ElementScalar,
+  int AlignmentAux,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class CopyOpG2R
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    CopyOpG2R
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    CopyOpG2R
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    CopyOpG2R
+  >::FusionCallbacks;
+};
+
+template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+  >::FusionCallbacks;
+};
+
+template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombPerColBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerColBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerColBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+  >::FusionCallbacks;
+};
+
+template <
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombPerRowBiasEltAct<
+      ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
+    >,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerRowBiasEltAct<
+      ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
+    >,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGeneric,
+    fusion::LinCombPerRowBiasEltAct<
+      ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
+    >,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+  >::FusionCallbacks;
+};
+
+template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16Group,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : FusionCallbacks<
+    epilogue::IntelXeGenericGroup,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> {
+  using FusionCallbacks<
+    epilogue::IntelXeGenericGroup,
+    fusion::LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+  >::FusionCallbacks;
+};
 
 } // namespace cutlass::epilogue::fusion
 
