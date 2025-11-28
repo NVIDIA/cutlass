@@ -14,7 +14,6 @@ from typing_extensions import deprecated
 from inspect import isclass
 import operator
 
-from cutlass.base_dsl.typing import Float8E4M3
 from cutlass.cutlass_dsl import (
     dsl_user_op,
     lru_cache_ir,
@@ -75,6 +74,7 @@ from .typing import (
     Int8,
     Int32,
     Float4E2M1FN,
+    Float8E4M3,
     Float16,
     Float32,
     BFloat16,
