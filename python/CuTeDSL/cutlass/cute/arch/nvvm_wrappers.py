@@ -1396,3 +1396,61 @@ def cvt_f4e2m1x8_to_f16x8(src_vec8, *, loc=None, ip=None):
     vec_f16x8_type = ir.VectorType.get([8], Float16.mlir_type, loc=loc)
     vec_f16x8 = llvm.bitcast(vec_f16x8_type, vec_f32x4, loc=loc, ip=ip)
     return vec_f16x8
+
+
+@dsl_user_op
+def cvt_f8e4m3_f16(src, *, loc=None, ip=None):
+    # 0 padding for upper 8 bits
+    zero = arith.constant(src.type, 0, loc=loc, ip=ip)
+    vec2 = vector.from_elements(
+        ir.VectorType.get([2], src.type, loc=loc), [src, zero], loc=loc, ip=ip
+    )
+    rst_vec2 = cvt_f8e4m3x2_to_f16x2(vec2, loc=loc, ip=ip)
+    # only the 1st element is valid
+    rst = vector.extract(
+        rst_vec2, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    return rst
+
+
+# Convert 2 float8e4m3 values to 2 float16 values
+@dsl_user_op
+def cvt_f8e4m3x2_to_f16x2(src_vec2, *, loc=None, ip=None):
+    # pack 2 float8e4m3 into 1 int16 value
+    src_i16 = llvm.bitcast(Int16.mlir_type, src_vec2, loc=loc, ip=ip)
+    rst_i32 = llvm.inline_asm(
+        Int32.mlir_type,
+        [src_i16],
+        """{\n\t
+            cvt.rn.f16x2.e4m3x2 $0, $1;\n\t
+        }""",
+        "=r,h",
+    )
+    vec_f16x2_type = ir.VectorType.get([2], Float16.mlir_type, loc=loc)
+    vec_f16x2 = llvm.bitcast(vec_f16x2_type, rst_i32, loc=loc, ip=ip)
+    return vec_f16x2
+
+
+# Convert 4 float8e4m3 values to 4 float16 values
+@dsl_user_op
+def cvt_f8e4m3x4_to_f16x4(src_vec4, *, loc=None, ip=None):
+    # pack 4 float8e4m3 into 1 int32 value
+    src_i32 = llvm.bitcast(Int32.mlir_type, src_vec4, loc=loc, ip=ip)
+    rst_i32x2 = llvm.inline_asm(
+        llvm.StructType.get_literal([T.i32(), T.i32()]),
+        [src_i32],
+        """{\n\t
+            .reg .b16 h0, h1;\n\t
+            mov.b32 {h0, h1}, $2;\n\t
+            cvt.rn.f16x2.e4m3x2 $0, h0;\n\t
+            cvt.rn.f16x2.e4m3x2 $1, h1;\n\t
+        }""",
+        "=r,=r,r",
+    )
+    res0 = llvm.extractvalue(T.i32(), rst_i32x2, [0])
+    res1 = llvm.extractvalue(T.i32(), rst_i32x2, [1])
+    vec_i32x2_type = ir.VectorType.get([2], Int32.mlir_type, loc=loc)
+    vec_i32x2 = vector.from_elements(vec_i32x2_type, [res0, res1], loc=loc, ip=ip)
+    vec_f16x4_type = ir.VectorType.get([4], Float16.mlir_type, loc=loc)
+    vec_f16x4 = llvm.bitcast(vec_f16x4_type, vec_i32x2, loc=loc, ip=ip)
+    return vec_f16x4
