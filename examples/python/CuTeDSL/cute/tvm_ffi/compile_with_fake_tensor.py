@@ -22,26 +22,26 @@ def run():
 
     shape = (3, 4)
     a = make_fake_compact_tensor(cutlass.Float16, (3, 4), stride_order=(1, 0))
-    cute.compile(print_tensor_type, a)
+    cute.compile(print_tensor_type, a, options="--enable-tvm-ffi")
 
     # 32-bit symbolic integer with divisibility 8
     shape = (3, cute.sym_int32(divisibility=8))
     a = make_fake_compact_tensor(cutlass.Float16, shape, stride_order=(1, 0))
-    cute.compile(print_tensor_type, a)
+    cute.compile(print_tensor_type, a, options="--enable-tvm-ffi")
 
     # with static stride
     a = make_fake_tensor(cutlass.Float16, shape, stride=(4, 1))
-    cute.compile(print_tensor_type, a)
+    cute.compile(print_tensor_type, a, options="--enable-tvm-ffi")
 
     # with dynamic stride using 32bit integer
     stride = (cute.sym_int32(divisibility=8), 1)
     a = make_fake_tensor(cutlass.Float16, shape, stride=stride)
-    cute.compile(print_tensor_type, a)
+    cute.compile(print_tensor_type, a, options="--enable-tvm-ffi")
 
     # with dynamic stride using 64bit integer
     stride = (cute.sym_int64(divisibility=8), 1)
     a = make_fake_tensor(cutlass.Float16, shape, stride=stride)
-    cute.compile(print_tensor_type, a)
+    cute.compile(print_tensor_type, a, options="--enable-tvm-ffi")
 
 
 if __name__ == "__main__":
