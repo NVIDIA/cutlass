@@ -26,11 +26,14 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import pytest
-import logging
+import os
 import sys
 from pathlib import Path
+import logging
+import hashlib
+import random
 
+import pytest
 import torch
 import numpy as np
 
@@ -136,13 +139,10 @@ def torch_empty_cache():
 
 
 @pytest.fixture(autouse=True)
-def torch_seed(request):
-    if torch.cuda.is_available():
-        seed = hash(request.node.nodeid) % 2**32
-        torch.manual_seed(seed)
-
-
-@pytest.fixture(autouse=True)
-def numpy_seed(request):
-    seed = hash(request.node.nodeid) % 2**32
+def random_seed(request):
+    test_case = request.node.nodeid.split(os.sep)[-1]
+    seed = int(hashlib.md5(test_case.encode("utf-8")).hexdigest(), 16) % (2**32)
+    random.seed(seed)
     np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.manual_seed(seed)
