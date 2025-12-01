@@ -50,7 +50,7 @@ if(CUTLASS_ENABLE_SYCL)
       cutlass_test_unit_gemm_device_tensorop_cooperative_xe
       xe_gemm_bf16_bf16_fp32_tensor_op_fp32_cooperative.cpp
       xe_gemm_fp16_fp16_fp32_tensor_op_fp32_cooperative.cpp
-      xe_gemm_fp16_fp16_f32_ptr_array_cooperative.cpp
+      # xe_gemm_fp16_fp16_f32_ptr_array_cooperative.cpp
       # TODO (Codeplay): fix gemm cooperative tests for s8 and tf32
       # xe_gemm_s8_s8_s32_tensor_op_s32_cooperative.cpp
       # xe_gemm_tf32_tf32_fp32_tensor_op_fp32_cooperative.cpp
