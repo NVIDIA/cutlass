@@ -2373,7 +2373,7 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
     %0 = builtin.unrealized_conversion_cast %arg2 : !memref_gmem_f32_1 to !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>
     %1 = builtin.unrealized_conversion_cast %arg1 : !memref_gmem_f32_ to !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>
     %2 = builtin.unrealized_conversion_cast %arg0 : !memref_gmem_f32_ to !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>

@@ -3,7 +3,7 @@
 #loop_unroll = #llvm.loop_unroll<disable = false, full = true>
 #loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
 module attributes {gpu.container_module} {
-  gpu.module @kernels [#nvvm.target<O = 3, chip = "sm_100a">] {
+  gpu.module @kernels [#nvvm.target<O = 3, chip = "sm_90a">] {
     llvm.func @kernel_cutlass__convert_kernel_tensorptrf32gmemo1512100div5121_tensorptrf8E4M3FNgmemalign16o15121010512_tensor000o15121011010512112____Float32_Float8E4M3FN_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i64, i64, i64)>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i64, i64)>)>)>, %arg2: !llvm.struct<(struct<()>, struct<(struct<(i32, i32, i32)>, struct<()>)>)>, %arg3: i32, %arg4: i32, %arg5: i32) attributes {gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %0 = llvm.mlir.constant(1 : i64) : i64
       %1 = llvm.mlir.constant(0 : i64) : i64
