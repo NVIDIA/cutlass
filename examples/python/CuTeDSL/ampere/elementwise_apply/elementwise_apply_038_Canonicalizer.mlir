@@ -716,7 +716,7 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  llvm.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
+  llvm.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.constant(256 : index) : i64
     %1 = llvm.mlir.constant(1 : index) : i64
     %2 = llvm.mlir.poison : !llvm.struct<()>
@@ -966,8 +966,8 @@ module attributes {gpu.container_module} {
     gpu.launch_func <%arg3 : !llvm.ptr> @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0 blocks in (%172, %173, %1) threads in (%0, %1, %1) : i64 dynamic_shared_memory_size %6 args(%63 : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %65 : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %131 : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>, %169 : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %133 : i32, %134 : i32) {use_pdl = false}
     llvm.return
   }
-  llvm.func @_mlir_ciface_cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
-    llvm.call @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.ptr) -> ()
+  llvm.func @_mlir_ciface_cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
+    llvm.call @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.ptr) -> ()
     llvm.return
   }
 }

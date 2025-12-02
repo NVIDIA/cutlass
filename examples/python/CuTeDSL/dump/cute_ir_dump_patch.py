@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 cute_ir_dump_patch.py（单环境变量总开关版）
+
 - 只有一个环境变量：CUTE_DSL_ON
   * 未开启时：仍可通过 `python -m cute_ir_dump_patch your_script.py ...` 运行包装脚本，
     但不会启用"只编译/跳驱动/NOOP launch"这些强力补丁。
@@ -134,12 +135,14 @@ class SplitStdoutTee:
                     safe_len = max(0, len(self.buf) - self._safe_tail_keep_normal)
                     if safe_len > 0:
                         self.out.write(self.buf[:safe_len])
+                        self.out.flush()  # Force flush
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     pre = self.buf[:idx]
                     if pre:
                         self.out.write(pre)
+                        self.out.flush() # Force flush
                     self.buf = self.buf[idx + len(self.start):]
                     self.capturing = True
                     self._ensure_mlir_open()
@@ -150,15 +153,21 @@ class SplitStdoutTee:
                     if safe_len > 0:
                         if self.mlir_f:
                             self.mlir_f.write(self.buf[:safe_len])
+                            self.mlir_f.flush() # Force flush
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     seg = self.buf[:idx2]
                     if seg and self.mlir_f:
                         self.mlir_f.write(seg)
+                        self.mlir_f.flush() # Force flush
                     self.buf = self.buf[idx2 + len(self.end):]
                     self.capturing = False
         return len(data)
+
+    def fileno(self):
+        return self.console.fileno()
+
 
     def flush(self):
         self.console.flush()
@@ -254,6 +263,10 @@ def _split_pass_text_to_files(text: str) -> list[str]:
 # 只编译不运行：JIT/执行兜底
 # -------------------------
 class _DummyJIT:
+    def __call__(self, *args, **kwargs):
+        print("[NOEXEC] JIT object called directly in COMPILE-ONLY mode; ignored.")
+        return None
+
     def __getattr__(self, name):
         return lambda *a, **kw: print(f"[NOEXEC] {name} called in COMPILE-ONLY mode; ignored.")
 

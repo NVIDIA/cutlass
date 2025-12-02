@@ -766,7 +766,7 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !memref_gmem_f32_4, %arg1: !memref_gmem_f32_4, %arg2: !memref_gmem_f32_5, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !memref_gmem_f32_4, %arg1: !memref_gmem_f32_4, %arg2: !memref_gmem_f32_5, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
     %c256 = arith.constant 256 : index
     %c1 = arith.constant 1 : index
     %0 = cute.static : !cute.stride<"((1@0,1@1),(64@0,256@1))">

@@ -1,7 +1,7 @@
 [INFO] Run tag: flash_attention_v2
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 Running Ampere SM80 FlashAttentionForward test with:
@@ -56,19 +56,18 @@ Running Ampere SM80 FlashAttentionForward test with:
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_029_FinalizeMemRefToLLVMConversionPass.mlir (6851 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_030_ExpandStridedMetadata.mlir (6573 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_031_ArithToLLVMConversionPass.mlir (6573 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_032_StripDebugInfo.mlir (6526 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_033_ConvertFastmathOps.mlir (7038 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_034_ConvertGpuOpsToNVVMOps.mlir (6919 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_035_StoreGpuLaunchAttribute.mlir (6967 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_036_GpuToLLVMConversionPass.mlir (6959 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_037_StoreGpuLaunchAttribute.mlir (6958 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_038_ConvertMathToLLVMPass.mlir (6958 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_039_Canonicalizer.mlir (6955 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_040_CSE.mlir (6955 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_041_ReconcileUnrealizedCasts.mlir (6955 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_032_ConvertFastmathOps.mlir (7038 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_033_ConvertGpuOpsToNVVMOps.mlir (6919 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_034_StoreGpuLaunchAttribute.mlir (6967 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_035_GpuToLLVMConversionPass.mlir (6959 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_036_StoreGpuLaunchAttribute.mlir (6958 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_037_ConvertMathToLLVMPass.mlir (6958 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_038_Canonicalizer.mlir (6955 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_039_CSE.mlir (6955 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_040_ReconcileUnrealizedCasts.mlir (6955 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_041_DIScopeForLLVMFuncOpPass.mlir (6955 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_042_CutlassModuleToBinaryPass.mlir (44 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_043_ExternalKernelForGpuLaunchPass.mlir (96 lines)
 [DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 Results verified successfully!
 PASS

@@ -16,7 +16,9 @@ Warmup iterations: 0
 Iterations: 1
 Skip reference checking: False
 Use cold L2: False
-[COMPILE-ONLY] Mocking HardwareInfo.get_max_active_clusters -> 1 (skipping occupancy check)
+
+
+
 [PATCH] hit Compiler.compile
 [DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_0_.mlir (3352 lines)
 [DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_001_CuteRemoveStaticArgs.mlir (3357 lines)
@@ -50,16 +52,16 @@ Use cold L2: False
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_029_FinalizeMemRefToLLVMConversionPass.mlir (2389 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_030_ExpandStridedMetadata.mlir (2312 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_031_ArithToLLVMConversionPass.mlir (2312 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_032_StripDebugInfo.mlir (1891 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_033_ConvertFastmathOps.mlir (1891 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_034_ConvertGpuOpsToNVVMOps.mlir (1891 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_035_StoreGpuLaunchAttribute.mlir (2313 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_036_GpuToLLVMConversionPass.mlir (2311 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_037_StoreGpuLaunchAttribute.mlir (2310 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_038_ConvertMathToLLVMPass.mlir (2310 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_039_Canonicalizer.mlir (2303 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_040_CSE.mlir (2303 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_041_ReconcileUnrealizedCasts.mlir (2303 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_032_ConvertFastmathOps.mlir (1891 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_033_ConvertGpuOpsToNVVMOps.mlir (1891 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_034_StoreGpuLaunchAttribute.mlir (2313 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_035_GpuToLLVMConversionPass.mlir (2311 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_036_StoreGpuLaunchAttribute.mlir (2310 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_037_ConvertMathToLLVMPass.mlir (2310 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_038_Canonicalizer.mlir (2303 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_039_CSE.mlir (2303 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_040_ReconcileUnrealizedCasts.mlir (2303 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_041_DIScopeForLLVMFuncOpPass.mlir (2303 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_042_CutlassModuleToBinaryPass.mlir (410 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell_geforce/dense_gemm/dense_gemm_043_ExternalKernelForGpuLaunchPass.mlir (535 lines)
 [DUMP] per-pass IR split -> 43 files

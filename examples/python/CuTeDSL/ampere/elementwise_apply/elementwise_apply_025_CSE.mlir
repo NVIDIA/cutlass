@@ -692,7 +692,7 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>
     %1 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<()>)>
     %2 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>

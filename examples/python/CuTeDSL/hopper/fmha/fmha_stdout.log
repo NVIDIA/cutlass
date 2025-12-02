@@ -1,7 +1,7 @@
 [INFO] Run tag: fmha
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 Running Hopper SM90 FMHA test with:
@@ -25,15 +25,18 @@ Running Hopper SM90 FMHA test with:
   skip_ref_check: False
   use_cold_l2: False
 Compiling kernel with cute.compile ...
+
+
+
 [PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_0_.mlir (14275 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_001_CuteRemoveStaticArgs.mlir (14279 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_002_MaterializeTmaMulticast.mlir (14279 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_003_SoftwarePipelinePass.mlir (14279 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_004_CuteDesugar.mlir (16261 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_005_CuteExpandOps.mlir (20186 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_006_CuteFoldStatic.mlir (11709 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_007_InsertRangeInformation.mlir (11709 lines)
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_0_.mlir (15925 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_001_CuteRemoveStaticArgs.mlir (15929 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_002_MaterializeTmaMulticast.mlir (15929 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_003_SoftwarePipelinePass.mlir (15929 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_004_CuteDesugar.mlir (17911 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_005_CuteExpandOps.mlir (21836 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_006_CuteFoldStatic.mlir (12031 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_007_InsertRangeInformation.mlir (12031 lines)
 [DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_008_Canonicalizer.mlir (6570 lines)
 [DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_009_CSE.mlir (5853 lines)
 [DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_010_LoopInvariantCodeMotion.mlir (5853 lines)
@@ -58,21 +61,24 @@ Compiling kernel with cute.compile ...
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_029_FinalizeMemRefToLLVMConversionPass.mlir (8001 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_030_ExpandStridedMetadata.mlir (7998 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_031_ArithToLLVMConversionPass.mlir (7998 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_032_StripDebugInfo.mlir (7250 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_033_ConvertFastmathOps.mlir (7250 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_034_ConvertGpuOpsToNVVMOps.mlir (7251 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_035_StoreGpuLaunchAttribute.mlir (8000 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_036_GpuToLLVMConversionPass.mlir (7990 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_037_StoreGpuLaunchAttribute.mlir (7989 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_038_ConvertMathToLLVMPass.mlir (7989 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_039_Canonicalizer.mlir (7977 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_040_CSE.mlir (7977 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_041_ReconcileUnrealizedCasts.mlir (7977 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_032_ConvertFastmathOps.mlir (7250 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_033_ConvertGpuOpsToNVVMOps.mlir (7251 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_034_StoreGpuLaunchAttribute.mlir (8000 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_035_GpuToLLVMConversionPass.mlir (7990 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_036_StoreGpuLaunchAttribute.mlir (7989 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_037_ConvertMathToLLVMPass.mlir (7989 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_038_Canonicalizer.mlir (7977 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_039_CSE.mlir (7977 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_040_ReconcileUnrealizedCasts.mlir (7977 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_041_DIScopeForLLVMFuncOpPass.mlir (7977 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_042_CutlassModuleToBinaryPass.mlir (722 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_043_ExternalKernelForGpuLaunchPass.mlir (887 lines)
 [DUMP] per-pass IR split -> 43 files
-Compilation time: 13.7016 seconds
+Compilation time: 27.3094 seconds
 Verifying results...
+
+
+
 [PATCH] hit Compiler.compile
 [DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_0_.mlir (486 lines)
 [DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_001_CuteRemoveStaticArgs.mlir (488 lines)
@@ -106,16 +112,16 @@ Verifying results...
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_029_FinalizeMemRefToLLVMConversionPass.mlir (316 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_030_ExpandStridedMetadata.mlir (316 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_031_ArithToLLVMConversionPass.mlir (316 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_032_StripDebugInfo.mlir (159 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_033_ConvertFastmathOps.mlir (159 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_034_ConvertGpuOpsToNVVMOps.mlir (159 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_035_StoreGpuLaunchAttribute.mlir (317 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_036_GpuToLLVMConversionPass.mlir (309 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_037_StoreGpuLaunchAttribute.mlir (308 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_038_ConvertMathToLLVMPass.mlir (308 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_039_Canonicalizer.mlir (308 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_040_CSE.mlir (308 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_041_ReconcileUnrealizedCasts.mlir (308 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_032_ConvertFastmathOps.mlir (159 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_033_ConvertGpuOpsToNVVMOps.mlir (159 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_034_StoreGpuLaunchAttribute.mlir (317 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_035_GpuToLLVMConversionPass.mlir (309 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_036_StoreGpuLaunchAttribute.mlir (308 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_037_ConvertMathToLLVMPass.mlir (308 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_038_Canonicalizer.mlir (308 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_039_CSE.mlir (308 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_040_ReconcileUnrealizedCasts.mlir (308 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_041_DIScopeForLLVMFuncOpPass.mlir (308 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_042_CutlassModuleToBinaryPass.mlir (149 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/fmha/fmha_043_ExternalKernelForGpuLaunchPass.mlir (217 lines)
 [DUMP] per-pass IR split -> 43 files

@@ -17,51 +17,6 @@ Warmup iterations: 0
 Iterations: 1
 Skip reference checking: False
 Use cold L2: False
-[PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_0_.mlir (420 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_001_CuteRemoveStaticArgs.mlir (422 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_002_MaterializeTmaMulticast.mlir (422 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_003_SoftwarePipelinePass.mlir (422 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_004_CuteDesugar.mlir (559 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_005_CuteExpandOps.mlir (695 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_006_CuteFoldStatic.mlir (370 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_007_InsertRangeInformation.mlir (370 lines)
-[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_008_Canonicalizer.mlir (260 lines)
-[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_009_CSE.mlir (254 lines)
-[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_010_LoopInvariantCodeMotion.mlir (254 lines)
-[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_011_LoopStrengthReductionPass.mlir (254 lines)
-[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_012_ConvertVectorToSCF.mlir (254 lines)
-[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_013_ConvertCuteTypesInScfOps.mlir (254 lines)
-[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_014_SCFToControlFlow.mlir (268 lines)
-[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_015_ArithExpandOpsPass.mlir (322 lines)
-[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_016_ConvertMathToFuncs.mlir (322 lines)
-[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_017_GpuLaunchSinkIndexComputations.mlir (322 lines)
-[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_018_ConvertToLLVMPass.mlir (649 lines)
-[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_019_ReconcileUnrealizedCasts.mlir (599 lines)
-[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_020_GpuKernelOutlining.mlir (599 lines)
-[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_021_SCFToControlFlow.mlir (617 lines)
-[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_022_ReconcileUnrealizedCasts.mlir (617 lines)
-[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_023_ConvertToLLVMPass.mlir (617 lines)
-[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_024_Canonicalizer.mlir (421 lines)
-[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_025_CSE.mlir (418 lines)
-[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_026_ConvertVectorToLLVMPass.mlir (410 lines)
-[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_027_ConvertNVVMToLLVMPass.mlir (410 lines)
-[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_028_GpuNVVMAttachTarget.mlir (410 lines)
-[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_029_FinalizeMemRefToLLVMConversionPass.mlir (410 lines)
-[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_030_ExpandStridedMetadata.mlir (409 lines)
-[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_031_ArithToLLVMConversionPass.mlir (409 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_032_StripDebugInfo.mlir (200 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_033_ConvertFastmathOps.mlir (200 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_034_ConvertGpuOpsToNVVMOps.mlir (200 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_035_StoreGpuLaunchAttribute.mlir (410 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_036_GpuToLLVMConversionPass.mlir (402 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_037_StoreGpuLaunchAttribute.mlir (401 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_038_ConvertMathToLLVMPass.mlir (401 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_039_Canonicalizer.mlir (401 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_040_CSE.mlir (401 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_041_ReconcileUnrealizedCasts.mlir (401 lines)
-[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_042_CutlassModuleToBinaryPass.mlir (201 lines)
-[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent/dense_blockscaled_gemm_persistent_043_ExternalKernelForGpuLaunchPass.mlir (259 lines)
-[DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
-[COMPILE-ONLY] Skipping CUDA kern
+
+
+

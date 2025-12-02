@@ -1,7 +1,7 @@
 [INFO] Run tag: sgemm
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 Running SIMT GEMM example:
@@ -63,10 +63,9 @@ Compiling kernel with cute.compile ...
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_042_CutlassModuleToBinaryPass.mlir (52 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_043_ExternalKernelForGpuLaunchPass.mlir (94 lines)
 [DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
-Compilation time: 2.8514 seconds
+Compilation time: 2.4266 seconds
 Executing GEMM kernel...
 Verifying results...
 Results verified successfully!
-Kernel execution time: 0.0301 ms
+Kernel execution time: 0.0262 ms
 PASS

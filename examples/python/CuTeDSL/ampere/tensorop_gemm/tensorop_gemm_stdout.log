@@ -1,7 +1,7 @@
 [INFO] Run tag: tensorop_gemm
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 Running Ampere tensor core GEMM example:
@@ -50,20 +50,19 @@ Compiling kernel with cute.compile ...
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_029_FinalizeMemRefToLLVMConversionPass.mlir (1161 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_030_ExpandStridedMetadata.mlir (1140 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_031_ArithToLLVMConversionPass.mlir (1140 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_032_StripDebugInfo.mlir (1048 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_033_ConvertFastmathOps.mlir (1048 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_034_ConvertGpuOpsToNVVMOps.mlir (1048 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_035_StoreGpuLaunchAttribute.mlir (1141 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_036_GpuToLLVMConversionPass.mlir (1131 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_037_StoreGpuLaunchAttribute.mlir (1130 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_038_ConvertMathToLLVMPass.mlir (1130 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_039_Canonicalizer.mlir (1130 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_040_CSE.mlir (1130 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_041_ReconcileUnrealizedCasts.mlir (1130 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_032_ConvertFastmathOps.mlir (1048 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_033_ConvertGpuOpsToNVVMOps.mlir (1048 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_034_StoreGpuLaunchAttribute.mlir (1141 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_035_GpuToLLVMConversionPass.mlir (1131 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_036_StoreGpuLaunchAttribute.mlir (1130 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_037_ConvertMathToLLVMPass.mlir (1130 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_038_Canonicalizer.mlir (1130 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_039_CSE.mlir (1130 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_040_ReconcileUnrealizedCasts.mlir (1130 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_041_DIScopeForLLVMFuncOpPass.mlir (1130 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_042_CutlassModuleToBinaryPass.mlir (80 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/tensorop_gemm/tensorop_gemm_043_ExternalKernelForGpuLaunchPass.mlir (128 lines)
 [DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 Executing GEMM kernel...
 Verifying results...
 Results verified successfully!

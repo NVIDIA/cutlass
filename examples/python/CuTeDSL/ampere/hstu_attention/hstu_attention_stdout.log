@@ -1,7 +1,7 @@
 [INFO] Run tag: hstu_attention
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 Running Ampere SM80 HSTUAttentionForward test with:
@@ -53,19 +53,18 @@ dtype:  BFloat16
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_029_FinalizeMemRefToLLVMConversionPass.mlir (3186 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_030_ExpandStridedMetadata.mlir (3062 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_031_ArithToLLVMConversionPass.mlir (3062 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_032_StripDebugInfo.mlir (3021 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_033_ConvertFastmathOps.mlir (3021 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_034_ConvertGpuOpsToNVVMOps.mlir (3020 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_035_StoreGpuLaunchAttribute.mlir (3062 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_036_GpuToLLVMConversionPass.mlir (3063 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_037_StoreGpuLaunchAttribute.mlir (3062 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_038_ConvertMathToLLVMPass.mlir (3062 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_039_Canonicalizer.mlir (3059 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_040_CSE.mlir (3059 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_041_ReconcileUnrealizedCasts.mlir (3059 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_032_ConvertFastmathOps.mlir (3021 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_033_ConvertGpuOpsToNVVMOps.mlir (3020 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_034_StoreGpuLaunchAttribute.mlir (3062 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_035_GpuToLLVMConversionPass.mlir (3063 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_036_StoreGpuLaunchAttribute.mlir (3062 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_037_ConvertMathToLLVMPass.mlir (3062 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_038_Canonicalizer.mlir (3059 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_039_CSE.mlir (3059 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_040_ReconcileUnrealizedCasts.mlir (3059 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_041_DIScopeForLLVMFuncOpPass.mlir (3059 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_042_CutlassModuleToBinaryPass.mlir (39 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/hstu_attention/hstu_attention_043_ExternalKernelForGpuLaunchPass.mlir (91 lines)
 [DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 Results verified successfully!
 PASS
