@@ -116,8 +116,7 @@ struct MoEProblemShape {
   UnderlyingProblemShape const
   get_host_problem_shape(int32_t group_idx=0) const {
     UnderlyingProblemShape expert_problem_dims = {max_m, max_n, max_k};
-    assert(tokens_per_expert_host != nullptr); //tokens_per_expert_host should not be null
-    if (group_idx < num_groups) {
+    if (group_idx < num_groups && tokens_per_expert_host != nullptr) {
       expert_problem_dims = {max_m, tokens_per_expert_host[group_idx], max_k};
     }
     return expert_problem_dims;
