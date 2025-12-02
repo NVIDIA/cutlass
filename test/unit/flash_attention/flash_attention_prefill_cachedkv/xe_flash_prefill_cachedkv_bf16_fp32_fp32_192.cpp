@@ -61,7 +61,7 @@ TEST(XE_Flash_Attention_Prefill_bf16_192, noncausal) {
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillCachedKVAll<Kernel>(192));
 }
 
-TEST(DISABLED_XE_Flash_Attention_Prefill_bf16_192, varlen_causal) {
+TEST(XE_Flash_Attention_Prefill_bf16_192, varlen_causal) {
   constexpr int PipelineStages = 2;
   using ShapeQK = Shape<_256, _64, _64>;
   using ShapePV = Shape<_256, _32, _64>;

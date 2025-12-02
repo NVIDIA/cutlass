@@ -283,6 +283,10 @@ struct TestbedImpl {
     block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
     block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
 
+    // Zero-initialize output buffer for the kernel result
+    // block_ref_O is fully written in verify() before being read, so no initialization needed
+    compat::memset(block_O.get(), 0, block_O.size() * sizeof(ElementOutput));
+
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
     initialize_block(block_V, seed + 2021);
