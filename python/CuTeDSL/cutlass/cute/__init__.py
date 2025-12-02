@@ -205,6 +205,7 @@ KeepCUBIN = _dsl.KeepCUBIN
 KeepPTX = _dsl.KeepPTX
 GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
+EnableTVMFFI = _dsl.EnableTVMFFI
 
 # attach the TVM FFI ABI interface postprocessor to the DSL
 from . import _tvm_ffi_args_spec_converter

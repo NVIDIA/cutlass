@@ -235,27 +235,20 @@ def get_prefix_dsl_libs(prefix: str):
             return prefix_libs_existing
 
         def get_libs_cand(start):
-            target_libs = {
-                "mlir_c_runner_utils",
-                "mlir_runner_utils",
-                "mlir_cuda_runtime",
+            target_cuda_dialect_libs = {
+                "cuda_dialect_runtime",
             }
             lib_folder_guesses = [
                 "lib",
             ]
 
-            libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
-
-            optional_libs_cand = find_libs_in_ancestors(
-                start, {"cuda_dialect_runtime"}, lib_folder_guesses
-            )
-
-            if libs_cand:
-                dsl_libs = ":".join(libs_cand)
-                if optional_libs_cand:
-                    dsl_libs += ":" + ":".join(optional_libs_cand)
-                return dsl_libs
-
+            for target_libs in [
+                target_cuda_dialect_libs,
+            ]:
+                libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
+                if libs_cand:
+                    dsl_libs = ":".join(libs_cand)
+                    return dsl_libs
             return None
 
         # find from install folder

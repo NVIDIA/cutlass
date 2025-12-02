@@ -53,7 +53,7 @@ from .runtime.jit_arg_adapters import is_argument_constexpr, JitArgAdapterRegist
 
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
-from .typing import get_c_pointers, get_mlir_types, Integer, arg_compatible_with_tvm_ffi
+from .typing import get_c_pointers, get_mlir_types, Integer
 from .arch import Arch
 
 # =============================================================================
@@ -810,10 +810,6 @@ class BaseDSL:
 
                 if is_host:
                     if self.envar.enable_tvm_ffi:
-                        if not arg_compatible_with_tvm_ffi(arg):
-                            raise DSLRuntimeError(
-                                f"Argument #{i + 1} ({arg_name}) is not a TVM FFI argument."
-                            )
                         jit_exec_arg.extend([arg])
                     else:
                         jit_exec_arg.extend(get_c_pointers(arg))
@@ -1218,6 +1214,8 @@ class BaseDSL:
         no_cache,
         func_type=JitCompiledFunction,
         *,
+        full_args=None,
+        full_kwargs=None,
         dynamic_args=None,
         dynamic_kwargs=None,
         original_function_name=None,
@@ -1388,6 +1386,8 @@ class BaseDSL:
                         pipeline,
                         args_spec,
                         no_cache,
+                        full_args=args,
+                        full_kwargs=kwargs,
                         dynamic_args=dynamic_args,
                         dynamic_kwargs=dynamic_kwargs,
                         original_function_name=original_function_name,
@@ -1400,7 +1400,7 @@ class BaseDSL:
                         module_hash,
                     )
                     jit_function = self.jit_cache[module_hash]
-            
+
             finally:
                 self.post_compilation_cleanup()
 

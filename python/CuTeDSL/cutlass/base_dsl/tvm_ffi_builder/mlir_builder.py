@@ -302,7 +302,10 @@ class MLIRBuilder(MLIRTypeBuilder):
         cond: ir.Value,
         true_block: ir.Block,
         false_block: ir.Block,
-        branch_weights=None
+        *,
+        branch_weights=None,
+        true_dest_operands: Sequence[ir.Value] = (),
+        false_dest_operands: Sequence[ir.Value] = (),
     ) -> None:
         """Create a conditional branch.
 
@@ -318,6 +321,10 @@ class MLIRBuilder(MLIRTypeBuilder):
             Optional branch weights [true_weight, false_weight] for optimization hints.
             Higher values indicate higher probability. For example, (99, 1) indicates
             the true branch is much more likely than the false branch.
+        true_dest_operands : Sequence[ir.Value]
+            Operands to pass to the true destination block.
+        false_dest_operands : Sequence[ir.Value]
+            Operands to pass to the false destination block.
         """
         if branch_weights is not None:
             # Branch weights should be a tuple/list of two integers [true_weight, false_weight]
@@ -325,8 +332,8 @@ class MLIRBuilder(MLIRTypeBuilder):
                 raise ValueError("branch_weights must have exactly 2 elements")
             llvm.cond_br(
                 cond,
-                true_dest_operands=[],
-                false_dest_operands=[],
+                true_dest_operands=true_dest_operands,
+                false_dest_operands=false_dest_operands,
                 true_dest=true_block,
                 false_dest=false_block,
                 branch_weights=ir.DenseI32ArrayAttr.get(list(branch_weights))
@@ -334,8 +341,8 @@ class MLIRBuilder(MLIRTypeBuilder):
         else:
             llvm.cond_br(
                 cond,
-                true_dest_operands=[],
-                false_dest_operands=[],
+                true_dest_operands=true_dest_operands,
+                false_dest_operands=false_dest_operands,
                 true_dest=true_block,
                 false_dest=false_block,
             )
@@ -401,6 +408,17 @@ class MLIRBuilder(MLIRTypeBuilder):
         )
         func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
 
+    def create_alloca(self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int) -> ir.Value:
+        """Create an alloca operation."""
+        with ir.InsertionPoint(entry_block.operations[0]):
+            # declare the struct type
+            alloca = llvm.alloca(
+                res=self.ptr_type,
+                elem_type=alloca_type,
+                array_size=self.i32(array_size),
+            )
+        return alloca
+
     def pack_values_to_alloca(
         self,
         current_block: ir.Block,
@@ -423,14 +441,11 @@ class MLIRBuilder(MLIRTypeBuilder):
         tuple[ir.Type, ir.Value]
             The struct type and the alloca.
         """
-        with ir.InsertionPoint(entry_block.operations[0]):
-            # declare the struct type
-            struct_type = self.struct_type(fields=[value.type for value in values])
-            alloca = llvm.alloca(
-                res=self.ptr_type,
-                elem_type=struct_type,
-                array_size=self.i32(1),
-            )
+        # Declare the struct type from the values
+        struct_type = self.struct_type(fields=[value.type for value in values])
+
+        # Create alloca using the helper method
+        alloca = self.create_alloca(entry_block, struct_type, array_size=1)
 
         with ir.InsertionPoint(current_block):
             for index, value in enumerate(values):
