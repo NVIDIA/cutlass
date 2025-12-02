@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_gemm.py", line 2365, in <module>
+    run(
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_gemm.py", line 2130, in run
+    torch.testing.assert_close(
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1519, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 16333 / 16384 (99.7%)
+Greatest absolute difference: 107.0 at index (94, 99, 0) (up to 0.1 allowed)
+Greatest relative difference: inf at index (13, 95, 0) (up to 1e-05 allowed)

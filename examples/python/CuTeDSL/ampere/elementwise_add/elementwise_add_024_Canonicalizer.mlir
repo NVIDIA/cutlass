@@ -723,7 +723,7 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  llvm.func @cutlass_elementwise_add_tensor_00795_21652_04639_03193_15897_02304_02971_12990_02319_03973_00495_05866_09467_06015_06234_07404_19793_05333_01425_01997_05745_11222_16922_13492_04451(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
+  llvm.func @cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>
     %1 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<()>)>
     %2 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>
@@ -913,8 +913,8 @@ module attributes {gpu.container_module} {
     gpu.launch_func  @kernels::@kernel_cutlass_elementwise_add_kernel_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensor00o1612810111601281___0 blocks in (%185, %18, %18) threads in (%17, %18, %18)  dynamic_shared_memory_size %15 args(%59 : !memref_gmem_f32_, %100 : !memref_gmem_f32_, %141 : !memref_gmem_f32_, %182 : !cute.coord_tensor<"(0,0)", "((16,128),(?,?)):((1@0,1@1),(16@0,128@1))">, %143 : i32, %144 : i32) {use_pdl = false}
     llvm.return
   }
-  llvm.func @_mlir_ciface_cutlass_elementwise_add_tensor_00795_21652_04639_03193_15897_02304_02971_12990_02319_03973_00495_05866_09467_06015_06234_07404_19793_05333_01425_01997_05745_11222_16922_13492_04451(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
-    llvm.call @cutlass_elementwise_add_tensor_00795_21652_04639_03193_15897_02304_02971_12990_02319_03973_00495_05866_09467_06015_06234_07404_19793_05333_01425_01997_05745_11222_16922_13492_04451(%arg0, %arg1, %arg2) : (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> ()
+  llvm.func @_mlir_ciface_cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
+    llvm.call @cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0, %arg1, %arg2) : (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> ()
     llvm.return
   }
 }

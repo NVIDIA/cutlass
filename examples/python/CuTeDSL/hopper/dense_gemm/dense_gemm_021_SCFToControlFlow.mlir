@@ -5217,7 +5217,7 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  func.func @cutlass___call_____main__HopperWgmmaGemmKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_CUstream0x99dc670(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__HopperWgmmaGemmKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_CUstream0x90b7ef0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
     %0 = builtin.unrealized_conversion_cast %arg2 : !memref_gmem_f16_ to !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i64, i64)>)>)>
     %1 = builtin.unrealized_conversion_cast %arg1 : !memref_gmem_f16_ to !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i64, i64)>)>)>
     %2 = builtin.unrealized_conversion_cast %arg0 : !memref_gmem_f16_ to !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i64, i64)>)>)>

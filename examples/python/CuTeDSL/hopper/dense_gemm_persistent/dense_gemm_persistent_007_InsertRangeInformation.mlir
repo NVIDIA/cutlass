@@ -4729,7 +4729,7 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_114_CUstream0xa9ac2c0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_114_CUstream0xa461420(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
     %false = arith.constant false
     %atom = cute.make_atom() : () -> !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
     %0 = cute_nvgpu.atom.set_value(%atom, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
