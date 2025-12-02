@@ -15,7 +15,9 @@ Warmup iterations: 0
 Iterations: 1
 Skip reference checking: False
 Use cold L2: False
-[COMPILE-ONLY] Mocking HardwareInfo.get_max_active_clusters -> 1 (skipping occupancy check)
+
+
+
 [PATCH] hit Compiler.compile
 [DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_0_.mlir (10332 lines)
 [DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_001_CuteRemoveStaticArgs.mlir (10347 lines)
@@ -49,16 +51,16 @@ Use cold L2: False
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_029_FinalizeMemRefToLLVMConversionPass.mlir (9814 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_030_ExpandStridedMetadata.mlir (8712 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_031_ArithToLLVMConversionPass.mlir (8712 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_032_StripDebugInfo.mlir (7731 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_033_ConvertFastmathOps.mlir (7993 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_034_ConvertGpuOpsToNVVMOps.mlir (7863 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_035_StoreGpuLaunchAttribute.mlir (8845 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_036_GpuToLLVMConversionPass.mlir (8838 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_037_StoreGpuLaunchAttribute.mlir (8837 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_038_ConvertMathToLLVMPass.mlir (8837 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_039_Canonicalizer.mlir (8814 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_040_CSE.mlir (8814 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_041_ReconcileUnrealizedCasts.mlir (8814 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_032_ConvertFastmathOps.mlir (7993 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_033_ConvertGpuOpsToNVVMOps.mlir (7863 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_034_StoreGpuLaunchAttribute.mlir (8845 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_035_GpuToLLVMConversionPass.mlir (8838 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_036_StoreGpuLaunchAttribute.mlir (8837 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_037_ConvertMathToLLVMPass.mlir (8837 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_038_Canonicalizer.mlir (8814 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_039_CSE.mlir (8814 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_040_ReconcileUnrealizedCasts.mlir (8814 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_041_DIScopeForLLVMFuncOpPass.mlir (8814 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_042_CutlassModuleToBinaryPass.mlir (947 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mamba2_ssd/mamba2_ssd/mamba2_ssd_043_ExternalKernelForGpuLaunchPass.mlir (1122 lines)
 [DUMP] per-pass IR split -> 43 files

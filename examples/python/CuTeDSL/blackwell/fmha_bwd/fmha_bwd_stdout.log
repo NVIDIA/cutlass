@@ -24,6 +24,9 @@ Running Blackwell SM100 FMHA bwd test with:
   iterations: 1
   skip_ref_check: False
 Compiling kernel with cute.compile ...
+
+
+
 [PATCH] hit Compiler.compile
 [DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_0_.mlir (10580 lines)
 [DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_001_CuteRemoveStaticArgs.mlir (10593 lines)
@@ -57,19 +60,19 @@ Compiling kernel with cute.compile ...
 [DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_029_FinalizeMemRefToLLVMConversionPass.mlir (3963 lines)
 [DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_030_ExpandStridedMetadata.mlir (3913 lines)
 [DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_031_ArithToLLVMConversionPass.mlir (3913 lines)
-[DUMP] 032_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_032_StripDebugInfo.mlir (3035 lines)
-[DUMP] 033_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_033_ConvertFastmathOps.mlir (3035 lines)
-[DUMP] 034_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_034_ConvertGpuOpsToNVVMOps.mlir (3035 lines)
-[DUMP] 035_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_035_StoreGpuLaunchAttribute.mlir (3916 lines)
-[DUMP] 036_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_036_GpuToLLVMConversionPass.mlir (3889 lines)
-[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_037_StoreGpuLaunchAttribute.mlir (3886 lines)
-[DUMP] 038_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_038_ConvertMathToLLVMPass.mlir (3886 lines)
-[DUMP] 039_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_039_Canonicalizer.mlir (3863 lines)
-[DUMP] 040_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_040_CSE.mlir (3863 lines)
-[DUMP] 041_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_041_ReconcileUnrealizedCasts.mlir (3863 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_032_ConvertFastmathOps.mlir (3035 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_033_ConvertGpuOpsToNVVMOps.mlir (3035 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_034_StoreGpuLaunchAttribute.mlir (3916 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_035_GpuToLLVMConversionPass.mlir (3889 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_036_StoreGpuLaunchAttribute.mlir (3886 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_037_ConvertMathToLLVMPass.mlir (3886 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_038_Canonicalizer.mlir (3863 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_039_CSE.mlir (3863 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_040_ReconcileUnrealizedCasts.mlir (3863 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_041_DIScopeForLLVMFuncOpPass.mlir (3863 lines)
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_042_CutlassModuleToBinaryPass.mlir (826 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_043_ExternalKernelForGpuLaunchPass.mlir (1278 lines)
 [DUMP] per-pass IR split -> 43 files
 [INFO] COMPILE-ONLY mode: skip JIT & execution completely.
-Compilation time: 8.2783 seconds
+Compilation time: 9.3490 seconds
 [COMPILE-ONLY] Skipping CUDA kern

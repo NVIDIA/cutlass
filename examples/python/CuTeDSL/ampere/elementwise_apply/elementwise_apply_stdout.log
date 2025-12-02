@@ -1,7 +1,7 @@
 [INFO] Run tag: elementwise_apply
-[INFO] Stdout is mirrored to (IR片段不包含在内): /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_stdout.log
-[INFO] Stderr is mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_stderr.log
-[INFO] Stdout IR slice will be saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_0_with_loc.mlir
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
 [INFO] cute_ir_dump_patch installed.
 
@@ -91,14 +91,13 @@ Compiling kernel with cute.compile ...
 [DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_042_CutlassModuleToBinaryPass.mlir (258 lines)
 [DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_apply/elementwise_apply_043_ExternalKernelForGpuLaunchPass.mlir (315 lines)
 [DUMP] per-pass IR split -> 43 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
-Compilation time: 2.1035 seconds
+Compilation time: 1.9270 seconds
 Executing elementwise apply kernel...
 Verifying results...
 Results verified successfully!
 First few elements of result: 
-tensor([[-0.3464,  0.0102,  1.3894],
-        [-1.3715,  0.6742, -0.6739],
-        [-0.5601,  0.4224, -2.2773]], device='cuda:0')
+tensor([[-0.0528, -1.1401, -1.8574],
+        [ 0.3013,  1.2216, -1.4279],
+        [ 2.0438,  1.1161, -2.2119]], device='cuda:0')
 
 PASS

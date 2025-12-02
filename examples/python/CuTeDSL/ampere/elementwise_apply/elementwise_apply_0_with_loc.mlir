@@ -1424,7 +1424,7 @@ module attributes {gpu.container_module} {
       return loc(#loc2)
     } loc(#loc55)
   } loc(#loc54)
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9fd15d0(%arg0: !memref_gmem_f32_8 loc(unknown), %arg1: !memref_gmem_f32_8 loc(unknown), %arg2: !memref_gmem_f32_9 loc(unknown), %arg3: !gpu.async.token loc(unknown)) attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !memref_gmem_f32_8 loc(unknown), %arg1: !memref_gmem_f32_8 loc(unknown), %arg2: !memref_gmem_f32_9 loc(unknown), %arg3: !gpu.async.token loc(unknown)) attributes {llvm.emit_c_interface} {
     %iter = cute.get_iter(%arg0) : !memref_gmem_f32_8 loc(#loc56)
     %iter_0 = cute.get_iter(%arg1) : !memref_gmem_f32_8 loc(#loc56)
     %iter_1 = cute.get_iter(%arg2) : !memref_gmem_f32_9 loc(#loc56)
