@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * Copyright (C) 2025 Intel Corporation, All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -29,27 +29,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
 /*! \file
-    \brief CUTLASS Intel BMG Gemm with ReLU Activation Fn epilogue
+    \brief CUTLASS Intel BMG Gemm with SiLu Activation Fn epilogue
 
-    This example constructs and executes a standard GEMM fused with a ReLU (Rectified Linear Unit)
-    activation epilogue. Aside from the epilogue operation, it is identical to 00_bmg_gemm.
+    This example constructs and executes a standard GEMM fused with a SiLu (Sigmoid Linear Unit)
+    activation epilogue. Aside from the epilogue operation, it is identical to
+    05_bmg_gemm_with_epilogue_relu.
 
-    CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
-    typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
-    epilogue operation.
+    The SiLu Element-wise activation function is applied as:
 
-    In this case, the ReLU Element-wise activation function is applied:
-
-    // D = ReLU(alpha * (A*B) + beta * C)
+    // D = SiLu(alpha * (A*B) + beta * C)
 
     To build & run this example (from your build dir):
 
-      $ ninja 05_bmg_gemm_with_epilogue_relu
-      $ ./examples/sycl/05_bmg_gemm_with_epilogues/05_bmg_gemm_with_epilogue_relu
+      $ ninja 05_bmg_gemm_with_epilogue_silu
+      $ ./examples/sycl/05_bmg_gemm_with_epilogues/05_bmg_gemm_with_epilogue_silu
 
     Call with `--help` for information about available options
 */
+
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
@@ -67,7 +66,7 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "cutlass/util/reference/device/tensor_relu.h"
+#include "cutlass/util/reference/device/tensor_silu.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/coord.h"
 
@@ -149,12 +148,13 @@ struct ExampleRunner {
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
-  using ElementAccumulator = typename Gemm::ElementAccumulator;
+  using ElementAcc = typename Gemm::ElementAccumulator;
 
   using CollectiveEpilogue = typename Gemm::CollectiveEpilogue;
   using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
+  using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
@@ -209,7 +209,7 @@ struct ExampleRunner {
 
     using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
     for(int batch = 0, offset = 0; batch < L; batch++, offset += M * N) {
-      cutlass::reference::device::TensorReLu(TensorView(block_ref_D.get() + offset, LayoutD::packed({M, N}),
+      cutlass::reference::device::TensorSiLu(TensorView(block_ref_D.get() + offset, LayoutD::packed({M, N}),
                                                         cutlass::make_Coord(M, N)));
     }
 
@@ -232,11 +232,11 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    block_A.reset(static_cast<std::size_t>(M) * K * L);
-    block_B.reset(static_cast<std::size_t>(K) * N * L);
-    block_C.reset(static_cast<std::size_t>(M) * N * L);
-    block_D.reset(static_cast<std::size_t>(M) * N * L);
-    block_ref_D.reset(static_cast<std::size_t>(M) * N * L);
+    block_A.reset(M * K * L);
+    block_B.reset(K * N * L);
+    block_C.reset(M * N * L);
+    block_D.reset(M * N * L);
+    block_ref_D.reset(M * N * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
@@ -342,37 +342,40 @@ int main(int argc, const char** argv)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  using GmemTiledCopyA = void;
-  using GmemTiledCopyB = void;
+  using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
+  using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
 
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  using TiledMma = typename TiledMMAHelper<MMA_Atom<XE_DPAS_TT<8, float, cute::bfloat16_t>>, Layout<TileShape>, Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
+                                    Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   constexpr int PipelineStages = 2;
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1Staged<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGeneric;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
-  // The Linear Combination with ReLU epilogue
-  using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu, ElementOutput,
+  // The Linear Combination with SiLu epilogue
+  using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::SiLu, ElementOutput,
           ElementComputeEpilogue, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
-  using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           decltype(tile_shape(TiledMma()))>;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
           TileShape,
-          void,
           ElementAccumulator,
           cutlass::gemm::TagToStrideC_t<LayoutC>,
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD>,
-          FusionCallbacks,
-          void,
-          void>;
+          FusionCallBacks,
+          XE_2D_U32x8x16_LD_N,
+          void, void,
+          XE_2D_U32x8x16_ST_N,
+          void, void>;
 
-// Mainloop
+  // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           GEMMDispatchPolicy,
           TileShape,

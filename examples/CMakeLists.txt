@@ -108,6 +108,7 @@ if(CUTLASS_ENABLE_SYCL)
       04_bmg_grouped_gemm
       04_bmg_grouped_gemm/legacy
       05_bmg_gemm_with_epilogues
+      05_bmg_gemm_with_epilogues/legacy
       06_bmg_flash_attention
       07_bmg_dual_gemm
       08_bmg_gemm_f8
