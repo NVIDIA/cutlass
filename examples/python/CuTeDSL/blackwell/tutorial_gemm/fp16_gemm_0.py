@@ -8,7 +8,7 @@
 # without an express license agreement from NVIDIA CORPORATION or
 # its affiliates is strictly prohibited.
 import sys
-sys.path.append("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/dump")
+sys.path.append("/os.path.join(os.path.dirname(__file__), "../dump")")
 
 import cute_ir_dump_patch as cid
 cid.install()
