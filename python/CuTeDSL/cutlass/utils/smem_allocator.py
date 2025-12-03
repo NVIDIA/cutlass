@@ -14,10 +14,12 @@ import inspect
 
 import cutlass.cute as cute
 from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
-from cutlass.cutlass_dsl import CutlassBaseDSL, Int8, Numeric, NumericMeta, dsl_user_op
+from cutlass.cutlass_dsl import CuTeDSL, Int8, Numeric, NumericMeta, dsl_user_op
+
 
 SMEM_CAPACITY_MAP = {
     "sm_120": (100 - 1) * 1024,
+    "sm_103": (228 - 1) * 1024,
     "sm_100": (228 - 1) * 1024,
     "sm_90": (228 - 1) * 1024,
     "sm_80": (164 - 1) * 1024,
@@ -71,7 +73,7 @@ class SmemAllocator:
     """
 
     @staticmethod
-    def capacity_in_bytes(compute_capability: str) -> int:
+    def capacity_in_bytes(compute_capability: Optional[str] = None) -> int:
         """Get the shared memory capacity in bytes for a given compute capability.
 
         Returns the maximum shared memory capacity in bytes available for the specified
@@ -83,6 +85,9 @@ class SmemAllocator:
         :rtype: int
         :raises ValueError: If the compute capability is not supported
         """
+        if compute_capability is None:
+            arch = CuTeDSL._get_dsl().get_arch_enum()
+            compute_capability = f"sm_{arch.major}{arch.minor}"
         if compute_capability not in SMEM_CAPACITY_MAP:
             raise ValueError(f"Unsupported compute capability: {compute_capability}")
         return SMEM_CAPACITY_MAP[compute_capability]
@@ -101,7 +106,7 @@ class SmemAllocator:
         """
         self._base = get_dyn_smem(Int8, alignment=1024, loc=loc, ip=ip)
         self._allocated_bytes = 0
-        CutlassBaseDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)
+        CuTeDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)
 
     @overload
     def allocate(

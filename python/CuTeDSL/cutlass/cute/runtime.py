@@ -515,6 +515,7 @@ class _FakeTensor(Tensor):
         when the dimension is dynamic.
     :type use_32bit_stride: bool, optional
 
+
     """
 
     def __init__(self, dtype, shape, *, stride, memspace=None, assumed_align=None):

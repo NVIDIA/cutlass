@@ -130,6 +130,9 @@ After serialization, compiled MLIR bytecode is stored in file.
 The cache directory is ``/tmp/{current_user}/cutlass_python_cache``.
 The cache loads from files into memory during |DSL| initialization and saves back to files when the process exits.
 
+Note that for efficiency, the default cache directory is located in a temporary folder. However, this location is not persistent, it may be cleared by the system (for example, during a reboot or disk space cleanup).
+If you wish to preserve the cache across sessions, set the ``CUTE_DSL_CACHE_DIR`` environment variable to point to a persistent directory.
+
 The following environment variables control file caching:
 
 .. code-block:: bash
@@ -139,6 +142,9 @@ The following environment variables control file caching:
 
    # Maximum number of cache files allowed, defaults to 1000.
    export CUTE_DSL_FILE_CACHING_CAPACITY=1000
+
+   # Cache directory, defaults to /tmp/{current_user}/cutlass_python_cache.
+   export CUTE_DSL_CACHE_DIR=/home/user/local_cutlass_python_cache/dense_gemm_cache/
 
 Limitations
 ~~~~~~~~~~~~~~~~~~~~~

@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.3.1
+# CUTLASS 4.3.2
 
-_CUTLASS 4.3.1 - Nov 2025_
+_CUTLASS 4.3.2 - Dec 2025_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -53,6 +53,7 @@ To get started quickly - please refer :
   - Added l2 cache evict priority for tma related ops. Users could do fine-grain l2 cache control.
   - Added Blackwell SM103 support.
   - Multiple dependent DSOs in the wheel have been merged into one single DSO.
+  - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches.
 * Debuggability improvements:
     - Supported source location tracking for DSL APIs (Allow tools like ``nsight`` profiling to correlate perf metrics with Python source code)
     - Supported dumping PTX and CUBIN code: [Hello World Example](https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/notebooks/hello_world.ipynb)
@@ -99,6 +100,8 @@ To get started quickly - please refer :
     - Fixed an issue with mark_compact_shape_dynamic
     - Fixed device reset issue with tvm-ffi
     - Fixed tvm-ffi export compiled function
+    - Fixed an issue of CUDA JitExecutor when unloading kernels
+    - Fixed an issue of allocating max smem when there's statically allocated smem
 
 ## CUTLASS C++
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
