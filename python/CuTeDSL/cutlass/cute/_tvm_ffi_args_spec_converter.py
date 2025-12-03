@@ -115,7 +115,9 @@ class ConverterContext:
     def __init__(self):
         self.num_dyn_shape_vars = 0
         self.num_dyn_stride_vars = 0
+        self.num_device_id_vars = 0
         self.sym_int_id_mapping = {}
+        self.vdevice_to_device_id_mapping = {}
 
     def alloc_shape_name(self) -> str:
         """Allocate a new dynamic shape variable name."""
@@ -142,6 +144,25 @@ class ConverterContext:
         var = spec.Var(name, dtype, divisibility=value.divisibility)
         self.sym_int_id_mapping[sym_int_id] = var
         return var
+
+    def alloc_or_reuse_device_id(self, device_type: str, vdevice_id: int) -> Optional[spec.Var]:
+        """Allocate or reuse a device_id variable for a given virtual device.
+
+        This function returns None for CPU tensors.
+        """
+        # Don't allocate device_id for CPU tensors
+        if device_type == "cpu":
+            return None
+
+        vdevice_key = (device_type, vdevice_id)
+        if vdevice_key in self.vdevice_to_device_id_mapping:
+            return self.vdevice_to_device_id_mapping[vdevice_key]
+
+        name = f"device_id{self.num_device_id_vars}"
+        self.num_device_id_vars += 1
+        device_id_var = spec.Var(name, "int32")
+        self.vdevice_to_device_id_mapping[vdevice_key] = device_id_var
+        return device_id_var
 
 
 def _convert_single_arg(
@@ -209,17 +230,28 @@ def _convert_single_arg(
         if hasattr(arg, "_tvm_ffi_tensor"):
             tvm_ffi_tensor = arg._tvm_ffi_tensor
             dtype = tvm_ffi_tensor.dtype
+            device_type = tvm_ffi_tensor.device.type
+
+            # Allocate device_id (returns None for CPU tensors)
+            vdevice_id = tvm_ffi_tensor.device.index
+            device_id = ctx.alloc_or_reuse_device_id(device_type, vdevice_id)
+
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
                 shapes,
                 arg._tvm_ffi_tensor.dtype,
                 strides=strides,
                 data_alignment=arg._assumed_align,
-                device_type=tvm_ffi_tensor.device.type
+                device_type=device_type,
+                device_id=device_id
             )
         else:
             # for FakeTensor, strictly follow the shape and stride from the cute tensor
             device_type = "cuda" if _is_gpu_memspace(arg.memspace) else "cpu"
+            # Allocate device_id (returns None for CPU tensors)
+            vdevice_id = 0  # For now, use vdevice_id = 0 for all GPU tensors
+            device_id = ctx.alloc_or_reuse_device_id(device_type, vdevice_id)
+
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
                 shapes,
@@ -227,6 +259,7 @@ def _convert_single_arg(
                 strides=strides,
                 data_alignment=arg._assumed_align,
                 device_type=device_type,
+                device_id=device_id
             )
             if arg.element_type == Float4E2M1FN:
                 tvm_ffi_cute_tensor = spec.create_map_tensor_dtype_f4x2_to_f4_spec(

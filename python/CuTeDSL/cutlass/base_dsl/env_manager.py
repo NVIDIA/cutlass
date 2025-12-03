@@ -296,6 +296,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_FILTER_STACKTRACE: Filter internal stacktrace (default: True)
     File options:
     - [DSL_NAME]_DUMP_DIR: Directory to dump the generated files (default: current working directory)
+    - [DSL_NAME]_CACHE_DIR: Cache directory (default: /tmp/{dsl_name}_python_cache_{tmpfile_suffix})
     - [DSL_NAME]_KEEP_IR: Save generated IR in a file (default: False)
     - [DSL_NAME]_KEEP_PTX: Save generated PTX in a file (default: False)
     - [DSL_NAME]_KEEP_CUBIN: Save generated CUBIN in a file (default: False)
@@ -333,6 +334,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
 
         # File options
         self.keep_ir = get_bool_env_var(f"{prefix}_KEEP_IR", False)
+        self.cache_dir = get_str_env_var(f"{prefix}_CACHE_DIR", None)
         # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
         self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))

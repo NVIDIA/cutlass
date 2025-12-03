@@ -515,6 +515,7 @@ class _FakeTensor(Tensor):
         when the dimension is dynamic.
     :type use_32bit_stride: bool, optional
 
+
     """
 
     def __init__(self, dtype, shape, *, stride, memspace=None, assumed_align=None):
@@ -617,8 +618,7 @@ def make_fake_compact_tensor(
     :param shape: Shape of the tensor.
     :type shape: tuple[int, ...]
     :param stride_order: Order in which strides (memory layout) are assigned to the tensor dimensions.
-        If None, the default layout is left-to-right order (known as column-major order for flatten layout).
-        Otherwise, it should be a permutation order of the dimension indices.
+        If None, the default layout is col-major. Otherwise, it should be a permutation of the dimension indices.
     :type stride_order: tuple[int, ...], optional
     :param memspace: Memory space where the fake tensor resides. Optional.
     :type memspace: str, optional

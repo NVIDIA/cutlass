@@ -372,10 +372,10 @@ class BaseDSL:
 
             atexit.register(restore_excepthook, origin_excepthook)
 
-    def dump_cache(self):
+    def dump_cache(self, path=None):
         if not self.envar.disable_file_caching:
             dump_cache_to_path(
-                self.name, self.jit_cache, self.envar.file_caching_capacity
+                self.name, self.jit_cache, self.envar.file_caching_capacity, path=path
             )
 
     @lru_cache(maxsize=1)
