@@ -26,7 +26,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import sys
-sys.path.append("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/dump")
+sys.path.append("/os.path.join(os.path.dirname(__file__), "../dump")")
 
 import cute_ir_dump_patch as cid
 cid.install()
