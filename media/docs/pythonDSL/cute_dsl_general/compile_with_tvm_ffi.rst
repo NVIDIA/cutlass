@@ -55,7 +55,7 @@ To maximize performance benefits, we recommend setting up your workflow as follo
 - **Declare shape constraints using fake tensors** and reuse the compiled function
   throughout your execution.
 - **Pass PyTorch tensors directly** to the compiled function to avoid explicit DLPack conversion.
-- **Use the environment stream flag** to implicitly synchronize with the current PyTorch stream.
+- **Use the environment stream flag** to implicitly pass the current PyTorch stream.
 - **Rely on compiled argument validation** instead of Python-side attribute validation,
   as TVM FFI functions perform fast compiled checks.
 
@@ -210,11 +210,11 @@ The following example demonstrates this approach; the function accepts ``torch.c
 Using Environment Stream
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The second option is to rely on the environment-stream flag.
-Pass ``use_tvm_ffi_env_stream=True`` to ``make_fake_stream`` to mark the argument as an
-environment stream so it no longer has to be provided explicitly.
-TVM FFI will reuse its environment stream, synchronizing it with ``torch.cuda.current_stream()``
-before each call. The example below shows this flow:
+The second option is to rely on the environment stream flag.
+Pass ``use_tvm_ffi_env_stream=True`` to ``make_fake_stream`` to mark the stream argument as an
+environment stream, which means it no longer needs to be provided explicitly.
+TVM FFI will automatically use its environment stream (i.e., the current PyTorch stream)
+as the stream argument. The example below demonstrates this flow:
 
 .. code-block:: python
 
@@ -351,7 +351,7 @@ example error cases that can be checked:
       except ValueError as e:
          # Mismatched b.shape[0] on argument #1 when calling:
          # `add_one(a: Tensor([n0], float32), b: Tensor([n0], float32))`,
-         # symbolic constraint violated
+         # expected to match a.shape[0]
          print(f"ValueError: {e}")
 
       try:

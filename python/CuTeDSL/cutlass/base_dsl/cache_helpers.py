@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 import hashlib
 from functools import lru_cache
+import tempfile
 
 from .utils.logger import log
 from .jit_executor import JitCompiledFunction
@@ -46,15 +47,23 @@ def get_current_user():
 
 
 # default_generated_ir_path is the path to the cache directory.
-# It is set to /tmp/{user}/cutlass_python_cache/ by default.
-# If the user is not found, the default path is used or /tmp/cutlass_python_cache/ is used.
-try:
-    default_generated_ir_path = f"/tmp/{get_current_user()}/cutlass_python_cache/"
-except Exception as e:
-    # If all else fails, provide a default fallback path
-    default_generated_ir_path = "/tmp/cutlass_python_cache/"
-    print(f"Could not determine user, using default path. Error: {e}")
+# If `CUTE_DSL_CACHE_DIR` is set, it is used as the cache directory.
+# Otherwise, it is set to a directory controled by TMPDIR defaulting
+# to /tmp/${USER}/cutlass_python_cache.
+if not (default_generated_ir_path := os.getenv("CUTE_DSL_CACHE_DIR", None)):
 
+    tmp_dir = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
+
+    def get_reusable_temp_dir(name):
+        path = tmp_dir / f"{get_current_user()}/{name}"
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    try:
+        default_generated_ir_path = get_reusable_temp_dir("cutlass_python_cache")
+    except Exception as e:
+        default_generated_ir_path = str(tmp_dir / "cutlass_python_cache")
+        print(f"Could not determine user, using default path. Error: {e}")
 
 @lru_cache(maxsize=1)
 def get_default_file_dump_root():
@@ -223,6 +232,8 @@ def dump_cache_to_path(
     :type bytecode_writer: callable, optional
     """
     log().info("JIT cache : dumping [%s] items=[%s]", dsl_name, len(jit_cache))
+    if not path:
+        path = default_generated_ir_path
     os.makedirs(path, exist_ok=True)
     try:
         for idx, [key, value] in enumerate(jit_cache.items()):

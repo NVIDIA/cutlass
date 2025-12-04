@@ -55,6 +55,8 @@ class CudaDialectJitModule:
             for library in self.cuda_library:
                 cuda_runtime.cudaLibraryUnload(library)
             self.cuda_library.clear()
+        except Exception as e:
+            pass
         finally:
             self._unloaded = True
 

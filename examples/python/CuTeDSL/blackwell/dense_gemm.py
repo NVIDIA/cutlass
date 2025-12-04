@@ -215,7 +215,7 @@ class DenseGemmKernel:
 
         self.occupancy = 1
         self.threads_per_cta = 128
-        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.smem_capacity = utils.get_smem_capacity_in_bytes()
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
