@@ -192,6 +192,7 @@ class Tensor(Param):
         dtype: Union[str, "tvm_ffi.dtype"],
         *,
         device_type: Optional[str] = None,
+        device_id: Optional[Var] = None,
         strides: Optional[Sequence[Var]] = None,
         map_tensor_dtype_f4x2_to_f4: bool = False,
         data_alignment: Optional[int] = None,
@@ -229,7 +230,10 @@ class Tensor(Param):
         example_device = tvm_ffi.device(device_type, 0)
         self.dlpack_device_type = example_device.dlpack_device_type()
         self.device_type_name = example_device.type
-        self.device_id = Var(name + ".device_id", tvm_ffi.dtype("int32"))
+        if device_id is None:
+            self.device_id = Var(name + ".device.index", tvm_ffi.dtype("int32"))
+        else:
+            self.device_id = device_id
         self.map_tensor_dtype_f4x2_to_f4 = map_tensor_dtype_f4x2_to_f4
 
 

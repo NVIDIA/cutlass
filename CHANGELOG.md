@@ -2,6 +2,14 @@
 
 # CUTLASS 4.x
 
+## [4.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.2) (2025-12-05)
+* New features
+  - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches
+
+* Bug fixing and improvements
+  - Fixed an issue of CUDA JitExecutor when unloading kernels
+  - Fixed an issue of allocating max smem when there's statically allocated smem
+
 ## [4.3.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.1) (2025-11-26)
 
 ### CuTe DSL

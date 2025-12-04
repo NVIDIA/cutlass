@@ -4,8 +4,7 @@
 Compile with TVM FFI
 ====================
 
-Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in 
-the `official documentation <https://tvm.apache.org/ffi/>`_.
+Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in the `official documentation <https://tvm.apache.org/ffi/>`_.
 
 To install TVM FFI, you can run the following command:
 
@@ -15,9 +14,7 @@ To install TVM FFI, you can run the following command:
    # optional package for improved torch tensor calling performance
    pip install torch-c-dlpack-ext
 
-In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster 
-JIT function invocation and provides better interoperability with machine learning frameworks 
-(e.g., directly take ``torch.Tensor`` as arguments).
+In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster JIT function invocation and provides better interoperability with machine learning frameworks (e.g., directly take ``torch.Tensor`` as arguments).
 
 
 Enable Apache TVM FFI in |DSL|
@@ -43,8 +40,7 @@ There are two ways to enable TVM FFI in |DSL|:
 
 Note that the object returned by ``cute.compile`` is a Python function specific to TVM FFI.
 
-2. Alternatively, you can enable TVM FFI globally by setting the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. 
-Please note that this setting will apply to all JIT compilations within the environment.
+2. Alternatively, you can enable TVM FFI globally by setting the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. Please note that this setting will apply to all JIT compilations within the environment.
 
 
 Minimizing Host Overhead
@@ -59,7 +55,7 @@ To maximize performance benefits, we recommend setting up your workflow as follo
 - **Declare shape constraints using fake tensors** and reuse the compiled function
   throughout your execution.
 - **Pass PyTorch tensors directly** to the compiled function to avoid explicit DLPack conversion.
-- **Use the environment stream flag** to implicitly synchronize with the current PyTorch stream.
+- **Use the environment stream flag** to implicitly pass the current PyTorch stream.
 - **Rely on compiled argument validation** instead of Python-side attribute validation,
   as TVM FFI functions perform fast compiled checks.
 
@@ -118,37 +114,6 @@ The fake tensor is a placeholder that mimics the interface of a real tensor but 
 It is used in compilation or testing scenarios where only shape/type/layout information is needed.
 All attempts to access or mutate data will raise errors.
 
-
-Interoperability with `from_dlpack`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Fake Tensor flow supports more flexible constraints on Tensor arguments than the `from_dlpack` flow.
-When fake tensor is used, it's recommended to use TVM FFI backend as it supports more flexible constraints on 
-Tensor arguments than the `from_dlpack` flow.
-
-For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which is not supported by 
-`from_dlpack`. It's expected that JIT function compiled with fake tensor may have different ABI with tensor converted 
-with `from_dlpack`.
-
-.. code-block:: python
-
-   import cutlass.cute as cute
-   import torch
-
-   n = cute.sym_int()
-   # Dynamic Shape
-   fake_a = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
-
-   # Compile without tvm-ffi
-   compiled_fn = cute.compile(foo, fake_a)
-
-   # Wrong, in compatible ABI
-   compiled_fn(from_dlpack(a))
-
-
-In order to avoid mismatched ABI, it's recommended to use TVM FFI when fake tensor is used for compilation.
-
-
 Note on Stride Order
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -164,8 +129,7 @@ stride via the ``stride`` argument in the ``make_fake_tensor`` API.
 ``cute.Tensor`` adapter for TVM FFI
 -----------------------------------
 
-To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the 
-``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
+To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the ``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
 
 .. code-block:: python
 
@@ -246,11 +210,11 @@ The following example demonstrates this approach; the function accepts ``torch.c
 Using Environment Stream
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The second option is to rely on the environment-stream flag.
-Pass ``use_tvm_ffi_env_stream=True`` to ``make_fake_stream`` to mark the argument as an
-environment stream so it no longer has to be provided explicitly.
-TVM FFI will reuse its environment stream, synchronizing it with ``torch.cuda.current_stream()``
-before each call. The example below shows this flow:
+The second option is to rely on the environment stream flag.
+Pass ``use_tvm_ffi_env_stream=True`` to ``make_fake_stream`` to mark the stream argument as an
+environment stream, which means it no longer needs to be provided explicitly.
+TVM FFI will automatically use its environment stream (i.e., the current PyTorch stream)
+as the stream argument. The example below demonstrates this flow:
 
 .. code-block:: python
 
@@ -324,7 +288,6 @@ composed of the types that are supported by TVM FFI. The example below shows how
    example_add_one_with_tuple()
 
 
-
 Supported types
 ---------------
 
@@ -352,7 +315,6 @@ The TVM FFI function supports the following |DSL|-specific types as arguments:
      - A stream class that implements the CUDA stream protocol (e.g. ``torch.cuda.Stream``, ``cuda.CUstream``).
    * - Tuple of types (e.g. ``Tuple[cute.Tensor, cute.Tensor, cutlass.Int32]``)
      - Python tuple of corresponding call-time types.
-
 
 Error handling
 --------------
@@ -389,7 +351,7 @@ example error cases that can be checked:
       except ValueError as e:
          # Mismatched b.shape[0] on argument #1 when calling:
          # `add_one(a: Tensor([n0], float32), b: Tensor([n0], float32))`,
-         # symbolic constraint violated
+         # expected to match a.shape[0]
          print(f"ValueError: {e}")
 
       try:
