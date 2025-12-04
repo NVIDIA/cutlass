@@ -1056,12 +1056,6 @@ class PersistentDenseGemmKernel:
             )
 
             if cutlass.const_expr(self.use_tma_store):
-                # {$nv-internal-release begin}
-                # (EPI_TILE_M, EPI_TILE_N, STAGE)
-                # sC = storage.sC.get_tensor(
-                #     c_smem_layout_staged.outer, swizzle=c_smem_layout_staged.inner
-                # )
-                # {$nv-internal-release end}
 
                 assert tma_atom_c is not None and sC is not None
                 self.epilogue_tma_store_release_flag(
