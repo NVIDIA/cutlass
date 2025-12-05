@@ -29,6 +29,9 @@ from .nvvm_wrappers import (
     cvt_f4e2m1x4_to_f16x4,
     cvt_f4e2m1x2_to_f16x2,
     cvt_f4e2m1_f16,
+    cvt_f8e4m3x4_to_f16x4,
+    cvt_f8e4m3x2_to_f16x2,
+    cvt_f8e4m3_f16,
 )
 
 from ..typing import (
@@ -268,6 +271,81 @@ def cvt_f4e2m1_f16_intrinsic(vec_f4e2m1, length, *, loc=None, ip=None):
             loc=loc,
             ip=ip,
         )
+    return vec_dst
+
+
+@dsl_user_op
+def cvt_f8e4m3_f16_intrinsic(vec_f8e4m3, length, *, loc=None, ip=None):
+    """
+    Convert a vector of float8e4m3 to a vector of float16.
+    Iterates in chunks of 4 (32-bit) to maximize register throughput.
+
+    :param vec_f8e4m3: The input vector of float8e4m3.
+    :type vec_f8e4m3: 1D vector of float8e4m3
+    :param length: The length of the input vector.
+    :type length: int
+    :return: The output 1D vector of float16 with the same length as the input vector.
+    :rtype: 1D vector of float16
+    """
+    src_pos = 0
+    
+    vec_src_i8 = builtin.unrealized_conversion_cast(
+        [ir.VectorType.get([length], Int8.mlir_type, loc=loc)],
+        [vec_f8e4m3],
+        loc=loc,
+        ip=ip,
+    )[0]
+
+    vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    vec_i8x2_type = ir.VectorType.get([2], Int8.mlir_type, loc=loc)
+    vec_dst_type = ir.VectorType.get([length], Float16.mlir_type, loc=loc)
+    
+    vec_dst = llvm.mlir_zero(vec_dst_type, loc=loc, ip=ip)
+
+    # try to use vectorized version
+    if length >= 4:
+        num_vec4 = length // 4
+        for _ in range(num_vec4):
+            vec_f8x4 = vector.extract_strided_slice(
+                vec_i8x4_type, vec_src_i8, [src_pos], [4], [1], loc=loc, ip=ip
+            )
+            vec_f16x4 = cvt_f8e4m3x4_to_f16x4(vec_f8x4, loc=loc, ip=ip)
+            vec_dst = vector.insert_strided_slice(
+                vec_f16x4, vec_dst, [src_pos], [1], loc=loc, ip=ip
+            )
+            src_pos += 4
+            length -= 4
+
+    if length >= 2:
+        vec_f8x2 = vector.extract_strided_slice(
+            vec_i8x2_type, vec_src_i8, [src_pos], [2], [1], loc=loc, ip=ip
+        )
+        vec_f16x2 = cvt_f8e4m3x2_to_f16x2(vec_f8x2, loc=loc, ip=ip)
+        vec_dst = vector.insert_strided_slice(
+            vec_f16x2, vec_dst, [src_pos], [1], loc=loc, ip=ip
+        )
+        src_pos += 2
+        length -= 2
+
+    if length >= 1:
+        val_f16 = cvt_f8e4m3_f16(
+            vector.extractelement(
+                vec_src_i8,
+                position=arith.constant(Int32.mlir_type, src_pos),
+                loc=loc,
+                ip=ip,
+            ),
+            loc=loc,
+            ip=ip,
+        )
+        vec_dst = vector.insertelement(
+            val_f16,
+            vec_dst,
+            position=arith.constant(Int32.mlir_type, src_pos),
+            loc=loc,
+            ip=ip,
+        )
+
     return vec_dst
 
 
