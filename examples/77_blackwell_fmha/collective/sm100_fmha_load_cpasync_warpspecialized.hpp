@@ -170,8 +170,12 @@ struct Sm100FmhaLoadCpAsyncWarpspecialized {
     auto tSgQ = thr_mma_qk.partition_A(gQ);
     auto tScQ = thr_mma_qk.partition_A(cQ);
 
-    auto atom_q_tv = Layout<Shape<Shape<_2, _32>, _16>, Stride<Stride<_16, _32>, _1>>{};
-    auto atom_kv_tv = Layout<Shape<Shape<_2, _32>, _16>, Stride<Stride<_16, _32>, _1>>{};
+    // Each cp.async copy atom is 16-bytes uint128_t. So we adjust the number of
+    // elements in atom's TV layout accordingly to match Element dtype.
+    // This avoids uncoalesced gmem access according to ncu.
+    using ElemPerAtom = cute::Int<sizeof(uint128_t) / sizeof(Element)>;
+    auto atom_q_tv = Layout<Shape<Shape<_2, _32>, ElemPerAtom>, Stride<Stride<ElemPerAtom, decltype(_2{} * ElemPerAtom{})>, _1>>{};
+    auto atom_kv_tv = Layout<Shape<Shape<_2, _32>, ElemPerAtom>, Stride<Stride<ElemPerAtom, decltype(_2{} * ElemPerAtom{})>, _1>>{};
 
     auto tiled_copy_q = make_cotiled_copy(
         Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, Element>{},
