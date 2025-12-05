@@ -380,7 +380,8 @@ sm1xx_blockscaled_gemm_is_aligned() {
   // Only support blocksscaled gemm alignment check
   constexpr bool is_mxf8f6f4_subbytes = (cute::sizeof_bits_v<ElementA> < 8 || cute::sizeof_bits_v<ElementB> < 8) &&
                                     (cute::is_base_of_v<KernelScheduleMxf8f6f4Sm100, BuilderScheduleTag> ||
-                                     cute::is_base_of_v<KernelScheduleMxf8f6f4Sm120, BuilderScheduleTag> );
+                                     cute::is_base_of_v<KernelScheduleMxf8f6f4Sm120, BuilderScheduleTag> ||
+                                     cute::is_base_of_v<KernelScheduleAuto, BuilderScheduleTag>);
 
   return ((cute::sizeof_bits_v<ElementA> * AlignmentA) % cutlass::detail::get_input_alignment_bits<ElementA, is_mxf8f6f4_subbytes>() == 0) &&
          ((cute::sizeof_bits_v<ElementB> * AlignmentB) % cutlass::detail::get_input_alignment_bits<ElementB, is_mxf8f6f4_subbytes>() == 0);
