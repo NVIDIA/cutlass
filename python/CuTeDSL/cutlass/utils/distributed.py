@@ -266,6 +266,47 @@ def red_add1(
         elif order == "relaxed":
             red_relaxed_sys_add1(lock_ptr=lock_ptr, loc=loc, ip=ip)
 
+@cute.jit
+def spin_lock_atom_cas_acquire_wait(
+    lock_ptr: Pointer,
+    *,
+    expected_val: Int32,
+    reset_val: Int32,
+    scope: str,
+    loc=None,
+    ip=None,
+) -> None:
+    """
+    wait on a spin lock until the expected count is reached. Reset flag to reset_val if the expected count is reached.
+    """
+    if scope == "gpu":
+        result = 0
+        while result != expected_val:
+            result = nvvm.atomicrmw(
+                T.i32(),
+                AtomicOpKind.CAS,
+                lock_ptr.llvm_ptr,
+                Int32(reset_val).ir_value(loc=loc, ip=ip),
+                b=Int32(expected_val).ir_value(loc=loc, ip=ip),
+                mem_order=MemOrderKind.ACQUIRE,
+                syncscope=MemScopeKind.GPU,
+                loc=loc,
+                ip=ip,
+            )
+    elif scope == "sys":
+        result = 0
+        while result != expected_val:
+            result = nvvm.atomicrmw(
+                T.i32(),
+                AtomicOpKind.CAS,
+                lock_ptr.llvm_ptr,
+                Int32(reset_val).ir_value(loc=loc, ip=ip),
+                b=Int32(expected_val).ir_value(loc=loc, ip=ip),
+                mem_order=MemOrderKind.ACQUIRE,
+                syncscope=MemScopeKind.SYS,
+                loc=loc,
+                ip=ip,
+            )
 
 @cute.jit
 def spin_lock_atom_cas_relaxed_wait(
