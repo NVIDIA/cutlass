@@ -261,7 +261,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                         package_name = module.__package__.rsplit(
                             ".", child_node.level - 1
                         )[0]
-                        module_name = f"{package_name}.{module_name}"
+                        if module_name is not None:
+                            module_name = f"{package_name}.{module_name}"
+                        else:
+                            module_name = package_name
                     else:
                         # Handle typically some local import like:
                         # from .common_dense_gemm import DenseGemmKernel
