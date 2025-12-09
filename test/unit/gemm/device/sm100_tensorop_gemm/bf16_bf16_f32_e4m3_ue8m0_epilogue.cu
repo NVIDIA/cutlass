@@ -53,6 +53,160 @@ using namespace cute;
 
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 
+namespace test {
+namespace gemm {
+namespace device {
+
+template <
+  typename Gemm,
+  template <class T> class ActivationFunctor = cutlass::epilogue::thread::Identity
+>
+bool TestFusion(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0, CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+
+  Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
+
+  int max_alignment_m = std::max({Gemm::kAlignmentA, Gemm::kAlignmentC, Gemm::kAlignmentD});
+  int max_alignment_n = std::max({Gemm::kAlignmentB, Gemm::kAlignmentC, Gemm::kAlignmentD});
+
+  if constexpr (std::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, typename Gemm::EpilogueOutputOp>) {
+    max_alignment_m = std::max(max_alignment_m, Gemm::EpilogueOutputOp::AlignmentAux);
+    max_alignment_n = std::max(max_alignment_n, Gemm::EpilogueOutputOp::AlignmentAux);
+  }
+
+  std::vector<int> problem_size_m = {max_alignment_m, 512 - 3 * max_alignment_m};
+  std::vector<int> problem_size_n = {max_alignment_n, 512 - 2 * max_alignment_n};
+  if(max_alignment_n % Gemm::EpilogueOutputOp::SFVecSize != 0) {
+    max_alignment_n = Gemm::EpilogueOutputOp::SFVecSize;
+    problem_size_n = {max_alignment_n, 4 * max_alignment_n};
+  }
+ 
+  //printf("Problem Shape Setup : Gemm::EpilogueOutputOp::AlignmentAux : %d, Gemm::kAlignmentD %d, max_alignment_m : %d, problem_size_m : %d\n", Gemm::EpilogueOutputOp::AlignmentAux, Gemm::kAlignmentD, max_alignment_m, problem_size_m);
+  //printf("Problem Shape Setup : Gemm::EpilogueOutputOp::AlignmentAux : %d, Gemm::kAlignmentD %d, max_alignment_n : %d, problem_size_n : %d\n", Gemm::EpilogueOutputOp::AlignmentAux, Gemm::kAlignmentD,  max_alignment_n, problem_size_n);
+
+  constexpr int Stages = Gemm::GemmKernel::DispatchPolicy::Stages;
+  constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
+
+  int max_alignment_k = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  std::vector<int> problem_size_k = {max_alignment_k, TileShapeK * (Stages + 1) - max_alignment_k};
+
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
+  std::vector problem_splits = {detail::Splits{1}};
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
+    problem_splits.push_back(detail::Splits{2});
+    problem_splits.push_back(detail::Splits{3});
+
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+
+    // Use larger K sizes for stream-K tests
+    static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::min_iters_per_sk_unit_;
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment_k};
+  }
+
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  std::vector<RasterOrderOptions> raster_orders = {RasterOrderOptions::AlongM, RasterOrderOptions::AlongN};
+  std::vector max_swizzle_sizes{detail::MaxSwizzleSize{1}, detail::MaxSwizzleSize{4}};
+
+  bool passed = true;
+
+  for (int m : problem_size_m) {
+    for (int n : problem_size_n) {
+      for (int k : problem_size_k) {
+        for (auto raster_order : raster_orders) {
+          for (auto max_swizzle_size : max_swizzle_sizes) {
+            for (DecompositionMode decomp_mode : decomposition_modes) {
+
+              std::vector problem_splits = {detail::Splits{1}};
+              if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+                auto max_splits = (k + TileShapeK - 1) / TileShapeK;
+                if (max_splits > 2) {
+                  problem_splits.push_back(detail::Splits{2});
+                }
+                if (max_splits > 3) {
+                  problem_splits.push_back(detail::Splits{3});
+                }
+
+                problem_splits.push_back(detail::Splits{max_splits});
+
+                // Test the case in which we ask for more splits than there are K tiles in the GEMM. In this
+                // case, split-K will fall back to a splitting factor of `max_splits`.
+                problem_splits.push_back(detail::Splits{max_splits + 1});
+              }
+              for (auto splits : problem_splits) {
+                ProblemShapeType problem_size;
+                if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+                  problem_size = ProblemShapeType{m, n, k, /* l */ 1};
+                }
+                else {
+                  problem_size = ProblemShapeType{m, n, k};
+                }
+
+                try {
+                  passed = testbed.run(
+                    problem_size,
+                    cutlass::from_real<ElementScalar>(alpha),
+                    cutlass::from_real<ElementScalar>(beta),
+                    raster_order,
+                    max_swizzle_size,
+                    splits,
+                    decomp_mode
+                  );
+                }
+                catch (std::exception const& e) {
+                  EXPECT_TRUE(false) << "TestAll: testbed.run {"
+                    << "m: " << m << ", n: " << n << ", k: " << k
+                    << ", alpha: " << alpha << ", beta: " << beta
+                    << ", raster_order: ???"
+                    << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
+                    << ", splits: " << static_cast<int>(splits)
+                    << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                    << "} threw an exception: " << e.what();
+                  throw;
+                }
+                catch (...) {
+                  EXPECT_TRUE(false) << "TestAll: testbed.run {"
+                    << "m: " << m << ", n: " << n << ", k: " << k
+                    << ", alpha: " << alpha << ", beta: " << beta
+                    << ", raster_order: ???"
+                    << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
+                    << ", splits: " << static_cast<int>(splits)
+                    << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                    << "} threw an exception (unknown)";
+                  throw;
+                }
+
+                EXPECT_TRUE(passed) << "TestAll: testbed.run {"
+                  << "m: " << m << ", n: " << n << ", k: " << k
+                  << ", alpha: " << alpha << ", beta: " << beta
+                  << ", raster_order: ???"
+                  << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
+                  << ", splits: " << static_cast<int>(splits)
+                  << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                  << "} failed";
+
+                if (!passed) {
+                  std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNK " << m << " " << n << " " << k << " FAILED.\n";
+                  return false;
+                }
+              } // splits
+            } // decomposition_mode
+          } // max_swizzle_size
+        } // raster_order
+      } // k
+    } // n
+  } // m
+
+  return passed;
+}
+} // namespace device
+} // namespace gemm
+} // namespace test
+
 TEST(SM100Only_Device_Gemm_bf16t_bf16n_ue8m0xe4m3t_outputVs32_bstensorop_1sm_f32, 128x128x64_1x1x1) {
 
   // Describe A and B tensors
@@ -108,7 +262,6 @@ TEST(SM100Only_Device_Gemm_bf16t_bf16n_ue8m0xe4m3t_outputVs32_bstensorop_1sm_f32
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
       ElementD, GmemLayoutD, AlignD,                                        // D tensor description
       cutlass::epilogue::TmaWarpSpecialized1Sm,                   // Epilogue schedule policy
-      //cutlass::epilogue::TmaWarpSpecialized1Sm,                   // Epilogue schedule policy
       FusionOperation
     >::CollectiveOp;
 
@@ -136,7 +289,7 @@ TEST(SM100Only_Device_Gemm_bf16t_bf16n_ue8m0xe4m3t_outputVs32_bstensorop_1sm_f32
   
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
   // Run tests
-  auto pass = test::gemm::device::TestAll<Gemm>();
+  auto pass = test::gemm::device::TestFusion<Gemm>();
   // Check results
   EXPECT_TRUE(pass); 
 }

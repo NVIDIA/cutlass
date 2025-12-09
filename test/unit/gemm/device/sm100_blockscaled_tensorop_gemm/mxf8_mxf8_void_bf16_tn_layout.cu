@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-
-
 #include <iostream>
 
 #include "cutlass/cutlass.h"
@@ -53,6 +51,8 @@
 
 using namespace cute;
 
+
+#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 
 TEST(SM100Only_Device_Gemm_ue8m0xe4m3t_ue8m0xe4m3n_void_bf16t_bstensorop_f32, 128x128x256_4x4x1_1sm_auto) {
   // Describe A and B tensors
@@ -124,3 +124,5 @@ TEST(SM100Only_Device_Gemm_ue8m0xe4m3t_ue8m0xe4m3n_void_bf16t_bstensorop_f32, 12
   // Check results
   EXPECT_TRUE(pass);
 }
+
+#endif
