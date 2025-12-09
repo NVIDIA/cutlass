@@ -14,7 +14,7 @@
 #loop_annotation2 = #llvm.loop_annotation<unroll = #loop_unroll2>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_kernel___main__HopperWgmmaGemmKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1819201_TVL_0(%arg0: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg1: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg2: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg3: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg4: !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg5: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg6: !mma_f16_f16_f32_64x128x16_) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    cuda.kernel @kernel_cutlass_kernel___main__HopperWgmmaGemmKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1819201_TVL_0(%arg0: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg1: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg2: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg3: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg4: !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg5: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg6: !mma_f16_f16_f32_64x128x16_) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %0 = cute.static : !cute.int_tuple<"(96,64)">
       %1 = cute.static : !cute.coord<"127">
       %2 = cute.static : !cute.coord<"126">
@@ -411,18 +411,20 @@ module attributes {gpu.container_module} {
           %393 = cute.get_scalars(%157) : !cute.int_tuple<"1">
           scf.for %arg11 = %c0_i32 to %393 step %c1_i32  : i32 {
             %401 = cute_nvgpu.atom.get_value(%392 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %402 = cute_nvgpu.atom.get_value(%392 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%392 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-            %402:3 = cute.get_scalars(%int_tuple_80) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_72 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %401 : !cute.ptr<smem, align<8>>, [%402#0, %402#1, %402#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %403:3 = cute.get_scalars(%int_tuple_80) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_72 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %401 : !cute.ptr<smem, align<8>>, [%403#0, %403#1, %403#2] : i32, i32, i32) cache_policy = %402 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation}
           %int_tuple_81 = cute.make_int_tuple(%e0_75, %e1_76, %e2_77) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
           %394 = cute_nvgpu.atom.make_exec_tma(%arg2) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
           %395 = cute_nvgpu.atom.set_value(%394, %ptr_79 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
           scf.for %arg11 = %c0_i32 to %393 step %c1_i32  : i32 {
             %401 = cute_nvgpu.atom.get_value(%395 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %402 = cute_nvgpu.atom.get_value(%395 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%395 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-            %402:3 = cute.get_scalars(%int_tuple_81) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_78 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %401 : !cute.ptr<smem, align<8>>, [%402#0, %402#1, %402#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %403:3 = cute.get_scalars(%int_tuple_81) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_78 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %401 : !cute.ptr<smem, align<8>>, [%403#0, %403#1, %403#2] : i32, i32, i32) cache_policy = %402 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation}
           %396 = arith.addi %arg9, %c1_i32 : i32
           %397 = arith.addi %arg8, %c1_i32 : i32
@@ -987,18 +989,20 @@ module attributes {gpu.container_module} {
           %412 = cute.get_scalars(%157) : !cute.int_tuple<"1">
           scf.for %arg18 = %c0_i32 to %412 step %c1_i32  : i32 {
             %420 = cute_nvgpu.atom.get_value(%411 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %421 = cute_nvgpu.atom.get_value(%411 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%411 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-            %421:3 = cute.get_scalars(%int_tuple_80) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_72 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %420 : !cute.ptr<smem, align<8>>, [%421#0, %421#1, %421#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %422:3 = cute.get_scalars(%int_tuple_80) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_72 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %420 : !cute.ptr<smem, align<8>>, [%422#0, %422#1, %422#2] : i32, i32, i32) cache_policy = %421 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation}
           %int_tuple_81 = cute.make_int_tuple(%e0_75, %e1_76, %e2_77) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
           %413 = cute_nvgpu.atom.make_exec_tma(%arg2) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
           %414 = cute_nvgpu.atom.set_value(%413, %ptr_79 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
           scf.for %arg18 = %c0_i32 to %412 step %c1_i32  : i32 {
             %420 = cute_nvgpu.atom.get_value(%414 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %421 = cute_nvgpu.atom.get_value(%414 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%414 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-            %421:3 = cute.get_scalars(%int_tuple_81) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_78 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %420 : !cute.ptr<smem, align<8>>, [%421#0, %421#1, %421#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %422:3 = cute.get_scalars(%int_tuple_81) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_78 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %420 : !cute.ptr<smem, align<8>>, [%422#0, %422#1, %422#2] : i32, i32, i32) cache_policy = %421 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation}
           %415 = arith.addi %arg16, %c1_i32 : i32
           %416 = arith.addi %arg15, %c1_i32 : i32
@@ -1076,9 +1080,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %258) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_44 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_45 = cute.get_iter(%rmem_44) : !memref_rmem_f16_
-      %259 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %259 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %260 = arith.truncf %259 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %260, %rmem_44, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %260, %rmem_44 : !memref_rmem_f16_
       %261 = cute.get_scalars(%156) : !cute.int_tuple<"2">
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
@@ -1100,8 +1104,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_65) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_7 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_65) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_7 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1141,9 +1146,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %277) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_46 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_47 = cute.get_iter(%rmem_46) : !memref_rmem_f16_
-      %278 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %278 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %279 = arith.truncf %278 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %279, %rmem_46, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %279, %rmem_46 : !memref_rmem_f16_
       %ptr_48 = cute.add_offset(%ptr_41, %105) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"2048">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
@@ -1167,8 +1172,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1208,9 +1214,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %295) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_49 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_50 = cute.get_iter(%rmem_49) : !memref_rmem_f16_
-      %296 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %296 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %297 = arith.truncf %296 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %297, %rmem_49, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %297, %rmem_49 : !memref_rmem_f16_
       %ptr_51 = cute.add_offset(%ptr_41, %87) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"4096">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
@@ -1234,8 +1240,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1275,9 +1282,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %313) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_52 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_53 = cute.get_iter(%rmem_52) : !memref_rmem_f16_
-      %314 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %314 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %315 = arith.truncf %314 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %315, %rmem_52, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %315, %rmem_52 : !memref_rmem_f16_
       %ptr_54 = cute.add_offset(%ptr_41, %69) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"6144">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
@@ -1301,8 +1308,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1342,9 +1350,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %331) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_55 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_56 = cute.get_iter(%rmem_55) : !memref_rmem_f16_
-      %332 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %332 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %333 = arith.truncf %332 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %333, %rmem_55, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %333, %rmem_55 : !memref_rmem_f16_
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
         %idx_64 = cute.crd2idx(%coord_63, %123) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
@@ -1366,8 +1374,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_66) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_7 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_66) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_7 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1407,9 +1416,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %349) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_57 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_58 = cute.get_iter(%rmem_57) : !memref_rmem_f16_
-      %350 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %350 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %351 = arith.truncf %350 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %351, %rmem_57, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %351, %rmem_57 : !memref_rmem_f16_
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
         %idx_64 = cute.crd2idx(%coord_63, %123) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
@@ -1432,8 +1441,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1473,9 +1483,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %367) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_59 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_60 = cute.get_iter(%rmem_59) : !memref_rmem_f16_
-      %368 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %368 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %369 = arith.truncf %368 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %369, %rmem_59, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %369, %rmem_59 : !memref_rmem_f16_
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
         %idx_64 = cute.crd2idx(%coord_63, %123) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
@@ -1498,8 +1508,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1539,9 +1550,9 @@ module attributes {gpu.container_module} {
       cute.memref.store(%rmem_43, %124, %385) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
       %rmem_61 = cute.memref.alloca() : !memref_rmem_f16_
       %iter_62 = cute.get_iter(%rmem_61) : !memref_rmem_f16_
-      %386 = cute.memref.load_vec %rmem_43, row_major : !memref_rmem_f32_2
+      %386 = cute.memref.load_vec %rmem_43 : !memref_rmem_f32_2
       %387 = arith.truncf %386 : vector<16xf32> to vector<16xf16>
-      cute.memref.store_vec %387, %rmem_61, row_major : !memref_rmem_f16_
+      cute.memref.store_vec %387, %rmem_61 : !memref_rmem_f16_
       scf.for %arg7 = %c0_i32 to %261 step %c1_i32  : i32 {
         %coord_63 = cute.make_coord(%arg7) : (i32) -> !cute.coord<"(_,?)">
         %idx_64 = cute.crd2idx(%coord_63, %123) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
@@ -1564,8 +1575,9 @@ module attributes {gpu.container_module} {
         %389 = cute.get_scalars(%157) : !cute.int_tuple<"1">
         scf.for %arg7 = %c0_i32 to %389 step %c1_i32  : i32 {
           %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-          %390:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%390#0, %390#1, %390#2] : i32, i32, i32) mode = <tiled>
+          %390 = cute_nvgpu.atom.get_value(%388 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+          %391:3 = cute.get_scalars(%int_tuple_67) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+          cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_63 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%391#0, %391#1, %391#2] : i32, i32, i32) cache_policy = %390 mode = <tiled>
         } {llvm.loop_annotation = #loop_annotation}
         nvvm.cp.async.bulk.commit.group
         nvvm.cp.async.bulk.wait_group 3 {read}
@@ -1577,16 +1589,16 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass___call_____main__HopperWgmmaGemmKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_CUstream0x90b7ef0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__HopperWgmmaGemmKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_CUstream(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+    %c230400_i64 = arith.constant 230400 : i64
     %0 = llvm.mlir.constant(63 : i64) : i64
     %1 = llvm.mlir.constant(2233785415175766016 : i64) : i64
     %2 = llvm.mlir.constant(279330 : i64) : i64
     %3 = llvm.mlir.constant(127 : i64) : i64
     %4 = llvm.mlir.constant(4539628424389459968 : i64) : i64
     %5 = llvm.mlir.constant(287522 : i64) : i64
-    %c230400_i32 = arith.constant 230400 : i32
-    %c1 = arith.constant 1 : index
-    %c128 = arith.constant 128 : index
+    %c0_i32 = arith.constant 0 : i32
+    %c1_i32 = arith.constant 1 : i32
     %6 = cute.static : !cute.int_tuple<"1">
     %c128_i64 = arith.constant 128 : i64
     %c128_i32 = arith.constant 128 : i32
@@ -1958,10 +1970,11 @@ module attributes {gpu.container_module} {
     %251 = cute.get_scalars(%mul_22) : !cute.int_tuple<"?">
     %mul_23 = cute.tuple_mul(%e2_21, %6) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
     %252 = cute.get_scalars(%mul_23) : !cute.int_tuple<"?">
-    %253 = arith.index_cast %250 : i32 to index
-    %254 = arith.index_cast %251 : i32 to index
-    %255 = arith.index_cast %252 : i32 to index
-    %256 = gpu.launch_func async [%arg3] @kernels::@kernel_cutlass_kernel___main__HopperWgmmaGemmKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1819201_TVL_0 clusters in (%c1, %c1, %c1) blocks in (%253, %254, %255) threads in (%c128, %c1, %c1)  dynamic_shared_memory_size %c230400_i32 args(%97 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %169 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view_5 : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %242 : !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view_10 : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %10 : !mma_f16_f16_f32_64x128x16_) {use_pdl = false}
-    return
+    %253 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c128_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c230400_i64, gridDim = (%250, %251, %252), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    cuda.launch_cfg.cluster_dim[%253] (%c1_i32, %c1_i32, %c1_i32) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %254 = cuda.launch_ex @kernels::@kernel_cutlass_kernel___main__HopperWgmmaGemmKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1819201_TVL_0<%253> (%97, %view, %169, %view_5, %242, %view_10, %10) : !cuda.launch_cfg<max_attrs = 2>, (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !mma_f16_f16_f32_64x128x16_) -> !cuda.result
+    %255 = cuda.cast %254 : !cuda.result -> i32
+    cuda.return_if_error %255 : i32
+    return %c0_i32 : i32
   }
 }

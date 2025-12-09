@@ -1,6 +1,6 @@
 module attributes {gpu.container_module} {
-  gpu.module @kernels [#nvvm.target<O = 3, chip = "sm_90a">] {
-    llvm.func @kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>, %arg3: !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %arg4: i32, %arg5: i32) attributes {gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} {
+  gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, conditional, [sm_90]>]} {
+    llvm.func @kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>, %arg3: !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} {
       %0 = llvm.mlir.constant(dense<0.000000e+00> : vector<64xf32>) : vector<64xf32>
       %1 = llvm.mlir.constant(15 : i64) : i64
       %2 = llvm.mlir.constant(14 : i64) : i64
@@ -585,389 +585,411 @@ module attributes {gpu.container_module} {
       %517 = llvm.shufflevector %516, %515 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 0, 1, 2, 3, 124, 125, 126, 127] : vector<64xf32> 
       %518 = llvm.shufflevector %487, %487 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
       %519 = llvm.shufflevector %518, %517 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 0, 1, 2, 3] : vector<64xf32> 
-      %520 = llvm.shufflevector %519, %519 [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] : vector<64xf32> 
-      %521 = llvm.load %90 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %522 = llvm.getelementptr %90[4096] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %523 = llvm.load %522 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %524 = llvm.getelementptr %90[8192] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %525 = llvm.load %524 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %526 = llvm.getelementptr %90[12288] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %527 = llvm.load %526 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %528 = llvm.getelementptr %90[16384] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %529 = llvm.load %528 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %530 = llvm.getelementptr %90[20480] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %531 = llvm.load %530 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %532 = llvm.getelementptr %90[24576] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %533 = llvm.load %532 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %534 = llvm.getelementptr %90[28672] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %535 = llvm.load %534 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %536 = llvm.getelementptr %90[32768] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %537 = llvm.load %536 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %538 = llvm.getelementptr %90[36864] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %539 = llvm.load %538 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %540 = llvm.getelementptr %90[40960] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %541 = llvm.load %540 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %542 = llvm.getelementptr %90[45056] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %543 = llvm.load %542 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %544 = llvm.getelementptr %90[49152] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %545 = llvm.load %544 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %546 = llvm.getelementptr %90[53248] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %547 = llvm.load %546 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %548 = llvm.getelementptr %90[57344] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %549 = llvm.load %548 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %550 = llvm.getelementptr %90[61440] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %551 = llvm.load %550 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
-      %552 = llvm.shufflevector %521, %521 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %553 = llvm.shufflevector %552, %0 [0, 1, 2, 3, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %554 = llvm.shufflevector %523, %523 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %555 = llvm.shufflevector %554, %553 [64, 65, 66, 67, 0, 1, 2, 3, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %556 = llvm.shufflevector %525, %525 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %557 = llvm.shufflevector %556, %555 [64, 65, 66, 67, 68, 69, 70, 71, 0, 1, 2, 3, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %558 = llvm.shufflevector %527, %527 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %559 = llvm.shufflevector %558, %557 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 0, 1, 2, 3, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %560 = llvm.shufflevector %529, %529 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %561 = llvm.shufflevector %560, %559 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 0, 1, 2, 3, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %562 = llvm.shufflevector %531, %531 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %563 = llvm.shufflevector %562, %561 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 0, 1, 2, 3, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %564 = llvm.shufflevector %533, %533 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %565 = llvm.shufflevector %564, %563 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 0, 1, 2, 3, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %566 = llvm.shufflevector %535, %535 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %567 = llvm.shufflevector %566, %565 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 0, 1, 2, 3, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %568 = llvm.shufflevector %537, %537 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %569 = llvm.shufflevector %568, %567 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 0, 1, 2, 3, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %570 = llvm.shufflevector %539, %539 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %571 = llvm.shufflevector %570, %569 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 0, 1, 2, 3, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %572 = llvm.shufflevector %541, %541 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %573 = llvm.shufflevector %572, %571 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 0, 1, 2, 3, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %574 = llvm.shufflevector %543, %543 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %575 = llvm.shufflevector %574, %573 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 0, 1, 2, 3, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %576 = llvm.shufflevector %545, %545 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %577 = llvm.shufflevector %576, %575 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 0, 1, 2, 3, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %578 = llvm.shufflevector %547, %547 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %579 = llvm.shufflevector %578, %577 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 0, 1, 2, 3, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
-      %580 = llvm.shufflevector %549, %549 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %581 = llvm.shufflevector %580, %579 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 0, 1, 2, 3, 124, 125, 126, 127] : vector<64xf32> 
-      %582 = llvm.shufflevector %551, %551 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
-      %583 = llvm.shufflevector %582, %581 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 0, 1, 2, 3] : vector<64xf32> 
-      %584 = llvm.shufflevector %583, %583 [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] : vector<64xf32> 
-      %585 = llvm.fadd %520, %584 : vector<64xf32>
-      %586 = llvm.shufflevector %585, %585 [0, 16, 32, 48, 1, 17, 33, 49, 2, 18, 34, 50, 3, 19, 35, 51, 4, 20, 36, 52, 5, 21, 37, 53, 6, 22, 38, 54, 7, 23, 39, 55, 8, 24, 40, 56, 9, 25, 41, 57, 10, 26, 42, 58, 11, 27, 43, 59, 12, 28, 44, 60, 13, 29, 45, 61, 14, 30, 46, 62, 15, 31, 47, 63] : vector<64xf32> 
-      %587 = llvm.shufflevector %586, %586 [0, 1, 2, 3] : vector<64xf32> 
-      %588 = llvm.shufflevector %586, %586 [4, 5, 6, 7] : vector<64xf32> 
-      %589 = llvm.shufflevector %586, %586 [8, 9, 10, 11] : vector<64xf32> 
-      %590 = llvm.shufflevector %586, %586 [12, 13, 14, 15] : vector<64xf32> 
-      %591 = llvm.shufflevector %586, %586 [16, 17, 18, 19] : vector<64xf32> 
-      %592 = llvm.shufflevector %586, %586 [20, 21, 22, 23] : vector<64xf32> 
-      %593 = llvm.shufflevector %586, %586 [24, 25, 26, 27] : vector<64xf32> 
-      %594 = llvm.shufflevector %586, %586 [28, 29, 30, 31] : vector<64xf32> 
-      %595 = llvm.shufflevector %586, %586 [32, 33, 34, 35] : vector<64xf32> 
-      %596 = llvm.shufflevector %586, %586 [36, 37, 38, 39] : vector<64xf32> 
-      %597 = llvm.shufflevector %586, %586 [40, 41, 42, 43] : vector<64xf32> 
-      %598 = llvm.shufflevector %586, %586 [44, 45, 46, 47] : vector<64xf32> 
-      %599 = llvm.shufflevector %586, %586 [48, 49, 50, 51] : vector<64xf32> 
-      %600 = llvm.shufflevector %586, %586 [52, 53, 54, 55] : vector<64xf32> 
-      %601 = llvm.shufflevector %586, %586 [56, 57, 58, 59] : vector<64xf32> 
-      %602 = llvm.shufflevector %586, %586 [60, 61, 62, 63] : vector<64xf32> 
-      llvm.store %587, %96 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %603 = llvm.getelementptr %96[%91] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %588, %603 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %604 = llvm.mul %91, %14 : i64
-      %605 = llvm.getelementptr %96[%604] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %589, %605 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %606 = llvm.mul %91, %13 : i64
-      %607 = llvm.getelementptr %96[%606] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %590, %607 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %608 = llvm.mul %91, %12 : i64
-      %609 = llvm.getelementptr %96[%608] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %591, %609 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %610 = llvm.mul %91, %11 : i64
-      %611 = llvm.getelementptr %96[%610] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %592, %611 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %612 = llvm.mul %91, %10 : i64
-      %613 = llvm.getelementptr %96[%612] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %593, %613 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %614 = llvm.mul %91, %9 : i64
-      %615 = llvm.getelementptr %96[%614] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %594, %615 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %616 = llvm.mul %91, %8 : i64
-      %617 = llvm.getelementptr %96[%616] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %595, %617 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %618 = llvm.mul %91, %7 : i64
-      %619 = llvm.getelementptr %96[%618] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %596, %619 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %620 = llvm.mul %91, %6 : i64
-      %621 = llvm.getelementptr %96[%620] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %597, %621 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %622 = llvm.mul %91, %5 : i64
-      %623 = llvm.getelementptr %96[%622] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %598, %623 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %624 = llvm.mul %91, %4 : i64
-      %625 = llvm.getelementptr %96[%624] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %599, %625 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %626 = llvm.mul %91, %3 : i64
-      %627 = llvm.getelementptr %96[%626] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %600, %627 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %628 = llvm.mul %91, %2 : i64
-      %629 = llvm.getelementptr %96[%628] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %601, %629 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
-      %630 = llvm.mul %91, %1 : i64
-      %631 = llvm.getelementptr %96[%630] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      llvm.store %602, %631 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %520 = llvm.load %90 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %521 = llvm.getelementptr %90[4096] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %522 = llvm.load %521 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %523 = llvm.getelementptr %90[8192] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %524 = llvm.load %523 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %525 = llvm.getelementptr %90[12288] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %526 = llvm.load %525 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %527 = llvm.getelementptr %90[16384] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %528 = llvm.load %527 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %529 = llvm.getelementptr %90[20480] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %530 = llvm.load %529 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %531 = llvm.getelementptr %90[24576] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %532 = llvm.load %531 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %533 = llvm.getelementptr %90[28672] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %534 = llvm.load %533 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %535 = llvm.getelementptr %90[32768] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %536 = llvm.load %535 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %537 = llvm.getelementptr %90[36864] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %538 = llvm.load %537 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %539 = llvm.getelementptr %90[40960] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %540 = llvm.load %539 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %541 = llvm.getelementptr %90[45056] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %542 = llvm.load %541 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %543 = llvm.getelementptr %90[49152] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %544 = llvm.load %543 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %545 = llvm.getelementptr %90[53248] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %546 = llvm.load %545 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %547 = llvm.getelementptr %90[57344] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %548 = llvm.load %547 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %549 = llvm.getelementptr %90[61440] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %550 = llvm.load %549 {alignment = 16 : i64} : !llvm.ptr<1> -> vector<4xf32>
+      %551 = llvm.shufflevector %520, %520 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %552 = llvm.shufflevector %551, %0 [0, 1, 2, 3, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %553 = llvm.shufflevector %522, %522 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %554 = llvm.shufflevector %553, %552 [64, 65, 66, 67, 0, 1, 2, 3, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %555 = llvm.shufflevector %524, %524 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %556 = llvm.shufflevector %555, %554 [64, 65, 66, 67, 68, 69, 70, 71, 0, 1, 2, 3, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %557 = llvm.shufflevector %526, %526 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %558 = llvm.shufflevector %557, %556 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 0, 1, 2, 3, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %559 = llvm.shufflevector %528, %528 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %560 = llvm.shufflevector %559, %558 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 0, 1, 2, 3, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %561 = llvm.shufflevector %530, %530 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %562 = llvm.shufflevector %561, %560 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 0, 1, 2, 3, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %563 = llvm.shufflevector %532, %532 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %564 = llvm.shufflevector %563, %562 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 0, 1, 2, 3, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %565 = llvm.shufflevector %534, %534 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %566 = llvm.shufflevector %565, %564 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 0, 1, 2, 3, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %567 = llvm.shufflevector %536, %536 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %568 = llvm.shufflevector %567, %566 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 0, 1, 2, 3, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %569 = llvm.shufflevector %538, %538 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %570 = llvm.shufflevector %569, %568 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 0, 1, 2, 3, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %571 = llvm.shufflevector %540, %540 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %572 = llvm.shufflevector %571, %570 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 0, 1, 2, 3, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %573 = llvm.shufflevector %542, %542 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %574 = llvm.shufflevector %573, %572 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 0, 1, 2, 3, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %575 = llvm.shufflevector %544, %544 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %576 = llvm.shufflevector %575, %574 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 0, 1, 2, 3, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %577 = llvm.shufflevector %546, %546 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %578 = llvm.shufflevector %577, %576 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 0, 1, 2, 3, 120, 121, 122, 123, 124, 125, 126, 127] : vector<64xf32> 
+      %579 = llvm.shufflevector %548, %548 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %580 = llvm.shufflevector %579, %578 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 0, 1, 2, 3, 124, 125, 126, 127] : vector<64xf32> 
+      %581 = llvm.shufflevector %550, %550 [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : vector<4xf32> 
+      %582 = llvm.shufflevector %581, %580 [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 0, 1, 2, 3] : vector<64xf32> 
+      %583 = llvm.fadd %519, %582 : vector<64xf32>
+      %584 = llvm.shufflevector %583, %583 [0, 1, 2, 3] : vector<64xf32> 
+      %585 = llvm.shufflevector %583, %583 [4, 5, 6, 7] : vector<64xf32> 
+      %586 = llvm.shufflevector %583, %583 [8, 9, 10, 11] : vector<64xf32> 
+      %587 = llvm.shufflevector %583, %583 [12, 13, 14, 15] : vector<64xf32> 
+      %588 = llvm.shufflevector %583, %583 [16, 17, 18, 19] : vector<64xf32> 
+      %589 = llvm.shufflevector %583, %583 [20, 21, 22, 23] : vector<64xf32> 
+      %590 = llvm.shufflevector %583, %583 [24, 25, 26, 27] : vector<64xf32> 
+      %591 = llvm.shufflevector %583, %583 [28, 29, 30, 31] : vector<64xf32> 
+      %592 = llvm.shufflevector %583, %583 [32, 33, 34, 35] : vector<64xf32> 
+      %593 = llvm.shufflevector %583, %583 [36, 37, 38, 39] : vector<64xf32> 
+      %594 = llvm.shufflevector %583, %583 [40, 41, 42, 43] : vector<64xf32> 
+      %595 = llvm.shufflevector %583, %583 [44, 45, 46, 47] : vector<64xf32> 
+      %596 = llvm.shufflevector %583, %583 [48, 49, 50, 51] : vector<64xf32> 
+      %597 = llvm.shufflevector %583, %583 [52, 53, 54, 55] : vector<64xf32> 
+      %598 = llvm.shufflevector %583, %583 [56, 57, 58, 59] : vector<64xf32> 
+      %599 = llvm.shufflevector %583, %583 [60, 61, 62, 63] : vector<64xf32> 
+      llvm.store %584, %96 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %600 = llvm.getelementptr %96[%91] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %585, %600 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %601 = llvm.mul %91, %14 : i64
+      %602 = llvm.getelementptr %96[%601] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %586, %602 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %603 = llvm.mul %91, %13 : i64
+      %604 = llvm.getelementptr %96[%603] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %587, %604 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %605 = llvm.mul %91, %12 : i64
+      %606 = llvm.getelementptr %96[%605] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %588, %606 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %607 = llvm.mul %91, %11 : i64
+      %608 = llvm.getelementptr %96[%607] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %589, %608 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %609 = llvm.mul %91, %10 : i64
+      %610 = llvm.getelementptr %96[%609] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %590, %610 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %611 = llvm.mul %91, %9 : i64
+      %612 = llvm.getelementptr %96[%611] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %591, %612 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %613 = llvm.mul %91, %8 : i64
+      %614 = llvm.getelementptr %96[%613] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %592, %614 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %615 = llvm.mul %91, %7 : i64
+      %616 = llvm.getelementptr %96[%615] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %593, %616 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %617 = llvm.mul %91, %6 : i64
+      %618 = llvm.getelementptr %96[%617] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %594, %618 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %619 = llvm.mul %91, %5 : i64
+      %620 = llvm.getelementptr %96[%619] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %595, %620 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %621 = llvm.mul %91, %4 : i64
+      %622 = llvm.getelementptr %96[%621] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %596, %622 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %623 = llvm.mul %91, %3 : i64
+      %624 = llvm.getelementptr %96[%623] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %597, %624 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %625 = llvm.mul %91, %2 : i64
+      %626 = llvm.getelementptr %96[%625] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %598, %626 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
+      %627 = llvm.mul %91, %1 : i64
+      %628 = llvm.getelementptr %96[%627] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      llvm.store %599, %628 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<1>
       llvm.return
     }
   }
-  llvm.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
-    %0 = llvm.mlir.constant(256 : index) : i64
-    %1 = llvm.mlir.constant(1 : index) : i64
-    %2 = llvm.mlir.poison : !llvm.struct<()>
-    %3 = llvm.mlir.constant(16 : i32) : i32
-    %4 = llvm.mlir.constant(-1 : i32) : i32
-    %5 = llvm.mlir.constant(1 : i32) : i32
-    %6 = llvm.mlir.constant(0 : i32) : i32
-    %7 = llvm.mlir.constant(256 : i32) : i32
-    %8 = llvm.mlir.constant(64 : i64) : i64
-    %9 = llvm.mlir.constant(64 : i32) : i32
-    %10 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<()>)>
+  llvm.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>
+    %1 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<()>)>
+    %2 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>
+    %3 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>
+    %4 = llvm.mlir.undef : !llvm.struct<(i64, i64, i32, i64, i32)>
+    %5 = llvm.mlir.undef : !llvm.struct<(i32, i32, i32, i32)>
+    %6 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>
+    %7 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)>
+    %8 = llvm.mlir.undef : !llvm.struct<(i64, i64)>
+    %9 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
+    %10 = llvm.mlir.constant(false) : i1
     %11 = llvm.mlir.constant(true) : i1
-    %12 = llvm.mlir.constant(false) : i1
-    %13 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-    %14 = llvm.mlir.undef : !llvm.struct<(i64, i64)>
-    %15 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)>
-    %16 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>
-    %17 = llvm.mlir.undef : !llvm.struct<(i32, i32, i32, i32)>
-    %18 = llvm.mlir.undef : !llvm.struct<(i64, i64, i32, i64, i32)>
-    %19 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>
-    %20 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>
-    %21 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<()>)>
-    %22 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>
-    %23 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %24 = llvm.extractvalue %arg1[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %25 = llvm.extractvalue %arg2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %26 = llvm.extractvalue %arg2[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %27 = llvm.extractvalue %26[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %28 = llvm.extractvalue %26[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %29 = llvm.extractvalue %26[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %30 = llvm.select %11, %4, %5 : i1, i32
-    %31 = llvm.add %30, %27 : i32
-    %32 = llvm.sdiv %31, %9 : i32
-    %33 = llvm.add %32, %5 : i32
-    %34 = llvm.sub %6, %27 : i32
-    %35 = llvm.sdiv %34, %9 : i32
-    %36 = llvm.sub %6, %35 : i32
-    %37 = llvm.icmp "slt" %27, %6 : i32
-    %38 = llvm.icmp "sgt" %27, %6 : i32
-    %39 = llvm.and %37, %12 : i1
-    %40 = llvm.and %38, %11 : i1
-    %41 = llvm.or %39, %40 : i1
-    %42 = llvm.select %41, %33, %36 : i1, i32
-    %43 = llvm.mul %29, %8 : i64
-    %44 = llvm.add %30, %28 : i32
-    %45 = llvm.sdiv %44, %7 : i32
-    %46 = llvm.add %45, %5 : i32
-    %47 = llvm.sub %6, %28 : i32
-    %48 = llvm.sdiv %47, %7 : i32
-    %49 = llvm.sub %6, %48 : i32
-    %50 = llvm.icmp "slt" %28, %6 : i32
-    %51 = llvm.icmp "sgt" %28, %6 : i32
-    %52 = llvm.and %50, %12 : i1
-    %53 = llvm.and %51, %11 : i1
-    %54 = llvm.or %52, %53 : i1
-    %55 = llvm.select %54, %46, %49 : i1, i32
-    %56 = llvm.insertvalue %42, %13[0] : !llvm.struct<(i32, i32)> 
-    %57 = llvm.insertvalue %55, %56[1] : !llvm.struct<(i32, i32)> 
-    %58 = llvm.insertvalue %29, %14[0] : !llvm.struct<(i64, i64)> 
-    %59 = llvm.insertvalue %43, %58[1] : !llvm.struct<(i64, i64)> 
-    %60 = llvm.insertvalue %57, %15[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %61 = llvm.insertvalue %59, %60[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %62 = llvm.insertvalue %23, %16[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %63 = llvm.insertvalue %10, %62[1] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %64 = llvm.insertvalue %24, %16[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %65 = llvm.insertvalue %10, %64[1] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
-    %66 = llvm.extractvalue %60[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %67 = llvm.extractvalue %61[1, 0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %68 = llvm.extractvalue %61[1, 1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %69 = llvm.sdiv %66, %9 : i32
-    %70 = llvm.icmp "ne" %69, %6 : i32
-    llvm.cond_br %70, ^bb1(%69 : i32), ^bb2
-  ^bb1(%71: i32):  // 2 preds: ^bb0, ^bb5
+    %12 = llvm.mlir.constant(0 : i64) : i64
+    %13 = llvm.mlir.poison : !llvm.struct<()>
+    %14 = llvm.mlir.constant(16 : i32) : i32
+    %15 = llvm.mlir.constant(-1 : i32) : i32
+    %16 = llvm.mlir.constant(1 : i32) : i32
+    %17 = llvm.mlir.constant(0 : i32) : i32
+    %18 = llvm.mlir.constant(256 : i32) : i32
+    %19 = llvm.mlir.constant(64 : i64) : i64
+    %20 = llvm.mlir.constant(64 : i32) : i32
+    %21 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<()>)>
+    %22 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %23 = llvm.extractvalue %arg1[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %24 = llvm.extractvalue %arg2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %25 = llvm.extractvalue %arg2[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %26 = llvm.extractvalue %25[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %27 = llvm.extractvalue %25[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %28 = llvm.extractvalue %25[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %29 = llvm.select %11, %15, %16 : i1, i32
+    %30 = llvm.add %29, %26 : i32
+    %31 = llvm.sdiv %30, %20 : i32
+    %32 = llvm.add %31, %16 : i32
+    %33 = llvm.sub %17, %26 : i32
+    %34 = llvm.sdiv %33, %20 : i32
+    %35 = llvm.sub %17, %34 : i32
+    %36 = llvm.icmp "slt" %26, %17 : i32
+    %37 = llvm.icmp "sgt" %26, %17 : i32
+    %38 = llvm.and %36, %10 : i1
+    %39 = llvm.and %37, %11 : i1
+    %40 = llvm.or %38, %39 : i1
+    %41 = llvm.select %40, %32, %35 : i1, i32
+    %42 = llvm.mul %28, %19 : i64
+    %43 = llvm.add %29, %27 : i32
+    %44 = llvm.sdiv %43, %18 : i32
+    %45 = llvm.add %44, %16 : i32
+    %46 = llvm.sub %17, %27 : i32
+    %47 = llvm.sdiv %46, %18 : i32
+    %48 = llvm.sub %17, %47 : i32
+    %49 = llvm.icmp "slt" %27, %17 : i32
+    %50 = llvm.icmp "sgt" %27, %17 : i32
+    %51 = llvm.and %49, %10 : i1
+    %52 = llvm.and %50, %11 : i1
+    %53 = llvm.or %51, %52 : i1
+    %54 = llvm.select %53, %45, %48 : i1, i32
+    %55 = llvm.insertvalue %41, %9[0] : !llvm.struct<(i32, i32)> 
+    %56 = llvm.insertvalue %54, %55[1] : !llvm.struct<(i32, i32)> 
+    %57 = llvm.insertvalue %28, %8[0] : !llvm.struct<(i64, i64)> 
+    %58 = llvm.insertvalue %42, %57[1] : !llvm.struct<(i64, i64)> 
+    %59 = llvm.insertvalue %56, %7[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %60 = llvm.insertvalue %58, %59[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %61 = llvm.insertvalue %22, %6[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %62 = llvm.insertvalue %21, %61[1] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %63 = llvm.insertvalue %23, %6[0] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %64 = llvm.insertvalue %21, %63[1] : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)> 
+    %65 = llvm.extractvalue %59[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %66 = llvm.extractvalue %60[1, 0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %67 = llvm.extractvalue %60[1, 1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %68 = llvm.sdiv %65, %20 : i32
+    %69 = llvm.icmp "ne" %68, %17 : i32
+    llvm.cond_br %69, ^bb1(%68 : i32), ^bb2
+  ^bb1(%70: i32):  // 2 preds: ^bb0, ^bb5
     llvm.br ^bb6
   ^bb2:  // pred: ^bb0
-    %72 = llvm.icmp "sgt" %66, %6 : i32
-    llvm.cond_br %72, ^bb3, ^bb4
+    %71 = llvm.icmp "sgt" %65, %17 : i32
+    llvm.cond_br %71, ^bb3, ^bb4
   ^bb3:  // pred: ^bb2
-    llvm.br ^bb5(%5 : i32)
+    llvm.br ^bb5(%16 : i32)
   ^bb4:  // pred: ^bb2
-    %73 = llvm.icmp "eq" %66, %6 : i32
-    %74 = llvm.select %73, %6, %4 : i1, i32
-    llvm.br ^bb5(%74 : i32)
-  ^bb5(%75: i32):  // 2 preds: ^bb3, ^bb4
-    llvm.br ^bb1(%75 : i32)
+    %72 = llvm.icmp "eq" %65, %17 : i32
+    %73 = llvm.select %72, %17, %15 : i1, i32
+    llvm.br ^bb5(%73 : i32)
+  ^bb5(%74: i32):  // 2 preds: ^bb3, ^bb4
+    llvm.br ^bb1(%74 : i32)
   ^bb6:  // pred: ^bb1
     llvm.br ^bb7
   ^bb7:  // pred: ^bb6
-    %76 = llvm.icmp "slt" %71, %3 : i32
-    %77 = llvm.select %76, %71, %3 : i1, i32
-    %78 = llvm.mul %68, %8 : i64
-    %79 = "llvm.intr.abs"(%71) <{is_int_min_poison = false}> : (i32) -> i32
-    %80 = llvm.sdiv %3, %79 : i32
-    %81 = llvm.icmp "ne" %80, %6 : i32
-    llvm.cond_br %81, ^bb8(%80 : i32), ^bb9
-  ^bb8(%82: i32):  // 2 preds: ^bb7, ^bb12
+    %75 = llvm.icmp "slt" %70, %14 : i32
+    %76 = llvm.select %75, %70, %14 : i1, i32
+    %77 = llvm.mul %67, %19 : i64
+    %78 = "llvm.intr.abs"(%70) <{is_int_min_poison = false}> : (i32) -> i32
+    %79 = llvm.sdiv %14, %78 : i32
+    %80 = llvm.icmp "ne" %79, %17 : i32
+    llvm.cond_br %80, ^bb8(%79 : i32), ^bb9
+  ^bb8(%81: i32):  // 2 preds: ^bb7, ^bb12
     llvm.br ^bb13
   ^bb9:  // pred: ^bb7
-    %83 = llvm.icmp "sgt" %79, %6 : i32
-    llvm.cond_br %83, ^bb10, ^bb11
+    %82 = llvm.icmp "sgt" %78, %17 : i32
+    llvm.cond_br %82, ^bb10, ^bb11
   ^bb10:  // pred: ^bb9
-    llvm.br ^bb12(%5 : i32)
+    llvm.br ^bb12(%16 : i32)
   ^bb11:  // pred: ^bb9
-    %84 = llvm.icmp "eq" %79, %6 : i32
-    %85 = llvm.select %84, %6, %4 : i1, i32
-    llvm.br ^bb12(%85 : i32)
-  ^bb12(%86: i32):  // 2 preds: ^bb10, ^bb11
-    llvm.br ^bb8(%86 : i32)
+    %83 = llvm.icmp "eq" %78, %17 : i32
+    %84 = llvm.select %83, %17, %15 : i1, i32
+    llvm.br ^bb12(%84 : i32)
+  ^bb12(%85: i32):  // 2 preds: ^bb10, ^bb11
+    llvm.br ^bb8(%85 : i32)
   ^bb13:  // pred: ^bb8
     llvm.br ^bb14
   ^bb14:  // pred: ^bb13
-    %87 = llvm.sdiv %9, %66 : i32
-    %88 = llvm.icmp "ne" %87, %6 : i32
-    llvm.cond_br %88, ^bb15(%87 : i32), ^bb16
-  ^bb15(%89: i32):  // 2 preds: ^bb14, ^bb19
+    %86 = llvm.sdiv %20, %65 : i32
+    %87 = llvm.icmp "ne" %86, %17 : i32
+    llvm.cond_br %87, ^bb15(%86 : i32), ^bb16
+  ^bb15(%88: i32):  // 2 preds: ^bb14, ^bb19
     llvm.br ^bb20
   ^bb16:  // pred: ^bb14
-    %90 = llvm.icmp "sgt" %66, %6 : i32
-    llvm.cond_br %90, ^bb17, ^bb18
+    %89 = llvm.icmp "sgt" %65, %17 : i32
+    llvm.cond_br %89, ^bb17, ^bb18
   ^bb17:  // pred: ^bb16
-    llvm.br ^bb19(%5 : i32)
+    llvm.br ^bb19(%16 : i32)
   ^bb18:  // pred: ^bb16
-    %91 = llvm.icmp "eq" %66, %6 : i32
-    %92 = llvm.select %91, %6, %4 : i1, i32
-    llvm.br ^bb19(%92 : i32)
-  ^bb19(%93: i32):  // 2 preds: ^bb17, ^bb18
-    llvm.br ^bb15(%93 : i32)
+    %90 = llvm.icmp "eq" %65, %17 : i32
+    %91 = llvm.select %90, %17, %15 : i1, i32
+    llvm.br ^bb19(%91 : i32)
+  ^bb19(%92: i32):  // 2 preds: ^bb17, ^bb18
+    llvm.br ^bb15(%92 : i32)
   ^bb20:  // pred: ^bb15
     llvm.br ^bb21
   ^bb21:  // pred: ^bb20
-    %94 = llvm.mul %89, %7 : i32
-    %95 = llvm.icmp "ne" %66, %6 : i32
-    llvm.cond_br %95, ^bb22(%66 : i32), ^bb23
-  ^bb22(%96: i32):  // 2 preds: ^bb21, ^bb26
+    %93 = llvm.mul %88, %18 : i32
+    %94 = llvm.icmp "ne" %65, %17 : i32
+    llvm.cond_br %94, ^bb22(%65 : i32), ^bb23
+  ^bb22(%95: i32):  // 2 preds: ^bb21, ^bb26
     llvm.br ^bb27
   ^bb23:  // pred: ^bb21
-    %97 = llvm.icmp "sgt" %66, %6 : i32
-    llvm.cond_br %97, ^bb24, ^bb25
+    %96 = llvm.icmp "sgt" %65, %17 : i32
+    llvm.cond_br %96, ^bb24, ^bb25
   ^bb24:  // pred: ^bb23
-    llvm.br ^bb26(%5 : i32)
+    llvm.br ^bb26(%16 : i32)
   ^bb25:  // pred: ^bb23
-    %98 = llvm.icmp "eq" %66, %6 : i32
-    %99 = llvm.select %98, %6, %4 : i1, i32
-    llvm.br ^bb26(%99 : i32)
-  ^bb26(%100: i32):  // 2 preds: ^bb24, ^bb25
-    llvm.br ^bb22(%100 : i32)
+    %97 = llvm.icmp "eq" %65, %17 : i32
+    %98 = llvm.select %97, %17, %15 : i1, i32
+    llvm.br ^bb26(%98 : i32)
+  ^bb26(%99: i32):  // 2 preds: ^bb24, ^bb25
+    llvm.br ^bb22(%99 : i32)
   ^bb27:  // pred: ^bb22
     llvm.br ^bb28
   ^bb28:  // pred: ^bb27
-    %101 = llvm.icmp "slt" %96, %9 : i32
-    %102 = llvm.select %101, %96, %9 : i1, i32
-    %103 = "llvm.intr.abs"(%96) <{is_int_min_poison = false}> : (i32) -> i32
-    %104 = llvm.sdiv %9, %103 : i32
-    %105 = llvm.icmp "ne" %104, %6 : i32
-    llvm.cond_br %105, ^bb29(%104 : i32), ^bb30
-  ^bb29(%106: i32):  // 2 preds: ^bb28, ^bb33
+    %100 = llvm.icmp "slt" %95, %20 : i32
+    %101 = llvm.select %100, %95, %20 : i1, i32
+    %102 = "llvm.intr.abs"(%95) <{is_int_min_poison = false}> : (i32) -> i32
+    %103 = llvm.sdiv %20, %102 : i32
+    %104 = llvm.icmp "ne" %103, %17 : i32
+    llvm.cond_br %104, ^bb29(%103 : i32), ^bb30
+  ^bb29(%105: i32):  // 2 preds: ^bb28, ^bb33
     llvm.br ^bb34
   ^bb30:  // pred: ^bb28
-    %107 = llvm.icmp "sgt" %103, %6 : i32
-    llvm.cond_br %107, ^bb31, ^bb32
+    %106 = llvm.icmp "sgt" %102, %17 : i32
+    llvm.cond_br %106, ^bb31, ^bb32
   ^bb31:  // pred: ^bb30
-    llvm.br ^bb33(%5 : i32)
+    llvm.br ^bb33(%16 : i32)
   ^bb32:  // pred: ^bb30
-    %108 = llvm.icmp "eq" %103, %6 : i32
-    %109 = llvm.select %108, %6, %4 : i1, i32
-    llvm.br ^bb33(%109 : i32)
-  ^bb33(%110: i32):  // 2 preds: ^bb31, ^bb32
-    llvm.br ^bb29(%110 : i32)
+    %107 = llvm.icmp "eq" %102, %17 : i32
+    %108 = llvm.select %107, %17, %15 : i1, i32
+    llvm.br ^bb33(%108 : i32)
+  ^bb33(%109: i32):  // 2 preds: ^bb31, ^bb32
+    llvm.br ^bb29(%109 : i32)
   ^bb34:  // pred: ^bb29
     llvm.br ^bb35
   ^bb35:  // pred: ^bb34
-    %111 = llvm.sdiv %5, %66 : i32
-    %112 = llvm.icmp "ne" %111, %6 : i32
-    llvm.cond_br %112, ^bb36(%111 : i32), ^bb37
-  ^bb36(%113: i32):  // 2 preds: ^bb35, ^bb40
+    %110 = llvm.sdiv %16, %65 : i32
+    %111 = llvm.icmp "ne" %110, %17 : i32
+    llvm.cond_br %111, ^bb36(%110 : i32), ^bb37
+  ^bb36(%112: i32):  // 2 preds: ^bb35, ^bb40
     llvm.br ^bb41
   ^bb37:  // pred: ^bb35
-    %114 = llvm.icmp "sgt" %66, %6 : i32
-    llvm.cond_br %114, ^bb38, ^bb39
+    %113 = llvm.icmp "sgt" %65, %17 : i32
+    llvm.cond_br %113, ^bb38, ^bb39
   ^bb38:  // pred: ^bb37
-    llvm.br ^bb40(%5 : i32)
+    llvm.br ^bb40(%16 : i32)
   ^bb39:  // pred: ^bb37
-    %115 = llvm.icmp "eq" %66, %6 : i32
-    %116 = llvm.select %115, %6, %4 : i1, i32
-    llvm.br ^bb40(%116 : i32)
-  ^bb40(%117: i32):  // 2 preds: ^bb38, ^bb39
-    llvm.br ^bb36(%117 : i32)
+    %114 = llvm.icmp "eq" %65, %17 : i32
+    %115 = llvm.select %114, %17, %15 : i1, i32
+    llvm.br ^bb40(%115 : i32)
+  ^bb40(%116: i32):  // 2 preds: ^bb38, ^bb39
+    llvm.br ^bb36(%116 : i32)
   ^bb41:  // pred: ^bb36
     llvm.br ^bb42
   ^bb42:  // pred: ^bb41
-    %118 = llvm.mul %113, %7 : i32
-    %119 = llvm.insertvalue %77, %17[0] : !llvm.struct<(i32, i32, i32, i32)> 
-    %120 = llvm.insertvalue %82, %119[1] : !llvm.struct<(i32, i32, i32, i32)> 
-    %121 = llvm.insertvalue %102, %120[2] : !llvm.struct<(i32, i32, i32, i32)> 
-    %122 = llvm.insertvalue %106, %121[3] : !llvm.struct<(i32, i32, i32, i32)> 
-    %123 = llvm.insertvalue %67, %18[0] : !llvm.struct<(i64, i64, i32, i64, i32)> 
-    %124 = llvm.insertvalue %78, %123[1] : !llvm.struct<(i64, i64, i32, i64, i32)> 
-    %125 = llvm.insertvalue %94, %124[2] : !llvm.struct<(i64, i64, i32, i64, i32)> 
-    %126 = llvm.insertvalue %68, %125[3] : !llvm.struct<(i64, i64, i32, i64, i32)> 
-    %127 = llvm.insertvalue %118, %126[4] : !llvm.struct<(i64, i64, i32, i64, i32)> 
-    %128 = llvm.insertvalue %122, %19[0] : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)> 
-    %129 = llvm.insertvalue %127, %128[1] : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)> 
-    %130 = llvm.insertvalue %25, %20[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)> 
-    %131 = llvm.insertvalue %129, %130[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)> 
-    %132 = llvm.extractvalue %26[0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %133 = llvm.extractvalue %132[0] : !llvm.struct<(i32, i32)> 
-    %134 = llvm.extractvalue %132[1] : !llvm.struct<(i32, i32)> 
-    %135 = llvm.insertvalue %133, %13[0] : !llvm.struct<(i32, i32)> 
-    %136 = llvm.insertvalue %134, %135[1] : !llvm.struct<(i32, i32)> 
-    %137 = llvm.insertvalue %136, %21[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %138 = llvm.extractvalue %137[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %139 = llvm.extractvalue %137[0, 1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %140 = llvm.add %30, %138 : i32
-    %141 = llvm.sdiv %140, %9 : i32
-    %142 = llvm.add %141, %5 : i32
-    %143 = llvm.sub %6, %138 : i32
-    %144 = llvm.sdiv %143, %9 : i32
-    %145 = llvm.sub %6, %144 : i32
-    %146 = llvm.icmp "slt" %138, %6 : i32
-    %147 = llvm.icmp "sgt" %138, %6 : i32
-    %148 = llvm.and %146, %12 : i1
-    %149 = llvm.and %147, %11 : i1
-    %150 = llvm.or %148, %149 : i1
-    %151 = llvm.select %150, %142, %145 : i1, i32
-    %152 = llvm.add %30, %139 : i32
-    %153 = llvm.sdiv %152, %7 : i32
-    %154 = llvm.add %153, %5 : i32
-    %155 = llvm.sub %6, %139 : i32
-    %156 = llvm.sdiv %155, %7 : i32
-    %157 = llvm.sub %6, %156 : i32
-    %158 = llvm.icmp "slt" %139, %6 : i32
-    %159 = llvm.icmp "sgt" %139, %6 : i32
-    %160 = llvm.and %158, %12 : i1
-    %161 = llvm.and %159, %11 : i1
-    %162 = llvm.or %160, %161 : i1
-    %163 = llvm.select %162, %154, %157 : i1, i32
-    %164 = llvm.insertvalue %151, %13[0] : !llvm.struct<(i32, i32)> 
-    %165 = llvm.insertvalue %163, %164[1] : !llvm.struct<(i32, i32)> 
-    %166 = llvm.insertvalue %165, %21[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %167 = llvm.insertvalue %2, %166[1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %168 = llvm.insertvalue %2, %22[0] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
-    %169 = llvm.insertvalue %167, %168[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
-    %170 = llvm.mul %77, %82 : i32
-    %171 = llvm.mul %102, %106 : i32
-    %172 = llvm.sext %170 : i32 to i64
-    %173 = llvm.sext %171 : i32 to i64
-    gpu.launch_func <%arg3 : !llvm.ptr> @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0 blocks in (%172, %173, %1) threads in (%0, %1, %1) : i64 dynamic_shared_memory_size %6 args(%63 : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %65 : !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %131 : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>, %169 : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %133 : i32, %134 : i32) {use_pdl = false}
-    llvm.return
+    %117 = llvm.mul %112, %18 : i32
+    %118 = llvm.insertvalue %76, %5[0] : !llvm.struct<(i32, i32, i32, i32)> 
+    %119 = llvm.insertvalue %81, %118[1] : !llvm.struct<(i32, i32, i32, i32)> 
+    %120 = llvm.insertvalue %101, %119[2] : !llvm.struct<(i32, i32, i32, i32)> 
+    %121 = llvm.insertvalue %105, %120[3] : !llvm.struct<(i32, i32, i32, i32)> 
+    %122 = llvm.insertvalue %66, %4[0] : !llvm.struct<(i64, i64, i32, i64, i32)> 
+    %123 = llvm.insertvalue %77, %122[1] : !llvm.struct<(i64, i64, i32, i64, i32)> 
+    %124 = llvm.insertvalue %93, %123[2] : !llvm.struct<(i64, i64, i32, i64, i32)> 
+    %125 = llvm.insertvalue %67, %124[3] : !llvm.struct<(i64, i64, i32, i64, i32)> 
+    %126 = llvm.insertvalue %117, %125[4] : !llvm.struct<(i64, i64, i32, i64, i32)> 
+    %127 = llvm.insertvalue %121, %3[0] : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)> 
+    %128 = llvm.insertvalue %126, %127[1] : !llvm.struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)> 
+    %129 = llvm.insertvalue %24, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)> 
+    %130 = llvm.insertvalue %128, %129[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)> 
+    %131 = llvm.extractvalue %25[0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %132 = llvm.extractvalue %131[0] : !llvm.struct<(i32, i32)> 
+    %133 = llvm.extractvalue %131[1] : !llvm.struct<(i32, i32)> 
+    %134 = llvm.insertvalue %132, %9[0] : !llvm.struct<(i32, i32)> 
+    %135 = llvm.insertvalue %133, %134[1] : !llvm.struct<(i32, i32)> 
+    %136 = llvm.insertvalue %135, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %137 = llvm.extractvalue %136[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %138 = llvm.extractvalue %136[0, 1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %139 = llvm.add %29, %137 : i32
+    %140 = llvm.sdiv %139, %20 : i32
+    %141 = llvm.add %140, %16 : i32
+    %142 = llvm.sub %17, %137 : i32
+    %143 = llvm.sdiv %142, %20 : i32
+    %144 = llvm.sub %17, %143 : i32
+    %145 = llvm.icmp "slt" %137, %17 : i32
+    %146 = llvm.icmp "sgt" %137, %17 : i32
+    %147 = llvm.and %145, %10 : i1
+    %148 = llvm.and %146, %11 : i1
+    %149 = llvm.or %147, %148 : i1
+    %150 = llvm.select %149, %141, %144 : i1, i32
+    %151 = llvm.add %29, %138 : i32
+    %152 = llvm.sdiv %151, %18 : i32
+    %153 = llvm.add %152, %16 : i32
+    %154 = llvm.sub %17, %138 : i32
+    %155 = llvm.sdiv %154, %18 : i32
+    %156 = llvm.sub %17, %155 : i32
+    %157 = llvm.icmp "slt" %138, %17 : i32
+    %158 = llvm.icmp "sgt" %138, %17 : i32
+    %159 = llvm.and %157, %10 : i1
+    %160 = llvm.and %158, %11 : i1
+    %161 = llvm.or %159, %160 : i1
+    %162 = llvm.select %161, %153, %156 : i1, i32
+    %163 = llvm.insertvalue %150, %9[0] : !llvm.struct<(i32, i32)> 
+    %164 = llvm.insertvalue %162, %163[1] : !llvm.struct<(i32, i32)> 
+    %165 = llvm.insertvalue %164, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %166 = llvm.insertvalue %13, %165[1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %167 = llvm.insertvalue %13, %0[0] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
+    %168 = llvm.insertvalue %166, %167[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
+    %169 = llvm.mul %76, %81 : i32
+    %170 = llvm.mul %101, %105 : i32
+    %171 = llvm.alloca %16 x !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)> : (i32) -> !llvm.ptr
+    %172 = llvm.alloca %16 x !llvm.array<2 x struct<(i32, array<4 x i8>, array<64 x i8>)>> : (i32) -> !llvm.ptr
+    %173 = llvm.getelementptr %171[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %172, %173 : !llvm.ptr, !llvm.ptr
+    %174 = llvm.getelementptr %171[0, 1, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %18, %174 : i32, !llvm.ptr
+    %175 = llvm.getelementptr %171[0, 1, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %16, %175 : i32, !llvm.ptr
+    %176 = llvm.getelementptr %171[0, 1, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %16, %176 : i32, !llvm.ptr
+    %177 = llvm.getelementptr %171[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %12, %177 : i64, !llvm.ptr
+    %178 = llvm.getelementptr %171[0, 0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %169, %178 : i32, !llvm.ptr
+    %179 = llvm.getelementptr %171[0, 0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %170, %179 : i32, !llvm.ptr
+    %180 = llvm.getelementptr %171[0, 0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %16, %180 : i32, !llvm.ptr
+    %181 = llvm.getelementptr %171[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %17, %181 : i32, !llvm.ptr
+    %182 = llvm.getelementptr %171[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %arg3, %182 : !llvm.ptr, !llvm.ptr
+    %183 = llvm.alloca %16 x !llvm.array<1 x ptr> : (i32) -> !llvm.ptr
+    %184 = llvm.getelementptr %183[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<1 x ptr>
+    llvm.store %171, %184 : !llvm.ptr, !llvm.ptr
+    %185 = builtin.unrealized_conversion_cast %183 : !llvm.ptr to !cuda.launch_cfg<max_attrs = 2>
+    %186 = cuda.launch_ex @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0<%185> (%62, %64, %130, %168, %132, %133) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32, i32)>, struct<(i64, i64, i32, i64, i32)>)>)>, !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, i32, i32) -> !cuda.result
+    %187 = builtin.unrealized_conversion_cast %186 : !cuda.result to i32
+    cuda.return_if_error %187 : i32
+    llvm.return %17 : i32
   }
-  llvm.func @_mlir_ciface_cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) attributes {llvm.emit_c_interface} {
-    llvm.call @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.ptr) -> ()
-    llvm.return
+  llvm.func @_mlir_ciface_cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg3: !llvm.ptr) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = llvm.call @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.ptr) -> i32
+    llvm.return %0 : i32
   }
 }

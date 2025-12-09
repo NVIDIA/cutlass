@@ -2,7 +2,7 @@
 !memref_gmem_i8_ = !cute.memref<i8, gmem, "(?):(1)">
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} {
+    cuda.kernel @kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} {
       %c-1_i32 = arith.constant -1 : i32
       %c10_i32 = arith.constant 10 : i32
       %0 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
@@ -28,11 +28,16 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) attributes {llvm.emit_c_interface} {
-    %c1 = arith.constant 1 : index
-    %c32 = arith.constant 32 : index
+  func.func @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) -> i32 attributes {llvm.emit_c_interface} {
+    %c1_i32 = arith.constant 1 : i32
+    %c32_i32 = arith.constant 32 : i32
     %c0_i32 = arith.constant 0 : i32
-    gpu.launch_func  @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0 blocks in (%c1, %c1, %c1) threads in (%c32, %c1, %c1)  dynamic_shared_memory_size %c0_i32 args(%arg0 : !memref_gmem_i32_, %arg1 : !memref_gmem_i8_, %arg2 : !memref_gmem_i8_, %arg3 : !memref_gmem_i8_) {use_pdl = false}
-    return
+    %c0_i64 = arith.constant 0 : i64
+    %0 = cuda.cast %c0_i64 : i64 -> !cuda.stream
+    %1 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c32_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%c1_i32, %c1_i32, %c1_i32), stream = %0) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %2 = cuda.launch_ex @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0<%1> (%arg0, %arg1, %arg2, %arg3) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_i32_, !memref_gmem_i8_, !memref_gmem_i8_, !memref_gmem_i8_) -> !cuda.result
+    %3 = cuda.cast %2 : !cuda.result -> i32
+    cuda.return_if_error %3 : i32
+    return %c0_i32 : i32
   }
 }
