@@ -649,4 +649,9 @@ class CompileCallable:
 
         if hasattr(func, "_decorator_frame"):
             kwargs["_decorator_frame"] = func._decorator_frame
-        return func._dsl_object._func(fcn_ptr, *args, **kwargs)
+        result = func._dsl_object._func(fcn_ptr, *args, **kwargs)
+        # Drop the decorator frame to avoid holding onto the caller's locals
+        # (e.g., tensors) longer than necessary once compilation is done.
+        if hasattr(func, "_decorator_frame"):
+            func._decorator_frame = None
+        return result
