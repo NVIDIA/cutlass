@@ -3840,22 +3840,8 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
     max_alignment_m = std::max(max_alignment_m, Gemm::EpilogueOutputOp::AlignmentAux);
     max_alignment_n = std::max(max_alignment_n, Gemm::EpilogueOutputOp::AlignmentAux);
   }
- 
   std::vector<int> problem_size_m = {max_alignment_m, 512 - 3 * max_alignment_m};
   std::vector<int> problem_size_n = {max_alignment_n, 512 - 2 * max_alignment_n};
-
-  //static_assert(std::is_base_of_v<
-  //  cutlass::epilogue::fusion::FusionOperation,
-  //  typename Gemm::EpilogueOutputOp>,
-  //  "EpilogueOutputOp is not a FusionOperation");
-  
-  //if constexpr (std::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, typename Gemm::EpilogueOutputOp>) {
-  //  // TODO(shgaur): Fix for SFvectorsize consideration for problem shapes
-  //  problem_size_n = {Gemm::EpilogueOutputOp::SFVecSize, 4 * max_alignment_m};
-  //}
-
-  printf("Problem Shape Setup : Gemm::EpilogueOutputOp::AlignmentAux : %d, Gemm::kAlignmentD %d, max_alignment_m : %d, problem_size_m : %d\n", Gemm::EpilogueOutputOp::AlignmentAux, Gemm::kAlignmentD, max_alignment_m, problem_size_m);
-  printf("Problem Shape Setup : Gemm::EpilogueOutputOp::AlignmentAux : %d, Gemm::kAlignmentD %d, max_alignment_n : %d, problem_size_n : %d\n", Gemm::EpilogueOutputOp::AlignmentAux, Gemm::kAlignmentD,  max_alignment_n, problem_size_n);
 
   if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
                 cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
