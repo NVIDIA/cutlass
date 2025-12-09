@@ -1059,8 +1059,6 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
     auto K = cute::size<2>(problem_shape_MNKL);
     auto L = cute::size<3>(problem_shape_MNKL);
 
-    printf("Problem Shape: M = %d, N = %d, K = %d, L = %d\n", M, N, K, L);
-
     stride_a = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
     stride_b = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
 
