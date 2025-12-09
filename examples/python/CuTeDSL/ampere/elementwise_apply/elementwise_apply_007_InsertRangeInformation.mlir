@@ -13,7 +13,7 @@
 !memref_rmem_i8_ = !cute.memref<i8, rmem, align<32>, "((4,16)):((1,4))">
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, %arg4: i32, %arg5: i32) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} {
+    cuda.kernel @kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} {
       %0 = cute.static : !cute.layout<"((64,4),(4,16)):((256,16),(64,1))">
       %1 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
       %2 = nvvm.read.ptx.sreg.ctaid.x range <i32, 0, 2147483647> : i32
@@ -1246,14 +1246,14 @@ module attributes {gpu.container_module} {
       %594 = arith.extui %593 : i1 to i8
       %595 = cute.static : !cute.coord<"63">
       cute.memref.store(%rmem, %595, %594) : (!memref_rmem_i8_, !cute.coord<"63">, i8) -> ()
-      %596 = cute.memref.load_vec %view_30, row_major : !memref_gmem_f32_6
-      %597 = cute.memref.load_vec %view_35, row_major : !memref_gmem_f32_6
+      %596 = cute.memref.load_vec %view_30 : !memref_gmem_f32_6
+      %597 = cute.memref.load_vec %view_35 : !memref_gmem_f32_6
       %598 = arith.addf %596, %597 : vector<64xf32>
-      cute.memref.store_vec %598, %view_43, row_major : !memref_gmem_f32_7
+      cute.memref.store_vec %598, %view_43 : !memref_gmem_f32_7
       return
     }
   }
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream0x9998240(%arg0: !memref_gmem_f32_8, %arg1: !memref_gmem_f32_8, %arg2: !memref_gmem_f32_9, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream(%arg0: !memref_gmem_f32_8, %arg1: !memref_gmem_f32_8, %arg2: !memref_gmem_f32_9, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
     %0 = cute.static : !cute.layout<"(16,16):(16,1)">
     %1 = cute.recast_layout<32, 8> (%0) : !cute.layout<"(16,16):(16,1)"> to !cute.layout<"(16,4):(4,1)">
     %iter = cute.get_iter(%arg0) : !memref_gmem_f32_8
@@ -1288,24 +1288,24 @@ module attributes {gpu.container_module} {
     %9 = scf.if %8 -> (i32) {
       scf.yield %7 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %6#0, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %6#0, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %6#0, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %6#0, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c16_i32 = arith.constant 16 : i32
     %10 = arith.minsi %9, %c16_i32 : i32
@@ -1319,24 +1319,24 @@ module attributes {gpu.container_module} {
     %15 = scf.if %14 -> (i32) {
       scf.yield %13 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %12, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %12, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %12, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %12, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c64_i32_15 = arith.constant 64 : i32
     %16 = arith.divsi %c64_i32_15, %6#0 : i32
@@ -1345,24 +1345,24 @@ module attributes {gpu.container_module} {
     %18 = scf.if %17 -> (i32) {
       scf.yield %16 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %6#0, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %6#0, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %6#0, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %6#0, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c256_i32_17 = arith.constant 256 : i32
     %19 = arith.muli %18, %c256_i32_17 : i32
@@ -1371,24 +1371,24 @@ module attributes {gpu.container_module} {
     %21 = scf.if %20 -> (i32) {
       scf.yield %6#0 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %6#0, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %6#0, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %6#0, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %6#0, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c64_i32_19 = arith.constant 64 : i32
     %22 = arith.minsi %21, %c64_i32_19 : i32
@@ -1400,24 +1400,24 @@ module attributes {gpu.container_module} {
     %26 = scf.if %25 -> (i32) {
       scf.yield %24 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %23, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %23, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %23, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %23, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c1_i32 = arith.constant 1 : i32
     %27 = arith.divsi %c1_i32, %6#0 : i32
@@ -1426,24 +1426,24 @@ module attributes {gpu.container_module} {
     %29 = scf.if %28 -> (i32) {
       scf.yield %27 : i32
     } else {
-      %c0_i32_54 = arith.constant 0 : i32
-      %52 = arith.cmpi sgt, %6#0, %c0_i32_54 : i32
-      %53 = scf.if %52 -> (i32) {
-        %c1_i32_55 = arith.constant 1 : i32
-        scf.yield %c1_i32_55 : i32
+      %c0_i32_57 = arith.constant 0 : i32
+      %53 = arith.cmpi sgt, %6#0, %c0_i32_57 : i32
+      %54 = scf.if %53 -> (i32) {
+        %c1_i32_58 = arith.constant 1 : i32
+        scf.yield %c1_i32_58 : i32
       } else {
-        %c0_i32_55 = arith.constant 0 : i32
-        %54 = arith.cmpi eq, %6#0, %c0_i32_55 : i32
-        %55 = scf.if %54 -> (i32) {
-          %c0_i32_56 = arith.constant 0 : i32
-          scf.yield %c0_i32_56 : i32
+        %c0_i32_58 = arith.constant 0 : i32
+        %55 = arith.cmpi eq, %6#0, %c0_i32_58 : i32
+        %56 = scf.if %55 -> (i32) {
+          %c0_i32_59 = arith.constant 0 : i32
+          scf.yield %c0_i32_59 : i32
         } else {
           %c-1_i32 = arith.constant -1 : i32
           scf.yield %c-1_i32 : i32
         }
-        scf.yield %55 : i32
+        scf.yield %56 : i32
       }
-      scf.yield %53 : i32
+      scf.yield %54 : i32
     }
     %c256_i32_23 = arith.constant 256 : i32
     %30 = arith.muli %29, %c256_i32_23 : i32
@@ -1495,12 +1495,15 @@ module attributes {gpu.container_module} {
     %e0_51, %e1_52 = cute.get_leaves(%int_tuple_50) : !cute.int_tuple<"(?,?)">
     %47 = cute.get_scalars(%e0_51) : !cute.int_tuple<"?">
     %48 = cute.get_scalars(%e1_52) : !cute.int_tuple<"?">
-    %49 = arith.index_cast %47 : i32 to index
-    %50 = arith.index_cast %48 : i32 to index
-    %c1 = arith.constant 1 : index
-    %c256 = arith.constant 256 : index
     %c0_i32_53 = arith.constant 0 : i32
-    %51 = gpu.launch_func async [%arg3] @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0 blocks in (%49, %50, %c1) threads in (%c256, %c1, %c1)  dynamic_shared_memory_size %c0_i32_53 args(%view_6 : !memref_gmem_f32_, %view_8 : !memref_gmem_f32_, %view_31 : !memref_gmem_f32_1, %view_42 : !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, %32 : i32, %33 : i32) {use_pdl = false}
-    return
+    %49 = arith.extsi %c0_i32_53 : i32 to i64
+    %c256_i32_54 = arith.constant 256 : i32
+    %c1_i32_55 = arith.constant 1 : i32
+    %50 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c256_i32_54, %c1_i32_55, %c1_i32_55), dynamicSmemBytes = %49, gridDim = (%47, %48, %c1_i32_55), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %51 = cuda.launch_ex @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0<%50> (%view_6, %view_8, %view_31, %view_42, %32, %33) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, i32, i32) -> !cuda.result
+    %52 = cuda.cast %51 : !cuda.result -> i32
+    cuda.return_if_error %52 : i32
+    %c0_i32_56 = arith.constant 0 : i32
+    return %c0_i32_56 : i32
   }
 }

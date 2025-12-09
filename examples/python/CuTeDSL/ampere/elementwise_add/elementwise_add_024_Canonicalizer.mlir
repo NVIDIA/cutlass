@@ -1,9 +1,8 @@
-!memref_gmem_f32_ = !cute.memref<f32, gmem, "((16,128),(?,?)):((?{i64},1),(?{i64 div=16},128))">
 #loop_unroll = #llvm.loop_unroll<disable = false, full = true>
 #loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    llvm.func @kernel_cutlass_elementwise_add_kernel_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensor00o1612810111601281___0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg3: !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %arg4: i32, %arg5: i32) attributes {gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    llvm.func @kernel_cutlass_elementwise_add_kernel_tensorptrf32gmemo161281i64div16128_tensorptrf32gmemo161281i64div16128_tensorptrf32gmemo161281i64div16128_tensor00o1612810111601281___0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, %arg3: !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %0 = llvm.mlir.constant(128 : i32) : i32
       %1 = llvm.mlir.constant(4 : i64) : i64
       %2 = llvm.mlir.constant(32 : i32) : i32
@@ -516,214 +515,211 @@ module attributes {gpu.container_module} {
       llvm.br ^bb39(%334 : i32)
     ^bb73:  // pred: ^bb39
       %335 = llvm.load %14 {alignment = 32 : i64} : !llvm.ptr -> vector<16xf32>
-      %336 = vector.shuffle %335, %335 [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15] : vector<16xf32>, vector<16xf32>
-      %337 = llvm.load %13 {alignment = 32 : i64} : !llvm.ptr -> vector<16xf32>
-      %338 = vector.shuffle %337, %337 [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15] : vector<16xf32>, vector<16xf32>
-      %339 = llvm.fadd %336, %338 : vector<16xf32>
-      %340 = vector.shuffle %339, %339 [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15] : vector<16xf32>, vector<16xf32>
-      llvm.store %340, %12 {alignment = 32 : i64} : vector<16xf32>, !llvm.ptr
-      %341 = llvm.getelementptr %11[1] : (!llvm.ptr) -> !llvm.ptr, i8
-      %342 = llvm.getelementptr %11[2] : (!llvm.ptr) -> !llvm.ptr, i8
-      %343 = llvm.getelementptr %11[3] : (!llvm.ptr) -> !llvm.ptr, i8
-      %344 = llvm.getelementptr %11[4] : (!llvm.ptr) -> !llvm.ptr, i8
-      %345 = llvm.getelementptr %11[5] : (!llvm.ptr) -> !llvm.ptr, i8
-      %346 = llvm.getelementptr %11[6] : (!llvm.ptr) -> !llvm.ptr, i8
-      %347 = llvm.getelementptr %11[7] : (!llvm.ptr) -> !llvm.ptr, i8
-      %348 = llvm.getelementptr %11[8] : (!llvm.ptr) -> !llvm.ptr, i8
-      %349 = llvm.getelementptr %11[9] : (!llvm.ptr) -> !llvm.ptr, i8
-      %350 = llvm.getelementptr %11[10] : (!llvm.ptr) -> !llvm.ptr, i8
-      %351 = llvm.getelementptr %11[11] : (!llvm.ptr) -> !llvm.ptr, i8
-      %352 = llvm.getelementptr %11[12] : (!llvm.ptr) -> !llvm.ptr, i8
-      %353 = llvm.getelementptr %11[13] : (!llvm.ptr) -> !llvm.ptr, i8
-      %354 = llvm.getelementptr %11[14] : (!llvm.ptr) -> !llvm.ptr, i8
-      %355 = llvm.getelementptr %11[15] : (!llvm.ptr) -> !llvm.ptr, i8
+      %336 = llvm.load %13 {alignment = 32 : i64} : !llvm.ptr -> vector<16xf32>
+      %337 = llvm.fadd %335, %336 : vector<16xf32>
+      llvm.store %337, %12 {alignment = 32 : i64} : vector<16xf32>, !llvm.ptr
+      %338 = llvm.getelementptr %11[1] : (!llvm.ptr) -> !llvm.ptr, i8
+      %339 = llvm.getelementptr %11[2] : (!llvm.ptr) -> !llvm.ptr, i8
+      %340 = llvm.getelementptr %11[3] : (!llvm.ptr) -> !llvm.ptr, i8
+      %341 = llvm.getelementptr %11[4] : (!llvm.ptr) -> !llvm.ptr, i8
+      %342 = llvm.getelementptr %11[5] : (!llvm.ptr) -> !llvm.ptr, i8
+      %343 = llvm.getelementptr %11[6] : (!llvm.ptr) -> !llvm.ptr, i8
+      %344 = llvm.getelementptr %11[7] : (!llvm.ptr) -> !llvm.ptr, i8
+      %345 = llvm.getelementptr %11[8] : (!llvm.ptr) -> !llvm.ptr, i8
+      %346 = llvm.getelementptr %11[9] : (!llvm.ptr) -> !llvm.ptr, i8
+      %347 = llvm.getelementptr %11[10] : (!llvm.ptr) -> !llvm.ptr, i8
+      %348 = llvm.getelementptr %11[11] : (!llvm.ptr) -> !llvm.ptr, i8
+      %349 = llvm.getelementptr %11[12] : (!llvm.ptr) -> !llvm.ptr, i8
+      %350 = llvm.getelementptr %11[13] : (!llvm.ptr) -> !llvm.ptr, i8
+      %351 = llvm.getelementptr %11[14] : (!llvm.ptr) -> !llvm.ptr, i8
+      %352 = llvm.getelementptr %11[15] : (!llvm.ptr) -> !llvm.ptr, i8
       llvm.br ^bb74(%4 : i32)
-    ^bb74(%356: i32):  // 2 preds: ^bb73, ^bb107
-      %357 = llvm.icmp "slt" %356, %10 : i32
-      llvm.cond_br %357, ^bb75, ^bb108 {llvm.loop_annotation = #loop_annotation}
+    ^bb74(%353: i32):  // 2 preds: ^bb73, ^bb107
+      %354 = llvm.icmp "slt" %353, %10 : i32
+      llvm.cond_br %354, ^bb75, ^bb108 {llvm.loop_annotation = #loop_annotation}
     ^bb75:  // pred: ^bb74
-      %358 = llvm.load %11 : !llvm.ptr -> i8
-      %359 = llvm.icmp "ne" %358, %5 : i8
-      llvm.cond_br %359, ^bb76, ^bb77
+      %355 = llvm.load %11 : !llvm.ptr -> i8
+      %356 = llvm.icmp "ne" %355, %5 : i8
+      llvm.cond_br %356, ^bb76, ^bb77
     ^bb76:  // pred: ^bb75
-      %360 = llvm.load %12 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %360, %85 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %357 = llvm.load %12 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %357, %85 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb77
     ^bb77:  // 2 preds: ^bb75, ^bb76
-      %361 = llvm.load %341 : !llvm.ptr -> i8
-      %362 = llvm.icmp "ne" %361, %5 : i8
-      llvm.cond_br %362, ^bb78, ^bb79
+      %358 = llvm.load %338 : !llvm.ptr -> i8
+      %359 = llvm.icmp "ne" %358, %5 : i8
+      llvm.cond_br %359, ^bb78, ^bb79
     ^bb78:  // pred: ^bb77
-      %363 = llvm.getelementptr %12[1] : (!llvm.ptr) -> !llvm.ptr, f32
-      %364 = llvm.getelementptr %85[1] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %365 = llvm.load %363 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %365, %364 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %360 = llvm.getelementptr %12[1] : (!llvm.ptr) -> !llvm.ptr, f32
+      %361 = llvm.getelementptr %85[1] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %362 = llvm.load %360 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %362, %361 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb79
     ^bb79:  // 2 preds: ^bb77, ^bb78
-      %366 = llvm.load %342 : !llvm.ptr -> i8
-      %367 = llvm.icmp "ne" %366, %5 : i8
-      llvm.cond_br %367, ^bb80, ^bb81
+      %363 = llvm.load %339 : !llvm.ptr -> i8
+      %364 = llvm.icmp "ne" %363, %5 : i8
+      llvm.cond_br %364, ^bb80, ^bb81
     ^bb80:  // pred: ^bb79
-      %368 = llvm.getelementptr %12[2] : (!llvm.ptr) -> !llvm.ptr, f32
-      %369 = llvm.getelementptr %85[2] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %370 = llvm.load %368 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %370, %369 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %365 = llvm.getelementptr %12[2] : (!llvm.ptr) -> !llvm.ptr, f32
+      %366 = llvm.getelementptr %85[2] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %367 = llvm.load %365 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %367, %366 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb81
     ^bb81:  // 2 preds: ^bb79, ^bb80
-      %371 = llvm.load %343 : !llvm.ptr -> i8
-      %372 = llvm.icmp "ne" %371, %5 : i8
-      llvm.cond_br %372, ^bb82, ^bb83
+      %368 = llvm.load %340 : !llvm.ptr -> i8
+      %369 = llvm.icmp "ne" %368, %5 : i8
+      llvm.cond_br %369, ^bb82, ^bb83
     ^bb82:  // pred: ^bb81
-      %373 = llvm.getelementptr %12[3] : (!llvm.ptr) -> !llvm.ptr, f32
-      %374 = llvm.getelementptr %85[3] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
-      %375 = llvm.load %373 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %375, %374 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %370 = llvm.getelementptr %12[3] : (!llvm.ptr) -> !llvm.ptr, f32
+      %371 = llvm.getelementptr %85[3] : (!llvm.ptr<1>) -> !llvm.ptr<1>, f32
+      %372 = llvm.load %370 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %372, %371 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb83
     ^bb83:  // 2 preds: ^bb81, ^bb82
-      %376 = llvm.load %344 : !llvm.ptr -> i8
-      %377 = llvm.icmp "ne" %376, %5 : i8
-      llvm.cond_br %377, ^bb84, ^bb85
+      %373 = llvm.load %341 : !llvm.ptr -> i8
+      %374 = llvm.icmp "ne" %373, %5 : i8
+      llvm.cond_br %374, ^bb84, ^bb85
     ^bb84:  // pred: ^bb83
-      %378 = llvm.getelementptr %12[4] : (!llvm.ptr) -> !llvm.ptr, f32
-      %379 = llvm.getelementptr %85[%48] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %380 = llvm.load %378 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %380, %379 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %375 = llvm.getelementptr %12[4] : (!llvm.ptr) -> !llvm.ptr, f32
+      %376 = llvm.getelementptr %85[%48] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %377 = llvm.load %375 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %377, %376 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb85
     ^bb85:  // 2 preds: ^bb83, ^bb84
-      %381 = llvm.load %345 : !llvm.ptr -> i8
-      %382 = llvm.icmp "ne" %381, %5 : i8
-      llvm.cond_br %382, ^bb86, ^bb87
+      %378 = llvm.load %342 : !llvm.ptr -> i8
+      %379 = llvm.icmp "ne" %378, %5 : i8
+      llvm.cond_br %379, ^bb86, ^bb87
     ^bb86:  // pred: ^bb85
-      %383 = llvm.getelementptr %12[5] : (!llvm.ptr) -> !llvm.ptr, f32
-      %384 = llvm.add %48, %6 : i64
-      %385 = llvm.getelementptr %85[%384] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %386 = llvm.load %383 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %386, %385 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %380 = llvm.getelementptr %12[5] : (!llvm.ptr) -> !llvm.ptr, f32
+      %381 = llvm.add %48, %6 : i64
+      %382 = llvm.getelementptr %85[%381] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %383 = llvm.load %380 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %383, %382 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb87
     ^bb87:  // 2 preds: ^bb85, ^bb86
-      %387 = llvm.load %346 : !llvm.ptr -> i8
-      %388 = llvm.icmp "ne" %387, %5 : i8
-      llvm.cond_br %388, ^bb88, ^bb89
+      %384 = llvm.load %343 : !llvm.ptr -> i8
+      %385 = llvm.icmp "ne" %384, %5 : i8
+      llvm.cond_br %385, ^bb88, ^bb89
     ^bb88:  // pred: ^bb87
-      %389 = llvm.getelementptr %12[6] : (!llvm.ptr) -> !llvm.ptr, f32
-      %390 = llvm.add %48, %7 : i64
-      %391 = llvm.getelementptr %85[%390] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %392 = llvm.load %389 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %392, %391 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %386 = llvm.getelementptr %12[6] : (!llvm.ptr) -> !llvm.ptr, f32
+      %387 = llvm.add %48, %7 : i64
+      %388 = llvm.getelementptr %85[%387] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %389 = llvm.load %386 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %389, %388 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb89
     ^bb89:  // 2 preds: ^bb87, ^bb88
-      %393 = llvm.load %347 : !llvm.ptr -> i8
-      %394 = llvm.icmp "ne" %393, %5 : i8
-      llvm.cond_br %394, ^bb90, ^bb91
+      %390 = llvm.load %344 : !llvm.ptr -> i8
+      %391 = llvm.icmp "ne" %390, %5 : i8
+      llvm.cond_br %391, ^bb90, ^bb91
     ^bb90:  // pred: ^bb89
-      %395 = llvm.getelementptr %12[7] : (!llvm.ptr) -> !llvm.ptr, f32
-      %396 = llvm.add %48, %8 : i64
-      %397 = llvm.getelementptr %85[%396] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %398 = llvm.load %395 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %398, %397 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %392 = llvm.getelementptr %12[7] : (!llvm.ptr) -> !llvm.ptr, f32
+      %393 = llvm.add %48, %8 : i64
+      %394 = llvm.getelementptr %85[%393] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %395 = llvm.load %392 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %395, %394 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb91
     ^bb91:  // 2 preds: ^bb89, ^bb90
-      %399 = llvm.load %348 : !llvm.ptr -> i8
-      %400 = llvm.icmp "ne" %399, %5 : i8
-      llvm.cond_br %400, ^bb92, ^bb93
+      %396 = llvm.load %345 : !llvm.ptr -> i8
+      %397 = llvm.icmp "ne" %396, %5 : i8
+      llvm.cond_br %397, ^bb92, ^bb93
     ^bb92:  // pred: ^bb91
-      %401 = llvm.getelementptr %12[8] : (!llvm.ptr) -> !llvm.ptr, f32
-      %402 = llvm.mul %48, %7 : i64
-      %403 = llvm.getelementptr %85[%402] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %404 = llvm.load %401 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %404, %403 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %398 = llvm.getelementptr %12[8] : (!llvm.ptr) -> !llvm.ptr, f32
+      %399 = llvm.mul %48, %7 : i64
+      %400 = llvm.getelementptr %85[%399] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %401 = llvm.load %398 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %401, %400 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb93
     ^bb93:  // 2 preds: ^bb91, ^bb92
-      %405 = llvm.load %349 : !llvm.ptr -> i8
-      %406 = llvm.icmp "ne" %405, %5 : i8
-      llvm.cond_br %406, ^bb94, ^bb95
+      %402 = llvm.load %346 : !llvm.ptr -> i8
+      %403 = llvm.icmp "ne" %402, %5 : i8
+      llvm.cond_br %403, ^bb94, ^bb95
     ^bb94:  // pred: ^bb93
-      %407 = llvm.getelementptr %12[9] : (!llvm.ptr) -> !llvm.ptr, f32
-      %408 = llvm.mul %48, %7 : i64
-      %409 = llvm.add %408, %6 : i64
-      %410 = llvm.getelementptr %85[%409] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %411 = llvm.load %407 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %411, %410 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %404 = llvm.getelementptr %12[9] : (!llvm.ptr) -> !llvm.ptr, f32
+      %405 = llvm.mul %48, %7 : i64
+      %406 = llvm.add %405, %6 : i64
+      %407 = llvm.getelementptr %85[%406] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %408 = llvm.load %404 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %408, %407 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb95
     ^bb95:  // 2 preds: ^bb93, ^bb94
-      %412 = llvm.load %350 : !llvm.ptr -> i8
-      %413 = llvm.icmp "ne" %412, %5 : i8
-      llvm.cond_br %413, ^bb96, ^bb97
+      %409 = llvm.load %347 : !llvm.ptr -> i8
+      %410 = llvm.icmp "ne" %409, %5 : i8
+      llvm.cond_br %410, ^bb96, ^bb97
     ^bb96:  // pred: ^bb95
-      %414 = llvm.getelementptr %12[10] : (!llvm.ptr) -> !llvm.ptr, f32
-      %415 = llvm.mul %48, %7 : i64
-      %416 = llvm.add %415, %7 : i64
-      %417 = llvm.getelementptr %85[%416] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %418 = llvm.load %414 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %418, %417 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %411 = llvm.getelementptr %12[10] : (!llvm.ptr) -> !llvm.ptr, f32
+      %412 = llvm.mul %48, %7 : i64
+      %413 = llvm.add %412, %7 : i64
+      %414 = llvm.getelementptr %85[%413] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %415 = llvm.load %411 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %415, %414 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb97
     ^bb97:  // 2 preds: ^bb95, ^bb96
-      %419 = llvm.load %351 : !llvm.ptr -> i8
-      %420 = llvm.icmp "ne" %419, %5 : i8
-      llvm.cond_br %420, ^bb98, ^bb99
+      %416 = llvm.load %348 : !llvm.ptr -> i8
+      %417 = llvm.icmp "ne" %416, %5 : i8
+      llvm.cond_br %417, ^bb98, ^bb99
     ^bb98:  // pred: ^bb97
-      %421 = llvm.getelementptr %12[11] : (!llvm.ptr) -> !llvm.ptr, f32
-      %422 = llvm.mul %48, %7 : i64
-      %423 = llvm.add %422, %8 : i64
-      %424 = llvm.getelementptr %85[%423] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %425 = llvm.load %421 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %425, %424 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %418 = llvm.getelementptr %12[11] : (!llvm.ptr) -> !llvm.ptr, f32
+      %419 = llvm.mul %48, %7 : i64
+      %420 = llvm.add %419, %8 : i64
+      %421 = llvm.getelementptr %85[%420] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %422 = llvm.load %418 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %422, %421 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb99
     ^bb99:  // 2 preds: ^bb97, ^bb98
-      %426 = llvm.load %352 : !llvm.ptr -> i8
-      %427 = llvm.icmp "ne" %426, %5 : i8
-      llvm.cond_br %427, ^bb100, ^bb101
+      %423 = llvm.load %349 : !llvm.ptr -> i8
+      %424 = llvm.icmp "ne" %423, %5 : i8
+      llvm.cond_br %424, ^bb100, ^bb101
     ^bb100:  // pred: ^bb99
-      %428 = llvm.getelementptr %12[12] : (!llvm.ptr) -> !llvm.ptr, f32
-      %429 = llvm.mul %48, %8 : i64
-      %430 = llvm.getelementptr %85[%429] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %431 = llvm.load %428 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %431, %430 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %425 = llvm.getelementptr %12[12] : (!llvm.ptr) -> !llvm.ptr, f32
+      %426 = llvm.mul %48, %8 : i64
+      %427 = llvm.getelementptr %85[%426] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %428 = llvm.load %425 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %428, %427 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb101
     ^bb101:  // 2 preds: ^bb99, ^bb100
-      %432 = llvm.load %353 : !llvm.ptr -> i8
-      %433 = llvm.icmp "ne" %432, %5 : i8
-      llvm.cond_br %433, ^bb102, ^bb103
+      %429 = llvm.load %350 : !llvm.ptr -> i8
+      %430 = llvm.icmp "ne" %429, %5 : i8
+      llvm.cond_br %430, ^bb102, ^bb103
     ^bb102:  // pred: ^bb101
-      %434 = llvm.getelementptr %12[13] : (!llvm.ptr) -> !llvm.ptr, f32
-      %435 = llvm.mul %48, %8 : i64
-      %436 = llvm.add %435, %6 : i64
-      %437 = llvm.getelementptr %85[%436] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %438 = llvm.load %434 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %438, %437 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %431 = llvm.getelementptr %12[13] : (!llvm.ptr) -> !llvm.ptr, f32
+      %432 = llvm.mul %48, %8 : i64
+      %433 = llvm.add %432, %6 : i64
+      %434 = llvm.getelementptr %85[%433] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %435 = llvm.load %431 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %435, %434 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb103
     ^bb103:  // 2 preds: ^bb101, ^bb102
-      %439 = llvm.load %354 : !llvm.ptr -> i8
-      %440 = llvm.icmp "ne" %439, %5 : i8
-      llvm.cond_br %440, ^bb104, ^bb105
+      %436 = llvm.load %351 : !llvm.ptr -> i8
+      %437 = llvm.icmp "ne" %436, %5 : i8
+      llvm.cond_br %437, ^bb104, ^bb105
     ^bb104:  // pred: ^bb103
-      %441 = llvm.getelementptr %12[14] : (!llvm.ptr) -> !llvm.ptr, f32
-      %442 = llvm.mul %48, %8 : i64
-      %443 = llvm.add %442, %7 : i64
-      %444 = llvm.getelementptr %85[%443] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %445 = llvm.load %441 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %445, %444 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %438 = llvm.getelementptr %12[14] : (!llvm.ptr) -> !llvm.ptr, f32
+      %439 = llvm.mul %48, %8 : i64
+      %440 = llvm.add %439, %7 : i64
+      %441 = llvm.getelementptr %85[%440] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %442 = llvm.load %438 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %442, %441 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb105
     ^bb105:  // 2 preds: ^bb103, ^bb104
-      %446 = llvm.load %355 : !llvm.ptr -> i8
-      %447 = llvm.icmp "ne" %446, %5 : i8
-      llvm.cond_br %447, ^bb106, ^bb107
+      %443 = llvm.load %352 : !llvm.ptr -> i8
+      %444 = llvm.icmp "ne" %443, %5 : i8
+      llvm.cond_br %444, ^bb106, ^bb107
     ^bb106:  // pred: ^bb105
-      %448 = llvm.getelementptr %12[15] : (!llvm.ptr) -> !llvm.ptr, f32
-      %449 = llvm.mul %48, %8 : i64
-      %450 = llvm.add %449, %8 : i64
-      %451 = llvm.getelementptr %85[%450] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
-      %452 = llvm.load %448 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
-      llvm.store %452, %451 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
+      %445 = llvm.getelementptr %12[15] : (!llvm.ptr) -> !llvm.ptr, f32
+      %446 = llvm.mul %48, %8 : i64
+      %447 = llvm.add %446, %8 : i64
+      %448 = llvm.getelementptr %85[%447] : (!llvm.ptr<1>, i64) -> !llvm.ptr<1>, f32
+      %449 = llvm.load %445 {alignment = 4 : i64} : !llvm.ptr -> vector<1xf32>
+      llvm.store %449, %448 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr<1>
       llvm.br ^bb107
     ^bb107:  // 2 preds: ^bb105, ^bb106
-      %453 = llvm.add %356, %10 : i32
-      llvm.br ^bb74(%453 : i32)
+      %450 = llvm.add %353, %10 : i32
+      llvm.br ^bb74(%450 : i32)
     ^bb108:  // pred: ^bb74
       llvm.return
     }
   }
-  llvm.func @cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
+  llvm.func @cutlass_elementwise_add_tensor02841_02912_01912_08313_09196_09403_10126_01202_16746_01064_01796_23174_06047_09508_18613_09638_07238_13885_01225_14714_08045_25177_11321_05292_11895_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> i32 attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>
     %1 = llvm.mlir.undef : !llvm.struct<(struct<(i32, i32)>, struct<()>)>
     %2 = llvm.mlir.undef : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>
@@ -734,187 +730,207 @@ module attributes {gpu.container_module} {
     %7 = llvm.mlir.constant(true) : i1
     %8 = llvm.mlir.constant(-1 : i32) : i32
     %9 = llvm.mlir.constant(1 : i32) : i32
-    %10 = llvm.mlir.constant(16 : i32) : i32
-    %11 = llvm.mlir.constant(16 : i64) : i64
-    %12 = llvm.mlir.constant(128 : i32) : i32
-    %13 = llvm.mlir.poison : !llvm.struct<()>
-    %14 = llvm.mlir.constant(1 : index) : i64
-    %15 = llvm.mlir.constant(0 : i32) : i32
-    %16 = llvm.mlir.constant(128 : index) : i64
-    %17 = builtin.unrealized_conversion_cast %16 : i64 to index
-    %18 = builtin.unrealized_conversion_cast %14 : i64 to index
-    %19 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %20 = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %21 = llvm.extractvalue %20[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %22 = llvm.extractvalue %20[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %23 = llvm.extractvalue %20[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %24 = llvm.select %7, %8, %9 : i1, i32
-    %25 = llvm.add %24, %21 : i32
-    %26 = llvm.sdiv %25, %10 : i32
-    %27 = llvm.add %26, %9 : i32
-    %28 = llvm.sub %15, %21 : i32
-    %29 = llvm.sdiv %28, %10 : i32
-    %30 = llvm.sub %15, %29 : i32
-    %31 = llvm.icmp "slt" %21, %15 : i32
-    %32 = llvm.icmp "sgt" %21, %15 : i32
-    %33 = llvm.and %31, %6 : i1
-    %34 = llvm.and %32, %7 : i1
-    %35 = llvm.or %33, %34 : i1
-    %36 = llvm.select %35, %27, %30 : i1, i32
-    %37 = llvm.mul %23, %11 : i64
-    %38 = llvm.select %7, %8, %9 : i1, i32
-    %39 = llvm.add %38, %22 : i32
-    %40 = llvm.sdiv %39, %12 : i32
-    %41 = llvm.add %40, %9 : i32
-    %42 = llvm.sub %15, %22 : i32
-    %43 = llvm.sdiv %42, %12 : i32
-    %44 = llvm.sub %15, %43 : i32
-    %45 = llvm.icmp "slt" %22, %15 : i32
-    %46 = llvm.icmp "sgt" %22, %15 : i32
-    %47 = llvm.and %45, %6 : i1
-    %48 = llvm.and %46, %7 : i1
-    %49 = llvm.or %47, %48 : i1
-    %50 = llvm.select %49, %41, %44 : i1, i32
-    %51 = llvm.insertvalue %36, %5[0] : !llvm.struct<(i32, i32)> 
-    %52 = llvm.insertvalue %50, %51[1] : !llvm.struct<(i32, i32)> 
-    %53 = llvm.insertvalue %23, %4[0] : !llvm.struct<(i64, i64)> 
-    %54 = llvm.insertvalue %37, %53[1] : !llvm.struct<(i64, i64)> 
-    %55 = llvm.insertvalue %52, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %56 = llvm.insertvalue %54, %55[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %57 = llvm.insertvalue %19, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %58 = llvm.insertvalue %56, %57[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %59 = builtin.unrealized_conversion_cast %58 : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> to !memref_gmem_f32_
-    %60 = llvm.extractvalue %arg1[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %61 = llvm.extractvalue %arg1[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %62 = llvm.extractvalue %61[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %63 = llvm.extractvalue %61[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %64 = llvm.extractvalue %61[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %65 = llvm.select %7, %8, %9 : i1, i32
-    %66 = llvm.add %65, %62 : i32
-    %67 = llvm.sdiv %66, %10 : i32
-    %68 = llvm.add %67, %9 : i32
-    %69 = llvm.sub %15, %62 : i32
-    %70 = llvm.sdiv %69, %10 : i32
-    %71 = llvm.sub %15, %70 : i32
-    %72 = llvm.icmp "slt" %62, %15 : i32
-    %73 = llvm.icmp "sgt" %62, %15 : i32
-    %74 = llvm.and %72, %6 : i1
-    %75 = llvm.and %73, %7 : i1
-    %76 = llvm.or %74, %75 : i1
-    %77 = llvm.select %76, %68, %71 : i1, i32
-    %78 = llvm.mul %64, %11 : i64
-    %79 = llvm.select %7, %8, %9 : i1, i32
-    %80 = llvm.add %79, %63 : i32
-    %81 = llvm.sdiv %80, %12 : i32
-    %82 = llvm.add %81, %9 : i32
-    %83 = llvm.sub %15, %63 : i32
-    %84 = llvm.sdiv %83, %12 : i32
-    %85 = llvm.sub %15, %84 : i32
-    %86 = llvm.icmp "slt" %63, %15 : i32
-    %87 = llvm.icmp "sgt" %63, %15 : i32
-    %88 = llvm.and %86, %6 : i1
-    %89 = llvm.and %87, %7 : i1
-    %90 = llvm.or %88, %89 : i1
-    %91 = llvm.select %90, %82, %85 : i1, i32
-    %92 = llvm.insertvalue %77, %5[0] : !llvm.struct<(i32, i32)> 
-    %93 = llvm.insertvalue %91, %92[1] : !llvm.struct<(i32, i32)> 
-    %94 = llvm.insertvalue %64, %4[0] : !llvm.struct<(i64, i64)> 
-    %95 = llvm.insertvalue %78, %94[1] : !llvm.struct<(i64, i64)> 
-    %96 = llvm.insertvalue %93, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %97 = llvm.insertvalue %95, %96[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %98 = llvm.insertvalue %60, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %99 = llvm.insertvalue %97, %98[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %100 = builtin.unrealized_conversion_cast %99 : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> to !memref_gmem_f32_
-    %101 = llvm.extractvalue %arg2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %102 = llvm.extractvalue %arg2[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
-    %103 = llvm.extractvalue %102[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %104 = llvm.extractvalue %102[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %105 = llvm.extractvalue %102[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %106 = llvm.select %7, %8, %9 : i1, i32
-    %107 = llvm.add %106, %103 : i32
-    %108 = llvm.sdiv %107, %10 : i32
-    %109 = llvm.add %108, %9 : i32
-    %110 = llvm.sub %15, %103 : i32
-    %111 = llvm.sdiv %110, %10 : i32
-    %112 = llvm.sub %15, %111 : i32
-    %113 = llvm.icmp "slt" %103, %15 : i32
-    %114 = llvm.icmp "sgt" %103, %15 : i32
-    %115 = llvm.and %113, %6 : i1
-    %116 = llvm.and %114, %7 : i1
-    %117 = llvm.or %115, %116 : i1
-    %118 = llvm.select %117, %109, %112 : i1, i32
-    %119 = llvm.mul %105, %11 : i64
-    %120 = llvm.select %7, %8, %9 : i1, i32
-    %121 = llvm.add %120, %104 : i32
-    %122 = llvm.sdiv %121, %12 : i32
-    %123 = llvm.add %122, %9 : i32
-    %124 = llvm.sub %15, %104 : i32
-    %125 = llvm.sdiv %124, %12 : i32
-    %126 = llvm.sub %15, %125 : i32
-    %127 = llvm.icmp "slt" %104, %15 : i32
-    %128 = llvm.icmp "sgt" %104, %15 : i32
-    %129 = llvm.and %127, %6 : i1
-    %130 = llvm.and %128, %7 : i1
-    %131 = llvm.or %129, %130 : i1
-    %132 = llvm.select %131, %123, %126 : i1, i32
-    %133 = llvm.insertvalue %118, %5[0] : !llvm.struct<(i32, i32)> 
-    %134 = llvm.insertvalue %132, %133[1] : !llvm.struct<(i32, i32)> 
-    %135 = llvm.insertvalue %105, %4[0] : !llvm.struct<(i64, i64)> 
-    %136 = llvm.insertvalue %119, %135[1] : !llvm.struct<(i64, i64)> 
-    %137 = llvm.insertvalue %134, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %138 = llvm.insertvalue %136, %137[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
-    %139 = llvm.insertvalue %101, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %140 = llvm.insertvalue %138, %139[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
-    %141 = builtin.unrealized_conversion_cast %140 : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> to !memref_gmem_f32_
-    %142 = llvm.extractvalue %102[0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
-    %143 = llvm.extractvalue %142[0] : !llvm.struct<(i32, i32)> 
-    %144 = llvm.extractvalue %142[1] : !llvm.struct<(i32, i32)> 
-    %145 = llvm.insertvalue %143, %5[0] : !llvm.struct<(i32, i32)> 
-    %146 = llvm.insertvalue %144, %145[1] : !llvm.struct<(i32, i32)> 
-    %147 = llvm.insertvalue %146, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %148 = llvm.extractvalue %147[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %149 = llvm.extractvalue %147[0, 1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %150 = llvm.select %7, %8, %9 : i1, i32
-    %151 = llvm.add %150, %148 : i32
-    %152 = llvm.sdiv %151, %10 : i32
-    %153 = llvm.add %152, %9 : i32
-    %154 = llvm.sub %15, %148 : i32
-    %155 = llvm.sdiv %154, %10 : i32
-    %156 = llvm.sub %15, %155 : i32
-    %157 = llvm.icmp "slt" %148, %15 : i32
-    %158 = llvm.icmp "sgt" %148, %15 : i32
-    %159 = llvm.and %157, %6 : i1
-    %160 = llvm.and %158, %7 : i1
-    %161 = llvm.or %159, %160 : i1
-    %162 = llvm.select %161, %153, %156 : i1, i32
-    %163 = llvm.select %7, %8, %9 : i1, i32
-    %164 = llvm.add %163, %149 : i32
-    %165 = llvm.sdiv %164, %12 : i32
-    %166 = llvm.add %165, %9 : i32
-    %167 = llvm.sub %15, %149 : i32
-    %168 = llvm.sdiv %167, %12 : i32
-    %169 = llvm.sub %15, %168 : i32
-    %170 = llvm.icmp "slt" %149, %15 : i32
-    %171 = llvm.icmp "sgt" %149, %15 : i32
-    %172 = llvm.and %170, %6 : i1
-    %173 = llvm.and %171, %7 : i1
-    %174 = llvm.or %172, %173 : i1
-    %175 = llvm.select %174, %166, %169 : i1, i32
-    %176 = llvm.insertvalue %162, %5[0] : !llvm.struct<(i32, i32)> 
-    %177 = llvm.insertvalue %175, %176[1] : !llvm.struct<(i32, i32)> 
-    %178 = llvm.insertvalue %177, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %179 = llvm.insertvalue %13, %178[1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
-    %180 = llvm.insertvalue %13, %0[0] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
-    %181 = llvm.insertvalue %179, %180[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
-    %182 = builtin.unrealized_conversion_cast %181 : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> to !cute.coord_tensor<"(0,0)", "((16,128),(?,?)):((1@0,1@1),(16@0,128@1))">
-    %183 = llvm.mul %118, %132 : i32
-    %184 = llvm.sext %183 : i32 to i64
-    %185 = builtin.unrealized_conversion_cast %184 : i64 to index
-    gpu.launch_func  @kernels::@kernel_cutlass_elementwise_add_kernel_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensorptrf32gmemo161281div16128_tensor00o1612810111601281___0 blocks in (%185, %18, %18) threads in (%17, %18, %18)  dynamic_shared_memory_size %15 args(%59 : !memref_gmem_f32_, %100 : !memref_gmem_f32_, %141 : !memref_gmem_f32_, %182 : !cute.coord_tensor<"(0,0)", "((16,128),(?,?)):((1@0,1@1),(16@0,128@1))">, %143 : i32, %144 : i32) {use_pdl = false}
-    llvm.return
+    %10 = llvm.mlir.constant(0 : i64) : i64
+    %11 = llvm.mlir.constant(0 : i32) : i32
+    %12 = llvm.mlir.poison : !llvm.struct<()>
+    %13 = llvm.mlir.constant(128 : i32) : i32
+    %14 = llvm.mlir.constant(16 : i64) : i64
+    %15 = llvm.mlir.constant(16 : i32) : i32
+    %16 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %17 = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %18 = llvm.extractvalue %17[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %19 = llvm.extractvalue %17[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %20 = llvm.extractvalue %17[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %21 = llvm.select %7, %8, %9 : i1, i32
+    %22 = llvm.add %21, %18 : i32
+    %23 = llvm.sdiv %22, %15 : i32
+    %24 = llvm.add %23, %9 : i32
+    %25 = llvm.sub %11, %18 : i32
+    %26 = llvm.sdiv %25, %15 : i32
+    %27 = llvm.sub %11, %26 : i32
+    %28 = llvm.icmp "slt" %18, %11 : i32
+    %29 = llvm.icmp "sgt" %18, %11 : i32
+    %30 = llvm.and %28, %6 : i1
+    %31 = llvm.and %29, %7 : i1
+    %32 = llvm.or %30, %31 : i1
+    %33 = llvm.select %32, %24, %27 : i1, i32
+    %34 = llvm.mul %20, %14 : i64
+    %35 = llvm.select %7, %8, %9 : i1, i32
+    %36 = llvm.add %35, %19 : i32
+    %37 = llvm.sdiv %36, %13 : i32
+    %38 = llvm.add %37, %9 : i32
+    %39 = llvm.sub %11, %19 : i32
+    %40 = llvm.sdiv %39, %13 : i32
+    %41 = llvm.sub %11, %40 : i32
+    %42 = llvm.icmp "slt" %19, %11 : i32
+    %43 = llvm.icmp "sgt" %19, %11 : i32
+    %44 = llvm.and %42, %6 : i1
+    %45 = llvm.and %43, %7 : i1
+    %46 = llvm.or %44, %45 : i1
+    %47 = llvm.select %46, %38, %41 : i1, i32
+    %48 = llvm.insertvalue %33, %5[0] : !llvm.struct<(i32, i32)> 
+    %49 = llvm.insertvalue %47, %48[1] : !llvm.struct<(i32, i32)> 
+    %50 = llvm.insertvalue %20, %4[0] : !llvm.struct<(i64, i64)> 
+    %51 = llvm.insertvalue %34, %50[1] : !llvm.struct<(i64, i64)> 
+    %52 = llvm.insertvalue %49, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %53 = llvm.insertvalue %51, %52[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %54 = llvm.insertvalue %16, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %55 = llvm.insertvalue %53, %54[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %56 = llvm.extractvalue %arg1[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %57 = llvm.extractvalue %arg1[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %58 = llvm.extractvalue %57[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %59 = llvm.extractvalue %57[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %60 = llvm.extractvalue %57[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %61 = llvm.select %7, %8, %9 : i1, i32
+    %62 = llvm.add %61, %58 : i32
+    %63 = llvm.sdiv %62, %15 : i32
+    %64 = llvm.add %63, %9 : i32
+    %65 = llvm.sub %11, %58 : i32
+    %66 = llvm.sdiv %65, %15 : i32
+    %67 = llvm.sub %11, %66 : i32
+    %68 = llvm.icmp "slt" %58, %11 : i32
+    %69 = llvm.icmp "sgt" %58, %11 : i32
+    %70 = llvm.and %68, %6 : i1
+    %71 = llvm.and %69, %7 : i1
+    %72 = llvm.or %70, %71 : i1
+    %73 = llvm.select %72, %64, %67 : i1, i32
+    %74 = llvm.mul %60, %14 : i64
+    %75 = llvm.select %7, %8, %9 : i1, i32
+    %76 = llvm.add %75, %59 : i32
+    %77 = llvm.sdiv %76, %13 : i32
+    %78 = llvm.add %77, %9 : i32
+    %79 = llvm.sub %11, %59 : i32
+    %80 = llvm.sdiv %79, %13 : i32
+    %81 = llvm.sub %11, %80 : i32
+    %82 = llvm.icmp "slt" %59, %11 : i32
+    %83 = llvm.icmp "sgt" %59, %11 : i32
+    %84 = llvm.and %82, %6 : i1
+    %85 = llvm.and %83, %7 : i1
+    %86 = llvm.or %84, %85 : i1
+    %87 = llvm.select %86, %78, %81 : i1, i32
+    %88 = llvm.insertvalue %73, %5[0] : !llvm.struct<(i32, i32)> 
+    %89 = llvm.insertvalue %87, %88[1] : !llvm.struct<(i32, i32)> 
+    %90 = llvm.insertvalue %60, %4[0] : !llvm.struct<(i64, i64)> 
+    %91 = llvm.insertvalue %74, %90[1] : !llvm.struct<(i64, i64)> 
+    %92 = llvm.insertvalue %89, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %93 = llvm.insertvalue %91, %92[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %94 = llvm.insertvalue %56, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %95 = llvm.insertvalue %93, %94[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %96 = llvm.extractvalue %arg2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %97 = llvm.extractvalue %arg2[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)> 
+    %98 = llvm.extractvalue %97[0, 0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %99 = llvm.extractvalue %97[0, 1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %100 = llvm.extractvalue %97[1] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %101 = llvm.select %7, %8, %9 : i1, i32
+    %102 = llvm.add %101, %98 : i32
+    %103 = llvm.sdiv %102, %15 : i32
+    %104 = llvm.add %103, %9 : i32
+    %105 = llvm.sub %11, %98 : i32
+    %106 = llvm.sdiv %105, %15 : i32
+    %107 = llvm.sub %11, %106 : i32
+    %108 = llvm.icmp "slt" %98, %11 : i32
+    %109 = llvm.icmp "sgt" %98, %11 : i32
+    %110 = llvm.and %108, %6 : i1
+    %111 = llvm.and %109, %7 : i1
+    %112 = llvm.or %110, %111 : i1
+    %113 = llvm.select %112, %104, %107 : i1, i32
+    %114 = llvm.mul %100, %14 : i64
+    %115 = llvm.select %7, %8, %9 : i1, i32
+    %116 = llvm.add %115, %99 : i32
+    %117 = llvm.sdiv %116, %13 : i32
+    %118 = llvm.add %117, %9 : i32
+    %119 = llvm.sub %11, %99 : i32
+    %120 = llvm.sdiv %119, %13 : i32
+    %121 = llvm.sub %11, %120 : i32
+    %122 = llvm.icmp "slt" %99, %11 : i32
+    %123 = llvm.icmp "sgt" %99, %11 : i32
+    %124 = llvm.and %122, %6 : i1
+    %125 = llvm.and %123, %7 : i1
+    %126 = llvm.or %124, %125 : i1
+    %127 = llvm.select %126, %118, %121 : i1, i32
+    %128 = llvm.insertvalue %113, %5[0] : !llvm.struct<(i32, i32)> 
+    %129 = llvm.insertvalue %127, %128[1] : !llvm.struct<(i32, i32)> 
+    %130 = llvm.insertvalue %100, %4[0] : !llvm.struct<(i64, i64)> 
+    %131 = llvm.insertvalue %114, %130[1] : !llvm.struct<(i64, i64)> 
+    %132 = llvm.insertvalue %129, %3[0] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %133 = llvm.insertvalue %131, %132[1] : !llvm.struct<(struct<(i32, i32)>, struct<(i64, i64)>)> 
+    %134 = llvm.insertvalue %96, %2[0] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %135 = llvm.insertvalue %133, %134[1] : !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)> 
+    %136 = llvm.extractvalue %97[0] : !llvm.struct<(struct<(i32, i32)>, i64)> 
+    %137 = llvm.extractvalue %136[0] : !llvm.struct<(i32, i32)> 
+    %138 = llvm.extractvalue %136[1] : !llvm.struct<(i32, i32)> 
+    %139 = llvm.insertvalue %137, %5[0] : !llvm.struct<(i32, i32)> 
+    %140 = llvm.insertvalue %138, %139[1] : !llvm.struct<(i32, i32)> 
+    %141 = llvm.insertvalue %140, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %142 = llvm.extractvalue %141[0, 0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %143 = llvm.extractvalue %141[0, 1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %144 = llvm.select %7, %8, %9 : i1, i32
+    %145 = llvm.add %144, %142 : i32
+    %146 = llvm.sdiv %145, %15 : i32
+    %147 = llvm.add %146, %9 : i32
+    %148 = llvm.sub %11, %142 : i32
+    %149 = llvm.sdiv %148, %15 : i32
+    %150 = llvm.sub %11, %149 : i32
+    %151 = llvm.icmp "slt" %142, %11 : i32
+    %152 = llvm.icmp "sgt" %142, %11 : i32
+    %153 = llvm.and %151, %6 : i1
+    %154 = llvm.and %152, %7 : i1
+    %155 = llvm.or %153, %154 : i1
+    %156 = llvm.select %155, %147, %150 : i1, i32
+    %157 = llvm.select %7, %8, %9 : i1, i32
+    %158 = llvm.add %157, %143 : i32
+    %159 = llvm.sdiv %158, %13 : i32
+    %160 = llvm.add %159, %9 : i32
+    %161 = llvm.sub %11, %143 : i32
+    %162 = llvm.sdiv %161, %13 : i32
+    %163 = llvm.sub %11, %162 : i32
+    %164 = llvm.icmp "slt" %143, %11 : i32
+    %165 = llvm.icmp "sgt" %143, %11 : i32
+    %166 = llvm.and %164, %6 : i1
+    %167 = llvm.and %165, %7 : i1
+    %168 = llvm.or %166, %167 : i1
+    %169 = llvm.select %168, %160, %163 : i1, i32
+    %170 = llvm.insertvalue %156, %5[0] : !llvm.struct<(i32, i32)> 
+    %171 = llvm.insertvalue %169, %170[1] : !llvm.struct<(i32, i32)> 
+    %172 = llvm.insertvalue %171, %1[0] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %173 = llvm.insertvalue %12, %172[1] : !llvm.struct<(struct<(i32, i32)>, struct<()>)> 
+    %174 = llvm.insertvalue %12, %0[0] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
+    %175 = llvm.insertvalue %173, %174[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)> 
+    %176 = llvm.mul %113, %127 : i32
+    %177 = llvm.inttoptr %10 : i64 to !llvm.ptr
+    %178 = llvm.alloca %9 x !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)> : (i32) -> !llvm.ptr
+    %179 = llvm.alloca %9 x !llvm.array<2 x struct<(i32, array<4 x i8>, array<64 x i8>)>> : (i32) -> !llvm.ptr
+    %180 = llvm.getelementptr %178[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %179, %180 : !llvm.ptr, !llvm.ptr
+    %181 = llvm.getelementptr %178[0, 1, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %13, %181 : i32, !llvm.ptr
+    %182 = llvm.getelementptr %178[0, 1, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %9, %182 : i32, !llvm.ptr
+    %183 = llvm.getelementptr %178[0, 1, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %9, %183 : i32, !llvm.ptr
+    %184 = llvm.getelementptr %178[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %10, %184 : i64, !llvm.ptr
+    %185 = llvm.getelementptr %178[0, 0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %176, %185 : i32, !llvm.ptr
+    %186 = llvm.getelementptr %178[0, 0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %9, %186 : i32, !llvm.ptr
+    %187 = llvm.getelementptr %178[0, 0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %9, %187 : i32, !llvm.ptr
+    %188 = llvm.getelementptr %178[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %11, %188 : i32, !llvm.ptr
+    %189 = llvm.getelementptr %178[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %177, %189 : !llvm.ptr, !llvm.ptr
+    %190 = llvm.alloca %9 x !llvm.array<1 x ptr> : (i32) -> !llvm.ptr
+    %191 = llvm.getelementptr %190[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<1 x ptr>
+    llvm.store %178, %191 : !llvm.ptr, !llvm.ptr
+    %192 = builtin.unrealized_conversion_cast %190 : !llvm.ptr to !cuda.launch_cfg<max_attrs = 2>
+    %193 = cuda.launch_ex @kernels::@kernel_cutlass_elementwise_add_kernel_tensorptrf32gmemo161281i64div16128_tensorptrf32gmemo161281i64div16128_tensorptrf32gmemo161281i64div16128_tensor00o1612810111601281___0<%192> (%55, %95, %135, %175, %137, %138) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, struct<(i64, i64)>)>)>, !llvm.struct<(struct<()>, struct<(struct<(i32, i32)>, struct<()>)>)>, i32, i32) -> !cuda.result
+    %194 = builtin.unrealized_conversion_cast %193 : !cuda.result to i32
+    cuda.return_if_error %194 : i32
+    llvm.return %11 : i32
   }
-  llvm.func @_mlir_ciface_cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) attributes {llvm.emit_c_interface} {
-    llvm.call @cutlass_elementwise_add_tensor12172_02436_09155_14039_01618_04011_05577_09551_06691_04439_00270_01901_19478_25692_12886_22370_05617_20513_02754_03422_05042_12216_02342_13762_01969_(%arg0, %arg1, %arg2) : (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> ()
-    llvm.return
+  llvm.func @_mlir_ciface_cutlass_elementwise_add_tensor02841_02912_01912_08313_09196_09403_10126_01202_16746_01064_01796_23174_06047_09508_18613_09638_07238_13885_01225_14714_08045_25177_11321_05292_11895_(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = llvm.call @cutlass_elementwise_add_tensor02841_02912_01912_08313_09196_09403_10126_01202_16746_01064_01796_23174_06047_09508_18613_09638_07238_13885_01225_14714_08045_25177_11321_05292_11895_(%arg0, %arg1, %arg2) : (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32)>, i64)>)>) -> i32
+    llvm.return %0 : i32
   }
 }

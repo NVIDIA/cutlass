@@ -119,7 +119,7 @@
 #loop_annotation1 = #llvm.loop_annotation<unroll = #loop_unroll1>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64div641div64div64div64_tensorptrf16gmemalign16odiv64div641div64div64div64_te_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f32_, %arg3: !memref_gmem_f32_, %arg4: !memref_gmem_f32_1, %arg5: f32, %arg6: f32, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: i32, %arg11: i32, %arg12: i32) attributes {cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 8, 16, 1>} {
+    cuda.kernel @kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64i64div641div64div64div64_tensorptrf16gmemalign16odiv64i64div641div64div64di_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f32_, %arg3: !memref_gmem_f32_, %arg4: !memref_gmem_f32_1, %arg5: f32, %arg6: f32, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: i32, %arg11: i32, %arg12: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 8, 16, 1>} {
       %0 = nvvm.read.ptx.sreg.ctaid.x : i32
       %1 = nvvm.read.ptx.sreg.ctaid.y : i32
       %2 = nvvm.read.ptx.sreg.ctaid.z : i32
@@ -191,14 +191,14 @@ module attributes {gpu.container_module} {
             %iter_27 = cute.get_iter(%view_6) : !memref_gmem_f16_2
             %ptr_28 = cute.add_offset(%iter_27, %idx_26) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<f16, gmem, align<4>>
             %view_29 = cute.make_view(%ptr_28) : !memref_gmem_f16_3
-            %34 = cute.memref.load_vec %view_29, row_major : !memref_gmem_f16_3
+            %34 = cute.memref.load_vec %view_29 : !memref_gmem_f16_3
             %coord_30 = cute.make_coord(%arg16) : (i32) -> !cute.coord<"(_,?)">
             %lay_31 = cute.get_layout(%view_21) : !memref_gmem_f16_2
             %idx_32 = cute.crd2idx(%coord_30, %lay_31) : (!cute.coord<"(_,?)">, !cute.layout<"(2,?):(1,2)">) -> !cute.int_tuple<"?{div=2}">
             %iter_33 = cute.get_iter(%view_21) : !memref_gmem_f16_2
             %ptr_34 = cute.add_offset(%iter_33, %idx_32) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<f16, gmem, align<4>>
             %view_35 = cute.make_view(%ptr_34) : !memref_gmem_f16_3
-            %35 = cute.memref.load_vec %view_35, row_major : !memref_gmem_f16_3
+            %35 = cute.memref.load_vec %view_35 : !memref_gmem_f16_3
             %36 = arith.mulf %34, %35 : vector<2xf16>
             %37 = arith.extf %36 : vector<2xf16> to vector<2xf32>
             %cst_36 = arith.constant 0.000000e+00 : f32
@@ -241,7 +241,7 @@ module attributes {gpu.container_module} {
       } {loop_annotation = #loop_annotation}
       return
     }
-    func.func public @kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1(%arg0: !mma_f16_f16_f32_128x128x16_, %arg1: !mma_f16_f16_f32_128x128x16_, %arg2: !mma_f16_f16_f32_128x128x16_1, %arg3: !mma_f16_f16_f32_128x128x16_2, %arg4: !mma_f16_f16_f32_128x128x16_3, %arg5: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg6: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg7: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg8: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg9: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg10: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg11: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg12: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg13: !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %arg14: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg15: !memref_gmem_f16_4, %arg16: !memref_gmem_f16_4, %arg17: !memref_gmem_f32_1, %arg18: f32, %arg19: !memref_gmem_f32_, %arg20: i32, %arg21: i32, %arg22: i32, %arg23: i32, %arg24: i32, %arg25: i32) attributes {cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 512, 1, 1>} {
+    cuda.kernel @kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1(%arg0: !mma_f16_f16_f32_128x128x16_, %arg1: !mma_f16_f16_f32_128x128x16_, %arg2: !mma_f16_f16_f32_128x128x16_1, %arg3: !mma_f16_f16_f32_128x128x16_2, %arg4: !mma_f16_f16_f32_128x128x16_3, %arg5: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg6: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg7: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg8: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg9: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg10: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg11: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg12: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg13: !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %arg14: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg15: !memref_gmem_f16_4, %arg16: !memref_gmem_f16_4, %arg17: !memref_gmem_f32_1, %arg18: f32, %arg19: !memref_gmem_f32_, %arg20: i32, %arg21: i32, %arg22: i32, %arg23: i32, %arg24: i32, %arg25: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 512, 1, 1>} {
       %0 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2),1):((64,1),0,(16,8192),0)">
       %1 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2),2):((64,1),0,(16,8192),16384)">
       %2 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2),1):((64,1),0,(16,8192),0)">
@@ -1273,15 +1273,16 @@ module attributes {gpu.container_module} {
             %iter_462 = cute.get_iter(%view_459) : !cute.coord_tensor<"(?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
             %iter_463 = cute.get_iter(%view_461) : !memref_smem_f16_8
             %581 = cute_nvgpu.atom.get_value(%480 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %582 = cute_nvgpu.atom.get_value(%480 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%480 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) -> !cute.ptr<generic, align<64>>
-            %582:4 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%582#0, %582#1, %582#2, %582#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-            %583 = cute.static : !cute.int_tuple<"(64,0)">
-            %tup_464 = cute.add_offset(%iter_462, %583) : (!cute.int_tuple<"(?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?)">
-            %584 = cute.static : !cute.int_tuple<"8192">
-            %ptr_465 = cute.add_offset(%iter_463, %584) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %585:4 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%585#0, %585#1, %585#2, %585#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %583:4 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%583#0, %583#1, %583#2, %583#3] : i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
+            %584 = cute.static : !cute.int_tuple<"(64,0)">
+            %tup_464 = cute.add_offset(%iter_462, %584) : (!cute.int_tuple<"(?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?)">
+            %585 = cute.static : !cute.int_tuple<"8192">
+            %ptr_465 = cute.add_offset(%iter_463, %585) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %586:4 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%586#0, %586#1, %586#2, %586#3] : i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %coord_326 = cute.make_coord(%c0_i32_121, %417, %418) : (i32, i32, i32) -> !cute.coord<"(_,0,0,((?,?),?))">
           %lay_327 = cute.get_layout(%view_269) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2),?,?,((?,?),?)):(((1@0,1@1),64@0),128@1,128@0,((1@2,1@3),1@4))">
@@ -1328,15 +1329,16 @@ module attributes {gpu.container_module} {
             %iter_462 = cute.get_iter(%view_459) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
             %iter_463 = cute.get_iter(%view_461) : !memref_smem_f16_8
             %581 = cute_nvgpu.atom.get_value(%488 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %582 = cute_nvgpu.atom.get_value(%488 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%488 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-            %582:5 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%582#0, %582#1, %582#2, %582#3, %582#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-            %583 = cute.static : !cute.int_tuple<"(64,0)">
-            %tup_464 = cute.add_offset(%iter_462, %583) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
-            %584 = cute.static : !cute.int_tuple<"8192">
-            %ptr_465 = cute.add_offset(%iter_463, %584) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %585:5 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%585#0, %585#1, %585#2, %585#3, %585#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %583:5 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%583#0, %583#1, %583#2, %583#3, %583#4] : i32, i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
+            %584 = cute.static : !cute.int_tuple<"(64,0)">
+            %tup_464 = cute.add_offset(%iter_462, %584) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
+            %585 = cute.static : !cute.int_tuple<"8192">
+            %ptr_465 = cute.add_offset(%iter_463, %585) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %586:5 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%586#0, %586#1, %586#2, %586#3, %586#4] : i32, i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %false = arith.constant false
           %492:2 = scf.if %false -> (i32, i32) {
@@ -1443,7 +1445,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %502 = arith.muli %493, %c4_i32 : i32
           %503 = arith.addi %502, %c0_i32_363 : i32
@@ -1521,7 +1523,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %509 = arith.muli %493, %c4_i32 : i32
           %510 = arith.addi %509, %c0_i32_363 : i32
@@ -1599,7 +1601,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %516 = arith.muli %493, %c4_i32 : i32
           %517 = arith.addi %516, %c0_i32_363 : i32
@@ -1677,7 +1679,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %int_tuple_377 = cute.make_int_tuple(%c0_i32_121) : (i32) -> !cute.int_tuple<"?">
           %ptr_378 = cute.add_offset(%iter_24, %int_tuple_377) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
@@ -1761,15 +1763,16 @@ module attributes {gpu.container_module} {
             %iter_462 = cute.get_iter(%view_459) : !cute.coord_tensor<"(?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
             %iter_463 = cute.get_iter(%view_461) : !memref_smem_f16_8
             %581 = cute_nvgpu.atom.get_value(%530 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %582 = cute_nvgpu.atom.get_value(%530 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%530 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) -> !cute.ptr<generic, align<64>>
-            %582:4 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%582#0, %582#1, %582#2, %582#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-            %583 = cute.static : !cute.int_tuple<"(64,0)">
-            %tup_464 = cute.add_offset(%iter_462, %583) : (!cute.int_tuple<"(?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?)">
-            %584 = cute.static : !cute.int_tuple<"8192">
-            %ptr_465 = cute.add_offset(%iter_463, %584) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %585:4 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%585#0, %585#1, %585#2, %585#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %583:4 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%583#0, %583#1, %583#2, %583#3] : i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
+            %584 = cute.static : !cute.int_tuple<"(64,0)">
+            %tup_464 = cute.add_offset(%iter_462, %584) : (!cute.int_tuple<"(?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?)">
+            %585 = cute.static : !cute.int_tuple<"8192">
+            %ptr_465 = cute.add_offset(%iter_463, %585) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %586:4 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%586#0, %586#1, %586#2, %586#3] : i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %coord_407 = cute.make_coord(%c0_i32_121, %417, %418) : (i32, i32, i32) -> !cute.coord<"(_,0,0,((?,?),?))">
           %lay_408 = cute.get_layout(%view_297) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2),?,?,((?,?),?)):(((1@0,1@1),64@0),128@1,128@0,((1@2,1@3),1@4))">
@@ -1814,15 +1817,16 @@ module attributes {gpu.container_module} {
             %iter_462 = cute.get_iter(%view_459) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
             %iter_463 = cute.get_iter(%view_461) : !memref_smem_f16_8
             %581 = cute_nvgpu.atom.get_value(%538 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %582 = cute_nvgpu.atom.get_value(%538 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%538 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-            %582:5 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%582#0, %582#1, %582#2, %582#3, %582#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-            %583 = cute.static : !cute.int_tuple<"(64,0)">
-            %tup_464 = cute.add_offset(%iter_462, %583) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
-            %584 = cute.static : !cute.int_tuple<"8192">
-            %ptr_465 = cute.add_offset(%iter_463, %584) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %585:5 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%585#0, %585#1, %585#2, %585#3, %585#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %583:5 = cute.get_scalars(%iter_462) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_463 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%583#0, %583#1, %583#2, %583#3, %583#4] : i32, i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
+            %584 = cute.static : !cute.int_tuple<"(64,0)">
+            %tup_464 = cute.add_offset(%iter_462, %584) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
+            %585 = cute.static : !cute.int_tuple<"8192">
+            %ptr_465 = cute.add_offset(%iter_463, %585) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %586:5 = cute.get_scalars(%tup_464) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_465 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %581 : !cute.ptr<smem, align<8>>, [%586#0, %586#1, %586#2, %586#3, %586#4] : i32, i32, i32, i32, i32) cache_policy = %582 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %542:2 = scf.if %true -> (i32, i32) {
             %c0_i32_458 = arith.constant 0 : i32
@@ -1924,7 +1928,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %551 = arith.muli %493, %c4_i32 : i32
           %552 = arith.addi %551, %c0_i32_363 : i32
@@ -2001,7 +2005,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %558 = arith.muli %493, %c4_i32 : i32
           %559 = arith.addi %558, %c0_i32_363 : i32
@@ -2078,7 +2082,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %565 = arith.muli %493, %c4_i32 : i32
           %566 = arith.addi %565, %c0_i32_363 : i32
@@ -2155,7 +2159,7 @@ module attributes {gpu.container_module} {
             %view_465 = cute.make_view(%ptr_464) : !memref_smem_f32_3
             %cst = arith.constant 0.000000e+00 : f32
             %580 = vector.splat %cst : vector<1xf32>
-            cute.memref.store_vec %580, %view_465, row_major : !memref_smem_f32_3
+            cute.memref.store_vec %580, %view_465 : !memref_smem_f32_3
           }
           %int_tuple_454 = cute.make_int_tuple(%c0_i32_121) : (i32) -> !cute.int_tuple<"?">
           %ptr_455 = cute.add_offset(%iter_26, %int_tuple_454) : (!cute.ptr<i64, smem, align<64>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
@@ -2252,15 +2256,16 @@ module attributes {gpu.container_module} {
               %iter_573 = cute.get_iter(%view_570) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
               %iter_574 = cute.get_iter(%view_572) : !memref_smem_f16_8
               %685 = cute_nvgpu.atom.get_value(%583 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %686 = cute_nvgpu.atom.get_value(%583 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
               %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%583 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-              %686:5 = cute.get_scalars(%iter_573) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_574 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%686#0, %686#1, %686#2, %686#3, %686#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-              %687 = cute.static : !cute.int_tuple<"(64,0)">
-              %tup_575 = cute.add_offset(%iter_573, %687) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
-              %688 = cute.static : !cute.int_tuple<"8192">
-              %ptr_576 = cute.add_offset(%iter_574, %688) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-              %689:5 = cute.get_scalars(%tup_575) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_576 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%689#0, %689#1, %689#2, %689#3, %689#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %687:5 = cute.get_scalars(%iter_573) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_574 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%687#0, %687#1, %687#2, %687#3, %687#4] : i32, i32, i32, i32, i32) cache_policy = %686 mode = <tiled> num_cta = 1 : i32
+              %688 = cute.static : !cute.int_tuple<"(64,0)">
+              %tup_575 = cute.add_offset(%iter_573, %688) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
+              %689 = cute.static : !cute.int_tuple<"8192">
+              %ptr_576 = cute.add_offset(%iter_574, %689) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+              %690:5 = cute.get_scalars(%tup_575) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_576 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%690#0, %690#1, %690#2, %690#3, %690#4] : i32, i32, i32, i32, i32) cache_policy = %686 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation1}
             %c1_i32_490 = arith.constant 1 : i32
             %587 = arith.addi %arg39, %c1_i32_490 : i32
@@ -2368,7 +2373,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %600 = arith.muli %578#0, %c128_i32_500 : i32
             %601 = arith.muli %493, %c4_i32_501 : i32
@@ -2444,7 +2449,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %608 = arith.muli %578#0, %c128_i32_500 : i32
             %609 = arith.muli %493, %c4_i32_501 : i32
@@ -2520,7 +2525,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %616 = arith.muli %578#0, %c128_i32_500 : i32
             %617 = arith.muli %493, %c4_i32_501 : i32
@@ -2597,7 +2602,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %int_tuple_516 = cute.make_int_tuple(%arg42) : (i32) -> !cute.int_tuple<"?">
             %ptr_517 = cute.add_offset(%iter_24, %int_tuple_516) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
@@ -2676,15 +2681,16 @@ module attributes {gpu.container_module} {
               %iter_573 = cute.get_iter(%view_570) : !cute.coord_tensor<"(?,?,?,?,?)", "(((64,128),2)):(((1@0,1@1),64@0))">
               %iter_574 = cute.get_iter(%view_572) : !memref_smem_f16_8
               %685 = cute_nvgpu.atom.get_value(%633 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %686 = cute_nvgpu.atom.get_value(%633 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
               %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%633 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-              %686:5 = cute.get_scalars(%iter_573) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_574 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%686#0, %686#1, %686#2, %686#3, %686#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
-              %687 = cute.static : !cute.int_tuple<"(64,0)">
-              %tup_575 = cute.add_offset(%iter_573, %687) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
-              %688 = cute.static : !cute.int_tuple<"8192">
-              %ptr_576 = cute.add_offset(%iter_574, %688) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-              %689:5 = cute.get_scalars(%tup_575) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_576 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%689#0, %689#1, %689#2, %689#3, %689#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %687:5 = cute.get_scalars(%iter_573) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_574 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%687#0, %687#1, %687#2, %687#3, %687#4] : i32, i32, i32, i32, i32) cache_policy = %686 mode = <tiled> num_cta = 1 : i32
+              %688 = cute.static : !cute.int_tuple<"(64,0)">
+              %tup_575 = cute.add_offset(%iter_573, %688) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
+              %689 = cute.static : !cute.int_tuple<"8192">
+              %ptr_576 = cute.add_offset(%iter_574, %689) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+              %690:5 = cute.get_scalars(%tup_575) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_576 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %685 : !cute.ptr<smem, align<8>>, [%690#0, %690#1, %690#2, %690#3, %690#4] : i32, i32, i32, i32, i32) cache_policy = %686 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation1}
             %637 = arith.addi %arg45, %c1_i32_490 : i32
             %638 = arith.addi %arg44, %c1_i32_490 : i32
@@ -2787,7 +2793,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %650 = arith.muli %578#0, %c128_i32_500 : i32
             %651 = arith.muli %493, %c4_i32_501 : i32
@@ -2863,7 +2869,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %658 = arith.muli %578#0, %c128_i32_500 : i32
             %659 = arith.muli %493, %c4_i32_501 : i32
@@ -2939,7 +2945,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %666 = arith.muli %578#0, %c128_i32_500 : i32
             %667 = arith.muli %493, %c4_i32_501 : i32
@@ -3015,7 +3021,7 @@ module attributes {gpu.container_module} {
               %view_575 = cute.make_view(%ptr_574) : !memref_smem_f32_3
               %cst = arith.constant 0.000000e+00 : f32
               %684 = vector.splat %cst : vector<1xf32>
-              cute.memref.store_vec %684, %view_575, row_major : !memref_smem_f32_3
+              cute.memref.store_vec %684, %view_575 : !memref_smem_f32_3
             }
             %int_tuple_567 = cute.make_int_tuple(%arg48) : (i32) -> !cute.int_tuple<"?">
             %ptr_568 = cute.add_offset(%iter_26, %int_tuple_567) : (!cute.ptr<i64, smem, align<64>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
@@ -3051,91 +3057,105 @@ module attributes {gpu.container_module} {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_20, %int_tuple_130) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c0_i32_132 = arith.constant 0 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             scf.if %true {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_29, %int_tuple_130) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c1_i32_132 = arith.constant 1 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             %false = arith.constant false
             %416 = cute_nvgpu.atom.set_value(%arg0, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+            %417 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %418 = cute.static : !cute.tile<"[_;_;_]">
+            %419 = cute.static : !cute.layout<"1:0">
+            %420 = cute.static : !cute.shape<"(128,128,16)">
+            %421 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %422 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %423 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
             %c0_i32_123 = arith.constant 0 : i32
             %c8_i32 = arith.constant 8 : i32
             %c1_i32_124 = arith.constant 1 : i32
-            %417 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %416) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
+            %424 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %416) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
               %coord = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,_,?,0)">
-              %442 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-              %idx = cute.crd2idx(%coord, %442) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+              %512 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+              %idx = cute.crd2idx(%coord, %512) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
               %iter_129 = cute.get_iter(%view_68) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
               %tup_130 = cute.add_offset(%iter_129, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
               %view_131 = cute.make_view(%tup_130) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %c0_i32_132 = arith.constant 0 : i32
               %coord_133 = cute.make_coord(%arg26, %c0_i32_132) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %443 = cute.static : !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">
-              %idx_134 = cute.crd2idx(%coord_133, %443) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">) -> !cute.int_tuple<"?{div=2}">
+              %513 = cute.static : !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">
+              %idx_134 = cute.crd2idx(%coord_133, %513) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">) -> !cute.int_tuple<"?{div=2}">
               %iter_135 = cute.get_iter(%view_71) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),2):(0,0,(2,1024),2048)">
               %tup_136 = cute.add_offset(%iter_135, %idx_134) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
               %view_137 = cute.make_view(%tup_136) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_138 = cute.get_iter(%view_131) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_139 = cute.get_iter(%view_137) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_140 = cute.get_iter(%view_93) : !memref_tmem_f32_
-              %444 = cute.static : !cute.layout<"1:0">
-              %445 = cute.static : !cute.int_tuple<"1">
-              %446 = cute.static : !cute.int_tuple<"1">
-              %447 = cute.static : !cute.int_tuple<"1">
-              %448 = cute.get_scalars(%445) : !cute.int_tuple<"1">
-              %449 = cute.get_scalars(%446) : !cute.int_tuple<"1">
-              %450 = cute.get_scalars(%447) : !cute.int_tuple<"1">
+              %514 = cute.static : !cute.layout<"1:0">
+              %515 = cute.static : !cute.int_tuple<"1">
+              %516 = cute.static : !cute.int_tuple<"1">
+              %517 = cute.static : !cute.int_tuple<"1">
+              %518 = cute.get_scalars(%515) : !cute.int_tuple<"1">
+              %519 = cute.get_scalars(%516) : !cute.int_tuple<"1">
+              %520 = cute.get_scalars(%517) : !cute.int_tuple<"1">
               %c0_i32_141 = arith.constant 0 : i32
               %c1_i32_142 = arith.constant 1 : i32
-              scf.for %arg28 = %c0_i32_141 to %448 step %c1_i32_142  : i32 {
-                scf.for %arg29 = %c0_i32_141 to %449 step %c1_i32_142  : i32 {
-                  scf.for %arg30 = %c0_i32_141 to %450 step %c1_i32_142  : i32 {
-                    %452 = cute.static : !cute.layout<"(1):(0)">
-                    %453 = cute.static : !cute.int_tuple<"0">
-                    %tup_144 = cute.add_offset(%iter_138, %453) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_145 = cute.make_view(%tup_144, %452) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %454 = cute.static : !cute.layout<"(1):(0)">
-                    %455 = cute.static : !cute.int_tuple<"0">
-                    %tup_146 = cute.add_offset(%iter_139, %455) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_147 = cute.make_view(%tup_146, %454) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %456 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                    %457 = cute.static : !cute.int_tuple<"0">
-                    %ptr_148 = cute.add_offset(%iter_140, %457) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                    %view_149 = cute.make_view(%ptr_148, %456) : !memref_tmem_f32_1
+              scf.for %arg28 = %c0_i32_141 to %518 step %c1_i32_142  : i32 {
+                scf.for %arg29 = %c0_i32_141 to %519 step %c1_i32_142  : i32 {
+                  scf.for %arg30 = %c0_i32_141 to %520 step %c1_i32_142  : i32 {
+                    %529 = cute.static : !cute.layout<"(1):(0)">
+                    %530 = cute.static : !cute.int_tuple<"0">
+                    %tup_144 = cute.add_offset(%iter_138, %530) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_145 = cute.make_view(%tup_144, %529) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %531 = cute.static : !cute.layout<"(1):(0)">
+                    %532 = cute.static : !cute.int_tuple<"0">
+                    %tup_146 = cute.add_offset(%iter_139, %532) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_147 = cute.make_view(%tup_146, %531) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %533 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                    %534 = cute.static : !cute.int_tuple<"0">
+                    %ptr_148 = cute.add_offset(%iter_140, %534) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                    %view_149 = cute.make_view(%ptr_148, %533) : !memref_tmem_f32_1
                     %iter_150 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_151 = cute.get_iter(%view_147) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_152 = cute.get_iter(%view_149) : !memref_tmem_f32_1
-                    %458 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                    %459 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                    %460 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                    %535 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                    %536 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                    %537 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                     %c136314896_i32 = arith.constant 136314896 : i32
-                    %461 = arith.extui %458 : i1 to i32
-                    %462 = arith.extui %459 : i1 to i32
+                    %538 = arith.extui %535 : i1 to i32
+                    %539 = arith.extui %536 : i1 to i32
                     %c13_i32_153 = arith.constant 13 : i32
                     %c14_i32 = arith.constant 14 : i32
-                    %463 = arith.shli %461, %c13_i32_153 : i32
-                    %464 = arith.shli %462, %c14_i32 : i32
-                    %465 = arith.ori %463, %c136314896_i32 : i32
-                    %466 = arith.ori %465, %464 : i32
-                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %466, %460) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                    %540 = arith.shli %538, %c13_i32_153 : i32
+                    %541 = arith.shli %539, %c14_i32 : i32
+                    %542 = arith.ori %540, %c136314896_i32 : i32
+                    %543 = arith.ori %542, %541 : i32
+                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %543, %537) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
               } {llvm.loop_annotation = #loop_annotation1}
               %true_143 = arith.constant true
-              %451 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-              scf.yield %451 : !mma_f16_f16_f32_128x128x16_
+              %521 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+              %522 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %523 = cute.static : !cute.tile<"[_;_;_]">
+              %524 = cute.static : !cute.layout<"1:0">
+              %525 = cute.static : !cute.shape<"(128,128,16)">
+              %526 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %528 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %521 : !mma_f16_f16_f32_128x128x16_
             } {loop_annotation = #loop_annotation}
             %false_125 = arith.constant false
-            %418:2 = scf.if %false_125 -> (i32, i32) {
+            %425:2 = scf.if %false_125 -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               %c1_i32_130 = arith.constant 1 : i32
               scf.yield %c0_i32_129, %c1_i32_130 : i32, i32
@@ -3144,15 +3164,15 @@ module attributes {gpu.container_module} {
               %c0_i32_130 = arith.constant 0 : i32
               scf.yield %c1_i32_129, %c0_i32_130 : i32, i32
             }
-            %419 = nvvm.elect.sync -> i1
-            scf.if %419 {
+            %426 = nvvm.elect.sync -> i1
+            scf.if %426 {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_28, %int_tuple_130) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %420:2 = scf.if %true -> (i32, i32) {
+            %427:2 = scf.if %true -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               scf.yield %c0_i32_129, %c0_i32_129 : i32, i32
             } else {
@@ -3163,104 +3183,118 @@ module attributes {gpu.container_module} {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_22, %int_tuple_130) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c0_i32_132 = arith.constant 0 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             scf.if %true {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_31, %int_tuple_130) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c1_i32_132 = arith.constant 1 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             scf.if %true {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_33, %int_tuple_130) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c1_i32_132 = arith.constant 1 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             %false_126 = arith.constant false
-            %421 = cute_nvgpu.atom.set_value(%arg1, %false_126 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-            %422 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %421) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
+            %428 = cute_nvgpu.atom.set_value(%arg1, %false_126 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+            %429 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %430 = cute.static : !cute.tile<"[_;_;_]">
+            %431 = cute.static : !cute.layout<"1:0">
+            %432 = cute.static : !cute.shape<"(128,128,16)">
+            %433 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %434 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %435 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %436 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %428) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
               %coord = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,_,?,0)">
-              %442 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-              %idx = cute.crd2idx(%coord, %442) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+              %512 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+              %idx = cute.crd2idx(%coord, %512) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
               %iter_129 = cute.get_iter(%view_74) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
               %tup_130 = cute.add_offset(%iter_129, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
               %view_131 = cute.make_view(%tup_130) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %c0_i32_132 = arith.constant 0 : i32
               %coord_133 = cute.make_coord(%arg26, %c0_i32_132) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %443 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-              %idx_134 = cute.crd2idx(%coord_133, %443) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+              %513 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+              %idx_134 = cute.crd2idx(%coord_133, %513) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
               %iter_135 = cute.get_iter(%view_77) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
               %tup_136 = cute.add_offset(%iter_135, %idx_134) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
               %view_137 = cute.make_view(%tup_136) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_138 = cute.get_iter(%view_131) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_139 = cute.get_iter(%view_137) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_140 = cute.get_iter(%view_103) : !memref_tmem_f32_
-              %444 = cute.static : !cute.layout<"1:0">
-              %445 = cute.static : !cute.int_tuple<"1">
-              %446 = cute.static : !cute.int_tuple<"1">
-              %447 = cute.static : !cute.int_tuple<"1">
-              %448 = cute.get_scalars(%445) : !cute.int_tuple<"1">
-              %449 = cute.get_scalars(%446) : !cute.int_tuple<"1">
-              %450 = cute.get_scalars(%447) : !cute.int_tuple<"1">
+              %514 = cute.static : !cute.layout<"1:0">
+              %515 = cute.static : !cute.int_tuple<"1">
+              %516 = cute.static : !cute.int_tuple<"1">
+              %517 = cute.static : !cute.int_tuple<"1">
+              %518 = cute.get_scalars(%515) : !cute.int_tuple<"1">
+              %519 = cute.get_scalars(%516) : !cute.int_tuple<"1">
+              %520 = cute.get_scalars(%517) : !cute.int_tuple<"1">
               %c0_i32_141 = arith.constant 0 : i32
               %c1_i32_142 = arith.constant 1 : i32
-              scf.for %arg28 = %c0_i32_141 to %448 step %c1_i32_142  : i32 {
-                scf.for %arg29 = %c0_i32_141 to %449 step %c1_i32_142  : i32 {
-                  scf.for %arg30 = %c0_i32_141 to %450 step %c1_i32_142  : i32 {
-                    %452 = cute.static : !cute.layout<"(1):(0)">
-                    %453 = cute.static : !cute.int_tuple<"0">
-                    %tup_144 = cute.add_offset(%iter_138, %453) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_145 = cute.make_view(%tup_144, %452) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %454 = cute.static : !cute.layout<"(1):(0)">
-                    %455 = cute.static : !cute.int_tuple<"0">
-                    %tup_146 = cute.add_offset(%iter_139, %455) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_147 = cute.make_view(%tup_146, %454) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %456 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                    %457 = cute.static : !cute.int_tuple<"0">
-                    %ptr_148 = cute.add_offset(%iter_140, %457) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                    %view_149 = cute.make_view(%ptr_148, %456) : !memref_tmem_f32_1
+              scf.for %arg28 = %c0_i32_141 to %518 step %c1_i32_142  : i32 {
+                scf.for %arg29 = %c0_i32_141 to %519 step %c1_i32_142  : i32 {
+                  scf.for %arg30 = %c0_i32_141 to %520 step %c1_i32_142  : i32 {
+                    %529 = cute.static : !cute.layout<"(1):(0)">
+                    %530 = cute.static : !cute.int_tuple<"0">
+                    %tup_144 = cute.add_offset(%iter_138, %530) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_145 = cute.make_view(%tup_144, %529) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %531 = cute.static : !cute.layout<"(1):(0)">
+                    %532 = cute.static : !cute.int_tuple<"0">
+                    %tup_146 = cute.add_offset(%iter_139, %532) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_147 = cute.make_view(%tup_146, %531) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %533 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                    %534 = cute.static : !cute.int_tuple<"0">
+                    %ptr_148 = cute.add_offset(%iter_140, %534) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                    %view_149 = cute.make_view(%ptr_148, %533) : !memref_tmem_f32_1
                     %iter_150 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_151 = cute.get_iter(%view_147) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_152 = cute.get_iter(%view_149) : !memref_tmem_f32_1
-                    %458 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                    %459 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                    %460 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                    %535 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                    %536 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                    %537 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                     %c136314896_i32 = arith.constant 136314896 : i32
-                    %461 = arith.extui %458 : i1 to i32
-                    %462 = arith.extui %459 : i1 to i32
+                    %538 = arith.extui %535 : i1 to i32
+                    %539 = arith.extui %536 : i1 to i32
                     %c13_i32_153 = arith.constant 13 : i32
                     %c14_i32 = arith.constant 14 : i32
-                    %463 = arith.shli %461, %c13_i32_153 : i32
-                    %464 = arith.shli %462, %c14_i32 : i32
-                    %465 = arith.ori %463, %c136314896_i32 : i32
-                    %466 = arith.ori %465, %464 : i32
-                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %466, %460) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                    %540 = arith.shli %538, %c13_i32_153 : i32
+                    %541 = arith.shli %539, %c14_i32 : i32
+                    %542 = arith.ori %540, %c136314896_i32 : i32
+                    %543 = arith.ori %542, %541 : i32
+                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %543, %537) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
               } {llvm.loop_annotation = #loop_annotation1}
               %true_143 = arith.constant true
-              %451 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-              scf.yield %451 : !mma_f16_f16_f32_128x128x16_
+              %521 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+              %522 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %523 = cute.static : !cute.tile<"[_;_;_]">
+              %524 = cute.static : !cute.layout<"1:0">
+              %525 = cute.static : !cute.shape<"(128,128,16)">
+              %526 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %528 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %521 : !mma_f16_f16_f32_128x128x16_
             } {loop_annotation = #loop_annotation}
-            %423 = nvvm.elect.sync -> i1
-            scf.if %423 {
+            %437 = nvvm.elect.sync -> i1
+            scf.if %437 {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_30, %int_tuple_130) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %424:2 = scf.if %true -> (i32, i32) {
+            %438:2 = scf.if %true -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               scf.yield %c0_i32_129, %c0_i32_129 : i32, i32
             } else {
@@ -3271,84 +3305,98 @@ module attributes {gpu.container_module} {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_34, %int_tuple_130) : (!cute.ptr<i64, smem, align<128>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c0_i32_132 = arith.constant 0 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c0_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
-            %425 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %arg2) -> (!mma_f16_f16_f32_128x128x16_1)  : i32 {
+            %439 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %440 = cute.static : !cute.tile<"[_;_;_]">
+            %441 = cute.static : !cute.layout<"1:0">
+            %442 = cute.static : !cute.shape<"(128,128,16)">
+            %443 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %444 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %445 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %446 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %arg2) -> (!mma_f16_f16_f32_128x128x16_1)  : i32 {
               %coord = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,_,?)">
-              %442 = cute.static : !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">
-              %idx = cute.crd2idx(%coord, %442) : (!cute.coord<"(_,_,?)">, !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">) -> !cute.int_tuple<"?{div=16}">
+              %512 = cute.static : !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">
+              %idx = cute.crd2idx(%coord, %512) : (!cute.coord<"(_,_,?)">, !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">) -> !cute.int_tuple<"?{div=16}">
               %iter_129 = cute.get_iter(%view_96) : !memref_tmem_f16_
               %ptr_130 = cute.add_offset(%iter_129, %idx) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, tmem, align<1>>
               %view_131 = cute.make_view(%ptr_130) : !memref_tmem_f16_1
               %c0_i32_132 = arith.constant 0 : i32
               %coord_133 = cute.make_coord(%arg26, %c0_i32_132) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %443 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-              %idx_134 = cute.crd2idx(%coord_133, %443) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+              %513 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+              %idx_134 = cute.crd2idx(%coord_133, %513) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
               %iter_135 = cute.get_iter(%view_99) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
               %tup_136 = cute.add_offset(%iter_135, %idx_134) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
               %view_137 = cute.make_view(%tup_136) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_138 = cute.get_iter(%view_131) : !memref_tmem_f16_1
               %iter_139 = cute.get_iter(%view_137) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_140 = cute.get_iter(%view_115) : !memref_tmem_f32_
-              %444 = cute.static : !cute.layout<"1:0">
-              %445 = cute.static : !cute.int_tuple<"1">
-              %446 = cute.static : !cute.int_tuple<"1">
-              %447 = cute.static : !cute.int_tuple<"1">
-              %448 = cute.get_scalars(%445) : !cute.int_tuple<"1">
-              %449 = cute.get_scalars(%446) : !cute.int_tuple<"1">
-              %450 = cute.get_scalars(%447) : !cute.int_tuple<"1">
+              %514 = cute.static : !cute.layout<"1:0">
+              %515 = cute.static : !cute.int_tuple<"1">
+              %516 = cute.static : !cute.int_tuple<"1">
+              %517 = cute.static : !cute.int_tuple<"1">
+              %518 = cute.get_scalars(%515) : !cute.int_tuple<"1">
+              %519 = cute.get_scalars(%516) : !cute.int_tuple<"1">
+              %520 = cute.get_scalars(%517) : !cute.int_tuple<"1">
               %c0_i32_141 = arith.constant 0 : i32
               %c1_i32_142 = arith.constant 1 : i32
-              scf.for %arg28 = %c0_i32_141 to %448 step %c1_i32_142  : i32 {
-                scf.for %arg29 = %c0_i32_141 to %449 step %c1_i32_142  : i32 {
-                  scf.for %arg30 = %c0_i32_141 to %450 step %c1_i32_142  : i32 {
-                    %452 = cute.static : !cute.layout<"((128,16)):((131072,1))">
-                    %453 = cute.static : !cute.int_tuple<"0">
-                    %ptr_144 = cute.add_offset(%iter_138, %453) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f16, tmem, align<1>>
-                    %view_145 = cute.make_view(%ptr_144, %452) : !memref_tmem_f16_2
-                    %454 = cute.static : !cute.layout<"(1):(0)">
-                    %455 = cute.static : !cute.int_tuple<"0">
-                    %tup_146 = cute.add_offset(%iter_139, %455) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_147 = cute.make_view(%tup_146, %454) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %456 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                    %457 = cute.static : !cute.int_tuple<"0">
-                    %ptr_148 = cute.add_offset(%iter_140, %457) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                    %view_149 = cute.make_view(%ptr_148, %456) : !memref_tmem_f32_1
+              scf.for %arg28 = %c0_i32_141 to %518 step %c1_i32_142  : i32 {
+                scf.for %arg29 = %c0_i32_141 to %519 step %c1_i32_142  : i32 {
+                  scf.for %arg30 = %c0_i32_141 to %520 step %c1_i32_142  : i32 {
+                    %529 = cute.static : !cute.layout<"((128,16)):((131072,1))">
+                    %530 = cute.static : !cute.int_tuple<"0">
+                    %ptr_144 = cute.add_offset(%iter_138, %530) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f16, tmem, align<1>>
+                    %view_145 = cute.make_view(%ptr_144, %529) : !memref_tmem_f16_2
+                    %531 = cute.static : !cute.layout<"(1):(0)">
+                    %532 = cute.static : !cute.int_tuple<"0">
+                    %tup_146 = cute.add_offset(%iter_139, %532) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_147 = cute.make_view(%tup_146, %531) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %533 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                    %534 = cute.static : !cute.int_tuple<"0">
+                    %ptr_148 = cute.add_offset(%iter_140, %534) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                    %view_149 = cute.make_view(%ptr_148, %533) : !memref_tmem_f32_1
                     %iter_150 = cute.get_iter(%view_145) : !memref_tmem_f16_2
                     %iter_151 = cute.get_iter(%view_147) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_152 = cute.get_iter(%view_149) : !memref_tmem_f32_1
-                    %458 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                    %459 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                    %460 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                    %535 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                    %536 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                    %537 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                     %c136380432_i32 = arith.constant 136380432 : i32
-                    %461 = arith.extui %458 : i1 to i32
-                    %462 = arith.extui %459 : i1 to i32
+                    %538 = arith.extui %535 : i1 to i32
+                    %539 = arith.extui %536 : i1 to i32
                     %c13_i32_153 = arith.constant 13 : i32
                     %c14_i32 = arith.constant 14 : i32
-                    %463 = arith.shli %461, %c13_i32_153 : i32
-                    %464 = arith.shli %462, %c14_i32 : i32
-                    %465 = arith.ori %463, %c136380432_i32 : i32
-                    %466 = arith.ori %465, %464 : i32
-                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %466, %460) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute.ptr<f16, tmem, align<1>>, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                    %540 = arith.shli %538, %c13_i32_153 : i32
+                    %541 = arith.shli %539, %c14_i32 : i32
+                    %542 = arith.ori %540, %c136380432_i32 : i32
+                    %543 = arith.ori %542, %541 : i32
+                    cute_nvgpu.arch.mma.SM100.umma(%iter_150, %iter_151, %iter_152, %543, %537) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute.ptr<f16, tmem, align<1>>, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
               } {llvm.loop_annotation = #loop_annotation1}
               %true_143 = arith.constant true
-              %451 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_1
-              scf.yield %451 : !mma_f16_f16_f32_128x128x16_1
+              %521 = cute_nvgpu.atom.set_value(%arg27, %true_143 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_1
+              %522 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %523 = cute.static : !cute.tile<"[_;_;_]">
+              %524 = cute.static : !cute.layout<"1:0">
+              %525 = cute.static : !cute.shape<"(128,128,16)">
+              %526 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %528 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %521 : !mma_f16_f16_f32_128x128x16_1
             } {loop_annotation = #loop_annotation}
-            %426 = nvvm.elect.sync -> i1
-            scf.if %426 {
+            %447 = nvvm.elect.sync -> i1
+            scf.if %447 {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_35, %int_tuple_130) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %427:2 = scf.if %true -> (i32, i32) {
+            %448:2 = scf.if %true -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               %c1_i32_130 = arith.constant 1 : i32
               scf.yield %c0_i32_129, %c1_i32_130 : i32, i32
@@ -3357,15 +3405,15 @@ module attributes {gpu.container_module} {
               %c0_i32_130 = arith.constant 0 : i32
               scf.yield %c1_i32_129, %c0_i32_130 : i32, i32
             }
-            %428 = nvvm.elect.sync -> i1
-            scf.if %428 {
+            %449 = nvvm.elect.sync -> i1
+            scf.if %449 {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_23, %int_tuple_130) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %429:2 = scf.if %true -> (i32, i32) {
+            %450:2 = scf.if %true -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               %c1_i32_130 = arith.constant 1 : i32
               scf.yield %c0_i32_129, %c1_i32_130 : i32, i32
@@ -3374,549 +3422,724 @@ module attributes {gpu.container_module} {
               %c0_i32_130 = arith.constant 0 : i32
               scf.yield %c1_i32_129, %c0_i32_130 : i32, i32
             }
-            %430 = cute.static : !cute.int_tuple<"1">
-            %sub_127 = cute.tuple_sub(%mul, %430) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-            %431 = cute.get_scalars(%sub_127) : !cute.int_tuple<"?">
-            %432:30 = scf.while (%arg26 = %431, %arg27 = %417, %arg28 = %c1_i32_124, %arg29 = %418#0, %arg30 = %418#1, %arg31 = %c1_i32_124, %arg32 = %420#0, %arg33 = %420#1, %arg34 = %arg4, %arg35 = %c0_i32_123, %arg36 = %c0_i32_123, %arg37 = %c1_i32_124, %arg38 = %arg3, %arg39 = %c0_i32_123, %arg40 = %c0_i32_123, %arg41 = %c0_i32_123, %arg42 = %c0_i32_123, %arg43 = %c0_i32_123, %arg44 = %c0_i32_123, %arg45 = %422, %arg46 = %c1_i32_124, %arg47 = %424#0, %arg48 = %424#1, %arg49 = %425, %arg50 = %c1_i32_124, %arg51 = %427#0, %arg52 = %427#1, %arg53 = %c1_i32_124, %arg54 = %429#0, %arg55 = %429#1) : (i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32) -> (i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32) {
+            %451 = cute.static : !cute.int_tuple<"1">
+            %sub_127 = cute.tuple_sub(%mul, %451) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+            %452 = cute.get_scalars(%sub_127) : !cute.int_tuple<"?">
+            %453 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %454 = cute.static : !cute.tile<"[_;_;_]">
+            %455 = cute.static : !cute.layout<"1:0">
+            %456 = cute.static : !cute.shape<"(128,128,16)">
+            %457 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %458 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %459 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %460 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %461 = cute.static : !cute.tile<"[_;_;_]">
+            %462 = cute.static : !cute.layout<"1:0">
+            %463 = cute.static : !cute.shape<"(128,128,16)">
+            %464 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %465 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %466 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %467 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %468 = cute.static : !cute.tile<"[_;_;_]">
+            %469 = cute.static : !cute.layout<"1:0">
+            %470 = cute.static : !cute.shape<"(128,128,16)">
+            %471 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %472 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %473 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %474 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %475 = cute.static : !cute.tile<"[_;_;_]">
+            %476 = cute.static : !cute.layout<"1:0">
+            %477 = cute.static : !cute.shape<"(128,128,16)">
+            %478 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %479 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %480 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %481 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %482 = cute.static : !cute.tile<"[_;_;_]">
+            %483 = cute.static : !cute.layout<"1:0">
+            %484 = cute.static : !cute.shape<"(128,128,16)">
+            %485 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %486 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %487 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %488:30 = scf.while (%arg26 = %452, %arg27 = %424, %arg28 = %c1_i32_124, %arg29 = %425#0, %arg30 = %425#1, %arg31 = %c1_i32_124, %arg32 = %427#0, %arg33 = %427#1, %arg34 = %arg4, %arg35 = %c0_i32_123, %arg36 = %c0_i32_123, %arg37 = %c1_i32_124, %arg38 = %arg3, %arg39 = %c0_i32_123, %arg40 = %c0_i32_123, %arg41 = %c0_i32_123, %arg42 = %c0_i32_123, %arg43 = %c0_i32_123, %arg44 = %c0_i32_123, %arg45 = %436, %arg46 = %c1_i32_124, %arg47 = %438#0, %arg48 = %438#1, %arg49 = %446, %arg50 = %c1_i32_124, %arg51 = %448#0, %arg52 = %448#1, %arg53 = %c1_i32_124, %arg54 = %450#0, %arg55 = %450#1) : (i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32) -> (i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
-              %442 = arith.cmpi sgt, %arg26, %c0_i32_129 : i32
-              scf.condition(%442) %arg26, %arg27, %arg28, %arg29, %arg30, %arg31, %arg32, %arg33, %arg34, %arg35, %arg36, %arg37, %arg38, %arg39, %arg40, %arg41, %arg42, %arg43, %arg44, %arg45, %arg46, %arg47, %arg48, %arg49, %arg50, %arg51, %arg52, %arg53, %arg54, %arg55 : i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32
+              %512 = arith.cmpi sgt, %arg26, %c0_i32_129 : i32
+              %513 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %514 = cute.static : !cute.tile<"[_;_;_]">
+              %515 = cute.static : !cute.layout<"1:0">
+              %516 = cute.static : !cute.shape<"(128,128,16)">
+              %517 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %518 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %519 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %520 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %521 = cute.static : !cute.tile<"[_;_;_]">
+              %522 = cute.static : !cute.layout<"1:0">
+              %523 = cute.static : !cute.shape<"(128,128,16)">
+              %524 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %525 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %526 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %528 = cute.static : !cute.tile<"[_;_;_]">
+              %529 = cute.static : !cute.layout<"1:0">
+              %530 = cute.static : !cute.shape<"(128,128,16)">
+              %531 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %532 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %533 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %534 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %535 = cute.static : !cute.tile<"[_;_;_]">
+              %536 = cute.static : !cute.layout<"1:0">
+              %537 = cute.static : !cute.shape<"(128,128,16)">
+              %538 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %539 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %540 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %541 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %542 = cute.static : !cute.tile<"[_;_;_]">
+              %543 = cute.static : !cute.layout<"1:0">
+              %544 = cute.static : !cute.shape<"(128,128,16)">
+              %545 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %546 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %547 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.condition(%512) %arg26, %arg27, %arg28, %arg29, %arg30, %arg31, %arg32, %arg33, %arg34, %arg35, %arg36, %arg37, %arg38, %arg39, %arg40, %arg41, %arg42, %arg43, %arg44, %arg45, %arg46, %arg47, %arg48, %arg49, %arg50, %arg51, %arg52, %arg53, %arg54, %arg55 : i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32
             } do {
             ^bb0(%arg26: i32, %arg27: !mma_f16_f16_f32_128x128x16_, %arg28: i32, %arg29: i32, %arg30: i32, %arg31: i32, %arg32: i32, %arg33: i32, %arg34: !mma_f16_f16_f32_128x128x16_3, %arg35: i32, %arg36: i32, %arg37: i32, %arg38: !mma_f16_f16_f32_128x128x16_2, %arg39: i32, %arg40: i32, %arg41: i32, %arg42: i32, %arg43: i32, %arg44: i32, %arg45: !mma_f16_f16_f32_128x128x16_, %arg46: i32, %arg47: i32, %arg48: i32, %arg49: !mma_f16_f16_f32_128x128x16_1, %arg50: i32, %arg51: i32, %arg52: i32, %arg53: i32, %arg54: i32, %arg55: i32):
               %true_129 = arith.constant true
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg29) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_20, %int_tuple_138) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg30, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg30, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg32) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_29, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg33, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg33, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               %false_130 = arith.constant false
-              %442 = cute_nvgpu.atom.set_value(%arg27, %false_130 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+              %512 = cute_nvgpu.atom.set_value(%arg27, %false_130 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+              %513 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %514 = cute.static : !cute.tile<"[_;_;_]">
+              %515 = cute.static : !cute.layout<"1:0">
+              %516 = cute.static : !cute.shape<"(128,128,16)">
+              %517 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %518 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %519 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
               %c0_i32_131 = arith.constant 0 : i32
               %c8_i32_132 = arith.constant 8 : i32
               %c1_i32_133 = arith.constant 1 : i32
-              %443 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %442) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
+              %520 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %512) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
                 %coord = cute.make_coord(%arg56) : (i32) -> !cute.coord<"(_,_,?,0)">
-                %490 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-                %idx = cute.crd2idx(%coord, %490) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+                %630 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+                %idx = cute.crd2idx(%coord, %630) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
                 %iter_138 = cute.get_iter(%view_68) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
                 %tup_139 = cute.add_offset(%iter_138, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
                 %view_140 = cute.make_view(%tup_139) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %coord_141 = cute.make_coord(%arg56, %arg29) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %491 = cute.static : !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">
-                %idx_142 = cute.crd2idx(%coord_141, %491) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">) -> !cute.int_tuple<"?{div=2}">
+                %631 = cute.static : !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">
+                %idx_142 = cute.crd2idx(%coord_141, %631) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),2):(0,0,(2,1024),2048)">) -> !cute.int_tuple<"?{div=2}">
                 %iter_143 = cute.get_iter(%view_71) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),2):(0,0,(2,1024),2048)">
                 %tup_144 = cute.add_offset(%iter_143, %idx_142) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
                 %view_145 = cute.make_view(%tup_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_146 = cute.get_iter(%view_140) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_147 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_148 = cute.get_iter(%view_93) : !memref_tmem_f32_
-                %492 = cute.static : !cute.layout<"1:0">
-                %493 = cute.static : !cute.int_tuple<"1">
-                %494 = cute.static : !cute.int_tuple<"1">
-                %495 = cute.static : !cute.int_tuple<"1">
-                %496 = cute.get_scalars(%493) : !cute.int_tuple<"1">
-                %497 = cute.get_scalars(%494) : !cute.int_tuple<"1">
-                %498 = cute.get_scalars(%495) : !cute.int_tuple<"1">
+                %632 = cute.static : !cute.layout<"1:0">
+                %633 = cute.static : !cute.int_tuple<"1">
+                %634 = cute.static : !cute.int_tuple<"1">
+                %635 = cute.static : !cute.int_tuple<"1">
+                %636 = cute.get_scalars(%633) : !cute.int_tuple<"1">
+                %637 = cute.get_scalars(%634) : !cute.int_tuple<"1">
+                %638 = cute.get_scalars(%635) : !cute.int_tuple<"1">
                 %c0_i32_149 = arith.constant 0 : i32
                 %c1_i32_150 = arith.constant 1 : i32
-                scf.for %arg58 = %c0_i32_149 to %496 step %c1_i32_150  : i32 {
-                  scf.for %arg59 = %c0_i32_149 to %497 step %c1_i32_150  : i32 {
-                    scf.for %arg60 = %c0_i32_149 to %498 step %c1_i32_150  : i32 {
-                      %500 = cute.static : !cute.layout<"(1):(0)">
-                      %501 = cute.static : !cute.int_tuple<"0">
-                      %tup_152 = cute.add_offset(%iter_146, %501) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_153 = cute.make_view(%tup_152, %500) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %502 = cute.static : !cute.layout<"(1):(0)">
-                      %503 = cute.static : !cute.int_tuple<"0">
-                      %tup_154 = cute.add_offset(%iter_147, %503) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_155 = cute.make_view(%tup_154, %502) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %504 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                      %505 = cute.static : !cute.int_tuple<"0">
-                      %ptr_156 = cute.add_offset(%iter_148, %505) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                      %view_157 = cute.make_view(%ptr_156, %504) : !memref_tmem_f32_1
+                scf.for %arg58 = %c0_i32_149 to %636 step %c1_i32_150  : i32 {
+                  scf.for %arg59 = %c0_i32_149 to %637 step %c1_i32_150  : i32 {
+                    scf.for %arg60 = %c0_i32_149 to %638 step %c1_i32_150  : i32 {
+                      %647 = cute.static : !cute.layout<"(1):(0)">
+                      %648 = cute.static : !cute.int_tuple<"0">
+                      %tup_152 = cute.add_offset(%iter_146, %648) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_153 = cute.make_view(%tup_152, %647) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %649 = cute.static : !cute.layout<"(1):(0)">
+                      %650 = cute.static : !cute.int_tuple<"0">
+                      %tup_154 = cute.add_offset(%iter_147, %650) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_155 = cute.make_view(%tup_154, %649) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %651 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                      %652 = cute.static : !cute.int_tuple<"0">
+                      %ptr_156 = cute.add_offset(%iter_148, %652) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                      %view_157 = cute.make_view(%ptr_156, %651) : !memref_tmem_f32_1
                       %iter_158 = cute.get_iter(%view_153) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_159 = cute.get_iter(%view_155) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_160 = cute.get_iter(%view_157) : !memref_tmem_f32_1
-                      %506 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                      %507 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                      %508 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                      %653 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                      %654 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                      %655 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                       %c136314896_i32 = arith.constant 136314896 : i32
-                      %509 = arith.extui %506 : i1 to i32
-                      %510 = arith.extui %507 : i1 to i32
+                      %656 = arith.extui %653 : i1 to i32
+                      %657 = arith.extui %654 : i1 to i32
                       %c13_i32_161 = arith.constant 13 : i32
                       %c14_i32 = arith.constant 14 : i32
-                      %511 = arith.shli %509, %c13_i32_161 : i32
-                      %512 = arith.shli %510, %c14_i32 : i32
-                      %513 = arith.ori %511, %c136314896_i32 : i32
-                      %514 = arith.ori %513, %512 : i32
-                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %514, %508) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                      %658 = arith.shli %656, %c13_i32_161 : i32
+                      %659 = arith.shli %657, %c14_i32 : i32
+                      %660 = arith.ori %658, %c136314896_i32 : i32
+                      %661 = arith.ori %660, %659 : i32
+                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %661, %655) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                     } {llvm.loop_annotation = #loop_annotation1}
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
                 %true_151 = arith.constant true
-                %499 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-                scf.yield %499 : !mma_f16_f16_f32_128x128x16_
+                %639 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+                %640 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+                %641 = cute.static : !cute.tile<"[_;_;_]">
+                %642 = cute.static : !cute.layout<"1:0">
+                %643 = cute.static : !cute.shape<"(128,128,16)">
+                %644 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %645 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %646 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+                scf.yield %639 : !mma_f16_f16_f32_128x128x16_
               } {loop_annotation = #loop_annotation}
               %c1_i32_134 = arith.constant 1 : i32
-              %444 = arith.addi %arg29, %c1_i32_134 : i32
-              %445 = arith.addi %arg28, %c1_i32_134 : i32
+              %521 = arith.addi %arg29, %c1_i32_134 : i32
+              %522 = arith.addi %arg28, %c1_i32_134 : i32
               %c2_i32_135 = arith.constant 2 : i32
-              %446 = arith.cmpi eq, %444, %c2_i32_135 : i32
-              %447:2 = scf.if %446 -> (i32, i32) {
+              %523 = arith.cmpi eq, %521, %c2_i32_135 : i32
+              %524:2 = scf.if %523 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg30, %c1_i32_138 : i32
+                %630 = arith.xori %arg30, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %444, %arg30 : i32, i32
+                scf.yield %521, %arg30 : i32, i32
               }
-              %448 = nvvm.elect.sync -> i1
-              scf.if %448 {
+              %525 = nvvm.elect.sync -> i1
+              scf.if %525 {
                 %int_tuple_138 = cute.make_int_tuple(%arg32) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_28, %int_tuple_138) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %449 = arith.addi %arg32, %c1_i32_134 : i32
-              %450 = arith.addi %arg31, %c1_i32_134 : i32
-              %451 = arith.cmpi eq, %449, %c1_i32_134 : i32
-              %452:2 = scf.if %451 -> (i32, i32) {
+              %526 = arith.addi %arg32, %c1_i32_134 : i32
+              %527 = arith.addi %arg31, %c1_i32_134 : i32
+              %528 = arith.cmpi eq, %526, %c1_i32_134 : i32
+              %529:2 = scf.if %528 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg33, %c1_i32_138 : i32
+                %630 = arith.xori %arg33, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %449, %arg33 : i32, i32
+                scf.yield %526, %arg33 : i32, i32
               }
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg43) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_36, %int_tuple_138) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg44, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg44, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg47) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_31, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg48, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg48, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               %false_136 = arith.constant false
-              %453 = cute_nvgpu.atom.set_value(%arg34, %false_136 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
-              %454 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %453) -> (!mma_f16_f16_f32_128x128x16_3)  : i32 {
+              %530 = cute_nvgpu.atom.set_value(%arg34, %false_136 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
+              %531 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %532 = cute.static : !cute.tile<"[_;_;_]">
+              %533 = cute.static : !cute.layout<"1:0">
+              %534 = cute.static : !cute.shape<"(128,128,16)">
+              %535 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %536 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %537 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %538 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %530) -> (!mma_f16_f16_f32_128x128x16_3)  : i32 {
                 %coord = cute.make_coord(%arg56, %arg43) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %490 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-                %idx = cute.crd2idx(%coord, %490) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+                %630 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+                %idx = cute.crd2idx(%coord, %630) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
                 %iter_138 = cute.get_iter(%view_80) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
                 %tup_139 = cute.add_offset(%iter_138, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
                 %view_140 = cute.make_view(%tup_139) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %coord_141 = cute.make_coord(%arg56) : (i32) -> !cute.coord<"(_,_,?,0)">
-                %491 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-                %idx_142 = cute.crd2idx(%coord_141, %491) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+                %631 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+                %idx_142 = cute.crd2idx(%coord_141, %631) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
                 %iter_143 = cute.get_iter(%view_83) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
                 %tup_144 = cute.add_offset(%iter_143, %idx_142) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
                 %view_145 = cute.make_view(%tup_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_146 = cute.get_iter(%view_140) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_147 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_148 = cute.get_iter(%view_107) : !memref_tmem_f32_
-                %492 = cute.static : !cute.layout<"1:0">
-                %493 = cute.static : !cute.int_tuple<"1">
-                %494 = cute.static : !cute.int_tuple<"1">
-                %495 = cute.static : !cute.int_tuple<"1">
-                %496 = cute.get_scalars(%493) : !cute.int_tuple<"1">
-                %497 = cute.get_scalars(%494) : !cute.int_tuple<"1">
-                %498 = cute.get_scalars(%495) : !cute.int_tuple<"1">
+                %632 = cute.static : !cute.layout<"1:0">
+                %633 = cute.static : !cute.int_tuple<"1">
+                %634 = cute.static : !cute.int_tuple<"1">
+                %635 = cute.static : !cute.int_tuple<"1">
+                %636 = cute.get_scalars(%633) : !cute.int_tuple<"1">
+                %637 = cute.get_scalars(%634) : !cute.int_tuple<"1">
+                %638 = cute.get_scalars(%635) : !cute.int_tuple<"1">
                 %c0_i32_149 = arith.constant 0 : i32
                 %c1_i32_150 = arith.constant 1 : i32
-                scf.for %arg58 = %c0_i32_149 to %496 step %c1_i32_150  : i32 {
-                  scf.for %arg59 = %c0_i32_149 to %497 step %c1_i32_150  : i32 {
-                    scf.for %arg60 = %c0_i32_149 to %498 step %c1_i32_150  : i32 {
-                      %500 = cute.static : !cute.layout<"(1):(0)">
-                      %501 = cute.static : !cute.int_tuple<"0">
-                      %tup_152 = cute.add_offset(%iter_146, %501) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_153 = cute.make_view(%tup_152, %500) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %502 = cute.static : !cute.layout<"(1):(0)">
-                      %503 = cute.static : !cute.int_tuple<"0">
-                      %tup_154 = cute.add_offset(%iter_147, %503) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_155 = cute.make_view(%tup_154, %502) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %504 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                      %505 = cute.static : !cute.int_tuple<"0">
-                      %ptr_156 = cute.add_offset(%iter_148, %505) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                      %view_157 = cute.make_view(%ptr_156, %504) : !memref_tmem_f32_1
+                scf.for %arg58 = %c0_i32_149 to %636 step %c1_i32_150  : i32 {
+                  scf.for %arg59 = %c0_i32_149 to %637 step %c1_i32_150  : i32 {
+                    scf.for %arg60 = %c0_i32_149 to %638 step %c1_i32_150  : i32 {
+                      %647 = cute.static : !cute.layout<"(1):(0)">
+                      %648 = cute.static : !cute.int_tuple<"0">
+                      %tup_152 = cute.add_offset(%iter_146, %648) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_153 = cute.make_view(%tup_152, %647) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %649 = cute.static : !cute.layout<"(1):(0)">
+                      %650 = cute.static : !cute.int_tuple<"0">
+                      %tup_154 = cute.add_offset(%iter_147, %650) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_155 = cute.make_view(%tup_154, %649) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %651 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                      %652 = cute.static : !cute.int_tuple<"0">
+                      %ptr_156 = cute.add_offset(%iter_148, %652) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                      %view_157 = cute.make_view(%ptr_156, %651) : !memref_tmem_f32_1
                       %iter_158 = cute.get_iter(%view_153) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_159 = cute.get_iter(%view_155) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_160 = cute.get_iter(%view_157) : !memref_tmem_f32_1
-                      %506 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                      %507 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                      %508 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                      %653 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                      %654 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                      %655 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                       %c136413200_i32 = arith.constant 136413200 : i32
-                      %509 = arith.extui %506 : i1 to i32
-                      %510 = arith.extui %507 : i1 to i32
+                      %656 = arith.extui %653 : i1 to i32
+                      %657 = arith.extui %654 : i1 to i32
                       %c13_i32_161 = arith.constant 13 : i32
                       %c14_i32 = arith.constant 14 : i32
-                      %511 = arith.shli %509, %c13_i32_161 : i32
-                      %512 = arith.shli %510, %c14_i32 : i32
-                      %513 = arith.ori %511, %c136413200_i32 : i32
-                      %514 = arith.ori %513, %512 : i32
-                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %514, %508) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                      %658 = arith.shli %656, %c13_i32_161 : i32
+                      %659 = arith.shli %657, %c14_i32 : i32
+                      %660 = arith.ori %658, %c136413200_i32 : i32
+                      %661 = arith.ori %660, %659 : i32
+                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %661, %655) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                     } {llvm.loop_annotation = #loop_annotation1}
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
                 %true_151 = arith.constant true
-                %499 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
-                scf.yield %499 : !mma_f16_f16_f32_128x128x16_3
+                %639 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
+                %640 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+                %641 = cute.static : !cute.tile<"[_;_;_]">
+                %642 = cute.static : !cute.layout<"1:0">
+                %643 = cute.static : !cute.shape<"(128,128,16)">
+                %644 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %645 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %646 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+                scf.yield %639 : !mma_f16_f16_f32_128x128x16_3
               } {loop_annotation = #loop_annotation}
-              %455 = nvvm.elect.sync -> i1
-              scf.if %455 {
+              %539 = nvvm.elect.sync -> i1
+              scf.if %539 {
                 %int_tuple_138 = cute.make_int_tuple(%arg36) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_32, %int_tuple_138) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %456 = arith.addi %arg36, %c1_i32_134 : i32
-              %457 = arith.addi %arg35, %c1_i32_134 : i32
-              %458 = arith.cmpi eq, %456, %c1_i32_134 : i32
-              %459:2 = scf.if %458 -> (i32, i32) {
+              %540 = arith.addi %arg36, %c1_i32_134 : i32
+              %541 = arith.addi %arg35, %c1_i32_134 : i32
+              %542 = arith.cmpi eq, %540, %c1_i32_134 : i32
+              %543:2 = scf.if %542 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg37, %c1_i32_138 : i32
+                %630 = arith.xori %arg37, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %456, %arg37 : i32, i32
+                scf.yield %540, %arg37 : i32, i32
               }
-              %460 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %arg38) -> (!mma_f16_f16_f32_128x128x16_2)  : i32 {
+              %544 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %545 = cute.static : !cute.tile<"[_;_;_]">
+              %546 = cute.static : !cute.layout<"1:0">
+              %547 = cute.static : !cute.shape<"(128,128,16)">
+              %548 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %549 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %550 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %551 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %arg38) -> (!mma_f16_f16_f32_128x128x16_2)  : i32 {
                 %coord = cute.make_coord(%arg56, %arg43) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %490 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-                %idx = cute.crd2idx(%coord, %490) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+                %630 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+                %idx = cute.crd2idx(%coord, %630) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
                 %iter_138 = cute.get_iter(%view_86) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
                 %tup_139 = cute.add_offset(%iter_138, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
                 %view_140 = cute.make_view(%tup_139) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %coord_141 = cute.make_coord(%arg56, %arg40) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %491 = cute.static : !cute.layout<"(1,1,8,2):(0,0,128,2048)">
-                %idx_142 = cute.crd2idx(%coord_141, %491) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,2):(0,0,128,2048)">) -> !cute.int_tuple<"?{div=128}">
+                %631 = cute.static : !cute.layout<"(1,1,8,2):(0,0,128,2048)">
+                %idx_142 = cute.crd2idx(%coord_141, %631) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,2):(0,0,128,2048)">) -> !cute.int_tuple<"?{div=128}">
                 %iter_143 = cute.get_iter(%view_89) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,2):(0,0,128,2048)">
                 %tup_144 = cute.add_offset(%iter_143, %idx_142) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
                 %view_145 = cute.make_view(%tup_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_146 = cute.get_iter(%view_140) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_147 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_148 = cute.get_iter(%view_111) : !memref_tmem_f32_
-                %492 = cute.static : !cute.layout<"1:0">
-                %493 = cute.static : !cute.int_tuple<"1">
-                %494 = cute.static : !cute.int_tuple<"1">
-                %495 = cute.static : !cute.int_tuple<"1">
-                %496 = cute.get_scalars(%493) : !cute.int_tuple<"1">
-                %497 = cute.get_scalars(%494) : !cute.int_tuple<"1">
-                %498 = cute.get_scalars(%495) : !cute.int_tuple<"1">
+                %632 = cute.static : !cute.layout<"1:0">
+                %633 = cute.static : !cute.int_tuple<"1">
+                %634 = cute.static : !cute.int_tuple<"1">
+                %635 = cute.static : !cute.int_tuple<"1">
+                %636 = cute.get_scalars(%633) : !cute.int_tuple<"1">
+                %637 = cute.get_scalars(%634) : !cute.int_tuple<"1">
+                %638 = cute.get_scalars(%635) : !cute.int_tuple<"1">
                 %c0_i32_149 = arith.constant 0 : i32
                 %c1_i32_150 = arith.constant 1 : i32
-                scf.for %arg58 = %c0_i32_149 to %496 step %c1_i32_150  : i32 {
-                  scf.for %arg59 = %c0_i32_149 to %497 step %c1_i32_150  : i32 {
-                    scf.for %arg60 = %c0_i32_149 to %498 step %c1_i32_150  : i32 {
-                      %500 = cute.static : !cute.layout<"(1):(0)">
-                      %501 = cute.static : !cute.int_tuple<"0">
-                      %tup_152 = cute.add_offset(%iter_146, %501) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_153 = cute.make_view(%tup_152, %500) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %502 = cute.static : !cute.layout<"(1):(0)">
-                      %503 = cute.static : !cute.int_tuple<"0">
-                      %tup_154 = cute.add_offset(%iter_147, %503) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_155 = cute.make_view(%tup_154, %502) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %504 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                      %505 = cute.static : !cute.int_tuple<"0">
-                      %ptr_156 = cute.add_offset(%iter_148, %505) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                      %view_157 = cute.make_view(%ptr_156, %504) : !memref_tmem_f32_1
+                scf.for %arg58 = %c0_i32_149 to %636 step %c1_i32_150  : i32 {
+                  scf.for %arg59 = %c0_i32_149 to %637 step %c1_i32_150  : i32 {
+                    scf.for %arg60 = %c0_i32_149 to %638 step %c1_i32_150  : i32 {
+                      %647 = cute.static : !cute.layout<"(1):(0)">
+                      %648 = cute.static : !cute.int_tuple<"0">
+                      %tup_152 = cute.add_offset(%iter_146, %648) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_153 = cute.make_view(%tup_152, %647) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %649 = cute.static : !cute.layout<"(1):(0)">
+                      %650 = cute.static : !cute.int_tuple<"0">
+                      %tup_154 = cute.add_offset(%iter_147, %650) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_155 = cute.make_view(%tup_154, %649) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %651 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                      %652 = cute.static : !cute.int_tuple<"0">
+                      %ptr_156 = cute.add_offset(%iter_148, %652) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                      %view_157 = cute.make_view(%ptr_156, %651) : !memref_tmem_f32_1
                       %iter_158 = cute.get_iter(%view_153) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_159 = cute.get_iter(%view_155) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_160 = cute.get_iter(%view_157) : !memref_tmem_f32_1
-                      %506 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                      %507 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                      %508 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                      %653 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                      %654 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                      %655 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                       %c136380432_i32 = arith.constant 136380432 : i32
-                      %509 = arith.extui %506 : i1 to i32
-                      %510 = arith.extui %507 : i1 to i32
+                      %656 = arith.extui %653 : i1 to i32
+                      %657 = arith.extui %654 : i1 to i32
                       %c13_i32_161 = arith.constant 13 : i32
                       %c14_i32 = arith.constant 14 : i32
-                      %511 = arith.shli %509, %c13_i32_161 : i32
-                      %512 = arith.shli %510, %c14_i32 : i32
-                      %513 = arith.ori %511, %c136380432_i32 : i32
-                      %514 = arith.ori %513, %512 : i32
-                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %514, %508) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                      %658 = arith.shli %656, %c13_i32_161 : i32
+                      %659 = arith.shli %657, %c14_i32 : i32
+                      %660 = arith.ori %658, %c136380432_i32 : i32
+                      %661 = arith.ori %660, %659 : i32
+                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %661, %655) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                     } {llvm.loop_annotation = #loop_annotation1}
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
                 %true_151 = arith.constant true
-                %499 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_2
-                scf.yield %499 : !mma_f16_f16_f32_128x128x16_2
+                %639 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_2
+                %640 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+                %641 = cute.static : !cute.tile<"[_;_;_]">
+                %642 = cute.static : !cute.layout<"1:0">
+                %643 = cute.static : !cute.shape<"(128,128,16)">
+                %644 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %645 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %646 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+                scf.yield %639 : !mma_f16_f16_f32_128x128x16_2
               } {loop_annotation = #loop_annotation}
-              %461 = nvvm.elect.sync -> i1
-              scf.if %461 {
+              %552 = nvvm.elect.sync -> i1
+              scf.if %552 {
                 %int_tuple_138 = cute.make_int_tuple(%arg40) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_21, %int_tuple_138) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %462 = arith.addi %arg40, %c1_i32_134 : i32
-              %463 = arith.addi %arg39, %c1_i32_134 : i32
-              %464 = arith.cmpi eq, %462, %c2_i32_135 : i32
-              %465:2 = scf.if %464 -> (i32, i32) {
+              %553 = arith.addi %arg40, %c1_i32_134 : i32
+              %554 = arith.addi %arg39, %c1_i32_134 : i32
+              %555 = arith.cmpi eq, %553, %c2_i32_135 : i32
+              %556:2 = scf.if %555 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg41, %c1_i32_138 : i32
+                %630 = arith.xori %arg41, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %462, %arg41 : i32, i32
+                scf.yield %553, %arg41 : i32, i32
               }
-              %466 = nvvm.elect.sync -> i1
-              scf.if %466 {
+              %557 = nvvm.elect.sync -> i1
+              scf.if %557 {
                 %int_tuple_138 = cute.make_int_tuple(%arg43) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_37, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %467 = arith.addi %arg43, %c1_i32_134 : i32
-              %468 = arith.addi %arg42, %c1_i32_134 : i32
-              %469 = arith.cmpi eq, %467, %c1_i32_134 : i32
-              %470:2 = scf.if %469 -> (i32, i32) {
+              %558 = arith.addi %arg43, %c1_i32_134 : i32
+              %559 = arith.addi %arg42, %c1_i32_134 : i32
+              %560 = arith.cmpi eq, %558, %c1_i32_134 : i32
+              %561:2 = scf.if %560 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg44, %c1_i32_138 : i32
+                %630 = arith.xori %arg44, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %467, %arg44 : i32, i32
+                scf.yield %558, %arg44 : i32, i32
               }
               scf.if %true_129 {
-                %int_tuple_138 = cute.make_int_tuple(%459#0) : (i32) -> !cute.int_tuple<"?">
+                %int_tuple_138 = cute.make_int_tuple(%543#0) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_33, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %459#1, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %543#1, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg54) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_22, %int_tuple_138) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg55, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg55, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
               %false_137 = arith.constant false
-              %471 = cute_nvgpu.atom.set_value(%arg45, %false_137 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-              %472 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %471) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
+              %562 = cute_nvgpu.atom.set_value(%arg45, %false_137 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+              %563 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %564 = cute.static : !cute.tile<"[_;_;_]">
+              %565 = cute.static : !cute.layout<"1:0">
+              %566 = cute.static : !cute.shape<"(128,128,16)">
+              %567 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %568 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %569 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %570 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %562) -> (!mma_f16_f16_f32_128x128x16_)  : i32 {
                 %coord = cute.make_coord(%arg56) : (i32) -> !cute.coord<"(_,_,?,0)">
-                %490 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-                %idx = cute.crd2idx(%coord, %490) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+                %630 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+                %idx = cute.crd2idx(%coord, %630) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
                 %iter_138 = cute.get_iter(%view_74) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
                 %tup_139 = cute.add_offset(%iter_138, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
                 %view_140 = cute.make_view(%tup_139) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %coord_141 = cute.make_coord(%arg56, %arg54) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %491 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-                %idx_142 = cute.crd2idx(%coord_141, %491) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+                %631 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+                %idx_142 = cute.crd2idx(%coord_141, %631) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
                 %iter_143 = cute.get_iter(%view_77) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
                 %tup_144 = cute.add_offset(%iter_143, %idx_142) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
                 %view_145 = cute.make_view(%tup_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_146 = cute.get_iter(%view_140) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_147 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_148 = cute.get_iter(%view_103) : !memref_tmem_f32_
-                %492 = cute.static : !cute.layout<"1:0">
-                %493 = cute.static : !cute.int_tuple<"1">
-                %494 = cute.static : !cute.int_tuple<"1">
-                %495 = cute.static : !cute.int_tuple<"1">
-                %496 = cute.get_scalars(%493) : !cute.int_tuple<"1">
-                %497 = cute.get_scalars(%494) : !cute.int_tuple<"1">
-                %498 = cute.get_scalars(%495) : !cute.int_tuple<"1">
+                %632 = cute.static : !cute.layout<"1:0">
+                %633 = cute.static : !cute.int_tuple<"1">
+                %634 = cute.static : !cute.int_tuple<"1">
+                %635 = cute.static : !cute.int_tuple<"1">
+                %636 = cute.get_scalars(%633) : !cute.int_tuple<"1">
+                %637 = cute.get_scalars(%634) : !cute.int_tuple<"1">
+                %638 = cute.get_scalars(%635) : !cute.int_tuple<"1">
                 %c0_i32_149 = arith.constant 0 : i32
                 %c1_i32_150 = arith.constant 1 : i32
-                scf.for %arg58 = %c0_i32_149 to %496 step %c1_i32_150  : i32 {
-                  scf.for %arg59 = %c0_i32_149 to %497 step %c1_i32_150  : i32 {
-                    scf.for %arg60 = %c0_i32_149 to %498 step %c1_i32_150  : i32 {
-                      %500 = cute.static : !cute.layout<"(1):(0)">
-                      %501 = cute.static : !cute.int_tuple<"0">
-                      %tup_152 = cute.add_offset(%iter_146, %501) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_153 = cute.make_view(%tup_152, %500) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %502 = cute.static : !cute.layout<"(1):(0)">
-                      %503 = cute.static : !cute.int_tuple<"0">
-                      %tup_154 = cute.add_offset(%iter_147, %503) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_155 = cute.make_view(%tup_154, %502) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %504 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                      %505 = cute.static : !cute.int_tuple<"0">
-                      %ptr_156 = cute.add_offset(%iter_148, %505) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                      %view_157 = cute.make_view(%ptr_156, %504) : !memref_tmem_f32_1
+                scf.for %arg58 = %c0_i32_149 to %636 step %c1_i32_150  : i32 {
+                  scf.for %arg59 = %c0_i32_149 to %637 step %c1_i32_150  : i32 {
+                    scf.for %arg60 = %c0_i32_149 to %638 step %c1_i32_150  : i32 {
+                      %647 = cute.static : !cute.layout<"(1):(0)">
+                      %648 = cute.static : !cute.int_tuple<"0">
+                      %tup_152 = cute.add_offset(%iter_146, %648) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_153 = cute.make_view(%tup_152, %647) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %649 = cute.static : !cute.layout<"(1):(0)">
+                      %650 = cute.static : !cute.int_tuple<"0">
+                      %tup_154 = cute.add_offset(%iter_147, %650) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_155 = cute.make_view(%tup_154, %649) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %651 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                      %652 = cute.static : !cute.int_tuple<"0">
+                      %ptr_156 = cute.add_offset(%iter_148, %652) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                      %view_157 = cute.make_view(%ptr_156, %651) : !memref_tmem_f32_1
                       %iter_158 = cute.get_iter(%view_153) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_159 = cute.get_iter(%view_155) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_160 = cute.get_iter(%view_157) : !memref_tmem_f32_1
-                      %506 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                      %507 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                      %508 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                      %653 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                      %654 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                      %655 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                       %c136314896_i32 = arith.constant 136314896 : i32
-                      %509 = arith.extui %506 : i1 to i32
-                      %510 = arith.extui %507 : i1 to i32
+                      %656 = arith.extui %653 : i1 to i32
+                      %657 = arith.extui %654 : i1 to i32
                       %c13_i32_161 = arith.constant 13 : i32
                       %c14_i32 = arith.constant 14 : i32
-                      %511 = arith.shli %509, %c13_i32_161 : i32
-                      %512 = arith.shli %510, %c14_i32 : i32
-                      %513 = arith.ori %511, %c136314896_i32 : i32
-                      %514 = arith.ori %513, %512 : i32
-                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %514, %508) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                      %658 = arith.shli %656, %c13_i32_161 : i32
+                      %659 = arith.shli %657, %c14_i32 : i32
+                      %660 = arith.ori %658, %c136314896_i32 : i32
+                      %661 = arith.ori %660, %659 : i32
+                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %661, %655) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                     } {llvm.loop_annotation = #loop_annotation1}
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
                 %true_151 = arith.constant true
-                %499 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
-                scf.yield %499 : !mma_f16_f16_f32_128x128x16_
+                %639 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_
+                %640 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+                %641 = cute.static : !cute.tile<"[_;_;_]">
+                %642 = cute.static : !cute.layout<"1:0">
+                %643 = cute.static : !cute.shape<"(128,128,16)">
+                %644 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %645 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %646 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+                scf.yield %639 : !mma_f16_f16_f32_128x128x16_
               } {loop_annotation = #loop_annotation}
-              %473 = nvvm.elect.sync -> i1
-              scf.if %473 {
+              %571 = nvvm.elect.sync -> i1
+              scf.if %571 {
                 %int_tuple_138 = cute.make_int_tuple(%arg47) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_30, %int_tuple_138) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %474 = arith.addi %arg47, %c1_i32_134 : i32
-              %475 = arith.addi %arg46, %c1_i32_134 : i32
-              %476 = arith.cmpi eq, %474, %c1_i32_134 : i32
-              %477:2 = scf.if %476 -> (i32, i32) {
+              %572 = arith.addi %arg47, %c1_i32_134 : i32
+              %573 = arith.addi %arg46, %c1_i32_134 : i32
+              %574 = arith.cmpi eq, %572, %c1_i32_134 : i32
+              %575:2 = scf.if %574 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg48, %c1_i32_138 : i32
+                %630 = arith.xori %arg48, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %474, %arg48 : i32, i32
+                scf.yield %572, %arg48 : i32, i32
               }
               scf.if %true_129 {
                 %int_tuple_138 = cute.make_int_tuple(%arg51) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%iter_34, %int_tuple_138) : (!cute.ptr<i64, smem, align<128>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
                 %c10000000_i32 = arith.constant 10000000 : i32
-                nvvm.mbarrier.try_wait.parity.shared %490, %arg52, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+                nvvm.mbarrier.try_wait.parity.shared %630, %arg52, %c10000000_i32 : !llvm.ptr<3>, i32, i32
               }
-              %478 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %arg49) -> (!mma_f16_f16_f32_128x128x16_1)  : i32 {
+              %576 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %577 = cute.static : !cute.tile<"[_;_;_]">
+              %578 = cute.static : !cute.layout<"1:0">
+              %579 = cute.static : !cute.shape<"(128,128,16)">
+              %580 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %581 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %582 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %583 = scf.for %arg56 = %c0_i32_131 to %c8_i32_132 step %c1_i32_133 iter_args(%arg57 = %arg49) -> (!mma_f16_f16_f32_128x128x16_1)  : i32 {
                 %coord = cute.make_coord(%arg56) : (i32) -> !cute.coord<"(_,_,?)">
-                %490 = cute.static : !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">
-                %idx = cute.crd2idx(%coord, %490) : (!cute.coord<"(_,_,?)">, !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">) -> !cute.int_tuple<"?{div=16}">
+                %630 = cute.static : !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">
+                %idx = cute.crd2idx(%coord, %630) : (!cute.coord<"(_,_,?)">, !cute.layout<"((128,16),1,(4,2)):((131072,1),0,(16,64))">) -> !cute.int_tuple<"?{div=16}">
                 %iter_138 = cute.get_iter(%view_96) : !memref_tmem_f16_
                 %ptr_139 = cute.add_offset(%iter_138, %idx) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, tmem, align<1>>
                 %view_140 = cute.make_view(%ptr_139) : !memref_tmem_f16_1
                 %coord_141 = cute.make_coord(%arg56, %arg54) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-                %491 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-                %idx_142 = cute.crd2idx(%coord_141, %491) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+                %631 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+                %idx_142 = cute.crd2idx(%coord_141, %631) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
                 %iter_143 = cute.get_iter(%view_99) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
                 %tup_144 = cute.add_offset(%iter_143, %idx_142) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
                 %view_145 = cute.make_view(%tup_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_146 = cute.get_iter(%view_140) : !memref_tmem_f16_1
                 %iter_147 = cute.get_iter(%view_145) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
                 %iter_148 = cute.get_iter(%view_115) : !memref_tmem_f32_
-                %492 = cute.static : !cute.layout<"1:0">
-                %493 = cute.static : !cute.int_tuple<"1">
-                %494 = cute.static : !cute.int_tuple<"1">
-                %495 = cute.static : !cute.int_tuple<"1">
-                %496 = cute.get_scalars(%493) : !cute.int_tuple<"1">
-                %497 = cute.get_scalars(%494) : !cute.int_tuple<"1">
-                %498 = cute.get_scalars(%495) : !cute.int_tuple<"1">
+                %632 = cute.static : !cute.layout<"1:0">
+                %633 = cute.static : !cute.int_tuple<"1">
+                %634 = cute.static : !cute.int_tuple<"1">
+                %635 = cute.static : !cute.int_tuple<"1">
+                %636 = cute.get_scalars(%633) : !cute.int_tuple<"1">
+                %637 = cute.get_scalars(%634) : !cute.int_tuple<"1">
+                %638 = cute.get_scalars(%635) : !cute.int_tuple<"1">
                 %c0_i32_149 = arith.constant 0 : i32
                 %c1_i32_150 = arith.constant 1 : i32
-                scf.for %arg58 = %c0_i32_149 to %496 step %c1_i32_150  : i32 {
-                  scf.for %arg59 = %c0_i32_149 to %497 step %c1_i32_150  : i32 {
-                    scf.for %arg60 = %c0_i32_149 to %498 step %c1_i32_150  : i32 {
-                      %500 = cute.static : !cute.layout<"((128,16)):((131072,1))">
-                      %501 = cute.static : !cute.int_tuple<"0">
-                      %ptr_152 = cute.add_offset(%iter_146, %501) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f16, tmem, align<1>>
-                      %view_153 = cute.make_view(%ptr_152, %500) : !memref_tmem_f16_2
-                      %502 = cute.static : !cute.layout<"(1):(0)">
-                      %503 = cute.static : !cute.int_tuple<"0">
-                      %tup_154 = cute.add_offset(%iter_147, %503) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                      %view_155 = cute.make_view(%tup_154, %502) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                      %504 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                      %505 = cute.static : !cute.int_tuple<"0">
-                      %ptr_156 = cute.add_offset(%iter_148, %505) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                      %view_157 = cute.make_view(%ptr_156, %504) : !memref_tmem_f32_1
+                scf.for %arg58 = %c0_i32_149 to %636 step %c1_i32_150  : i32 {
+                  scf.for %arg59 = %c0_i32_149 to %637 step %c1_i32_150  : i32 {
+                    scf.for %arg60 = %c0_i32_149 to %638 step %c1_i32_150  : i32 {
+                      %647 = cute.static : !cute.layout<"((128,16)):((131072,1))">
+                      %648 = cute.static : !cute.int_tuple<"0">
+                      %ptr_152 = cute.add_offset(%iter_146, %648) : (!cute.ptr<f16, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f16, tmem, align<1>>
+                      %view_153 = cute.make_view(%ptr_152, %647) : !memref_tmem_f16_2
+                      %649 = cute.static : !cute.layout<"(1):(0)">
+                      %650 = cute.static : !cute.int_tuple<"0">
+                      %tup_154 = cute.add_offset(%iter_147, %650) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                      %view_155 = cute.make_view(%tup_154, %649) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                      %651 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                      %652 = cute.static : !cute.int_tuple<"0">
+                      %ptr_156 = cute.add_offset(%iter_148, %652) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                      %view_157 = cute.make_view(%ptr_156, %651) : !memref_tmem_f32_1
                       %iter_158 = cute.get_iter(%view_153) : !memref_tmem_f16_2
                       %iter_159 = cute.get_iter(%view_155) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                       %iter_160 = cute.get_iter(%view_157) : !memref_tmem_f32_1
-                      %506 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                      %507 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                      %508 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                      %653 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                      %654 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                      %655 = cute_nvgpu.atom.get_value(%arg57 : !mma_f16_f16_f32_128x128x16_1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                       %c136380432_i32 = arith.constant 136380432 : i32
-                      %509 = arith.extui %506 : i1 to i32
-                      %510 = arith.extui %507 : i1 to i32
+                      %656 = arith.extui %653 : i1 to i32
+                      %657 = arith.extui %654 : i1 to i32
                       %c13_i32_161 = arith.constant 13 : i32
                       %c14_i32 = arith.constant 14 : i32
-                      %511 = arith.shli %509, %c13_i32_161 : i32
-                      %512 = arith.shli %510, %c14_i32 : i32
-                      %513 = arith.ori %511, %c136380432_i32 : i32
-                      %514 = arith.ori %513, %512 : i32
-                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %514, %508) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute.ptr<f16, tmem, align<1>>, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                      %658 = arith.shli %656, %c13_i32_161 : i32
+                      %659 = arith.shli %657, %c14_i32 : i32
+                      %660 = arith.ori %658, %c136380432_i32 : i32
+                      %661 = arith.ori %660, %659 : i32
+                      cute_nvgpu.arch.mma.SM100.umma(%iter_158, %iter_159, %iter_160, %661, %655) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute.ptr<f16, tmem, align<1>>, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                     } {llvm.loop_annotation = #loop_annotation1}
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
                 %true_151 = arith.constant true
-                %499 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_1
-                scf.yield %499 : !mma_f16_f16_f32_128x128x16_1
+                %639 = cute_nvgpu.atom.set_value(%arg57, %true_151 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_1
+                %640 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+                %641 = cute.static : !cute.tile<"[_;_;_]">
+                %642 = cute.static : !cute.layout<"1:0">
+                %643 = cute.static : !cute.shape<"(128,128,16)">
+                %644 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %645 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+                %646 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+                scf.yield %639 : !mma_f16_f16_f32_128x128x16_1
               } {loop_annotation = #loop_annotation}
-              %479 = nvvm.elect.sync -> i1
-              scf.if %479 {
+              %584 = nvvm.elect.sync -> i1
+              scf.if %584 {
                 %int_tuple_138 = cute.make_int_tuple(%arg51) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_35, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %480 = arith.addi %arg51, %c1_i32_134 : i32
-              %481 = arith.addi %arg50, %c1_i32_134 : i32
-              %482 = arith.cmpi eq, %480, %c1_i32_134 : i32
-              %483:2 = scf.if %482 -> (i32, i32) {
+              %585 = arith.addi %arg51, %c1_i32_134 : i32
+              %586 = arith.addi %arg50, %c1_i32_134 : i32
+              %587 = arith.cmpi eq, %585, %c1_i32_134 : i32
+              %588:2 = scf.if %587 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg52, %c1_i32_138 : i32
+                %630 = arith.xori %arg52, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %480, %arg52 : i32, i32
+                scf.yield %585, %arg52 : i32, i32
               }
-              %484 = nvvm.elect.sync -> i1
-              scf.if %484 {
+              %589 = nvvm.elect.sync -> i1
+              scf.if %589 {
                 %int_tuple_138 = cute.make_int_tuple(%arg54) : (i32) -> !cute.int_tuple<"?">
                 %ptr_139 = cute.add_offset(%ptr_23, %int_tuple_138) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-                %490 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-                nvvm.tcgen05.commit.arrive %490 : !llvm.ptr<3>
+                %630 = builtin.unrealized_conversion_cast %ptr_139 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+                nvvm.tcgen05.commit.arrive %630 : !llvm.ptr<3>
               }
-              %485 = arith.addi %arg54, %c1_i32_134 : i32
-              %486 = arith.addi %arg53, %c1_i32_134 : i32
-              %487 = arith.cmpi eq, %485, %c1_i32_134 : i32
-              %488:2 = scf.if %487 -> (i32, i32) {
+              %590 = arith.addi %arg54, %c1_i32_134 : i32
+              %591 = arith.addi %arg53, %c1_i32_134 : i32
+              %592 = arith.cmpi eq, %590, %c1_i32_134 : i32
+              %593:2 = scf.if %592 -> (i32, i32) {
                 %c1_i32_138 = arith.constant 1 : i32
-                %490 = arith.xori %arg55, %c1_i32_138 : i32
+                %630 = arith.xori %arg55, %c1_i32_138 : i32
                 %c0_i32_139 = arith.constant 0 : i32
-                scf.yield %c0_i32_139, %490 : i32, i32
+                scf.yield %c0_i32_139, %630 : i32, i32
               } else {
-                scf.yield %485, %arg55 : i32, i32
+                scf.yield %590, %arg55 : i32, i32
               }
-              %489 = arith.subi %arg26, %c1_i32_134 : i32
-              scf.yield %489, %443, %445, %447#0, %447#1, %450, %452#0, %452#1, %454, %457, %459#0, %459#1, %460, %463, %465#0, %465#1, %468, %470#0, %470#1, %472, %475, %477#0, %477#1, %478, %481, %483#0, %483#1, %486, %488#0, %488#1 : i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32
+              %594 = arith.subi %arg26, %c1_i32_134 : i32
+              %595 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %596 = cute.static : !cute.tile<"[_;_;_]">
+              %597 = cute.static : !cute.layout<"1:0">
+              %598 = cute.static : !cute.shape<"(128,128,16)">
+              %599 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %600 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %601 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %602 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %603 = cute.static : !cute.tile<"[_;_;_]">
+              %604 = cute.static : !cute.layout<"1:0">
+              %605 = cute.static : !cute.shape<"(128,128,16)">
+              %606 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %607 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %608 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %609 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %610 = cute.static : !cute.tile<"[_;_;_]">
+              %611 = cute.static : !cute.layout<"1:0">
+              %612 = cute.static : !cute.shape<"(128,128,16)">
+              %613 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %614 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %615 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %616 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %617 = cute.static : !cute.tile<"[_;_;_]">
+              %618 = cute.static : !cute.layout<"1:0">
+              %619 = cute.static : !cute.shape<"(128,128,16)">
+              %620 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %621 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %622 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              %623 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %624 = cute.static : !cute.tile<"[_;_;_]">
+              %625 = cute.static : !cute.layout<"1:0">
+              %626 = cute.static : !cute.shape<"(128,128,16)">
+              %627 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %628 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %629 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %594, %520, %522, %524#0, %524#1, %527, %529#0, %529#1, %538, %541, %543#0, %543#1, %551, %554, %556#0, %556#1, %559, %561#0, %561#1, %570, %573, %575#0, %575#1, %583, %586, %588#0, %588#1, %591, %593#0, %593#1 : i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_3, i32, i32, i32, !mma_f16_f16_f32_128x128x16_2, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_128x128x16_, i32, i32, i32, !mma_f16_f16_f32_128x128x16_1, i32, i32, i32, i32, i32, i32
             }
             scf.if %true {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%ptr_39, %int_tuple_130) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c1_i32_132 = arith.constant 1 : i32
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %c1_i32_132, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
-            %433 = nvvm.elect.sync -> i1
-            scf.if %433 {
+            %489 = nvvm.elect.sync -> i1
+            scf.if %489 {
               %c0_i32_129 = arith.constant 0 : i32
               %int_tuple_130 = cute.make_int_tuple(%c0_i32_129) : (i32) -> !cute.int_tuple<"?">
               %ptr_131 = cute.add_offset(%iter_38, %int_tuple_130) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %434:2 = scf.if %false_125 -> (i32, i32) {
+            %490:2 = scf.if %false_125 -> (i32, i32) {
               %c0_i32_129 = arith.constant 0 : i32
               scf.yield %c0_i32_129, %c0_i32_129 : i32, i32
             } else {
@@ -3924,174 +4147,202 @@ module attributes {gpu.container_module} {
               scf.yield %c1_i32_129, %c1_i32_129 : i32, i32
             }
             scf.if %true {
-              %int_tuple_129 = cute.make_int_tuple(%434#0) : (i32) -> !cute.int_tuple<"?">
+              %int_tuple_129 = cute.make_int_tuple(%490#0) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%ptr_39, %int_tuple_129) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %434#1, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %490#1, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
             scf.if %true {
-              %int_tuple_129 = cute.make_int_tuple(%432#17) : (i32) -> !cute.int_tuple<"?">
+              %int_tuple_129 = cute.make_int_tuple(%488#17) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%iter_36, %int_tuple_129) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
               %c10000000_i32 = arith.constant 10000000 : i32
-              nvvm.mbarrier.try_wait.parity.shared %442, %432#18, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+              nvvm.mbarrier.try_wait.parity.shared %512, %488#18, %c10000000_i32 : !llvm.ptr<3>, i32, i32
             }
-            %435 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %432#12) -> (!mma_f16_f16_f32_128x128x16_2)  : i32 {
-              %coord = cute.make_coord(%arg26, %432#17) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %442 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
-              %idx = cute.crd2idx(%coord, %442) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
+            %491 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %492 = cute.static : !cute.tile<"[_;_;_]">
+            %493 = cute.static : !cute.layout<"1:0">
+            %494 = cute.static : !cute.shape<"(128,128,16)">
+            %495 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %496 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %497 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %498 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %488#12) -> (!mma_f16_f16_f32_128x128x16_2)  : i32 {
+              %coord = cute.make_coord(%arg26, %488#17) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
+              %512 = cute.static : !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">
+              %idx = cute.crd2idx(%coord, %512) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,(4,2),1):(0,0,(2,1024),0)">) -> !cute.int_tuple<"?{div=2}">
               %iter_129 = cute.get_iter(%view_86) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,(4,2),1):(0,0,(2,1024),0)">
               %tup_130 = cute.add_offset(%iter_129, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
               %view_131 = cute.make_view(%tup_130) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
-              %coord_132 = cute.make_coord(%arg26, %432#14) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %443 = cute.static : !cute.layout<"(1,1,8,2):(0,0,128,2048)">
-              %idx_133 = cute.crd2idx(%coord_132, %443) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,2):(0,0,128,2048)">) -> !cute.int_tuple<"?{div=128}">
+              %coord_132 = cute.make_coord(%arg26, %488#14) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
+              %513 = cute.static : !cute.layout<"(1,1,8,2):(0,0,128,2048)">
+              %idx_133 = cute.crd2idx(%coord_132, %513) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,2):(0,0,128,2048)">) -> !cute.int_tuple<"?{div=128}">
               %iter_134 = cute.get_iter(%view_89) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,2):(0,0,128,2048)">
               %tup_135 = cute.add_offset(%iter_134, %idx_133) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
               %view_136 = cute.make_view(%tup_135) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_137 = cute.get_iter(%view_131) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_138 = cute.get_iter(%view_136) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_139 = cute.get_iter(%view_111) : !memref_tmem_f32_
-              %444 = cute.static : !cute.layout<"1:0">
-              %445 = cute.static : !cute.int_tuple<"1">
-              %446 = cute.static : !cute.int_tuple<"1">
-              %447 = cute.static : !cute.int_tuple<"1">
-              %448 = cute.get_scalars(%445) : !cute.int_tuple<"1">
-              %449 = cute.get_scalars(%446) : !cute.int_tuple<"1">
-              %450 = cute.get_scalars(%447) : !cute.int_tuple<"1">
+              %514 = cute.static : !cute.layout<"1:0">
+              %515 = cute.static : !cute.int_tuple<"1">
+              %516 = cute.static : !cute.int_tuple<"1">
+              %517 = cute.static : !cute.int_tuple<"1">
+              %518 = cute.get_scalars(%515) : !cute.int_tuple<"1">
+              %519 = cute.get_scalars(%516) : !cute.int_tuple<"1">
+              %520 = cute.get_scalars(%517) : !cute.int_tuple<"1">
               %c0_i32_140 = arith.constant 0 : i32
               %c1_i32_141 = arith.constant 1 : i32
-              scf.for %arg28 = %c0_i32_140 to %448 step %c1_i32_141  : i32 {
-                scf.for %arg29 = %c0_i32_140 to %449 step %c1_i32_141  : i32 {
-                  scf.for %arg30 = %c0_i32_140 to %450 step %c1_i32_141  : i32 {
-                    %452 = cute.static : !cute.layout<"(1):(0)">
-                    %453 = cute.static : !cute.int_tuple<"0">
-                    %tup_143 = cute.add_offset(%iter_137, %453) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_144 = cute.make_view(%tup_143, %452) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %454 = cute.static : !cute.layout<"(1):(0)">
-                    %455 = cute.static : !cute.int_tuple<"0">
-                    %tup_145 = cute.add_offset(%iter_138, %455) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_146 = cute.make_view(%tup_145, %454) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %456 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                    %457 = cute.static : !cute.int_tuple<"0">
-                    %ptr_147 = cute.add_offset(%iter_139, %457) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                    %view_148 = cute.make_view(%ptr_147, %456) : !memref_tmem_f32_1
+              scf.for %arg28 = %c0_i32_140 to %518 step %c1_i32_141  : i32 {
+                scf.for %arg29 = %c0_i32_140 to %519 step %c1_i32_141  : i32 {
+                  scf.for %arg30 = %c0_i32_140 to %520 step %c1_i32_141  : i32 {
+                    %529 = cute.static : !cute.layout<"(1):(0)">
+                    %530 = cute.static : !cute.int_tuple<"0">
+                    %tup_143 = cute.add_offset(%iter_137, %530) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_144 = cute.make_view(%tup_143, %529) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %531 = cute.static : !cute.layout<"(1):(0)">
+                    %532 = cute.static : !cute.int_tuple<"0">
+                    %tup_145 = cute.add_offset(%iter_138, %532) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_146 = cute.make_view(%tup_145, %531) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %533 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                    %534 = cute.static : !cute.int_tuple<"0">
+                    %ptr_147 = cute.add_offset(%iter_139, %534) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                    %view_148 = cute.make_view(%ptr_147, %533) : !memref_tmem_f32_1
                     %iter_149 = cute.get_iter(%view_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_150 = cute.get_iter(%view_146) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_151 = cute.get_iter(%view_148) : !memref_tmem_f32_1
-                    %458 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                    %459 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                    %460 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                    %535 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                    %536 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                    %537 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_2) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                     %c136380432_i32 = arith.constant 136380432 : i32
-                    %461 = arith.extui %458 : i1 to i32
-                    %462 = arith.extui %459 : i1 to i32
+                    %538 = arith.extui %535 : i1 to i32
+                    %539 = arith.extui %536 : i1 to i32
                     %c13_i32_152 = arith.constant 13 : i32
                     %c14_i32 = arith.constant 14 : i32
-                    %463 = arith.shli %461, %c13_i32_152 : i32
-                    %464 = arith.shli %462, %c14_i32 : i32
-                    %465 = arith.ori %463, %c136380432_i32 : i32
-                    %466 = arith.ori %465, %464 : i32
-                    cute_nvgpu.arch.mma.SM100.umma(%iter_149, %iter_150, %iter_151, %466, %460) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                    %540 = arith.shli %538, %c13_i32_152 : i32
+                    %541 = arith.shli %539, %c14_i32 : i32
+                    %542 = arith.ori %540, %c136380432_i32 : i32
+                    %543 = arith.ori %542, %541 : i32
+                    cute_nvgpu.arch.mma.SM100.umma(%iter_149, %iter_150, %iter_151, %543, %537) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
               } {llvm.loop_annotation = #loop_annotation1}
               %true_142 = arith.constant true
-              %451 = cute_nvgpu.atom.set_value(%arg27, %true_142 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_2
-              scf.yield %451 : !mma_f16_f16_f32_128x128x16_2
+              %521 = cute_nvgpu.atom.set_value(%arg27, %true_142 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_2
+              %522 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %523 = cute.static : !cute.tile<"[_;_;_]">
+              %524 = cute.static : !cute.layout<"1:0">
+              %525 = cute.static : !cute.shape<"(128,128,16)">
+              %526 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %528 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %521 : !mma_f16_f16_f32_128x128x16_2
             } {loop_annotation = #loop_annotation}
-            %436 = nvvm.elect.sync -> i1
-            scf.if %436 {
-              %int_tuple_129 = cute.make_int_tuple(%434#0) : (i32) -> !cute.int_tuple<"?">
+            %499 = nvvm.elect.sync -> i1
+            scf.if %499 {
+              %int_tuple_129 = cute.make_int_tuple(%490#0) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%iter_38, %int_tuple_129) : (!cute.ptr<i64, smem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
             %false_128 = arith.constant false
-            %437 = cute_nvgpu.atom.set_value(%432#8, %false_128 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
-            %438 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %437) -> (!mma_f16_f16_f32_128x128x16_3)  : i32 {
-              %coord = cute.make_coord(%arg26, %432#17) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
-              %442 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-              %idx = cute.crd2idx(%coord, %442) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+            %500 = cute_nvgpu.atom.set_value(%488#8, %false_128 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
+            %501 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+            %502 = cute.static : !cute.tile<"[_;_;_]">
+            %503 = cute.static : !cute.layout<"1:0">
+            %504 = cute.static : !cute.shape<"(128,128,16)">
+            %505 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %506 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+            %507 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+            %508 = scf.for %arg26 = %c0_i32_123 to %c8_i32 step %c1_i32_124 iter_args(%arg27 = %500) -> (!mma_f16_f16_f32_128x128x16_3)  : i32 {
+              %coord = cute.make_coord(%arg26, %488#17) : (i32, i32) -> !cute.coord<"(_,_,?,?)">
+              %512 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+              %idx = cute.crd2idx(%coord, %512) : (!cute.coord<"(_,_,?,?)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
               %iter_129 = cute.get_iter(%view_80) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
               %tup_130 = cute.add_offset(%iter_129, %idx) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
               %view_131 = cute.make_view(%tup_130) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %coord_132 = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,_,?,0)">
-              %443 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
-              %idx_133 = cute.crd2idx(%coord_132, %443) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
+              %513 = cute.static : !cute.layout<"(1,1,8,1):(0,0,128,0)">
+              %idx_133 = cute.crd2idx(%coord_132, %513) : (!cute.coord<"(_,_,?,0)">, !cute.layout<"(1,1,8,1):(0,0,128,0)">) -> !cute.int_tuple<"?{div=128}">
               %iter_134 = cute.get_iter(%view_83) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,8,1):(0,0,128,0)">
               %tup_135 = cute.add_offset(%iter_134, %idx_133) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=128}">) -> !cute_nvgpu.smem_desc
               %view_136 = cute.make_view(%tup_135) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_137 = cute.get_iter(%view_131) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_138 = cute.get_iter(%view_136) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1):(0,0)">
               %iter_139 = cute.get_iter(%view_107) : !memref_tmem_f32_
-              %444 = cute.static : !cute.layout<"1:0">
-              %445 = cute.static : !cute.int_tuple<"1">
-              %446 = cute.static : !cute.int_tuple<"1">
-              %447 = cute.static : !cute.int_tuple<"1">
-              %448 = cute.get_scalars(%445) : !cute.int_tuple<"1">
-              %449 = cute.get_scalars(%446) : !cute.int_tuple<"1">
-              %450 = cute.get_scalars(%447) : !cute.int_tuple<"1">
+              %514 = cute.static : !cute.layout<"1:0">
+              %515 = cute.static : !cute.int_tuple<"1">
+              %516 = cute.static : !cute.int_tuple<"1">
+              %517 = cute.static : !cute.int_tuple<"1">
+              %518 = cute.get_scalars(%515) : !cute.int_tuple<"1">
+              %519 = cute.get_scalars(%516) : !cute.int_tuple<"1">
+              %520 = cute.get_scalars(%517) : !cute.int_tuple<"1">
               %c0_i32_140 = arith.constant 0 : i32
               %c1_i32_141 = arith.constant 1 : i32
-              scf.for %arg28 = %c0_i32_140 to %448 step %c1_i32_141  : i32 {
-                scf.for %arg29 = %c0_i32_140 to %449 step %c1_i32_141  : i32 {
-                  scf.for %arg30 = %c0_i32_140 to %450 step %c1_i32_141  : i32 {
-                    %452 = cute.static : !cute.layout<"(1):(0)">
-                    %453 = cute.static : !cute.int_tuple<"0">
-                    %tup_143 = cute.add_offset(%iter_137, %453) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_144 = cute.make_view(%tup_143, %452) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %454 = cute.static : !cute.layout<"(1):(0)">
-                    %455 = cute.static : !cute.int_tuple<"0">
-                    %tup_145 = cute.add_offset(%iter_138, %455) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
-                    %view_146 = cute.make_view(%tup_145, %454) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
-                    %456 = cute.static : !cute.layout<"((128,128)):((65536,1))">
-                    %457 = cute.static : !cute.int_tuple<"0">
-                    %ptr_147 = cute.add_offset(%iter_139, %457) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
-                    %view_148 = cute.make_view(%ptr_147, %456) : !memref_tmem_f32_1
+              scf.for %arg28 = %c0_i32_140 to %518 step %c1_i32_141  : i32 {
+                scf.for %arg29 = %c0_i32_140 to %519 step %c1_i32_141  : i32 {
+                  scf.for %arg30 = %c0_i32_140 to %520 step %c1_i32_141  : i32 {
+                    %529 = cute.static : !cute.layout<"(1):(0)">
+                    %530 = cute.static : !cute.int_tuple<"0">
+                    %tup_143 = cute.add_offset(%iter_137, %530) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_144 = cute.make_view(%tup_143, %529) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %531 = cute.static : !cute.layout<"(1):(0)">
+                    %532 = cute.static : !cute.int_tuple<"0">
+                    %tup_145 = cute.add_offset(%iter_138, %532) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"0">) -> !cute_nvgpu.smem_desc
+                    %view_146 = cute.make_view(%tup_145, %531) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
+                    %533 = cute.static : !cute.layout<"((128,128)):((65536,1))">
+                    %534 = cute.static : !cute.int_tuple<"0">
+                    %ptr_147 = cute.add_offset(%iter_139, %534) : (!cute.ptr<f32, tmem, align<1>>, !cute.int_tuple<"0">) -> !cute.ptr<f32, tmem, align<1>>
+                    %view_148 = cute.make_view(%ptr_147, %533) : !memref_tmem_f32_1
                     %iter_149 = cute.get_iter(%view_144) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_150 = cute.get_iter(%view_146) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1):(0)">
                     %iter_151 = cute.get_iter(%view_148) : !memref_tmem_f32_1
-                    %458 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
-                    %459 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
-                    %460 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
+                    %535 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : i1
+                    %536 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : i1
+                    %537 = cute_nvgpu.atom.get_value(%arg27 : !mma_f16_f16_f32_128x128x16_3) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : i1
                     %c136413200_i32 = arith.constant 136413200 : i32
-                    %461 = arith.extui %458 : i1 to i32
-                    %462 = arith.extui %459 : i1 to i32
+                    %538 = arith.extui %535 : i1 to i32
+                    %539 = arith.extui %536 : i1 to i32
                     %c13_i32_152 = arith.constant 13 : i32
                     %c14_i32 = arith.constant 14 : i32
-                    %463 = arith.shli %461, %c13_i32_152 : i32
-                    %464 = arith.shli %462, %c14_i32 : i32
-                    %465 = arith.ori %463, %c136413200_i32 : i32
-                    %466 = arith.ori %465, %464 : i32
-                    cute_nvgpu.arch.mma.SM100.umma(%iter_149, %iter_150, %iter_151, %466, %460) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
+                    %540 = arith.shli %538, %c13_i32_152 : i32
+                    %541 = arith.shli %539, %c14_i32 : i32
+                    %542 = arith.ori %540, %c136413200_i32 : i32
+                    %543 = arith.ori %542, %541 : i32
+                    cute_nvgpu.arch.mma.SM100.umma(%iter_149, %iter_150, %iter_151, %543, %537) {num_cta = 1 : i32, scale = 0 : i32, a_type = f16} : (!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, !cute.ptr<f32, tmem, align<1>>, i32, i1) -> ()
                   } {llvm.loop_annotation = #loop_annotation1}
                 } {llvm.loop_annotation = #loop_annotation1}
               } {llvm.loop_annotation = #loop_annotation1}
               %true_142 = arith.constant true
-              %451 = cute_nvgpu.atom.set_value(%arg27, %true_142 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
-              scf.yield %451 : !mma_f16_f16_f32_128x128x16_3
+              %521 = cute_nvgpu.atom.set_value(%arg27, %true_142 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !mma_f16_f16_f32_128x128x16_3
+              %522 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
+              %523 = cute.static : !cute.tile<"[_;_;_]">
+              %524 = cute.static : !cute.layout<"1:0">
+              %525 = cute.static : !cute.shape<"(128,128,16)">
+              %526 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %527 = cute.static : !cute.layout<"(1,(128,16)):(128,(1,128))">
+              %528 = cute.static : !cute.layout<"(1,(128,128)):(128,(1,128))">
+              scf.yield %521 : !mma_f16_f16_f32_128x128x16_3
             } {loop_annotation = #loop_annotation}
-            %439 = nvvm.elect.sync -> i1
-            scf.if %439 {
-              %int_tuple_129 = cute.make_int_tuple(%432#10) : (i32) -> !cute.int_tuple<"?">
+            %509 = nvvm.elect.sync -> i1
+            scf.if %509 {
+              %int_tuple_129 = cute.make_int_tuple(%488#10) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%iter_32, %int_tuple_129) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %440 = nvvm.elect.sync -> i1
-            scf.if %440 {
-              %int_tuple_129 = cute.make_int_tuple(%432#14) : (i32) -> !cute.int_tuple<"?">
+            %510 = nvvm.elect.sync -> i1
+            scf.if %510 {
+              %int_tuple_129 = cute.make_int_tuple(%488#14) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%ptr_21, %int_tuple_129) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
-            %441 = nvvm.elect.sync -> i1
-            scf.if %441 {
-              %int_tuple_129 = cute.make_int_tuple(%432#17) : (i32) -> !cute.int_tuple<"?">
+            %511 = nvvm.elect.sync -> i1
+            scf.if %511 {
+              %int_tuple_129 = cute.make_int_tuple(%488#17) : (i32) -> !cute.int_tuple<"?">
               %ptr_130 = cute.add_offset(%ptr_37, %int_tuple_129) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %442 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.tcgen05.commit.arrive %442 : !llvm.ptr<3>
+              %512 = builtin.unrealized_conversion_cast %ptr_130 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.tcgen05.commit.arrive %512 : !llvm.ptr<3>
             }
           } else {
             %c4_i32 = arith.constant 4 : i32
@@ -4369,7 +4620,7 @@ module attributes {gpu.container_module} {
                   %iter_749 = cute.get_iter(%view_666) : !memref_rmem_f32_3
                   %ptr_750 = cute.add_offset(%iter_749, %idx_748) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                   %view_751 = cute.make_view(%ptr_750) : !memref_rmem_f32_4
-                  %809 = cute.memref.load_vec %view_751, row_major : !memref_rmem_f32_4
+                  %809 = cute.memref.load_vec %view_751 : !memref_rmem_f32_4
                   %coord_752 = cute.make_coord(%arg48) : (i32) -> !cute.coord<"(_,?)">
                   %810 = cute.static : !cute.layout<"(4,16):(1,4)">
                   %idx_753 = cute.crd2idx(%coord_752, %810) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
@@ -4377,7 +4628,7 @@ module attributes {gpu.container_module} {
                   %ptr_755 = cute.add_offset(%iter_754, %idx_753) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                   %view_756 = cute.make_view(%ptr_755) : !memref_rmem_f16_2
                   %811 = arith.truncf %809 : vector<4xf32> to vector<4xf16>
-                  cute.memref.store_vec %811, %view_756, row_major : !memref_rmem_f16_2
+                  cute.memref.store_vec %811, %view_756 : !memref_rmem_f16_2
                 } {loop_annotation = #loop_annotation}
                 %748 = cute.static : !cute.layout<"((16,1),1,1,4):((1,0),0,0,16)">
                 %view_670 = cute.make_view(%iter_664, %748) : !memref_rmem_f16_3
@@ -4597,7 +4848,7 @@ module attributes {gpu.container_module} {
                   %iter_749 = cute.get_iter(%view_705) : !memref_rmem_f32_3
                   %ptr_750 = cute.add_offset(%iter_749, %idx_748) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                   %view_751 = cute.make_view(%ptr_750) : !memref_rmem_f32_4
-                  %809 = cute.memref.load_vec %view_751, row_major : !memref_rmem_f32_4
+                  %809 = cute.memref.load_vec %view_751 : !memref_rmem_f32_4
                   %coord_752 = cute.make_coord(%arg48) : (i32) -> !cute.coord<"(_,?)">
                   %810 = cute.static : !cute.layout<"(4,16):(1,4)">
                   %idx_753 = cute.crd2idx(%coord_752, %810) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
@@ -4605,7 +4856,7 @@ module attributes {gpu.container_module} {
                   %ptr_755 = cute.add_offset(%iter_754, %idx_753) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                   %view_756 = cute.make_view(%ptr_755) : !memref_rmem_f16_2
                   %811 = arith.truncf %809 : vector<4xf32> to vector<4xf16>
-                  cute.memref.store_vec %811, %view_756, row_major : !memref_rmem_f16_2
+                  cute.memref.store_vec %811, %view_756 : !memref_rmem_f16_2
                 } {loop_annotation = #loop_annotation}
                 nvvm.tcgen05.wait <load>
                 %int_tuple_707 = cute.make_int_tuple(%arg40) : (i32) -> !cute.int_tuple<"?">
@@ -5085,7 +5336,7 @@ module attributes {gpu.container_module} {
                 %iter_649 = cute.get_iter(%view_432) : !memref_rmem_f32_3
                 %ptr_650 = cute.add_offset(%iter_649, %idx_648) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                 %view_651 = cute.make_view(%ptr_650) : !memref_rmem_f32_4
-                %738 = cute.memref.load_vec %view_651, row_major : !memref_rmem_f32_4
+                %738 = cute.memref.load_vec %view_651 : !memref_rmem_f32_4
                 %coord_652 = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,?)">
                 %739 = cute.static : !cute.layout<"(4,16):(1,4)">
                 %idx_653 = cute.crd2idx(%coord_652, %739) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
@@ -5093,7 +5344,7 @@ module attributes {gpu.container_module} {
                 %ptr_655 = cute.add_offset(%iter_654, %idx_653) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                 %view_656 = cute.make_view(%ptr_655) : !memref_rmem_f16_2
                 %740 = arith.truncf %738 : vector<4xf32> to vector<4xf16>
-                cute.memref.store_vec %740, %view_656, row_major : !memref_rmem_f16_2
+                cute.memref.store_vec %740, %view_656 : !memref_rmem_f16_2
               } {loop_annotation = #loop_annotation}
               %iter_434 = cute.get_iter(%rmem_429) : !memref_rmem_f16_
               %view_435 = cute.make_view(%iter_434) : !memref_rmem_f16_9
@@ -5382,7 +5633,7 @@ module attributes {gpu.container_module} {
                 %iter_649 = cute.get_iter(%view_547) : !memref_rmem_f32_3
                 %ptr_650 = cute.add_offset(%iter_649, %idx_648) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                 %view_651 = cute.make_view(%ptr_650) : !memref_rmem_f32_4
-                %738 = cute.memref.load_vec %view_651, row_major : !memref_rmem_f32_4
+                %738 = cute.memref.load_vec %view_651 : !memref_rmem_f32_4
                 %coord_652 = cute.make_coord(%arg26) : (i32) -> !cute.coord<"(_,?)">
                 %739 = cute.static : !cute.layout<"(4,16):(1,4)">
                 %idx_653 = cute.crd2idx(%coord_652, %739) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
@@ -5390,7 +5641,7 @@ module attributes {gpu.container_module} {
                 %ptr_655 = cute.add_offset(%iter_654, %idx_653) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                 %view_656 = cute.make_view(%ptr_655) : !memref_rmem_f16_2
                 %740 = arith.truncf %738 : vector<4xf32> to vector<4xf16>
-                cute.memref.store_vec %740, %view_656, row_major : !memref_rmem_f16_2
+                cute.memref.store_vec %740, %view_656 : !memref_rmem_f16_2
               } {loop_annotation = #loop_annotation}
               %iter_549 = cute.get_iter(%rmem_544) : !memref_rmem_f16_
               %view_550 = cute.make_view(%iter_549) : !memref_rmem_f16_9
@@ -5887,8 +6138,9 @@ module attributes {gpu.container_module} {
                         %iter_236 = cute.get_iter(%view_233) : !memref_smem_f32_13
                         %iter_237 = cute.get_iter(%view_235) : !cute.coord_tensor<"(?{div=32},?{div=128},?,?,?)", "(((32,128),1)):(((1@0,1@1),0))">
                         %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%505 : !cute_nvgpu.atom.tma_reduce<f32, copy_bits = 131072, mode = tiled, kind = ADD, g_stride = <"()"> tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-                        %513:5 = cute.get_scalars(%iter_237) : !cute.int_tuple<"(?{div=32},?{div=128},?,?,?)">
-                        cute_nvgpu.arch.copy.SM100.tma_reduce(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_236 : !cute.ptr<f32, smem, align<1024>, S<3,4,3>>, [%513#0, %513#1, %513#2, %513#3, %513#4] : i32, i32, i32, i32, i32) mode = <tiled> kind = <ADD>
+                        %513 = cute_nvgpu.atom.get_value(%505 : !cute_nvgpu.atom.tma_reduce<f32, copy_bits = 131072, mode = tiled, kind = ADD, g_stride = <"()"> tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmareduce<cache_policy>} : i64
+                        %514:5 = cute.get_scalars(%iter_237) : !cute.int_tuple<"(?{div=32},?{div=128},?,?,?)">
+                        cute_nvgpu.arch.copy.SM100.tma_reduce(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_236 : !cute.ptr<f32, smem, align<1024>, S<3,4,3>>, [%514#0, %514#1, %514#2, %514#3, %514#4] : i32, i32, i32, i32, i32) cache_policy = %513 mode = <tiled> kind = <ADD>
                       } {llvm.loop_annotation = #loop_annotation1}
                       nvvm.cp.async.bulk.commit.group
                     } else {
@@ -5931,7 +6183,7 @@ module attributes {gpu.container_module} {
       }
       return
     }
-    func.func public @kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64div641div64div64div64___None__2(%arg0: !memref_gmem_f32_7, %arg1: !memref_gmem_f16_, %arg2: i32, %arg3: i32, %arg4: f32) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 16, 8, 1>} {
+    cuda.kernel @kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64i64div641div64div64div64___None__2(%arg0: !memref_gmem_f32_7, %arg1: !memref_gmem_f16_, %arg2: i32, %arg3: i32, %arg4: f32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 16, 8, 1>} {
       %0 = nvvm.read.ptx.sreg.tid.x : i32
       %1 = nvvm.read.ptx.sreg.tid.y : i32
       %2 = nvvm.read.ptx.sreg.ctaid.x : i32
@@ -5995,7 +6247,7 @@ module attributes {gpu.container_module} {
             %iter_25 = cute.get_iter(%view_6) : !memref_gmem_f32_9
             %ptr_26 = cute.add_offset(%iter_25, %idx_24) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem>
             %view_27 = cute.make_view(%ptr_26) : !memref_gmem_f32_10
-            %20 = cute.memref.load_vec %view_27, row_major : !memref_gmem_f32_10
+            %20 = cute.memref.load_vec %view_27 : !memref_gmem_f32_10
             %21 = vector.broadcast %arg4 : f32 to vector<4xf32>
             %22 = arith.mulf %21, %20 : vector<4xf32>
             %coord_28 = cute.make_coord(%arg6) : (i32) -> !cute.coord<"(_,?)">
@@ -6005,14 +6257,16 @@ module attributes {gpu.container_module} {
             %ptr_32 = cute.add_offset(%iter_31, %idx_30) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, gmem, align<8>>
             %view_33 = cute.make_view(%ptr_32) : !memref_gmem_f16_15
             %23 = arith.truncf %22 : vector<4xf32> to vector<4xf16>
-            cute.memref.store_vec %23, %view_33, row_major : !memref_gmem_f16_15
+            cute.memref.store_vec %23, %view_33 : !memref_gmem_f16_15
           }
         }
       }
       return
     }
   }
-  func.func @cutlass___call_____main__BlackwellFusedMultiHeadAttentionBackward_object_at__1024_1024_128_1_8_1_Tensorgmemodiv64i64div641i64div64i64div64i64div64_Tensorgmemodiv64i64div641i64div64(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: i32, %arg4: i32, %arg5: i32, %arg6: !memref_gmem_f16_16, %arg7: !memref_gmem_f16_16, %arg8: !memref_gmem_f16_16, %arg9: !memref_gmem_f16_16, %arg10: !memref_gmem_f16_16, %arg11: !memref_gmem_f16_16, %arg12: !memref_gmem_f16_16, %arg13: !memref_gmem_f16_16, %arg14: !memref_gmem_f32_11, %arg15: f32, %arg16: !memref_gmem_i8_, %arg17: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__BlackwellFusedMultiHeadAttentionBackward_object_at__1024_1024_128_1_8_1_Tensorgmemodiv64i64div641i64div64i64div64i64div64_Tensorgmemodiv64i64div641i64div64(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: i32, %arg4: i32, %arg5: i32, %arg6: !memref_gmem_f16_16, %arg7: !memref_gmem_f16_16, %arg8: !memref_gmem_f16_16, %arg9: !memref_gmem_f16_16, %arg10: !memref_gmem_f16_16, %arg11: !memref_gmem_f16_16, %arg12: !memref_gmem_f16_16, %arg13: !memref_gmem_f16_16, %arg14: !memref_gmem_f32_11, %arg15: f32, %arg16: !memref_gmem_i8_, %arg17: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+    %c1_i32 = arith.constant 1 : i32
+    %c8_i32 = arith.constant 8 : i32
     %iter = cute.get_iter(%arg6) : !memref_gmem_f16_16
     %iter_0 = cute.get_iter(%arg7) : !memref_gmem_f16_16
     %iter_1 = cute.get_iter(%arg8) : !memref_gmem_f16_16
@@ -6110,46 +6364,46 @@ module attributes {gpu.container_module} {
     %itup_92 = cute.to_int_tuple(%e3_88) : !cute.shape<"?"> to !cute.int_tuple<"?">
     %15 = cute.get_scalars(%itup_92) : !cute.int_tuple<"?">
     %mul_93 = cute.tuple_mul(%itup_89, %itup_90) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %c1_i32 = arith.constant 1 : i32
-    %16 = arith.cmpi eq, %15, %c1_i32 : i32
-    %mul_94 = cute.tuple_mul(%itup_89, %itup_90) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %mul_95 = cute.tuple_mul(%mul_94, %itup_91) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %17 = cute.get_scalars(%mul_95) : !cute.int_tuple<"?">
+    %c1_i32_94 = arith.constant 1 : i32
+    %16 = arith.cmpi eq, %15, %c1_i32_94 : i32
+    %mul_95 = cute.tuple_mul(%itup_89, %itup_90) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %mul_96 = cute.tuple_mul(%mul_95, %itup_91) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %17 = cute.get_scalars(%mul_96) : !cute.int_tuple<"?">
     %c0_i32 = arith.constant 0 : i32
     %18 = arith.select %16, %c0_i32, %17 : i32
-    %shape_96 = cute.make_shape(%itup_89, %arg3, %arg4, %arg5) : (!cute.int_tuple<"?">, i32, i32, i32) -> !cute.shape<"(?,((?,?),?))">
-    %stride_97 = cute.make_stride(%itup_89, %mul_93, %18) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, i32) -> !cute.stride<"(1,((?,?),?))">
-    %lay_98 = cute.make_layout(%shape_96, %stride_97) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
-    %view_99 = cute.make_view(%iter_7, %lay_98) : !memref_gmem_f32_
+    %shape_97 = cute.make_shape(%itup_89, %arg3, %arg4, %arg5) : (!cute.int_tuple<"?">, i32, i32, i32) -> !cute.shape<"(?,((?,?),?))">
+    %stride_98 = cute.make_stride(%itup_89, %mul_93, %18) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, i32) -> !cute.stride<"(1,((?,?),?))">
+    %lay_99 = cute.make_layout(%shape_97, %stride_98) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
+    %view_100 = cute.make_view(%iter_7, %lay_99) : !memref_gmem_f32_
     %false = arith.constant false
     %atom = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %19 = cute_nvgpu.atom.set_value(%atom, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %20 = cute_nvgpu.atom.set_value(%19, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %21 = cute_nvgpu.atom.set_value(%20, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %22 = cute.make_tiled_mma(%21) : !mma_f16_f16_f32_128x128x16_
-    %false_100 = arith.constant false
-    %atom_101 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %23 = cute_nvgpu.atom.set_value(%atom_101, %false_100 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %24 = cute_nvgpu.atom.set_value(%23, %false_100 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %25 = cute_nvgpu.atom.set_value(%24, %false_100 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %false_101 = arith.constant false
+    %atom_102 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %23 = cute_nvgpu.atom.set_value(%atom_102, %false_101 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %24 = cute_nvgpu.atom.set_value(%23, %false_101 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %25 = cute_nvgpu.atom.set_value(%24, %false_101 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %26 = cute.make_tiled_mma(%25) : !mma_f16_f16_f32_128x128x16_
-    %false_102 = arith.constant false
-    %atom_103 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
-    %27 = cute_nvgpu.atom.set_value(%atom_103, %false_102 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
-    %28 = cute_nvgpu.atom.set_value(%27, %false_102 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
-    %29 = cute_nvgpu.atom.set_value(%28, %false_102 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
+    %false_103 = arith.constant false
+    %atom_104 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
+    %27 = cute_nvgpu.atom.set_value(%atom_104, %false_103 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
+    %28 = cute_nvgpu.atom.set_value(%27, %false_103 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
+    %29 = cute_nvgpu.atom.set_value(%28, %false_103 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ts, c_scale_exp = 0>
     %30 = cute.make_tiled_mma(%29) : !mma_f16_f16_f32_128x128x16_1
-    %false_104 = arith.constant false
-    %atom_105 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %31 = cute_nvgpu.atom.set_value(%atom_105, %false_104 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %32 = cute_nvgpu.atom.set_value(%31, %false_104 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %33 = cute_nvgpu.atom.set_value(%32, %false_104 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %false_105 = arith.constant false
+    %atom_106 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %31 = cute_nvgpu.atom.set_value(%atom_106, %false_105 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %32 = cute_nvgpu.atom.set_value(%31, %false_105 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %33 = cute_nvgpu.atom.set_value(%32, %false_105 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (k, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %34 = cute.make_tiled_mma(%33) : !mma_f16_f16_f32_128x128x16_2
-    %false_106 = arith.constant false
-    %atom_107 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %35 = cute_nvgpu.atom.set_value(%atom_107, %false_106 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %36 = cute_nvgpu.atom.set_value(%35, %false_106 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
-    %37 = cute_nvgpu.atom.set_value(%36, %false_106 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %false_107 = arith.constant false
+    %atom_108 = cute.make_atom() : () -> !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %35 = cute_nvgpu.atom.set_value(%atom_108, %false_107 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<accum_c>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %36 = cute_nvgpu.atom.set_value(%35, %false_107 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_a>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
+    %37 = cute_nvgpu.atom.set_value(%36, %false_107 : i1) {field = #cute_nvgpu.atom_mma_field_sm100<neg_b>} : !cute_nvgpu.sm100.mma<128x128x16, num_cta = 1, ab_major = (mn, mn), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>
     %38 = cute.make_tiled_mma(%37) : !mma_f16_f16_f32_128x128x16_3
     %39 = cute.static : !cute.layout<"1:0">
     %40 = cute.static : !cute.swizzle<"S<3,4,3>">
@@ -6178,9 +6432,9 @@ module attributes {gpu.container_module} {
     %63 = cute.static : !cute.layout<"((1,(1,1)),((128,16),(1,8))):((0,(0,0)),((1@0,1@1),(0,16@1)))">
     %c16_i32 = arith.constant 16 : i32
     %64 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
-    %iter_108 = cute.get_iter(%view_48) : !memref_gmem_f16_4
-    %lay_109 = cute.get_layout(%view_48) : !memref_gmem_f16_4
-    %65:8 = cute.get_scalars(%lay_109) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">
+    %iter_109 = cute.get_iter(%view_48) : !memref_gmem_f16_4
+    %lay_110 = cute.get_layout(%view_48) : !memref_gmem_f16_4
+    %65:8 = cute.get_scalars(%lay_110) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">
     %c0_i64 = arith.constant 0 : i64
     %c1_i64 = arith.constant 1 : i64
     %66 = arith.extui %65#1 : i32 to i64
@@ -6189,85 +6443,85 @@ module attributes {gpu.container_module} {
     %68 = llvm.mul %65#5, %c2_i64 : i64
     %69 = arith.extui %65#3 : i32 to i64
     %70 = arith.extui %65#6 : i32 to i64
-    %c2_i64_110 = arith.constant 2 : i64
-    %71 = llvm.mul %70, %c2_i64_110 : i64
+    %c2_i64_111 = arith.constant 2 : i64
+    %71 = llvm.mul %70, %c2_i64_111 : i64
     %72 = arith.extui %65#4 : i32 to i64
     %73 = arith.extui %65#7 : i32 to i64
-    %c2_i64_111 = arith.constant 2 : i64
-    %74 = llvm.mul %73, %c2_i64_111 : i64
-    %75 = cute.ptrtoint(%iter_108) : !cute.ptr<f16, gmem, align<16>> to i64
-    %c0_i64_112 = arith.constant 0 : i64
-    %c1_i64_113 = arith.constant 1 : i64
+    %c2_i64_112 = arith.constant 2 : i64
+    %74 = llvm.mul %73, %c2_i64_112 : i64
+    %75 = cute.ptrtoint(%iter_109) : !cute.ptr<f16, gmem, align<16>> to i64
+    %c0_i64_113 = arith.constant 0 : i64
+    %c1_i64_114 = arith.constant 1 : i64
     %c8_i64 = arith.constant 8 : i64
     %c16_i64 = arith.constant 16 : i64
     %c24_i64 = arith.constant 24 : i64
     %c4294967295_i64 = arith.constant 4294967295 : i64
-    %c0_i64_114 = arith.constant 0 : i64
+    %c0_i64_115 = arith.constant 0 : i64
     %c4_i64 = arith.constant 4 : i64
-    %c16_i64_115 = arith.constant 16 : i64
+    %c16_i64_116 = arith.constant 16 : i64
     %c9007199254740991_i64 = arith.constant 9007199254740991 : i64
     %76 = llvm.getelementptr %64[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %76 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %76 : i64, !llvm.ptr
     %77 = llvm.getelementptr %64[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %77 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %77 : i64, !llvm.ptr
     %78 = llvm.getelementptr %64[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %78 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %78 : i64, !llvm.ptr
     %79 = llvm.getelementptr %64[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %79 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %79 : i64, !llvm.ptr
     %80 = llvm.getelementptr %64[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %80 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %80 : i64, !llvm.ptr
     %81 = llvm.getelementptr %64[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %81 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %81 : i64, !llvm.ptr
     %82 = llvm.getelementptr %64[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %82 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %82 : i64, !llvm.ptr
     %83 = llvm.getelementptr %64[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %83 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %83 : i64, !llvm.ptr
     %84 = llvm.getelementptr %64[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %84 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %84 : i64, !llvm.ptr
     %85 = llvm.getelementptr %64[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %85 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %85 : i64, !llvm.ptr
     %86 = llvm.getelementptr %64[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %86 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %86 : i64, !llvm.ptr
     %87 = llvm.getelementptr %64[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %87 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %87 : i64, !llvm.ptr
     %88 = llvm.getelementptr %64[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %88 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %88 : i64, !llvm.ptr
     %89 = llvm.getelementptr %64[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %89 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %89 : i64, !llvm.ptr
     %90 = llvm.getelementptr %64[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %90 : i64, !llvm.ptr
+    llvm.store %c0_i64_115, %90 : i64, !llvm.ptr
     %91 = llvm.getelementptr %64[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_114, %91 : i64, !llvm.ptr
-    %92 = llvm.udiv %75, %c16_i64_115 : i64
+    llvm.store %c0_i64_115, %91 : i64, !llvm.ptr
+    %92 = llvm.udiv %75, %c16_i64_116 : i64
     %93 = llvm.and %92, %c9007199254740991_i64 : i64
     %94 = llvm.shl %93, %c4_i64 : i64
     %95 = llvm.getelementptr %64[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %94, %95 : i64, !llvm.ptr
-    %c1_i64_116 = arith.constant 1 : i64
-    %c16_i64_117 = arith.constant 16 : i64
-    %c2_i64_118 = arith.constant 2 : i64
+    %c1_i64_117 = arith.constant 1 : i64
+    %c16_i64_118 = arith.constant 16 : i64
+    %c2_i64_119 = arith.constant 2 : i64
     %c48_i64 = arith.constant 48 : i64
     %c768_i64 = arith.constant 768 : i64
-    %c0_i64_119 = arith.constant 0 : i64
-    %c24576_i64 = arith.constant 24576 : i64
     %c0_i64_120 = arith.constant 0 : i64
+    %c24576_i64 = arith.constant 24576 : i64
     %c0_i64_121 = arith.constant 0 : i64
-    %c262144_i64 = arith.constant 262144 : i64
     %c0_i64_122 = arith.constant 0 : i64
-    %96 = llvm.sub %67, %c1_i64_116 : i64
-    %97 = llvm.sub %69, %c1_i64_116 : i64
-    %98 = llvm.sub %72, %c1_i64_116 : i64
-    %99 = llvm.sub %c1_i64, %c1_i64_116 : i64
+    %c262144_i64 = arith.constant 262144 : i64
+    %c0_i64_123 = arith.constant 0 : i64
+    %96 = llvm.sub %67, %c1_i64_117 : i64
+    %97 = llvm.sub %69, %c1_i64_117 : i64
+    %98 = llvm.sub %72, %c1_i64_117 : i64
+    %99 = llvm.sub %c1_i64, %c1_i64_117 : i64
     %100 = llvm.mul %96, %68 : i64
     %101 = llvm.mul %97, %71 : i64
     %102 = llvm.mul %98, %74 : i64
     %103 = llvm.mul %99, %c0_i64 : i64
     %104 = llvm.add %100, %101 : i64
     %105 = llvm.add %102, %103 : i64
-    %c8_i64_123 = arith.constant 8 : i64
-    %c16_i64_124 = arith.constant 16 : i64
-    %106 = llvm.mul %66, %c16_i64_124 : i64
-    %107 = llvm.udiv %106, %c8_i64_123 : i64
+    %c8_i64_124 = arith.constant 8 : i64
+    %c16_i64_125 = arith.constant 16 : i64
+    %106 = llvm.mul %66, %c16_i64_125 : i64
+    %107 = llvm.udiv %106, %c8_i64_124 : i64
     %108 = llvm.add %107, %104 : i64
     %109 = llvm.add %108, %105 : i64
     %c131072_i64 = arith.constant 131072 : i64
@@ -6275,14 +6529,14 @@ module attributes {gpu.container_module} {
     %111 = llvm.zext %110 : i1 to i64
     %c21_i64 = arith.constant 21 : i64
     %112 = llvm.shl %111, %c21_i64 : i64
-    %113 = llvm.udiv %68, %c16_i64_117 : i64
+    %113 = llvm.udiv %68, %c16_i64_118 : i64
     %c32_i64 = arith.constant 32 : i64
     %114 = llvm.shl %113, %c32_i64 : i64
-    %115 = llvm.or %c2_i64_118, %c48_i64 : i64
-    %116 = llvm.or %c768_i64, %c0_i64_119 : i64
-    %117 = llvm.or %c24576_i64, %c0_i64_120 : i64
-    %118 = llvm.or %c0_i64_121, %c262144_i64 : i64
-    %119 = llvm.or %c0_i64_122, %112 : i64
+    %115 = llvm.or %c2_i64_119, %c48_i64 : i64
+    %116 = llvm.or %c768_i64, %c0_i64_120 : i64
+    %117 = llvm.or %c24576_i64, %c0_i64_121 : i64
+    %118 = llvm.or %c0_i64_122, %c262144_i64 : i64
+    %119 = llvm.or %c0_i64_123, %112 : i64
     %120 = llvm.or %115, %116 : i64
     %121 = llvm.or %117, %118 : i64
     %122 = llvm.or %119, %114 : i64
@@ -6290,31 +6544,31 @@ module attributes {gpu.container_module} {
     %124 = llvm.or %123, %122 : i64
     %125 = llvm.getelementptr %64[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %124, %125 : i64, !llvm.ptr
-    %c0_i64_125 = arith.constant 0 : i64
-    %c1_i64_126 = arith.constant 1 : i64
-    %c16_i64_127 = arith.constant 16 : i64
-    %c32_i64_128 = arith.constant 32 : i64
+    %c0_i64_126 = arith.constant 0 : i64
+    %c1_i64_127 = arith.constant 1 : i64
+    %c16_i64_128 = arith.constant 16 : i64
+    %c32_i64_129 = arith.constant 32 : i64
     %c36_i64 = arith.constant 36 : i64
-    %c4294967295_i64_129 = arith.constant 4294967295 : i64
-    %126 = llvm.udiv %71, %c16_i64_127 : i64
-    %127 = llvm.and %126, %c4294967295_i64_129 : i64
-    %128 = llvm.shl %127, %c0_i64_125 : i64
-    %129 = llvm.udiv %74, %c16_i64_127 : i64
-    %130 = llvm.shl %129, %c32_i64_128 : i64
+    %c4294967295_i64_130 = arith.constant 4294967295 : i64
+    %126 = llvm.udiv %71, %c16_i64_128 : i64
+    %127 = llvm.and %126, %c4294967295_i64_130 : i64
+    %128 = llvm.shl %127, %c0_i64_126 : i64
+    %129 = llvm.udiv %74, %c16_i64_128 : i64
+    %130 = llvm.shl %129, %c32_i64_129 : i64
     %131 = llvm.or %128, %130 : i64
     %132 = llvm.getelementptr %64[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %131, %132 : i64, !llvm.ptr
-    %133 = llvm.udiv %c0_i64, %c16_i64_127 : i64
-    %134 = llvm.and %133, %c4294967295_i64_129 : i64
-    %135 = llvm.shl %134, %c0_i64_125 : i64
+    %133 = llvm.udiv %c0_i64, %c16_i64_128 : i64
+    %134 = llvm.and %133, %c4294967295_i64_130 : i64
+    %135 = llvm.shl %134, %c0_i64_126 : i64
     %c15_i64 = arith.constant 15 : i64
     %136 = llvm.lshr %68, %c36_i64 : i64
     %137 = llvm.and %136, %c15_i64 : i64
-    %138 = llvm.shl %137, %c32_i64_128 : i64
+    %138 = llvm.shl %137, %c32_i64_129 : i64
     %139 = llvm.lshr %71, %c36_i64 : i64
     %140 = llvm.and %139, %c15_i64 : i64
-    %c36_i64_130 = arith.constant 36 : i64
-    %141 = llvm.shl %140, %c36_i64_130 : i64
+    %c36_i64_131 = arith.constant 36 : i64
+    %141 = llvm.shl %140, %c36_i64_131 : i64
     %142 = llvm.lshr %74, %c36_i64 : i64
     %143 = llvm.and %142, %c15_i64 : i64
     %c40_i64 = arith.constant 40 : i64
@@ -6328,40 +6582,40 @@ module attributes {gpu.container_module} {
     %150 = llvm.or %135, %149 : i64
     %151 = llvm.getelementptr %64[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %150, %151 : i64, !llvm.ptr
-    %152 = llvm.sub %66, %c1_i64_126 : i64
-    %153 = llvm.and %152, %c4294967295_i64_129 : i64
-    %154 = llvm.shl %153, %c0_i64_125 : i64
-    %155 = llvm.sub %67, %c1_i64_126 : i64
-    %156 = llvm.shl %155, %c32_i64_128 : i64
+    %152 = llvm.sub %66, %c1_i64_127 : i64
+    %153 = llvm.and %152, %c4294967295_i64_130 : i64
+    %154 = llvm.shl %153, %c0_i64_126 : i64
+    %155 = llvm.sub %67, %c1_i64_127 : i64
+    %156 = llvm.shl %155, %c32_i64_129 : i64
     %157 = llvm.or %154, %156 : i64
     %158 = llvm.getelementptr %64[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %157, %158 : i64, !llvm.ptr
-    %159 = llvm.sub %69, %c1_i64_126 : i64
-    %160 = llvm.and %159, %c4294967295_i64_129 : i64
-    %161 = llvm.shl %160, %c0_i64_125 : i64
-    %162 = llvm.sub %72, %c1_i64_126 : i64
-    %163 = llvm.shl %162, %c32_i64_128 : i64
+    %159 = llvm.sub %69, %c1_i64_127 : i64
+    %160 = llvm.and %159, %c4294967295_i64_130 : i64
+    %161 = llvm.shl %160, %c0_i64_126 : i64
+    %162 = llvm.sub %72, %c1_i64_127 : i64
+    %163 = llvm.shl %162, %c32_i64_129 : i64
     %164 = llvm.or %161, %163 : i64
     %165 = llvm.getelementptr %64[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %164, %165 : i64, !llvm.ptr
-    %166 = llvm.sub %c1_i64, %c1_i64_113 : i64
+    %166 = llvm.sub %c1_i64, %c1_i64_114 : i64
     %167 = llvm.and %166, %c4294967295_i64 : i64
-    %c0_i64_131 = arith.constant 0 : i64
+    %c0_i64_132 = arith.constant 0 : i64
     %c63_i64 = arith.constant 63 : i64
     %c56_i64 = arith.constant 56 : i64
     %168 = llvm.shl %c63_i64, %c56_i64 : i64
-    %169 = llvm.or %167, %c0_i64_131 : i64
+    %169 = llvm.or %167, %c0_i64_132 : i64
     %170 = llvm.or %169, %168 : i64
     %171 = llvm.getelementptr %64[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %170, %171 : i64, !llvm.ptr
     %c127_i64 = arith.constant 127 : i64
-    %172 = llvm.shl %c127_i64, %c0_i64_112 : i64
-    %c0_i64_132 = arith.constant 0 : i64
-    %173 = llvm.shl %c0_i64_132, %c8_i64 : i64
+    %172 = llvm.shl %c127_i64, %c0_i64_113 : i64
     %c0_i64_133 = arith.constant 0 : i64
-    %174 = llvm.shl %c0_i64_133, %c16_i64 : i64
+    %173 = llvm.shl %c0_i64_133, %c8_i64 : i64
     %c0_i64_134 = arith.constant 0 : i64
-    %175 = llvm.shl %c0_i64_134, %c24_i64 : i64
+    %174 = llvm.shl %c0_i64_134, %c16_i64 : i64
+    %c0_i64_135 = arith.constant 0 : i64
+    %175 = llvm.shl %c0_i64_135, %c24_i64 : i64
     %176 = llvm.or %172, %173 : i64
     %177 = llvm.or %174, %175 : i64
     %178 = llvm.or %176, %177 : i64
@@ -6372,123 +6626,123 @@ module attributes {gpu.container_module} {
     %182 = llvm.inttoptr %181 : i64 to !llvm.ptr
     %183 = llvm.load %182 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
     %184 = builtin.unrealized_conversion_cast %183 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
-    %atom_135 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
-    %185 = cute_nvgpu.atom.set_value(%atom_135, %184 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
-    %lay_136 = cute.get_layout(%view_48) : !memref_gmem_f16_4
-    %186 = cute.get_shape(%lay_136) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
+    %atom_136 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
+    %185 = cute_nvgpu.atom.set_value(%atom_136, %184 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
+    %lay_137 = cute.get_layout(%view_48) : !memref_gmem_f16_4
+    %186 = cute.get_shape(%lay_137) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
     %187 = cute.static : !cute.stride<"(1@1,1@0,((0,1@2),1@3))">
-    %lay_137 = cute.make_layout(%186, %187) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
+    %lay_138 = cute.make_layout(%186, %187) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
     %188 = cute.static : !cute.int_tuple<"(0,0,0,0)">
-    %view_138 = cute.make_view(%188, %lay_137) : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
+    %view_139 = cute.make_view(%188, %lay_138) : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
     %189 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2)):((64,1),0,(16,8192))">
     %190 = cute.static : !cute.layout<"((1,(1,1)),((128,16),(1,8))):((0,(0,0)),((1@0,1@1),(0,16@1)))">
-    %c16_i32_139 = arith.constant 16 : i32
-    %191 = llvm.alloca %c16_i32_139 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
-    %iter_140 = cute.get_iter(%view_73) : !memref_gmem_f16_4
-    %lay_141 = cute.get_layout(%view_73) : !memref_gmem_f16_4
-    %192:8 = cute.get_scalars(%lay_141) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">
-    %c0_i64_142 = arith.constant 0 : i64
-    %c1_i64_143 = arith.constant 1 : i64
+    %c16_i32_140 = arith.constant 16 : i32
+    %191 = llvm.alloca %c16_i32_140 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %iter_141 = cute.get_iter(%view_73) : !memref_gmem_f16_4
+    %lay_142 = cute.get_layout(%view_73) : !memref_gmem_f16_4
+    %192:8 = cute.get_scalars(%lay_142) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">
+    %c0_i64_143 = arith.constant 0 : i64
+    %c1_i64_144 = arith.constant 1 : i64
     %193 = arith.extui %192#1 : i32 to i64
     %194 = arith.extui %192#0 : i32 to i64
-    %c2_i64_144 = arith.constant 2 : i64
-    %195 = llvm.mul %192#5, %c2_i64_144 : i64
+    %c2_i64_145 = arith.constant 2 : i64
+    %195 = llvm.mul %192#5, %c2_i64_145 : i64
     %196 = arith.extui %192#3 : i32 to i64
     %197 = arith.extui %192#6 : i32 to i64
-    %c2_i64_145 = arith.constant 2 : i64
-    %198 = llvm.mul %197, %c2_i64_145 : i64
+    %c2_i64_146 = arith.constant 2 : i64
+    %198 = llvm.mul %197, %c2_i64_146 : i64
     %199 = arith.extui %192#4 : i32 to i64
     %200 = arith.extui %192#7 : i32 to i64
-    %c2_i64_146 = arith.constant 2 : i64
-    %201 = llvm.mul %200, %c2_i64_146 : i64
-    %202 = cute.ptrtoint(%iter_140) : !cute.ptr<f16, gmem, align<16>> to i64
-    %c0_i64_147 = arith.constant 0 : i64
-    %c1_i64_148 = arith.constant 1 : i64
-    %c8_i64_149 = arith.constant 8 : i64
-    %c16_i64_150 = arith.constant 16 : i64
-    %c24_i64_151 = arith.constant 24 : i64
-    %c4294967295_i64_152 = arith.constant 4294967295 : i64
-    %c0_i64_153 = arith.constant 0 : i64
-    %c4_i64_154 = arith.constant 4 : i64
-    %c16_i64_155 = arith.constant 16 : i64
-    %c9007199254740991_i64_156 = arith.constant 9007199254740991 : i64
+    %c2_i64_147 = arith.constant 2 : i64
+    %201 = llvm.mul %200, %c2_i64_147 : i64
+    %202 = cute.ptrtoint(%iter_141) : !cute.ptr<f16, gmem, align<16>> to i64
+    %c0_i64_148 = arith.constant 0 : i64
+    %c1_i64_149 = arith.constant 1 : i64
+    %c8_i64_150 = arith.constant 8 : i64
+    %c16_i64_151 = arith.constant 16 : i64
+    %c24_i64_152 = arith.constant 24 : i64
+    %c4294967295_i64_153 = arith.constant 4294967295 : i64
+    %c0_i64_154 = arith.constant 0 : i64
+    %c4_i64_155 = arith.constant 4 : i64
+    %c16_i64_156 = arith.constant 16 : i64
+    %c9007199254740991_i64_157 = arith.constant 9007199254740991 : i64
     %203 = llvm.getelementptr %191[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %203 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %203 : i64, !llvm.ptr
     %204 = llvm.getelementptr %191[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %204 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %204 : i64, !llvm.ptr
     %205 = llvm.getelementptr %191[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %205 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %205 : i64, !llvm.ptr
     %206 = llvm.getelementptr %191[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %206 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %206 : i64, !llvm.ptr
     %207 = llvm.getelementptr %191[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %207 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %207 : i64, !llvm.ptr
     %208 = llvm.getelementptr %191[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %208 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %208 : i64, !llvm.ptr
     %209 = llvm.getelementptr %191[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %209 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %209 : i64, !llvm.ptr
     %210 = llvm.getelementptr %191[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %210 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %210 : i64, !llvm.ptr
     %211 = llvm.getelementptr %191[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %211 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %211 : i64, !llvm.ptr
     %212 = llvm.getelementptr %191[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %212 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %212 : i64, !llvm.ptr
     %213 = llvm.getelementptr %191[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %213 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %213 : i64, !llvm.ptr
     %214 = llvm.getelementptr %191[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %214 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %214 : i64, !llvm.ptr
     %215 = llvm.getelementptr %191[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %215 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %215 : i64, !llvm.ptr
     %216 = llvm.getelementptr %191[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %216 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %216 : i64, !llvm.ptr
     %217 = llvm.getelementptr %191[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %217 : i64, !llvm.ptr
+    llvm.store %c0_i64_154, %217 : i64, !llvm.ptr
     %218 = llvm.getelementptr %191[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_153, %218 : i64, !llvm.ptr
-    %219 = llvm.udiv %202, %c16_i64_155 : i64
-    %220 = llvm.and %219, %c9007199254740991_i64_156 : i64
-    %221 = llvm.shl %220, %c4_i64_154 : i64
+    llvm.store %c0_i64_154, %218 : i64, !llvm.ptr
+    %219 = llvm.udiv %202, %c16_i64_156 : i64
+    %220 = llvm.and %219, %c9007199254740991_i64_157 : i64
+    %221 = llvm.shl %220, %c4_i64_155 : i64
     %222 = llvm.getelementptr %191[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %221, %222 : i64, !llvm.ptr
-    %c1_i64_157 = arith.constant 1 : i64
-    %c16_i64_158 = arith.constant 16 : i64
-    %c2_i64_159 = arith.constant 2 : i64
-    %c48_i64_160 = arith.constant 48 : i64
-    %c768_i64_161 = arith.constant 768 : i64
-    %c0_i64_162 = arith.constant 0 : i64
-    %c24576_i64_163 = arith.constant 24576 : i64
-    %c0_i64_164 = arith.constant 0 : i64
+    %c1_i64_158 = arith.constant 1 : i64
+    %c16_i64_159 = arith.constant 16 : i64
+    %c2_i64_160 = arith.constant 2 : i64
+    %c48_i64_161 = arith.constant 48 : i64
+    %c768_i64_162 = arith.constant 768 : i64
+    %c0_i64_163 = arith.constant 0 : i64
+    %c24576_i64_164 = arith.constant 24576 : i64
     %c0_i64_165 = arith.constant 0 : i64
-    %c262144_i64_166 = arith.constant 262144 : i64
-    %c0_i64_167 = arith.constant 0 : i64
-    %223 = llvm.sub %194, %c1_i64_157 : i64
-    %224 = llvm.sub %196, %c1_i64_157 : i64
-    %225 = llvm.sub %199, %c1_i64_157 : i64
-    %226 = llvm.sub %c1_i64_143, %c1_i64_157 : i64
+    %c0_i64_166 = arith.constant 0 : i64
+    %c262144_i64_167 = arith.constant 262144 : i64
+    %c0_i64_168 = arith.constant 0 : i64
+    %223 = llvm.sub %194, %c1_i64_158 : i64
+    %224 = llvm.sub %196, %c1_i64_158 : i64
+    %225 = llvm.sub %199, %c1_i64_158 : i64
+    %226 = llvm.sub %c1_i64_144, %c1_i64_158 : i64
     %227 = llvm.mul %223, %195 : i64
     %228 = llvm.mul %224, %198 : i64
     %229 = llvm.mul %225, %201 : i64
-    %230 = llvm.mul %226, %c0_i64_142 : i64
+    %230 = llvm.mul %226, %c0_i64_143 : i64
     %231 = llvm.add %227, %228 : i64
     %232 = llvm.add %229, %230 : i64
-    %c8_i64_168 = arith.constant 8 : i64
-    %c16_i64_169 = arith.constant 16 : i64
-    %233 = llvm.mul %193, %c16_i64_169 : i64
-    %234 = llvm.udiv %233, %c8_i64_168 : i64
+    %c8_i64_169 = arith.constant 8 : i64
+    %c16_i64_170 = arith.constant 16 : i64
+    %233 = llvm.mul %193, %c16_i64_170 : i64
+    %234 = llvm.udiv %233, %c8_i64_169 : i64
     %235 = llvm.add %234, %231 : i64
     %236 = llvm.add %235, %232 : i64
-    %c131072_i64_170 = arith.constant 131072 : i64
-    %237 = llvm.icmp "uge" %236, %c131072_i64_170 : i64
+    %c131072_i64_171 = arith.constant 131072 : i64
+    %237 = llvm.icmp "uge" %236, %c131072_i64_171 : i64
     %238 = llvm.zext %237 : i1 to i64
-    %c21_i64_171 = arith.constant 21 : i64
-    %239 = llvm.shl %238, %c21_i64_171 : i64
-    %240 = llvm.udiv %195, %c16_i64_158 : i64
-    %c32_i64_172 = arith.constant 32 : i64
-    %241 = llvm.shl %240, %c32_i64_172 : i64
-    %242 = llvm.or %c2_i64_159, %c48_i64_160 : i64
-    %243 = llvm.or %c768_i64_161, %c0_i64_162 : i64
-    %244 = llvm.or %c24576_i64_163, %c0_i64_164 : i64
-    %245 = llvm.or %c0_i64_165, %c262144_i64_166 : i64
-    %246 = llvm.or %c0_i64_167, %239 : i64
+    %c21_i64_172 = arith.constant 21 : i64
+    %239 = llvm.shl %238, %c21_i64_172 : i64
+    %240 = llvm.udiv %195, %c16_i64_159 : i64
+    %c32_i64_173 = arith.constant 32 : i64
+    %241 = llvm.shl %240, %c32_i64_173 : i64
+    %242 = llvm.or %c2_i64_160, %c48_i64_161 : i64
+    %243 = llvm.or %c768_i64_162, %c0_i64_163 : i64
+    %244 = llvm.or %c24576_i64_164, %c0_i64_165 : i64
+    %245 = llvm.or %c0_i64_166, %c262144_i64_167 : i64
+    %246 = llvm.or %c0_i64_168, %239 : i64
     %247 = llvm.or %242, %243 : i64
     %248 = llvm.or %244, %245 : i64
     %249 = llvm.or %246, %241 : i64
@@ -6496,78 +6750,78 @@ module attributes {gpu.container_module} {
     %251 = llvm.or %250, %249 : i64
     %252 = llvm.getelementptr %191[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %251, %252 : i64, !llvm.ptr
-    %c0_i64_173 = arith.constant 0 : i64
-    %c1_i64_174 = arith.constant 1 : i64
-    %c16_i64_175 = arith.constant 16 : i64
-    %c32_i64_176 = arith.constant 32 : i64
-    %c36_i64_177 = arith.constant 36 : i64
-    %c4294967295_i64_178 = arith.constant 4294967295 : i64
-    %253 = llvm.udiv %198, %c16_i64_175 : i64
-    %254 = llvm.and %253, %c4294967295_i64_178 : i64
-    %255 = llvm.shl %254, %c0_i64_173 : i64
-    %256 = llvm.udiv %201, %c16_i64_175 : i64
-    %257 = llvm.shl %256, %c32_i64_176 : i64
+    %c0_i64_174 = arith.constant 0 : i64
+    %c1_i64_175 = arith.constant 1 : i64
+    %c16_i64_176 = arith.constant 16 : i64
+    %c32_i64_177 = arith.constant 32 : i64
+    %c36_i64_178 = arith.constant 36 : i64
+    %c4294967295_i64_179 = arith.constant 4294967295 : i64
+    %253 = llvm.udiv %198, %c16_i64_176 : i64
+    %254 = llvm.and %253, %c4294967295_i64_179 : i64
+    %255 = llvm.shl %254, %c0_i64_174 : i64
+    %256 = llvm.udiv %201, %c16_i64_176 : i64
+    %257 = llvm.shl %256, %c32_i64_177 : i64
     %258 = llvm.or %255, %257 : i64
     %259 = llvm.getelementptr %191[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %258, %259 : i64, !llvm.ptr
-    %260 = llvm.udiv %c0_i64_142, %c16_i64_175 : i64
-    %261 = llvm.and %260, %c4294967295_i64_178 : i64
-    %262 = llvm.shl %261, %c0_i64_173 : i64
-    %c15_i64_179 = arith.constant 15 : i64
-    %263 = llvm.lshr %195, %c36_i64_177 : i64
-    %264 = llvm.and %263, %c15_i64_179 : i64
-    %265 = llvm.shl %264, %c32_i64_176 : i64
-    %266 = llvm.lshr %198, %c36_i64_177 : i64
-    %267 = llvm.and %266, %c15_i64_179 : i64
-    %c36_i64_180 = arith.constant 36 : i64
-    %268 = llvm.shl %267, %c36_i64_180 : i64
-    %269 = llvm.lshr %201, %c36_i64_177 : i64
-    %270 = llvm.and %269, %c15_i64_179 : i64
-    %c40_i64_181 = arith.constant 40 : i64
-    %271 = llvm.shl %270, %c40_i64_181 : i64
-    %272 = llvm.lshr %c0_i64_142, %c36_i64_177 : i64
-    %c44_i64_182 = arith.constant 44 : i64
-    %273 = llvm.shl %272, %c44_i64_182 : i64
+    %260 = llvm.udiv %c0_i64_143, %c16_i64_176 : i64
+    %261 = llvm.and %260, %c4294967295_i64_179 : i64
+    %262 = llvm.shl %261, %c0_i64_174 : i64
+    %c15_i64_180 = arith.constant 15 : i64
+    %263 = llvm.lshr %195, %c36_i64_178 : i64
+    %264 = llvm.and %263, %c15_i64_180 : i64
+    %265 = llvm.shl %264, %c32_i64_177 : i64
+    %266 = llvm.lshr %198, %c36_i64_178 : i64
+    %267 = llvm.and %266, %c15_i64_180 : i64
+    %c36_i64_181 = arith.constant 36 : i64
+    %268 = llvm.shl %267, %c36_i64_181 : i64
+    %269 = llvm.lshr %201, %c36_i64_178 : i64
+    %270 = llvm.and %269, %c15_i64_180 : i64
+    %c40_i64_182 = arith.constant 40 : i64
+    %271 = llvm.shl %270, %c40_i64_182 : i64
+    %272 = llvm.lshr %c0_i64_143, %c36_i64_178 : i64
+    %c44_i64_183 = arith.constant 44 : i64
+    %273 = llvm.shl %272, %c44_i64_183 : i64
     %274 = llvm.or %265, %268 : i64
     %275 = llvm.or %271, %273 : i64
     %276 = llvm.or %274, %275 : i64
     %277 = llvm.or %262, %276 : i64
     %278 = llvm.getelementptr %191[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %277, %278 : i64, !llvm.ptr
-    %279 = llvm.sub %193, %c1_i64_174 : i64
-    %280 = llvm.and %279, %c4294967295_i64_178 : i64
-    %281 = llvm.shl %280, %c0_i64_173 : i64
-    %282 = llvm.sub %194, %c1_i64_174 : i64
-    %283 = llvm.shl %282, %c32_i64_176 : i64
+    %279 = llvm.sub %193, %c1_i64_175 : i64
+    %280 = llvm.and %279, %c4294967295_i64_179 : i64
+    %281 = llvm.shl %280, %c0_i64_174 : i64
+    %282 = llvm.sub %194, %c1_i64_175 : i64
+    %283 = llvm.shl %282, %c32_i64_177 : i64
     %284 = llvm.or %281, %283 : i64
     %285 = llvm.getelementptr %191[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %284, %285 : i64, !llvm.ptr
-    %286 = llvm.sub %196, %c1_i64_174 : i64
-    %287 = llvm.and %286, %c4294967295_i64_178 : i64
-    %288 = llvm.shl %287, %c0_i64_173 : i64
-    %289 = llvm.sub %199, %c1_i64_174 : i64
-    %290 = llvm.shl %289, %c32_i64_176 : i64
+    %286 = llvm.sub %196, %c1_i64_175 : i64
+    %287 = llvm.and %286, %c4294967295_i64_179 : i64
+    %288 = llvm.shl %287, %c0_i64_174 : i64
+    %289 = llvm.sub %199, %c1_i64_175 : i64
+    %290 = llvm.shl %289, %c32_i64_177 : i64
     %291 = llvm.or %288, %290 : i64
     %292 = llvm.getelementptr %191[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %291, %292 : i64, !llvm.ptr
-    %293 = llvm.sub %c1_i64_143, %c1_i64_148 : i64
-    %294 = llvm.and %293, %c4294967295_i64_152 : i64
-    %c0_i64_183 = arith.constant 0 : i64
-    %c63_i64_184 = arith.constant 63 : i64
-    %c56_i64_185 = arith.constant 56 : i64
-    %295 = llvm.shl %c63_i64_184, %c56_i64_185 : i64
-    %296 = llvm.or %294, %c0_i64_183 : i64
+    %293 = llvm.sub %c1_i64_144, %c1_i64_149 : i64
+    %294 = llvm.and %293, %c4294967295_i64_153 : i64
+    %c0_i64_184 = arith.constant 0 : i64
+    %c63_i64_185 = arith.constant 63 : i64
+    %c56_i64_186 = arith.constant 56 : i64
+    %295 = llvm.shl %c63_i64_185, %c56_i64_186 : i64
+    %296 = llvm.or %294, %c0_i64_184 : i64
     %297 = llvm.or %296, %295 : i64
     %298 = llvm.getelementptr %191[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %297, %298 : i64, !llvm.ptr
-    %c127_i64_186 = arith.constant 127 : i64
-    %299 = llvm.shl %c127_i64_186, %c0_i64_147 : i64
-    %c0_i64_187 = arith.constant 0 : i64
-    %300 = llvm.shl %c0_i64_187, %c8_i64_149 : i64
+    %c127_i64_187 = arith.constant 127 : i64
+    %299 = llvm.shl %c127_i64_187, %c0_i64_148 : i64
     %c0_i64_188 = arith.constant 0 : i64
-    %301 = llvm.shl %c0_i64_188, %c16_i64_150 : i64
+    %300 = llvm.shl %c0_i64_188, %c8_i64_150 : i64
     %c0_i64_189 = arith.constant 0 : i64
-    %302 = llvm.shl %c0_i64_189, %c24_i64_151 : i64
+    %301 = llvm.shl %c0_i64_189, %c16_i64_151 : i64
+    %c0_i64_190 = arith.constant 0 : i64
+    %302 = llvm.shl %c0_i64_190, %c24_i64_152 : i64
     %303 = llvm.or %299, %300 : i64
     %304 = llvm.or %301, %302 : i64
     %305 = llvm.or %303, %304 : i64
@@ -6578,125 +6832,125 @@ module attributes {gpu.container_module} {
     %309 = llvm.inttoptr %308 : i64 to !llvm.ptr
     %310 = llvm.load %309 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
     %311 = builtin.unrealized_conversion_cast %310 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
-    %atom_190 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
-    %312 = cute_nvgpu.atom.set_value(%atom_190, %311 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
-    %lay_191 = cute.get_layout(%view_73) : !memref_gmem_f16_4
-    %313 = cute.get_shape(%lay_191) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
+    %atom_191 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
+    %312 = cute_nvgpu.atom.set_value(%atom_191, %311 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>
+    %lay_192 = cute.get_layout(%view_73) : !memref_gmem_f16_4
+    %313 = cute.get_shape(%lay_192) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((0,?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
     %314 = cute.static : !cute.stride<"(1@1,1@0,((0,1@2),1@3))">
-    %lay_192 = cute.make_layout(%313, %314) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
+    %lay_193 = cute.make_layout(%313, %314) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
     %315 = cute.static : !cute.int_tuple<"(0,0,0,0)">
-    %view_193 = cute.make_view(%315, %lay_192) : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
+    %view_194 = cute.make_view(%315, %lay_193) : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">
     %316 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2)):((64,1),0,(16,8192))">
     %317 = cute.static : !cute.layout<"((1,(1,1)),((128,16),(1,8))):((0,(0,0)),((1@0,1@1),(0,16@1)))">
-    %c16_i32_194 = arith.constant 16 : i32
-    %318 = llvm.alloca %c16_i32_194 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
-    %iter_195 = cute.get_iter(%view) : !memref_gmem_f16_
-    %lay_196 = cute.get_layout(%view) : !memref_gmem_f16_
-    %319:9 = cute.get_scalars(%lay_196) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">
+    %c16_i32_195 = arith.constant 16 : i32
+    %318 = llvm.alloca %c16_i32_195 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %iter_196 = cute.get_iter(%view) : !memref_gmem_f16_
+    %lay_197 = cute.get_layout(%view) : !memref_gmem_f16_
+    %319:9 = cute.get_scalars(%lay_197) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">
     %320 = arith.extui %319#1 : i32 to i64
     %321 = arith.extui %319#0 : i32 to i64
-    %c2_i64_197 = arith.constant 2 : i64
-    %322 = llvm.mul %319#5, %c2_i64_197 : i64
+    %c2_i64_198 = arith.constant 2 : i64
+    %322 = llvm.mul %319#5, %c2_i64_198 : i64
     %323 = arith.extui %319#2 : i32 to i64
     %324 = arith.extui %319#6 : i32 to i64
-    %c2_i64_198 = arith.constant 2 : i64
-    %325 = llvm.mul %324, %c2_i64_198 : i64
+    %c2_i64_199 = arith.constant 2 : i64
+    %325 = llvm.mul %324, %c2_i64_199 : i64
     %326 = arith.extui %319#3 : i32 to i64
     %327 = arith.extui %319#7 : i32 to i64
-    %c2_i64_199 = arith.constant 2 : i64
-    %328 = llvm.mul %327, %c2_i64_199 : i64
+    %c2_i64_200 = arith.constant 2 : i64
+    %328 = llvm.mul %327, %c2_i64_200 : i64
     %329 = arith.extui %319#4 : i32 to i64
     %330 = arith.extui %319#8 : i32 to i64
-    %c2_i64_200 = arith.constant 2 : i64
-    %331 = llvm.mul %330, %c2_i64_200 : i64
-    %332 = cute.ptrtoint(%iter_195) : !cute.ptr<f16, gmem, align<16>> to i64
-    %c0_i64_201 = arith.constant 0 : i64
-    %c1_i64_202 = arith.constant 1 : i64
-    %c8_i64_203 = arith.constant 8 : i64
-    %c16_i64_204 = arith.constant 16 : i64
-    %c24_i64_205 = arith.constant 24 : i64
-    %c4294967295_i64_206 = arith.constant 4294967295 : i64
-    %c0_i64_207 = arith.constant 0 : i64
-    %c4_i64_208 = arith.constant 4 : i64
-    %c16_i64_209 = arith.constant 16 : i64
-    %c9007199254740991_i64_210 = arith.constant 9007199254740991 : i64
+    %c2_i64_201 = arith.constant 2 : i64
+    %331 = llvm.mul %330, %c2_i64_201 : i64
+    %332 = cute.ptrtoint(%iter_196) : !cute.ptr<f16, gmem, align<16>> to i64
+    %c0_i64_202 = arith.constant 0 : i64
+    %c1_i64_203 = arith.constant 1 : i64
+    %c8_i64_204 = arith.constant 8 : i64
+    %c16_i64_205 = arith.constant 16 : i64
+    %c24_i64_206 = arith.constant 24 : i64
+    %c4294967295_i64_207 = arith.constant 4294967295 : i64
+    %c0_i64_208 = arith.constant 0 : i64
+    %c4_i64_209 = arith.constant 4 : i64
+    %c16_i64_210 = arith.constant 16 : i64
+    %c9007199254740991_i64_211 = arith.constant 9007199254740991 : i64
     %333 = llvm.getelementptr %318[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %333 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %333 : i64, !llvm.ptr
     %334 = llvm.getelementptr %318[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %334 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %334 : i64, !llvm.ptr
     %335 = llvm.getelementptr %318[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %335 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %335 : i64, !llvm.ptr
     %336 = llvm.getelementptr %318[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %336 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %336 : i64, !llvm.ptr
     %337 = llvm.getelementptr %318[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %337 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %337 : i64, !llvm.ptr
     %338 = llvm.getelementptr %318[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %338 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %338 : i64, !llvm.ptr
     %339 = llvm.getelementptr %318[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %339 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %339 : i64, !llvm.ptr
     %340 = llvm.getelementptr %318[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %340 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %340 : i64, !llvm.ptr
     %341 = llvm.getelementptr %318[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %341 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %341 : i64, !llvm.ptr
     %342 = llvm.getelementptr %318[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %342 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %342 : i64, !llvm.ptr
     %343 = llvm.getelementptr %318[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %343 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %343 : i64, !llvm.ptr
     %344 = llvm.getelementptr %318[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %344 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %344 : i64, !llvm.ptr
     %345 = llvm.getelementptr %318[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %345 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %345 : i64, !llvm.ptr
     %346 = llvm.getelementptr %318[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %346 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %346 : i64, !llvm.ptr
     %347 = llvm.getelementptr %318[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %347 : i64, !llvm.ptr
+    llvm.store %c0_i64_208, %347 : i64, !llvm.ptr
     %348 = llvm.getelementptr %318[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_207, %348 : i64, !llvm.ptr
-    %349 = llvm.udiv %332, %c16_i64_209 : i64
-    %350 = llvm.and %349, %c9007199254740991_i64_210 : i64
-    %351 = llvm.shl %350, %c4_i64_208 : i64
+    llvm.store %c0_i64_208, %348 : i64, !llvm.ptr
+    %349 = llvm.udiv %332, %c16_i64_210 : i64
+    %350 = llvm.and %349, %c9007199254740991_i64_211 : i64
+    %351 = llvm.shl %350, %c4_i64_209 : i64
     %352 = llvm.getelementptr %318[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %351, %352 : i64, !llvm.ptr
-    %c1_i64_211 = arith.constant 1 : i64
-    %c16_i64_212 = arith.constant 16 : i64
-    %c2_i64_213 = arith.constant 2 : i64
+    %c1_i64_212 = arith.constant 1 : i64
+    %c16_i64_213 = arith.constant 16 : i64
+    %c2_i64_214 = arith.constant 2 : i64
     %c64_i64 = arith.constant 64 : i64
-    %c768_i64_214 = arith.constant 768 : i64
-    %c0_i64_215 = arith.constant 0 : i64
-    %c24576_i64_216 = arith.constant 24576 : i64
-    %c0_i64_217 = arith.constant 0 : i64
+    %c768_i64_215 = arith.constant 768 : i64
+    %c0_i64_216 = arith.constant 0 : i64
+    %c24576_i64_217 = arith.constant 24576 : i64
     %c0_i64_218 = arith.constant 0 : i64
-    %c262144_i64_219 = arith.constant 262144 : i64
-    %c0_i64_220 = arith.constant 0 : i64
-    %353 = llvm.sub %321, %c1_i64_211 : i64
-    %354 = llvm.sub %323, %c1_i64_211 : i64
-    %355 = llvm.sub %326, %c1_i64_211 : i64
-    %356 = llvm.sub %329, %c1_i64_211 : i64
+    %c0_i64_219 = arith.constant 0 : i64
+    %c262144_i64_220 = arith.constant 262144 : i64
+    %c0_i64_221 = arith.constant 0 : i64
+    %353 = llvm.sub %321, %c1_i64_212 : i64
+    %354 = llvm.sub %323, %c1_i64_212 : i64
+    %355 = llvm.sub %326, %c1_i64_212 : i64
+    %356 = llvm.sub %329, %c1_i64_212 : i64
     %357 = llvm.mul %353, %322 : i64
     %358 = llvm.mul %354, %325 : i64
     %359 = llvm.mul %355, %328 : i64
     %360 = llvm.mul %356, %331 : i64
     %361 = llvm.add %357, %358 : i64
     %362 = llvm.add %359, %360 : i64
-    %c8_i64_221 = arith.constant 8 : i64
-    %c16_i64_222 = arith.constant 16 : i64
-    %363 = llvm.mul %320, %c16_i64_222 : i64
-    %364 = llvm.udiv %363, %c8_i64_221 : i64
+    %c8_i64_222 = arith.constant 8 : i64
+    %c16_i64_223 = arith.constant 16 : i64
+    %363 = llvm.mul %320, %c16_i64_223 : i64
+    %364 = llvm.udiv %363, %c8_i64_222 : i64
     %365 = llvm.add %364, %361 : i64
     %366 = llvm.add %365, %362 : i64
-    %c131072_i64_223 = arith.constant 131072 : i64
-    %367 = llvm.icmp "uge" %366, %c131072_i64_223 : i64
+    %c131072_i64_224 = arith.constant 131072 : i64
+    %367 = llvm.icmp "uge" %366, %c131072_i64_224 : i64
     %368 = llvm.zext %367 : i1 to i64
-    %c21_i64_224 = arith.constant 21 : i64
-    %369 = llvm.shl %368, %c21_i64_224 : i64
-    %370 = llvm.udiv %322, %c16_i64_212 : i64
-    %c32_i64_225 = arith.constant 32 : i64
-    %371 = llvm.shl %370, %c32_i64_225 : i64
-    %372 = llvm.or %c2_i64_213, %c64_i64 : i64
-    %373 = llvm.or %c768_i64_214, %c0_i64_215 : i64
-    %374 = llvm.or %c24576_i64_216, %c0_i64_217 : i64
-    %375 = llvm.or %c0_i64_218, %c262144_i64_219 : i64
-    %376 = llvm.or %c0_i64_220, %369 : i64
+    %c21_i64_225 = arith.constant 21 : i64
+    %369 = llvm.shl %368, %c21_i64_225 : i64
+    %370 = llvm.udiv %322, %c16_i64_213 : i64
+    %c32_i64_226 = arith.constant 32 : i64
+    %371 = llvm.shl %370, %c32_i64_226 : i64
+    %372 = llvm.or %c2_i64_214, %c64_i64 : i64
+    %373 = llvm.or %c768_i64_215, %c0_i64_216 : i64
+    %374 = llvm.or %c24576_i64_217, %c0_i64_218 : i64
+    %375 = llvm.or %c0_i64_219, %c262144_i64_220 : i64
+    %376 = llvm.or %c0_i64_221, %369 : i64
     %377 = llvm.or %372, %373 : i64
     %378 = llvm.or %374, %375 : i64
     %379 = llvm.or %376, %371 : i64
@@ -6704,78 +6958,78 @@ module attributes {gpu.container_module} {
     %381 = llvm.or %380, %379 : i64
     %382 = llvm.getelementptr %318[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %381, %382 : i64, !llvm.ptr
-    %c0_i64_226 = arith.constant 0 : i64
-    %c1_i64_227 = arith.constant 1 : i64
-    %c16_i64_228 = arith.constant 16 : i64
-    %c32_i64_229 = arith.constant 32 : i64
-    %c36_i64_230 = arith.constant 36 : i64
-    %c4294967295_i64_231 = arith.constant 4294967295 : i64
-    %383 = llvm.udiv %325, %c16_i64_228 : i64
-    %384 = llvm.and %383, %c4294967295_i64_231 : i64
-    %385 = llvm.shl %384, %c0_i64_226 : i64
-    %386 = llvm.udiv %328, %c16_i64_228 : i64
-    %387 = llvm.shl %386, %c32_i64_229 : i64
+    %c0_i64_227 = arith.constant 0 : i64
+    %c1_i64_228 = arith.constant 1 : i64
+    %c16_i64_229 = arith.constant 16 : i64
+    %c32_i64_230 = arith.constant 32 : i64
+    %c36_i64_231 = arith.constant 36 : i64
+    %c4294967295_i64_232 = arith.constant 4294967295 : i64
+    %383 = llvm.udiv %325, %c16_i64_229 : i64
+    %384 = llvm.and %383, %c4294967295_i64_232 : i64
+    %385 = llvm.shl %384, %c0_i64_227 : i64
+    %386 = llvm.udiv %328, %c16_i64_229 : i64
+    %387 = llvm.shl %386, %c32_i64_230 : i64
     %388 = llvm.or %385, %387 : i64
     %389 = llvm.getelementptr %318[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %388, %389 : i64, !llvm.ptr
-    %390 = llvm.udiv %331, %c16_i64_228 : i64
-    %391 = llvm.and %390, %c4294967295_i64_231 : i64
-    %392 = llvm.shl %391, %c0_i64_226 : i64
-    %c15_i64_232 = arith.constant 15 : i64
-    %393 = llvm.lshr %322, %c36_i64_230 : i64
-    %394 = llvm.and %393, %c15_i64_232 : i64
-    %395 = llvm.shl %394, %c32_i64_229 : i64
-    %396 = llvm.lshr %325, %c36_i64_230 : i64
-    %397 = llvm.and %396, %c15_i64_232 : i64
-    %c36_i64_233 = arith.constant 36 : i64
-    %398 = llvm.shl %397, %c36_i64_233 : i64
-    %399 = llvm.lshr %328, %c36_i64_230 : i64
-    %400 = llvm.and %399, %c15_i64_232 : i64
-    %c40_i64_234 = arith.constant 40 : i64
-    %401 = llvm.shl %400, %c40_i64_234 : i64
-    %402 = llvm.lshr %331, %c36_i64_230 : i64
-    %c44_i64_235 = arith.constant 44 : i64
-    %403 = llvm.shl %402, %c44_i64_235 : i64
+    %390 = llvm.udiv %331, %c16_i64_229 : i64
+    %391 = llvm.and %390, %c4294967295_i64_232 : i64
+    %392 = llvm.shl %391, %c0_i64_227 : i64
+    %c15_i64_233 = arith.constant 15 : i64
+    %393 = llvm.lshr %322, %c36_i64_231 : i64
+    %394 = llvm.and %393, %c15_i64_233 : i64
+    %395 = llvm.shl %394, %c32_i64_230 : i64
+    %396 = llvm.lshr %325, %c36_i64_231 : i64
+    %397 = llvm.and %396, %c15_i64_233 : i64
+    %c36_i64_234 = arith.constant 36 : i64
+    %398 = llvm.shl %397, %c36_i64_234 : i64
+    %399 = llvm.lshr %328, %c36_i64_231 : i64
+    %400 = llvm.and %399, %c15_i64_233 : i64
+    %c40_i64_235 = arith.constant 40 : i64
+    %401 = llvm.shl %400, %c40_i64_235 : i64
+    %402 = llvm.lshr %331, %c36_i64_231 : i64
+    %c44_i64_236 = arith.constant 44 : i64
+    %403 = llvm.shl %402, %c44_i64_236 : i64
     %404 = llvm.or %395, %398 : i64
     %405 = llvm.or %401, %403 : i64
     %406 = llvm.or %404, %405 : i64
     %407 = llvm.or %392, %406 : i64
     %408 = llvm.getelementptr %318[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %407, %408 : i64, !llvm.ptr
-    %409 = llvm.sub %320, %c1_i64_227 : i64
-    %410 = llvm.and %409, %c4294967295_i64_231 : i64
-    %411 = llvm.shl %410, %c0_i64_226 : i64
-    %412 = llvm.sub %321, %c1_i64_227 : i64
-    %413 = llvm.shl %412, %c32_i64_229 : i64
+    %409 = llvm.sub %320, %c1_i64_228 : i64
+    %410 = llvm.and %409, %c4294967295_i64_232 : i64
+    %411 = llvm.shl %410, %c0_i64_227 : i64
+    %412 = llvm.sub %321, %c1_i64_228 : i64
+    %413 = llvm.shl %412, %c32_i64_230 : i64
     %414 = llvm.or %411, %413 : i64
     %415 = llvm.getelementptr %318[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %414, %415 : i64, !llvm.ptr
-    %416 = llvm.sub %323, %c1_i64_227 : i64
-    %417 = llvm.and %416, %c4294967295_i64_231 : i64
-    %418 = llvm.shl %417, %c0_i64_226 : i64
-    %419 = llvm.sub %326, %c1_i64_227 : i64
-    %420 = llvm.shl %419, %c32_i64_229 : i64
+    %416 = llvm.sub %323, %c1_i64_228 : i64
+    %417 = llvm.and %416, %c4294967295_i64_232 : i64
+    %418 = llvm.shl %417, %c0_i64_227 : i64
+    %419 = llvm.sub %326, %c1_i64_228 : i64
+    %420 = llvm.shl %419, %c32_i64_230 : i64
     %421 = llvm.or %418, %420 : i64
     %422 = llvm.getelementptr %318[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %421, %422 : i64, !llvm.ptr
-    %423 = llvm.sub %329, %c1_i64_202 : i64
-    %424 = llvm.and %423, %c4294967295_i64_206 : i64
-    %c0_i64_236 = arith.constant 0 : i64
-    %c63_i64_237 = arith.constant 63 : i64
-    %c56_i64_238 = arith.constant 56 : i64
-    %425 = llvm.shl %c63_i64_237, %c56_i64_238 : i64
-    %426 = llvm.or %424, %c0_i64_236 : i64
+    %423 = llvm.sub %329, %c1_i64_203 : i64
+    %424 = llvm.and %423, %c4294967295_i64_207 : i64
+    %c0_i64_237 = arith.constant 0 : i64
+    %c63_i64_238 = arith.constant 63 : i64
+    %c56_i64_239 = arith.constant 56 : i64
+    %425 = llvm.shl %c63_i64_238, %c56_i64_239 : i64
+    %426 = llvm.or %424, %c0_i64_237 : i64
     %427 = llvm.or %426, %425 : i64
     %428 = llvm.getelementptr %318[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %427, %428 : i64, !llvm.ptr
-    %c127_i64_239 = arith.constant 127 : i64
-    %429 = llvm.shl %c127_i64_239, %c0_i64_201 : i64
-    %c0_i64_240 = arith.constant 0 : i64
-    %430 = llvm.shl %c0_i64_240, %c8_i64_203 : i64
+    %c127_i64_240 = arith.constant 127 : i64
+    %429 = llvm.shl %c127_i64_240, %c0_i64_202 : i64
     %c0_i64_241 = arith.constant 0 : i64
-    %431 = llvm.shl %c0_i64_241, %c16_i64_204 : i64
+    %430 = llvm.shl %c0_i64_241, %c8_i64_204 : i64
     %c0_i64_242 = arith.constant 0 : i64
-    %432 = llvm.shl %c0_i64_242, %c24_i64_205 : i64
+    %431 = llvm.shl %c0_i64_242, %c16_i64_205 : i64
+    %c0_i64_243 = arith.constant 0 : i64
+    %432 = llvm.shl %c0_i64_243, %c24_i64_206 : i64
     %433 = llvm.or %429, %430 : i64
     %434 = llvm.or %431, %432 : i64
     %435 = llvm.or %433, %434 : i64
@@ -6786,125 +7040,125 @@ module attributes {gpu.container_module} {
     %439 = llvm.inttoptr %438 : i64 to !llvm.ptr
     %440 = llvm.load %439 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
     %441 = builtin.unrealized_conversion_cast %440 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
-    %atom_243 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
-    %442 = cute_nvgpu.atom.set_value(%atom_243, %441 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
-    %lay_244 = cute.get_layout(%view) : !memref_gmem_f16_
-    %443 = cute.get_shape(%lay_244) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
+    %atom_244 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
+    %442 = cute_nvgpu.atom.set_value(%atom_244, %441 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
+    %lay_245 = cute.get_layout(%view) : !memref_gmem_f16_
+    %443 = cute.get_shape(%lay_245) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
     %444 = cute.static : !cute.stride<"(1@1,1@0,((1@2,1@3),1@4))">
-    %lay_245 = cute.make_layout(%443, %444) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %lay_246 = cute.make_layout(%443, %444) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
     %445 = cute.static : !cute.int_tuple<"(0,0,0,0,0)">
-    %view_246 = cute.make_view(%445, %lay_245) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %view_247 = cute.make_view(%445, %lay_246) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
     %446 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((128,16),1,(4,2)):((64,1),0,(16,8192))">
     %447 = cute.static : !cute.layout<"((1,(1,1)),((128,16),(1,8))):((0,(0,0)),((1@0,1@1),(0,16@1)))">
-    %c16_i32_247 = arith.constant 16 : i32
-    %448 = llvm.alloca %c16_i32_247 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
-    %iter_248 = cute.get_iter(%view_83) : !memref_gmem_f16_
-    %lay_249 = cute.get_layout(%view_83) : !memref_gmem_f16_
-    %449:9 = cute.get_scalars(%lay_249) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">
+    %c16_i32_248 = arith.constant 16 : i32
+    %448 = llvm.alloca %c16_i32_248 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %iter_249 = cute.get_iter(%view_83) : !memref_gmem_f16_
+    %lay_250 = cute.get_layout(%view_83) : !memref_gmem_f16_
+    %449:9 = cute.get_scalars(%lay_250) <{only_dynamic}> : !cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">
     %450 = arith.extui %449#1 : i32 to i64
     %451 = arith.extui %449#0 : i32 to i64
-    %c2_i64_250 = arith.constant 2 : i64
-    %452 = llvm.mul %449#5, %c2_i64_250 : i64
+    %c2_i64_251 = arith.constant 2 : i64
+    %452 = llvm.mul %449#5, %c2_i64_251 : i64
     %453 = arith.extui %449#2 : i32 to i64
     %454 = arith.extui %449#6 : i32 to i64
-    %c2_i64_251 = arith.constant 2 : i64
-    %455 = llvm.mul %454, %c2_i64_251 : i64
+    %c2_i64_252 = arith.constant 2 : i64
+    %455 = llvm.mul %454, %c2_i64_252 : i64
     %456 = arith.extui %449#3 : i32 to i64
     %457 = arith.extui %449#7 : i32 to i64
-    %c2_i64_252 = arith.constant 2 : i64
-    %458 = llvm.mul %457, %c2_i64_252 : i64
+    %c2_i64_253 = arith.constant 2 : i64
+    %458 = llvm.mul %457, %c2_i64_253 : i64
     %459 = arith.extui %449#4 : i32 to i64
     %460 = arith.extui %449#8 : i32 to i64
-    %c2_i64_253 = arith.constant 2 : i64
-    %461 = llvm.mul %460, %c2_i64_253 : i64
-    %462 = cute.ptrtoint(%iter_248) : !cute.ptr<f16, gmem, align<16>> to i64
-    %c0_i64_254 = arith.constant 0 : i64
-    %c1_i64_255 = arith.constant 1 : i64
-    %c8_i64_256 = arith.constant 8 : i64
-    %c16_i64_257 = arith.constant 16 : i64
-    %c24_i64_258 = arith.constant 24 : i64
-    %c4294967295_i64_259 = arith.constant 4294967295 : i64
-    %c0_i64_260 = arith.constant 0 : i64
-    %c4_i64_261 = arith.constant 4 : i64
-    %c16_i64_262 = arith.constant 16 : i64
-    %c9007199254740991_i64_263 = arith.constant 9007199254740991 : i64
+    %c2_i64_254 = arith.constant 2 : i64
+    %461 = llvm.mul %460, %c2_i64_254 : i64
+    %462 = cute.ptrtoint(%iter_249) : !cute.ptr<f16, gmem, align<16>> to i64
+    %c0_i64_255 = arith.constant 0 : i64
+    %c1_i64_256 = arith.constant 1 : i64
+    %c8_i64_257 = arith.constant 8 : i64
+    %c16_i64_258 = arith.constant 16 : i64
+    %c24_i64_259 = arith.constant 24 : i64
+    %c4294967295_i64_260 = arith.constant 4294967295 : i64
+    %c0_i64_261 = arith.constant 0 : i64
+    %c4_i64_262 = arith.constant 4 : i64
+    %c16_i64_263 = arith.constant 16 : i64
+    %c9007199254740991_i64_264 = arith.constant 9007199254740991 : i64
     %463 = llvm.getelementptr %448[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %463 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %463 : i64, !llvm.ptr
     %464 = llvm.getelementptr %448[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %464 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %464 : i64, !llvm.ptr
     %465 = llvm.getelementptr %448[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %465 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %465 : i64, !llvm.ptr
     %466 = llvm.getelementptr %448[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %466 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %466 : i64, !llvm.ptr
     %467 = llvm.getelementptr %448[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %467 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %467 : i64, !llvm.ptr
     %468 = llvm.getelementptr %448[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %468 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %468 : i64, !llvm.ptr
     %469 = llvm.getelementptr %448[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %469 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %469 : i64, !llvm.ptr
     %470 = llvm.getelementptr %448[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %470 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %470 : i64, !llvm.ptr
     %471 = llvm.getelementptr %448[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %471 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %471 : i64, !llvm.ptr
     %472 = llvm.getelementptr %448[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %472 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %472 : i64, !llvm.ptr
     %473 = llvm.getelementptr %448[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %473 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %473 : i64, !llvm.ptr
     %474 = llvm.getelementptr %448[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %474 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %474 : i64, !llvm.ptr
     %475 = llvm.getelementptr %448[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %475 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %475 : i64, !llvm.ptr
     %476 = llvm.getelementptr %448[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %476 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %476 : i64, !llvm.ptr
     %477 = llvm.getelementptr %448[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %477 : i64, !llvm.ptr
+    llvm.store %c0_i64_261, %477 : i64, !llvm.ptr
     %478 = llvm.getelementptr %448[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_260, %478 : i64, !llvm.ptr
-    %479 = llvm.udiv %462, %c16_i64_262 : i64
-    %480 = llvm.and %479, %c9007199254740991_i64_263 : i64
-    %481 = llvm.shl %480, %c4_i64_261 : i64
+    llvm.store %c0_i64_261, %478 : i64, !llvm.ptr
+    %479 = llvm.udiv %462, %c16_i64_263 : i64
+    %480 = llvm.and %479, %c9007199254740991_i64_264 : i64
+    %481 = llvm.shl %480, %c4_i64_262 : i64
     %482 = llvm.getelementptr %448[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %481, %482 : i64, !llvm.ptr
-    %c1_i64_264 = arith.constant 1 : i64
-    %c16_i64_265 = arith.constant 16 : i64
-    %c2_i64_266 = arith.constant 2 : i64
-    %c64_i64_267 = arith.constant 64 : i64
-    %c768_i64_268 = arith.constant 768 : i64
-    %c0_i64_269 = arith.constant 0 : i64
-    %c24576_i64_270 = arith.constant 24576 : i64
-    %c0_i64_271 = arith.constant 0 : i64
+    %c1_i64_265 = arith.constant 1 : i64
+    %c16_i64_266 = arith.constant 16 : i64
+    %c2_i64_267 = arith.constant 2 : i64
+    %c64_i64_268 = arith.constant 64 : i64
+    %c768_i64_269 = arith.constant 768 : i64
+    %c0_i64_270 = arith.constant 0 : i64
+    %c24576_i64_271 = arith.constant 24576 : i64
     %c0_i64_272 = arith.constant 0 : i64
-    %c262144_i64_273 = arith.constant 262144 : i64
-    %c0_i64_274 = arith.constant 0 : i64
-    %483 = llvm.sub %451, %c1_i64_264 : i64
-    %484 = llvm.sub %453, %c1_i64_264 : i64
-    %485 = llvm.sub %456, %c1_i64_264 : i64
-    %486 = llvm.sub %459, %c1_i64_264 : i64
+    %c0_i64_273 = arith.constant 0 : i64
+    %c262144_i64_274 = arith.constant 262144 : i64
+    %c0_i64_275 = arith.constant 0 : i64
+    %483 = llvm.sub %451, %c1_i64_265 : i64
+    %484 = llvm.sub %453, %c1_i64_265 : i64
+    %485 = llvm.sub %456, %c1_i64_265 : i64
+    %486 = llvm.sub %459, %c1_i64_265 : i64
     %487 = llvm.mul %483, %452 : i64
     %488 = llvm.mul %484, %455 : i64
     %489 = llvm.mul %485, %458 : i64
     %490 = llvm.mul %486, %461 : i64
     %491 = llvm.add %487, %488 : i64
     %492 = llvm.add %489, %490 : i64
-    %c8_i64_275 = arith.constant 8 : i64
-    %c16_i64_276 = arith.constant 16 : i64
-    %493 = llvm.mul %450, %c16_i64_276 : i64
-    %494 = llvm.udiv %493, %c8_i64_275 : i64
+    %c8_i64_276 = arith.constant 8 : i64
+    %c16_i64_277 = arith.constant 16 : i64
+    %493 = llvm.mul %450, %c16_i64_277 : i64
+    %494 = llvm.udiv %493, %c8_i64_276 : i64
     %495 = llvm.add %494, %491 : i64
     %496 = llvm.add %495, %492 : i64
-    %c131072_i64_277 = arith.constant 131072 : i64
-    %497 = llvm.icmp "uge" %496, %c131072_i64_277 : i64
+    %c131072_i64_278 = arith.constant 131072 : i64
+    %497 = llvm.icmp "uge" %496, %c131072_i64_278 : i64
     %498 = llvm.zext %497 : i1 to i64
-    %c21_i64_278 = arith.constant 21 : i64
-    %499 = llvm.shl %498, %c21_i64_278 : i64
-    %500 = llvm.udiv %452, %c16_i64_265 : i64
-    %c32_i64_279 = arith.constant 32 : i64
-    %501 = llvm.shl %500, %c32_i64_279 : i64
-    %502 = llvm.or %c2_i64_266, %c64_i64_267 : i64
-    %503 = llvm.or %c768_i64_268, %c0_i64_269 : i64
-    %504 = llvm.or %c24576_i64_270, %c0_i64_271 : i64
-    %505 = llvm.or %c0_i64_272, %c262144_i64_273 : i64
-    %506 = llvm.or %c0_i64_274, %499 : i64
+    %c21_i64_279 = arith.constant 21 : i64
+    %499 = llvm.shl %498, %c21_i64_279 : i64
+    %500 = llvm.udiv %452, %c16_i64_266 : i64
+    %c32_i64_280 = arith.constant 32 : i64
+    %501 = llvm.shl %500, %c32_i64_280 : i64
+    %502 = llvm.or %c2_i64_267, %c64_i64_268 : i64
+    %503 = llvm.or %c768_i64_269, %c0_i64_270 : i64
+    %504 = llvm.or %c24576_i64_271, %c0_i64_272 : i64
+    %505 = llvm.or %c0_i64_273, %c262144_i64_274 : i64
+    %506 = llvm.or %c0_i64_275, %499 : i64
     %507 = llvm.or %502, %503 : i64
     %508 = llvm.or %504, %505 : i64
     %509 = llvm.or %506, %501 : i64
@@ -6912,78 +7166,78 @@ module attributes {gpu.container_module} {
     %511 = llvm.or %510, %509 : i64
     %512 = llvm.getelementptr %448[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %511, %512 : i64, !llvm.ptr
-    %c0_i64_280 = arith.constant 0 : i64
-    %c1_i64_281 = arith.constant 1 : i64
-    %c16_i64_282 = arith.constant 16 : i64
-    %c32_i64_283 = arith.constant 32 : i64
-    %c36_i64_284 = arith.constant 36 : i64
-    %c4294967295_i64_285 = arith.constant 4294967295 : i64
-    %513 = llvm.udiv %455, %c16_i64_282 : i64
-    %514 = llvm.and %513, %c4294967295_i64_285 : i64
-    %515 = llvm.shl %514, %c0_i64_280 : i64
-    %516 = llvm.udiv %458, %c16_i64_282 : i64
-    %517 = llvm.shl %516, %c32_i64_283 : i64
+    %c0_i64_281 = arith.constant 0 : i64
+    %c1_i64_282 = arith.constant 1 : i64
+    %c16_i64_283 = arith.constant 16 : i64
+    %c32_i64_284 = arith.constant 32 : i64
+    %c36_i64_285 = arith.constant 36 : i64
+    %c4294967295_i64_286 = arith.constant 4294967295 : i64
+    %513 = llvm.udiv %455, %c16_i64_283 : i64
+    %514 = llvm.and %513, %c4294967295_i64_286 : i64
+    %515 = llvm.shl %514, %c0_i64_281 : i64
+    %516 = llvm.udiv %458, %c16_i64_283 : i64
+    %517 = llvm.shl %516, %c32_i64_284 : i64
     %518 = llvm.or %515, %517 : i64
     %519 = llvm.getelementptr %448[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %518, %519 : i64, !llvm.ptr
-    %520 = llvm.udiv %461, %c16_i64_282 : i64
-    %521 = llvm.and %520, %c4294967295_i64_285 : i64
-    %522 = llvm.shl %521, %c0_i64_280 : i64
-    %c15_i64_286 = arith.constant 15 : i64
-    %523 = llvm.lshr %452, %c36_i64_284 : i64
-    %524 = llvm.and %523, %c15_i64_286 : i64
-    %525 = llvm.shl %524, %c32_i64_283 : i64
-    %526 = llvm.lshr %455, %c36_i64_284 : i64
-    %527 = llvm.and %526, %c15_i64_286 : i64
-    %c36_i64_287 = arith.constant 36 : i64
-    %528 = llvm.shl %527, %c36_i64_287 : i64
-    %529 = llvm.lshr %458, %c36_i64_284 : i64
-    %530 = llvm.and %529, %c15_i64_286 : i64
-    %c40_i64_288 = arith.constant 40 : i64
-    %531 = llvm.shl %530, %c40_i64_288 : i64
-    %532 = llvm.lshr %461, %c36_i64_284 : i64
-    %c44_i64_289 = arith.constant 44 : i64
-    %533 = llvm.shl %532, %c44_i64_289 : i64
+    %520 = llvm.udiv %461, %c16_i64_283 : i64
+    %521 = llvm.and %520, %c4294967295_i64_286 : i64
+    %522 = llvm.shl %521, %c0_i64_281 : i64
+    %c15_i64_287 = arith.constant 15 : i64
+    %523 = llvm.lshr %452, %c36_i64_285 : i64
+    %524 = llvm.and %523, %c15_i64_287 : i64
+    %525 = llvm.shl %524, %c32_i64_284 : i64
+    %526 = llvm.lshr %455, %c36_i64_285 : i64
+    %527 = llvm.and %526, %c15_i64_287 : i64
+    %c36_i64_288 = arith.constant 36 : i64
+    %528 = llvm.shl %527, %c36_i64_288 : i64
+    %529 = llvm.lshr %458, %c36_i64_285 : i64
+    %530 = llvm.and %529, %c15_i64_287 : i64
+    %c40_i64_289 = arith.constant 40 : i64
+    %531 = llvm.shl %530, %c40_i64_289 : i64
+    %532 = llvm.lshr %461, %c36_i64_285 : i64
+    %c44_i64_290 = arith.constant 44 : i64
+    %533 = llvm.shl %532, %c44_i64_290 : i64
     %534 = llvm.or %525, %528 : i64
     %535 = llvm.or %531, %533 : i64
     %536 = llvm.or %534, %535 : i64
     %537 = llvm.or %522, %536 : i64
     %538 = llvm.getelementptr %448[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %537, %538 : i64, !llvm.ptr
-    %539 = llvm.sub %450, %c1_i64_281 : i64
-    %540 = llvm.and %539, %c4294967295_i64_285 : i64
-    %541 = llvm.shl %540, %c0_i64_280 : i64
-    %542 = llvm.sub %451, %c1_i64_281 : i64
-    %543 = llvm.shl %542, %c32_i64_283 : i64
+    %539 = llvm.sub %450, %c1_i64_282 : i64
+    %540 = llvm.and %539, %c4294967295_i64_286 : i64
+    %541 = llvm.shl %540, %c0_i64_281 : i64
+    %542 = llvm.sub %451, %c1_i64_282 : i64
+    %543 = llvm.shl %542, %c32_i64_284 : i64
     %544 = llvm.or %541, %543 : i64
     %545 = llvm.getelementptr %448[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %544, %545 : i64, !llvm.ptr
-    %546 = llvm.sub %453, %c1_i64_281 : i64
-    %547 = llvm.and %546, %c4294967295_i64_285 : i64
-    %548 = llvm.shl %547, %c0_i64_280 : i64
-    %549 = llvm.sub %456, %c1_i64_281 : i64
-    %550 = llvm.shl %549, %c32_i64_283 : i64
+    %546 = llvm.sub %453, %c1_i64_282 : i64
+    %547 = llvm.and %546, %c4294967295_i64_286 : i64
+    %548 = llvm.shl %547, %c0_i64_281 : i64
+    %549 = llvm.sub %456, %c1_i64_282 : i64
+    %550 = llvm.shl %549, %c32_i64_284 : i64
     %551 = llvm.or %548, %550 : i64
     %552 = llvm.getelementptr %448[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %551, %552 : i64, !llvm.ptr
-    %553 = llvm.sub %459, %c1_i64_255 : i64
-    %554 = llvm.and %553, %c4294967295_i64_259 : i64
-    %c0_i64_290 = arith.constant 0 : i64
-    %c63_i64_291 = arith.constant 63 : i64
-    %c56_i64_292 = arith.constant 56 : i64
-    %555 = llvm.shl %c63_i64_291, %c56_i64_292 : i64
-    %556 = llvm.or %554, %c0_i64_290 : i64
+    %553 = llvm.sub %459, %c1_i64_256 : i64
+    %554 = llvm.and %553, %c4294967295_i64_260 : i64
+    %c0_i64_291 = arith.constant 0 : i64
+    %c63_i64_292 = arith.constant 63 : i64
+    %c56_i64_293 = arith.constant 56 : i64
+    %555 = llvm.shl %c63_i64_292, %c56_i64_293 : i64
+    %556 = llvm.or %554, %c0_i64_291 : i64
     %557 = llvm.or %556, %555 : i64
     %558 = llvm.getelementptr %448[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %557, %558 : i64, !llvm.ptr
-    %c127_i64_293 = arith.constant 127 : i64
-    %559 = llvm.shl %c127_i64_293, %c0_i64_254 : i64
-    %c0_i64_294 = arith.constant 0 : i64
-    %560 = llvm.shl %c0_i64_294, %c8_i64_256 : i64
+    %c127_i64_294 = arith.constant 127 : i64
+    %559 = llvm.shl %c127_i64_294, %c0_i64_255 : i64
     %c0_i64_295 = arith.constant 0 : i64
-    %561 = llvm.shl %c0_i64_295, %c16_i64_257 : i64
+    %560 = llvm.shl %c0_i64_295, %c8_i64_257 : i64
     %c0_i64_296 = arith.constant 0 : i64
-    %562 = llvm.shl %c0_i64_296, %c24_i64_258 : i64
+    %561 = llvm.shl %c0_i64_296, %c16_i64_258 : i64
+    %c0_i64_297 = arith.constant 0 : i64
+    %562 = llvm.shl %c0_i64_297, %c24_i64_259 : i64
     %563 = llvm.or %559, %560 : i64
     %564 = llvm.or %561, %562 : i64
     %565 = llvm.or %563, %564 : i64
@@ -6994,187 +7248,187 @@ module attributes {gpu.container_module} {
     %569 = llvm.inttoptr %568 : i64 to !llvm.ptr
     %570 = llvm.load %569 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
     %571 = builtin.unrealized_conversion_cast %570 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
-    %atom_297 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
-    %572 = cute_nvgpu.atom.set_value(%atom_297, %571 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
-    %lay_298 = cute.get_layout(%view_83) : !memref_gmem_f16_
-    %573 = cute.get_shape(%lay_298) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
+    %atom_298 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
+    %572 = cute_nvgpu.atom.set_value(%atom_298, %571 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>
+    %lay_299 = cute.get_layout(%view_83) : !memref_gmem_f16_
+    %573 = cute.get_shape(%lay_299) : (!cute.layout<"(?,?{div=64},((?,?),?)):(?{i64 div=64},1,((?{div=64},?{div=64}),?{div=64}))">) -> !cute.shape<"(?,?{div=64},((?,?),?))">
     %574 = cute.static : !cute.stride<"(1@1,1@0,((1@2,1@3),1@4))">
-    %lay_299 = cute.make_layout(%573, %574) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %lay_300 = cute.make_layout(%573, %574) : !cute.layout<"(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
     %575 = cute.static : !cute.int_tuple<"(0,0,0,0,0)">
-    %view_300 = cute.make_view(%575, %lay_299) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
-    %int_tuple_301 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
-    %sz = cute.size(%int_tuple_301) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
-    %e0_302 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
-    %int_tuple_303 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
-    %sz_304 = cute.size(%int_tuple_303) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_305 = cute.get_leaves(%sz_304) : !cute.int_tuple<"?">
-    %c8_i32 = arith.constant 8 : i32
-    %576 = arith.addi %arg2, %c8_i32 : i32
-    %577 = arith.subi %576, %c1_i32 : i32
-    %578 = arith.floordivsi %577, %c8_i32 : i32
-    %579 = arith.muli %578, %c8_i32 : i32
-    %580 = arith.addi %arg0, %c8_i32 : i32
-    %581 = arith.subi %580, %c1_i32 : i32
-    %582 = arith.floordivsi %581, %c8_i32 : i32
-    %583 = arith.muli %582, %c8_i32 : i32
-    %mul_306 = cute.tuple_mul(%e0_305, %e0_302) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %int_tuple_307 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
-    %mul_308 = cute.tuple_mul(%mul_306, %int_tuple_307) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %view_301 = cute.make_view(%575, %lay_300) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %int_tuple_302 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
+    %sz = cute.size(%int_tuple_302) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
+    %e0_303 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
+    %int_tuple_304 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
+    %sz_305 = cute.size(%int_tuple_304) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_306 = cute.get_leaves(%sz_305) : !cute.int_tuple<"?">
+    %c8_i32_307 = arith.constant 8 : i32
+    %576 = arith.addi %arg2, %c8_i32_307 : i32
+    %577 = arith.subi %576, %c1_i32_94 : i32
+    %578 = arith.floordivsi %577, %c8_i32_307 : i32
+    %579 = arith.muli %578, %c8_i32_307 : i32
+    %580 = arith.addi %arg0, %c8_i32_307 : i32
+    %581 = arith.subi %580, %c1_i32_94 : i32
+    %582 = arith.floordivsi %581, %c8_i32_307 : i32
+    %583 = arith.muli %582, %c8_i32_307 : i32
+    %mul_308 = cute.tuple_mul(%e0_306, %e0_303) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %int_tuple_309 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
+    %mul_310 = cute.tuple_mul(%mul_308, %int_tuple_309) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
     %584 = cute.static : !cute.int_tuple<"4">
-    %mul_309 = cute.tuple_mul(%mul_308, %584) : (!cute.int_tuple<"?">, !cute.int_tuple<"4">) -> !cute.int_tuple<"?{div=4}">
-    %585 = cute.get_scalars(%mul_309) : !cute.int_tuple<"?{div=4}">
-    %iv_310 = cute.assume(%585) : (i32) -> !cute.i32<divby 4>
-    %int_tuple_311 = cute.make_int_tuple(%iv_310) : (!cute.i32<divby 4>) -> !cute.int_tuple<"?{div=4}">
-    %mul_312 = cute.tuple_mul(%e0_305, %e0_302) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %int_tuple_313 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
-    %mul_314 = cute.tuple_mul(%mul_312, %int_tuple_313) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %mul_311 = cute.tuple_mul(%mul_310, %584) : (!cute.int_tuple<"?">, !cute.int_tuple<"4">) -> !cute.int_tuple<"?{div=4}">
+    %585 = cute.get_scalars(%mul_311) : !cute.int_tuple<"?{div=4}">
+    %iv_312 = cute.assume(%585) : (i32) -> !cute.i32<divby 4>
+    %int_tuple_313 = cute.make_int_tuple(%iv_312) : (!cute.i32<divby 4>) -> !cute.int_tuple<"?{div=4}">
+    %mul_314 = cute.tuple_mul(%e0_306, %e0_303) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %int_tuple_315 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
+    %mul_316 = cute.tuple_mul(%mul_314, %int_tuple_315) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
     %586 = cute.static : !cute.int_tuple<"4">
-    %mul_315 = cute.tuple_mul(%mul_314, %586) : (!cute.int_tuple<"?">, !cute.int_tuple<"4">) -> !cute.int_tuple<"?{div=4}">
-    %587 = cute.get_scalars(%mul_315) : !cute.int_tuple<"?{div=4}">
-    %iv_316 = cute.assume(%587) : (i32) -> !cute.i32<divby 4>
-    %int_tuple_317 = cute.make_int_tuple(%iv_316) : (!cute.i32<divby 4>) -> !cute.int_tuple<"?{div=4}">
-    %int_tuple_318 = cute.make_int_tuple(%int_tuple_311) : (!cute.int_tuple<"?{div=4}">) -> !cute.int_tuple<"?{div=4}">
-    %ptr = cute.add_offset(%iter_8, %int_tuple_318) : (!cute.ptr<i8, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<i8, gmem, align<4>>
-    %int_tuple_319 = cute.make_int_tuple(%int_tuple_317) : (!cute.int_tuple<"?{div=4}">) -> !cute.int_tuple<"?{div=4}">
-    %ptr_320 = cute.add_offset(%ptr, %int_tuple_319) : (!cute.ptr<i8, gmem, align<4>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<i8, gmem, align<4>>
-    %iter_321 = cute.recast_iter(%iter_8) : !cute.ptr<i8, gmem, align<16>> to !cute.ptr<f32, gmem, align<16>>
-    %iter_322 = cute.recast_iter(%ptr) : !cute.ptr<i8, gmem, align<4>> to !cute.ptr<f32, gmem>
-    %iter_323 = cute.recast_iter(%ptr_320) : !cute.ptr<i8, gmem, align<4>> to !cute.ptr<f32, gmem>
+    %mul_317 = cute.tuple_mul(%mul_316, %586) : (!cute.int_tuple<"?">, !cute.int_tuple<"4">) -> !cute.int_tuple<"?{div=4}">
+    %587 = cute.get_scalars(%mul_317) : !cute.int_tuple<"?{div=4}">
+    %iv_318 = cute.assume(%587) : (i32) -> !cute.i32<divby 4>
+    %int_tuple_319 = cute.make_int_tuple(%iv_318) : (!cute.i32<divby 4>) -> !cute.int_tuple<"?{div=4}">
+    %int_tuple_320 = cute.make_int_tuple(%int_tuple_313) : (!cute.int_tuple<"?{div=4}">) -> !cute.int_tuple<"?{div=4}">
+    %ptr = cute.add_offset(%iter_8, %int_tuple_320) : (!cute.ptr<i8, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<i8, gmem, align<4>>
+    %int_tuple_321 = cute.make_int_tuple(%int_tuple_319) : (!cute.int_tuple<"?{div=4}">) -> !cute.int_tuple<"?{div=4}">
+    %ptr_322 = cute.add_offset(%ptr, %int_tuple_321) : (!cute.ptr<i8, gmem, align<4>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<i8, gmem, align<4>>
+    %iter_323 = cute.recast_iter(%iter_8) : !cute.ptr<i8, gmem, align<16>> to !cute.ptr<f32, gmem, align<16>>
+    %iter_324 = cute.recast_iter(%ptr) : !cute.ptr<i8, gmem, align<4>> to !cute.ptr<f32, gmem>
+    %iter_325 = cute.recast_iter(%ptr_322) : !cute.ptr<i8, gmem, align<4>> to !cute.ptr<f32, gmem>
     %588 = arith.muli %583, %arg3 : i32
-    %int_tuple_324 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
-    %mul_325 = cute.tuple_mul(%int_tuple_324, %e0_302) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %shape_326 = cute.make_shape(%583, %arg3, %arg4, %e0_305) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,((?,?),?))">
-    %stride_327 = cute.make_stride(%583, %588, %mul_325) : (i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(1,((?,?),?))">
-    %lay_328 = cute.make_layout(%shape_326, %stride_327) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
-    %view_329 = cute.make_view(%iter_321, %lay_328) : !memref_gmem_f32_
+    %int_tuple_326 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
+    %mul_327 = cute.tuple_mul(%int_tuple_326, %e0_303) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %shape_328 = cute.make_shape(%583, %arg3, %arg4, %e0_306) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,((?,?),?))">
+    %stride_329 = cute.make_stride(%583, %588, %mul_327) : (i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(1,((?,?),?))">
+    %lay_330 = cute.make_layout(%shape_328, %stride_329) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
+    %view_331 = cute.make_view(%iter_323, %lay_330) : !memref_gmem_f32_
     %589 = arith.muli %583, %arg3 : i32
-    %int_tuple_330 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
-    %mul_331 = cute.tuple_mul(%int_tuple_330, %e0_302) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %shape_332 = cute.make_shape(%583, %arg3, %arg4, %e0_305) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,((?,?),?))">
-    %stride_333 = cute.make_stride(%583, %589, %mul_331) : (i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(1,((?,?),?))">
-    %lay_334 = cute.make_layout(%shape_332, %stride_333) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
-    %view_335 = cute.make_view(%iter_322, %lay_334) : !memref_gmem_f32_1
+    %int_tuple_332 = cute.make_int_tuple(%583) : (i32) -> !cute.int_tuple<"?">
+    %mul_333 = cute.tuple_mul(%int_tuple_332, %e0_303) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %shape_334 = cute.make_shape(%583, %arg3, %arg4, %e0_306) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,((?,?),?))">
+    %stride_335 = cute.make_stride(%583, %589, %mul_333) : (i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(1,((?,?),?))">
+    %lay_336 = cute.make_layout(%shape_334, %stride_335) : !cute.layout<"(?,((?,?),?)):(1,((?,?),?))">
+    %view_337 = cute.make_view(%iter_324, %lay_336) : !memref_gmem_f32_1
     %590 = arith.muli %579, %583 : i32
     %591 = arith.muli %579, %583 : i32
     %592 = arith.muli %591, %arg3 : i32
     %593 = arith.muli %579, %583 : i32
-    %int_tuple_336 = cute.make_int_tuple(%593) : (i32) -> !cute.int_tuple<"?">
-    %mul_337 = cute.tuple_mul(%int_tuple_336, %e0_302) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %shape_338 = cute.make_shape(%583, %579, %arg3, %arg4, %e0_305) : (i32, i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,((?,?),?))">
-    %stride_339 = cute.make_stride(%579, %590, %592, %mul_337) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(?,1,((?,?),?))">
-    %lay_340 = cute.make_layout(%shape_338, %stride_339) : !cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">
-    %view_341 = cute.make_view(%iter_323, %lay_340) : !memref_gmem_f32_7
+    %int_tuple_338 = cute.make_int_tuple(%593) : (i32) -> !cute.int_tuple<"?">
+    %mul_339 = cute.tuple_mul(%int_tuple_338, %e0_303) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %shape_340 = cute.make_shape(%583, %579, %arg3, %arg4, %e0_306) : (i32, i32, i32, i32, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,((?,?),?))">
+    %stride_341 = cute.make_stride(%579, %590, %592, %mul_339) : (i32, i32, i32, !cute.int_tuple<"?">) -> !cute.stride<"(?,1,((?,?),?))">
+    %lay_342 = cute.make_layout(%shape_340, %stride_341) : !cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">
+    %view_343 = cute.make_view(%iter_325, %lay_342) : !memref_gmem_f32_7
     %594 = cute.static : !cute.composed_layout<"S<3,4,3> o 0 o ((8,16),(32,1)):((32,256),(1,0))">
-    %c16_i32_342 = arith.constant 16 : i32
-    %595 = llvm.alloca %c16_i32_342 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
-    %iter_343 = cute.get_iter(%view_341) : !memref_gmem_f32_7
-    %lay_344 = cute.get_layout(%view_341) : !memref_gmem_f32_7
-    %596:9 = cute.get_scalars(%lay_344) <{only_dynamic}> : !cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">
+    %c16_i32_344 = arith.constant 16 : i32
+    %595 = llvm.alloca %c16_i32_344 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %iter_345 = cute.get_iter(%view_343) : !memref_gmem_f32_7
+    %lay_346 = cute.get_layout(%view_343) : !memref_gmem_f32_7
+    %596:9 = cute.get_scalars(%lay_346) <{only_dynamic}> : !cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">
     %597 = arith.extui %596#1 : i32 to i64
     %598 = arith.extui %596#0 : i32 to i64
     %599 = arith.extui %596#5 : i32 to i64
-    %c4_i64_345 = arith.constant 4 : i64
-    %600 = llvm.mul %599, %c4_i64_345 : i64
+    %c4_i64_347 = arith.constant 4 : i64
+    %600 = llvm.mul %599, %c4_i64_347 : i64
     %601 = arith.extui %596#2 : i32 to i64
     %602 = arith.extui %596#6 : i32 to i64
-    %c4_i64_346 = arith.constant 4 : i64
-    %603 = llvm.mul %602, %c4_i64_346 : i64
+    %c4_i64_348 = arith.constant 4 : i64
+    %603 = llvm.mul %602, %c4_i64_348 : i64
     %604 = arith.extui %596#3 : i32 to i64
     %605 = arith.extui %596#7 : i32 to i64
-    %c4_i64_347 = arith.constant 4 : i64
-    %606 = llvm.mul %605, %c4_i64_347 : i64
+    %c4_i64_349 = arith.constant 4 : i64
+    %606 = llvm.mul %605, %c4_i64_349 : i64
     %607 = arith.extui %596#4 : i32 to i64
     %608 = arith.extui %596#8 : i32 to i64
-    %c4_i64_348 = arith.constant 4 : i64
-    %609 = llvm.mul %608, %c4_i64_348 : i64
-    %610 = cute.ptrtoint(%iter_343) : !cute.ptr<f32, gmem> to i64
-    %c0_i64_349 = arith.constant 0 : i64
-    %c1_i64_350 = arith.constant 1 : i64
-    %c8_i64_351 = arith.constant 8 : i64
-    %c16_i64_352 = arith.constant 16 : i64
-    %c24_i64_353 = arith.constant 24 : i64
-    %c4294967295_i64_354 = arith.constant 4294967295 : i64
-    %c0_i64_355 = arith.constant 0 : i64
-    %c4_i64_356 = arith.constant 4 : i64
-    %c16_i64_357 = arith.constant 16 : i64
-    %c9007199254740991_i64_358 = arith.constant 9007199254740991 : i64
+    %c4_i64_350 = arith.constant 4 : i64
+    %609 = llvm.mul %608, %c4_i64_350 : i64
+    %610 = cute.ptrtoint(%iter_345) : !cute.ptr<f32, gmem> to i64
+    %c0_i64_351 = arith.constant 0 : i64
+    %c1_i64_352 = arith.constant 1 : i64
+    %c8_i64_353 = arith.constant 8 : i64
+    %c16_i64_354 = arith.constant 16 : i64
+    %c24_i64_355 = arith.constant 24 : i64
+    %c4294967295_i64_356 = arith.constant 4294967295 : i64
+    %c0_i64_357 = arith.constant 0 : i64
+    %c4_i64_358 = arith.constant 4 : i64
+    %c16_i64_359 = arith.constant 16 : i64
+    %c9007199254740991_i64_360 = arith.constant 9007199254740991 : i64
     %611 = llvm.getelementptr %595[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %611 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %611 : i64, !llvm.ptr
     %612 = llvm.getelementptr %595[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %612 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %612 : i64, !llvm.ptr
     %613 = llvm.getelementptr %595[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %613 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %613 : i64, !llvm.ptr
     %614 = llvm.getelementptr %595[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %614 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %614 : i64, !llvm.ptr
     %615 = llvm.getelementptr %595[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %615 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %615 : i64, !llvm.ptr
     %616 = llvm.getelementptr %595[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %616 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %616 : i64, !llvm.ptr
     %617 = llvm.getelementptr %595[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %617 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %617 : i64, !llvm.ptr
     %618 = llvm.getelementptr %595[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %618 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %618 : i64, !llvm.ptr
     %619 = llvm.getelementptr %595[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %619 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %619 : i64, !llvm.ptr
     %620 = llvm.getelementptr %595[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %620 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %620 : i64, !llvm.ptr
     %621 = llvm.getelementptr %595[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %621 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %621 : i64, !llvm.ptr
     %622 = llvm.getelementptr %595[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %622 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %622 : i64, !llvm.ptr
     %623 = llvm.getelementptr %595[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %623 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %623 : i64, !llvm.ptr
     %624 = llvm.getelementptr %595[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %624 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %624 : i64, !llvm.ptr
     %625 = llvm.getelementptr %595[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %625 : i64, !llvm.ptr
+    llvm.store %c0_i64_357, %625 : i64, !llvm.ptr
     %626 = llvm.getelementptr %595[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64_355, %626 : i64, !llvm.ptr
-    %627 = llvm.udiv %610, %c16_i64_357 : i64
-    %628 = llvm.and %627, %c9007199254740991_i64_358 : i64
-    %629 = llvm.shl %628, %c4_i64_356 : i64
+    llvm.store %c0_i64_357, %626 : i64, !llvm.ptr
+    %627 = llvm.udiv %610, %c16_i64_359 : i64
+    %628 = llvm.and %627, %c9007199254740991_i64_360 : i64
+    %629 = llvm.shl %628, %c4_i64_358 : i64
     %630 = llvm.getelementptr %595[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %629, %630 : i64, !llvm.ptr
-    %c1_i64_359 = arith.constant 1 : i64
-    %c16_i64_360 = arith.constant 16 : i64
-    %c2_i64_361 = arith.constant 2 : i64
-    %c64_i64_362 = arith.constant 64 : i64
+    %c1_i64_361 = arith.constant 1 : i64
+    %c16_i64_362 = arith.constant 16 : i64
+    %c2_i64_363 = arith.constant 2 : i64
+    %c64_i64_364 = arith.constant 64 : i64
     %c896_i64 = arith.constant 896 : i64
-    %c0_i64_363 = arith.constant 0 : i64
-    %c24576_i64_364 = arith.constant 24576 : i64
     %c0_i64_365 = arith.constant 0 : i64
-    %c0_i64_366 = arith.constant 0 : i64
-    %c262144_i64_367 = arith.constant 262144 : i64
+    %c24576_i64_366 = arith.constant 24576 : i64
+    %c0_i64_367 = arith.constant 0 : i64
     %c0_i64_368 = arith.constant 0 : i64
-    %631 = llvm.sub %598, %c1_i64_359 : i64
-    %632 = llvm.sub %601, %c1_i64_359 : i64
-    %633 = llvm.sub %604, %c1_i64_359 : i64
-    %634 = llvm.sub %607, %c1_i64_359 : i64
+    %c262144_i64_369 = arith.constant 262144 : i64
+    %c0_i64_370 = arith.constant 0 : i64
+    %631 = llvm.sub %598, %c1_i64_361 : i64
+    %632 = llvm.sub %601, %c1_i64_361 : i64
+    %633 = llvm.sub %604, %c1_i64_361 : i64
+    %634 = llvm.sub %607, %c1_i64_361 : i64
     %635 = llvm.mul %631, %600 : i64
     %636 = llvm.mul %632, %603 : i64
     %637 = llvm.mul %633, %606 : i64
     %638 = llvm.mul %634, %609 : i64
     %639 = llvm.add %635, %636 : i64
     %640 = llvm.add %637, %638 : i64
-    %c8_i64_369 = arith.constant 8 : i64
-    %c32_i64_370 = arith.constant 32 : i64
-    %641 = llvm.mul %597, %c32_i64_370 : i64
-    %642 = llvm.udiv %641, %c8_i64_369 : i64
+    %c8_i64_371 = arith.constant 8 : i64
+    %c32_i64_372 = arith.constant 32 : i64
+    %641 = llvm.mul %597, %c32_i64_372 : i64
+    %642 = llvm.udiv %641, %c8_i64_371 : i64
     %643 = llvm.add %642, %639 : i64
     %644 = llvm.add %643, %640 : i64
-    %c131072_i64_371 = arith.constant 131072 : i64
-    %645 = llvm.icmp "uge" %644, %c131072_i64_371 : i64
+    %c131072_i64_373 = arith.constant 131072 : i64
+    %645 = llvm.icmp "uge" %644, %c131072_i64_373 : i64
     %646 = llvm.zext %645 : i1 to i64
-    %c21_i64_372 = arith.constant 21 : i64
-    %647 = llvm.shl %646, %c21_i64_372 : i64
-    %648 = llvm.udiv %600, %c16_i64_360 : i64
-    %c32_i64_373 = arith.constant 32 : i64
-    %649 = llvm.shl %648, %c32_i64_373 : i64
-    %650 = llvm.or %c2_i64_361, %c64_i64_362 : i64
-    %651 = llvm.or %c896_i64, %c0_i64_363 : i64
-    %652 = llvm.or %c24576_i64_364, %c0_i64_365 : i64
-    %653 = llvm.or %c0_i64_366, %c262144_i64_367 : i64
-    %654 = llvm.or %c0_i64_368, %647 : i64
+    %c21_i64_374 = arith.constant 21 : i64
+    %647 = llvm.shl %646, %c21_i64_374 : i64
+    %648 = llvm.udiv %600, %c16_i64_362 : i64
+    %c32_i64_375 = arith.constant 32 : i64
+    %649 = llvm.shl %648, %c32_i64_375 : i64
+    %650 = llvm.or %c2_i64_363, %c64_i64_364 : i64
+    %651 = llvm.or %c896_i64, %c0_i64_365 : i64
+    %652 = llvm.or %c24576_i64_366, %c0_i64_367 : i64
+    %653 = llvm.or %c0_i64_368, %c262144_i64_369 : i64
+    %654 = llvm.or %c0_i64_370, %647 : i64
     %655 = llvm.or %650, %651 : i64
     %656 = llvm.or %652, %653 : i64
     %657 = llvm.or %654, %649 : i64
@@ -7182,78 +7436,78 @@ module attributes {gpu.container_module} {
     %659 = llvm.or %658, %657 : i64
     %660 = llvm.getelementptr %595[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %659, %660 : i64, !llvm.ptr
-    %c0_i64_374 = arith.constant 0 : i64
-    %c1_i64_375 = arith.constant 1 : i64
-    %c16_i64_376 = arith.constant 16 : i64
-    %c32_i64_377 = arith.constant 32 : i64
-    %c36_i64_378 = arith.constant 36 : i64
-    %c4294967295_i64_379 = arith.constant 4294967295 : i64
-    %661 = llvm.udiv %603, %c16_i64_376 : i64
-    %662 = llvm.and %661, %c4294967295_i64_379 : i64
-    %663 = llvm.shl %662, %c0_i64_374 : i64
-    %664 = llvm.udiv %606, %c16_i64_376 : i64
-    %665 = llvm.shl %664, %c32_i64_377 : i64
+    %c0_i64_376 = arith.constant 0 : i64
+    %c1_i64_377 = arith.constant 1 : i64
+    %c16_i64_378 = arith.constant 16 : i64
+    %c32_i64_379 = arith.constant 32 : i64
+    %c36_i64_380 = arith.constant 36 : i64
+    %c4294967295_i64_381 = arith.constant 4294967295 : i64
+    %661 = llvm.udiv %603, %c16_i64_378 : i64
+    %662 = llvm.and %661, %c4294967295_i64_381 : i64
+    %663 = llvm.shl %662, %c0_i64_376 : i64
+    %664 = llvm.udiv %606, %c16_i64_378 : i64
+    %665 = llvm.shl %664, %c32_i64_379 : i64
     %666 = llvm.or %663, %665 : i64
     %667 = llvm.getelementptr %595[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %666, %667 : i64, !llvm.ptr
-    %668 = llvm.udiv %609, %c16_i64_376 : i64
-    %669 = llvm.and %668, %c4294967295_i64_379 : i64
-    %670 = llvm.shl %669, %c0_i64_374 : i64
-    %c15_i64_380 = arith.constant 15 : i64
-    %671 = llvm.lshr %600, %c36_i64_378 : i64
-    %672 = llvm.and %671, %c15_i64_380 : i64
-    %673 = llvm.shl %672, %c32_i64_377 : i64
-    %674 = llvm.lshr %603, %c36_i64_378 : i64
-    %675 = llvm.and %674, %c15_i64_380 : i64
-    %c36_i64_381 = arith.constant 36 : i64
-    %676 = llvm.shl %675, %c36_i64_381 : i64
-    %677 = llvm.lshr %606, %c36_i64_378 : i64
-    %678 = llvm.and %677, %c15_i64_380 : i64
-    %c40_i64_382 = arith.constant 40 : i64
-    %679 = llvm.shl %678, %c40_i64_382 : i64
-    %680 = llvm.lshr %609, %c36_i64_378 : i64
-    %c44_i64_383 = arith.constant 44 : i64
-    %681 = llvm.shl %680, %c44_i64_383 : i64
+    %668 = llvm.udiv %609, %c16_i64_378 : i64
+    %669 = llvm.and %668, %c4294967295_i64_381 : i64
+    %670 = llvm.shl %669, %c0_i64_376 : i64
+    %c15_i64_382 = arith.constant 15 : i64
+    %671 = llvm.lshr %600, %c36_i64_380 : i64
+    %672 = llvm.and %671, %c15_i64_382 : i64
+    %673 = llvm.shl %672, %c32_i64_379 : i64
+    %674 = llvm.lshr %603, %c36_i64_380 : i64
+    %675 = llvm.and %674, %c15_i64_382 : i64
+    %c36_i64_383 = arith.constant 36 : i64
+    %676 = llvm.shl %675, %c36_i64_383 : i64
+    %677 = llvm.lshr %606, %c36_i64_380 : i64
+    %678 = llvm.and %677, %c15_i64_382 : i64
+    %c40_i64_384 = arith.constant 40 : i64
+    %679 = llvm.shl %678, %c40_i64_384 : i64
+    %680 = llvm.lshr %609, %c36_i64_380 : i64
+    %c44_i64_385 = arith.constant 44 : i64
+    %681 = llvm.shl %680, %c44_i64_385 : i64
     %682 = llvm.or %673, %676 : i64
     %683 = llvm.or %679, %681 : i64
     %684 = llvm.or %682, %683 : i64
     %685 = llvm.or %670, %684 : i64
     %686 = llvm.getelementptr %595[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %685, %686 : i64, !llvm.ptr
-    %687 = llvm.sub %597, %c1_i64_375 : i64
-    %688 = llvm.and %687, %c4294967295_i64_379 : i64
-    %689 = llvm.shl %688, %c0_i64_374 : i64
-    %690 = llvm.sub %598, %c1_i64_375 : i64
-    %691 = llvm.shl %690, %c32_i64_377 : i64
+    %687 = llvm.sub %597, %c1_i64_377 : i64
+    %688 = llvm.and %687, %c4294967295_i64_381 : i64
+    %689 = llvm.shl %688, %c0_i64_376 : i64
+    %690 = llvm.sub %598, %c1_i64_377 : i64
+    %691 = llvm.shl %690, %c32_i64_379 : i64
     %692 = llvm.or %689, %691 : i64
     %693 = llvm.getelementptr %595[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %692, %693 : i64, !llvm.ptr
-    %694 = llvm.sub %601, %c1_i64_375 : i64
-    %695 = llvm.and %694, %c4294967295_i64_379 : i64
-    %696 = llvm.shl %695, %c0_i64_374 : i64
-    %697 = llvm.sub %604, %c1_i64_375 : i64
-    %698 = llvm.shl %697, %c32_i64_377 : i64
+    %694 = llvm.sub %601, %c1_i64_377 : i64
+    %695 = llvm.and %694, %c4294967295_i64_381 : i64
+    %696 = llvm.shl %695, %c0_i64_376 : i64
+    %697 = llvm.sub %604, %c1_i64_377 : i64
+    %698 = llvm.shl %697, %c32_i64_379 : i64
     %699 = llvm.or %696, %698 : i64
     %700 = llvm.getelementptr %595[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %699, %700 : i64, !llvm.ptr
-    %701 = llvm.sub %607, %c1_i64_350 : i64
-    %702 = llvm.and %701, %c4294967295_i64_354 : i64
-    %c0_i64_384 = arith.constant 0 : i64
+    %701 = llvm.sub %607, %c1_i64_352 : i64
+    %702 = llvm.and %701, %c4294967295_i64_356 : i64
+    %c0_i64_386 = arith.constant 0 : i64
     %c31_i64 = arith.constant 31 : i64
-    %c56_i64_385 = arith.constant 56 : i64
-    %703 = llvm.shl %c31_i64, %c56_i64_385 : i64
-    %704 = llvm.or %702, %c0_i64_384 : i64
+    %c56_i64_387 = arith.constant 56 : i64
+    %703 = llvm.shl %c31_i64, %c56_i64_387 : i64
+    %704 = llvm.or %702, %c0_i64_386 : i64
     %705 = llvm.or %704, %703 : i64
     %706 = llvm.getelementptr %595[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %705, %706 : i64, !llvm.ptr
-    %c127_i64_386 = arith.constant 127 : i64
-    %707 = llvm.shl %c127_i64_386, %c0_i64_349 : i64
-    %c0_i64_387 = arith.constant 0 : i64
-    %708 = llvm.shl %c0_i64_387, %c8_i64_351 : i64
-    %c0_i64_388 = arith.constant 0 : i64
-    %709 = llvm.shl %c0_i64_388, %c16_i64_352 : i64
+    %c127_i64_388 = arith.constant 127 : i64
+    %707 = llvm.shl %c127_i64_388, %c0_i64_351 : i64
     %c0_i64_389 = arith.constant 0 : i64
-    %710 = llvm.shl %c0_i64_389, %c24_i64_353 : i64
+    %708 = llvm.shl %c0_i64_389, %c8_i64_353 : i64
+    %c0_i64_390 = arith.constant 0 : i64
+    %709 = llvm.shl %c0_i64_390, %c16_i64_354 : i64
+    %c0_i64_391 = arith.constant 0 : i64
+    %710 = llvm.shl %c0_i64_391, %c24_i64_355 : i64
     %711 = llvm.or %707, %708 : i64
     %712 = llvm.or %709, %710 : i64
     %713 = llvm.or %711, %712 : i64
@@ -7264,56 +7518,57 @@ module attributes {gpu.container_module} {
     %717 = llvm.inttoptr %716 : i64 to !llvm.ptr
     %718 = llvm.load %717 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
     %719 = builtin.unrealized_conversion_cast %718 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
-    %atom_390 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>
-    %720 = cute_nvgpu.atom.set_value(%atom_390, %719 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_reduce<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>
-    %lay_391 = cute.get_layout(%view_341) : !memref_gmem_f32_7
-    %721 = cute.get_shape(%lay_391) : (!cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">) -> !cute.shape<"(?,?,((?,?),?))">
+    %atom_392 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>
+    %720 = cute_nvgpu.atom.set_value(%atom_392, %719 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_reduce<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>
+    %lay_393 = cute.get_layout(%view_343) : !memref_gmem_f32_7
+    %721 = cute.get_shape(%lay_393) : (!cute.layout<"(?,?,((?,?),?)):(?,1,((?,?),?))">) -> !cute.shape<"(?,?,((?,?),?))">
     %722 = cute.static : !cute.stride<"(1@1,1@0,((1@2,1@3),1@4))">
-    %lay_392 = cute.make_layout(%721, %722) : !cute.layout<"(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %lay_394 = cute.make_layout(%721, %722) : !cute.layout<"(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
     %723 = cute.static : !cute.int_tuple<"(0,0,0,0,0)">
-    %view_393 = cute.make_view(%723, %lay_392) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
-    %int_tuple_394 = cute.make_int_tuple(%arg0) : (i32) -> !cute.int_tuple<"?">
-    %sz_395 = cute.size(%int_tuple_394) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_396 = cute.get_leaves(%sz_395) : !cute.int_tuple<"?">
-    %int_tuple_397 = cute.make_int_tuple(%e0_396) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %724 = cute.get_scalars(%int_tuple_397) <{only_dynamic}> : !cute.int_tuple<"?">
-    %c16_i32_398 = arith.constant 16 : i32
-    %725 = arith.ceildivsi %724, %c16_i32_398 : i32
-    %int_tuple_399 = cute.make_int_tuple(%725) : (i32) -> !cute.int_tuple<"?">
-    %e0_400 = cute.get_leaves(%int_tuple_399) : !cute.int_tuple<"?">
-    %726 = cute.get_scalars(%e0_400) : !cute.int_tuple<"?">
-    %int_tuple_401 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
-    %sz_402 = cute.size(%int_tuple_401) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
-    %e0_403 = cute.get_leaves(%sz_402) : !cute.int_tuple<"?">
-    %727 = cute.get_scalars(%e0_403) : !cute.int_tuple<"?">
-    %int_tuple_404 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
-    %sz_405 = cute.size(%int_tuple_404) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_406 = cute.get_leaves(%sz_405) : !cute.int_tuple<"?">
-    %728 = cute.get_scalars(%e0_406) : !cute.int_tuple<"?">
+    %view_395 = cute.make_view(%723, %lay_394) : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">
+    %int_tuple_396 = cute.make_int_tuple(%arg0) : (i32) -> !cute.int_tuple<"?">
+    %sz_397 = cute.size(%int_tuple_396) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_398 = cute.get_leaves(%sz_397) : !cute.int_tuple<"?">
+    %int_tuple_399 = cute.make_int_tuple(%e0_398) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %724 = cute.get_scalars(%int_tuple_399) <{only_dynamic}> : !cute.int_tuple<"?">
+    %c16_i32_400 = arith.constant 16 : i32
+    %725 = arith.ceildivsi %724, %c16_i32_400 : i32
+    %int_tuple_401 = cute.make_int_tuple(%725) : (i32) -> !cute.int_tuple<"?">
+    %e0_402 = cute.get_leaves(%int_tuple_401) : !cute.int_tuple<"?">
+    %726 = cute.get_scalars(%e0_402) : !cute.int_tuple<"?">
+    %int_tuple_403 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
+    %sz_404 = cute.size(%int_tuple_403) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
+    %e0_405 = cute.get_leaves(%sz_404) : !cute.int_tuple<"?">
+    %727 = cute.get_scalars(%e0_405) : !cute.int_tuple<"?">
+    %int_tuple_406 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
+    %sz_407 = cute.size(%int_tuple_406) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_408 = cute.get_leaves(%sz_407) : !cute.int_tuple<"?">
+    %728 = cute.get_scalars(%e0_408) : !cute.int_tuple<"?">
     %cst = arith.constant -1.000000e+00 : f32
-    %cst_407 = arith.constant -1.44269502 : f32
-    %729 = arith.index_cast %726 : i32 to index
-    %730 = arith.index_cast %727 : i32 to index
-    %731 = arith.index_cast %728 : i32 to index
-    %c8 = arith.constant 8 : index
-    %c16 = arith.constant 16 : index
-    %c1 = arith.constant 1 : index
-    %732 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64div641div64div64div64_tensorptrf16gmemalign16odiv64div641div64div64div64_te_0 clusters in (%c1, %c1, %c1) blocks in (%729, %730, %731) threads in (%c8, %c16, %c1)  dynamic_shared_memory_size %c0_i32 args(%view_75 : !memref_gmem_f16_, %view_83 : !memref_gmem_f16_, %view_329 : !memref_gmem_f32_, %view_99 : !memref_gmem_f32_, %view_335 : !memref_gmem_f32_1, %cst : f32, %cst_407 : f32, %arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i32, %arg4 : i32, %arg5 : i32) {use_pdl = false}
-    %int_tuple_408 = cute.make_int_tuple(%arg1) : (i32) -> !cute.int_tuple<"?">
-    %733 = cute.get_scalars(%int_tuple_408) <{only_dynamic}> : !cute.int_tuple<"?">
+    %cst_409 = arith.constant -1.44269502 : f32
+    %729 = arith.extsi %c0_i32 : i32 to i64
+    %c16_i32_410 = arith.constant 16 : i32
+    %730 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c8_i32, %c16_i32_410, %c1_i32), dynamicSmemBytes = %729, gridDim = (%726, %727, %728), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %c1_i32_411 = arith.constant 1 : i32
+    cuda.launch_cfg.cluster_dim[%730] (%c1_i32_411, %c1_i32_411, %c1_i32_411) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %731 = cuda.launch_ex @kernels::@kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64i64div641div64div64div64_tensorptrf16gmemalign16odiv64i64div641div64div64di_0<%730> (%view_75, %view_83, %view_331, %view_100, %view_337, %cst, %cst_409, %arg0, %arg1, %arg2, %arg3, %arg4, %arg5) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f16_, !memref_gmem_f16_, !memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, f32, f32, i32, i32, i32, i32, i32, i32) -> !cuda.result
+    %732 = cuda.cast %731 : !cuda.result -> i32
+    cuda.return_if_error %732 : i32
+    %int_tuple_412 = cute.make_int_tuple(%arg1) : (i32) -> !cute.int_tuple<"?">
+    %733 = cute.get_scalars(%int_tuple_412) <{only_dynamic}> : !cute.int_tuple<"?">
     %c128_i32 = arith.constant 128 : i32
     %734 = arith.ceildivsi %733, %c128_i32 : i32
-    %int_tuple_409 = cute.make_int_tuple(%734) : (i32) -> !cute.int_tuple<"?">
-    %e0_410 = cute.get_leaves(%int_tuple_409) : !cute.int_tuple<"?">
-    %735 = cute.get_scalars(%e0_410) : !cute.int_tuple<"?">
-    %int_tuple_411 = cute.make_int_tuple(%arg4) : (i32) -> !cute.int_tuple<"?">
-    %sz_412 = cute.size(%int_tuple_411) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_413 = cute.get_leaves(%sz_412) : !cute.int_tuple<"?">
-    %736 = cute.get_scalars(%e0_413) : !cute.int_tuple<"?">
-    %int_tuple_414 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
-    %sz_415 = cute.size(%int_tuple_414) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_416 = cute.get_leaves(%sz_415) : !cute.int_tuple<"?">
-    %737 = cute.get_scalars(%e0_416) : !cute.int_tuple<"?">
+    %int_tuple_413 = cute.make_int_tuple(%734) : (i32) -> !cute.int_tuple<"?">
+    %e0_414 = cute.get_leaves(%int_tuple_413) : !cute.int_tuple<"?">
+    %735 = cute.get_scalars(%e0_414) : !cute.int_tuple<"?">
+    %int_tuple_415 = cute.make_int_tuple(%arg4) : (i32) -> !cute.int_tuple<"?">
+    %sz_416 = cute.size(%int_tuple_415) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_417 = cute.get_leaves(%sz_416) : !cute.int_tuple<"?">
+    %736 = cute.get_scalars(%e0_417) : !cute.int_tuple<"?">
+    %int_tuple_418 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
+    %sz_419 = cute.size(%int_tuple_418) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_420 = cute.get_leaves(%sz_419) : !cute.int_tuple<"?">
+    %737 = cute.get_scalars(%e0_420) : !cute.int_tuple<"?">
     %738 = cute.static : !cute.layout<"(1,1,1,1):(0,0,0,0)">
     %739 = cute.static : !cute.tile<"[_;_;_]">
     %740 = cute.static : !cute.layout<"1:0">
@@ -7364,34 +7619,41 @@ module attributes {gpu.container_module} {
     %785 = cute.static : !cute.layout<"1:0">
     %786 = cute.static : !cute.layout<"(1,4096):(0,1)">
     %787 = cute.static : !cute.layout<"(1,4096):(0,1)">
-    %788 = arith.index_cast %735 : i32 to index
-    %789 = arith.index_cast %736 : i32 to index
-    %790 = arith.index_cast %737 : i32 to index
-    %c512 = arith.constant 512 : index
-    %c1_417 = arith.constant 1 : index
     %c232448_i32 = arith.constant 232448 : i32
-    %791 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1 clusters in (%c1_417, %c1_417, %c1_417) blocks in (%788, %789, %790) threads in (%c512, %c1_417, %c1_417)  dynamic_shared_memory_size %c232448_i32 args(%22 : !mma_f16_f16_f32_128x128x16_, %26 : !mma_f16_f16_f32_128x128x16_, %30 : !mma_f16_f16_f32_128x128x16_1, %34 : !mma_f16_f16_f32_128x128x16_2, %38 : !mma_f16_f16_f32_128x128x16_3, %185 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %view_138 : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %312 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %view_193 : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %442 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %view_246 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %572 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %view_300 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %720 : !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %view_393 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %view_79 : !memref_gmem_f16_4, %view_81 : !memref_gmem_f16_4, %view_335 : !memref_gmem_f32_1, %arg15 : f32, %view_329 : !memref_gmem_f32_, %arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i32, %arg4 : i32, %arg5 : i32) {use_pdl = false}
+    %788 = arith.extsi %c232448_i32 : i32 to i64
+    %c512_i32 = arith.constant 512 : i32
+    %c1_i32_421 = arith.constant 1 : i32
+    %789 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c512_i32, %c1_i32_421, %c1_i32_421), dynamicSmemBytes = %788, gridDim = (%735, %736, %737), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %c1_i32_422 = arith.constant 1 : i32
+    cuda.launch_cfg.cluster_dim[%789] (%c1_i32_422, %c1_i32_422, %c1_i32_422) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %790 = cuda.launch_ex @kernels::@kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1<%789> (%22, %26, %30, %34, %38, %185, %view_139, %312, %view_194, %442, %view_247, %572, %view_301, %720, %view_395, %view_79, %view_81, %view_337, %arg15, %view_331, %arg0, %arg1, %arg2, %arg3, %arg4, %arg5) : !cuda.launch_cfg<max_attrs = 2>, (!mma_f16_f16_f32_128x128x16_, !mma_f16_f16_f32_128x128x16_, !mma_f16_f16_f32_128x128x16_1, !mma_f16_f16_f32_128x128x16_2, !mma_f16_f16_f32_128x128x16_3, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !memref_gmem_f16_4, !memref_gmem_f16_4, !memref_gmem_f32_1, f32, !memref_gmem_f32_, i32, i32, i32, i32, i32, i32) -> !cuda.result
+    %791 = cuda.cast %790 : !cuda.result -> i32
+    cuda.return_if_error %791 : i32
     %792 = arith.maxsi %arg0, %arg1 : i32
-    %c8_i32_418 = arith.constant 8 : i32
-    %793 = arith.addi %792, %c8_i32_418 : i32
-    %c1_i32_419 = arith.constant 1 : i32
-    %794 = arith.subi %793, %c1_i32_419 : i32
-    %795 = arith.floordivsi %794, %c8_i32_418 : i32
-    %int_tuple_420 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
-    %sz_421 = cute.size(%int_tuple_420) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
-    %e0_422 = cute.get_leaves(%sz_421) : !cute.int_tuple<"?">
-    %796 = cute.get_scalars(%e0_422) : !cute.int_tuple<"?">
-    %int_tuple_423 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
-    %sz_424 = cute.size(%int_tuple_423) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_425 = cute.get_leaves(%sz_424) : !cute.int_tuple<"?">
-    %797 = cute.get_scalars(%e0_425) : !cute.int_tuple<"?">
-    %798 = arith.index_cast %796 : i32 to index
-    %799 = arith.index_cast %797 : i32 to index
-    %800 = arith.index_cast %795 : i32 to index
-    %c16_426 = arith.constant 16 : index
-    %c8_427 = arith.constant 8 : index
-    %c0_i32_428 = arith.constant 0 : i32
-    %801 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64div641div64div64div64___None__2 clusters in (%c1_417, %c1_417, %c1_417) blocks in (%798, %799, %800) threads in (%c16_426, %c8_427, %c1_417)  dynamic_shared_memory_size %c0_i32_428 args(%view_341 : !memref_gmem_f32_7, %view_77 : !memref_gmem_f16_, %arg0 : i32, %arg2 : i32, %arg15 : f32) {use_pdl = false}
-    return
+    %c8_i32_423 = arith.constant 8 : i32
+    %793 = arith.addi %792, %c8_i32_423 : i32
+    %c1_i32_424 = arith.constant 1 : i32
+    %794 = arith.subi %793, %c1_i32_424 : i32
+    %795 = arith.floordivsi %794, %c8_i32_423 : i32
+    %int_tuple_425 = cute.make_int_tuple(%arg3, %arg4) : (i32, i32) -> !cute.int_tuple<"(?,?)">
+    %sz_426 = cute.size(%int_tuple_425) : (!cute.int_tuple<"(?,?)">) -> !cute.int_tuple<"?">
+    %e0_427 = cute.get_leaves(%sz_426) : !cute.int_tuple<"?">
+    %796 = cute.get_scalars(%e0_427) : !cute.int_tuple<"?">
+    %int_tuple_428 = cute.make_int_tuple(%arg5) : (i32) -> !cute.int_tuple<"?">
+    %sz_429 = cute.size(%int_tuple_428) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_430 = cute.get_leaves(%sz_429) : !cute.int_tuple<"?">
+    %797 = cute.get_scalars(%e0_430) : !cute.int_tuple<"?">
+    %c0_i32_431 = arith.constant 0 : i32
+    %798 = arith.extsi %c0_i32_431 : i32 to i64
+    %c16_i32_432 = arith.constant 16 : i32
+    %c8_i32_433 = arith.constant 8 : i32
+    %799 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c16_i32_432, %c8_i32_433, %c1_i32_421), dynamicSmemBytes = %798, gridDim = (%796, %797, %795), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %c1_i32_434 = arith.constant 1 : i32
+    cuda.launch_cfg.cluster_dim[%799] (%c1_i32_434, %c1_i32_434, %c1_i32_434) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %800 = cuda.launch_ex @kernels::@kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64i64div641div64div64div64___None__2<%799> (%view_343, %view_77, %arg0, %arg2, %arg15) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_7, !memref_gmem_f16_, i32, i32, f32) -> !cuda.result
+    %801 = cuda.cast %800 : !cuda.result -> i32
+    cuda.return_if_error %801 : i32
+    %c0_i32_435 = arith.constant 0 : i32
+    return %c0_i32_435 : i32
   }
 }

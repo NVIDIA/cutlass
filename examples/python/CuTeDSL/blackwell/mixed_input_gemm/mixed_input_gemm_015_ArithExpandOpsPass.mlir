@@ -8,7 +8,7 @@
 #loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass__convert_kernel_tensorptrf32gmemo1024111001024_tensorptri8gmemalign128o51211100512_tensor000o1024111000102401112____Float32_Int4_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_i8_, %arg2: !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">, %arg3: i32, %arg4: i32, %arg5: i32) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    cuda.kernel @kernel_cutlass__convert_kernel_tensorptrf32gmemo1024111001024_tensorptri8gmemalign128o51211100512_tensor000o1024111000102401112____Float32_Int4_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_i8_, %arg2: !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">, %arg3: i32, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %0 = cute.static : !cute.int_tuple<"7">
       %1 = cute.static : !cute.int_tuple<"6">
       %2 = cute.static : !cute.int_tuple<"5">
@@ -115,11 +115,11 @@ module attributes {gpu.container_module} {
       %48 = arith.addi %38, %c1_i32 : i32
       cf.br ^bb2(%48 : i32)
     ^bb4:  // pred: ^bb2
-      %49 = cute.memref.load_vec %rmem, row_major : !memref_rmem_f32_
+      %49 = cute.memref.load_vec %rmem : !memref_rmem_f32_
       %50 = arith.fptosi %49 : vector<8xf32> to vector<8xi4>
       %51 = cute.recast_layout<8, 4> (%7) : !cute.layout<"8:1"> to !cute.layout<"4:1">
       %52 = vector.bitcast %50 : vector<8xi4> to vector<4xi8>
-      cute.memref.store_vec %52, %rmem_16, row_major : !memref_rmem_i8_
+      cute.memref.store_vec %52, %rmem_16 : !memref_rmem_i8_
       %53 = builtin.unrealized_conversion_cast %iter_17 : !cute.ptr<i8, rmem, align<32>> to !llvm.ptr
       %54 = builtin.unrealized_conversion_cast %ptr_10 : !cute.ptr<i8, gmem> to !llvm.ptr<1>
       %ptr_32 = cute.add_offset(%iter_17, %6) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"1">) -> !cute.ptr<i8, rmem>
@@ -155,10 +155,11 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass__convert_Tensorgmemo1i64i64_Tensorgmemo1i64i64_0_8(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_i4_) attributes {llvm.emit_c_interface} {
+  func.func @cutlass__convert_Tensorgmemo1i64i64_Tensorgmemo1i64i64_0_8(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_i4_) -> i32 attributes {llvm.emit_c_interface} {
+    %c1_i32 = arith.constant 1 : i32
+    %c128_i32 = arith.constant 128 : i32
+    %c0_i64 = arith.constant 0 : i64
     %c0_i32 = arith.constant 0 : i32
-    %c128 = arith.constant 128 : index
-    %c1 = arith.constant 1 : index
     %c512_i32 = arith.constant 512 : i32
     %0 = cute.static : !cute.stride<"((1@0,0,0),(1024@0,1@1,1@2))">
     %c1024_i32 = arith.constant 1024 : i32
@@ -183,81 +184,84 @@ module attributes {gpu.container_module} {
     %lay_4 = cute.make_layout(%shape, %1) : !cute.layout<"(?,?,?):(1@0,1@1,1@2)">
     %iter_5 = cute.get_iter(%arg0) : !memref_gmem_f32_1
     %10:5 = cute.get_scalars(%lay_1) <{only_dynamic}> : !cute.layout<"(?,?,?):(1,?{i64},?{i64})">
-    %c1_i32 = arith.constant 1 : i32
-    %c0_i32_6 = arith.constant 0 : i32
+    %c1_i32_6 = arith.constant 1 : i32
+    %c0_i32_7 = arith.constant 0 : i32
     %c-1_i32 = arith.constant -1 : i32
-    %11 = arith.cmpi sgt, %c1024_i32, %c0_i32_6 : i32
-    %12 = arith.select %11, %c-1_i32, %c1_i32 : i32
+    %11 = arith.cmpi sgt, %c1024_i32, %c0_i32_7 : i32
+    %12 = arith.select %11, %c-1_i32, %c1_i32_6 : i32
     %13 = arith.addi %12, %10#0 : i32
     %14 = arith.divsi %13, %c1024_i32 : i32
-    %15 = arith.addi %c1_i32, %14 : i32
-    %16 = arith.subi %c0_i32_6, %10#0 : i32
+    %15 = arith.addi %c1_i32_6, %14 : i32
+    %16 = arith.subi %c0_i32_7, %10#0 : i32
     %17 = arith.divsi %16, %c1024_i32 : i32
-    %18 = arith.subi %c0_i32_6, %17 : i32
-    %19 = arith.cmpi slt, %10#0, %c0_i32_6 : i32
-    %20 = arith.cmpi sgt, %10#0, %c0_i32_6 : i32
-    %21 = arith.cmpi slt, %c1024_i32, %c0_i32_6 : i32
-    %22 = arith.cmpi sgt, %c1024_i32, %c0_i32_6 : i32
+    %18 = arith.subi %c0_i32_7, %17 : i32
+    %19 = arith.cmpi slt, %10#0, %c0_i32_7 : i32
+    %20 = arith.cmpi sgt, %10#0, %c0_i32_7 : i32
+    %21 = arith.cmpi slt, %c1024_i32, %c0_i32_7 : i32
+    %22 = arith.cmpi sgt, %c1024_i32, %c0_i32_7 : i32
     %23 = arith.andi %19, %21 : i1
     %24 = arith.andi %20, %22 : i1
     %25 = arith.ori %23, %24 : i1
     %26 = arith.select %25, %15, %18 : i32
-    %shape_7 = cute.make_shape(%26, %10#1, %10#2) : (i32, i32, i32) -> !cute.shape<"((1024,1,1),(?,?,?))">
+    %shape_8 = cute.make_shape(%26, %10#1, %10#2) : (i32, i32, i32) -> !cute.shape<"((1024,1,1),(?,?,?))">
     %stride = cute.make_stride(%10#3, %10#4) : (i64, i64) -> !cute.stride<"((1,0,0),(1024,?{i64},?{i64}))">
-    %lay_8 = cute.make_layout(%shape_7, %stride) : !cute.layout<"((1024,1,1),(?,?,?)):((1,0,0),(1024,?{i64},?{i64}))">
-    %view = cute.make_view(%iter_5, %lay_8) : !memref_gmem_f32_
+    %lay_9 = cute.make_layout(%shape_8, %stride) : !cute.layout<"((1024,1,1),(?,?,?)):((1,0,0),(1024,?{i64},?{i64}))">
+    %view = cute.make_view(%iter_5, %lay_9) : !memref_gmem_f32_
     %27:3 = cute.get_scalars(%lay_4) <{only_dynamic}> : !cute.layout<"(?,?,?):(1@0,1@1,1@2)">
-    %c1_i32_9 = arith.constant 1 : i32
-    %c0_i32_10 = arith.constant 0 : i32
-    %c-1_i32_11 = arith.constant -1 : i32
-    %28 = arith.cmpi sgt, %c1024_i32, %c0_i32_10 : i32
-    %29 = arith.select %28, %c-1_i32_11, %c1_i32_9 : i32
+    %c1_i32_10 = arith.constant 1 : i32
+    %c0_i32_11 = arith.constant 0 : i32
+    %c-1_i32_12 = arith.constant -1 : i32
+    %28 = arith.cmpi sgt, %c1024_i32, %c0_i32_11 : i32
+    %29 = arith.select %28, %c-1_i32_12, %c1_i32_10 : i32
     %30 = arith.addi %29, %27#0 : i32
     %31 = arith.divsi %30, %c1024_i32 : i32
-    %32 = arith.addi %c1_i32_9, %31 : i32
-    %33 = arith.subi %c0_i32_10, %27#0 : i32
+    %32 = arith.addi %c1_i32_10, %31 : i32
+    %33 = arith.subi %c0_i32_11, %27#0 : i32
     %34 = arith.divsi %33, %c1024_i32 : i32
-    %35 = arith.subi %c0_i32_10, %34 : i32
-    %36 = arith.cmpi slt, %27#0, %c0_i32_10 : i32
-    %37 = arith.cmpi sgt, %27#0, %c0_i32_10 : i32
-    %38 = arith.cmpi slt, %c1024_i32, %c0_i32_10 : i32
-    %39 = arith.cmpi sgt, %c1024_i32, %c0_i32_10 : i32
+    %35 = arith.subi %c0_i32_11, %34 : i32
+    %36 = arith.cmpi slt, %27#0, %c0_i32_11 : i32
+    %37 = arith.cmpi sgt, %27#0, %c0_i32_11 : i32
+    %38 = arith.cmpi slt, %c1024_i32, %c0_i32_11 : i32
+    %39 = arith.cmpi sgt, %c1024_i32, %c0_i32_11 : i32
     %40 = arith.andi %36, %38 : i1
     %41 = arith.andi %37, %39 : i1
     %42 = arith.ori %40, %41 : i1
     %43 = arith.select %42, %32, %35 : i32
-    %shape_12 = cute.make_shape(%43, %27#1, %27#2) : (i32, i32, i32) -> !cute.shape<"((1024,1,1),(?,?,?))">
-    %lay_13 = cute.make_layout(%shape_12, %0) : !cute.layout<"((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">
-    %view_14 = cute.make_view(%2, %lay_13) : !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">
+    %shape_13 = cute.make_shape(%43, %27#1, %27#2) : (i32, i32, i32) -> !cute.shape<"((1024,1,1),(?,?,?))">
+    %lay_14 = cute.make_layout(%shape_13, %0) : !cute.layout<"((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">
+    %view_15 = cute.make_view(%2, %lay_14) : !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">
     %44:5 = cute.get_scalars(%5) <{only_dynamic}> : !cute.layout<"(?,?,?):(1,?{i64},?{i64})">
-    %c1_i32_15 = arith.constant 1 : i32
-    %c0_i32_16 = arith.constant 0 : i32
-    %c-1_i32_17 = arith.constant -1 : i32
-    %45 = arith.cmpi sgt, %c512_i32, %c0_i32_16 : i32
-    %46 = arith.select %45, %c-1_i32_17, %c1_i32_15 : i32
+    %c1_i32_16 = arith.constant 1 : i32
+    %c0_i32_17 = arith.constant 0 : i32
+    %c-1_i32_18 = arith.constant -1 : i32
+    %45 = arith.cmpi sgt, %c512_i32, %c0_i32_17 : i32
+    %46 = arith.select %45, %c-1_i32_18, %c1_i32_16 : i32
     %47 = arith.addi %46, %44#0 : i32
     %48 = arith.divsi %47, %c512_i32 : i32
-    %49 = arith.addi %c1_i32_15, %48 : i32
-    %50 = arith.subi %c0_i32_16, %44#0 : i32
+    %49 = arith.addi %c1_i32_16, %48 : i32
+    %50 = arith.subi %c0_i32_17, %44#0 : i32
     %51 = arith.divsi %50, %c512_i32 : i32
-    %52 = arith.subi %c0_i32_16, %51 : i32
-    %53 = arith.cmpi slt, %44#0, %c0_i32_16 : i32
-    %54 = arith.cmpi sgt, %44#0, %c0_i32_16 : i32
-    %55 = arith.cmpi slt, %c512_i32, %c0_i32_16 : i32
-    %56 = arith.cmpi sgt, %c512_i32, %c0_i32_16 : i32
+    %52 = arith.subi %c0_i32_17, %51 : i32
+    %53 = arith.cmpi slt, %44#0, %c0_i32_17 : i32
+    %54 = arith.cmpi sgt, %44#0, %c0_i32_17 : i32
+    %55 = arith.cmpi slt, %c512_i32, %c0_i32_17 : i32
+    %56 = arith.cmpi sgt, %c512_i32, %c0_i32_17 : i32
     %57 = arith.andi %53, %55 : i1
     %58 = arith.andi %54, %56 : i1
     %59 = arith.ori %57, %58 : i1
     %60 = arith.select %59, %49, %52 : i32
-    %shape_18 = cute.make_shape(%60, %44#1, %44#2) : (i32, i32, i32) -> !cute.shape<"((512,1,1),(?,?,?))">
-    %stride_19 = cute.make_stride(%44#3, %44#4) : (i64, i64) -> !cute.stride<"((1,0,0),(512,?{i64},?{i64}))">
-    %lay_20 = cute.make_layout(%shape_18, %stride_19) : !cute.layout<"((512,1,1),(?,?,?)):((1,0,0),(512,?{i64},?{i64}))">
-    %view_21 = cute.make_view(%iter_0, %lay_20) : !memref_gmem_i8_
-    %sz = cute.size(%lay_8) <{mode = [1]}> : (!cute.layout<"((1024,1,1),(?,?,?)):((1,0,0),(1024,?{i64},?{i64}))">) -> !cute.int_tuple<"?">
-    %e0_22 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
-    %61 = cute.get_scalars(%e0_22) : !cute.int_tuple<"?">
-    %62 = arith.index_cast %61 : i32 to index
-    gpu.launch_func  @kernels::@kernel_cutlass__convert_kernel_tensorptrf32gmemo1024111001024_tensorptri8gmemalign128o51211100512_tensor000o1024111000102401112____Float32_Int4_0 blocks in (%62, %c1, %c1) threads in (%c128, %c1, %c1)  dynamic_shared_memory_size %c0_i32 args(%view : !memref_gmem_f32_, %view_21 : !memref_gmem_i8_, %view_14 : !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">, %7 : i32, %8 : i32, %9 : i32) {use_pdl = false}
-    return
+    %shape_19 = cute.make_shape(%60, %44#1, %44#2) : (i32, i32, i32) -> !cute.shape<"((512,1,1),(?,?,?))">
+    %stride_20 = cute.make_stride(%44#3, %44#4) : (i64, i64) -> !cute.stride<"((1,0,0),(512,?{i64},?{i64}))">
+    %lay_21 = cute.make_layout(%shape_19, %stride_20) : !cute.layout<"((512,1,1),(?,?,?)):((1,0,0),(512,?{i64},?{i64}))">
+    %view_22 = cute.make_view(%iter_0, %lay_21) : !memref_gmem_i8_
+    %sz = cute.size(%lay_9) <{mode = [1]}> : (!cute.layout<"((1024,1,1),(?,?,?)):((1,0,0),(1024,?{i64},?{i64}))">) -> !cute.int_tuple<"?">
+    %e0_23 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
+    %61 = cute.get_scalars(%e0_23) : !cute.int_tuple<"?">
+    %62 = cuda.cast %c0_i64 : i64 -> !cuda.stream
+    %63 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c128_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%61, %c1_i32, %c1_i32), stream = %62) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %64 = cuda.launch_ex @kernels::@kernel_cutlass__convert_kernel_tensorptrf32gmemo1024111001024_tensorptri8gmemalign128o51211100512_tensor000o1024111000102401112____Float32_Int4_0<%63> (%view, %view_22, %view_15, %7, %8, %9) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_i8_, !cute.coord_tensor<"(0,0,0)", "((1024,1,1),(?,?,?)):((1@0,0,0),(1024@0,1@1,1@2))">, i32, i32, i32) -> !cuda.result
+    %65 = cuda.cast %64 : !cuda.result -> i32
+    cuda.return_if_error %65 : i32
+    return %c0_i32 : i32
   }
 }

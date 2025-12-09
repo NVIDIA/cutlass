@@ -10,7 +10,7 @@
 #loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_kernel___main__HopperWgmmaGemmPersistentKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1_0(%arg0: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg1: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg2: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg3: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg4: !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg5: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg6: !mma_f16_f16_f32_64x128x16_, %arg7: i32, %arg8: i32, %arg9: i32) attributes {cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 256, 1, 1>} {
+    cuda.kernel @kernel_cutlass_kernel___main__HopperWgmmaGemmPersistentKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1_0(%arg0: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg1: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg2: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg3: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg4: !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %arg5: !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %arg6: !mma_f16_f16_f32_64x128x16_, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: !cute.fast_divmod_divisor<32>, %arg11: !cute.fast_divmod_divisor<32>, %arg12: !cute.fast_divmod_divisor<32>) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 256, 1, 1>} {
       %cst = arith.constant dense<0.000000e+00> : vector<128xf32>
       %0 = cute.static : !cute.int_tuple<"(96,64)">
       %c7_i32 = arith.constant 7 : i32
@@ -370,169 +370,239 @@ module attributes {gpu.container_module} {
         %e0_36 = cute.get_leaves(%sz_35) : !cute.int_tuple<"?">
         %235 = cute.get_scalars(%e0_36) : !cute.int_tuple<"?">
         %236 = arith.cmpi sgt, %235, %230 : i32
-        %237 = cute.get_hier_coord(%230, %lay) : (i32, !cute.layout<"(?,?,?):(1,?,?)">) -> !cute.coord<"(?,?,?)">
-        %e0_37, %e1_38, %e2_39 = cute.get_leaves(%237) : !cute.coord<"(?,?,?)">
-        %itup = cute.to_int_tuple(%e0_37) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %itup_40 = cute.to_int_tuple(%e1_38) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %itup_41 = cute.to_int_tuple(%e2_39) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %mul = cute.tuple_mul(%itup, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %238 = cute.get_scalars(%mul) : !cute.int_tuple<"?">
-        %mul_42 = cute.tuple_mul(%itup_40, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %239 = cute.get_scalars(%mul_42) : !cute.int_tuple<"?">
-        %mul_43 = cute.tuple_mul(%itup_41, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %240 = cute.get_scalars(%mul_43) : !cute.int_tuple<"?">
-        %241:7 = scf.while (%arg10 = %238, %arg11 = %239, %arg12 = %240, %arg13 = %236, %arg14 = %c0_i32, %arg15 = %c1_i32, %arg16 = %230, %arg17 = %c0_i32) : (i32, i32, i32, i1, i32, i32, i32, i32) -> (i32, i32, i32, i32, i32, i32, i32) {
-          scf.condition(%arg13) %arg10, %arg11, %arg12, %arg14, %arg15, %arg16, %arg17 : i32, i32, i32, i32, i32, i32, i32
+        %237 = cute.fast_divmod.get_divisor(%arg10) : !cute.fast_divmod_divisor<32>
+        %multiplier, %shift1, %shift2 = cute.fast_divmod.get_aux(%arg10) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %238 = arith.extui %shift1 : i8 to i32
+        %239 = arith.extui %shift2 : i8 to i32
+        %240 = nvvm.mul  hi %230, %multiplier : i32 -> i32
+        %241 = arith.subi %230, %240 : i32
+        %242 = arith.shrui %241, %238 : i32
+        %243 = arith.addi %240, %242 : i32
+        %244 = arith.shrui %243, %239 : i32
+        %245 = arith.muli %244, %237 : i32
+        %246 = arith.subi %230, %245 : i32
+        %247 = cute.fast_divmod.get_divisor(%arg11) : !cute.fast_divmod_divisor<32>
+        %multiplier_37, %shift1_38, %shift2_39 = cute.fast_divmod.get_aux(%arg11) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %248 = arith.extui %shift1_38 : i8 to i32
+        %249 = arith.extui %shift2_39 : i8 to i32
+        %250 = nvvm.mul  hi %246, %multiplier_37 : i32 -> i32
+        %251 = arith.subi %246, %250 : i32
+        %252 = arith.shrui %251, %248 : i32
+        %253 = arith.addi %250, %252 : i32
+        %254 = arith.shrui %253, %249 : i32
+        %255 = arith.muli %254, %247 : i32
+        %256 = arith.subi %246, %255 : i32
+        %257 = cute.fast_divmod.get_divisor(%arg12) : !cute.fast_divmod_divisor<32>
+        %multiplier_40, %shift1_41, %shift2_42 = cute.fast_divmod.get_aux(%arg12) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %258 = arith.extui %shift1_41 : i8 to i32
+        %259 = arith.extui %shift2_42 : i8 to i32
+        %260 = nvvm.mul  hi %254, %multiplier_40 : i32 -> i32
+        %261 = arith.subi %254, %260 : i32
+        %262 = arith.shrui %261, %258 : i32
+        %263 = arith.addi %260, %262 : i32
+        %264 = arith.shrui %263, %259 : i32
+        %265 = arith.muli %264, %257 : i32
+        %266 = arith.subi %254, %265 : i32
+        %int_tuple_43 = cute.make_int_tuple(%256) : (i32) -> !cute.int_tuple<"?">
+        %mul = cute.tuple_mul(%int_tuple_43, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %267 = cute.get_scalars(%mul) : !cute.int_tuple<"?">
+        %int_tuple_44 = cute.make_int_tuple(%266) : (i32) -> !cute.int_tuple<"?">
+        %mul_45 = cute.tuple_mul(%int_tuple_44, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %268 = cute.get_scalars(%mul_45) : !cute.int_tuple<"?">
+        %int_tuple_46 = cute.make_int_tuple(%264) : (i32) -> !cute.int_tuple<"?">
+        %mul_47 = cute.tuple_mul(%int_tuple_46, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %269 = cute.get_scalars(%mul_47) : !cute.int_tuple<"?">
+        %270:7 = scf.while (%arg13 = %267, %arg14 = %268, %arg15 = %269, %arg16 = %236, %arg17 = %c0_i32, %arg18 = %c1_i32, %arg19 = %230, %arg20 = %c0_i32) : (i32, i32, i32, i1, i32, i32, i32, i32) -> (i32, i32, i32, i32, i32, i32, i32) {
+          scf.condition(%arg16) %arg13, %arg14, %arg15, %arg17, %arg18, %arg19, %arg20 : i32, i32, i32, i32, i32, i32, i32
         } do {
-        ^bb0(%arg10: i32, %arg11: i32, %arg12: i32, %arg13: i32, %arg14: i32, %arg15: i32, %arg16: i32):
-          %coord = cute.make_coord(%arg10, %arg12) : (i32, i32) -> !cute.coord<"(_,?,_,?)">
-          %264:3 = cute.get_scalars(%lay_25) <{only_dynamic}> : !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">
-          %shape_46 = cute.make_shape(%264#1) : (i32) -> !cute.shape<"(((64,128),1),?)">
-          %lay_47 = cute.make_layout(%shape_46, %143) : !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">
+        ^bb0(%arg13: i32, %arg14: i32, %arg15: i32, %arg16: i32, %arg17: i32, %arg18: i32, %arg19: i32):
+          %int_tuple_50 = cute.make_int_tuple(%arg7, %arg8, %arg9) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
+          %293:3 = cute.get_scalars(%int_tuple_50) <{only_dynamic}> : !cute.int_tuple<"(?,?,?)">
+          %int_tuple_51 = cute.make_int_tuple(%293#0, %293#1, %293#2) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
+          %e0_52, %e1_53, %e2_54 = cute.get_leaves(%int_tuple_51) : !cute.int_tuple<"(?,?,?)">
+          %shape_55 = cute.make_shape(%e0_52, %e1_53, %e2_54) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,?)">
+          %lay_56 = cute.make_layout(%shape_55) : !cute.layout<"(?,?,?):(1,?,?)">
+          %coord = cute.make_coord(%arg13, %arg15) : (i32, i32) -> !cute.coord<"(_,?,_,?)">
+          %294:3 = cute.get_scalars(%lay_25) <{only_dynamic}> : !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">
+          %shape_57 = cute.make_shape(%294#1) : (i32) -> !cute.shape<"(((64,128),1),?)">
+          %lay_58 = cute.make_layout(%shape_57, %143) : !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">
           %idx = cute.crd2idx(%coord, %lay_25) : (!cute.coord<"(_,?,_,?)">, !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">) -> !cute.int_tuple<"(0,?{div=128},?)">
           %tup = cute.add_offset(%149, %idx) : (!cute.int_tuple<"(0,0,0)">, !cute.int_tuple<"(0,?{div=128},?)">) -> !cute.int_tuple<"(0,?{div=128},?)">
-          %coord_48 = cute.make_coord(%arg11, %arg12) : (i32, i32) -> !cute.coord<"(_,?,_,?)">
-          %265:3 = cute.get_scalars(%lay_29) <{only_dynamic}> : !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">
-          %shape_49 = cute.make_shape(%265#1) : (i32) -> !cute.shape<"(((64,128),1),?)">
-          %lay_50 = cute.make_layout(%shape_49, %143) : !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">
-          %idx_51 = cute.crd2idx(%coord_48, %lay_29) : (!cute.coord<"(_,?,_,?)">, !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">) -> !cute.int_tuple<"(0,?{div=128},?)">
-          %tup_52 = cute.add_offset(%149, %idx_51) : (!cute.int_tuple<"(0,0,0)">, !cute.int_tuple<"(0,?{div=128},?)">) -> !cute.int_tuple<"(0,?{div=128},?)">
-          %266:3 = scf.for %arg17 = %c0_i32 to %226 step %c1_i32 iter_args(%arg18 = %c0_i32, %arg19 = %arg13, %arg20 = %arg14) -> (i32, i32, i32)  : i32 {
-            %int_tuple_64 = cute.make_int_tuple(%arg19) : (i32) -> !cute.int_tuple<"?">
-            %ptr_65 = cute.add_offset(%ptr_3, %int_tuple_64) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-            %275 = builtin.unrealized_conversion_cast %ptr_65 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-            nvvm.mbarrier.try_wait.parity.shared %275, %arg20, %c10000000_i32 : !llvm.ptr<3>, i32, i32
-            %276 = nvvm.elect.sync -> i1
-            scf.if %276 {
-              %int_tuple_90 = cute.make_int_tuple(%arg19) : (i32) -> !cute.int_tuple<"?">
-              %ptr_91 = cute.add_offset(%iter, %int_tuple_90) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %288 = builtin.unrealized_conversion_cast %ptr_91 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.mbarrier.txn %288, %c32768_i32 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
+          %coord_59 = cute.make_coord(%arg14, %arg15) : (i32, i32) -> !cute.coord<"(_,?,_,?)">
+          %295:3 = cute.get_scalars(%lay_29) <{only_dynamic}> : !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">
+          %shape_60 = cute.make_shape(%295#1) : (i32) -> !cute.shape<"(((64,128),1),?)">
+          %lay_61 = cute.make_layout(%shape_60, %143) : !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">
+          %idx_62 = cute.crd2idx(%coord_59, %lay_29) : (!cute.coord<"(_,?,_,?)">, !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">) -> !cute.int_tuple<"(0,?{div=128},?)">
+          %tup_63 = cute.add_offset(%149, %idx_62) : (!cute.int_tuple<"(0,0,0)">, !cute.int_tuple<"(0,?{div=128},?)">) -> !cute.int_tuple<"(0,?{div=128},?)">
+          %296:3 = scf.for %arg20 = %c0_i32 to %226 step %c1_i32 iter_args(%arg21 = %c0_i32, %arg22 = %arg16, %arg23 = %arg17) -> (i32, i32, i32)  : i32 {
+            %int_tuple_81 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
+            %ptr_82 = cute.add_offset(%ptr_3, %int_tuple_81) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+            %334 = builtin.unrealized_conversion_cast %ptr_82 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+            nvvm.mbarrier.try_wait.parity.shared %334, %arg23, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+            %335 = nvvm.elect.sync -> i1
+            scf.if %335 {
+              %int_tuple_107 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
+              %ptr_108 = cute.add_offset(%iter, %int_tuple_107) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+              %347 = builtin.unrealized_conversion_cast %ptr_108 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.mbarrier.txn %347, %c32768_i32 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
             }
-            %coord_66 = cute.make_coord(%arg18) : (i32) -> !cute.coord<"(_,?)">
-            %idx_67 = cute.crd2idx(%coord_66, %lay_47) : (!cute.coord<"(_,?)">, !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">) -> !cute.int_tuple<"(?{div=64},0)">
-            %tup_68 = cute.add_offset(%tup, %idx_67) : (!cute.int_tuple<"(0,?{div=128},?)">, !cute.int_tuple<"(?{div=64},0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %e0_69, %e1_70, %e2_71 = cute.get_leaves(%tup_68) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %coord_72 = cute.make_coord(%arg19) : (i32) -> !cute.coord<"(_,?)">
-            %idx_73 = cute.crd2idx(%coord_72, %142) : (!cute.coord<"(_,?)">, !cute.layout<"((8192,1),(1,6)):((1,0),(0,8192))">) -> !cute.int_tuple<"?{div=8192}">
-            %ptr_74 = cute.add_offset(%iter_4, %idx_73) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8192}">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %coord_75 = cute.make_coord(%arg18) : (i32) -> !cute.coord<"(_,?)">
-            %idx_76 = cute.crd2idx(%coord_75, %lay_50) : (!cute.coord<"(_,?)">, !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">) -> !cute.int_tuple<"(?{div=64},0)">
-            %tup_77 = cute.add_offset(%tup_52, %idx_76) : (!cute.int_tuple<"(0,?{div=128},?)">, !cute.int_tuple<"(?{div=64},0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %e0_78, %e1_79, %e2_80 = cute.get_leaves(%tup_77) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %coord_81 = cute.make_coord(%arg19) : (i32) -> !cute.coord<"(_,?)">
-            %idx_82 = cute.crd2idx(%coord_81, %142) : (!cute.coord<"(_,?)">, !cute.layout<"((8192,1),(1,6)):((1,0),(0,8192))">) -> !cute.int_tuple<"?{div=8192}">
-            %ptr_83 = cute.add_offset(%iter_5, %idx_82) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8192}">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %int_tuple_84 = cute.make_int_tuple(%arg19) : (i32) -> !cute.int_tuple<"?">
-            %ptr_85 = cute.add_offset(%iter, %int_tuple_84) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-            %int_tuple_86 = cute.make_int_tuple(%e0_69, %e1_70, %e2_71) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %277 = cute_nvgpu.atom.make_exec_tma(%arg0) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
-            %278 = cute_nvgpu.atom.set_value(%277, %ptr_85 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
-            %279 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg21 = %c0_i32 to %279 step %c1_i32  : i32 {
-              %288 = cute_nvgpu.atom.get_value(%278 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%278 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %289:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_74 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %288 : !cute.ptr<smem, align<8>>, [%289#0, %289#1, %289#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %coord_83 = cute.make_coord(%arg21) : (i32) -> !cute.coord<"(_,?)">
+            %idx_84 = cute.crd2idx(%coord_83, %lay_58) : (!cute.coord<"(_,?)">, !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">) -> !cute.int_tuple<"(?{div=64},0)">
+            %tup_85 = cute.add_offset(%tup, %idx_84) : (!cute.int_tuple<"(0,?{div=128},?)">, !cute.int_tuple<"(?{div=64},0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %e0_86, %e1_87, %e2_88 = cute.get_leaves(%tup_85) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %coord_89 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,?)">
+            %idx_90 = cute.crd2idx(%coord_89, %142) : (!cute.coord<"(_,?)">, !cute.layout<"((8192,1),(1,6)):((1,0),(0,8192))">) -> !cute.int_tuple<"?{div=8192}">
+            %ptr_91 = cute.add_offset(%iter_4, %idx_90) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8192}">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %coord_92 = cute.make_coord(%arg21) : (i32) -> !cute.coord<"(_,?)">
+            %idx_93 = cute.crd2idx(%coord_92, %lay_61) : (!cute.coord<"(_,?)">, !cute.layout<"(((64,128),1),?):(((1@0,1@1),0),64@0)">) -> !cute.int_tuple<"(?{div=64},0)">
+            %tup_94 = cute.add_offset(%tup_63, %idx_93) : (!cute.int_tuple<"(0,?{div=128},?)">, !cute.int_tuple<"(?{div=64},0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %e0_95, %e1_96, %e2_97 = cute.get_leaves(%tup_94) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %coord_98 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,?)">
+            %idx_99 = cute.crd2idx(%coord_98, %142) : (!cute.coord<"(_,?)">, !cute.layout<"((8192,1),(1,6)):((1,0),(0,8192))">) -> !cute.int_tuple<"?{div=8192}">
+            %ptr_100 = cute.add_offset(%iter_5, %idx_99) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8192}">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
+            %int_tuple_101 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
+            %ptr_102 = cute.add_offset(%iter, %int_tuple_101) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+            %int_tuple_103 = cute.make_int_tuple(%e0_86, %e1_87, %e2_88) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %336 = cute_nvgpu.atom.make_exec_tma(%arg0) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
+            %337 = cute_nvgpu.atom.set_value(%336, %ptr_102 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
+            %338 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg24 = %c0_i32 to %338 step %c1_i32  : i32 {
+              %347 = cute_nvgpu.atom.get_value(%337 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %348 = cute_nvgpu.atom.get_value(%337 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%337 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %349:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_91 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %347 : !cute.ptr<smem, align<8>>, [%349#0, %349#1, %349#2] : i32, i32, i32) cache_policy = %348 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation}
-            %int_tuple_87 = cute.make_int_tuple(%arg19) : (i32) -> !cute.int_tuple<"?">
-            %ptr_88 = cute.add_offset(%iter, %int_tuple_87) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-            %int_tuple_89 = cute.make_int_tuple(%e0_78, %e1_79, %e2_80) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %280 = cute_nvgpu.atom.make_exec_tma(%arg2) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
-            %281 = cute_nvgpu.atom.set_value(%280, %ptr_88 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
-            %282 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg21 = %c0_i32 to %282 step %c1_i32  : i32 {
-              %288 = cute_nvgpu.atom.get_value(%281 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%281 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %289:3 = cute.get_scalars(%int_tuple_89) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_83 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %288 : !cute.ptr<smem, align<8>>, [%289#0, %289#1, %289#2] : i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %int_tuple_104 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
+            %ptr_105 = cute.add_offset(%iter, %int_tuple_104) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+            %int_tuple_106 = cute.make_int_tuple(%e0_95, %e1_96, %e2_97) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %339 = cute_nvgpu.atom.make_exec_tma(%arg2) : (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
+            %340 = cute_nvgpu.atom.set_value(%339, %ptr_105 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>
+            %341 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg24 = %c0_i32 to %341 step %c1_i32  : i32 {
+              %347 = cute_nvgpu.atom.get_value(%340 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %348 = cute_nvgpu.atom.get_value(%340 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%340 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %349:3 = cute.get_scalars(%int_tuple_106) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_100 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %347 : !cute.ptr<smem, align<8>>, [%349#0, %349#1, %349#2] : i32, i32, i32) cache_policy = %348 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation}
-            %283 = arith.addi %arg19, %c1_i32 : i32
-            %284 = arith.addi %arg18, %c1_i32 : i32
-            %285 = arith.cmpi eq, %283, %c6_i32 : i32
-            %286 = arith.select %285, %c0_i32, %283 : i32
-            %287 = scf.if %285 -> (i32) {
-              %288 = arith.xori %arg20, %c1_i32 : i32
-              scf.yield %288 : i32
+            %342 = arith.addi %arg22, %c1_i32 : i32
+            %343 = arith.addi %arg21, %c1_i32 : i32
+            %344 = arith.cmpi eq, %342, %c6_i32 : i32
+            %345 = arith.select %344, %c0_i32, %342 : i32
+            %346 = scf.if %344 -> (i32) {
+              %347 = arith.xori %arg23, %c1_i32 : i32
+              scf.yield %347 : i32
             } else {
-              scf.yield %arg20 : i32
+              scf.yield %arg23 : i32
             }
-            scf.yield %284, %286, %287 : i32, i32, i32
+            scf.yield %343, %345, %346 : i32, i32, i32
           }
-          %267 = arith.addi %arg15, %234 : i32
-          %268 = arith.addi %arg16, %c1_i32 : i32
-          %sz_53 = cute.size(%lay) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.int_tuple<"?">
-          %e0_54 = cute.get_leaves(%sz_53) : !cute.int_tuple<"?">
-          %269 = cute.get_scalars(%e0_54) : !cute.int_tuple<"?">
-          %270 = arith.cmpi sgt, %269, %267 : i32
-          %271 = cute.get_hier_coord(%267, %lay) : (i32, !cute.layout<"(?,?,?):(1,?,?)">) -> !cute.coord<"(?,?,?)">
-          %e0_55, %e1_56, %e2_57 = cute.get_leaves(%271) : !cute.coord<"(?,?,?)">
-          %itup_58 = cute.to_int_tuple(%e0_55) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %itup_59 = cute.to_int_tuple(%e1_56) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %itup_60 = cute.to_int_tuple(%e2_57) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %mul_61 = cute.tuple_mul(%itup_58, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %272 = cute.get_scalars(%mul_61) : !cute.int_tuple<"?">
-          %mul_62 = cute.tuple_mul(%itup_59, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %273 = cute.get_scalars(%mul_62) : !cute.int_tuple<"?">
-          %mul_63 = cute.tuple_mul(%itup_60, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %274 = cute.get_scalars(%mul_63) : !cute.int_tuple<"?">
-          scf.yield %272, %273, %274, %270, %266#1, %266#2, %267, %268 : i32, i32, i32, i1, i32, i32, i32, i32
+          %297 = arith.addi %arg18, %234 : i32
+          %298 = arith.addi %arg19, %c1_i32 : i32
+          %sz_64 = cute.size(%lay_56) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.int_tuple<"?">
+          %e0_65 = cute.get_leaves(%sz_64) : !cute.int_tuple<"?">
+          %299 = cute.get_scalars(%e0_65) : !cute.int_tuple<"?">
+          %300 = arith.cmpi sgt, %299, %297 : i32
+          %301 = cute.fast_divmod.get_divisor(%arg10) : !cute.fast_divmod_divisor<32>
+          %multiplier_66, %shift1_67, %shift2_68 = cute.fast_divmod.get_aux(%arg10) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %302 = arith.extui %shift1_67 : i8 to i32
+          %303 = arith.extui %shift2_68 : i8 to i32
+          %304 = nvvm.mul  hi %297, %multiplier_66 : i32 -> i32
+          %305 = arith.subi %297, %304 : i32
+          %306 = arith.shrui %305, %302 : i32
+          %307 = arith.addi %304, %306 : i32
+          %308 = arith.shrui %307, %303 : i32
+          %309 = arith.muli %308, %301 : i32
+          %310 = arith.subi %297, %309 : i32
+          %311 = cute.fast_divmod.get_divisor(%arg11) : !cute.fast_divmod_divisor<32>
+          %multiplier_69, %shift1_70, %shift2_71 = cute.fast_divmod.get_aux(%arg11) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %312 = arith.extui %shift1_70 : i8 to i32
+          %313 = arith.extui %shift2_71 : i8 to i32
+          %314 = nvvm.mul  hi %310, %multiplier_69 : i32 -> i32
+          %315 = arith.subi %310, %314 : i32
+          %316 = arith.shrui %315, %312 : i32
+          %317 = arith.addi %314, %316 : i32
+          %318 = arith.shrui %317, %313 : i32
+          %319 = arith.muli %318, %311 : i32
+          %320 = arith.subi %310, %319 : i32
+          %321 = cute.fast_divmod.get_divisor(%arg12) : !cute.fast_divmod_divisor<32>
+          %multiplier_72, %shift1_73, %shift2_74 = cute.fast_divmod.get_aux(%arg12) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %322 = arith.extui %shift1_73 : i8 to i32
+          %323 = arith.extui %shift2_74 : i8 to i32
+          %324 = nvvm.mul  hi %318, %multiplier_72 : i32 -> i32
+          %325 = arith.subi %318, %324 : i32
+          %326 = arith.shrui %325, %322 : i32
+          %327 = arith.addi %324, %326 : i32
+          %328 = arith.shrui %327, %323 : i32
+          %329 = arith.muli %328, %321 : i32
+          %330 = arith.subi %318, %329 : i32
+          %int_tuple_75 = cute.make_int_tuple(%320) : (i32) -> !cute.int_tuple<"?">
+          %mul_76 = cute.tuple_mul(%int_tuple_75, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %331 = cute.get_scalars(%mul_76) : !cute.int_tuple<"?">
+          %int_tuple_77 = cute.make_int_tuple(%330) : (i32) -> !cute.int_tuple<"?">
+          %mul_78 = cute.tuple_mul(%int_tuple_77, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %332 = cute.get_scalars(%mul_78) : !cute.int_tuple<"?">
+          %int_tuple_79 = cute.make_int_tuple(%328) : (i32) -> !cute.int_tuple<"?">
+          %mul_80 = cute.tuple_mul(%int_tuple_79, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %333 = cute.get_scalars(%mul_80) : !cute.int_tuple<"?">
+          scf.yield %331, %332, %333, %300, %296#1, %296#2, %297, %298 : i32, i32, i32, i1, i32, i32, i32, i32
         }
-        %242 = arith.addi %241#3, %c1_i32 : i32
-        %243 = arith.cmpi eq, %242, %c6_i32 : i32
-        %244 = arith.select %243, %c0_i32, %242 : i32
-        %245 = scf.if %243 -> (i32) {
-          %264 = arith.xori %241#4, %c1_i32 : i32
-          scf.yield %264 : i32
+        %271 = arith.addi %270#3, %c1_i32 : i32
+        %272 = arith.cmpi eq, %271, %c6_i32 : i32
+        %273 = arith.select %272, %c0_i32, %271 : i32
+        %274 = scf.if %272 -> (i32) {
+          %293 = arith.xori %270#4, %c1_i32 : i32
+          scf.yield %293 : i32
         } else {
-          scf.yield %241#4 : i32
+          scf.yield %270#4 : i32
         }
-        %246 = arith.addi %244, %c1_i32 : i32
-        %247 = arith.cmpi eq, %246, %c6_i32 : i32
-        %248 = arith.select %247, %c0_i32, %246 : i32
-        %249 = scf.if %247 -> (i32) {
-          %264 = arith.xori %245, %c1_i32 : i32
-          scf.yield %264 : i32
+        %275 = arith.addi %273, %c1_i32 : i32
+        %276 = arith.cmpi eq, %275, %c6_i32 : i32
+        %277 = arith.select %276, %c0_i32, %275 : i32
+        %278 = scf.if %276 -> (i32) {
+          %293 = arith.xori %274, %c1_i32 : i32
+          scf.yield %293 : i32
         } else {
-          scf.yield %245 : i32
+          scf.yield %274 : i32
         }
-        %250 = arith.addi %248, %c1_i32 : i32
-        %251 = arith.cmpi eq, %250, %c6_i32 : i32
-        %252 = arith.select %251, %c0_i32, %250 : i32
-        %253 = scf.if %251 -> (i32) {
-          %264 = arith.xori %249, %c1_i32 : i32
-          scf.yield %264 : i32
+        %279 = arith.addi %277, %c1_i32 : i32
+        %280 = arith.cmpi eq, %279, %c6_i32 : i32
+        %281 = arith.select %280, %c0_i32, %279 : i32
+        %282 = scf.if %280 -> (i32) {
+          %293 = arith.xori %278, %c1_i32 : i32
+          scf.yield %293 : i32
         } else {
-          scf.yield %249 : i32
+          scf.yield %278 : i32
         }
-        %254 = arith.addi %252, %c1_i32 : i32
-        %255 = arith.cmpi eq, %254, %c6_i32 : i32
-        %256 = arith.select %255, %c0_i32, %254 : i32
-        %257 = scf.if %255 -> (i32) {
-          %264 = arith.xori %253, %c1_i32 : i32
-          scf.yield %264 : i32
+        %283 = arith.addi %281, %c1_i32 : i32
+        %284 = arith.cmpi eq, %283, %c6_i32 : i32
+        %285 = arith.select %284, %c0_i32, %283 : i32
+        %286 = scf.if %284 -> (i32) {
+          %293 = arith.xori %282, %c1_i32 : i32
+          scf.yield %293 : i32
         } else {
-          scf.yield %253 : i32
+          scf.yield %282 : i32
         }
-        %258 = arith.addi %256, %c1_i32 : i32
-        %259 = arith.cmpi eq, %258, %c6_i32 : i32
-        %260 = arith.select %259, %c0_i32, %258 : i32
-        %261 = scf.if %259 -> (i32) {
-          %264 = arith.xori %257, %c1_i32 : i32
-          scf.yield %264 : i32
+        %287 = arith.addi %285, %c1_i32 : i32
+        %288 = arith.cmpi eq, %287, %c6_i32 : i32
+        %289 = arith.select %288, %c0_i32, %287 : i32
+        %290 = scf.if %288 -> (i32) {
+          %293 = arith.xori %286, %c1_i32 : i32
+          scf.yield %293 : i32
         } else {
-          scf.yield %257 : i32
+          scf.yield %286 : i32
         }
-        %int_tuple_44 = cute.make_int_tuple(%260) : (i32) -> !cute.int_tuple<"?">
-        %ptr_45 = cute.add_offset(%ptr_3, %int_tuple_44) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-        %262 = builtin.unrealized_conversion_cast %ptr_45 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-        nvvm.mbarrier.try_wait.parity.shared %262, %261, %c10000000_i32 : !llvm.ptr<3>, i32, i32
-        %263 = nvvm.elect.sync -> i1
-        scf.if %263 {
-          %int_tuple_46 = cute.make_int_tuple(%260) : (i32) -> !cute.int_tuple<"?">
-          %ptr_47 = cute.add_offset(%iter, %int_tuple_46) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-          %264 = builtin.unrealized_conversion_cast %ptr_47 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-          nvvm.mbarrier.txn %264, %c32768_i32 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
+        %int_tuple_48 = cute.make_int_tuple(%289) : (i32) -> !cute.int_tuple<"?">
+        %ptr_49 = cute.add_offset(%ptr_3, %int_tuple_48) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+        %291 = builtin.unrealized_conversion_cast %ptr_49 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+        nvvm.mbarrier.try_wait.parity.shared %291, %290, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+        %292 = nvvm.elect.sync -> i1
+        scf.if %292 {
+          %int_tuple_50 = cute.make_int_tuple(%289) : (i32) -> !cute.int_tuple<"?">
+          %ptr_51 = cute.add_offset(%iter, %int_tuple_50) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+          %293 = builtin.unrealized_conversion_cast %ptr_51 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+          nvvm.mbarrier.txn %293, %c32768_i32 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
         }
       }
       %229 = arith.cmpi eq, %227, %false : i1
@@ -551,3000 +621,3084 @@ module attributes {gpu.container_module} {
         %e0_36 = cute.get_leaves(%sz_35) : !cute.int_tuple<"?">
         %235 = cute.get_scalars(%e0_36) : !cute.int_tuple<"?">
         %236 = arith.cmpi sgt, %235, %230 : i32
-        %237 = cute.get_hier_coord(%230, %lay) : (i32, !cute.layout<"(?,?,?):(1,?,?)">) -> !cute.coord<"(?,?,?)">
-        %e0_37, %e1_38, %e2_39 = cute.get_leaves(%237) : !cute.coord<"(?,?,?)">
-        %itup = cute.to_int_tuple(%e0_37) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %itup_40 = cute.to_int_tuple(%e1_38) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %itup_41 = cute.to_int_tuple(%e2_39) : !cute.coord<"?"> to !cute.int_tuple<"?">
-        %mul = cute.tuple_mul(%itup, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %238 = cute.get_scalars(%mul) : !cute.int_tuple<"?">
-        %mul_42 = cute.tuple_mul(%itup_40, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %239 = cute.get_scalars(%mul_42) : !cute.int_tuple<"?">
-        %mul_43 = cute.tuple_mul(%itup_41, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-        %240 = cute.get_scalars(%mul_43) : !cute.int_tuple<"?">
+        %237 = cute.fast_divmod.get_divisor(%arg10) : !cute.fast_divmod_divisor<32>
+        %multiplier, %shift1, %shift2 = cute.fast_divmod.get_aux(%arg10) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %238 = arith.extui %shift1 : i8 to i32
+        %239 = arith.extui %shift2 : i8 to i32
+        %240 = nvvm.mul  hi %230, %multiplier : i32 -> i32
+        %241 = arith.subi %230, %240 : i32
+        %242 = arith.shrui %241, %238 : i32
+        %243 = arith.addi %240, %242 : i32
+        %244 = arith.shrui %243, %239 : i32
+        %245 = arith.muli %244, %237 : i32
+        %246 = arith.subi %230, %245 : i32
+        %247 = cute.fast_divmod.get_divisor(%arg11) : !cute.fast_divmod_divisor<32>
+        %multiplier_37, %shift1_38, %shift2_39 = cute.fast_divmod.get_aux(%arg11) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %248 = arith.extui %shift1_38 : i8 to i32
+        %249 = arith.extui %shift2_39 : i8 to i32
+        %250 = nvvm.mul  hi %246, %multiplier_37 : i32 -> i32
+        %251 = arith.subi %246, %250 : i32
+        %252 = arith.shrui %251, %248 : i32
+        %253 = arith.addi %250, %252 : i32
+        %254 = arith.shrui %253, %249 : i32
+        %255 = arith.muli %254, %247 : i32
+        %256 = arith.subi %246, %255 : i32
+        %257 = cute.fast_divmod.get_divisor(%arg12) : !cute.fast_divmod_divisor<32>
+        %multiplier_40, %shift1_41, %shift2_42 = cute.fast_divmod.get_aux(%arg12) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+        %258 = arith.extui %shift1_41 : i8 to i32
+        %259 = arith.extui %shift2_42 : i8 to i32
+        %260 = nvvm.mul  hi %254, %multiplier_40 : i32 -> i32
+        %261 = arith.subi %254, %260 : i32
+        %262 = arith.shrui %261, %258 : i32
+        %263 = arith.addi %260, %262 : i32
+        %264 = arith.shrui %263, %259 : i32
+        %265 = arith.muli %264, %257 : i32
+        %266 = arith.subi %254, %265 : i32
+        %int_tuple_43 = cute.make_int_tuple(%256) : (i32) -> !cute.int_tuple<"?">
+        %mul = cute.tuple_mul(%int_tuple_43, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %267 = cute.get_scalars(%mul) : !cute.int_tuple<"?">
+        %int_tuple_44 = cute.make_int_tuple(%266) : (i32) -> !cute.int_tuple<"?">
+        %mul_45 = cute.tuple_mul(%int_tuple_44, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %268 = cute.get_scalars(%mul_45) : !cute.int_tuple<"?">
+        %int_tuple_46 = cute.make_int_tuple(%264) : (i32) -> !cute.int_tuple<"?">
+        %mul_47 = cute.tuple_mul(%int_tuple_46, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+        %269 = cute.get_scalars(%mul_47) : !cute.int_tuple<"?">
         %atom = cute.make_atom() : () -> !cute_nvgpu.atom.stsm<f16, mode = <"(8,8)">, num_matrices = 4, n>
-        %atom_44 = cute.make_atom() : () -> !cute_nvgpu.atom.stsm<f16, mode = <"(8,8)">, num_matrices = 4, n>
-        %241 = cute.make_tiled_copy(%atom_44) : !copy_stsm_4_
-        %242 = cute.make_tiled_copy(%atom) : !copy_stsm_4_1
-        %243 = arith.subi %162, %c128_i32 : i32
-        %coord = cute.make_coord(%243) : (i32) -> !cute.coord<"?">
-        %244 = cute.get_scalars(%coord) <{only_dynamic}> : !cute.coord<"?">
-        %245 = arith.divsi %244, %c8_i32 : i32
-        %246 = arith.remsi %244, %c8_i32 : i32
-        %247 = arith.muli %246, %c32_i32 : i32
-        %248 = arith.divsi %245, %c2_i32 : i32
-        %249 = arith.remsi %245, %c2_i32 : i32
-        %250 = arith.muli %249, %c256_i32 : i32
-        %251 = arith.addi %247, %250 : i32
-        %252 = arith.divsi %248, %c2_i32 : i32
-        %253 = arith.remsi %248, %c2_i32 : i32
-        %254 = arith.muli %253, %c8_i32 : i32
-        %255 = arith.addi %251, %254 : i32
-        %256 = arith.muli %252, %c512_i32 : i32
-        %257 = arith.addi %255, %256 : i32
-        %iv = cute.assume(%257) : (i32) -> !cute.i32<divby 8>
-        %int_tuple_45 = cute.make_int_tuple(%iv) : (!cute.i32<divby 8>) -> !cute.int_tuple<"?{div=8}">
-        %ptr_46 = cute.add_offset(%iter_6, %int_tuple_45) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-        %iter_47 = cute.get_iter(%rmem) : !memref_rmem_f32_
-        %view = cute.make_view(%iter_47) : !memref_rmem_f32_1
-        %rmem_48 = cute.memref.alloca() : !memref_rmem_f32_2
-        %rmem_49 = cute.memref.alloca() : !memref_rmem_f16_
-        %258 = arith.minsi %226, %c1_i32 : i32
-        %259:10 = scf.while (%arg10 = %238, %arg11 = %239, %arg12 = %240, %arg13 = %236, %arg14 = %c0_i32, %arg15 = %c0_i32, %arg16 = %c0_i32, %arg17 = %c0_i32, %arg18 = %arg6, %arg19 = %230, %arg20 = %c0_i32) : (i32, i32, i32, i1, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32) -> (i32, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32) {
-          scf.condition(%arg13) %arg10, %arg11, %arg12, %arg14, %arg15, %arg16, %arg17, %arg18, %arg19, %arg20 : i32, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32
+        %atom_48 = cute.make_atom() : () -> !cute_nvgpu.atom.stsm<f16, mode = <"(8,8)">, num_matrices = 4, n>
+        %270 = cute.make_tiled_copy(%atom_48) : !copy_stsm_4_
+        %271 = cute.make_tiled_copy(%atom) : !copy_stsm_4_1
+        %272 = arith.subi %162, %c128_i32 : i32
+        %coord = cute.make_coord(%272) : (i32) -> !cute.coord<"?">
+        %273 = cute.get_scalars(%coord) <{only_dynamic}> : !cute.coord<"?">
+        %274 = arith.divsi %273, %c8_i32 : i32
+        %275 = arith.remsi %273, %c8_i32 : i32
+        %276 = arith.muli %275, %c32_i32 : i32
+        %277 = arith.divsi %274, %c2_i32 : i32
+        %278 = arith.remsi %274, %c2_i32 : i32
+        %279 = arith.muli %278, %c256_i32 : i32
+        %280 = arith.addi %276, %279 : i32
+        %281 = arith.divsi %277, %c2_i32 : i32
+        %282 = arith.remsi %277, %c2_i32 : i32
+        %283 = arith.muli %282, %c8_i32 : i32
+        %284 = arith.addi %280, %283 : i32
+        %285 = arith.muli %281, %c512_i32 : i32
+        %286 = arith.addi %284, %285 : i32
+        %iv = cute.assume(%286) : (i32) -> !cute.i32<divby 8>
+        %int_tuple_49 = cute.make_int_tuple(%iv) : (!cute.i32<divby 8>) -> !cute.int_tuple<"?{div=8}">
+        %ptr_50 = cute.add_offset(%iter_6, %int_tuple_49) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+        %iter_51 = cute.get_iter(%rmem) : !memref_rmem_f32_
+        %view = cute.make_view(%iter_51) : !memref_rmem_f32_1
+        %rmem_52 = cute.memref.alloca() : !memref_rmem_f32_2
+        %rmem_53 = cute.memref.alloca() : !memref_rmem_f16_
+        %287 = arith.minsi %226, %c1_i32 : i32
+        %288:10 = scf.while (%arg13 = %267, %arg14 = %268, %arg15 = %269, %arg16 = %236, %arg17 = %c0_i32, %arg18 = %c0_i32, %arg19 = %c0_i32, %arg20 = %c0_i32, %arg21 = %arg6, %arg22 = %230, %arg23 = %c0_i32) : (i32, i32, i32, i1, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32) -> (i32, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32) {
+          scf.condition(%arg16) %arg13, %arg14, %arg15, %arg17, %arg18, %arg19, %arg20, %arg21, %arg22, %arg23 : i32, i32, i32, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32
         } do {
-        ^bb0(%arg10: i32, %arg11: i32, %arg12: i32, %arg13: i32, %arg14: i32, %arg15: i32, %arg16: i32, %arg17: !mma_f16_f16_f32_64x128x16_, %arg18: i32, %arg19: i32):
-          %iter_50 = cute.get_iter(%rmem_49) : !memref_rmem_f16_
-          %coord_51 = cute.make_coord(%arg10, %arg11, %arg12) : (i32, i32, i32) -> !cute.coord<"(_,_,?,?,?)">
-          %idx = cute.crd2idx(%coord_51, %lay_21) : (!cute.coord<"(_,_,?,?,?)">, !cute.layout<"(128,128,?,?,?):(1@1,1@0,128@1,128@0,1@2)">) -> !cute.int_tuple<"(?{div=128},?{div=128},?)">
+        ^bb0(%arg13: i32, %arg14: i32, %arg15: i32, %arg16: i32, %arg17: i32, %arg18: i32, %arg19: i32, %arg20: !mma_f16_f16_f32_64x128x16_, %arg21: i32, %arg22: i32):
+          %iter_54 = cute.get_iter(%rmem_53) : !memref_rmem_f16_
+          %int_tuple_55 = cute.make_int_tuple(%arg7, %arg8, %arg9) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
+          %289:3 = cute.get_scalars(%int_tuple_55) <{only_dynamic}> : !cute.int_tuple<"(?,?,?)">
+          %int_tuple_56 = cute.make_int_tuple(%289#0, %289#1, %289#2) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
+          %e0_57, %e1_58, %e2_59 = cute.get_leaves(%int_tuple_56) : !cute.int_tuple<"(?,?,?)">
+          %shape_60 = cute.make_shape(%e0_57, %e1_58, %e2_59) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,?)">
+          %lay_61 = cute.make_layout(%shape_60) : !cute.layout<"(?,?,?):(1,?,?)">
+          %coord_62 = cute.make_coord(%arg13, %arg14, %arg15) : (i32, i32, i32) -> !cute.coord<"(_,_,?,?,?)">
+          %idx = cute.crd2idx(%coord_62, %lay_21) : (!cute.coord<"(_,_,?,?,?)">, !cute.layout<"(128,128,?,?,?):(1@1,1@0,128@1,128@0,1@2)">) -> !cute.int_tuple<"(?{div=128},?{div=128},?)">
           %tup = cute.add_offset(%149, %idx) : (!cute.int_tuple<"(0,0,0)">, !cute.int_tuple<"(?{div=128},?{div=128},?)">) -> !cute.int_tuple<"(?{div=128},?{div=128},?)">
-          cute.memref.store_vec %cst, %rmem, row_major : !memref_rmem_f32_
-          %260 = cute_nvgpu.atom.set_value(%arg17, %true : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !mma_f16_f16_f32_64x128x16_
+          cute.memref.store_vec %cst, %rmem : !memref_rmem_f32_
+          %290 = cute_nvgpu.atom.set_value(%arg20, %true : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !mma_f16_f16_f32_64x128x16_
           nvvm.wgmma.fence.aligned
-          %261:3 = scf.for %arg20 = %c0_i32 to %258 step %c1_i32 iter_args(%arg21 = %c0_i32, %arg22 = %arg13, %arg23 = %arg14) -> (i32, i32, i32)  : i32 {
-            %int_tuple_79 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
-            %ptr_80 = cute.add_offset(%iter, %int_tuple_79) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-            %448 = builtin.unrealized_conversion_cast %ptr_80 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-            nvvm.mbarrier.try_wait.parity.shared %448, %arg23, %c10000000_i32 : !llvm.ptr<3>, i32, i32
-            %coord_81 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,0,?)">
-            %idx_82 = cute.crd2idx(%coord_81, %141) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
-            %tup_83 = cute.add_offset(%gmmaSmemDesc, %idx_82) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
-            %coord_84 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,0,?)">
-            %idx_85 = cute.crd2idx(%coord_84, %140) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
-            %tup_86 = cute.add_offset(%gmmaSmemDesc_30, %idx_85) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
-            %iter_87 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %450 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %451 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg24 = %c0_i32 to %449 step %c1_i32  : i32 {
-              scf.for %arg25 = %c0_i32 to %450 step %c1_i32  : i32 {
-                scf.for %arg26 = %c0_i32 to %451 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg25, %arg24) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg25, %arg26) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_83, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_87, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %466 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %467 = llvm.load %466 : !llvm.ptr -> f32
-                  %468 = llvm.getelementptr %466[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %469 = llvm.load %468 : !llvm.ptr -> f32
-                  %470 = llvm.getelementptr %466[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %471 = llvm.load %470 : !llvm.ptr -> f32
-                  %472 = llvm.getelementptr %466[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %473 = llvm.load %472 : !llvm.ptr -> f32
-                  %474 = llvm.getelementptr %466[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %475 = llvm.load %474 : !llvm.ptr -> f32
-                  %476 = llvm.getelementptr %466[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %477 = llvm.load %476 : !llvm.ptr -> f32
-                  %478 = llvm.getelementptr %466[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %479 = llvm.load %478 : !llvm.ptr -> f32
-                  %480 = llvm.getelementptr %466[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %481 = llvm.load %480 : !llvm.ptr -> f32
-                  %482 = llvm.getelementptr %466[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %483 = llvm.load %482 : !llvm.ptr -> f32
-                  %484 = llvm.getelementptr %466[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %485 = llvm.load %484 : !llvm.ptr -> f32
-                  %486 = llvm.getelementptr %466[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %487 = llvm.load %486 : !llvm.ptr -> f32
-                  %488 = llvm.getelementptr %466[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %489 = llvm.load %488 : !llvm.ptr -> f32
-                  %490 = llvm.getelementptr %466[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %491 = llvm.load %490 : !llvm.ptr -> f32
-                  %492 = llvm.getelementptr %466[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %493 = llvm.load %492 : !llvm.ptr -> f32
-                  %494 = llvm.getelementptr %466[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %495 = llvm.load %494 : !llvm.ptr -> f32
-                  %496 = llvm.getelementptr %466[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %497 = llvm.load %496 : !llvm.ptr -> f32
-                  %498 = llvm.getelementptr %466[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %499 = llvm.load %498 : !llvm.ptr -> f32
-                  %500 = llvm.getelementptr %466[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %501 = llvm.load %500 : !llvm.ptr -> f32
-                  %502 = llvm.getelementptr %466[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %503 = llvm.load %502 : !llvm.ptr -> f32
-                  %504 = llvm.getelementptr %466[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %505 = llvm.load %504 : !llvm.ptr -> f32
-                  %506 = llvm.getelementptr %466[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %507 = llvm.load %506 : !llvm.ptr -> f32
-                  %508 = llvm.getelementptr %466[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %509 = llvm.load %508 : !llvm.ptr -> f32
-                  %510 = llvm.getelementptr %466[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %511 = llvm.load %510 : !llvm.ptr -> f32
-                  %512 = llvm.getelementptr %466[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %513 = llvm.load %512 : !llvm.ptr -> f32
-                  %514 = llvm.getelementptr %466[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %515 = llvm.load %514 : !llvm.ptr -> f32
-                  %516 = llvm.getelementptr %466[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %517 = llvm.load %516 : !llvm.ptr -> f32
-                  %518 = llvm.getelementptr %466[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %519 = llvm.load %518 : !llvm.ptr -> f32
-                  %520 = llvm.getelementptr %466[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %521 = llvm.load %520 : !llvm.ptr -> f32
-                  %522 = llvm.getelementptr %466[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %523 = llvm.load %522 : !llvm.ptr -> f32
-                  %524 = llvm.getelementptr %466[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %525 = llvm.load %524 : !llvm.ptr -> f32
-                  %526 = llvm.getelementptr %466[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %527 = llvm.load %526 : !llvm.ptr -> f32
-                  %528 = llvm.getelementptr %466[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %529 = llvm.load %528 : !llvm.ptr -> f32
-                  %530 = llvm.getelementptr %466[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %531 = llvm.load %530 : !llvm.ptr -> f32
-                  %532 = llvm.getelementptr %466[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %533 = llvm.load %532 : !llvm.ptr -> f32
-                  %534 = llvm.getelementptr %466[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %535 = llvm.load %534 : !llvm.ptr -> f32
-                  %536 = llvm.getelementptr %466[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %537 = llvm.load %536 : !llvm.ptr -> f32
-                  %538 = llvm.getelementptr %466[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %539 = llvm.load %538 : !llvm.ptr -> f32
-                  %540 = llvm.getelementptr %466[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %541 = llvm.load %540 : !llvm.ptr -> f32
-                  %542 = llvm.getelementptr %466[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %543 = llvm.load %542 : !llvm.ptr -> f32
-                  %544 = llvm.getelementptr %466[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %545 = llvm.load %544 : !llvm.ptr -> f32
-                  %546 = llvm.getelementptr %466[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %547 = llvm.load %546 : !llvm.ptr -> f32
-                  %548 = llvm.getelementptr %466[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %549 = llvm.load %548 : !llvm.ptr -> f32
-                  %550 = llvm.getelementptr %466[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %551 = llvm.load %550 : !llvm.ptr -> f32
-                  %552 = llvm.getelementptr %466[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %553 = llvm.load %552 : !llvm.ptr -> f32
-                  %554 = llvm.getelementptr %466[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %555 = llvm.load %554 : !llvm.ptr -> f32
-                  %556 = llvm.getelementptr %466[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %557 = llvm.load %556 : !llvm.ptr -> f32
-                  %558 = llvm.getelementptr %466[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %559 = llvm.load %558 : !llvm.ptr -> f32
-                  %560 = llvm.getelementptr %466[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %561 = llvm.load %560 : !llvm.ptr -> f32
-                  %562 = llvm.getelementptr %466[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %563 = llvm.load %562 : !llvm.ptr -> f32
-                  %564 = llvm.getelementptr %466[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %565 = llvm.load %564 : !llvm.ptr -> f32
-                  %566 = llvm.getelementptr %466[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %567 = llvm.load %566 : !llvm.ptr -> f32
-                  %568 = llvm.getelementptr %466[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %569 = llvm.load %568 : !llvm.ptr -> f32
-                  %570 = llvm.getelementptr %466[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %571 = llvm.load %570 : !llvm.ptr -> f32
-                  %572 = llvm.getelementptr %466[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %573 = llvm.load %572 : !llvm.ptr -> f32
-                  %574 = llvm.getelementptr %466[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %575 = llvm.load %574 : !llvm.ptr -> f32
-                  %576 = llvm.getelementptr %466[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %577 = llvm.load %576 : !llvm.ptr -> f32
-                  %578 = llvm.getelementptr %466[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %579 = llvm.load %578 : !llvm.ptr -> f32
-                  %580 = llvm.getelementptr %466[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %581 = llvm.load %580 : !llvm.ptr -> f32
-                  %582 = llvm.getelementptr %466[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %583 = llvm.load %582 : !llvm.ptr -> f32
-                  %584 = llvm.getelementptr %466[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %585 = llvm.load %584 : !llvm.ptr -> f32
-                  %586 = llvm.getelementptr %466[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %587 = llvm.load %586 : !llvm.ptr -> f32
-                  %588 = llvm.getelementptr %466[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %589 = llvm.load %588 : !llvm.ptr -> f32
-                  %590 = llvm.getelementptr %466[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %591 = llvm.load %590 : !llvm.ptr -> f32
-                  %592 = llvm.getelementptr %466[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %593 = llvm.load %592 : !llvm.ptr -> f32
-                  %594 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %595:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_86 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%467, %469, %471, %473, %475, %477, %479, %481, %483, %485, %487, %489, %491, %493, %495, %497, %499, %501, %503, %505, %507, %509, %511, %513, %515, %517, %519, %521, %523, %525, %527, %529, %531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593], accum = %594 : i1)
+          %291:3 = scf.for %arg23 = %c0_i32 to %287 step %c1_i32 iter_args(%arg24 = %c0_i32, %arg25 = %arg16, %arg26 = %arg17) -> (i32, i32, i32)  : i32 {
+            %int_tuple_96 = cute.make_int_tuple(%arg25) : (i32) -> !cute.int_tuple<"?">
+            %ptr_97 = cute.add_offset(%iter, %int_tuple_96) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+            %507 = builtin.unrealized_conversion_cast %ptr_97 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+            nvvm.mbarrier.try_wait.parity.shared %507, %arg26, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+            %coord_98 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,0,?)">
+            %idx_99 = cute.crd2idx(%coord_98, %141) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
+            %tup_100 = cute.add_offset(%gmmaSmemDesc, %idx_99) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
+            %coord_101 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,0,?)">
+            %idx_102 = cute.crd2idx(%coord_101, %140) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
+            %tup_103 = cute.add_offset(%gmmaSmemDesc_30, %idx_102) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
+            %iter_104 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %509 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %510 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg27 = %c0_i32 to %508 step %c1_i32  : i32 {
+              scf.for %arg28 = %c0_i32 to %509 step %c1_i32  : i32 {
+                scf.for %arg29 = %c0_i32 to %510 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_100, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_104, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %525 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %526 = llvm.load %525 : !llvm.ptr -> f32
+                  %527 = llvm.getelementptr %525[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %528 = llvm.load %527 : !llvm.ptr -> f32
+                  %529 = llvm.getelementptr %525[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %530 = llvm.load %529 : !llvm.ptr -> f32
+                  %531 = llvm.getelementptr %525[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %532 = llvm.load %531 : !llvm.ptr -> f32
+                  %533 = llvm.getelementptr %525[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %534 = llvm.load %533 : !llvm.ptr -> f32
+                  %535 = llvm.getelementptr %525[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %536 = llvm.load %535 : !llvm.ptr -> f32
+                  %537 = llvm.getelementptr %525[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %538 = llvm.load %537 : !llvm.ptr -> f32
+                  %539 = llvm.getelementptr %525[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %540 = llvm.load %539 : !llvm.ptr -> f32
+                  %541 = llvm.getelementptr %525[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %542 = llvm.load %541 : !llvm.ptr -> f32
+                  %543 = llvm.getelementptr %525[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %544 = llvm.load %543 : !llvm.ptr -> f32
+                  %545 = llvm.getelementptr %525[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %546 = llvm.load %545 : !llvm.ptr -> f32
+                  %547 = llvm.getelementptr %525[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %548 = llvm.load %547 : !llvm.ptr -> f32
+                  %549 = llvm.getelementptr %525[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %550 = llvm.load %549 : !llvm.ptr -> f32
+                  %551 = llvm.getelementptr %525[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %552 = llvm.load %551 : !llvm.ptr -> f32
+                  %553 = llvm.getelementptr %525[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %554 = llvm.load %553 : !llvm.ptr -> f32
+                  %555 = llvm.getelementptr %525[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %556 = llvm.load %555 : !llvm.ptr -> f32
+                  %557 = llvm.getelementptr %525[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %558 = llvm.load %557 : !llvm.ptr -> f32
+                  %559 = llvm.getelementptr %525[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %560 = llvm.load %559 : !llvm.ptr -> f32
+                  %561 = llvm.getelementptr %525[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %562 = llvm.load %561 : !llvm.ptr -> f32
+                  %563 = llvm.getelementptr %525[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %564 = llvm.load %563 : !llvm.ptr -> f32
+                  %565 = llvm.getelementptr %525[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %566 = llvm.load %565 : !llvm.ptr -> f32
+                  %567 = llvm.getelementptr %525[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %568 = llvm.load %567 : !llvm.ptr -> f32
+                  %569 = llvm.getelementptr %525[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %570 = llvm.load %569 : !llvm.ptr -> f32
+                  %571 = llvm.getelementptr %525[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %572 = llvm.load %571 : !llvm.ptr -> f32
+                  %573 = llvm.getelementptr %525[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %574 = llvm.load %573 : !llvm.ptr -> f32
+                  %575 = llvm.getelementptr %525[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %576 = llvm.load %575 : !llvm.ptr -> f32
+                  %577 = llvm.getelementptr %525[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %578 = llvm.load %577 : !llvm.ptr -> f32
+                  %579 = llvm.getelementptr %525[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %580 = llvm.load %579 : !llvm.ptr -> f32
+                  %581 = llvm.getelementptr %525[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %582 = llvm.load %581 : !llvm.ptr -> f32
+                  %583 = llvm.getelementptr %525[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %584 = llvm.load %583 : !llvm.ptr -> f32
+                  %585 = llvm.getelementptr %525[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %586 = llvm.load %585 : !llvm.ptr -> f32
+                  %587 = llvm.getelementptr %525[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %588 = llvm.load %587 : !llvm.ptr -> f32
+                  %589 = llvm.getelementptr %525[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %590 = llvm.load %589 : !llvm.ptr -> f32
+                  %591 = llvm.getelementptr %525[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %592 = llvm.load %591 : !llvm.ptr -> f32
+                  %593 = llvm.getelementptr %525[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %594 = llvm.load %593 : !llvm.ptr -> f32
+                  %595 = llvm.getelementptr %525[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %596 = llvm.load %595 : !llvm.ptr -> f32
+                  %597 = llvm.getelementptr %525[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %598 = llvm.load %597 : !llvm.ptr -> f32
+                  %599 = llvm.getelementptr %525[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %600 = llvm.load %599 : !llvm.ptr -> f32
+                  %601 = llvm.getelementptr %525[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %602 = llvm.load %601 : !llvm.ptr -> f32
+                  %603 = llvm.getelementptr %525[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %604 = llvm.load %603 : !llvm.ptr -> f32
+                  %605 = llvm.getelementptr %525[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %606 = llvm.load %605 : !llvm.ptr -> f32
+                  %607 = llvm.getelementptr %525[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %608 = llvm.load %607 : !llvm.ptr -> f32
+                  %609 = llvm.getelementptr %525[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %610 = llvm.load %609 : !llvm.ptr -> f32
+                  %611 = llvm.getelementptr %525[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %612 = llvm.load %611 : !llvm.ptr -> f32
+                  %613 = llvm.getelementptr %525[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %614 = llvm.load %613 : !llvm.ptr -> f32
+                  %615 = llvm.getelementptr %525[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %616 = llvm.load %615 : !llvm.ptr -> f32
+                  %617 = llvm.getelementptr %525[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %618 = llvm.load %617 : !llvm.ptr -> f32
+                  %619 = llvm.getelementptr %525[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %620 = llvm.load %619 : !llvm.ptr -> f32
+                  %621 = llvm.getelementptr %525[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %622 = llvm.load %621 : !llvm.ptr -> f32
+                  %623 = llvm.getelementptr %525[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %624 = llvm.load %623 : !llvm.ptr -> f32
+                  %625 = llvm.getelementptr %525[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %626 = llvm.load %625 : !llvm.ptr -> f32
+                  %627 = llvm.getelementptr %525[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %628 = llvm.load %627 : !llvm.ptr -> f32
+                  %629 = llvm.getelementptr %525[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %630 = llvm.load %629 : !llvm.ptr -> f32
+                  %631 = llvm.getelementptr %525[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %632 = llvm.load %631 : !llvm.ptr -> f32
+                  %633 = llvm.getelementptr %525[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %634 = llvm.load %633 : !llvm.ptr -> f32
+                  %635 = llvm.getelementptr %525[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %636 = llvm.load %635 : !llvm.ptr -> f32
+                  %637 = llvm.getelementptr %525[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %638 = llvm.load %637 : !llvm.ptr -> f32
+                  %639 = llvm.getelementptr %525[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %640 = llvm.load %639 : !llvm.ptr -> f32
+                  %641 = llvm.getelementptr %525[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %642 = llvm.load %641 : !llvm.ptr -> f32
+                  %643 = llvm.getelementptr %525[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %644 = llvm.load %643 : !llvm.ptr -> f32
+                  %645 = llvm.getelementptr %525[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %646 = llvm.load %645 : !llvm.ptr -> f32
+                  %647 = llvm.getelementptr %525[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %648 = llvm.load %647 : !llvm.ptr -> f32
+                  %649 = llvm.getelementptr %525[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %650 = llvm.load %649 : !llvm.ptr -> f32
+                  %651 = llvm.getelementptr %525[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %652 = llvm.load %651 : !llvm.ptr -> f32
+                  %653 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %654:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_103 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598, %600, %602, %604, %606, %608, %610, %612, %614, %616, %618, %620, %622, %624, %626, %628, %630, %632, %634, %636, %638, %640, %642, %644, %646, %648, %650, %652], accum = %653 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %596 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %595#0, %596 : f32, !llvm.ptr
-                  %597 = llvm.getelementptr %596[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#1, %597 : f32, !llvm.ptr
-                  %598 = llvm.getelementptr %596[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#2, %598 : f32, !llvm.ptr
-                  %599 = llvm.getelementptr %596[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#3, %599 : f32, !llvm.ptr
-                  %600 = llvm.getelementptr %596[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#4, %600 : f32, !llvm.ptr
-                  %601 = llvm.getelementptr %596[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#5, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %596[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#6, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %596[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#7, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %596[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#8, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %596[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#9, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %596[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#10, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %596[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#11, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %596[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#12, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %596[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#13, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %596[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#14, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %596[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#15, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %596[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#16, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %596[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#17, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %596[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#18, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %596[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#19, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %596[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#20, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %596[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#21, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %596[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#22, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %596[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#23, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %596[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#24, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %596[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#25, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %596[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#26, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %596[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#27, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %596[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#28, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %596[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#29, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %596[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#30, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %596[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#31, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %596[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#32, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %596[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#33, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %596[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#34, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %596[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#35, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %596[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#36, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %596[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#37, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %596[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#38, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %596[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#39, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %596[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#40, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %596[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#41, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %596[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#42, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %596[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#43, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %596[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#44, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %596[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#45, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %596[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#46, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %596[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#47, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %596[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#48, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %596[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#49, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %596[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#50, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %596[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#51, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %596[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#52, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %596[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#53, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %596[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#54, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %596[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#55, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %596[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#56, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %596[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#57, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %596[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#58, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %596[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#59, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %596[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#60, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %596[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#61, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %596[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#62, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %596[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#63, %659 : f32, !llvm.ptr
+                  %655 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %654#0, %655 : f32, !llvm.ptr
+                  %656 = llvm.getelementptr %655[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#1, %656 : f32, !llvm.ptr
+                  %657 = llvm.getelementptr %655[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#2, %657 : f32, !llvm.ptr
+                  %658 = llvm.getelementptr %655[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#3, %658 : f32, !llvm.ptr
+                  %659 = llvm.getelementptr %655[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#4, %659 : f32, !llvm.ptr
+                  %660 = llvm.getelementptr %655[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#5, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %655[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#6, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %655[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#7, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %655[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#8, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %655[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#9, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %655[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#10, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %655[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#11, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %655[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#12, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %655[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#13, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %655[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#14, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %655[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#15, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %655[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#16, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %655[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#17, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %655[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#18, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %655[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#19, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %655[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#20, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %655[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#21, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %655[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#22, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %655[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#23, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %655[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#24, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %655[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#25, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %655[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#26, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %655[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#27, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %655[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#28, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %655[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#29, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %655[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#30, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %655[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#31, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %655[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#32, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %655[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#33, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %655[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#34, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %655[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#35, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %655[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#36, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %655[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#37, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %655[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#38, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %655[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#39, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %655[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#40, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %655[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#41, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %655[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#42, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %655[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#43, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %655[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#44, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %655[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#45, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %655[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#46, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %655[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#47, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %655[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#48, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %655[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#49, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %655[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#50, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %655[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#51, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %655[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#52, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %655[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#53, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %655[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#54, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %655[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#55, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %655[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#56, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %655[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#57, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %655[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#58, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %655[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#59, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %655[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#60, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %655[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#61, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %655[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#62, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %655[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#63, %718 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_88 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,1,?)">
-            %idx_89 = cute.crd2idx(%coord_88, %141) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_90 = cute.add_offset(%gmmaSmemDesc, %idx_89) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %coord_91 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,1,?)">
-            %idx_92 = cute.crd2idx(%coord_91, %140) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_93 = cute.add_offset(%gmmaSmemDesc_30, %idx_92) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %iter_94 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %452 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %453 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %454 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg24 = %c0_i32 to %452 step %c1_i32  : i32 {
-              scf.for %arg25 = %c0_i32 to %453 step %c1_i32  : i32 {
-                scf.for %arg26 = %c0_i32 to %454 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg25, %arg24) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg25, %arg26) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_90, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_94, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %466 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %467 = llvm.load %466 : !llvm.ptr -> f32
-                  %468 = llvm.getelementptr %466[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %469 = llvm.load %468 : !llvm.ptr -> f32
-                  %470 = llvm.getelementptr %466[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %471 = llvm.load %470 : !llvm.ptr -> f32
-                  %472 = llvm.getelementptr %466[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %473 = llvm.load %472 : !llvm.ptr -> f32
-                  %474 = llvm.getelementptr %466[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %475 = llvm.load %474 : !llvm.ptr -> f32
-                  %476 = llvm.getelementptr %466[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %477 = llvm.load %476 : !llvm.ptr -> f32
-                  %478 = llvm.getelementptr %466[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %479 = llvm.load %478 : !llvm.ptr -> f32
-                  %480 = llvm.getelementptr %466[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %481 = llvm.load %480 : !llvm.ptr -> f32
-                  %482 = llvm.getelementptr %466[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %483 = llvm.load %482 : !llvm.ptr -> f32
-                  %484 = llvm.getelementptr %466[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %485 = llvm.load %484 : !llvm.ptr -> f32
-                  %486 = llvm.getelementptr %466[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %487 = llvm.load %486 : !llvm.ptr -> f32
-                  %488 = llvm.getelementptr %466[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %489 = llvm.load %488 : !llvm.ptr -> f32
-                  %490 = llvm.getelementptr %466[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %491 = llvm.load %490 : !llvm.ptr -> f32
-                  %492 = llvm.getelementptr %466[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %493 = llvm.load %492 : !llvm.ptr -> f32
-                  %494 = llvm.getelementptr %466[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %495 = llvm.load %494 : !llvm.ptr -> f32
-                  %496 = llvm.getelementptr %466[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %497 = llvm.load %496 : !llvm.ptr -> f32
-                  %498 = llvm.getelementptr %466[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %499 = llvm.load %498 : !llvm.ptr -> f32
-                  %500 = llvm.getelementptr %466[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %501 = llvm.load %500 : !llvm.ptr -> f32
-                  %502 = llvm.getelementptr %466[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %503 = llvm.load %502 : !llvm.ptr -> f32
-                  %504 = llvm.getelementptr %466[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %505 = llvm.load %504 : !llvm.ptr -> f32
-                  %506 = llvm.getelementptr %466[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %507 = llvm.load %506 : !llvm.ptr -> f32
-                  %508 = llvm.getelementptr %466[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %509 = llvm.load %508 : !llvm.ptr -> f32
-                  %510 = llvm.getelementptr %466[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %511 = llvm.load %510 : !llvm.ptr -> f32
-                  %512 = llvm.getelementptr %466[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %513 = llvm.load %512 : !llvm.ptr -> f32
-                  %514 = llvm.getelementptr %466[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %515 = llvm.load %514 : !llvm.ptr -> f32
-                  %516 = llvm.getelementptr %466[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %517 = llvm.load %516 : !llvm.ptr -> f32
-                  %518 = llvm.getelementptr %466[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %519 = llvm.load %518 : !llvm.ptr -> f32
-                  %520 = llvm.getelementptr %466[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %521 = llvm.load %520 : !llvm.ptr -> f32
-                  %522 = llvm.getelementptr %466[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %523 = llvm.load %522 : !llvm.ptr -> f32
-                  %524 = llvm.getelementptr %466[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %525 = llvm.load %524 : !llvm.ptr -> f32
-                  %526 = llvm.getelementptr %466[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %527 = llvm.load %526 : !llvm.ptr -> f32
-                  %528 = llvm.getelementptr %466[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %529 = llvm.load %528 : !llvm.ptr -> f32
-                  %530 = llvm.getelementptr %466[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %531 = llvm.load %530 : !llvm.ptr -> f32
-                  %532 = llvm.getelementptr %466[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %533 = llvm.load %532 : !llvm.ptr -> f32
-                  %534 = llvm.getelementptr %466[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %535 = llvm.load %534 : !llvm.ptr -> f32
-                  %536 = llvm.getelementptr %466[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %537 = llvm.load %536 : !llvm.ptr -> f32
-                  %538 = llvm.getelementptr %466[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %539 = llvm.load %538 : !llvm.ptr -> f32
-                  %540 = llvm.getelementptr %466[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %541 = llvm.load %540 : !llvm.ptr -> f32
-                  %542 = llvm.getelementptr %466[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %543 = llvm.load %542 : !llvm.ptr -> f32
-                  %544 = llvm.getelementptr %466[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %545 = llvm.load %544 : !llvm.ptr -> f32
-                  %546 = llvm.getelementptr %466[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %547 = llvm.load %546 : !llvm.ptr -> f32
-                  %548 = llvm.getelementptr %466[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %549 = llvm.load %548 : !llvm.ptr -> f32
-                  %550 = llvm.getelementptr %466[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %551 = llvm.load %550 : !llvm.ptr -> f32
-                  %552 = llvm.getelementptr %466[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %553 = llvm.load %552 : !llvm.ptr -> f32
-                  %554 = llvm.getelementptr %466[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %555 = llvm.load %554 : !llvm.ptr -> f32
-                  %556 = llvm.getelementptr %466[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %557 = llvm.load %556 : !llvm.ptr -> f32
-                  %558 = llvm.getelementptr %466[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %559 = llvm.load %558 : !llvm.ptr -> f32
-                  %560 = llvm.getelementptr %466[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %561 = llvm.load %560 : !llvm.ptr -> f32
-                  %562 = llvm.getelementptr %466[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %563 = llvm.load %562 : !llvm.ptr -> f32
-                  %564 = llvm.getelementptr %466[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %565 = llvm.load %564 : !llvm.ptr -> f32
-                  %566 = llvm.getelementptr %466[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %567 = llvm.load %566 : !llvm.ptr -> f32
-                  %568 = llvm.getelementptr %466[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %569 = llvm.load %568 : !llvm.ptr -> f32
-                  %570 = llvm.getelementptr %466[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %571 = llvm.load %570 : !llvm.ptr -> f32
-                  %572 = llvm.getelementptr %466[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %573 = llvm.load %572 : !llvm.ptr -> f32
-                  %574 = llvm.getelementptr %466[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %575 = llvm.load %574 : !llvm.ptr -> f32
-                  %576 = llvm.getelementptr %466[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %577 = llvm.load %576 : !llvm.ptr -> f32
-                  %578 = llvm.getelementptr %466[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %579 = llvm.load %578 : !llvm.ptr -> f32
-                  %580 = llvm.getelementptr %466[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %581 = llvm.load %580 : !llvm.ptr -> f32
-                  %582 = llvm.getelementptr %466[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %583 = llvm.load %582 : !llvm.ptr -> f32
-                  %584 = llvm.getelementptr %466[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %585 = llvm.load %584 : !llvm.ptr -> f32
-                  %586 = llvm.getelementptr %466[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %587 = llvm.load %586 : !llvm.ptr -> f32
-                  %588 = llvm.getelementptr %466[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %589 = llvm.load %588 : !llvm.ptr -> f32
-                  %590 = llvm.getelementptr %466[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %591 = llvm.load %590 : !llvm.ptr -> f32
-                  %592 = llvm.getelementptr %466[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %593 = llvm.load %592 : !llvm.ptr -> f32
-                  %594 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %595:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_93 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%467, %469, %471, %473, %475, %477, %479, %481, %483, %485, %487, %489, %491, %493, %495, %497, %499, %501, %503, %505, %507, %509, %511, %513, %515, %517, %519, %521, %523, %525, %527, %529, %531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593], accum = %594 : i1)
+            %coord_105 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,1,?)">
+            %idx_106 = cute.crd2idx(%coord_105, %141) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_107 = cute.add_offset(%gmmaSmemDesc, %idx_106) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %coord_108 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,1,?)">
+            %idx_109 = cute.crd2idx(%coord_108, %140) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_110 = cute.add_offset(%gmmaSmemDesc_30, %idx_109) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %iter_111 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %511 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %512 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %513 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg27 = %c0_i32 to %511 step %c1_i32  : i32 {
+              scf.for %arg28 = %c0_i32 to %512 step %c1_i32  : i32 {
+                scf.for %arg29 = %c0_i32 to %513 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_107, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_111, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %525 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %526 = llvm.load %525 : !llvm.ptr -> f32
+                  %527 = llvm.getelementptr %525[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %528 = llvm.load %527 : !llvm.ptr -> f32
+                  %529 = llvm.getelementptr %525[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %530 = llvm.load %529 : !llvm.ptr -> f32
+                  %531 = llvm.getelementptr %525[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %532 = llvm.load %531 : !llvm.ptr -> f32
+                  %533 = llvm.getelementptr %525[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %534 = llvm.load %533 : !llvm.ptr -> f32
+                  %535 = llvm.getelementptr %525[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %536 = llvm.load %535 : !llvm.ptr -> f32
+                  %537 = llvm.getelementptr %525[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %538 = llvm.load %537 : !llvm.ptr -> f32
+                  %539 = llvm.getelementptr %525[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %540 = llvm.load %539 : !llvm.ptr -> f32
+                  %541 = llvm.getelementptr %525[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %542 = llvm.load %541 : !llvm.ptr -> f32
+                  %543 = llvm.getelementptr %525[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %544 = llvm.load %543 : !llvm.ptr -> f32
+                  %545 = llvm.getelementptr %525[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %546 = llvm.load %545 : !llvm.ptr -> f32
+                  %547 = llvm.getelementptr %525[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %548 = llvm.load %547 : !llvm.ptr -> f32
+                  %549 = llvm.getelementptr %525[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %550 = llvm.load %549 : !llvm.ptr -> f32
+                  %551 = llvm.getelementptr %525[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %552 = llvm.load %551 : !llvm.ptr -> f32
+                  %553 = llvm.getelementptr %525[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %554 = llvm.load %553 : !llvm.ptr -> f32
+                  %555 = llvm.getelementptr %525[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %556 = llvm.load %555 : !llvm.ptr -> f32
+                  %557 = llvm.getelementptr %525[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %558 = llvm.load %557 : !llvm.ptr -> f32
+                  %559 = llvm.getelementptr %525[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %560 = llvm.load %559 : !llvm.ptr -> f32
+                  %561 = llvm.getelementptr %525[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %562 = llvm.load %561 : !llvm.ptr -> f32
+                  %563 = llvm.getelementptr %525[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %564 = llvm.load %563 : !llvm.ptr -> f32
+                  %565 = llvm.getelementptr %525[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %566 = llvm.load %565 : !llvm.ptr -> f32
+                  %567 = llvm.getelementptr %525[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %568 = llvm.load %567 : !llvm.ptr -> f32
+                  %569 = llvm.getelementptr %525[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %570 = llvm.load %569 : !llvm.ptr -> f32
+                  %571 = llvm.getelementptr %525[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %572 = llvm.load %571 : !llvm.ptr -> f32
+                  %573 = llvm.getelementptr %525[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %574 = llvm.load %573 : !llvm.ptr -> f32
+                  %575 = llvm.getelementptr %525[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %576 = llvm.load %575 : !llvm.ptr -> f32
+                  %577 = llvm.getelementptr %525[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %578 = llvm.load %577 : !llvm.ptr -> f32
+                  %579 = llvm.getelementptr %525[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %580 = llvm.load %579 : !llvm.ptr -> f32
+                  %581 = llvm.getelementptr %525[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %582 = llvm.load %581 : !llvm.ptr -> f32
+                  %583 = llvm.getelementptr %525[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %584 = llvm.load %583 : !llvm.ptr -> f32
+                  %585 = llvm.getelementptr %525[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %586 = llvm.load %585 : !llvm.ptr -> f32
+                  %587 = llvm.getelementptr %525[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %588 = llvm.load %587 : !llvm.ptr -> f32
+                  %589 = llvm.getelementptr %525[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %590 = llvm.load %589 : !llvm.ptr -> f32
+                  %591 = llvm.getelementptr %525[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %592 = llvm.load %591 : !llvm.ptr -> f32
+                  %593 = llvm.getelementptr %525[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %594 = llvm.load %593 : !llvm.ptr -> f32
+                  %595 = llvm.getelementptr %525[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %596 = llvm.load %595 : !llvm.ptr -> f32
+                  %597 = llvm.getelementptr %525[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %598 = llvm.load %597 : !llvm.ptr -> f32
+                  %599 = llvm.getelementptr %525[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %600 = llvm.load %599 : !llvm.ptr -> f32
+                  %601 = llvm.getelementptr %525[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %602 = llvm.load %601 : !llvm.ptr -> f32
+                  %603 = llvm.getelementptr %525[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %604 = llvm.load %603 : !llvm.ptr -> f32
+                  %605 = llvm.getelementptr %525[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %606 = llvm.load %605 : !llvm.ptr -> f32
+                  %607 = llvm.getelementptr %525[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %608 = llvm.load %607 : !llvm.ptr -> f32
+                  %609 = llvm.getelementptr %525[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %610 = llvm.load %609 : !llvm.ptr -> f32
+                  %611 = llvm.getelementptr %525[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %612 = llvm.load %611 : !llvm.ptr -> f32
+                  %613 = llvm.getelementptr %525[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %614 = llvm.load %613 : !llvm.ptr -> f32
+                  %615 = llvm.getelementptr %525[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %616 = llvm.load %615 : !llvm.ptr -> f32
+                  %617 = llvm.getelementptr %525[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %618 = llvm.load %617 : !llvm.ptr -> f32
+                  %619 = llvm.getelementptr %525[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %620 = llvm.load %619 : !llvm.ptr -> f32
+                  %621 = llvm.getelementptr %525[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %622 = llvm.load %621 : !llvm.ptr -> f32
+                  %623 = llvm.getelementptr %525[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %624 = llvm.load %623 : !llvm.ptr -> f32
+                  %625 = llvm.getelementptr %525[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %626 = llvm.load %625 : !llvm.ptr -> f32
+                  %627 = llvm.getelementptr %525[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %628 = llvm.load %627 : !llvm.ptr -> f32
+                  %629 = llvm.getelementptr %525[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %630 = llvm.load %629 : !llvm.ptr -> f32
+                  %631 = llvm.getelementptr %525[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %632 = llvm.load %631 : !llvm.ptr -> f32
+                  %633 = llvm.getelementptr %525[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %634 = llvm.load %633 : !llvm.ptr -> f32
+                  %635 = llvm.getelementptr %525[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %636 = llvm.load %635 : !llvm.ptr -> f32
+                  %637 = llvm.getelementptr %525[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %638 = llvm.load %637 : !llvm.ptr -> f32
+                  %639 = llvm.getelementptr %525[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %640 = llvm.load %639 : !llvm.ptr -> f32
+                  %641 = llvm.getelementptr %525[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %642 = llvm.load %641 : !llvm.ptr -> f32
+                  %643 = llvm.getelementptr %525[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %644 = llvm.load %643 : !llvm.ptr -> f32
+                  %645 = llvm.getelementptr %525[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %646 = llvm.load %645 : !llvm.ptr -> f32
+                  %647 = llvm.getelementptr %525[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %648 = llvm.load %647 : !llvm.ptr -> f32
+                  %649 = llvm.getelementptr %525[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %650 = llvm.load %649 : !llvm.ptr -> f32
+                  %651 = llvm.getelementptr %525[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %652 = llvm.load %651 : !llvm.ptr -> f32
+                  %653 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %654:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_110 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598, %600, %602, %604, %606, %608, %610, %612, %614, %616, %618, %620, %622, %624, %626, %628, %630, %632, %634, %636, %638, %640, %642, %644, %646, %648, %650, %652], accum = %653 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %596 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %595#0, %596 : f32, !llvm.ptr
-                  %597 = llvm.getelementptr %596[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#1, %597 : f32, !llvm.ptr
-                  %598 = llvm.getelementptr %596[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#2, %598 : f32, !llvm.ptr
-                  %599 = llvm.getelementptr %596[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#3, %599 : f32, !llvm.ptr
-                  %600 = llvm.getelementptr %596[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#4, %600 : f32, !llvm.ptr
-                  %601 = llvm.getelementptr %596[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#5, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %596[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#6, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %596[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#7, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %596[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#8, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %596[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#9, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %596[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#10, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %596[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#11, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %596[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#12, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %596[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#13, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %596[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#14, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %596[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#15, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %596[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#16, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %596[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#17, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %596[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#18, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %596[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#19, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %596[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#20, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %596[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#21, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %596[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#22, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %596[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#23, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %596[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#24, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %596[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#25, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %596[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#26, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %596[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#27, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %596[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#28, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %596[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#29, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %596[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#30, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %596[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#31, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %596[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#32, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %596[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#33, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %596[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#34, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %596[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#35, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %596[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#36, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %596[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#37, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %596[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#38, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %596[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#39, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %596[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#40, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %596[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#41, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %596[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#42, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %596[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#43, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %596[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#44, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %596[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#45, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %596[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#46, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %596[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#47, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %596[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#48, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %596[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#49, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %596[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#50, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %596[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#51, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %596[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#52, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %596[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#53, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %596[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#54, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %596[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#55, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %596[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#56, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %596[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#57, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %596[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#58, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %596[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#59, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %596[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#60, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %596[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#61, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %596[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#62, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %596[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#63, %659 : f32, !llvm.ptr
+                  %655 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %654#0, %655 : f32, !llvm.ptr
+                  %656 = llvm.getelementptr %655[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#1, %656 : f32, !llvm.ptr
+                  %657 = llvm.getelementptr %655[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#2, %657 : f32, !llvm.ptr
+                  %658 = llvm.getelementptr %655[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#3, %658 : f32, !llvm.ptr
+                  %659 = llvm.getelementptr %655[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#4, %659 : f32, !llvm.ptr
+                  %660 = llvm.getelementptr %655[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#5, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %655[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#6, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %655[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#7, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %655[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#8, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %655[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#9, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %655[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#10, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %655[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#11, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %655[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#12, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %655[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#13, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %655[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#14, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %655[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#15, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %655[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#16, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %655[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#17, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %655[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#18, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %655[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#19, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %655[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#20, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %655[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#21, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %655[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#22, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %655[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#23, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %655[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#24, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %655[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#25, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %655[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#26, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %655[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#27, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %655[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#28, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %655[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#29, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %655[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#30, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %655[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#31, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %655[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#32, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %655[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#33, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %655[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#34, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %655[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#35, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %655[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#36, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %655[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#37, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %655[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#38, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %655[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#39, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %655[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#40, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %655[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#41, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %655[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#42, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %655[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#43, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %655[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#44, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %655[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#45, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %655[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#46, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %655[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#47, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %655[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#48, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %655[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#49, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %655[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#50, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %655[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#51, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %655[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#52, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %655[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#53, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %655[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#54, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %655[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#55, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %655[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#56, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %655[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#57, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %655[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#58, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %655[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#59, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %655[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#60, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %655[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#61, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %655[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#62, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %655[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#63, %718 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_95 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,2,?)">
-            %idx_96 = cute.crd2idx(%coord_95, %141) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
-            %tup_97 = cute.add_offset(%gmmaSmemDesc, %idx_96) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
-            %coord_98 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,2,?)">
-            %idx_99 = cute.crd2idx(%coord_98, %140) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
-            %tup_100 = cute.add_offset(%gmmaSmemDesc_30, %idx_99) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
-            %iter_101 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %455 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %456 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %457 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg24 = %c0_i32 to %455 step %c1_i32  : i32 {
-              scf.for %arg25 = %c0_i32 to %456 step %c1_i32  : i32 {
-                scf.for %arg26 = %c0_i32 to %457 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg25, %arg24) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg25, %arg26) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_97, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_101, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %466 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %467 = llvm.load %466 : !llvm.ptr -> f32
-                  %468 = llvm.getelementptr %466[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %469 = llvm.load %468 : !llvm.ptr -> f32
-                  %470 = llvm.getelementptr %466[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %471 = llvm.load %470 : !llvm.ptr -> f32
-                  %472 = llvm.getelementptr %466[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %473 = llvm.load %472 : !llvm.ptr -> f32
-                  %474 = llvm.getelementptr %466[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %475 = llvm.load %474 : !llvm.ptr -> f32
-                  %476 = llvm.getelementptr %466[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %477 = llvm.load %476 : !llvm.ptr -> f32
-                  %478 = llvm.getelementptr %466[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %479 = llvm.load %478 : !llvm.ptr -> f32
-                  %480 = llvm.getelementptr %466[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %481 = llvm.load %480 : !llvm.ptr -> f32
-                  %482 = llvm.getelementptr %466[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %483 = llvm.load %482 : !llvm.ptr -> f32
-                  %484 = llvm.getelementptr %466[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %485 = llvm.load %484 : !llvm.ptr -> f32
-                  %486 = llvm.getelementptr %466[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %487 = llvm.load %486 : !llvm.ptr -> f32
-                  %488 = llvm.getelementptr %466[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %489 = llvm.load %488 : !llvm.ptr -> f32
-                  %490 = llvm.getelementptr %466[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %491 = llvm.load %490 : !llvm.ptr -> f32
-                  %492 = llvm.getelementptr %466[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %493 = llvm.load %492 : !llvm.ptr -> f32
-                  %494 = llvm.getelementptr %466[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %495 = llvm.load %494 : !llvm.ptr -> f32
-                  %496 = llvm.getelementptr %466[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %497 = llvm.load %496 : !llvm.ptr -> f32
-                  %498 = llvm.getelementptr %466[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %499 = llvm.load %498 : !llvm.ptr -> f32
-                  %500 = llvm.getelementptr %466[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %501 = llvm.load %500 : !llvm.ptr -> f32
-                  %502 = llvm.getelementptr %466[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %503 = llvm.load %502 : !llvm.ptr -> f32
-                  %504 = llvm.getelementptr %466[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %505 = llvm.load %504 : !llvm.ptr -> f32
-                  %506 = llvm.getelementptr %466[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %507 = llvm.load %506 : !llvm.ptr -> f32
-                  %508 = llvm.getelementptr %466[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %509 = llvm.load %508 : !llvm.ptr -> f32
-                  %510 = llvm.getelementptr %466[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %511 = llvm.load %510 : !llvm.ptr -> f32
-                  %512 = llvm.getelementptr %466[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %513 = llvm.load %512 : !llvm.ptr -> f32
-                  %514 = llvm.getelementptr %466[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %515 = llvm.load %514 : !llvm.ptr -> f32
-                  %516 = llvm.getelementptr %466[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %517 = llvm.load %516 : !llvm.ptr -> f32
-                  %518 = llvm.getelementptr %466[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %519 = llvm.load %518 : !llvm.ptr -> f32
-                  %520 = llvm.getelementptr %466[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %521 = llvm.load %520 : !llvm.ptr -> f32
-                  %522 = llvm.getelementptr %466[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %523 = llvm.load %522 : !llvm.ptr -> f32
-                  %524 = llvm.getelementptr %466[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %525 = llvm.load %524 : !llvm.ptr -> f32
-                  %526 = llvm.getelementptr %466[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %527 = llvm.load %526 : !llvm.ptr -> f32
-                  %528 = llvm.getelementptr %466[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %529 = llvm.load %528 : !llvm.ptr -> f32
-                  %530 = llvm.getelementptr %466[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %531 = llvm.load %530 : !llvm.ptr -> f32
-                  %532 = llvm.getelementptr %466[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %533 = llvm.load %532 : !llvm.ptr -> f32
-                  %534 = llvm.getelementptr %466[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %535 = llvm.load %534 : !llvm.ptr -> f32
-                  %536 = llvm.getelementptr %466[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %537 = llvm.load %536 : !llvm.ptr -> f32
-                  %538 = llvm.getelementptr %466[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %539 = llvm.load %538 : !llvm.ptr -> f32
-                  %540 = llvm.getelementptr %466[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %541 = llvm.load %540 : !llvm.ptr -> f32
-                  %542 = llvm.getelementptr %466[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %543 = llvm.load %542 : !llvm.ptr -> f32
-                  %544 = llvm.getelementptr %466[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %545 = llvm.load %544 : !llvm.ptr -> f32
-                  %546 = llvm.getelementptr %466[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %547 = llvm.load %546 : !llvm.ptr -> f32
-                  %548 = llvm.getelementptr %466[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %549 = llvm.load %548 : !llvm.ptr -> f32
-                  %550 = llvm.getelementptr %466[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %551 = llvm.load %550 : !llvm.ptr -> f32
-                  %552 = llvm.getelementptr %466[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %553 = llvm.load %552 : !llvm.ptr -> f32
-                  %554 = llvm.getelementptr %466[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %555 = llvm.load %554 : !llvm.ptr -> f32
-                  %556 = llvm.getelementptr %466[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %557 = llvm.load %556 : !llvm.ptr -> f32
-                  %558 = llvm.getelementptr %466[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %559 = llvm.load %558 : !llvm.ptr -> f32
-                  %560 = llvm.getelementptr %466[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %561 = llvm.load %560 : !llvm.ptr -> f32
-                  %562 = llvm.getelementptr %466[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %563 = llvm.load %562 : !llvm.ptr -> f32
-                  %564 = llvm.getelementptr %466[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %565 = llvm.load %564 : !llvm.ptr -> f32
-                  %566 = llvm.getelementptr %466[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %567 = llvm.load %566 : !llvm.ptr -> f32
-                  %568 = llvm.getelementptr %466[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %569 = llvm.load %568 : !llvm.ptr -> f32
-                  %570 = llvm.getelementptr %466[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %571 = llvm.load %570 : !llvm.ptr -> f32
-                  %572 = llvm.getelementptr %466[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %573 = llvm.load %572 : !llvm.ptr -> f32
-                  %574 = llvm.getelementptr %466[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %575 = llvm.load %574 : !llvm.ptr -> f32
-                  %576 = llvm.getelementptr %466[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %577 = llvm.load %576 : !llvm.ptr -> f32
-                  %578 = llvm.getelementptr %466[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %579 = llvm.load %578 : !llvm.ptr -> f32
-                  %580 = llvm.getelementptr %466[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %581 = llvm.load %580 : !llvm.ptr -> f32
-                  %582 = llvm.getelementptr %466[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %583 = llvm.load %582 : !llvm.ptr -> f32
-                  %584 = llvm.getelementptr %466[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %585 = llvm.load %584 : !llvm.ptr -> f32
-                  %586 = llvm.getelementptr %466[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %587 = llvm.load %586 : !llvm.ptr -> f32
-                  %588 = llvm.getelementptr %466[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %589 = llvm.load %588 : !llvm.ptr -> f32
-                  %590 = llvm.getelementptr %466[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %591 = llvm.load %590 : !llvm.ptr -> f32
-                  %592 = llvm.getelementptr %466[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %593 = llvm.load %592 : !llvm.ptr -> f32
-                  %594 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %595:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_100 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%467, %469, %471, %473, %475, %477, %479, %481, %483, %485, %487, %489, %491, %493, %495, %497, %499, %501, %503, %505, %507, %509, %511, %513, %515, %517, %519, %521, %523, %525, %527, %529, %531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593], accum = %594 : i1)
+            %coord_112 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,2,?)">
+            %idx_113 = cute.crd2idx(%coord_112, %141) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
+            %tup_114 = cute.add_offset(%gmmaSmemDesc, %idx_113) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
+            %coord_115 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,2,?)">
+            %idx_116 = cute.crd2idx(%coord_115, %140) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
+            %tup_117 = cute.add_offset(%gmmaSmemDesc_30, %idx_116) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
+            %iter_118 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %514 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %515 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %516 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg27 = %c0_i32 to %514 step %c1_i32  : i32 {
+              scf.for %arg28 = %c0_i32 to %515 step %c1_i32  : i32 {
+                scf.for %arg29 = %c0_i32 to %516 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_114, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_118, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %525 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %526 = llvm.load %525 : !llvm.ptr -> f32
+                  %527 = llvm.getelementptr %525[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %528 = llvm.load %527 : !llvm.ptr -> f32
+                  %529 = llvm.getelementptr %525[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %530 = llvm.load %529 : !llvm.ptr -> f32
+                  %531 = llvm.getelementptr %525[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %532 = llvm.load %531 : !llvm.ptr -> f32
+                  %533 = llvm.getelementptr %525[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %534 = llvm.load %533 : !llvm.ptr -> f32
+                  %535 = llvm.getelementptr %525[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %536 = llvm.load %535 : !llvm.ptr -> f32
+                  %537 = llvm.getelementptr %525[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %538 = llvm.load %537 : !llvm.ptr -> f32
+                  %539 = llvm.getelementptr %525[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %540 = llvm.load %539 : !llvm.ptr -> f32
+                  %541 = llvm.getelementptr %525[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %542 = llvm.load %541 : !llvm.ptr -> f32
+                  %543 = llvm.getelementptr %525[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %544 = llvm.load %543 : !llvm.ptr -> f32
+                  %545 = llvm.getelementptr %525[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %546 = llvm.load %545 : !llvm.ptr -> f32
+                  %547 = llvm.getelementptr %525[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %548 = llvm.load %547 : !llvm.ptr -> f32
+                  %549 = llvm.getelementptr %525[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %550 = llvm.load %549 : !llvm.ptr -> f32
+                  %551 = llvm.getelementptr %525[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %552 = llvm.load %551 : !llvm.ptr -> f32
+                  %553 = llvm.getelementptr %525[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %554 = llvm.load %553 : !llvm.ptr -> f32
+                  %555 = llvm.getelementptr %525[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %556 = llvm.load %555 : !llvm.ptr -> f32
+                  %557 = llvm.getelementptr %525[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %558 = llvm.load %557 : !llvm.ptr -> f32
+                  %559 = llvm.getelementptr %525[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %560 = llvm.load %559 : !llvm.ptr -> f32
+                  %561 = llvm.getelementptr %525[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %562 = llvm.load %561 : !llvm.ptr -> f32
+                  %563 = llvm.getelementptr %525[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %564 = llvm.load %563 : !llvm.ptr -> f32
+                  %565 = llvm.getelementptr %525[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %566 = llvm.load %565 : !llvm.ptr -> f32
+                  %567 = llvm.getelementptr %525[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %568 = llvm.load %567 : !llvm.ptr -> f32
+                  %569 = llvm.getelementptr %525[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %570 = llvm.load %569 : !llvm.ptr -> f32
+                  %571 = llvm.getelementptr %525[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %572 = llvm.load %571 : !llvm.ptr -> f32
+                  %573 = llvm.getelementptr %525[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %574 = llvm.load %573 : !llvm.ptr -> f32
+                  %575 = llvm.getelementptr %525[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %576 = llvm.load %575 : !llvm.ptr -> f32
+                  %577 = llvm.getelementptr %525[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %578 = llvm.load %577 : !llvm.ptr -> f32
+                  %579 = llvm.getelementptr %525[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %580 = llvm.load %579 : !llvm.ptr -> f32
+                  %581 = llvm.getelementptr %525[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %582 = llvm.load %581 : !llvm.ptr -> f32
+                  %583 = llvm.getelementptr %525[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %584 = llvm.load %583 : !llvm.ptr -> f32
+                  %585 = llvm.getelementptr %525[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %586 = llvm.load %585 : !llvm.ptr -> f32
+                  %587 = llvm.getelementptr %525[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %588 = llvm.load %587 : !llvm.ptr -> f32
+                  %589 = llvm.getelementptr %525[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %590 = llvm.load %589 : !llvm.ptr -> f32
+                  %591 = llvm.getelementptr %525[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %592 = llvm.load %591 : !llvm.ptr -> f32
+                  %593 = llvm.getelementptr %525[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %594 = llvm.load %593 : !llvm.ptr -> f32
+                  %595 = llvm.getelementptr %525[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %596 = llvm.load %595 : !llvm.ptr -> f32
+                  %597 = llvm.getelementptr %525[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %598 = llvm.load %597 : !llvm.ptr -> f32
+                  %599 = llvm.getelementptr %525[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %600 = llvm.load %599 : !llvm.ptr -> f32
+                  %601 = llvm.getelementptr %525[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %602 = llvm.load %601 : !llvm.ptr -> f32
+                  %603 = llvm.getelementptr %525[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %604 = llvm.load %603 : !llvm.ptr -> f32
+                  %605 = llvm.getelementptr %525[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %606 = llvm.load %605 : !llvm.ptr -> f32
+                  %607 = llvm.getelementptr %525[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %608 = llvm.load %607 : !llvm.ptr -> f32
+                  %609 = llvm.getelementptr %525[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %610 = llvm.load %609 : !llvm.ptr -> f32
+                  %611 = llvm.getelementptr %525[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %612 = llvm.load %611 : !llvm.ptr -> f32
+                  %613 = llvm.getelementptr %525[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %614 = llvm.load %613 : !llvm.ptr -> f32
+                  %615 = llvm.getelementptr %525[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %616 = llvm.load %615 : !llvm.ptr -> f32
+                  %617 = llvm.getelementptr %525[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %618 = llvm.load %617 : !llvm.ptr -> f32
+                  %619 = llvm.getelementptr %525[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %620 = llvm.load %619 : !llvm.ptr -> f32
+                  %621 = llvm.getelementptr %525[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %622 = llvm.load %621 : !llvm.ptr -> f32
+                  %623 = llvm.getelementptr %525[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %624 = llvm.load %623 : !llvm.ptr -> f32
+                  %625 = llvm.getelementptr %525[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %626 = llvm.load %625 : !llvm.ptr -> f32
+                  %627 = llvm.getelementptr %525[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %628 = llvm.load %627 : !llvm.ptr -> f32
+                  %629 = llvm.getelementptr %525[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %630 = llvm.load %629 : !llvm.ptr -> f32
+                  %631 = llvm.getelementptr %525[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %632 = llvm.load %631 : !llvm.ptr -> f32
+                  %633 = llvm.getelementptr %525[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %634 = llvm.load %633 : !llvm.ptr -> f32
+                  %635 = llvm.getelementptr %525[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %636 = llvm.load %635 : !llvm.ptr -> f32
+                  %637 = llvm.getelementptr %525[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %638 = llvm.load %637 : !llvm.ptr -> f32
+                  %639 = llvm.getelementptr %525[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %640 = llvm.load %639 : !llvm.ptr -> f32
+                  %641 = llvm.getelementptr %525[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %642 = llvm.load %641 : !llvm.ptr -> f32
+                  %643 = llvm.getelementptr %525[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %644 = llvm.load %643 : !llvm.ptr -> f32
+                  %645 = llvm.getelementptr %525[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %646 = llvm.load %645 : !llvm.ptr -> f32
+                  %647 = llvm.getelementptr %525[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %648 = llvm.load %647 : !llvm.ptr -> f32
+                  %649 = llvm.getelementptr %525[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %650 = llvm.load %649 : !llvm.ptr -> f32
+                  %651 = llvm.getelementptr %525[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %652 = llvm.load %651 : !llvm.ptr -> f32
+                  %653 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %654:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_117 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598, %600, %602, %604, %606, %608, %610, %612, %614, %616, %618, %620, %622, %624, %626, %628, %630, %632, %634, %636, %638, %640, %642, %644, %646, %648, %650, %652], accum = %653 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %596 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %595#0, %596 : f32, !llvm.ptr
-                  %597 = llvm.getelementptr %596[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#1, %597 : f32, !llvm.ptr
-                  %598 = llvm.getelementptr %596[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#2, %598 : f32, !llvm.ptr
-                  %599 = llvm.getelementptr %596[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#3, %599 : f32, !llvm.ptr
-                  %600 = llvm.getelementptr %596[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#4, %600 : f32, !llvm.ptr
-                  %601 = llvm.getelementptr %596[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#5, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %596[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#6, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %596[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#7, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %596[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#8, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %596[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#9, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %596[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#10, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %596[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#11, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %596[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#12, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %596[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#13, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %596[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#14, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %596[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#15, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %596[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#16, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %596[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#17, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %596[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#18, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %596[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#19, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %596[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#20, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %596[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#21, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %596[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#22, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %596[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#23, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %596[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#24, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %596[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#25, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %596[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#26, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %596[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#27, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %596[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#28, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %596[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#29, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %596[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#30, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %596[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#31, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %596[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#32, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %596[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#33, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %596[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#34, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %596[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#35, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %596[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#36, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %596[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#37, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %596[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#38, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %596[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#39, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %596[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#40, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %596[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#41, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %596[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#42, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %596[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#43, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %596[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#44, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %596[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#45, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %596[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#46, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %596[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#47, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %596[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#48, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %596[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#49, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %596[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#50, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %596[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#51, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %596[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#52, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %596[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#53, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %596[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#54, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %596[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#55, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %596[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#56, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %596[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#57, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %596[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#58, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %596[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#59, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %596[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#60, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %596[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#61, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %596[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#62, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %596[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#63, %659 : f32, !llvm.ptr
+                  %655 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %654#0, %655 : f32, !llvm.ptr
+                  %656 = llvm.getelementptr %655[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#1, %656 : f32, !llvm.ptr
+                  %657 = llvm.getelementptr %655[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#2, %657 : f32, !llvm.ptr
+                  %658 = llvm.getelementptr %655[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#3, %658 : f32, !llvm.ptr
+                  %659 = llvm.getelementptr %655[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#4, %659 : f32, !llvm.ptr
+                  %660 = llvm.getelementptr %655[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#5, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %655[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#6, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %655[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#7, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %655[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#8, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %655[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#9, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %655[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#10, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %655[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#11, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %655[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#12, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %655[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#13, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %655[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#14, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %655[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#15, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %655[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#16, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %655[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#17, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %655[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#18, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %655[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#19, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %655[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#20, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %655[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#21, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %655[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#22, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %655[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#23, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %655[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#24, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %655[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#25, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %655[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#26, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %655[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#27, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %655[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#28, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %655[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#29, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %655[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#30, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %655[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#31, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %655[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#32, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %655[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#33, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %655[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#34, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %655[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#35, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %655[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#36, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %655[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#37, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %655[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#38, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %655[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#39, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %655[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#40, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %655[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#41, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %655[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#42, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %655[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#43, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %655[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#44, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %655[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#45, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %655[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#46, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %655[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#47, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %655[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#48, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %655[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#49, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %655[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#50, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %655[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#51, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %655[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#52, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %655[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#53, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %655[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#54, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %655[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#55, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %655[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#56, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %655[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#57, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %655[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#58, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %655[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#59, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %655[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#60, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %655[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#61, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %655[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#62, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %655[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#63, %718 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_102 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,3,?)">
-            %idx_103 = cute.crd2idx(%coord_102, %141) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_104 = cute.add_offset(%gmmaSmemDesc, %idx_103) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %coord_105 = cute.make_coord(%arg22) : (i32) -> !cute.coord<"(_,_,3,?)">
-            %idx_106 = cute.crd2idx(%coord_105, %140) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_107 = cute.add_offset(%gmmaSmemDesc_30, %idx_106) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %iter_108 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %458 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %459 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %460 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg24 = %c0_i32 to %458 step %c1_i32  : i32 {
-              scf.for %arg25 = %c0_i32 to %459 step %c1_i32  : i32 {
-                scf.for %arg26 = %c0_i32 to %460 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg25, %arg24) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg25, %arg26) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_104, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_108, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %466 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %467 = llvm.load %466 : !llvm.ptr -> f32
-                  %468 = llvm.getelementptr %466[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %469 = llvm.load %468 : !llvm.ptr -> f32
-                  %470 = llvm.getelementptr %466[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %471 = llvm.load %470 : !llvm.ptr -> f32
-                  %472 = llvm.getelementptr %466[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %473 = llvm.load %472 : !llvm.ptr -> f32
-                  %474 = llvm.getelementptr %466[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %475 = llvm.load %474 : !llvm.ptr -> f32
-                  %476 = llvm.getelementptr %466[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %477 = llvm.load %476 : !llvm.ptr -> f32
-                  %478 = llvm.getelementptr %466[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %479 = llvm.load %478 : !llvm.ptr -> f32
-                  %480 = llvm.getelementptr %466[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %481 = llvm.load %480 : !llvm.ptr -> f32
-                  %482 = llvm.getelementptr %466[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %483 = llvm.load %482 : !llvm.ptr -> f32
-                  %484 = llvm.getelementptr %466[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %485 = llvm.load %484 : !llvm.ptr -> f32
-                  %486 = llvm.getelementptr %466[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %487 = llvm.load %486 : !llvm.ptr -> f32
-                  %488 = llvm.getelementptr %466[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %489 = llvm.load %488 : !llvm.ptr -> f32
-                  %490 = llvm.getelementptr %466[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %491 = llvm.load %490 : !llvm.ptr -> f32
-                  %492 = llvm.getelementptr %466[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %493 = llvm.load %492 : !llvm.ptr -> f32
-                  %494 = llvm.getelementptr %466[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %495 = llvm.load %494 : !llvm.ptr -> f32
-                  %496 = llvm.getelementptr %466[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %497 = llvm.load %496 : !llvm.ptr -> f32
-                  %498 = llvm.getelementptr %466[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %499 = llvm.load %498 : !llvm.ptr -> f32
-                  %500 = llvm.getelementptr %466[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %501 = llvm.load %500 : !llvm.ptr -> f32
-                  %502 = llvm.getelementptr %466[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %503 = llvm.load %502 : !llvm.ptr -> f32
-                  %504 = llvm.getelementptr %466[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %505 = llvm.load %504 : !llvm.ptr -> f32
-                  %506 = llvm.getelementptr %466[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %507 = llvm.load %506 : !llvm.ptr -> f32
-                  %508 = llvm.getelementptr %466[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %509 = llvm.load %508 : !llvm.ptr -> f32
-                  %510 = llvm.getelementptr %466[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %511 = llvm.load %510 : !llvm.ptr -> f32
-                  %512 = llvm.getelementptr %466[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %513 = llvm.load %512 : !llvm.ptr -> f32
-                  %514 = llvm.getelementptr %466[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %515 = llvm.load %514 : !llvm.ptr -> f32
-                  %516 = llvm.getelementptr %466[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %517 = llvm.load %516 : !llvm.ptr -> f32
-                  %518 = llvm.getelementptr %466[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %519 = llvm.load %518 : !llvm.ptr -> f32
-                  %520 = llvm.getelementptr %466[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %521 = llvm.load %520 : !llvm.ptr -> f32
-                  %522 = llvm.getelementptr %466[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %523 = llvm.load %522 : !llvm.ptr -> f32
-                  %524 = llvm.getelementptr %466[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %525 = llvm.load %524 : !llvm.ptr -> f32
-                  %526 = llvm.getelementptr %466[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %527 = llvm.load %526 : !llvm.ptr -> f32
-                  %528 = llvm.getelementptr %466[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %529 = llvm.load %528 : !llvm.ptr -> f32
-                  %530 = llvm.getelementptr %466[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %531 = llvm.load %530 : !llvm.ptr -> f32
-                  %532 = llvm.getelementptr %466[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %533 = llvm.load %532 : !llvm.ptr -> f32
-                  %534 = llvm.getelementptr %466[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %535 = llvm.load %534 : !llvm.ptr -> f32
-                  %536 = llvm.getelementptr %466[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %537 = llvm.load %536 : !llvm.ptr -> f32
-                  %538 = llvm.getelementptr %466[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %539 = llvm.load %538 : !llvm.ptr -> f32
-                  %540 = llvm.getelementptr %466[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %541 = llvm.load %540 : !llvm.ptr -> f32
-                  %542 = llvm.getelementptr %466[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %543 = llvm.load %542 : !llvm.ptr -> f32
-                  %544 = llvm.getelementptr %466[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %545 = llvm.load %544 : !llvm.ptr -> f32
-                  %546 = llvm.getelementptr %466[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %547 = llvm.load %546 : !llvm.ptr -> f32
-                  %548 = llvm.getelementptr %466[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %549 = llvm.load %548 : !llvm.ptr -> f32
-                  %550 = llvm.getelementptr %466[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %551 = llvm.load %550 : !llvm.ptr -> f32
-                  %552 = llvm.getelementptr %466[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %553 = llvm.load %552 : !llvm.ptr -> f32
-                  %554 = llvm.getelementptr %466[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %555 = llvm.load %554 : !llvm.ptr -> f32
-                  %556 = llvm.getelementptr %466[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %557 = llvm.load %556 : !llvm.ptr -> f32
-                  %558 = llvm.getelementptr %466[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %559 = llvm.load %558 : !llvm.ptr -> f32
-                  %560 = llvm.getelementptr %466[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %561 = llvm.load %560 : !llvm.ptr -> f32
-                  %562 = llvm.getelementptr %466[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %563 = llvm.load %562 : !llvm.ptr -> f32
-                  %564 = llvm.getelementptr %466[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %565 = llvm.load %564 : !llvm.ptr -> f32
-                  %566 = llvm.getelementptr %466[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %567 = llvm.load %566 : !llvm.ptr -> f32
-                  %568 = llvm.getelementptr %466[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %569 = llvm.load %568 : !llvm.ptr -> f32
-                  %570 = llvm.getelementptr %466[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %571 = llvm.load %570 : !llvm.ptr -> f32
-                  %572 = llvm.getelementptr %466[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %573 = llvm.load %572 : !llvm.ptr -> f32
-                  %574 = llvm.getelementptr %466[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %575 = llvm.load %574 : !llvm.ptr -> f32
-                  %576 = llvm.getelementptr %466[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %577 = llvm.load %576 : !llvm.ptr -> f32
-                  %578 = llvm.getelementptr %466[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %579 = llvm.load %578 : !llvm.ptr -> f32
-                  %580 = llvm.getelementptr %466[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %581 = llvm.load %580 : !llvm.ptr -> f32
-                  %582 = llvm.getelementptr %466[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %583 = llvm.load %582 : !llvm.ptr -> f32
-                  %584 = llvm.getelementptr %466[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %585 = llvm.load %584 : !llvm.ptr -> f32
-                  %586 = llvm.getelementptr %466[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %587 = llvm.load %586 : !llvm.ptr -> f32
-                  %588 = llvm.getelementptr %466[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %589 = llvm.load %588 : !llvm.ptr -> f32
-                  %590 = llvm.getelementptr %466[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %591 = llvm.load %590 : !llvm.ptr -> f32
-                  %592 = llvm.getelementptr %466[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %593 = llvm.load %592 : !llvm.ptr -> f32
-                  %594 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %595:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_107 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%467, %469, %471, %473, %475, %477, %479, %481, %483, %485, %487, %489, %491, %493, %495, %497, %499, %501, %503, %505, %507, %509, %511, %513, %515, %517, %519, %521, %523, %525, %527, %529, %531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593], accum = %594 : i1)
+            %coord_119 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,3,?)">
+            %idx_120 = cute.crd2idx(%coord_119, %141) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_121 = cute.add_offset(%gmmaSmemDesc, %idx_120) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %coord_122 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,3,?)">
+            %idx_123 = cute.crd2idx(%coord_122, %140) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_124 = cute.add_offset(%gmmaSmemDesc_30, %idx_123) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %iter_125 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %517 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %518 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %519 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg27 = %c0_i32 to %517 step %c1_i32  : i32 {
+              scf.for %arg28 = %c0_i32 to %518 step %c1_i32  : i32 {
+                scf.for %arg29 = %c0_i32 to %519 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_121, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_125, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %525 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %526 = llvm.load %525 : !llvm.ptr -> f32
+                  %527 = llvm.getelementptr %525[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %528 = llvm.load %527 : !llvm.ptr -> f32
+                  %529 = llvm.getelementptr %525[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %530 = llvm.load %529 : !llvm.ptr -> f32
+                  %531 = llvm.getelementptr %525[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %532 = llvm.load %531 : !llvm.ptr -> f32
+                  %533 = llvm.getelementptr %525[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %534 = llvm.load %533 : !llvm.ptr -> f32
+                  %535 = llvm.getelementptr %525[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %536 = llvm.load %535 : !llvm.ptr -> f32
+                  %537 = llvm.getelementptr %525[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %538 = llvm.load %537 : !llvm.ptr -> f32
+                  %539 = llvm.getelementptr %525[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %540 = llvm.load %539 : !llvm.ptr -> f32
+                  %541 = llvm.getelementptr %525[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %542 = llvm.load %541 : !llvm.ptr -> f32
+                  %543 = llvm.getelementptr %525[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %544 = llvm.load %543 : !llvm.ptr -> f32
+                  %545 = llvm.getelementptr %525[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %546 = llvm.load %545 : !llvm.ptr -> f32
+                  %547 = llvm.getelementptr %525[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %548 = llvm.load %547 : !llvm.ptr -> f32
+                  %549 = llvm.getelementptr %525[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %550 = llvm.load %549 : !llvm.ptr -> f32
+                  %551 = llvm.getelementptr %525[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %552 = llvm.load %551 : !llvm.ptr -> f32
+                  %553 = llvm.getelementptr %525[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %554 = llvm.load %553 : !llvm.ptr -> f32
+                  %555 = llvm.getelementptr %525[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %556 = llvm.load %555 : !llvm.ptr -> f32
+                  %557 = llvm.getelementptr %525[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %558 = llvm.load %557 : !llvm.ptr -> f32
+                  %559 = llvm.getelementptr %525[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %560 = llvm.load %559 : !llvm.ptr -> f32
+                  %561 = llvm.getelementptr %525[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %562 = llvm.load %561 : !llvm.ptr -> f32
+                  %563 = llvm.getelementptr %525[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %564 = llvm.load %563 : !llvm.ptr -> f32
+                  %565 = llvm.getelementptr %525[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %566 = llvm.load %565 : !llvm.ptr -> f32
+                  %567 = llvm.getelementptr %525[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %568 = llvm.load %567 : !llvm.ptr -> f32
+                  %569 = llvm.getelementptr %525[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %570 = llvm.load %569 : !llvm.ptr -> f32
+                  %571 = llvm.getelementptr %525[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %572 = llvm.load %571 : !llvm.ptr -> f32
+                  %573 = llvm.getelementptr %525[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %574 = llvm.load %573 : !llvm.ptr -> f32
+                  %575 = llvm.getelementptr %525[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %576 = llvm.load %575 : !llvm.ptr -> f32
+                  %577 = llvm.getelementptr %525[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %578 = llvm.load %577 : !llvm.ptr -> f32
+                  %579 = llvm.getelementptr %525[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %580 = llvm.load %579 : !llvm.ptr -> f32
+                  %581 = llvm.getelementptr %525[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %582 = llvm.load %581 : !llvm.ptr -> f32
+                  %583 = llvm.getelementptr %525[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %584 = llvm.load %583 : !llvm.ptr -> f32
+                  %585 = llvm.getelementptr %525[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %586 = llvm.load %585 : !llvm.ptr -> f32
+                  %587 = llvm.getelementptr %525[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %588 = llvm.load %587 : !llvm.ptr -> f32
+                  %589 = llvm.getelementptr %525[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %590 = llvm.load %589 : !llvm.ptr -> f32
+                  %591 = llvm.getelementptr %525[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %592 = llvm.load %591 : !llvm.ptr -> f32
+                  %593 = llvm.getelementptr %525[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %594 = llvm.load %593 : !llvm.ptr -> f32
+                  %595 = llvm.getelementptr %525[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %596 = llvm.load %595 : !llvm.ptr -> f32
+                  %597 = llvm.getelementptr %525[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %598 = llvm.load %597 : !llvm.ptr -> f32
+                  %599 = llvm.getelementptr %525[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %600 = llvm.load %599 : !llvm.ptr -> f32
+                  %601 = llvm.getelementptr %525[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %602 = llvm.load %601 : !llvm.ptr -> f32
+                  %603 = llvm.getelementptr %525[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %604 = llvm.load %603 : !llvm.ptr -> f32
+                  %605 = llvm.getelementptr %525[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %606 = llvm.load %605 : !llvm.ptr -> f32
+                  %607 = llvm.getelementptr %525[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %608 = llvm.load %607 : !llvm.ptr -> f32
+                  %609 = llvm.getelementptr %525[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %610 = llvm.load %609 : !llvm.ptr -> f32
+                  %611 = llvm.getelementptr %525[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %612 = llvm.load %611 : !llvm.ptr -> f32
+                  %613 = llvm.getelementptr %525[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %614 = llvm.load %613 : !llvm.ptr -> f32
+                  %615 = llvm.getelementptr %525[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %616 = llvm.load %615 : !llvm.ptr -> f32
+                  %617 = llvm.getelementptr %525[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %618 = llvm.load %617 : !llvm.ptr -> f32
+                  %619 = llvm.getelementptr %525[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %620 = llvm.load %619 : !llvm.ptr -> f32
+                  %621 = llvm.getelementptr %525[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %622 = llvm.load %621 : !llvm.ptr -> f32
+                  %623 = llvm.getelementptr %525[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %624 = llvm.load %623 : !llvm.ptr -> f32
+                  %625 = llvm.getelementptr %525[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %626 = llvm.load %625 : !llvm.ptr -> f32
+                  %627 = llvm.getelementptr %525[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %628 = llvm.load %627 : !llvm.ptr -> f32
+                  %629 = llvm.getelementptr %525[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %630 = llvm.load %629 : !llvm.ptr -> f32
+                  %631 = llvm.getelementptr %525[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %632 = llvm.load %631 : !llvm.ptr -> f32
+                  %633 = llvm.getelementptr %525[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %634 = llvm.load %633 : !llvm.ptr -> f32
+                  %635 = llvm.getelementptr %525[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %636 = llvm.load %635 : !llvm.ptr -> f32
+                  %637 = llvm.getelementptr %525[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %638 = llvm.load %637 : !llvm.ptr -> f32
+                  %639 = llvm.getelementptr %525[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %640 = llvm.load %639 : !llvm.ptr -> f32
+                  %641 = llvm.getelementptr %525[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %642 = llvm.load %641 : !llvm.ptr -> f32
+                  %643 = llvm.getelementptr %525[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %644 = llvm.load %643 : !llvm.ptr -> f32
+                  %645 = llvm.getelementptr %525[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %646 = llvm.load %645 : !llvm.ptr -> f32
+                  %647 = llvm.getelementptr %525[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %648 = llvm.load %647 : !llvm.ptr -> f32
+                  %649 = llvm.getelementptr %525[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %650 = llvm.load %649 : !llvm.ptr -> f32
+                  %651 = llvm.getelementptr %525[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %652 = llvm.load %651 : !llvm.ptr -> f32
+                  %653 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %654:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_124 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598, %600, %602, %604, %606, %608, %610, %612, %614, %616, %618, %620, %622, %624, %626, %628, %630, %632, %634, %636, %638, %640, %642, %644, %646, %648, %650, %652], accum = %653 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %596 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %595#0, %596 : f32, !llvm.ptr
-                  %597 = llvm.getelementptr %596[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#1, %597 : f32, !llvm.ptr
-                  %598 = llvm.getelementptr %596[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#2, %598 : f32, !llvm.ptr
-                  %599 = llvm.getelementptr %596[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#3, %599 : f32, !llvm.ptr
-                  %600 = llvm.getelementptr %596[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#4, %600 : f32, !llvm.ptr
-                  %601 = llvm.getelementptr %596[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#5, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %596[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#6, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %596[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#7, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %596[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#8, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %596[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#9, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %596[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#10, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %596[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#11, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %596[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#12, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %596[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#13, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %596[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#14, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %596[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#15, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %596[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#16, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %596[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#17, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %596[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#18, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %596[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#19, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %596[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#20, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %596[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#21, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %596[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#22, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %596[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#23, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %596[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#24, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %596[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#25, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %596[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#26, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %596[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#27, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %596[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#28, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %596[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#29, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %596[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#30, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %596[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#31, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %596[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#32, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %596[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#33, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %596[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#34, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %596[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#35, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %596[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#36, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %596[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#37, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %596[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#38, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %596[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#39, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %596[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#40, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %596[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#41, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %596[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#42, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %596[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#43, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %596[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#44, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %596[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#45, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %596[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#46, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %596[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#47, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %596[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#48, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %596[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#49, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %596[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#50, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %596[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#51, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %596[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#52, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %596[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#53, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %596[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#54, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %596[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#55, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %596[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#56, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %596[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#57, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %596[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#58, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %596[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#59, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %596[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#60, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %596[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#61, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %596[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#62, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %596[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %595#63, %659 : f32, !llvm.ptr
+                  %655 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %654#0, %655 : f32, !llvm.ptr
+                  %656 = llvm.getelementptr %655[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#1, %656 : f32, !llvm.ptr
+                  %657 = llvm.getelementptr %655[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#2, %657 : f32, !llvm.ptr
+                  %658 = llvm.getelementptr %655[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#3, %658 : f32, !llvm.ptr
+                  %659 = llvm.getelementptr %655[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#4, %659 : f32, !llvm.ptr
+                  %660 = llvm.getelementptr %655[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#5, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %655[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#6, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %655[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#7, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %655[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#8, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %655[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#9, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %655[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#10, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %655[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#11, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %655[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#12, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %655[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#13, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %655[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#14, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %655[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#15, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %655[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#16, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %655[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#17, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %655[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#18, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %655[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#19, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %655[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#20, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %655[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#21, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %655[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#22, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %655[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#23, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %655[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#24, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %655[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#25, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %655[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#26, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %655[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#27, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %655[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#28, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %655[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#29, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %655[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#30, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %655[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#31, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %655[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#32, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %655[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#33, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %655[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#34, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %655[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#35, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %655[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#36, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %655[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#37, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %655[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#38, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %655[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#39, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %655[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#40, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %655[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#41, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %655[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#42, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %655[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#43, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %655[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#44, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %655[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#45, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %655[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#46, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %655[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#47, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %655[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#48, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %655[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#49, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %655[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#50, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %655[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#51, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %655[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#52, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %655[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#53, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %655[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#54, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %655[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#55, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %655[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#56, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %655[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#57, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %655[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#58, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %655[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#59, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %655[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#60, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %655[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#61, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %655[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#62, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %655[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %654#63, %718 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.wgmma.commit.group.sync.aligned
-            %461 = arith.addi %arg22, %c1_i32 : i32
-            %462 = arith.addi %arg21, %c1_i32 : i32
-            %463 = arith.cmpi eq, %461, %c6_i32 : i32
-            %464 = arith.select %463, %c0_i32, %461 : i32
-            %465 = scf.if %463 -> (i32) {
-              %466 = arith.xori %arg23, %c1_i32 : i32
-              scf.yield %466 : i32
+            %520 = arith.addi %arg25, %c1_i32 : i32
+            %521 = arith.addi %arg24, %c1_i32 : i32
+            %522 = arith.cmpi eq, %520, %c6_i32 : i32
+            %523 = arith.select %522, %c0_i32, %520 : i32
+            %524 = scf.if %522 -> (i32) {
+              %525 = arith.xori %arg26, %c1_i32 : i32
+              scf.yield %525 : i32
             } else {
-              scf.yield %arg23 : i32
+              scf.yield %arg26 : i32
             }
-            scf.yield %462, %464, %465 : i32, i32, i32
+            scf.yield %521, %523, %524 : i32, i32, i32
           }
-          %262:6 = scf.for %arg20 = %258 to %226 step %c1_i32 iter_args(%arg21 = %c0_i32, %arg22 = %arg15, %arg23 = %arg16, %arg24 = %261#0, %arg25 = %261#1, %arg26 = %261#2) -> (i32, i32, i32, i32, i32, i32)  : i32 {
-            %int_tuple_79 = cute.make_int_tuple(%arg25) : (i32) -> !cute.int_tuple<"?">
-            %ptr_80 = cute.add_offset(%iter, %int_tuple_79) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-            %448 = builtin.unrealized_conversion_cast %ptr_80 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-            nvvm.mbarrier.try_wait.parity.shared %448, %arg26, %c10000000_i32 : !llvm.ptr<3>, i32, i32
-            %coord_81 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,0,?)">
-            %idx_82 = cute.crd2idx(%coord_81, %141) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
-            %tup_83 = cute.add_offset(%gmmaSmemDesc, %idx_82) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
-            %coord_84 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,0,?)">
-            %idx_85 = cute.crd2idx(%coord_84, %140) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
-            %tup_86 = cute.add_offset(%gmmaSmemDesc_30, %idx_85) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
-            %iter_87 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %450 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %451 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg27 = %c0_i32 to %449 step %c1_i32  : i32 {
-              scf.for %arg28 = %c0_i32 to %450 step %c1_i32  : i32 {
-                scf.for %arg29 = %c0_i32 to %451 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_83, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_87, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %471 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %472 = llvm.load %471 : !llvm.ptr -> f32
-                  %473 = llvm.getelementptr %471[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %474 = llvm.load %473 : !llvm.ptr -> f32
-                  %475 = llvm.getelementptr %471[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %476 = llvm.load %475 : !llvm.ptr -> f32
-                  %477 = llvm.getelementptr %471[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %478 = llvm.load %477 : !llvm.ptr -> f32
-                  %479 = llvm.getelementptr %471[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %480 = llvm.load %479 : !llvm.ptr -> f32
-                  %481 = llvm.getelementptr %471[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %482 = llvm.load %481 : !llvm.ptr -> f32
-                  %483 = llvm.getelementptr %471[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %484 = llvm.load %483 : !llvm.ptr -> f32
-                  %485 = llvm.getelementptr %471[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %486 = llvm.load %485 : !llvm.ptr -> f32
-                  %487 = llvm.getelementptr %471[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %488 = llvm.load %487 : !llvm.ptr -> f32
-                  %489 = llvm.getelementptr %471[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %490 = llvm.load %489 : !llvm.ptr -> f32
-                  %491 = llvm.getelementptr %471[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %492 = llvm.load %491 : !llvm.ptr -> f32
-                  %493 = llvm.getelementptr %471[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %494 = llvm.load %493 : !llvm.ptr -> f32
-                  %495 = llvm.getelementptr %471[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %496 = llvm.load %495 : !llvm.ptr -> f32
-                  %497 = llvm.getelementptr %471[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %498 = llvm.load %497 : !llvm.ptr -> f32
-                  %499 = llvm.getelementptr %471[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %500 = llvm.load %499 : !llvm.ptr -> f32
-                  %501 = llvm.getelementptr %471[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %502 = llvm.load %501 : !llvm.ptr -> f32
-                  %503 = llvm.getelementptr %471[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %504 = llvm.load %503 : !llvm.ptr -> f32
-                  %505 = llvm.getelementptr %471[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %506 = llvm.load %505 : !llvm.ptr -> f32
-                  %507 = llvm.getelementptr %471[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %508 = llvm.load %507 : !llvm.ptr -> f32
-                  %509 = llvm.getelementptr %471[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %510 = llvm.load %509 : !llvm.ptr -> f32
-                  %511 = llvm.getelementptr %471[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %512 = llvm.load %511 : !llvm.ptr -> f32
-                  %513 = llvm.getelementptr %471[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %514 = llvm.load %513 : !llvm.ptr -> f32
-                  %515 = llvm.getelementptr %471[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %516 = llvm.load %515 : !llvm.ptr -> f32
-                  %517 = llvm.getelementptr %471[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %518 = llvm.load %517 : !llvm.ptr -> f32
-                  %519 = llvm.getelementptr %471[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %520 = llvm.load %519 : !llvm.ptr -> f32
-                  %521 = llvm.getelementptr %471[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %522 = llvm.load %521 : !llvm.ptr -> f32
-                  %523 = llvm.getelementptr %471[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %524 = llvm.load %523 : !llvm.ptr -> f32
-                  %525 = llvm.getelementptr %471[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %526 = llvm.load %525 : !llvm.ptr -> f32
-                  %527 = llvm.getelementptr %471[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %528 = llvm.load %527 : !llvm.ptr -> f32
-                  %529 = llvm.getelementptr %471[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %530 = llvm.load %529 : !llvm.ptr -> f32
-                  %531 = llvm.getelementptr %471[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %532 = llvm.load %531 : !llvm.ptr -> f32
-                  %533 = llvm.getelementptr %471[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %534 = llvm.load %533 : !llvm.ptr -> f32
-                  %535 = llvm.getelementptr %471[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %536 = llvm.load %535 : !llvm.ptr -> f32
-                  %537 = llvm.getelementptr %471[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %538 = llvm.load %537 : !llvm.ptr -> f32
-                  %539 = llvm.getelementptr %471[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %540 = llvm.load %539 : !llvm.ptr -> f32
-                  %541 = llvm.getelementptr %471[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %542 = llvm.load %541 : !llvm.ptr -> f32
-                  %543 = llvm.getelementptr %471[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %544 = llvm.load %543 : !llvm.ptr -> f32
-                  %545 = llvm.getelementptr %471[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %546 = llvm.load %545 : !llvm.ptr -> f32
-                  %547 = llvm.getelementptr %471[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %548 = llvm.load %547 : !llvm.ptr -> f32
-                  %549 = llvm.getelementptr %471[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %550 = llvm.load %549 : !llvm.ptr -> f32
-                  %551 = llvm.getelementptr %471[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %552 = llvm.load %551 : !llvm.ptr -> f32
-                  %553 = llvm.getelementptr %471[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %554 = llvm.load %553 : !llvm.ptr -> f32
-                  %555 = llvm.getelementptr %471[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %556 = llvm.load %555 : !llvm.ptr -> f32
-                  %557 = llvm.getelementptr %471[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %558 = llvm.load %557 : !llvm.ptr -> f32
-                  %559 = llvm.getelementptr %471[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %560 = llvm.load %559 : !llvm.ptr -> f32
-                  %561 = llvm.getelementptr %471[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %562 = llvm.load %561 : !llvm.ptr -> f32
-                  %563 = llvm.getelementptr %471[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %564 = llvm.load %563 : !llvm.ptr -> f32
-                  %565 = llvm.getelementptr %471[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %566 = llvm.load %565 : !llvm.ptr -> f32
-                  %567 = llvm.getelementptr %471[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %568 = llvm.load %567 : !llvm.ptr -> f32
-                  %569 = llvm.getelementptr %471[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %570 = llvm.load %569 : !llvm.ptr -> f32
-                  %571 = llvm.getelementptr %471[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %572 = llvm.load %571 : !llvm.ptr -> f32
-                  %573 = llvm.getelementptr %471[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %574 = llvm.load %573 : !llvm.ptr -> f32
-                  %575 = llvm.getelementptr %471[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %576 = llvm.load %575 : !llvm.ptr -> f32
-                  %577 = llvm.getelementptr %471[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %578 = llvm.load %577 : !llvm.ptr -> f32
-                  %579 = llvm.getelementptr %471[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %580 = llvm.load %579 : !llvm.ptr -> f32
-                  %581 = llvm.getelementptr %471[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %582 = llvm.load %581 : !llvm.ptr -> f32
-                  %583 = llvm.getelementptr %471[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %584 = llvm.load %583 : !llvm.ptr -> f32
-                  %585 = llvm.getelementptr %471[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %586 = llvm.load %585 : !llvm.ptr -> f32
-                  %587 = llvm.getelementptr %471[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %588 = llvm.load %587 : !llvm.ptr -> f32
-                  %589 = llvm.getelementptr %471[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %590 = llvm.load %589 : !llvm.ptr -> f32
-                  %591 = llvm.getelementptr %471[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %592 = llvm.load %591 : !llvm.ptr -> f32
-                  %593 = llvm.getelementptr %471[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %594 = llvm.load %593 : !llvm.ptr -> f32
-                  %595 = llvm.getelementptr %471[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %596 = llvm.load %595 : !llvm.ptr -> f32
-                  %597 = llvm.getelementptr %471[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %598 = llvm.load %597 : !llvm.ptr -> f32
-                  %599 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %600:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_86 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%472, %474, %476, %478, %480, %482, %484, %486, %488, %490, %492, %494, %496, %498, %500, %502, %504, %506, %508, %510, %512, %514, %516, %518, %520, %522, %524, %526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598], accum = %599 : i1)
+          %292:6 = scf.for %arg23 = %287 to %226 step %c1_i32 iter_args(%arg24 = %c0_i32, %arg25 = %arg18, %arg26 = %arg19, %arg27 = %291#0, %arg28 = %291#1, %arg29 = %291#2) -> (i32, i32, i32, i32, i32, i32)  : i32 {
+            %int_tuple_96 = cute.make_int_tuple(%arg28) : (i32) -> !cute.int_tuple<"?">
+            %ptr_97 = cute.add_offset(%iter, %int_tuple_96) : (!cute.ptr<i64, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+            %507 = builtin.unrealized_conversion_cast %ptr_97 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+            nvvm.mbarrier.try_wait.parity.shared %507, %arg29, %c10000000_i32 : !llvm.ptr<3>, i32, i32
+            %coord_98 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,0,?)">
+            %idx_99 = cute.crd2idx(%coord_98, %141) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
+            %tup_100 = cute.add_offset(%gmmaSmemDesc, %idx_99) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
+            %coord_101 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,0,?)">
+            %idx_102 = cute.crd2idx(%coord_101, %140) : (!cute.coord<"(_,_,0,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=1024}">
+            %tup_103 = cute.add_offset(%gmmaSmemDesc_30, %idx_102) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=1024}">) -> !cute_nvgpu.smem_desc
+            %iter_104 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %509 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %510 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg30 = %c0_i32 to %508 step %c1_i32  : i32 {
+              scf.for %arg31 = %c0_i32 to %509 step %c1_i32  : i32 {
+                scf.for %arg32 = %c0_i32 to %510 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg31, %arg30) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg31, %arg32) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_100, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_104, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %530 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %531 = llvm.load %530 : !llvm.ptr -> f32
+                  %532 = llvm.getelementptr %530[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %533 = llvm.load %532 : !llvm.ptr -> f32
+                  %534 = llvm.getelementptr %530[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %535 = llvm.load %534 : !llvm.ptr -> f32
+                  %536 = llvm.getelementptr %530[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %537 = llvm.load %536 : !llvm.ptr -> f32
+                  %538 = llvm.getelementptr %530[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %539 = llvm.load %538 : !llvm.ptr -> f32
+                  %540 = llvm.getelementptr %530[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %541 = llvm.load %540 : !llvm.ptr -> f32
+                  %542 = llvm.getelementptr %530[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %543 = llvm.load %542 : !llvm.ptr -> f32
+                  %544 = llvm.getelementptr %530[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %545 = llvm.load %544 : !llvm.ptr -> f32
+                  %546 = llvm.getelementptr %530[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %547 = llvm.load %546 : !llvm.ptr -> f32
+                  %548 = llvm.getelementptr %530[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %549 = llvm.load %548 : !llvm.ptr -> f32
+                  %550 = llvm.getelementptr %530[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %551 = llvm.load %550 : !llvm.ptr -> f32
+                  %552 = llvm.getelementptr %530[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %553 = llvm.load %552 : !llvm.ptr -> f32
+                  %554 = llvm.getelementptr %530[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %555 = llvm.load %554 : !llvm.ptr -> f32
+                  %556 = llvm.getelementptr %530[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %557 = llvm.load %556 : !llvm.ptr -> f32
+                  %558 = llvm.getelementptr %530[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %559 = llvm.load %558 : !llvm.ptr -> f32
+                  %560 = llvm.getelementptr %530[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %561 = llvm.load %560 : !llvm.ptr -> f32
+                  %562 = llvm.getelementptr %530[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %563 = llvm.load %562 : !llvm.ptr -> f32
+                  %564 = llvm.getelementptr %530[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %565 = llvm.load %564 : !llvm.ptr -> f32
+                  %566 = llvm.getelementptr %530[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %567 = llvm.load %566 : !llvm.ptr -> f32
+                  %568 = llvm.getelementptr %530[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %569 = llvm.load %568 : !llvm.ptr -> f32
+                  %570 = llvm.getelementptr %530[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %571 = llvm.load %570 : !llvm.ptr -> f32
+                  %572 = llvm.getelementptr %530[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %573 = llvm.load %572 : !llvm.ptr -> f32
+                  %574 = llvm.getelementptr %530[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %575 = llvm.load %574 : !llvm.ptr -> f32
+                  %576 = llvm.getelementptr %530[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %577 = llvm.load %576 : !llvm.ptr -> f32
+                  %578 = llvm.getelementptr %530[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %579 = llvm.load %578 : !llvm.ptr -> f32
+                  %580 = llvm.getelementptr %530[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %581 = llvm.load %580 : !llvm.ptr -> f32
+                  %582 = llvm.getelementptr %530[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %583 = llvm.load %582 : !llvm.ptr -> f32
+                  %584 = llvm.getelementptr %530[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %585 = llvm.load %584 : !llvm.ptr -> f32
+                  %586 = llvm.getelementptr %530[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %587 = llvm.load %586 : !llvm.ptr -> f32
+                  %588 = llvm.getelementptr %530[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %589 = llvm.load %588 : !llvm.ptr -> f32
+                  %590 = llvm.getelementptr %530[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %591 = llvm.load %590 : !llvm.ptr -> f32
+                  %592 = llvm.getelementptr %530[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %593 = llvm.load %592 : !llvm.ptr -> f32
+                  %594 = llvm.getelementptr %530[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %595 = llvm.load %594 : !llvm.ptr -> f32
+                  %596 = llvm.getelementptr %530[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %597 = llvm.load %596 : !llvm.ptr -> f32
+                  %598 = llvm.getelementptr %530[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %599 = llvm.load %598 : !llvm.ptr -> f32
+                  %600 = llvm.getelementptr %530[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %601 = llvm.load %600 : !llvm.ptr -> f32
+                  %602 = llvm.getelementptr %530[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %603 = llvm.load %602 : !llvm.ptr -> f32
+                  %604 = llvm.getelementptr %530[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %605 = llvm.load %604 : !llvm.ptr -> f32
+                  %606 = llvm.getelementptr %530[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %607 = llvm.load %606 : !llvm.ptr -> f32
+                  %608 = llvm.getelementptr %530[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %609 = llvm.load %608 : !llvm.ptr -> f32
+                  %610 = llvm.getelementptr %530[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %611 = llvm.load %610 : !llvm.ptr -> f32
+                  %612 = llvm.getelementptr %530[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %613 = llvm.load %612 : !llvm.ptr -> f32
+                  %614 = llvm.getelementptr %530[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %615 = llvm.load %614 : !llvm.ptr -> f32
+                  %616 = llvm.getelementptr %530[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %617 = llvm.load %616 : !llvm.ptr -> f32
+                  %618 = llvm.getelementptr %530[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %619 = llvm.load %618 : !llvm.ptr -> f32
+                  %620 = llvm.getelementptr %530[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %621 = llvm.load %620 : !llvm.ptr -> f32
+                  %622 = llvm.getelementptr %530[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %623 = llvm.load %622 : !llvm.ptr -> f32
+                  %624 = llvm.getelementptr %530[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %625 = llvm.load %624 : !llvm.ptr -> f32
+                  %626 = llvm.getelementptr %530[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %627 = llvm.load %626 : !llvm.ptr -> f32
+                  %628 = llvm.getelementptr %530[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %629 = llvm.load %628 : !llvm.ptr -> f32
+                  %630 = llvm.getelementptr %530[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %631 = llvm.load %630 : !llvm.ptr -> f32
+                  %632 = llvm.getelementptr %530[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %633 = llvm.load %632 : !llvm.ptr -> f32
+                  %634 = llvm.getelementptr %530[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %635 = llvm.load %634 : !llvm.ptr -> f32
+                  %636 = llvm.getelementptr %530[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %637 = llvm.load %636 : !llvm.ptr -> f32
+                  %638 = llvm.getelementptr %530[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %639 = llvm.load %638 : !llvm.ptr -> f32
+                  %640 = llvm.getelementptr %530[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %641 = llvm.load %640 : !llvm.ptr -> f32
+                  %642 = llvm.getelementptr %530[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %643 = llvm.load %642 : !llvm.ptr -> f32
+                  %644 = llvm.getelementptr %530[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %645 = llvm.load %644 : !llvm.ptr -> f32
+                  %646 = llvm.getelementptr %530[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %647 = llvm.load %646 : !llvm.ptr -> f32
+                  %648 = llvm.getelementptr %530[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %649 = llvm.load %648 : !llvm.ptr -> f32
+                  %650 = llvm.getelementptr %530[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %651 = llvm.load %650 : !llvm.ptr -> f32
+                  %652 = llvm.getelementptr %530[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %653 = llvm.load %652 : !llvm.ptr -> f32
+                  %654 = llvm.getelementptr %530[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %655 = llvm.load %654 : !llvm.ptr -> f32
+                  %656 = llvm.getelementptr %530[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %657 = llvm.load %656 : !llvm.ptr -> f32
+                  %658 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %659:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_103 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593, %595, %597, %599, %601, %603, %605, %607, %609, %611, %613, %615, %617, %619, %621, %623, %625, %627, %629, %631, %633, %635, %637, %639, %641, %643, %645, %647, %649, %651, %653, %655, %657], accum = %658 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %601 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %600#0, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %601[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#1, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %601[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#2, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %601[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#3, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %601[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#4, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %601[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#5, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %601[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#6, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %601[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#7, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %601[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#8, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %601[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#9, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %601[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#10, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %601[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#11, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %601[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#12, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %601[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#13, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %601[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#14, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %601[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#15, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %601[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#16, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %601[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#17, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %601[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#18, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %601[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#19, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %601[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#20, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %601[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#21, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %601[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#22, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %601[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#23, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %601[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#24, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %601[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#25, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %601[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#26, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %601[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#27, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %601[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#28, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %601[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#29, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %601[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#30, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %601[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#31, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %601[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#32, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %601[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#33, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %601[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#34, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %601[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#35, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %601[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#36, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %601[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#37, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %601[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#38, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %601[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#39, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %601[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#40, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %601[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#41, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %601[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#42, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %601[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#43, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %601[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#44, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %601[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#45, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %601[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#46, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %601[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#47, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %601[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#48, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %601[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#49, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %601[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#50, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %601[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#51, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %601[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#52, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %601[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#53, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %601[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#54, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %601[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#55, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %601[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#56, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %601[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#57, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %601[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#58, %659 : f32, !llvm.ptr
-                  %660 = llvm.getelementptr %601[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#59, %660 : f32, !llvm.ptr
-                  %661 = llvm.getelementptr %601[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#60, %661 : f32, !llvm.ptr
-                  %662 = llvm.getelementptr %601[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#61, %662 : f32, !llvm.ptr
-                  %663 = llvm.getelementptr %601[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#62, %663 : f32, !llvm.ptr
-                  %664 = llvm.getelementptr %601[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#63, %664 : f32, !llvm.ptr
+                  %660 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %659#0, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %660[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#1, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %660[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#2, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %660[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#3, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %660[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#4, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %660[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#5, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %660[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#6, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %660[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#7, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %660[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#8, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %660[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#9, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %660[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#10, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %660[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#11, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %660[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#12, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %660[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#13, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %660[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#14, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %660[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#15, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %660[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#16, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %660[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#17, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %660[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#18, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %660[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#19, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %660[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#20, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %660[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#21, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %660[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#22, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %660[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#23, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %660[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#24, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %660[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#25, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %660[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#26, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %660[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#27, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %660[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#28, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %660[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#29, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %660[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#30, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %660[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#31, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %660[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#32, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %660[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#33, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %660[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#34, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %660[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#35, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %660[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#36, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %660[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#37, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %660[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#38, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %660[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#39, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %660[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#40, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %660[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#41, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %660[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#42, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %660[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#43, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %660[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#44, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %660[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#45, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %660[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#46, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %660[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#47, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %660[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#48, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %660[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#49, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %660[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#50, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %660[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#51, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %660[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#52, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %660[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#53, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %660[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#54, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %660[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#55, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %660[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#56, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %660[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#57, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %660[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#58, %718 : f32, !llvm.ptr
+                  %719 = llvm.getelementptr %660[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#59, %719 : f32, !llvm.ptr
+                  %720 = llvm.getelementptr %660[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#60, %720 : f32, !llvm.ptr
+                  %721 = llvm.getelementptr %660[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#61, %721 : f32, !llvm.ptr
+                  %722 = llvm.getelementptr %660[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#62, %722 : f32, !llvm.ptr
+                  %723 = llvm.getelementptr %660[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#63, %723 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_88 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,1,?)">
-            %idx_89 = cute.crd2idx(%coord_88, %141) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_90 = cute.add_offset(%gmmaSmemDesc, %idx_89) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %coord_91 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,1,?)">
-            %idx_92 = cute.crd2idx(%coord_91, %140) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_93 = cute.add_offset(%gmmaSmemDesc_30, %idx_92) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %iter_94 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %452 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %453 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %454 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg27 = %c0_i32 to %452 step %c1_i32  : i32 {
-              scf.for %arg28 = %c0_i32 to %453 step %c1_i32  : i32 {
-                scf.for %arg29 = %c0_i32 to %454 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_90, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_94, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %471 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %472 = llvm.load %471 : !llvm.ptr -> f32
-                  %473 = llvm.getelementptr %471[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %474 = llvm.load %473 : !llvm.ptr -> f32
-                  %475 = llvm.getelementptr %471[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %476 = llvm.load %475 : !llvm.ptr -> f32
-                  %477 = llvm.getelementptr %471[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %478 = llvm.load %477 : !llvm.ptr -> f32
-                  %479 = llvm.getelementptr %471[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %480 = llvm.load %479 : !llvm.ptr -> f32
-                  %481 = llvm.getelementptr %471[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %482 = llvm.load %481 : !llvm.ptr -> f32
-                  %483 = llvm.getelementptr %471[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %484 = llvm.load %483 : !llvm.ptr -> f32
-                  %485 = llvm.getelementptr %471[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %486 = llvm.load %485 : !llvm.ptr -> f32
-                  %487 = llvm.getelementptr %471[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %488 = llvm.load %487 : !llvm.ptr -> f32
-                  %489 = llvm.getelementptr %471[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %490 = llvm.load %489 : !llvm.ptr -> f32
-                  %491 = llvm.getelementptr %471[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %492 = llvm.load %491 : !llvm.ptr -> f32
-                  %493 = llvm.getelementptr %471[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %494 = llvm.load %493 : !llvm.ptr -> f32
-                  %495 = llvm.getelementptr %471[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %496 = llvm.load %495 : !llvm.ptr -> f32
-                  %497 = llvm.getelementptr %471[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %498 = llvm.load %497 : !llvm.ptr -> f32
-                  %499 = llvm.getelementptr %471[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %500 = llvm.load %499 : !llvm.ptr -> f32
-                  %501 = llvm.getelementptr %471[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %502 = llvm.load %501 : !llvm.ptr -> f32
-                  %503 = llvm.getelementptr %471[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %504 = llvm.load %503 : !llvm.ptr -> f32
-                  %505 = llvm.getelementptr %471[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %506 = llvm.load %505 : !llvm.ptr -> f32
-                  %507 = llvm.getelementptr %471[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %508 = llvm.load %507 : !llvm.ptr -> f32
-                  %509 = llvm.getelementptr %471[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %510 = llvm.load %509 : !llvm.ptr -> f32
-                  %511 = llvm.getelementptr %471[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %512 = llvm.load %511 : !llvm.ptr -> f32
-                  %513 = llvm.getelementptr %471[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %514 = llvm.load %513 : !llvm.ptr -> f32
-                  %515 = llvm.getelementptr %471[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %516 = llvm.load %515 : !llvm.ptr -> f32
-                  %517 = llvm.getelementptr %471[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %518 = llvm.load %517 : !llvm.ptr -> f32
-                  %519 = llvm.getelementptr %471[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %520 = llvm.load %519 : !llvm.ptr -> f32
-                  %521 = llvm.getelementptr %471[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %522 = llvm.load %521 : !llvm.ptr -> f32
-                  %523 = llvm.getelementptr %471[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %524 = llvm.load %523 : !llvm.ptr -> f32
-                  %525 = llvm.getelementptr %471[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %526 = llvm.load %525 : !llvm.ptr -> f32
-                  %527 = llvm.getelementptr %471[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %528 = llvm.load %527 : !llvm.ptr -> f32
-                  %529 = llvm.getelementptr %471[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %530 = llvm.load %529 : !llvm.ptr -> f32
-                  %531 = llvm.getelementptr %471[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %532 = llvm.load %531 : !llvm.ptr -> f32
-                  %533 = llvm.getelementptr %471[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %534 = llvm.load %533 : !llvm.ptr -> f32
-                  %535 = llvm.getelementptr %471[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %536 = llvm.load %535 : !llvm.ptr -> f32
-                  %537 = llvm.getelementptr %471[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %538 = llvm.load %537 : !llvm.ptr -> f32
-                  %539 = llvm.getelementptr %471[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %540 = llvm.load %539 : !llvm.ptr -> f32
-                  %541 = llvm.getelementptr %471[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %542 = llvm.load %541 : !llvm.ptr -> f32
-                  %543 = llvm.getelementptr %471[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %544 = llvm.load %543 : !llvm.ptr -> f32
-                  %545 = llvm.getelementptr %471[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %546 = llvm.load %545 : !llvm.ptr -> f32
-                  %547 = llvm.getelementptr %471[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %548 = llvm.load %547 : !llvm.ptr -> f32
-                  %549 = llvm.getelementptr %471[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %550 = llvm.load %549 : !llvm.ptr -> f32
-                  %551 = llvm.getelementptr %471[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %552 = llvm.load %551 : !llvm.ptr -> f32
-                  %553 = llvm.getelementptr %471[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %554 = llvm.load %553 : !llvm.ptr -> f32
-                  %555 = llvm.getelementptr %471[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %556 = llvm.load %555 : !llvm.ptr -> f32
-                  %557 = llvm.getelementptr %471[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %558 = llvm.load %557 : !llvm.ptr -> f32
-                  %559 = llvm.getelementptr %471[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %560 = llvm.load %559 : !llvm.ptr -> f32
-                  %561 = llvm.getelementptr %471[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %562 = llvm.load %561 : !llvm.ptr -> f32
-                  %563 = llvm.getelementptr %471[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %564 = llvm.load %563 : !llvm.ptr -> f32
-                  %565 = llvm.getelementptr %471[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %566 = llvm.load %565 : !llvm.ptr -> f32
-                  %567 = llvm.getelementptr %471[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %568 = llvm.load %567 : !llvm.ptr -> f32
-                  %569 = llvm.getelementptr %471[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %570 = llvm.load %569 : !llvm.ptr -> f32
-                  %571 = llvm.getelementptr %471[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %572 = llvm.load %571 : !llvm.ptr -> f32
-                  %573 = llvm.getelementptr %471[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %574 = llvm.load %573 : !llvm.ptr -> f32
-                  %575 = llvm.getelementptr %471[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %576 = llvm.load %575 : !llvm.ptr -> f32
-                  %577 = llvm.getelementptr %471[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %578 = llvm.load %577 : !llvm.ptr -> f32
-                  %579 = llvm.getelementptr %471[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %580 = llvm.load %579 : !llvm.ptr -> f32
-                  %581 = llvm.getelementptr %471[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %582 = llvm.load %581 : !llvm.ptr -> f32
-                  %583 = llvm.getelementptr %471[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %584 = llvm.load %583 : !llvm.ptr -> f32
-                  %585 = llvm.getelementptr %471[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %586 = llvm.load %585 : !llvm.ptr -> f32
-                  %587 = llvm.getelementptr %471[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %588 = llvm.load %587 : !llvm.ptr -> f32
-                  %589 = llvm.getelementptr %471[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %590 = llvm.load %589 : !llvm.ptr -> f32
-                  %591 = llvm.getelementptr %471[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %592 = llvm.load %591 : !llvm.ptr -> f32
-                  %593 = llvm.getelementptr %471[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %594 = llvm.load %593 : !llvm.ptr -> f32
-                  %595 = llvm.getelementptr %471[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %596 = llvm.load %595 : !llvm.ptr -> f32
-                  %597 = llvm.getelementptr %471[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %598 = llvm.load %597 : !llvm.ptr -> f32
-                  %599 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %600:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_93 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%472, %474, %476, %478, %480, %482, %484, %486, %488, %490, %492, %494, %496, %498, %500, %502, %504, %506, %508, %510, %512, %514, %516, %518, %520, %522, %524, %526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598], accum = %599 : i1)
+            %coord_105 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,1,?)">
+            %idx_106 = cute.crd2idx(%coord_105, %141) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_107 = cute.add_offset(%gmmaSmemDesc, %idx_106) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %coord_108 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,1,?)">
+            %idx_109 = cute.crd2idx(%coord_108, %140) : (!cute.coord<"(_,_,1,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_110 = cute.add_offset(%gmmaSmemDesc_30, %idx_109) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %iter_111 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %511 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %512 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %513 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg30 = %c0_i32 to %511 step %c1_i32  : i32 {
+              scf.for %arg31 = %c0_i32 to %512 step %c1_i32  : i32 {
+                scf.for %arg32 = %c0_i32 to %513 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg31, %arg30) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg31, %arg32) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_107, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_111, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %530 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %531 = llvm.load %530 : !llvm.ptr -> f32
+                  %532 = llvm.getelementptr %530[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %533 = llvm.load %532 : !llvm.ptr -> f32
+                  %534 = llvm.getelementptr %530[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %535 = llvm.load %534 : !llvm.ptr -> f32
+                  %536 = llvm.getelementptr %530[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %537 = llvm.load %536 : !llvm.ptr -> f32
+                  %538 = llvm.getelementptr %530[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %539 = llvm.load %538 : !llvm.ptr -> f32
+                  %540 = llvm.getelementptr %530[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %541 = llvm.load %540 : !llvm.ptr -> f32
+                  %542 = llvm.getelementptr %530[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %543 = llvm.load %542 : !llvm.ptr -> f32
+                  %544 = llvm.getelementptr %530[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %545 = llvm.load %544 : !llvm.ptr -> f32
+                  %546 = llvm.getelementptr %530[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %547 = llvm.load %546 : !llvm.ptr -> f32
+                  %548 = llvm.getelementptr %530[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %549 = llvm.load %548 : !llvm.ptr -> f32
+                  %550 = llvm.getelementptr %530[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %551 = llvm.load %550 : !llvm.ptr -> f32
+                  %552 = llvm.getelementptr %530[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %553 = llvm.load %552 : !llvm.ptr -> f32
+                  %554 = llvm.getelementptr %530[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %555 = llvm.load %554 : !llvm.ptr -> f32
+                  %556 = llvm.getelementptr %530[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %557 = llvm.load %556 : !llvm.ptr -> f32
+                  %558 = llvm.getelementptr %530[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %559 = llvm.load %558 : !llvm.ptr -> f32
+                  %560 = llvm.getelementptr %530[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %561 = llvm.load %560 : !llvm.ptr -> f32
+                  %562 = llvm.getelementptr %530[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %563 = llvm.load %562 : !llvm.ptr -> f32
+                  %564 = llvm.getelementptr %530[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %565 = llvm.load %564 : !llvm.ptr -> f32
+                  %566 = llvm.getelementptr %530[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %567 = llvm.load %566 : !llvm.ptr -> f32
+                  %568 = llvm.getelementptr %530[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %569 = llvm.load %568 : !llvm.ptr -> f32
+                  %570 = llvm.getelementptr %530[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %571 = llvm.load %570 : !llvm.ptr -> f32
+                  %572 = llvm.getelementptr %530[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %573 = llvm.load %572 : !llvm.ptr -> f32
+                  %574 = llvm.getelementptr %530[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %575 = llvm.load %574 : !llvm.ptr -> f32
+                  %576 = llvm.getelementptr %530[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %577 = llvm.load %576 : !llvm.ptr -> f32
+                  %578 = llvm.getelementptr %530[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %579 = llvm.load %578 : !llvm.ptr -> f32
+                  %580 = llvm.getelementptr %530[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %581 = llvm.load %580 : !llvm.ptr -> f32
+                  %582 = llvm.getelementptr %530[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %583 = llvm.load %582 : !llvm.ptr -> f32
+                  %584 = llvm.getelementptr %530[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %585 = llvm.load %584 : !llvm.ptr -> f32
+                  %586 = llvm.getelementptr %530[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %587 = llvm.load %586 : !llvm.ptr -> f32
+                  %588 = llvm.getelementptr %530[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %589 = llvm.load %588 : !llvm.ptr -> f32
+                  %590 = llvm.getelementptr %530[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %591 = llvm.load %590 : !llvm.ptr -> f32
+                  %592 = llvm.getelementptr %530[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %593 = llvm.load %592 : !llvm.ptr -> f32
+                  %594 = llvm.getelementptr %530[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %595 = llvm.load %594 : !llvm.ptr -> f32
+                  %596 = llvm.getelementptr %530[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %597 = llvm.load %596 : !llvm.ptr -> f32
+                  %598 = llvm.getelementptr %530[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %599 = llvm.load %598 : !llvm.ptr -> f32
+                  %600 = llvm.getelementptr %530[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %601 = llvm.load %600 : !llvm.ptr -> f32
+                  %602 = llvm.getelementptr %530[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %603 = llvm.load %602 : !llvm.ptr -> f32
+                  %604 = llvm.getelementptr %530[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %605 = llvm.load %604 : !llvm.ptr -> f32
+                  %606 = llvm.getelementptr %530[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %607 = llvm.load %606 : !llvm.ptr -> f32
+                  %608 = llvm.getelementptr %530[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %609 = llvm.load %608 : !llvm.ptr -> f32
+                  %610 = llvm.getelementptr %530[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %611 = llvm.load %610 : !llvm.ptr -> f32
+                  %612 = llvm.getelementptr %530[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %613 = llvm.load %612 : !llvm.ptr -> f32
+                  %614 = llvm.getelementptr %530[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %615 = llvm.load %614 : !llvm.ptr -> f32
+                  %616 = llvm.getelementptr %530[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %617 = llvm.load %616 : !llvm.ptr -> f32
+                  %618 = llvm.getelementptr %530[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %619 = llvm.load %618 : !llvm.ptr -> f32
+                  %620 = llvm.getelementptr %530[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %621 = llvm.load %620 : !llvm.ptr -> f32
+                  %622 = llvm.getelementptr %530[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %623 = llvm.load %622 : !llvm.ptr -> f32
+                  %624 = llvm.getelementptr %530[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %625 = llvm.load %624 : !llvm.ptr -> f32
+                  %626 = llvm.getelementptr %530[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %627 = llvm.load %626 : !llvm.ptr -> f32
+                  %628 = llvm.getelementptr %530[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %629 = llvm.load %628 : !llvm.ptr -> f32
+                  %630 = llvm.getelementptr %530[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %631 = llvm.load %630 : !llvm.ptr -> f32
+                  %632 = llvm.getelementptr %530[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %633 = llvm.load %632 : !llvm.ptr -> f32
+                  %634 = llvm.getelementptr %530[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %635 = llvm.load %634 : !llvm.ptr -> f32
+                  %636 = llvm.getelementptr %530[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %637 = llvm.load %636 : !llvm.ptr -> f32
+                  %638 = llvm.getelementptr %530[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %639 = llvm.load %638 : !llvm.ptr -> f32
+                  %640 = llvm.getelementptr %530[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %641 = llvm.load %640 : !llvm.ptr -> f32
+                  %642 = llvm.getelementptr %530[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %643 = llvm.load %642 : !llvm.ptr -> f32
+                  %644 = llvm.getelementptr %530[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %645 = llvm.load %644 : !llvm.ptr -> f32
+                  %646 = llvm.getelementptr %530[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %647 = llvm.load %646 : !llvm.ptr -> f32
+                  %648 = llvm.getelementptr %530[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %649 = llvm.load %648 : !llvm.ptr -> f32
+                  %650 = llvm.getelementptr %530[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %651 = llvm.load %650 : !llvm.ptr -> f32
+                  %652 = llvm.getelementptr %530[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %653 = llvm.load %652 : !llvm.ptr -> f32
+                  %654 = llvm.getelementptr %530[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %655 = llvm.load %654 : !llvm.ptr -> f32
+                  %656 = llvm.getelementptr %530[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %657 = llvm.load %656 : !llvm.ptr -> f32
+                  %658 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %659:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_110 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593, %595, %597, %599, %601, %603, %605, %607, %609, %611, %613, %615, %617, %619, %621, %623, %625, %627, %629, %631, %633, %635, %637, %639, %641, %643, %645, %647, %649, %651, %653, %655, %657], accum = %658 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %601 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %600#0, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %601[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#1, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %601[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#2, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %601[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#3, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %601[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#4, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %601[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#5, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %601[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#6, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %601[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#7, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %601[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#8, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %601[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#9, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %601[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#10, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %601[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#11, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %601[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#12, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %601[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#13, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %601[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#14, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %601[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#15, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %601[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#16, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %601[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#17, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %601[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#18, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %601[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#19, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %601[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#20, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %601[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#21, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %601[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#22, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %601[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#23, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %601[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#24, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %601[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#25, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %601[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#26, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %601[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#27, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %601[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#28, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %601[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#29, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %601[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#30, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %601[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#31, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %601[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#32, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %601[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#33, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %601[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#34, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %601[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#35, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %601[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#36, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %601[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#37, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %601[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#38, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %601[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#39, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %601[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#40, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %601[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#41, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %601[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#42, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %601[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#43, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %601[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#44, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %601[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#45, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %601[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#46, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %601[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#47, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %601[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#48, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %601[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#49, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %601[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#50, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %601[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#51, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %601[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#52, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %601[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#53, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %601[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#54, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %601[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#55, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %601[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#56, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %601[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#57, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %601[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#58, %659 : f32, !llvm.ptr
-                  %660 = llvm.getelementptr %601[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#59, %660 : f32, !llvm.ptr
-                  %661 = llvm.getelementptr %601[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#60, %661 : f32, !llvm.ptr
-                  %662 = llvm.getelementptr %601[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#61, %662 : f32, !llvm.ptr
-                  %663 = llvm.getelementptr %601[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#62, %663 : f32, !llvm.ptr
-                  %664 = llvm.getelementptr %601[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#63, %664 : f32, !llvm.ptr
+                  %660 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %659#0, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %660[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#1, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %660[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#2, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %660[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#3, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %660[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#4, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %660[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#5, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %660[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#6, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %660[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#7, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %660[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#8, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %660[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#9, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %660[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#10, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %660[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#11, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %660[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#12, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %660[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#13, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %660[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#14, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %660[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#15, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %660[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#16, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %660[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#17, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %660[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#18, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %660[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#19, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %660[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#20, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %660[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#21, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %660[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#22, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %660[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#23, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %660[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#24, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %660[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#25, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %660[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#26, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %660[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#27, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %660[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#28, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %660[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#29, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %660[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#30, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %660[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#31, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %660[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#32, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %660[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#33, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %660[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#34, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %660[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#35, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %660[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#36, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %660[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#37, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %660[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#38, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %660[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#39, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %660[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#40, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %660[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#41, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %660[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#42, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %660[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#43, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %660[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#44, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %660[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#45, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %660[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#46, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %660[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#47, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %660[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#48, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %660[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#49, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %660[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#50, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %660[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#51, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %660[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#52, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %660[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#53, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %660[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#54, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %660[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#55, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %660[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#56, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %660[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#57, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %660[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#58, %718 : f32, !llvm.ptr
+                  %719 = llvm.getelementptr %660[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#59, %719 : f32, !llvm.ptr
+                  %720 = llvm.getelementptr %660[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#60, %720 : f32, !llvm.ptr
+                  %721 = llvm.getelementptr %660[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#61, %721 : f32, !llvm.ptr
+                  %722 = llvm.getelementptr %660[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#62, %722 : f32, !llvm.ptr
+                  %723 = llvm.getelementptr %660[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#63, %723 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_95 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,2,?)">
-            %idx_96 = cute.crd2idx(%coord_95, %141) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
-            %tup_97 = cute.add_offset(%gmmaSmemDesc, %idx_96) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
-            %coord_98 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,2,?)">
-            %idx_99 = cute.crd2idx(%coord_98, %140) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
-            %tup_100 = cute.add_offset(%gmmaSmemDesc_30, %idx_99) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
-            %iter_101 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %455 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %456 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %457 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg27 = %c0_i32 to %455 step %c1_i32  : i32 {
-              scf.for %arg28 = %c0_i32 to %456 step %c1_i32  : i32 {
-                scf.for %arg29 = %c0_i32 to %457 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_97, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_101, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %471 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %472 = llvm.load %471 : !llvm.ptr -> f32
-                  %473 = llvm.getelementptr %471[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %474 = llvm.load %473 : !llvm.ptr -> f32
-                  %475 = llvm.getelementptr %471[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %476 = llvm.load %475 : !llvm.ptr -> f32
-                  %477 = llvm.getelementptr %471[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %478 = llvm.load %477 : !llvm.ptr -> f32
-                  %479 = llvm.getelementptr %471[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %480 = llvm.load %479 : !llvm.ptr -> f32
-                  %481 = llvm.getelementptr %471[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %482 = llvm.load %481 : !llvm.ptr -> f32
-                  %483 = llvm.getelementptr %471[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %484 = llvm.load %483 : !llvm.ptr -> f32
-                  %485 = llvm.getelementptr %471[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %486 = llvm.load %485 : !llvm.ptr -> f32
-                  %487 = llvm.getelementptr %471[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %488 = llvm.load %487 : !llvm.ptr -> f32
-                  %489 = llvm.getelementptr %471[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %490 = llvm.load %489 : !llvm.ptr -> f32
-                  %491 = llvm.getelementptr %471[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %492 = llvm.load %491 : !llvm.ptr -> f32
-                  %493 = llvm.getelementptr %471[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %494 = llvm.load %493 : !llvm.ptr -> f32
-                  %495 = llvm.getelementptr %471[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %496 = llvm.load %495 : !llvm.ptr -> f32
-                  %497 = llvm.getelementptr %471[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %498 = llvm.load %497 : !llvm.ptr -> f32
-                  %499 = llvm.getelementptr %471[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %500 = llvm.load %499 : !llvm.ptr -> f32
-                  %501 = llvm.getelementptr %471[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %502 = llvm.load %501 : !llvm.ptr -> f32
-                  %503 = llvm.getelementptr %471[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %504 = llvm.load %503 : !llvm.ptr -> f32
-                  %505 = llvm.getelementptr %471[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %506 = llvm.load %505 : !llvm.ptr -> f32
-                  %507 = llvm.getelementptr %471[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %508 = llvm.load %507 : !llvm.ptr -> f32
-                  %509 = llvm.getelementptr %471[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %510 = llvm.load %509 : !llvm.ptr -> f32
-                  %511 = llvm.getelementptr %471[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %512 = llvm.load %511 : !llvm.ptr -> f32
-                  %513 = llvm.getelementptr %471[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %514 = llvm.load %513 : !llvm.ptr -> f32
-                  %515 = llvm.getelementptr %471[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %516 = llvm.load %515 : !llvm.ptr -> f32
-                  %517 = llvm.getelementptr %471[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %518 = llvm.load %517 : !llvm.ptr -> f32
-                  %519 = llvm.getelementptr %471[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %520 = llvm.load %519 : !llvm.ptr -> f32
-                  %521 = llvm.getelementptr %471[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %522 = llvm.load %521 : !llvm.ptr -> f32
-                  %523 = llvm.getelementptr %471[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %524 = llvm.load %523 : !llvm.ptr -> f32
-                  %525 = llvm.getelementptr %471[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %526 = llvm.load %525 : !llvm.ptr -> f32
-                  %527 = llvm.getelementptr %471[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %528 = llvm.load %527 : !llvm.ptr -> f32
-                  %529 = llvm.getelementptr %471[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %530 = llvm.load %529 : !llvm.ptr -> f32
-                  %531 = llvm.getelementptr %471[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %532 = llvm.load %531 : !llvm.ptr -> f32
-                  %533 = llvm.getelementptr %471[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %534 = llvm.load %533 : !llvm.ptr -> f32
-                  %535 = llvm.getelementptr %471[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %536 = llvm.load %535 : !llvm.ptr -> f32
-                  %537 = llvm.getelementptr %471[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %538 = llvm.load %537 : !llvm.ptr -> f32
-                  %539 = llvm.getelementptr %471[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %540 = llvm.load %539 : !llvm.ptr -> f32
-                  %541 = llvm.getelementptr %471[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %542 = llvm.load %541 : !llvm.ptr -> f32
-                  %543 = llvm.getelementptr %471[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %544 = llvm.load %543 : !llvm.ptr -> f32
-                  %545 = llvm.getelementptr %471[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %546 = llvm.load %545 : !llvm.ptr -> f32
-                  %547 = llvm.getelementptr %471[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %548 = llvm.load %547 : !llvm.ptr -> f32
-                  %549 = llvm.getelementptr %471[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %550 = llvm.load %549 : !llvm.ptr -> f32
-                  %551 = llvm.getelementptr %471[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %552 = llvm.load %551 : !llvm.ptr -> f32
-                  %553 = llvm.getelementptr %471[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %554 = llvm.load %553 : !llvm.ptr -> f32
-                  %555 = llvm.getelementptr %471[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %556 = llvm.load %555 : !llvm.ptr -> f32
-                  %557 = llvm.getelementptr %471[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %558 = llvm.load %557 : !llvm.ptr -> f32
-                  %559 = llvm.getelementptr %471[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %560 = llvm.load %559 : !llvm.ptr -> f32
-                  %561 = llvm.getelementptr %471[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %562 = llvm.load %561 : !llvm.ptr -> f32
-                  %563 = llvm.getelementptr %471[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %564 = llvm.load %563 : !llvm.ptr -> f32
-                  %565 = llvm.getelementptr %471[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %566 = llvm.load %565 : !llvm.ptr -> f32
-                  %567 = llvm.getelementptr %471[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %568 = llvm.load %567 : !llvm.ptr -> f32
-                  %569 = llvm.getelementptr %471[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %570 = llvm.load %569 : !llvm.ptr -> f32
-                  %571 = llvm.getelementptr %471[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %572 = llvm.load %571 : !llvm.ptr -> f32
-                  %573 = llvm.getelementptr %471[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %574 = llvm.load %573 : !llvm.ptr -> f32
-                  %575 = llvm.getelementptr %471[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %576 = llvm.load %575 : !llvm.ptr -> f32
-                  %577 = llvm.getelementptr %471[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %578 = llvm.load %577 : !llvm.ptr -> f32
-                  %579 = llvm.getelementptr %471[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %580 = llvm.load %579 : !llvm.ptr -> f32
-                  %581 = llvm.getelementptr %471[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %582 = llvm.load %581 : !llvm.ptr -> f32
-                  %583 = llvm.getelementptr %471[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %584 = llvm.load %583 : !llvm.ptr -> f32
-                  %585 = llvm.getelementptr %471[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %586 = llvm.load %585 : !llvm.ptr -> f32
-                  %587 = llvm.getelementptr %471[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %588 = llvm.load %587 : !llvm.ptr -> f32
-                  %589 = llvm.getelementptr %471[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %590 = llvm.load %589 : !llvm.ptr -> f32
-                  %591 = llvm.getelementptr %471[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %592 = llvm.load %591 : !llvm.ptr -> f32
-                  %593 = llvm.getelementptr %471[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %594 = llvm.load %593 : !llvm.ptr -> f32
-                  %595 = llvm.getelementptr %471[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %596 = llvm.load %595 : !llvm.ptr -> f32
-                  %597 = llvm.getelementptr %471[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %598 = llvm.load %597 : !llvm.ptr -> f32
-                  %599 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %600:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_100 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%472, %474, %476, %478, %480, %482, %484, %486, %488, %490, %492, %494, %496, %498, %500, %502, %504, %506, %508, %510, %512, %514, %516, %518, %520, %522, %524, %526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598], accum = %599 : i1)
+            %coord_112 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,2,?)">
+            %idx_113 = cute.crd2idx(%coord_112, %141) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
+            %tup_114 = cute.add_offset(%gmmaSmemDesc, %idx_113) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
+            %coord_115 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,2,?)">
+            %idx_116 = cute.crd2idx(%coord_115, %140) : (!cute.coord<"(_,_,2,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=4}">
+            %tup_117 = cute.add_offset(%gmmaSmemDesc_30, %idx_116) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=4}">) -> !cute_nvgpu.smem_desc
+            %iter_118 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %514 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %515 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %516 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg30 = %c0_i32 to %514 step %c1_i32  : i32 {
+              scf.for %arg31 = %c0_i32 to %515 step %c1_i32  : i32 {
+                scf.for %arg32 = %c0_i32 to %516 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg31, %arg30) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg31, %arg32) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_114, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_118, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %530 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %531 = llvm.load %530 : !llvm.ptr -> f32
+                  %532 = llvm.getelementptr %530[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %533 = llvm.load %532 : !llvm.ptr -> f32
+                  %534 = llvm.getelementptr %530[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %535 = llvm.load %534 : !llvm.ptr -> f32
+                  %536 = llvm.getelementptr %530[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %537 = llvm.load %536 : !llvm.ptr -> f32
+                  %538 = llvm.getelementptr %530[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %539 = llvm.load %538 : !llvm.ptr -> f32
+                  %540 = llvm.getelementptr %530[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %541 = llvm.load %540 : !llvm.ptr -> f32
+                  %542 = llvm.getelementptr %530[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %543 = llvm.load %542 : !llvm.ptr -> f32
+                  %544 = llvm.getelementptr %530[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %545 = llvm.load %544 : !llvm.ptr -> f32
+                  %546 = llvm.getelementptr %530[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %547 = llvm.load %546 : !llvm.ptr -> f32
+                  %548 = llvm.getelementptr %530[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %549 = llvm.load %548 : !llvm.ptr -> f32
+                  %550 = llvm.getelementptr %530[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %551 = llvm.load %550 : !llvm.ptr -> f32
+                  %552 = llvm.getelementptr %530[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %553 = llvm.load %552 : !llvm.ptr -> f32
+                  %554 = llvm.getelementptr %530[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %555 = llvm.load %554 : !llvm.ptr -> f32
+                  %556 = llvm.getelementptr %530[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %557 = llvm.load %556 : !llvm.ptr -> f32
+                  %558 = llvm.getelementptr %530[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %559 = llvm.load %558 : !llvm.ptr -> f32
+                  %560 = llvm.getelementptr %530[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %561 = llvm.load %560 : !llvm.ptr -> f32
+                  %562 = llvm.getelementptr %530[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %563 = llvm.load %562 : !llvm.ptr -> f32
+                  %564 = llvm.getelementptr %530[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %565 = llvm.load %564 : !llvm.ptr -> f32
+                  %566 = llvm.getelementptr %530[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %567 = llvm.load %566 : !llvm.ptr -> f32
+                  %568 = llvm.getelementptr %530[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %569 = llvm.load %568 : !llvm.ptr -> f32
+                  %570 = llvm.getelementptr %530[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %571 = llvm.load %570 : !llvm.ptr -> f32
+                  %572 = llvm.getelementptr %530[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %573 = llvm.load %572 : !llvm.ptr -> f32
+                  %574 = llvm.getelementptr %530[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %575 = llvm.load %574 : !llvm.ptr -> f32
+                  %576 = llvm.getelementptr %530[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %577 = llvm.load %576 : !llvm.ptr -> f32
+                  %578 = llvm.getelementptr %530[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %579 = llvm.load %578 : !llvm.ptr -> f32
+                  %580 = llvm.getelementptr %530[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %581 = llvm.load %580 : !llvm.ptr -> f32
+                  %582 = llvm.getelementptr %530[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %583 = llvm.load %582 : !llvm.ptr -> f32
+                  %584 = llvm.getelementptr %530[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %585 = llvm.load %584 : !llvm.ptr -> f32
+                  %586 = llvm.getelementptr %530[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %587 = llvm.load %586 : !llvm.ptr -> f32
+                  %588 = llvm.getelementptr %530[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %589 = llvm.load %588 : !llvm.ptr -> f32
+                  %590 = llvm.getelementptr %530[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %591 = llvm.load %590 : !llvm.ptr -> f32
+                  %592 = llvm.getelementptr %530[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %593 = llvm.load %592 : !llvm.ptr -> f32
+                  %594 = llvm.getelementptr %530[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %595 = llvm.load %594 : !llvm.ptr -> f32
+                  %596 = llvm.getelementptr %530[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %597 = llvm.load %596 : !llvm.ptr -> f32
+                  %598 = llvm.getelementptr %530[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %599 = llvm.load %598 : !llvm.ptr -> f32
+                  %600 = llvm.getelementptr %530[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %601 = llvm.load %600 : !llvm.ptr -> f32
+                  %602 = llvm.getelementptr %530[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %603 = llvm.load %602 : !llvm.ptr -> f32
+                  %604 = llvm.getelementptr %530[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %605 = llvm.load %604 : !llvm.ptr -> f32
+                  %606 = llvm.getelementptr %530[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %607 = llvm.load %606 : !llvm.ptr -> f32
+                  %608 = llvm.getelementptr %530[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %609 = llvm.load %608 : !llvm.ptr -> f32
+                  %610 = llvm.getelementptr %530[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %611 = llvm.load %610 : !llvm.ptr -> f32
+                  %612 = llvm.getelementptr %530[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %613 = llvm.load %612 : !llvm.ptr -> f32
+                  %614 = llvm.getelementptr %530[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %615 = llvm.load %614 : !llvm.ptr -> f32
+                  %616 = llvm.getelementptr %530[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %617 = llvm.load %616 : !llvm.ptr -> f32
+                  %618 = llvm.getelementptr %530[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %619 = llvm.load %618 : !llvm.ptr -> f32
+                  %620 = llvm.getelementptr %530[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %621 = llvm.load %620 : !llvm.ptr -> f32
+                  %622 = llvm.getelementptr %530[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %623 = llvm.load %622 : !llvm.ptr -> f32
+                  %624 = llvm.getelementptr %530[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %625 = llvm.load %624 : !llvm.ptr -> f32
+                  %626 = llvm.getelementptr %530[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %627 = llvm.load %626 : !llvm.ptr -> f32
+                  %628 = llvm.getelementptr %530[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %629 = llvm.load %628 : !llvm.ptr -> f32
+                  %630 = llvm.getelementptr %530[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %631 = llvm.load %630 : !llvm.ptr -> f32
+                  %632 = llvm.getelementptr %530[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %633 = llvm.load %632 : !llvm.ptr -> f32
+                  %634 = llvm.getelementptr %530[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %635 = llvm.load %634 : !llvm.ptr -> f32
+                  %636 = llvm.getelementptr %530[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %637 = llvm.load %636 : !llvm.ptr -> f32
+                  %638 = llvm.getelementptr %530[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %639 = llvm.load %638 : !llvm.ptr -> f32
+                  %640 = llvm.getelementptr %530[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %641 = llvm.load %640 : !llvm.ptr -> f32
+                  %642 = llvm.getelementptr %530[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %643 = llvm.load %642 : !llvm.ptr -> f32
+                  %644 = llvm.getelementptr %530[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %645 = llvm.load %644 : !llvm.ptr -> f32
+                  %646 = llvm.getelementptr %530[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %647 = llvm.load %646 : !llvm.ptr -> f32
+                  %648 = llvm.getelementptr %530[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %649 = llvm.load %648 : !llvm.ptr -> f32
+                  %650 = llvm.getelementptr %530[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %651 = llvm.load %650 : !llvm.ptr -> f32
+                  %652 = llvm.getelementptr %530[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %653 = llvm.load %652 : !llvm.ptr -> f32
+                  %654 = llvm.getelementptr %530[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %655 = llvm.load %654 : !llvm.ptr -> f32
+                  %656 = llvm.getelementptr %530[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %657 = llvm.load %656 : !llvm.ptr -> f32
+                  %658 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %659:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_117 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593, %595, %597, %599, %601, %603, %605, %607, %609, %611, %613, %615, %617, %619, %621, %623, %625, %627, %629, %631, %633, %635, %637, %639, %641, %643, %645, %647, %649, %651, %653, %655, %657], accum = %658 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %601 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %600#0, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %601[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#1, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %601[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#2, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %601[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#3, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %601[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#4, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %601[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#5, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %601[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#6, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %601[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#7, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %601[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#8, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %601[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#9, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %601[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#10, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %601[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#11, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %601[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#12, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %601[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#13, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %601[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#14, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %601[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#15, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %601[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#16, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %601[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#17, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %601[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#18, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %601[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#19, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %601[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#20, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %601[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#21, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %601[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#22, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %601[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#23, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %601[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#24, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %601[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#25, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %601[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#26, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %601[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#27, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %601[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#28, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %601[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#29, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %601[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#30, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %601[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#31, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %601[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#32, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %601[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#33, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %601[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#34, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %601[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#35, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %601[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#36, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %601[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#37, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %601[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#38, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %601[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#39, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %601[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#40, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %601[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#41, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %601[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#42, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %601[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#43, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %601[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#44, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %601[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#45, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %601[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#46, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %601[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#47, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %601[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#48, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %601[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#49, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %601[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#50, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %601[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#51, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %601[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#52, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %601[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#53, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %601[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#54, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %601[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#55, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %601[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#56, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %601[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#57, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %601[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#58, %659 : f32, !llvm.ptr
-                  %660 = llvm.getelementptr %601[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#59, %660 : f32, !llvm.ptr
-                  %661 = llvm.getelementptr %601[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#60, %661 : f32, !llvm.ptr
-                  %662 = llvm.getelementptr %601[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#61, %662 : f32, !llvm.ptr
-                  %663 = llvm.getelementptr %601[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#62, %663 : f32, !llvm.ptr
-                  %664 = llvm.getelementptr %601[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#63, %664 : f32, !llvm.ptr
+                  %660 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %659#0, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %660[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#1, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %660[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#2, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %660[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#3, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %660[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#4, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %660[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#5, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %660[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#6, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %660[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#7, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %660[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#8, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %660[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#9, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %660[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#10, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %660[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#11, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %660[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#12, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %660[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#13, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %660[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#14, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %660[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#15, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %660[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#16, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %660[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#17, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %660[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#18, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %660[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#19, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %660[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#20, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %660[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#21, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %660[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#22, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %660[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#23, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %660[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#24, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %660[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#25, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %660[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#26, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %660[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#27, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %660[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#28, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %660[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#29, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %660[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#30, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %660[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#31, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %660[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#32, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %660[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#33, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %660[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#34, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %660[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#35, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %660[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#36, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %660[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#37, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %660[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#38, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %660[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#39, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %660[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#40, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %660[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#41, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %660[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#42, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %660[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#43, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %660[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#44, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %660[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#45, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %660[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#46, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %660[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#47, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %660[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#48, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %660[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#49, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %660[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#50, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %660[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#51, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %660[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#52, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %660[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#53, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %660[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#54, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %660[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#55, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %660[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#56, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %660[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#57, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %660[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#58, %718 : f32, !llvm.ptr
+                  %719 = llvm.getelementptr %660[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#59, %719 : f32, !llvm.ptr
+                  %720 = llvm.getelementptr %660[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#60, %720 : f32, !llvm.ptr
+                  %721 = llvm.getelementptr %660[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#61, %721 : f32, !llvm.ptr
+                  %722 = llvm.getelementptr %660[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#62, %722 : f32, !llvm.ptr
+                  %723 = llvm.getelementptr %660[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#63, %723 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
-            %coord_102 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,3,?)">
-            %idx_103 = cute.crd2idx(%coord_102, %141) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_104 = cute.add_offset(%gmmaSmemDesc, %idx_103) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %coord_105 = cute.make_coord(%arg25) : (i32) -> !cute.coord<"(_,_,3,?)">
-            %idx_106 = cute.crd2idx(%coord_105, %140) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
-            %tup_107 = cute.add_offset(%gmmaSmemDesc_30, %idx_106) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
-            %iter_108 = cute.get_iter(%rmem) : !memref_rmem_f32_
-            %458 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            %459 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-            %460 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg27 = %c0_i32 to %458 step %c1_i32  : i32 {
-              scf.for %arg28 = %c0_i32 to %459 step %c1_i32  : i32 {
-                scf.for %arg29 = %c0_i32 to %460 step %c1_i32  : i32 {
-                  %coord_109 = cute.make_coord(%arg28, %arg27) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %coord_110 = cute.make_coord(%arg28, %arg29) : (i32, i32) -> !cute.coord<"(_,?,?)">
-                  %idx_111 = cute.crd2idx(%coord_109, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
-                  %tup_112 = cute.add_offset(%tup_104, %idx_111) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
-                  %idx_113 = cute.crd2idx(%coord_110, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
-                  %ptr_114 = cute.add_offset(%iter_108, %idx_113) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
-                  %471 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  %472 = llvm.load %471 : !llvm.ptr -> f32
-                  %473 = llvm.getelementptr %471[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %474 = llvm.load %473 : !llvm.ptr -> f32
-                  %475 = llvm.getelementptr %471[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %476 = llvm.load %475 : !llvm.ptr -> f32
-                  %477 = llvm.getelementptr %471[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %478 = llvm.load %477 : !llvm.ptr -> f32
-                  %479 = llvm.getelementptr %471[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %480 = llvm.load %479 : !llvm.ptr -> f32
-                  %481 = llvm.getelementptr %471[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %482 = llvm.load %481 : !llvm.ptr -> f32
-                  %483 = llvm.getelementptr %471[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %484 = llvm.load %483 : !llvm.ptr -> f32
-                  %485 = llvm.getelementptr %471[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %486 = llvm.load %485 : !llvm.ptr -> f32
-                  %487 = llvm.getelementptr %471[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %488 = llvm.load %487 : !llvm.ptr -> f32
-                  %489 = llvm.getelementptr %471[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %490 = llvm.load %489 : !llvm.ptr -> f32
-                  %491 = llvm.getelementptr %471[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %492 = llvm.load %491 : !llvm.ptr -> f32
-                  %493 = llvm.getelementptr %471[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %494 = llvm.load %493 : !llvm.ptr -> f32
-                  %495 = llvm.getelementptr %471[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %496 = llvm.load %495 : !llvm.ptr -> f32
-                  %497 = llvm.getelementptr %471[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %498 = llvm.load %497 : !llvm.ptr -> f32
-                  %499 = llvm.getelementptr %471[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %500 = llvm.load %499 : !llvm.ptr -> f32
-                  %501 = llvm.getelementptr %471[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %502 = llvm.load %501 : !llvm.ptr -> f32
-                  %503 = llvm.getelementptr %471[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %504 = llvm.load %503 : !llvm.ptr -> f32
-                  %505 = llvm.getelementptr %471[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %506 = llvm.load %505 : !llvm.ptr -> f32
-                  %507 = llvm.getelementptr %471[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %508 = llvm.load %507 : !llvm.ptr -> f32
-                  %509 = llvm.getelementptr %471[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %510 = llvm.load %509 : !llvm.ptr -> f32
-                  %511 = llvm.getelementptr %471[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %512 = llvm.load %511 : !llvm.ptr -> f32
-                  %513 = llvm.getelementptr %471[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %514 = llvm.load %513 : !llvm.ptr -> f32
-                  %515 = llvm.getelementptr %471[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %516 = llvm.load %515 : !llvm.ptr -> f32
-                  %517 = llvm.getelementptr %471[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %518 = llvm.load %517 : !llvm.ptr -> f32
-                  %519 = llvm.getelementptr %471[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %520 = llvm.load %519 : !llvm.ptr -> f32
-                  %521 = llvm.getelementptr %471[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %522 = llvm.load %521 : !llvm.ptr -> f32
-                  %523 = llvm.getelementptr %471[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %524 = llvm.load %523 : !llvm.ptr -> f32
-                  %525 = llvm.getelementptr %471[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %526 = llvm.load %525 : !llvm.ptr -> f32
-                  %527 = llvm.getelementptr %471[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %528 = llvm.load %527 : !llvm.ptr -> f32
-                  %529 = llvm.getelementptr %471[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %530 = llvm.load %529 : !llvm.ptr -> f32
-                  %531 = llvm.getelementptr %471[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %532 = llvm.load %531 : !llvm.ptr -> f32
-                  %533 = llvm.getelementptr %471[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %534 = llvm.load %533 : !llvm.ptr -> f32
-                  %535 = llvm.getelementptr %471[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %536 = llvm.load %535 : !llvm.ptr -> f32
-                  %537 = llvm.getelementptr %471[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %538 = llvm.load %537 : !llvm.ptr -> f32
-                  %539 = llvm.getelementptr %471[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %540 = llvm.load %539 : !llvm.ptr -> f32
-                  %541 = llvm.getelementptr %471[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %542 = llvm.load %541 : !llvm.ptr -> f32
-                  %543 = llvm.getelementptr %471[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %544 = llvm.load %543 : !llvm.ptr -> f32
-                  %545 = llvm.getelementptr %471[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %546 = llvm.load %545 : !llvm.ptr -> f32
-                  %547 = llvm.getelementptr %471[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %548 = llvm.load %547 : !llvm.ptr -> f32
-                  %549 = llvm.getelementptr %471[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %550 = llvm.load %549 : !llvm.ptr -> f32
-                  %551 = llvm.getelementptr %471[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %552 = llvm.load %551 : !llvm.ptr -> f32
-                  %553 = llvm.getelementptr %471[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %554 = llvm.load %553 : !llvm.ptr -> f32
-                  %555 = llvm.getelementptr %471[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %556 = llvm.load %555 : !llvm.ptr -> f32
-                  %557 = llvm.getelementptr %471[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %558 = llvm.load %557 : !llvm.ptr -> f32
-                  %559 = llvm.getelementptr %471[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %560 = llvm.load %559 : !llvm.ptr -> f32
-                  %561 = llvm.getelementptr %471[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %562 = llvm.load %561 : !llvm.ptr -> f32
-                  %563 = llvm.getelementptr %471[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %564 = llvm.load %563 : !llvm.ptr -> f32
-                  %565 = llvm.getelementptr %471[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %566 = llvm.load %565 : !llvm.ptr -> f32
-                  %567 = llvm.getelementptr %471[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %568 = llvm.load %567 : !llvm.ptr -> f32
-                  %569 = llvm.getelementptr %471[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %570 = llvm.load %569 : !llvm.ptr -> f32
-                  %571 = llvm.getelementptr %471[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %572 = llvm.load %571 : !llvm.ptr -> f32
-                  %573 = llvm.getelementptr %471[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %574 = llvm.load %573 : !llvm.ptr -> f32
-                  %575 = llvm.getelementptr %471[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %576 = llvm.load %575 : !llvm.ptr -> f32
-                  %577 = llvm.getelementptr %471[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %578 = llvm.load %577 : !llvm.ptr -> f32
-                  %579 = llvm.getelementptr %471[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %580 = llvm.load %579 : !llvm.ptr -> f32
-                  %581 = llvm.getelementptr %471[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %582 = llvm.load %581 : !llvm.ptr -> f32
-                  %583 = llvm.getelementptr %471[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %584 = llvm.load %583 : !llvm.ptr -> f32
-                  %585 = llvm.getelementptr %471[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %586 = llvm.load %585 : !llvm.ptr -> f32
-                  %587 = llvm.getelementptr %471[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %588 = llvm.load %587 : !llvm.ptr -> f32
-                  %589 = llvm.getelementptr %471[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %590 = llvm.load %589 : !llvm.ptr -> f32
-                  %591 = llvm.getelementptr %471[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %592 = llvm.load %591 : !llvm.ptr -> f32
-                  %593 = llvm.getelementptr %471[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %594 = llvm.load %593 : !llvm.ptr -> f32
-                  %595 = llvm.getelementptr %471[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %596 = llvm.load %595 : !llvm.ptr -> f32
-                  %597 = llvm.getelementptr %471[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  %598 = llvm.load %597 : !llvm.ptr -> f32
-                  %599 = cute_nvgpu.atom.get_value(%260 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
-                  %600:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_112 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_107 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%472, %474, %476, %478, %480, %482, %484, %486, %488, %490, %492, %494, %496, %498, %500, %502, %504, %506, %508, %510, %512, %514, %516, %518, %520, %522, %524, %526, %528, %530, %532, %534, %536, %538, %540, %542, %544, %546, %548, %550, %552, %554, %556, %558, %560, %562, %564, %566, %568, %570, %572, %574, %576, %578, %580, %582, %584, %586, %588, %590, %592, %594, %596, %598], accum = %599 : i1)
+            %coord_119 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,3,?)">
+            %idx_120 = cute.crd2idx(%coord_119, %141) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,2,4,(1,6)):(0,512,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_121 = cute.add_offset(%gmmaSmemDesc, %idx_120) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %coord_122 = cute.make_coord(%arg28) : (i32) -> !cute.coord<"(_,_,3,?)">
+            %idx_123 = cute.crd2idx(%coord_122, %140) : (!cute.coord<"(_,_,3,?)">, !cute.layout<"(1,1,4,(1,6)):(0,0,2,(0,1024))">) -> !cute.int_tuple<"?{div=2}">
+            %tup_124 = cute.add_offset(%gmmaSmemDesc_30, %idx_123) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=2}">) -> !cute_nvgpu.smem_desc
+            %iter_125 = cute.get_iter(%rmem) : !memref_rmem_f32_
+            %517 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            %518 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+            %519 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg30 = %c0_i32 to %517 step %c1_i32  : i32 {
+              scf.for %arg31 = %c0_i32 to %518 step %c1_i32  : i32 {
+                scf.for %arg32 = %c0_i32 to %519 step %c1_i32  : i32 {
+                  %coord_126 = cute.make_coord(%arg31, %arg30) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %coord_127 = cute.make_coord(%arg31, %arg32) : (i32, i32) -> !cute.coord<"(_,?,?)">
+                  %idx_128 = cute.crd2idx(%coord_126, %139) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,2,1):(0,512,0)">) -> !cute.int_tuple<"?{div=512}">
+                  %tup_129 = cute.add_offset(%tup_121, %idx_128) : (!cute_nvgpu.smem_desc, !cute.int_tuple<"?{div=512}">) -> !cute_nvgpu.smem_desc
+                  %idx_130 = cute.crd2idx(%coord_127, %144) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">) -> !cute.int_tuple<"?{div=64}">
+                  %ptr_131 = cute.add_offset(%iter_125, %idx_130) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<f32, rmem, align<32>>
+                  %530 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  %531 = llvm.load %530 : !llvm.ptr -> f32
+                  %532 = llvm.getelementptr %530[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %533 = llvm.load %532 : !llvm.ptr -> f32
+                  %534 = llvm.getelementptr %530[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %535 = llvm.load %534 : !llvm.ptr -> f32
+                  %536 = llvm.getelementptr %530[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %537 = llvm.load %536 : !llvm.ptr -> f32
+                  %538 = llvm.getelementptr %530[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %539 = llvm.load %538 : !llvm.ptr -> f32
+                  %540 = llvm.getelementptr %530[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %541 = llvm.load %540 : !llvm.ptr -> f32
+                  %542 = llvm.getelementptr %530[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %543 = llvm.load %542 : !llvm.ptr -> f32
+                  %544 = llvm.getelementptr %530[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %545 = llvm.load %544 : !llvm.ptr -> f32
+                  %546 = llvm.getelementptr %530[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %547 = llvm.load %546 : !llvm.ptr -> f32
+                  %548 = llvm.getelementptr %530[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %549 = llvm.load %548 : !llvm.ptr -> f32
+                  %550 = llvm.getelementptr %530[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %551 = llvm.load %550 : !llvm.ptr -> f32
+                  %552 = llvm.getelementptr %530[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %553 = llvm.load %552 : !llvm.ptr -> f32
+                  %554 = llvm.getelementptr %530[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %555 = llvm.load %554 : !llvm.ptr -> f32
+                  %556 = llvm.getelementptr %530[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %557 = llvm.load %556 : !llvm.ptr -> f32
+                  %558 = llvm.getelementptr %530[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %559 = llvm.load %558 : !llvm.ptr -> f32
+                  %560 = llvm.getelementptr %530[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %561 = llvm.load %560 : !llvm.ptr -> f32
+                  %562 = llvm.getelementptr %530[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %563 = llvm.load %562 : !llvm.ptr -> f32
+                  %564 = llvm.getelementptr %530[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %565 = llvm.load %564 : !llvm.ptr -> f32
+                  %566 = llvm.getelementptr %530[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %567 = llvm.load %566 : !llvm.ptr -> f32
+                  %568 = llvm.getelementptr %530[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %569 = llvm.load %568 : !llvm.ptr -> f32
+                  %570 = llvm.getelementptr %530[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %571 = llvm.load %570 : !llvm.ptr -> f32
+                  %572 = llvm.getelementptr %530[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %573 = llvm.load %572 : !llvm.ptr -> f32
+                  %574 = llvm.getelementptr %530[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %575 = llvm.load %574 : !llvm.ptr -> f32
+                  %576 = llvm.getelementptr %530[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %577 = llvm.load %576 : !llvm.ptr -> f32
+                  %578 = llvm.getelementptr %530[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %579 = llvm.load %578 : !llvm.ptr -> f32
+                  %580 = llvm.getelementptr %530[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %581 = llvm.load %580 : !llvm.ptr -> f32
+                  %582 = llvm.getelementptr %530[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %583 = llvm.load %582 : !llvm.ptr -> f32
+                  %584 = llvm.getelementptr %530[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %585 = llvm.load %584 : !llvm.ptr -> f32
+                  %586 = llvm.getelementptr %530[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %587 = llvm.load %586 : !llvm.ptr -> f32
+                  %588 = llvm.getelementptr %530[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %589 = llvm.load %588 : !llvm.ptr -> f32
+                  %590 = llvm.getelementptr %530[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %591 = llvm.load %590 : !llvm.ptr -> f32
+                  %592 = llvm.getelementptr %530[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %593 = llvm.load %592 : !llvm.ptr -> f32
+                  %594 = llvm.getelementptr %530[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %595 = llvm.load %594 : !llvm.ptr -> f32
+                  %596 = llvm.getelementptr %530[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %597 = llvm.load %596 : !llvm.ptr -> f32
+                  %598 = llvm.getelementptr %530[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %599 = llvm.load %598 : !llvm.ptr -> f32
+                  %600 = llvm.getelementptr %530[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %601 = llvm.load %600 : !llvm.ptr -> f32
+                  %602 = llvm.getelementptr %530[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %603 = llvm.load %602 : !llvm.ptr -> f32
+                  %604 = llvm.getelementptr %530[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %605 = llvm.load %604 : !llvm.ptr -> f32
+                  %606 = llvm.getelementptr %530[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %607 = llvm.load %606 : !llvm.ptr -> f32
+                  %608 = llvm.getelementptr %530[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %609 = llvm.load %608 : !llvm.ptr -> f32
+                  %610 = llvm.getelementptr %530[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %611 = llvm.load %610 : !llvm.ptr -> f32
+                  %612 = llvm.getelementptr %530[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %613 = llvm.load %612 : !llvm.ptr -> f32
+                  %614 = llvm.getelementptr %530[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %615 = llvm.load %614 : !llvm.ptr -> f32
+                  %616 = llvm.getelementptr %530[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %617 = llvm.load %616 : !llvm.ptr -> f32
+                  %618 = llvm.getelementptr %530[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %619 = llvm.load %618 : !llvm.ptr -> f32
+                  %620 = llvm.getelementptr %530[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %621 = llvm.load %620 : !llvm.ptr -> f32
+                  %622 = llvm.getelementptr %530[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %623 = llvm.load %622 : !llvm.ptr -> f32
+                  %624 = llvm.getelementptr %530[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %625 = llvm.load %624 : !llvm.ptr -> f32
+                  %626 = llvm.getelementptr %530[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %627 = llvm.load %626 : !llvm.ptr -> f32
+                  %628 = llvm.getelementptr %530[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %629 = llvm.load %628 : !llvm.ptr -> f32
+                  %630 = llvm.getelementptr %530[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %631 = llvm.load %630 : !llvm.ptr -> f32
+                  %632 = llvm.getelementptr %530[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %633 = llvm.load %632 : !llvm.ptr -> f32
+                  %634 = llvm.getelementptr %530[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %635 = llvm.load %634 : !llvm.ptr -> f32
+                  %636 = llvm.getelementptr %530[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %637 = llvm.load %636 : !llvm.ptr -> f32
+                  %638 = llvm.getelementptr %530[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %639 = llvm.load %638 : !llvm.ptr -> f32
+                  %640 = llvm.getelementptr %530[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %641 = llvm.load %640 : !llvm.ptr -> f32
+                  %642 = llvm.getelementptr %530[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %643 = llvm.load %642 : !llvm.ptr -> f32
+                  %644 = llvm.getelementptr %530[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %645 = llvm.load %644 : !llvm.ptr -> f32
+                  %646 = llvm.getelementptr %530[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %647 = llvm.load %646 : !llvm.ptr -> f32
+                  %648 = llvm.getelementptr %530[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %649 = llvm.load %648 : !llvm.ptr -> f32
+                  %650 = llvm.getelementptr %530[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %651 = llvm.load %650 : !llvm.ptr -> f32
+                  %652 = llvm.getelementptr %530[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %653 = llvm.load %652 : !llvm.ptr -> f32
+                  %654 = llvm.getelementptr %530[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %655 = llvm.load %654 : !llvm.ptr -> f32
+                  %656 = llvm.getelementptr %530[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  %657 = llvm.load %656 : !llvm.ptr -> f32
+                  %658 = cute_nvgpu.atom.get_value(%290 : !mma_f16_f16_f32_64x128x16_) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : i1
+                  %659:64 = cute_nvgpu.arch.mma.SM90(shapeMNK = "(64,128,16)", A = %tup_129 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], B = %tup_124 : [!cute_nvgpu.smem_desc, f16, #cute_nvgpu.major<k>], C[%531, %533, %535, %537, %539, %541, %543, %545, %547, %549, %551, %553, %555, %557, %559, %561, %563, %565, %567, %569, %571, %573, %575, %577, %579, %581, %583, %585, %587, %589, %591, %593, %595, %597, %599, %601, %603, %605, %607, %609, %611, %613, %615, %617, %619, %621, %623, %625, %627, %629, %631, %633, %635, %637, %639, %641, %643, %645, %647, %649, %651, %653, %655, %657], accum = %658 : i1)
 < {cd_type = f32, operandSegmentSizes = array<i32: 1, 1, 64, 1>}> :(!cute_nvgpu.smem_desc, !cute_nvgpu.smem_desc, f32, i1) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)
-                  %601 = builtin.unrealized_conversion_cast %ptr_114 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-                  llvm.store %600#0, %601 : f32, !llvm.ptr
-                  %602 = llvm.getelementptr %601[1] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#1, %602 : f32, !llvm.ptr
-                  %603 = llvm.getelementptr %601[2] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#2, %603 : f32, !llvm.ptr
-                  %604 = llvm.getelementptr %601[3] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#3, %604 : f32, !llvm.ptr
-                  %605 = llvm.getelementptr %601[4] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#4, %605 : f32, !llvm.ptr
-                  %606 = llvm.getelementptr %601[5] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#5, %606 : f32, !llvm.ptr
-                  %607 = llvm.getelementptr %601[6] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#6, %607 : f32, !llvm.ptr
-                  %608 = llvm.getelementptr %601[7] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#7, %608 : f32, !llvm.ptr
-                  %609 = llvm.getelementptr %601[8] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#8, %609 : f32, !llvm.ptr
-                  %610 = llvm.getelementptr %601[9] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#9, %610 : f32, !llvm.ptr
-                  %611 = llvm.getelementptr %601[10] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#10, %611 : f32, !llvm.ptr
-                  %612 = llvm.getelementptr %601[11] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#11, %612 : f32, !llvm.ptr
-                  %613 = llvm.getelementptr %601[12] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#12, %613 : f32, !llvm.ptr
-                  %614 = llvm.getelementptr %601[13] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#13, %614 : f32, !llvm.ptr
-                  %615 = llvm.getelementptr %601[14] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#14, %615 : f32, !llvm.ptr
-                  %616 = llvm.getelementptr %601[15] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#15, %616 : f32, !llvm.ptr
-                  %617 = llvm.getelementptr %601[16] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#16, %617 : f32, !llvm.ptr
-                  %618 = llvm.getelementptr %601[17] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#17, %618 : f32, !llvm.ptr
-                  %619 = llvm.getelementptr %601[18] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#18, %619 : f32, !llvm.ptr
-                  %620 = llvm.getelementptr %601[19] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#19, %620 : f32, !llvm.ptr
-                  %621 = llvm.getelementptr %601[20] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#20, %621 : f32, !llvm.ptr
-                  %622 = llvm.getelementptr %601[21] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#21, %622 : f32, !llvm.ptr
-                  %623 = llvm.getelementptr %601[22] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#22, %623 : f32, !llvm.ptr
-                  %624 = llvm.getelementptr %601[23] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#23, %624 : f32, !llvm.ptr
-                  %625 = llvm.getelementptr %601[24] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#24, %625 : f32, !llvm.ptr
-                  %626 = llvm.getelementptr %601[25] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#25, %626 : f32, !llvm.ptr
-                  %627 = llvm.getelementptr %601[26] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#26, %627 : f32, !llvm.ptr
-                  %628 = llvm.getelementptr %601[27] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#27, %628 : f32, !llvm.ptr
-                  %629 = llvm.getelementptr %601[28] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#28, %629 : f32, !llvm.ptr
-                  %630 = llvm.getelementptr %601[29] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#29, %630 : f32, !llvm.ptr
-                  %631 = llvm.getelementptr %601[30] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#30, %631 : f32, !llvm.ptr
-                  %632 = llvm.getelementptr %601[31] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#31, %632 : f32, !llvm.ptr
-                  %633 = llvm.getelementptr %601[32] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#32, %633 : f32, !llvm.ptr
-                  %634 = llvm.getelementptr %601[33] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#33, %634 : f32, !llvm.ptr
-                  %635 = llvm.getelementptr %601[34] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#34, %635 : f32, !llvm.ptr
-                  %636 = llvm.getelementptr %601[35] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#35, %636 : f32, !llvm.ptr
-                  %637 = llvm.getelementptr %601[36] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#36, %637 : f32, !llvm.ptr
-                  %638 = llvm.getelementptr %601[37] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#37, %638 : f32, !llvm.ptr
-                  %639 = llvm.getelementptr %601[38] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#38, %639 : f32, !llvm.ptr
-                  %640 = llvm.getelementptr %601[39] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#39, %640 : f32, !llvm.ptr
-                  %641 = llvm.getelementptr %601[40] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#40, %641 : f32, !llvm.ptr
-                  %642 = llvm.getelementptr %601[41] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#41, %642 : f32, !llvm.ptr
-                  %643 = llvm.getelementptr %601[42] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#42, %643 : f32, !llvm.ptr
-                  %644 = llvm.getelementptr %601[43] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#43, %644 : f32, !llvm.ptr
-                  %645 = llvm.getelementptr %601[44] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#44, %645 : f32, !llvm.ptr
-                  %646 = llvm.getelementptr %601[45] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#45, %646 : f32, !llvm.ptr
-                  %647 = llvm.getelementptr %601[46] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#46, %647 : f32, !llvm.ptr
-                  %648 = llvm.getelementptr %601[47] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#47, %648 : f32, !llvm.ptr
-                  %649 = llvm.getelementptr %601[48] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#48, %649 : f32, !llvm.ptr
-                  %650 = llvm.getelementptr %601[49] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#49, %650 : f32, !llvm.ptr
-                  %651 = llvm.getelementptr %601[50] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#50, %651 : f32, !llvm.ptr
-                  %652 = llvm.getelementptr %601[51] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#51, %652 : f32, !llvm.ptr
-                  %653 = llvm.getelementptr %601[52] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#52, %653 : f32, !llvm.ptr
-                  %654 = llvm.getelementptr %601[53] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#53, %654 : f32, !llvm.ptr
-                  %655 = llvm.getelementptr %601[54] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#54, %655 : f32, !llvm.ptr
-                  %656 = llvm.getelementptr %601[55] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#55, %656 : f32, !llvm.ptr
-                  %657 = llvm.getelementptr %601[56] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#56, %657 : f32, !llvm.ptr
-                  %658 = llvm.getelementptr %601[57] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#57, %658 : f32, !llvm.ptr
-                  %659 = llvm.getelementptr %601[58] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#58, %659 : f32, !llvm.ptr
-                  %660 = llvm.getelementptr %601[59] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#59, %660 : f32, !llvm.ptr
-                  %661 = llvm.getelementptr %601[60] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#60, %661 : f32, !llvm.ptr
-                  %662 = llvm.getelementptr %601[61] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#61, %662 : f32, !llvm.ptr
-                  %663 = llvm.getelementptr %601[62] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#62, %663 : f32, !llvm.ptr
-                  %664 = llvm.getelementptr %601[63] : (!llvm.ptr) -> !llvm.ptr, f32
-                  llvm.store %600#63, %664 : f32, !llvm.ptr
+                  %660 = builtin.unrealized_conversion_cast %ptr_131 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
+                  llvm.store %659#0, %660 : f32, !llvm.ptr
+                  %661 = llvm.getelementptr %660[1] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#1, %661 : f32, !llvm.ptr
+                  %662 = llvm.getelementptr %660[2] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#2, %662 : f32, !llvm.ptr
+                  %663 = llvm.getelementptr %660[3] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#3, %663 : f32, !llvm.ptr
+                  %664 = llvm.getelementptr %660[4] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#4, %664 : f32, !llvm.ptr
+                  %665 = llvm.getelementptr %660[5] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#5, %665 : f32, !llvm.ptr
+                  %666 = llvm.getelementptr %660[6] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#6, %666 : f32, !llvm.ptr
+                  %667 = llvm.getelementptr %660[7] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#7, %667 : f32, !llvm.ptr
+                  %668 = llvm.getelementptr %660[8] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#8, %668 : f32, !llvm.ptr
+                  %669 = llvm.getelementptr %660[9] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#9, %669 : f32, !llvm.ptr
+                  %670 = llvm.getelementptr %660[10] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#10, %670 : f32, !llvm.ptr
+                  %671 = llvm.getelementptr %660[11] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#11, %671 : f32, !llvm.ptr
+                  %672 = llvm.getelementptr %660[12] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#12, %672 : f32, !llvm.ptr
+                  %673 = llvm.getelementptr %660[13] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#13, %673 : f32, !llvm.ptr
+                  %674 = llvm.getelementptr %660[14] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#14, %674 : f32, !llvm.ptr
+                  %675 = llvm.getelementptr %660[15] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#15, %675 : f32, !llvm.ptr
+                  %676 = llvm.getelementptr %660[16] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#16, %676 : f32, !llvm.ptr
+                  %677 = llvm.getelementptr %660[17] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#17, %677 : f32, !llvm.ptr
+                  %678 = llvm.getelementptr %660[18] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#18, %678 : f32, !llvm.ptr
+                  %679 = llvm.getelementptr %660[19] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#19, %679 : f32, !llvm.ptr
+                  %680 = llvm.getelementptr %660[20] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#20, %680 : f32, !llvm.ptr
+                  %681 = llvm.getelementptr %660[21] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#21, %681 : f32, !llvm.ptr
+                  %682 = llvm.getelementptr %660[22] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#22, %682 : f32, !llvm.ptr
+                  %683 = llvm.getelementptr %660[23] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#23, %683 : f32, !llvm.ptr
+                  %684 = llvm.getelementptr %660[24] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#24, %684 : f32, !llvm.ptr
+                  %685 = llvm.getelementptr %660[25] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#25, %685 : f32, !llvm.ptr
+                  %686 = llvm.getelementptr %660[26] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#26, %686 : f32, !llvm.ptr
+                  %687 = llvm.getelementptr %660[27] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#27, %687 : f32, !llvm.ptr
+                  %688 = llvm.getelementptr %660[28] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#28, %688 : f32, !llvm.ptr
+                  %689 = llvm.getelementptr %660[29] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#29, %689 : f32, !llvm.ptr
+                  %690 = llvm.getelementptr %660[30] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#30, %690 : f32, !llvm.ptr
+                  %691 = llvm.getelementptr %660[31] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#31, %691 : f32, !llvm.ptr
+                  %692 = llvm.getelementptr %660[32] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#32, %692 : f32, !llvm.ptr
+                  %693 = llvm.getelementptr %660[33] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#33, %693 : f32, !llvm.ptr
+                  %694 = llvm.getelementptr %660[34] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#34, %694 : f32, !llvm.ptr
+                  %695 = llvm.getelementptr %660[35] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#35, %695 : f32, !llvm.ptr
+                  %696 = llvm.getelementptr %660[36] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#36, %696 : f32, !llvm.ptr
+                  %697 = llvm.getelementptr %660[37] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#37, %697 : f32, !llvm.ptr
+                  %698 = llvm.getelementptr %660[38] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#38, %698 : f32, !llvm.ptr
+                  %699 = llvm.getelementptr %660[39] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#39, %699 : f32, !llvm.ptr
+                  %700 = llvm.getelementptr %660[40] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#40, %700 : f32, !llvm.ptr
+                  %701 = llvm.getelementptr %660[41] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#41, %701 : f32, !llvm.ptr
+                  %702 = llvm.getelementptr %660[42] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#42, %702 : f32, !llvm.ptr
+                  %703 = llvm.getelementptr %660[43] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#43, %703 : f32, !llvm.ptr
+                  %704 = llvm.getelementptr %660[44] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#44, %704 : f32, !llvm.ptr
+                  %705 = llvm.getelementptr %660[45] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#45, %705 : f32, !llvm.ptr
+                  %706 = llvm.getelementptr %660[46] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#46, %706 : f32, !llvm.ptr
+                  %707 = llvm.getelementptr %660[47] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#47, %707 : f32, !llvm.ptr
+                  %708 = llvm.getelementptr %660[48] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#48, %708 : f32, !llvm.ptr
+                  %709 = llvm.getelementptr %660[49] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#49, %709 : f32, !llvm.ptr
+                  %710 = llvm.getelementptr %660[50] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#50, %710 : f32, !llvm.ptr
+                  %711 = llvm.getelementptr %660[51] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#51, %711 : f32, !llvm.ptr
+                  %712 = llvm.getelementptr %660[52] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#52, %712 : f32, !llvm.ptr
+                  %713 = llvm.getelementptr %660[53] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#53, %713 : f32, !llvm.ptr
+                  %714 = llvm.getelementptr %660[54] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#54, %714 : f32, !llvm.ptr
+                  %715 = llvm.getelementptr %660[55] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#55, %715 : f32, !llvm.ptr
+                  %716 = llvm.getelementptr %660[56] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#56, %716 : f32, !llvm.ptr
+                  %717 = llvm.getelementptr %660[57] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#57, %717 : f32, !llvm.ptr
+                  %718 = llvm.getelementptr %660[58] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#58, %718 : f32, !llvm.ptr
+                  %719 = llvm.getelementptr %660[59] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#59, %719 : f32, !llvm.ptr
+                  %720 = llvm.getelementptr %660[60] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#60, %720 : f32, !llvm.ptr
+                  %721 = llvm.getelementptr %660[61] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#61, %721 : f32, !llvm.ptr
+                  %722 = llvm.getelementptr %660[62] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#62, %722 : f32, !llvm.ptr
+                  %723 = llvm.getelementptr %660[63] : (!llvm.ptr) -> !llvm.ptr, f32
+                  llvm.store %659#63, %723 : f32, !llvm.ptr
                 } {llvm.loop_annotation = #loop_annotation}
               } {llvm.loop_annotation = #loop_annotation}
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.wgmma.commit.group.sync.aligned
             nvvm.wgmma.wait.group.sync.aligned 1
             scf.if %207 {
-              %int_tuple_109 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
-              %ptr_110 = cute.add_offset(%ptr_3, %int_tuple_109) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %471 = builtin.unrealized_conversion_cast %ptr_110 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.mbarrier.txn %471, %c1_i32 {kind = #nvvm.mbar_txn_kind<arrive>} : !llvm.ptr<3>, i32
+              %int_tuple_126 = cute.make_int_tuple(%arg25) : (i32) -> !cute.int_tuple<"?">
+              %ptr_127 = cute.add_offset(%ptr_3, %int_tuple_126) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+              %530 = builtin.unrealized_conversion_cast %ptr_127 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.mbarrier.txn %530, %c1_i32 {kind = #nvvm.mbar_txn_kind<arrive>} : !llvm.ptr<3>, i32
             }
-            %461 = arith.addi %arg22, %c1_i32 : i32
-            %462 = arith.addi %arg21, %c1_i32 : i32
-            %463 = arith.cmpi eq, %461, %c6_i32 : i32
-            %464 = arith.select %463, %c0_i32, %461 : i32
-            %465 = scf.if %463 -> (i32) {
-              %471 = arith.xori %arg23, %c1_i32 : i32
-              scf.yield %471 : i32
-            } else {
-              scf.yield %arg23 : i32
-            }
-            %466 = arith.addi %arg25, %c1_i32 : i32
-            %467 = arith.addi %arg24, %c1_i32 : i32
-            %468 = arith.cmpi eq, %466, %c6_i32 : i32
-            %469 = arith.select %468, %c0_i32, %466 : i32
-            %470 = scf.if %468 -> (i32) {
-              %471 = arith.xori %arg26, %c1_i32 : i32
-              scf.yield %471 : i32
+            %520 = arith.addi %arg25, %c1_i32 : i32
+            %521 = arith.addi %arg24, %c1_i32 : i32
+            %522 = arith.cmpi eq, %520, %c6_i32 : i32
+            %523 = arith.select %522, %c0_i32, %520 : i32
+            %524 = scf.if %522 -> (i32) {
+              %530 = arith.xori %arg26, %c1_i32 : i32
+              scf.yield %530 : i32
             } else {
               scf.yield %arg26 : i32
             }
-            scf.yield %462, %464, %465, %467, %469, %470 : i32, i32, i32, i32, i32, i32
+            %525 = arith.addi %arg28, %c1_i32 : i32
+            %526 = arith.addi %arg27, %c1_i32 : i32
+            %527 = arith.cmpi eq, %525, %c6_i32 : i32
+            %528 = arith.select %527, %c0_i32, %525 : i32
+            %529 = scf.if %527 -> (i32) {
+              %530 = arith.xori %arg29, %c1_i32 : i32
+              scf.yield %530 : i32
+            } else {
+              scf.yield %arg29 : i32
+            }
+            scf.yield %521, %523, %524, %526, %528, %529 : i32, i32, i32, i32, i32, i32
           }
           nvvm.wgmma.wait.group.sync.aligned 0
-          %263:3 = scf.for %arg20 = %c0_i32 to %258 step %c1_i32 iter_args(%arg21 = %262#0, %arg22 = %262#1, %arg23 = %262#2) -> (i32, i32, i32)  : i32 {
+          %293:3 = scf.for %arg23 = %c0_i32 to %287 step %c1_i32 iter_args(%arg24 = %292#0, %arg25 = %292#1, %arg26 = %292#2) -> (i32, i32, i32)  : i32 {
             scf.if %207 {
-              %int_tuple_79 = cute.make_int_tuple(%arg22) : (i32) -> !cute.int_tuple<"?">
-              %ptr_80 = cute.add_offset(%ptr_3, %int_tuple_79) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
-              %453 = builtin.unrealized_conversion_cast %ptr_80 : !cute.ptr<i64, smem> to !llvm.ptr<3>
-              nvvm.mbarrier.txn %453, %c1_i32 {kind = #nvvm.mbar_txn_kind<arrive>} : !llvm.ptr<3>, i32
+              %int_tuple_96 = cute.make_int_tuple(%arg25) : (i32) -> !cute.int_tuple<"?">
+              %ptr_97 = cute.add_offset(%ptr_3, %int_tuple_96) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
+              %512 = builtin.unrealized_conversion_cast %ptr_97 : !cute.ptr<i64, smem> to !llvm.ptr<3>
+              nvvm.mbarrier.txn %512, %c1_i32 {kind = #nvvm.mbar_txn_kind<arrive>} : !llvm.ptr<3>, i32
             }
-            %448 = arith.addi %arg22, %c1_i32 : i32
-            %449 = arith.addi %arg21, %c1_i32 : i32
-            %450 = arith.cmpi eq, %448, %c6_i32 : i32
-            %451 = arith.select %450, %c0_i32, %448 : i32
-            %452 = scf.if %450 -> (i32) {
-              %453 = arith.xori %arg23, %c1_i32 : i32
-              scf.yield %453 : i32
+            %507 = arith.addi %arg25, %c1_i32 : i32
+            %508 = arith.addi %arg24, %c1_i32 : i32
+            %509 = arith.cmpi eq, %507, %c6_i32 : i32
+            %510 = arith.select %509, %c0_i32, %507 : i32
+            %511 = scf.if %509 -> (i32) {
+              %512 = arith.xori %arg26, %c1_i32 : i32
+              scf.yield %512 : i32
             } else {
-              scf.yield %arg23 : i32
+              scf.yield %arg26 : i32
             }
-            scf.yield %449, %451, %452 : i32, i32, i32
+            scf.yield %508, %510, %511 : i32, i32, i32
           }
-          %264 = arith.muli %arg19, %c8_i32 : i32
-          %265 = cute.memref.load(%view, %138) : (!memref_rmem_f32_1, !cute.coord<"0">) -> f32
-          cute.memref.store(%rmem_48, %138, %265) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %266 = cute.memref.load(%view, %137) : (!memref_rmem_f32_1, !cute.coord<"1">) -> f32
-          cute.memref.store(%rmem_48, %137, %266) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %267 = cute.memref.load(%view, %136) : (!memref_rmem_f32_1, !cute.coord<"2">) -> f32
-          cute.memref.store(%rmem_48, %136, %267) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %268 = cute.memref.load(%view, %135) : (!memref_rmem_f32_1, !cute.coord<"3">) -> f32
-          cute.memref.store(%rmem_48, %135, %268) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %269 = cute.memref.load(%view, %134) : (!memref_rmem_f32_1, !cute.coord<"4">) -> f32
-          cute.memref.store(%rmem_48, %134, %269) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %270 = cute.memref.load(%view, %133) : (!memref_rmem_f32_1, !cute.coord<"5">) -> f32
-          cute.memref.store(%rmem_48, %133, %270) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %271 = cute.memref.load(%view, %132) : (!memref_rmem_f32_1, !cute.coord<"6">) -> f32
-          cute.memref.store(%rmem_48, %132, %271) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %272 = cute.memref.load(%view, %131) : (!memref_rmem_f32_1, !cute.coord<"7">) -> f32
-          cute.memref.store(%rmem_48, %131, %272) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %273 = cute.memref.load(%view, %130) : (!memref_rmem_f32_1, !cute.coord<"8">) -> f32
-          cute.memref.store(%rmem_48, %130, %273) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %274 = cute.memref.load(%view, %129) : (!memref_rmem_f32_1, !cute.coord<"9">) -> f32
-          cute.memref.store(%rmem_48, %129, %274) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %275 = cute.memref.load(%view, %128) : (!memref_rmem_f32_1, !cute.coord<"10">) -> f32
-          cute.memref.store(%rmem_48, %128, %275) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %276 = cute.memref.load(%view, %127) : (!memref_rmem_f32_1, !cute.coord<"11">) -> f32
-          cute.memref.store(%rmem_48, %127, %276) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %277 = cute.memref.load(%view, %126) : (!memref_rmem_f32_1, !cute.coord<"12">) -> f32
-          cute.memref.store(%rmem_48, %126, %277) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %278 = cute.memref.load(%view, %125) : (!memref_rmem_f32_1, !cute.coord<"13">) -> f32
-          cute.memref.store(%rmem_48, %125, %278) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %279 = cute.memref.load(%view, %124) : (!memref_rmem_f32_1, !cute.coord<"14">) -> f32
-          cute.memref.store(%rmem_48, %124, %279) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %280 = cute.memref.load(%view, %123) : (!memref_rmem_f32_1, !cute.coord<"15">) -> f32
-          cute.memref.store(%rmem_48, %123, %280) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %281 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %282 = arith.truncf %281 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %282, %rmem_49, row_major : !memref_rmem_f16_
-          %283 = arith.remsi %264, %c4_i32 : i32
-          %coord_52 = cute.make_coord(%283) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_53 = cute.crd2idx(%coord_52, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %284 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %284 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_53) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %294 = arith.muli %arg22, %c8_i32 : i32
+          %295 = cute.memref.load(%view, %138) : (!memref_rmem_f32_1, !cute.coord<"0">) -> f32
+          cute.memref.store(%rmem_52, %138, %295) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %296 = cute.memref.load(%view, %137) : (!memref_rmem_f32_1, !cute.coord<"1">) -> f32
+          cute.memref.store(%rmem_52, %137, %296) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %297 = cute.memref.load(%view, %136) : (!memref_rmem_f32_1, !cute.coord<"2">) -> f32
+          cute.memref.store(%rmem_52, %136, %297) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %298 = cute.memref.load(%view, %135) : (!memref_rmem_f32_1, !cute.coord<"3">) -> f32
+          cute.memref.store(%rmem_52, %135, %298) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %299 = cute.memref.load(%view, %134) : (!memref_rmem_f32_1, !cute.coord<"4">) -> f32
+          cute.memref.store(%rmem_52, %134, %299) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %300 = cute.memref.load(%view, %133) : (!memref_rmem_f32_1, !cute.coord<"5">) -> f32
+          cute.memref.store(%rmem_52, %133, %300) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %301 = cute.memref.load(%view, %132) : (!memref_rmem_f32_1, !cute.coord<"6">) -> f32
+          cute.memref.store(%rmem_52, %132, %301) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %302 = cute.memref.load(%view, %131) : (!memref_rmem_f32_1, !cute.coord<"7">) -> f32
+          cute.memref.store(%rmem_52, %131, %302) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %303 = cute.memref.load(%view, %130) : (!memref_rmem_f32_1, !cute.coord<"8">) -> f32
+          cute.memref.store(%rmem_52, %130, %303) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %304 = cute.memref.load(%view, %129) : (!memref_rmem_f32_1, !cute.coord<"9">) -> f32
+          cute.memref.store(%rmem_52, %129, %304) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %305 = cute.memref.load(%view, %128) : (!memref_rmem_f32_1, !cute.coord<"10">) -> f32
+          cute.memref.store(%rmem_52, %128, %305) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %306 = cute.memref.load(%view, %127) : (!memref_rmem_f32_1, !cute.coord<"11">) -> f32
+          cute.memref.store(%rmem_52, %127, %306) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %307 = cute.memref.load(%view, %126) : (!memref_rmem_f32_1, !cute.coord<"12">) -> f32
+          cute.memref.store(%rmem_52, %126, %307) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %308 = cute.memref.load(%view, %125) : (!memref_rmem_f32_1, !cute.coord<"13">) -> f32
+          cute.memref.store(%rmem_52, %125, %308) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %309 = cute.memref.load(%view, %124) : (!memref_rmem_f32_1, !cute.coord<"14">) -> f32
+          cute.memref.store(%rmem_52, %124, %309) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %310 = cute.memref.load(%view, %123) : (!memref_rmem_f32_1, !cute.coord<"15">) -> f32
+          cute.memref.store(%rmem_52, %123, %310) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %311 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %312 = arith.truncf %311 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %312, %rmem_53 : !memref_rmem_f16_
+          %313 = arith.remsi %294, %c4_i32 : i32
+          %coord_63 = cute.make_coord(%313) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_64 = cute.crd2idx(%coord_63, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %314 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %314 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_64) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %285 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %285 {
-            %coord_79 = cute.make_coord(%283) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %e0_82, %e1_83, %e2_84 = cute.get_leaves(%tup) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
-            %int_tuple_85 = cute.make_int_tuple(%e0_82, %e1_83, %e2_84) : (!cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=128},?{div=128},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_85) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %315 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %315 {
+            %coord_96 = cute.make_coord(%313) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %e0_99, %e1_100, %e2_101 = cute.get_leaves(%tup) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
+            %int_tuple_102 = cute.make_int_tuple(%e0_99, %e1_100, %e2_101) : (!cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=128},?{div=128},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_102) : !cute.int_tuple<"(?{div=128},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %286 = cute.memref.load(%view, %118) : (!memref_rmem_f32_1, !cute.coord<"16">) -> f32
-          cute.memref.store(%rmem_48, %138, %286) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %287 = cute.memref.load(%view, %117) : (!memref_rmem_f32_1, !cute.coord<"17">) -> f32
-          cute.memref.store(%rmem_48, %137, %287) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %288 = cute.memref.load(%view, %116) : (!memref_rmem_f32_1, !cute.coord<"18">) -> f32
-          cute.memref.store(%rmem_48, %136, %288) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %289 = cute.memref.load(%view, %115) : (!memref_rmem_f32_1, !cute.coord<"19">) -> f32
-          cute.memref.store(%rmem_48, %135, %289) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %290 = cute.memref.load(%view, %114) : (!memref_rmem_f32_1, !cute.coord<"20">) -> f32
-          cute.memref.store(%rmem_48, %134, %290) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %291 = cute.memref.load(%view, %113) : (!memref_rmem_f32_1, !cute.coord<"21">) -> f32
-          cute.memref.store(%rmem_48, %133, %291) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %292 = cute.memref.load(%view, %112) : (!memref_rmem_f32_1, !cute.coord<"22">) -> f32
-          cute.memref.store(%rmem_48, %132, %292) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %293 = cute.memref.load(%view, %111) : (!memref_rmem_f32_1, !cute.coord<"23">) -> f32
-          cute.memref.store(%rmem_48, %131, %293) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %294 = cute.memref.load(%view, %110) : (!memref_rmem_f32_1, !cute.coord<"24">) -> f32
-          cute.memref.store(%rmem_48, %130, %294) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %295 = cute.memref.load(%view, %109) : (!memref_rmem_f32_1, !cute.coord<"25">) -> f32
-          cute.memref.store(%rmem_48, %129, %295) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %296 = cute.memref.load(%view, %108) : (!memref_rmem_f32_1, !cute.coord<"26">) -> f32
-          cute.memref.store(%rmem_48, %128, %296) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %297 = cute.memref.load(%view, %107) : (!memref_rmem_f32_1, !cute.coord<"27">) -> f32
-          cute.memref.store(%rmem_48, %127, %297) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %298 = cute.memref.load(%view, %106) : (!memref_rmem_f32_1, !cute.coord<"28">) -> f32
-          cute.memref.store(%rmem_48, %126, %298) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %299 = cute.memref.load(%view, %105) : (!memref_rmem_f32_1, !cute.coord<"29">) -> f32
-          cute.memref.store(%rmem_48, %125, %299) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %300 = cute.memref.load(%view, %104) : (!memref_rmem_f32_1, !cute.coord<"30">) -> f32
-          cute.memref.store(%rmem_48, %124, %300) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %301 = cute.memref.load(%view, %103) : (!memref_rmem_f32_1, !cute.coord<"31">) -> f32
-          cute.memref.store(%rmem_48, %123, %301) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %302 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %303 = arith.truncf %302 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %303, %rmem_49, row_major : !memref_rmem_f16_
-          %304 = arith.addi %264, %c1_i32 : i32
-          %305 = arith.remsi %304, %c4_i32 : i32
-          %coord_54 = cute.make_coord(%305) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_55 = cute.crd2idx(%coord_54, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %306 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %306 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_55) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %316 = cute.memref.load(%view, %118) : (!memref_rmem_f32_1, !cute.coord<"16">) -> f32
+          cute.memref.store(%rmem_52, %138, %316) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %317 = cute.memref.load(%view, %117) : (!memref_rmem_f32_1, !cute.coord<"17">) -> f32
+          cute.memref.store(%rmem_52, %137, %317) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %318 = cute.memref.load(%view, %116) : (!memref_rmem_f32_1, !cute.coord<"18">) -> f32
+          cute.memref.store(%rmem_52, %136, %318) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %319 = cute.memref.load(%view, %115) : (!memref_rmem_f32_1, !cute.coord<"19">) -> f32
+          cute.memref.store(%rmem_52, %135, %319) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %320 = cute.memref.load(%view, %114) : (!memref_rmem_f32_1, !cute.coord<"20">) -> f32
+          cute.memref.store(%rmem_52, %134, %320) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %321 = cute.memref.load(%view, %113) : (!memref_rmem_f32_1, !cute.coord<"21">) -> f32
+          cute.memref.store(%rmem_52, %133, %321) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %322 = cute.memref.load(%view, %112) : (!memref_rmem_f32_1, !cute.coord<"22">) -> f32
+          cute.memref.store(%rmem_52, %132, %322) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %323 = cute.memref.load(%view, %111) : (!memref_rmem_f32_1, !cute.coord<"23">) -> f32
+          cute.memref.store(%rmem_52, %131, %323) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %324 = cute.memref.load(%view, %110) : (!memref_rmem_f32_1, !cute.coord<"24">) -> f32
+          cute.memref.store(%rmem_52, %130, %324) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %325 = cute.memref.load(%view, %109) : (!memref_rmem_f32_1, !cute.coord<"25">) -> f32
+          cute.memref.store(%rmem_52, %129, %325) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %326 = cute.memref.load(%view, %108) : (!memref_rmem_f32_1, !cute.coord<"26">) -> f32
+          cute.memref.store(%rmem_52, %128, %326) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %327 = cute.memref.load(%view, %107) : (!memref_rmem_f32_1, !cute.coord<"27">) -> f32
+          cute.memref.store(%rmem_52, %127, %327) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %328 = cute.memref.load(%view, %106) : (!memref_rmem_f32_1, !cute.coord<"28">) -> f32
+          cute.memref.store(%rmem_52, %126, %328) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %329 = cute.memref.load(%view, %105) : (!memref_rmem_f32_1, !cute.coord<"29">) -> f32
+          cute.memref.store(%rmem_52, %125, %329) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %330 = cute.memref.load(%view, %104) : (!memref_rmem_f32_1, !cute.coord<"30">) -> f32
+          cute.memref.store(%rmem_52, %124, %330) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %331 = cute.memref.load(%view, %103) : (!memref_rmem_f32_1, !cute.coord<"31">) -> f32
+          cute.memref.store(%rmem_52, %123, %331) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %332 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %333 = arith.truncf %332 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %333, %rmem_53 : !memref_rmem_f16_
+          %334 = arith.addi %294, %c1_i32 : i32
+          %335 = arith.remsi %334, %c4_i32 : i32
+          %coord_65 = cute.make_coord(%335) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_66 = cute.crd2idx(%coord_65, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %336 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %336 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_66) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %307 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %307 {
-            %coord_79 = cute.make_coord(%305) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %102) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(32,0)">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %337 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %337 {
+            %coord_96 = cute.make_coord(%335) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %102) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(32,0)">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %308 = cute.memref.load(%view, %101) : (!memref_rmem_f32_1, !cute.coord<"32">) -> f32
-          cute.memref.store(%rmem_48, %138, %308) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %309 = cute.memref.load(%view, %100) : (!memref_rmem_f32_1, !cute.coord<"33">) -> f32
-          cute.memref.store(%rmem_48, %137, %309) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %310 = cute.memref.load(%view, %99) : (!memref_rmem_f32_1, !cute.coord<"34">) -> f32
-          cute.memref.store(%rmem_48, %136, %310) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %311 = cute.memref.load(%view, %98) : (!memref_rmem_f32_1, !cute.coord<"35">) -> f32
-          cute.memref.store(%rmem_48, %135, %311) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %312 = cute.memref.load(%view, %97) : (!memref_rmem_f32_1, !cute.coord<"36">) -> f32
-          cute.memref.store(%rmem_48, %134, %312) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %313 = cute.memref.load(%view, %96) : (!memref_rmem_f32_1, !cute.coord<"37">) -> f32
-          cute.memref.store(%rmem_48, %133, %313) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %314 = cute.memref.load(%view, %95) : (!memref_rmem_f32_1, !cute.coord<"38">) -> f32
-          cute.memref.store(%rmem_48, %132, %314) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %315 = cute.memref.load(%view, %94) : (!memref_rmem_f32_1, !cute.coord<"39">) -> f32
-          cute.memref.store(%rmem_48, %131, %315) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %316 = cute.memref.load(%view, %93) : (!memref_rmem_f32_1, !cute.coord<"40">) -> f32
-          cute.memref.store(%rmem_48, %130, %316) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %317 = cute.memref.load(%view, %92) : (!memref_rmem_f32_1, !cute.coord<"41">) -> f32
-          cute.memref.store(%rmem_48, %129, %317) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %318 = cute.memref.load(%view, %91) : (!memref_rmem_f32_1, !cute.coord<"42">) -> f32
-          cute.memref.store(%rmem_48, %128, %318) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %319 = cute.memref.load(%view, %90) : (!memref_rmem_f32_1, !cute.coord<"43">) -> f32
-          cute.memref.store(%rmem_48, %127, %319) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %320 = cute.memref.load(%view, %89) : (!memref_rmem_f32_1, !cute.coord<"44">) -> f32
-          cute.memref.store(%rmem_48, %126, %320) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %321 = cute.memref.load(%view, %88) : (!memref_rmem_f32_1, !cute.coord<"45">) -> f32
-          cute.memref.store(%rmem_48, %125, %321) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %322 = cute.memref.load(%view, %87) : (!memref_rmem_f32_1, !cute.coord<"46">) -> f32
-          cute.memref.store(%rmem_48, %124, %322) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %323 = cute.memref.load(%view, %86) : (!memref_rmem_f32_1, !cute.coord<"47">) -> f32
-          cute.memref.store(%rmem_48, %123, %323) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %324 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %325 = arith.truncf %324 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %325, %rmem_49, row_major : !memref_rmem_f16_
-          %326 = arith.addi %264, %c2_i32 : i32
-          %327 = arith.remsi %326, %c4_i32 : i32
-          %coord_56 = cute.make_coord(%327) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_57 = cute.crd2idx(%coord_56, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %328 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %328 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_57) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %338 = cute.memref.load(%view, %101) : (!memref_rmem_f32_1, !cute.coord<"32">) -> f32
+          cute.memref.store(%rmem_52, %138, %338) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %339 = cute.memref.load(%view, %100) : (!memref_rmem_f32_1, !cute.coord<"33">) -> f32
+          cute.memref.store(%rmem_52, %137, %339) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %340 = cute.memref.load(%view, %99) : (!memref_rmem_f32_1, !cute.coord<"34">) -> f32
+          cute.memref.store(%rmem_52, %136, %340) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %341 = cute.memref.load(%view, %98) : (!memref_rmem_f32_1, !cute.coord<"35">) -> f32
+          cute.memref.store(%rmem_52, %135, %341) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %342 = cute.memref.load(%view, %97) : (!memref_rmem_f32_1, !cute.coord<"36">) -> f32
+          cute.memref.store(%rmem_52, %134, %342) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %343 = cute.memref.load(%view, %96) : (!memref_rmem_f32_1, !cute.coord<"37">) -> f32
+          cute.memref.store(%rmem_52, %133, %343) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %344 = cute.memref.load(%view, %95) : (!memref_rmem_f32_1, !cute.coord<"38">) -> f32
+          cute.memref.store(%rmem_52, %132, %344) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %345 = cute.memref.load(%view, %94) : (!memref_rmem_f32_1, !cute.coord<"39">) -> f32
+          cute.memref.store(%rmem_52, %131, %345) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %346 = cute.memref.load(%view, %93) : (!memref_rmem_f32_1, !cute.coord<"40">) -> f32
+          cute.memref.store(%rmem_52, %130, %346) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %347 = cute.memref.load(%view, %92) : (!memref_rmem_f32_1, !cute.coord<"41">) -> f32
+          cute.memref.store(%rmem_52, %129, %347) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %348 = cute.memref.load(%view, %91) : (!memref_rmem_f32_1, !cute.coord<"42">) -> f32
+          cute.memref.store(%rmem_52, %128, %348) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %349 = cute.memref.load(%view, %90) : (!memref_rmem_f32_1, !cute.coord<"43">) -> f32
+          cute.memref.store(%rmem_52, %127, %349) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %350 = cute.memref.load(%view, %89) : (!memref_rmem_f32_1, !cute.coord<"44">) -> f32
+          cute.memref.store(%rmem_52, %126, %350) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %351 = cute.memref.load(%view, %88) : (!memref_rmem_f32_1, !cute.coord<"45">) -> f32
+          cute.memref.store(%rmem_52, %125, %351) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %352 = cute.memref.load(%view, %87) : (!memref_rmem_f32_1, !cute.coord<"46">) -> f32
+          cute.memref.store(%rmem_52, %124, %352) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %353 = cute.memref.load(%view, %86) : (!memref_rmem_f32_1, !cute.coord<"47">) -> f32
+          cute.memref.store(%rmem_52, %123, %353) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %354 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %355 = arith.truncf %354 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %355, %rmem_53 : !memref_rmem_f16_
+          %356 = arith.addi %294, %c2_i32 : i32
+          %357 = arith.remsi %356, %c4_i32 : i32
+          %coord_67 = cute.make_coord(%357) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_68 = cute.crd2idx(%coord_67, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %358 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %358 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_68) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %329 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %329 {
-            %coord_79 = cute.make_coord(%327) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %85) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %359 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %359 {
+            %coord_96 = cute.make_coord(%357) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %85) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=128},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=64},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %330 = cute.memref.load(%view, %84) : (!memref_rmem_f32_1, !cute.coord<"48">) -> f32
-          cute.memref.store(%rmem_48, %138, %330) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %331 = cute.memref.load(%view, %83) : (!memref_rmem_f32_1, !cute.coord<"49">) -> f32
-          cute.memref.store(%rmem_48, %137, %331) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %332 = cute.memref.load(%view, %82) : (!memref_rmem_f32_1, !cute.coord<"50">) -> f32
-          cute.memref.store(%rmem_48, %136, %332) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %333 = cute.memref.load(%view, %81) : (!memref_rmem_f32_1, !cute.coord<"51">) -> f32
-          cute.memref.store(%rmem_48, %135, %333) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %334 = cute.memref.load(%view, %80) : (!memref_rmem_f32_1, !cute.coord<"52">) -> f32
-          cute.memref.store(%rmem_48, %134, %334) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %335 = cute.memref.load(%view, %79) : (!memref_rmem_f32_1, !cute.coord<"53">) -> f32
-          cute.memref.store(%rmem_48, %133, %335) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %336 = cute.memref.load(%view, %78) : (!memref_rmem_f32_1, !cute.coord<"54">) -> f32
-          cute.memref.store(%rmem_48, %132, %336) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %337 = cute.memref.load(%view, %77) : (!memref_rmem_f32_1, !cute.coord<"55">) -> f32
-          cute.memref.store(%rmem_48, %131, %337) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %338 = cute.memref.load(%view, %76) : (!memref_rmem_f32_1, !cute.coord<"56">) -> f32
-          cute.memref.store(%rmem_48, %130, %338) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %339 = cute.memref.load(%view, %75) : (!memref_rmem_f32_1, !cute.coord<"57">) -> f32
-          cute.memref.store(%rmem_48, %129, %339) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %340 = cute.memref.load(%view, %74) : (!memref_rmem_f32_1, !cute.coord<"58">) -> f32
-          cute.memref.store(%rmem_48, %128, %340) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %341 = cute.memref.load(%view, %73) : (!memref_rmem_f32_1, !cute.coord<"59">) -> f32
-          cute.memref.store(%rmem_48, %127, %341) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %342 = cute.memref.load(%view, %72) : (!memref_rmem_f32_1, !cute.coord<"60">) -> f32
-          cute.memref.store(%rmem_48, %126, %342) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %343 = cute.memref.load(%view, %71) : (!memref_rmem_f32_1, !cute.coord<"61">) -> f32
-          cute.memref.store(%rmem_48, %125, %343) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %344 = cute.memref.load(%view, %70) : (!memref_rmem_f32_1, !cute.coord<"62">) -> f32
-          cute.memref.store(%rmem_48, %124, %344) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %345 = cute.memref.load(%view, %69) : (!memref_rmem_f32_1, !cute.coord<"63">) -> f32
-          cute.memref.store(%rmem_48, %123, %345) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %346 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %347 = arith.truncf %346 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %347, %rmem_49, row_major : !memref_rmem_f16_
-          %348 = arith.addi %264, %c3_i32 : i32
-          %349 = arith.remsi %348, %c4_i32 : i32
-          %coord_58 = cute.make_coord(%349) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_59 = cute.crd2idx(%coord_58, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %350 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %350 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_59) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %360 = cute.memref.load(%view, %84) : (!memref_rmem_f32_1, !cute.coord<"48">) -> f32
+          cute.memref.store(%rmem_52, %138, %360) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %361 = cute.memref.load(%view, %83) : (!memref_rmem_f32_1, !cute.coord<"49">) -> f32
+          cute.memref.store(%rmem_52, %137, %361) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %362 = cute.memref.load(%view, %82) : (!memref_rmem_f32_1, !cute.coord<"50">) -> f32
+          cute.memref.store(%rmem_52, %136, %362) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %363 = cute.memref.load(%view, %81) : (!memref_rmem_f32_1, !cute.coord<"51">) -> f32
+          cute.memref.store(%rmem_52, %135, %363) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %364 = cute.memref.load(%view, %80) : (!memref_rmem_f32_1, !cute.coord<"52">) -> f32
+          cute.memref.store(%rmem_52, %134, %364) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %365 = cute.memref.load(%view, %79) : (!memref_rmem_f32_1, !cute.coord<"53">) -> f32
+          cute.memref.store(%rmem_52, %133, %365) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %366 = cute.memref.load(%view, %78) : (!memref_rmem_f32_1, !cute.coord<"54">) -> f32
+          cute.memref.store(%rmem_52, %132, %366) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %367 = cute.memref.load(%view, %77) : (!memref_rmem_f32_1, !cute.coord<"55">) -> f32
+          cute.memref.store(%rmem_52, %131, %367) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %368 = cute.memref.load(%view, %76) : (!memref_rmem_f32_1, !cute.coord<"56">) -> f32
+          cute.memref.store(%rmem_52, %130, %368) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %369 = cute.memref.load(%view, %75) : (!memref_rmem_f32_1, !cute.coord<"57">) -> f32
+          cute.memref.store(%rmem_52, %129, %369) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %370 = cute.memref.load(%view, %74) : (!memref_rmem_f32_1, !cute.coord<"58">) -> f32
+          cute.memref.store(%rmem_52, %128, %370) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %371 = cute.memref.load(%view, %73) : (!memref_rmem_f32_1, !cute.coord<"59">) -> f32
+          cute.memref.store(%rmem_52, %127, %371) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %372 = cute.memref.load(%view, %72) : (!memref_rmem_f32_1, !cute.coord<"60">) -> f32
+          cute.memref.store(%rmem_52, %126, %372) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %373 = cute.memref.load(%view, %71) : (!memref_rmem_f32_1, !cute.coord<"61">) -> f32
+          cute.memref.store(%rmem_52, %125, %373) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %374 = cute.memref.load(%view, %70) : (!memref_rmem_f32_1, !cute.coord<"62">) -> f32
+          cute.memref.store(%rmem_52, %124, %374) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %375 = cute.memref.load(%view, %69) : (!memref_rmem_f32_1, !cute.coord<"63">) -> f32
+          cute.memref.store(%rmem_52, %123, %375) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %376 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %377 = arith.truncf %376 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %377, %rmem_53 : !memref_rmem_f16_
+          %378 = arith.addi %294, %c3_i32 : i32
+          %379 = arith.remsi %378, %c4_i32 : i32
+          %coord_69 = cute.make_coord(%379) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_70 = cute.crd2idx(%coord_69, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %380 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %380 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_70) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %351 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %351 {
-            %coord_79 = cute.make_coord(%349) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %68) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(96,0)">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %381 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %381 {
+            %coord_96 = cute.make_coord(%379) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %68) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(96,0)">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=128},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=32},?{div=128},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %352 = cute.memref.load(%view, %67) : (!memref_rmem_f32_1, !cute.coord<"64">) -> f32
-          cute.memref.store(%rmem_48, %138, %352) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %353 = cute.memref.load(%view, %66) : (!memref_rmem_f32_1, !cute.coord<"65">) -> f32
-          cute.memref.store(%rmem_48, %137, %353) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %354 = cute.memref.load(%view, %65) : (!memref_rmem_f32_1, !cute.coord<"66">) -> f32
-          cute.memref.store(%rmem_48, %136, %354) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %355 = cute.memref.load(%view, %64) : (!memref_rmem_f32_1, !cute.coord<"67">) -> f32
-          cute.memref.store(%rmem_48, %135, %355) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %356 = cute.memref.load(%view, %63) : (!memref_rmem_f32_1, !cute.coord<"68">) -> f32
-          cute.memref.store(%rmem_48, %134, %356) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %357 = cute.memref.load(%view, %62) : (!memref_rmem_f32_1, !cute.coord<"69">) -> f32
-          cute.memref.store(%rmem_48, %133, %357) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %358 = cute.memref.load(%view, %61) : (!memref_rmem_f32_1, !cute.coord<"70">) -> f32
-          cute.memref.store(%rmem_48, %132, %358) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %359 = cute.memref.load(%view, %60) : (!memref_rmem_f32_1, !cute.coord<"71">) -> f32
-          cute.memref.store(%rmem_48, %131, %359) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %360 = cute.memref.load(%view, %59) : (!memref_rmem_f32_1, !cute.coord<"72">) -> f32
-          cute.memref.store(%rmem_48, %130, %360) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %361 = cute.memref.load(%view, %58) : (!memref_rmem_f32_1, !cute.coord<"73">) -> f32
-          cute.memref.store(%rmem_48, %129, %361) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %362 = cute.memref.load(%view, %57) : (!memref_rmem_f32_1, !cute.coord<"74">) -> f32
-          cute.memref.store(%rmem_48, %128, %362) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %363 = cute.memref.load(%view, %56) : (!memref_rmem_f32_1, !cute.coord<"75">) -> f32
-          cute.memref.store(%rmem_48, %127, %363) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %364 = cute.memref.load(%view, %55) : (!memref_rmem_f32_1, !cute.coord<"76">) -> f32
-          cute.memref.store(%rmem_48, %126, %364) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %365 = cute.memref.load(%view, %54) : (!memref_rmem_f32_1, !cute.coord<"77">) -> f32
-          cute.memref.store(%rmem_48, %125, %365) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %366 = cute.memref.load(%view, %53) : (!memref_rmem_f32_1, !cute.coord<"78">) -> f32
-          cute.memref.store(%rmem_48, %124, %366) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %367 = cute.memref.load(%view, %52) : (!memref_rmem_f32_1, !cute.coord<"79">) -> f32
-          cute.memref.store(%rmem_48, %123, %367) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %368 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %369 = arith.truncf %368 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %369, %rmem_49, row_major : !memref_rmem_f16_
-          %370 = arith.addi %264, %c4_i32 : i32
-          %371 = arith.remsi %370, %c4_i32 : i32
-          %coord_60 = cute.make_coord(%371) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_61 = cute.crd2idx(%coord_60, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %372 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %372 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_61) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %382 = cute.memref.load(%view, %67) : (!memref_rmem_f32_1, !cute.coord<"64">) -> f32
+          cute.memref.store(%rmem_52, %138, %382) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %383 = cute.memref.load(%view, %66) : (!memref_rmem_f32_1, !cute.coord<"65">) -> f32
+          cute.memref.store(%rmem_52, %137, %383) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %384 = cute.memref.load(%view, %65) : (!memref_rmem_f32_1, !cute.coord<"66">) -> f32
+          cute.memref.store(%rmem_52, %136, %384) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %385 = cute.memref.load(%view, %64) : (!memref_rmem_f32_1, !cute.coord<"67">) -> f32
+          cute.memref.store(%rmem_52, %135, %385) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %386 = cute.memref.load(%view, %63) : (!memref_rmem_f32_1, !cute.coord<"68">) -> f32
+          cute.memref.store(%rmem_52, %134, %386) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %387 = cute.memref.load(%view, %62) : (!memref_rmem_f32_1, !cute.coord<"69">) -> f32
+          cute.memref.store(%rmem_52, %133, %387) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %388 = cute.memref.load(%view, %61) : (!memref_rmem_f32_1, !cute.coord<"70">) -> f32
+          cute.memref.store(%rmem_52, %132, %388) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %389 = cute.memref.load(%view, %60) : (!memref_rmem_f32_1, !cute.coord<"71">) -> f32
+          cute.memref.store(%rmem_52, %131, %389) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %390 = cute.memref.load(%view, %59) : (!memref_rmem_f32_1, !cute.coord<"72">) -> f32
+          cute.memref.store(%rmem_52, %130, %390) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %391 = cute.memref.load(%view, %58) : (!memref_rmem_f32_1, !cute.coord<"73">) -> f32
+          cute.memref.store(%rmem_52, %129, %391) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %392 = cute.memref.load(%view, %57) : (!memref_rmem_f32_1, !cute.coord<"74">) -> f32
+          cute.memref.store(%rmem_52, %128, %392) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %393 = cute.memref.load(%view, %56) : (!memref_rmem_f32_1, !cute.coord<"75">) -> f32
+          cute.memref.store(%rmem_52, %127, %393) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %394 = cute.memref.load(%view, %55) : (!memref_rmem_f32_1, !cute.coord<"76">) -> f32
+          cute.memref.store(%rmem_52, %126, %394) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %395 = cute.memref.load(%view, %54) : (!memref_rmem_f32_1, !cute.coord<"77">) -> f32
+          cute.memref.store(%rmem_52, %125, %395) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %396 = cute.memref.load(%view, %53) : (!memref_rmem_f32_1, !cute.coord<"78">) -> f32
+          cute.memref.store(%rmem_52, %124, %396) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %397 = cute.memref.load(%view, %52) : (!memref_rmem_f32_1, !cute.coord<"79">) -> f32
+          cute.memref.store(%rmem_52, %123, %397) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %398 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %399 = arith.truncf %398 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %399, %rmem_53 : !memref_rmem_f16_
+          %400 = arith.addi %294, %c4_i32 : i32
+          %401 = arith.remsi %400, %c4_i32 : i32
+          %coord_71 = cute.make_coord(%401) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_72 = cute.crd2idx(%coord_71, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %402 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %402 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_72) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %373 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %373 {
-            %coord_79 = cute.make_coord(%371) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %51) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(0,64)">) -> !cute.int_tuple<"(?{div=128},?{div=64},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=128},?{div=64},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %403 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %403 {
+            %coord_96 = cute.make_coord(%401) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %51) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(0,64)">) -> !cute.int_tuple<"(?{div=128},?{div=64},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=128}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=128},?{div=64},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=128},?{div=64},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %374 = cute.memref.load(%view, %50) : (!memref_rmem_f32_1, !cute.coord<"80">) -> f32
-          cute.memref.store(%rmem_48, %138, %374) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %375 = cute.memref.load(%view, %49) : (!memref_rmem_f32_1, !cute.coord<"81">) -> f32
-          cute.memref.store(%rmem_48, %137, %375) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %376 = cute.memref.load(%view, %48) : (!memref_rmem_f32_1, !cute.coord<"82">) -> f32
-          cute.memref.store(%rmem_48, %136, %376) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %377 = cute.memref.load(%view, %47) : (!memref_rmem_f32_1, !cute.coord<"83">) -> f32
-          cute.memref.store(%rmem_48, %135, %377) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %378 = cute.memref.load(%view, %46) : (!memref_rmem_f32_1, !cute.coord<"84">) -> f32
-          cute.memref.store(%rmem_48, %134, %378) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %379 = cute.memref.load(%view, %45) : (!memref_rmem_f32_1, !cute.coord<"85">) -> f32
-          cute.memref.store(%rmem_48, %133, %379) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %380 = cute.memref.load(%view, %44) : (!memref_rmem_f32_1, !cute.coord<"86">) -> f32
-          cute.memref.store(%rmem_48, %132, %380) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %381 = cute.memref.load(%view, %43) : (!memref_rmem_f32_1, !cute.coord<"87">) -> f32
-          cute.memref.store(%rmem_48, %131, %381) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %382 = cute.memref.load(%view, %42) : (!memref_rmem_f32_1, !cute.coord<"88">) -> f32
-          cute.memref.store(%rmem_48, %130, %382) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %383 = cute.memref.load(%view, %41) : (!memref_rmem_f32_1, !cute.coord<"89">) -> f32
-          cute.memref.store(%rmem_48, %129, %383) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %384 = cute.memref.load(%view, %40) : (!memref_rmem_f32_1, !cute.coord<"90">) -> f32
-          cute.memref.store(%rmem_48, %128, %384) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %385 = cute.memref.load(%view, %39) : (!memref_rmem_f32_1, !cute.coord<"91">) -> f32
-          cute.memref.store(%rmem_48, %127, %385) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %386 = cute.memref.load(%view, %38) : (!memref_rmem_f32_1, !cute.coord<"92">) -> f32
-          cute.memref.store(%rmem_48, %126, %386) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %387 = cute.memref.load(%view, %37) : (!memref_rmem_f32_1, !cute.coord<"93">) -> f32
-          cute.memref.store(%rmem_48, %125, %387) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %388 = cute.memref.load(%view, %36) : (!memref_rmem_f32_1, !cute.coord<"94">) -> f32
-          cute.memref.store(%rmem_48, %124, %388) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %389 = cute.memref.load(%view, %35) : (!memref_rmem_f32_1, !cute.coord<"95">) -> f32
-          cute.memref.store(%rmem_48, %123, %389) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %390 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %391 = arith.truncf %390 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %391, %rmem_49, row_major : !memref_rmem_f16_
-          %392 = arith.addi %264, %c5_i32 : i32
-          %393 = arith.remsi %392, %c4_i32 : i32
-          %coord_62 = cute.make_coord(%393) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_63 = cute.crd2idx(%coord_62, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %394 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %394 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_63) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %404 = cute.memref.load(%view, %50) : (!memref_rmem_f32_1, !cute.coord<"80">) -> f32
+          cute.memref.store(%rmem_52, %138, %404) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %405 = cute.memref.load(%view, %49) : (!memref_rmem_f32_1, !cute.coord<"81">) -> f32
+          cute.memref.store(%rmem_52, %137, %405) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %406 = cute.memref.load(%view, %48) : (!memref_rmem_f32_1, !cute.coord<"82">) -> f32
+          cute.memref.store(%rmem_52, %136, %406) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %407 = cute.memref.load(%view, %47) : (!memref_rmem_f32_1, !cute.coord<"83">) -> f32
+          cute.memref.store(%rmem_52, %135, %407) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %408 = cute.memref.load(%view, %46) : (!memref_rmem_f32_1, !cute.coord<"84">) -> f32
+          cute.memref.store(%rmem_52, %134, %408) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %409 = cute.memref.load(%view, %45) : (!memref_rmem_f32_1, !cute.coord<"85">) -> f32
+          cute.memref.store(%rmem_52, %133, %409) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %410 = cute.memref.load(%view, %44) : (!memref_rmem_f32_1, !cute.coord<"86">) -> f32
+          cute.memref.store(%rmem_52, %132, %410) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %411 = cute.memref.load(%view, %43) : (!memref_rmem_f32_1, !cute.coord<"87">) -> f32
+          cute.memref.store(%rmem_52, %131, %411) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %412 = cute.memref.load(%view, %42) : (!memref_rmem_f32_1, !cute.coord<"88">) -> f32
+          cute.memref.store(%rmem_52, %130, %412) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %413 = cute.memref.load(%view, %41) : (!memref_rmem_f32_1, !cute.coord<"89">) -> f32
+          cute.memref.store(%rmem_52, %129, %413) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %414 = cute.memref.load(%view, %40) : (!memref_rmem_f32_1, !cute.coord<"90">) -> f32
+          cute.memref.store(%rmem_52, %128, %414) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %415 = cute.memref.load(%view, %39) : (!memref_rmem_f32_1, !cute.coord<"91">) -> f32
+          cute.memref.store(%rmem_52, %127, %415) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %416 = cute.memref.load(%view, %38) : (!memref_rmem_f32_1, !cute.coord<"92">) -> f32
+          cute.memref.store(%rmem_52, %126, %416) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %417 = cute.memref.load(%view, %37) : (!memref_rmem_f32_1, !cute.coord<"93">) -> f32
+          cute.memref.store(%rmem_52, %125, %417) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %418 = cute.memref.load(%view, %36) : (!memref_rmem_f32_1, !cute.coord<"94">) -> f32
+          cute.memref.store(%rmem_52, %124, %418) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %419 = cute.memref.load(%view, %35) : (!memref_rmem_f32_1, !cute.coord<"95">) -> f32
+          cute.memref.store(%rmem_52, %123, %419) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %420 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %421 = arith.truncf %420 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %421, %rmem_53 : !memref_rmem_f16_
+          %422 = arith.addi %294, %c5_i32 : i32
+          %423 = arith.remsi %422, %c4_i32 : i32
+          %coord_73 = cute.make_coord(%423) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_74 = cute.crd2idx(%coord_73, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %424 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %424 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_74) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %395 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %395 {
-            %coord_79 = cute.make_coord(%393) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %34) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(32,64)">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %425 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %425 {
+            %coord_96 = cute.make_coord(%423) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %34) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(32,64)">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %396 = cute.memref.load(%view, %33) : (!memref_rmem_f32_1, !cute.coord<"96">) -> f32
-          cute.memref.store(%rmem_48, %138, %396) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %397 = cute.memref.load(%view, %32) : (!memref_rmem_f32_1, !cute.coord<"97">) -> f32
-          cute.memref.store(%rmem_48, %137, %397) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %398 = cute.memref.load(%view, %31) : (!memref_rmem_f32_1, !cute.coord<"98">) -> f32
-          cute.memref.store(%rmem_48, %136, %398) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %399 = cute.memref.load(%view, %30) : (!memref_rmem_f32_1, !cute.coord<"99">) -> f32
-          cute.memref.store(%rmem_48, %135, %399) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %400 = cute.memref.load(%view, %29) : (!memref_rmem_f32_1, !cute.coord<"100">) -> f32
-          cute.memref.store(%rmem_48, %134, %400) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %401 = cute.memref.load(%view, %28) : (!memref_rmem_f32_1, !cute.coord<"101">) -> f32
-          cute.memref.store(%rmem_48, %133, %401) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %402 = cute.memref.load(%view, %27) : (!memref_rmem_f32_1, !cute.coord<"102">) -> f32
-          cute.memref.store(%rmem_48, %132, %402) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %403 = cute.memref.load(%view, %26) : (!memref_rmem_f32_1, !cute.coord<"103">) -> f32
-          cute.memref.store(%rmem_48, %131, %403) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %404 = cute.memref.load(%view, %25) : (!memref_rmem_f32_1, !cute.coord<"104">) -> f32
-          cute.memref.store(%rmem_48, %130, %404) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %405 = cute.memref.load(%view, %24) : (!memref_rmem_f32_1, !cute.coord<"105">) -> f32
-          cute.memref.store(%rmem_48, %129, %405) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %406 = cute.memref.load(%view, %23) : (!memref_rmem_f32_1, !cute.coord<"106">) -> f32
-          cute.memref.store(%rmem_48, %128, %406) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %407 = cute.memref.load(%view, %22) : (!memref_rmem_f32_1, !cute.coord<"107">) -> f32
-          cute.memref.store(%rmem_48, %127, %407) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %408 = cute.memref.load(%view, %21) : (!memref_rmem_f32_1, !cute.coord<"108">) -> f32
-          cute.memref.store(%rmem_48, %126, %408) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %409 = cute.memref.load(%view, %20) : (!memref_rmem_f32_1, !cute.coord<"109">) -> f32
-          cute.memref.store(%rmem_48, %125, %409) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %410 = cute.memref.load(%view, %19) : (!memref_rmem_f32_1, !cute.coord<"110">) -> f32
-          cute.memref.store(%rmem_48, %124, %410) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %411 = cute.memref.load(%view, %18) : (!memref_rmem_f32_1, !cute.coord<"111">) -> f32
-          cute.memref.store(%rmem_48, %123, %411) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %412 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %413 = arith.truncf %412 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %413, %rmem_49, row_major : !memref_rmem_f16_
-          %414 = arith.addi %264, %c6_i32 : i32
-          %415 = arith.remsi %414, %c4_i32 : i32
-          %coord_64 = cute.make_coord(%415) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_65 = cute.crd2idx(%coord_64, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %416 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %416 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_65) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %426 = cute.memref.load(%view, %33) : (!memref_rmem_f32_1, !cute.coord<"96">) -> f32
+          cute.memref.store(%rmem_52, %138, %426) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %427 = cute.memref.load(%view, %32) : (!memref_rmem_f32_1, !cute.coord<"97">) -> f32
+          cute.memref.store(%rmem_52, %137, %427) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %428 = cute.memref.load(%view, %31) : (!memref_rmem_f32_1, !cute.coord<"98">) -> f32
+          cute.memref.store(%rmem_52, %136, %428) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %429 = cute.memref.load(%view, %30) : (!memref_rmem_f32_1, !cute.coord<"99">) -> f32
+          cute.memref.store(%rmem_52, %135, %429) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %430 = cute.memref.load(%view, %29) : (!memref_rmem_f32_1, !cute.coord<"100">) -> f32
+          cute.memref.store(%rmem_52, %134, %430) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %431 = cute.memref.load(%view, %28) : (!memref_rmem_f32_1, !cute.coord<"101">) -> f32
+          cute.memref.store(%rmem_52, %133, %431) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %432 = cute.memref.load(%view, %27) : (!memref_rmem_f32_1, !cute.coord<"102">) -> f32
+          cute.memref.store(%rmem_52, %132, %432) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %433 = cute.memref.load(%view, %26) : (!memref_rmem_f32_1, !cute.coord<"103">) -> f32
+          cute.memref.store(%rmem_52, %131, %433) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %434 = cute.memref.load(%view, %25) : (!memref_rmem_f32_1, !cute.coord<"104">) -> f32
+          cute.memref.store(%rmem_52, %130, %434) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %435 = cute.memref.load(%view, %24) : (!memref_rmem_f32_1, !cute.coord<"105">) -> f32
+          cute.memref.store(%rmem_52, %129, %435) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %436 = cute.memref.load(%view, %23) : (!memref_rmem_f32_1, !cute.coord<"106">) -> f32
+          cute.memref.store(%rmem_52, %128, %436) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %437 = cute.memref.load(%view, %22) : (!memref_rmem_f32_1, !cute.coord<"107">) -> f32
+          cute.memref.store(%rmem_52, %127, %437) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %438 = cute.memref.load(%view, %21) : (!memref_rmem_f32_1, !cute.coord<"108">) -> f32
+          cute.memref.store(%rmem_52, %126, %438) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %439 = cute.memref.load(%view, %20) : (!memref_rmem_f32_1, !cute.coord<"109">) -> f32
+          cute.memref.store(%rmem_52, %125, %439) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %440 = cute.memref.load(%view, %19) : (!memref_rmem_f32_1, !cute.coord<"110">) -> f32
+          cute.memref.store(%rmem_52, %124, %440) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %441 = cute.memref.load(%view, %18) : (!memref_rmem_f32_1, !cute.coord<"111">) -> f32
+          cute.memref.store(%rmem_52, %123, %441) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %442 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %443 = arith.truncf %442 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %443, %rmem_53 : !memref_rmem_f16_
+          %444 = arith.addi %294, %c6_i32 : i32
+          %445 = arith.remsi %444, %c4_i32 : i32
+          %coord_75 = cute.make_coord(%445) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_76 = cute.crd2idx(%coord_75, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %446 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %446 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_76) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %417 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %417 {
-            %coord_79 = cute.make_coord(%415) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %17) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(64,64)">) -> !cute.int_tuple<"(?{div=64},?{div=64},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=64},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %447 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %447 {
+            %coord_96 = cute.make_coord(%445) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %17) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(64,64)">) -> !cute.int_tuple<"(?{div=64},?{div=64},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=64},?{div=64},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=64},?{div=64},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %418 = cute.memref.load(%view, %16) : (!memref_rmem_f32_1, !cute.coord<"112">) -> f32
-          cute.memref.store(%rmem_48, %138, %418) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
-          %419 = cute.memref.load(%view, %15) : (!memref_rmem_f32_1, !cute.coord<"113">) -> f32
-          cute.memref.store(%rmem_48, %137, %419) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
-          %420 = cute.memref.load(%view, %14) : (!memref_rmem_f32_1, !cute.coord<"114">) -> f32
-          cute.memref.store(%rmem_48, %136, %420) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
-          %421 = cute.memref.load(%view, %13) : (!memref_rmem_f32_1, !cute.coord<"115">) -> f32
-          cute.memref.store(%rmem_48, %135, %421) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
-          %422 = cute.memref.load(%view, %12) : (!memref_rmem_f32_1, !cute.coord<"116">) -> f32
-          cute.memref.store(%rmem_48, %134, %422) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
-          %423 = cute.memref.load(%view, %11) : (!memref_rmem_f32_1, !cute.coord<"117">) -> f32
-          cute.memref.store(%rmem_48, %133, %423) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
-          %424 = cute.memref.load(%view, %10) : (!memref_rmem_f32_1, !cute.coord<"118">) -> f32
-          cute.memref.store(%rmem_48, %132, %424) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
-          %425 = cute.memref.load(%view, %9) : (!memref_rmem_f32_1, !cute.coord<"119">) -> f32
-          cute.memref.store(%rmem_48, %131, %425) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
-          %426 = cute.memref.load(%view, %8) : (!memref_rmem_f32_1, !cute.coord<"120">) -> f32
-          cute.memref.store(%rmem_48, %130, %426) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
-          %427 = cute.memref.load(%view, %7) : (!memref_rmem_f32_1, !cute.coord<"121">) -> f32
-          cute.memref.store(%rmem_48, %129, %427) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
-          %428 = cute.memref.load(%view, %6) : (!memref_rmem_f32_1, !cute.coord<"122">) -> f32
-          cute.memref.store(%rmem_48, %128, %428) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
-          %429 = cute.memref.load(%view, %5) : (!memref_rmem_f32_1, !cute.coord<"123">) -> f32
-          cute.memref.store(%rmem_48, %127, %429) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
-          %430 = cute.memref.load(%view, %4) : (!memref_rmem_f32_1, !cute.coord<"124">) -> f32
-          cute.memref.store(%rmem_48, %126, %430) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
-          %431 = cute.memref.load(%view, %3) : (!memref_rmem_f32_1, !cute.coord<"125">) -> f32
-          cute.memref.store(%rmem_48, %125, %431) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
-          %432 = cute.memref.load(%view, %2) : (!memref_rmem_f32_1, !cute.coord<"126">) -> f32
-          cute.memref.store(%rmem_48, %124, %432) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
-          %433 = cute.memref.load(%view, %1) : (!memref_rmem_f32_1, !cute.coord<"127">) -> f32
-          cute.memref.store(%rmem_48, %123, %433) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
-          %434 = cute.memref.load_vec %rmem_48, row_major : !memref_rmem_f32_2
-          %435 = arith.truncf %434 : vector<16xf32> to vector<16xf16>
-          cute.memref.store_vec %435, %rmem_49, row_major : !memref_rmem_f16_
-          %436 = arith.addi %264, %c7_i32 : i32
-          %437 = arith.remsi %436, %c4_i32 : i32
-          %coord_66 = cute.make_coord(%437) : (i32) -> !cute.coord<"(_,_,_,?)">
-          %idx_67 = cute.crd2idx(%coord_66, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-          %438 = cute.get_scalars(%156) : !cute.int_tuple<"2">
-          scf.for %arg20 = %c0_i32 to %438 step %c1_i32  : i32 {
-            %coord_79 = cute.make_coord(%arg20) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-            %ptr_81 = cute.add_offset(%iter_50, %idx_80) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
-            %idx_82 = cute.crd2idx(%coord_79, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
-            %ptr_83 = cute.add_offset(%ptr_46, %idx_82) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %448 = builtin.unrealized_conversion_cast %ptr_81 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
-            %449 = llvm.load %448 : !llvm.ptr -> vector<4xi32>
-            %swizzled = cute.apply_swizzle(%ptr_83) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            %ptr_84 = cute.add_offset(%swizzled, %idx_67) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
-            cute_nvgpu.arch.copy.stsm(%ptr_84, %449) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
+          %448 = cute.memref.load(%view, %16) : (!memref_rmem_f32_1, !cute.coord<"112">) -> f32
+          cute.memref.store(%rmem_52, %138, %448) : (!memref_rmem_f32_2, !cute.coord<"0">, f32) -> ()
+          %449 = cute.memref.load(%view, %15) : (!memref_rmem_f32_1, !cute.coord<"113">) -> f32
+          cute.memref.store(%rmem_52, %137, %449) : (!memref_rmem_f32_2, !cute.coord<"1">, f32) -> ()
+          %450 = cute.memref.load(%view, %14) : (!memref_rmem_f32_1, !cute.coord<"114">) -> f32
+          cute.memref.store(%rmem_52, %136, %450) : (!memref_rmem_f32_2, !cute.coord<"2">, f32) -> ()
+          %451 = cute.memref.load(%view, %13) : (!memref_rmem_f32_1, !cute.coord<"115">) -> f32
+          cute.memref.store(%rmem_52, %135, %451) : (!memref_rmem_f32_2, !cute.coord<"3">, f32) -> ()
+          %452 = cute.memref.load(%view, %12) : (!memref_rmem_f32_1, !cute.coord<"116">) -> f32
+          cute.memref.store(%rmem_52, %134, %452) : (!memref_rmem_f32_2, !cute.coord<"4">, f32) -> ()
+          %453 = cute.memref.load(%view, %11) : (!memref_rmem_f32_1, !cute.coord<"117">) -> f32
+          cute.memref.store(%rmem_52, %133, %453) : (!memref_rmem_f32_2, !cute.coord<"5">, f32) -> ()
+          %454 = cute.memref.load(%view, %10) : (!memref_rmem_f32_1, !cute.coord<"118">) -> f32
+          cute.memref.store(%rmem_52, %132, %454) : (!memref_rmem_f32_2, !cute.coord<"6">, f32) -> ()
+          %455 = cute.memref.load(%view, %9) : (!memref_rmem_f32_1, !cute.coord<"119">) -> f32
+          cute.memref.store(%rmem_52, %131, %455) : (!memref_rmem_f32_2, !cute.coord<"7">, f32) -> ()
+          %456 = cute.memref.load(%view, %8) : (!memref_rmem_f32_1, !cute.coord<"120">) -> f32
+          cute.memref.store(%rmem_52, %130, %456) : (!memref_rmem_f32_2, !cute.coord<"8">, f32) -> ()
+          %457 = cute.memref.load(%view, %7) : (!memref_rmem_f32_1, !cute.coord<"121">) -> f32
+          cute.memref.store(%rmem_52, %129, %457) : (!memref_rmem_f32_2, !cute.coord<"9">, f32) -> ()
+          %458 = cute.memref.load(%view, %6) : (!memref_rmem_f32_1, !cute.coord<"122">) -> f32
+          cute.memref.store(%rmem_52, %128, %458) : (!memref_rmem_f32_2, !cute.coord<"10">, f32) -> ()
+          %459 = cute.memref.load(%view, %5) : (!memref_rmem_f32_1, !cute.coord<"123">) -> f32
+          cute.memref.store(%rmem_52, %127, %459) : (!memref_rmem_f32_2, !cute.coord<"11">, f32) -> ()
+          %460 = cute.memref.load(%view, %4) : (!memref_rmem_f32_1, !cute.coord<"124">) -> f32
+          cute.memref.store(%rmem_52, %126, %460) : (!memref_rmem_f32_2, !cute.coord<"12">, f32) -> ()
+          %461 = cute.memref.load(%view, %3) : (!memref_rmem_f32_1, !cute.coord<"125">) -> f32
+          cute.memref.store(%rmem_52, %125, %461) : (!memref_rmem_f32_2, !cute.coord<"13">, f32) -> ()
+          %462 = cute.memref.load(%view, %2) : (!memref_rmem_f32_1, !cute.coord<"126">) -> f32
+          cute.memref.store(%rmem_52, %124, %462) : (!memref_rmem_f32_2, !cute.coord<"14">, f32) -> ()
+          %463 = cute.memref.load(%view, %1) : (!memref_rmem_f32_1, !cute.coord<"127">) -> f32
+          cute.memref.store(%rmem_52, %123, %463) : (!memref_rmem_f32_2, !cute.coord<"15">, f32) -> ()
+          %464 = cute.memref.load_vec %rmem_52 : !memref_rmem_f32_2
+          %465 = arith.truncf %464 : vector<16xf32> to vector<16xf16>
+          cute.memref.store_vec %465, %rmem_53 : !memref_rmem_f16_
+          %466 = arith.addi %294, %c7_i32 : i32
+          %467 = arith.remsi %466, %c4_i32 : i32
+          %coord_77 = cute.make_coord(%467) : (i32) -> !cute.coord<"(_,_,_,?)">
+          %idx_78 = cute.crd2idx(%coord_77, %122) : (!cute.coord<"(_,_,_,?)">, !cute.layout<"(((2,4),1),1,2,(1,4)):(((1,2),0),0,16,(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+          %468 = cute.get_scalars(%156) : !cute.int_tuple<"2">
+          scf.for %arg23 = %c0_i32 to %468 step %c1_i32  : i32 {
+            %coord_96 = cute.make_coord(%arg23) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %121) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,2,2),1),((1,2))):(((1,2,4),0),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+            %ptr_98 = cute.add_offset(%iter_54, %idx_97) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<f16, rmem, align<16>>
+            %idx_99 = cute.crd2idx(%coord_96, %120) : (!cute.coord<"(_,?)">, !cute.layout<"(((2,4),1),((1,2))):(((1,2),0),((0,16)))">) -> !cute.int_tuple<"?{div=16}">
+            %ptr_100 = cute.add_offset(%ptr_50, %idx_99) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %507 = builtin.unrealized_conversion_cast %ptr_98 : !cute.ptr<f16, rmem, align<16>> to !llvm.ptr
+            %508 = llvm.load %507 : !llvm.ptr -> vector<4xi32>
+            %swizzled = cute.apply_swizzle(%ptr_100) : !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            %ptr_101 = cute.add_offset(%swizzled, %idx_78) : (!cute.ptr<f16, smem, align<16>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<16>, S<2,4,3>>
+            cute_nvgpu.arch.copy.stsm(%ptr_101, %508) {matrix_shape = <"(8,8)">, num_matrices = 4 : i32} : <f16, smem, align<16>, S<2,4,3>>, vector<4xi32>
           } {llvm.loop_annotation = #loop_annotation}
           nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %439 = arith.cmpi eq, %174, %c4_i32 : i32
-          scf.if %439 {
-            %coord_79 = cute.make_coord(%437) : (i32) -> !cute.coord<"(_,?)">
-            %idx_80 = cute.crd2idx(%coord_79, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
-            %ptr_81 = cute.add_offset(%iter_6, %idx_80) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
-            %tup_82 = cute.add_offset(%tup, %0) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(96,64)">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %e0_83, %e1_84, %e2_85 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %int_tuple_86 = cute.make_int_tuple(%e0_83, %e1_84, %e2_85) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
-            %448 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
-            %449 = cute.get_scalars(%157) : !cute.int_tuple<"1">
-            scf.for %arg20 = %c0_i32 to %449 step %c1_i32  : i32 {
-              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%448 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
-              %450:3 = cute.get_scalars(%int_tuple_86) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
-              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_81 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%450#0, %450#1, %450#2] : i32, i32, i32) mode = <tiled>
+          %469 = arith.cmpi eq, %174, %c4_i32 : i32
+          scf.if %469 {
+            %coord_96 = cute.make_coord(%467) : (i32) -> !cute.coord<"(_,?)">
+            %idx_97 = cute.crd2idx(%coord_96, %119) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,4)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
+            %ptr_98 = cute.add_offset(%iter_6, %idx_97) : (!cute.ptr<f16, smem, align<1024>, S<2,4,3>>, !cute.int_tuple<"?{div=2048}">) -> !cute.ptr<f16, smem, align<1024>, S<2,4,3>>
+            %tup_99 = cute.add_offset(%tup, %0) : (!cute.int_tuple<"(?{div=128},?{div=128},?)">, !cute.int_tuple<"(96,64)">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %e0_100, %e1_101, %e2_102 = cute.get_leaves(%tup_99) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %int_tuple_103 = cute.make_int_tuple(%e0_100, %e1_101, %e2_102) : (!cute.int_tuple<"?{div=32}">, !cute.int_tuple<"?{div=64}">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?{div=32},?{div=64},?)">
+            %507 = cute_nvgpu.atom.make_exec_tma(%arg4) : (!cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>) -> !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>
+            %508 = cute.get_scalars(%157) : !cute.int_tuple<"1">
+            scf.for %arg23 = %c0_i32 to %508 step %c1_i32  : i32 {
+              %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) -> !cute.ptr<generic, align<64>>
+              %509 = cute_nvgpu.atom.get_value(%507 : !cute_nvgpu.atom.tma_store<f16, copy_bits = 32768, mode = tiled, g_stride = <"()"> tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmastore<cache_policy>} : i64
+              %510:3 = cute.get_scalars(%int_tuple_103) : !cute.int_tuple<"(?{div=32},?{div=64},?)">
+              cute_nvgpu.arch.copy.SM100.tma_store(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_98 : !cute.ptr<f16, smem, align<1024>, S<2,4,3>>, [%510#0, %510#1, %510#2] : i32, i32, i32) cache_policy = %509 mode = <tiled>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.cp.async.bulk.commit.group
             nvvm.cp.async.bulk.wait_group 3 {read}
           }
           nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-          %440 = arith.addi %arg18, %234 : i32
-          %441 = arith.addi %arg19, %c1_i32 : i32
-          %sz_68 = cute.size(%lay) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.int_tuple<"?">
-          %e0_69 = cute.get_leaves(%sz_68) : !cute.int_tuple<"?">
-          %442 = cute.get_scalars(%e0_69) : !cute.int_tuple<"?">
-          %443 = arith.cmpi sgt, %442, %440 : i32
-          %444 = cute.get_hier_coord(%440, %lay) : (i32, !cute.layout<"(?,?,?):(1,?,?)">) -> !cute.coord<"(?,?,?)">
-          %e0_70, %e1_71, %e2_72 = cute.get_leaves(%444) : !cute.coord<"(?,?,?)">
-          %itup_73 = cute.to_int_tuple(%e0_70) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %itup_74 = cute.to_int_tuple(%e1_71) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %itup_75 = cute.to_int_tuple(%e2_72) : !cute.coord<"?"> to !cute.int_tuple<"?">
-          %mul_76 = cute.tuple_mul(%itup_73, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %445 = cute.get_scalars(%mul_76) : !cute.int_tuple<"?">
-          %mul_77 = cute.tuple_mul(%itup_74, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %446 = cute.get_scalars(%mul_77) : !cute.int_tuple<"?">
-          %mul_78 = cute.tuple_mul(%itup_75, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-          %447 = cute.get_scalars(%mul_78) : !cute.int_tuple<"?">
-          scf.yield %445, %446, %447, %443, %262#4, %262#5, %263#1, %263#2, %260, %440, %441 : i32, i32, i32, i1, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32
+          %470 = arith.addi %arg21, %234 : i32
+          %471 = arith.addi %arg22, %c1_i32 : i32
+          %sz_79 = cute.size(%lay_61) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.int_tuple<"?">
+          %e0_80 = cute.get_leaves(%sz_79) : !cute.int_tuple<"?">
+          %472 = cute.get_scalars(%e0_80) : !cute.int_tuple<"?">
+          %473 = arith.cmpi sgt, %472, %470 : i32
+          %474 = cute.fast_divmod.get_divisor(%arg10) : !cute.fast_divmod_divisor<32>
+          %multiplier_81, %shift1_82, %shift2_83 = cute.fast_divmod.get_aux(%arg10) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %475 = arith.extui %shift1_82 : i8 to i32
+          %476 = arith.extui %shift2_83 : i8 to i32
+          %477 = nvvm.mul  hi %470, %multiplier_81 : i32 -> i32
+          %478 = arith.subi %470, %477 : i32
+          %479 = arith.shrui %478, %475 : i32
+          %480 = arith.addi %477, %479 : i32
+          %481 = arith.shrui %480, %476 : i32
+          %482 = arith.muli %481, %474 : i32
+          %483 = arith.subi %470, %482 : i32
+          %484 = cute.fast_divmod.get_divisor(%arg11) : !cute.fast_divmod_divisor<32>
+          %multiplier_84, %shift1_85, %shift2_86 = cute.fast_divmod.get_aux(%arg11) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %485 = arith.extui %shift1_85 : i8 to i32
+          %486 = arith.extui %shift2_86 : i8 to i32
+          %487 = nvvm.mul  hi %483, %multiplier_84 : i32 -> i32
+          %488 = arith.subi %483, %487 : i32
+          %489 = arith.shrui %488, %485 : i32
+          %490 = arith.addi %487, %489 : i32
+          %491 = arith.shrui %490, %486 : i32
+          %492 = arith.muli %491, %484 : i32
+          %493 = arith.subi %483, %492 : i32
+          %494 = cute.fast_divmod.get_divisor(%arg12) : !cute.fast_divmod_divisor<32>
+          %multiplier_87, %shift1_88, %shift2_89 = cute.fast_divmod.get_aux(%arg12) : !cute.fast_divmod_divisor<32> -> (i32, i8)
+          %495 = arith.extui %shift1_88 : i8 to i32
+          %496 = arith.extui %shift2_89 : i8 to i32
+          %497 = nvvm.mul  hi %491, %multiplier_87 : i32 -> i32
+          %498 = arith.subi %491, %497 : i32
+          %499 = arith.shrui %498, %495 : i32
+          %500 = arith.addi %497, %499 : i32
+          %501 = arith.shrui %500, %496 : i32
+          %502 = arith.muli %501, %494 : i32
+          %503 = arith.subi %491, %502 : i32
+          %int_tuple_90 = cute.make_int_tuple(%493) : (i32) -> !cute.int_tuple<"?">
+          %mul_91 = cute.tuple_mul(%int_tuple_90, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %504 = cute.get_scalars(%mul_91) : !cute.int_tuple<"?">
+          %int_tuple_92 = cute.make_int_tuple(%503) : (i32) -> !cute.int_tuple<"?">
+          %mul_93 = cute.tuple_mul(%int_tuple_92, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %505 = cute.get_scalars(%mul_93) : !cute.int_tuple<"?">
+          %int_tuple_94 = cute.make_int_tuple(%501) : (i32) -> !cute.int_tuple<"?">
+          %mul_95 = cute.tuple_mul(%int_tuple_94, %157) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+          %506 = cute.get_scalars(%mul_95) : !cute.int_tuple<"?">
+          scf.yield %504, %505, %506, %473, %292#4, %292#5, %293#1, %293#2, %290, %470, %471 : i32, i32, i32, i1, i32, i32, i32, i32, !mma_f16_f16_f32_64x128x16_, i32, i32
         }
         nvvm.cp.async.bulk.wait_group 0 {read}
       }
       return
     }
   }
-  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_114_CUstream0xa461420(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_1_CUstream(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+    %c214016_i64 = arith.constant 214016 : i64
+    %c4294967296_i64 = arith.constant 4294967296 : i64
+    %c-2147483648_i32 = arith.constant -2147483648 : i32
     %0 = llvm.mlir.constant(63 : i64) : i64
     %1 = llvm.mlir.constant(2233785415175766016 : i64) : i64
     %2 = llvm.mlir.constant(279330 : i64) : i64
     %3 = llvm.mlir.constant(127 : i64) : i64
     %4 = llvm.mlir.constant(4539628424389459968 : i64) : i64
     %5 = llvm.mlir.constant(287522 : i64) : i64
-    %c214016_i32 = arith.constant 214016 : i32
-    %c256 = arith.constant 256 : index
-    %c1 = arith.constant 1 : index
-    %c114_i32 = arith.constant 114 : i32
+    %c0_i32 = arith.constant 0 : i32
+    %c256_i32 = arith.constant 256 : i32
+    %c1_i32 = arith.constant 1 : i32
     %6 = cute.static : !cute.int_tuple<"1">
+    %7 = llvm.mlir.constant(1 : i64) : i64
+    %8 = llvm.mlir.constant(1 : i8) : i8
+    %9 = llvm.mlir.constant(2 : i32) : i32
+    %10 = llvm.mlir.constant(32 : i8) : i8
+    %11 = llvm.mlir.constant(0 : i8) : i8
+    %12 = llvm.mlir.constant(1 : i32) : i32
     %c128_i64 = arith.constant 128 : i64
     %c128_i32 = arith.constant 128 : i32
-    %7 = cute.static : !cute.int_tuple<"(0,0,0)">
-    %8 = cute.static : !cute.stride<"(1@1,1@0,1@2)">
+    %13 = cute.static : !cute.int_tuple<"(0,0,0)">
+    %14 = cute.static : !cute.stride<"(1@1,1@0,1@2)">
     %c44_i64 = arith.constant 44 : i64
     %c40_i64 = arith.constant 40 : i64
     %c15_i64 = arith.constant 15 : i64
@@ -3563,460 +3717,576 @@ module attributes {gpu.container_module} {
     %c16_i32 = arith.constant 16 : i32
     %false = arith.constant false
     %atom = cute.make_atom() : () -> !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
-    %9 = cute_nvgpu.atom.set_value(%atom, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
-    %10 = cute.make_tiled_mma(%9) : !mma_f16_f16_f32_64x128x16_
-    %11 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %15 = cute_nvgpu.atom.set_value(%atom, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
+    %16 = cute.make_tiled_mma(%15) : !mma_f16_f16_f32_64x128x16_
+    %17 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
     %iter = cute.get_iter(%arg0) : !memref_gmem_f16_
     %lay = cute.get_layout(%arg0) : !memref_gmem_f16_
-    %12:5 = cute.get_scalars(%lay) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
-    %13 = arith.extui %12#1 : i32 to i64
-    %14 = arith.extui %12#0 : i32 to i64
-    %15 = llvm.mul %12#3, %c2_i64 : i64
-    %16 = arith.extui %12#2 : i32 to i64
-    %17 = llvm.mul %12#4, %c2_i64 : i64
-    %18 = cute.ptrtoint(%iter) : !cute.ptr<f16, gmem, align<16>> to i64
-    %19 = llvm.getelementptr %11[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %19 : i64, !llvm.ptr
-    %20 = llvm.getelementptr %11[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %20 : i64, !llvm.ptr
-    %21 = llvm.getelementptr %11[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %21 : i64, !llvm.ptr
-    %22 = llvm.getelementptr %11[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %22 : i64, !llvm.ptr
-    %23 = llvm.getelementptr %11[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %23 : i64, !llvm.ptr
-    %24 = llvm.getelementptr %11[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %24 : i64, !llvm.ptr
-    %25 = llvm.getelementptr %11[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %18:5 = cute.get_scalars(%lay) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
+    %19 = arith.extui %18#1 : i32 to i64
+    %20 = arith.extui %18#0 : i32 to i64
+    %21 = llvm.mul %18#3, %c2_i64 : i64
+    %22 = arith.extui %18#2 : i32 to i64
+    %23 = llvm.mul %18#4, %c2_i64 : i64
+    %24 = cute.ptrtoint(%iter) : !cute.ptr<f16, gmem, align<16>> to i64
+    %25 = llvm.getelementptr %17[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %25 : i64, !llvm.ptr
-    %26 = llvm.getelementptr %11[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %26 = llvm.getelementptr %17[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %26 : i64, !llvm.ptr
-    %27 = llvm.getelementptr %11[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %27 = llvm.getelementptr %17[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %27 : i64, !llvm.ptr
-    %28 = llvm.getelementptr %11[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %28 = llvm.getelementptr %17[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %28 : i64, !llvm.ptr
-    %29 = llvm.getelementptr %11[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %29 = llvm.getelementptr %17[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %29 : i64, !llvm.ptr
-    %30 = llvm.getelementptr %11[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %30 = llvm.getelementptr %17[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %30 : i64, !llvm.ptr
-    %31 = llvm.getelementptr %11[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %31 = llvm.getelementptr %17[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %31 : i64, !llvm.ptr
-    %32 = llvm.getelementptr %11[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %32 = llvm.getelementptr %17[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %32 : i64, !llvm.ptr
-    %33 = llvm.getelementptr %11[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %33 = llvm.getelementptr %17[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %33 : i64, !llvm.ptr
-    %34 = llvm.getelementptr %11[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %34 = llvm.getelementptr %17[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %34 : i64, !llvm.ptr
-    %35 = llvm.udiv %18, %c16_i64 : i64
-    %36 = llvm.and %35, %c9007199254740991_i64 : i64
-    %37 = llvm.shl %36, %c4_i64 : i64
-    %38 = llvm.getelementptr %11[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %37, %38 : i64, !llvm.ptr
-    %39 = llvm.sub %14, %c1_i64 : i64
-    %40 = llvm.sub %16, %c1_i64 : i64
-    %41 = llvm.sub %c1_i64, %c1_i64 : i64
-    %42 = llvm.sub %c1_i64, %c1_i64 : i64
-    %43 = llvm.mul %39, %15 : i64
-    %44 = llvm.mul %40, %17 : i64
-    %45 = llvm.mul %41, %c0_i64 : i64
-    %46 = llvm.mul %42, %c0_i64 : i64
-    %47 = llvm.add %43, %44 : i64
-    %48 = llvm.add %45, %46 : i64
-    %49 = llvm.mul %13, %c16_i64 : i64
-    %50 = llvm.udiv %49, %c8_i64 : i64
-    %51 = llvm.add %50, %47 : i64
-    %52 = llvm.add %51, %48 : i64
-    %53 = llvm.icmp "uge" %52, %c131072_i64 : i64
-    %54 = llvm.zext %53 : i1 to i64
-    %55 = llvm.shl %54, %c21_i64 : i64
-    %56 = llvm.udiv %15, %c16_i64 : i64
-    %57 = llvm.shl %56, %c32_i64 : i64
-    %58 = llvm.or %c0_i64, %55 : i64
-    %59 = llvm.or %58, %57 : i64
-    %60 = llvm.or %5, %59 : i64
-    %61 = llvm.getelementptr %11[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %60, %61 : i64, !llvm.ptr
-    %62 = llvm.udiv %17, %c16_i64 : i64
-    %63 = llvm.and %62, %c4294967295_i64 : i64
-    %64 = llvm.shl %63, %c0_i64 : i64
-    %65 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %66 = llvm.shl %65, %c32_i64 : i64
-    %67 = llvm.or %64, %66 : i64
-    %68 = llvm.getelementptr %11[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %67, %68 : i64, !llvm.ptr
-    %69 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %70 = llvm.and %69, %c4294967295_i64 : i64
-    %71 = llvm.shl %70, %c0_i64 : i64
-    %72 = llvm.lshr %15, %c36_i64 : i64
-    %73 = llvm.and %72, %c15_i64 : i64
-    %74 = llvm.shl %73, %c32_i64 : i64
-    %75 = llvm.lshr %17, %c36_i64 : i64
-    %76 = llvm.and %75, %c15_i64 : i64
-    %77 = llvm.shl %76, %c36_i64 : i64
-    %78 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %35 = llvm.getelementptr %17[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %35 : i64, !llvm.ptr
+    %36 = llvm.getelementptr %17[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %36 : i64, !llvm.ptr
+    %37 = llvm.getelementptr %17[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %37 : i64, !llvm.ptr
+    %38 = llvm.getelementptr %17[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %38 : i64, !llvm.ptr
+    %39 = llvm.getelementptr %17[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %39 : i64, !llvm.ptr
+    %40 = llvm.getelementptr %17[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %40 : i64, !llvm.ptr
+    %41 = llvm.udiv %24, %c16_i64 : i64
+    %42 = llvm.and %41, %c9007199254740991_i64 : i64
+    %43 = llvm.shl %42, %c4_i64 : i64
+    %44 = llvm.getelementptr %17[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %43, %44 : i64, !llvm.ptr
+    %45 = llvm.sub %20, %c1_i64 : i64
+    %46 = llvm.sub %22, %c1_i64 : i64
+    %47 = llvm.sub %c1_i64, %c1_i64 : i64
+    %48 = llvm.sub %c1_i64, %c1_i64 : i64
+    %49 = llvm.mul %45, %21 : i64
+    %50 = llvm.mul %46, %23 : i64
+    %51 = llvm.mul %47, %c0_i64 : i64
+    %52 = llvm.mul %48, %c0_i64 : i64
+    %53 = llvm.add %49, %50 : i64
+    %54 = llvm.add %51, %52 : i64
+    %55 = llvm.mul %19, %c16_i64 : i64
+    %56 = llvm.udiv %55, %c8_i64 : i64
+    %57 = llvm.add %56, %53 : i64
+    %58 = llvm.add %57, %54 : i64
+    %59 = llvm.icmp "uge" %58, %c131072_i64 : i64
+    %60 = llvm.zext %59 : i1 to i64
+    %61 = llvm.shl %60, %c21_i64 : i64
+    %62 = llvm.udiv %21, %c16_i64 : i64
+    %63 = llvm.shl %62, %c32_i64 : i64
+    %64 = llvm.or %c0_i64, %61 : i64
+    %65 = llvm.or %64, %63 : i64
+    %66 = llvm.or %5, %65 : i64
+    %67 = llvm.getelementptr %17[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %66, %67 : i64, !llvm.ptr
+    %68 = llvm.udiv %23, %c16_i64 : i64
+    %69 = llvm.and %68, %c4294967295_i64 : i64
+    %70 = llvm.shl %69, %c0_i64 : i64
+    %71 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %72 = llvm.shl %71, %c32_i64 : i64
+    %73 = llvm.or %70, %72 : i64
+    %74 = llvm.getelementptr %17[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %73, %74 : i64, !llvm.ptr
+    %75 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %76 = llvm.and %75, %c4294967295_i64 : i64
+    %77 = llvm.shl %76, %c0_i64 : i64
+    %78 = llvm.lshr %21, %c36_i64 : i64
     %79 = llvm.and %78, %c15_i64 : i64
-    %80 = llvm.shl %79, %c40_i64 : i64
-    %81 = llvm.lshr %c0_i64, %c36_i64 : i64
-    %82 = llvm.shl %81, %c44_i64 : i64
-    %83 = llvm.or %74, %77 : i64
-    %84 = llvm.or %80, %82 : i64
-    %85 = llvm.or %83, %84 : i64
-    %86 = llvm.or %71, %85 : i64
-    %87 = llvm.getelementptr %11[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %86, %87 : i64, !llvm.ptr
-    %88 = llvm.sub %13, %c1_i64 : i64
-    %89 = llvm.and %88, %c4294967295_i64 : i64
-    %90 = llvm.shl %89, %c0_i64 : i64
-    %91 = llvm.sub %14, %c1_i64 : i64
-    %92 = llvm.shl %91, %c32_i64 : i64
-    %93 = llvm.or %90, %92 : i64
-    %94 = llvm.getelementptr %11[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %93, %94 : i64, !llvm.ptr
-    %95 = llvm.sub %16, %c1_i64 : i64
-    %96 = llvm.and %95, %c4294967295_i64 : i64
-    %97 = llvm.shl %96, %c0_i64 : i64
-    %98 = llvm.sub %c1_i64, %c1_i64 : i64
-    %99 = llvm.shl %98, %c32_i64 : i64
-    %100 = llvm.or %97, %99 : i64
-    %101 = llvm.getelementptr %11[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %100, %101 : i64, !llvm.ptr
-    %102 = llvm.sub %c1_i64, %c1_i64 : i64
-    %103 = llvm.and %102, %c4294967295_i64 : i64
-    %104 = llvm.or %103, %c0_i64 : i64
-    %105 = llvm.or %104, %4 : i64
-    %106 = llvm.getelementptr %11[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %105, %106 : i64, !llvm.ptr
-    %107 = llvm.getelementptr %11[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %3, %107 : i64, !llvm.ptr
-    %108 = builtin.unrealized_conversion_cast %11 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
-    %109 = cute.ptrtoint(%108) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
-    %110 = llvm.inttoptr %109 : i64 to !llvm.ptr
-    %111 = llvm.load %110 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
-    %112 = builtin.unrealized_conversion_cast %111 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
+    %80 = llvm.shl %79, %c32_i64 : i64
+    %81 = llvm.lshr %23, %c36_i64 : i64
+    %82 = llvm.and %81, %c15_i64 : i64
+    %83 = llvm.shl %82, %c36_i64 : i64
+    %84 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %85 = llvm.and %84, %c15_i64 : i64
+    %86 = llvm.shl %85, %c40_i64 : i64
+    %87 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %88 = llvm.shl %87, %c44_i64 : i64
+    %89 = llvm.or %80, %83 : i64
+    %90 = llvm.or %86, %88 : i64
+    %91 = llvm.or %89, %90 : i64
+    %92 = llvm.or %77, %91 : i64
+    %93 = llvm.getelementptr %17[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %92, %93 : i64, !llvm.ptr
+    %94 = llvm.sub %19, %c1_i64 : i64
+    %95 = llvm.and %94, %c4294967295_i64 : i64
+    %96 = llvm.shl %95, %c0_i64 : i64
+    %97 = llvm.sub %20, %c1_i64 : i64
+    %98 = llvm.shl %97, %c32_i64 : i64
+    %99 = llvm.or %96, %98 : i64
+    %100 = llvm.getelementptr %17[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %99, %100 : i64, !llvm.ptr
+    %101 = llvm.sub %22, %c1_i64 : i64
+    %102 = llvm.and %101, %c4294967295_i64 : i64
+    %103 = llvm.shl %102, %c0_i64 : i64
+    %104 = llvm.sub %c1_i64, %c1_i64 : i64
+    %105 = llvm.shl %104, %c32_i64 : i64
+    %106 = llvm.or %103, %105 : i64
+    %107 = llvm.getelementptr %17[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %106, %107 : i64, !llvm.ptr
+    %108 = llvm.sub %c1_i64, %c1_i64 : i64
+    %109 = llvm.and %108, %c4294967295_i64 : i64
+    %110 = llvm.or %109, %c0_i64 : i64
+    %111 = llvm.or %110, %4 : i64
+    %112 = llvm.getelementptr %17[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %111, %112 : i64, !llvm.ptr
+    %113 = llvm.getelementptr %17[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %3, %113 : i64, !llvm.ptr
+    %114 = builtin.unrealized_conversion_cast %17 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
+    %115 = cute.ptrtoint(%114) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
+    %116 = llvm.inttoptr %115 : i64 to !llvm.ptr
+    %117 = llvm.load %116 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
+    %118 = builtin.unrealized_conversion_cast %117 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
     %atom_0 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
-    %113 = cute_nvgpu.atom.set_value(%atom_0, %112 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
+    %119 = cute_nvgpu.atom.set_value(%atom_0, %118 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
     %lay_1 = cute.get_layout(%arg0) : !memref_gmem_f16_
-    %114 = cute.get_shape(%lay_1) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
-    %lay_2 = cute.make_layout(%114, %8) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
-    %view = cute.make_view(%7, %lay_2) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
-    %115 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %120 = cute.get_shape(%lay_1) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
+    %lay_2 = cute.make_layout(%120, %14) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
+    %view = cute.make_view(%13, %lay_2) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
+    %121 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
     %iter_3 = cute.get_iter(%arg1) : !memref_gmem_f16_
     %lay_4 = cute.get_layout(%arg1) : !memref_gmem_f16_
-    %116:5 = cute.get_scalars(%lay_4) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
-    %117 = arith.extui %116#1 : i32 to i64
-    %118 = arith.extui %116#0 : i32 to i64
-    %119 = llvm.mul %116#3, %c2_i64 : i64
-    %120 = arith.extui %116#2 : i32 to i64
-    %121 = llvm.mul %116#4, %c2_i64 : i64
-    %122 = cute.ptrtoint(%iter_3) : !cute.ptr<f16, gmem, align<16>> to i64
-    %123 = llvm.getelementptr %115[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %123 : i64, !llvm.ptr
-    %124 = llvm.getelementptr %115[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %124 : i64, !llvm.ptr
-    %125 = llvm.getelementptr %115[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %125 : i64, !llvm.ptr
-    %126 = llvm.getelementptr %115[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %126 : i64, !llvm.ptr
-    %127 = llvm.getelementptr %115[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %127 : i64, !llvm.ptr
-    %128 = llvm.getelementptr %115[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %128 : i64, !llvm.ptr
-    %129 = llvm.getelementptr %115[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %122:5 = cute.get_scalars(%lay_4) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
+    %123 = arith.extui %122#1 : i32 to i64
+    %124 = arith.extui %122#0 : i32 to i64
+    %125 = llvm.mul %122#3, %c2_i64 : i64
+    %126 = arith.extui %122#2 : i32 to i64
+    %127 = llvm.mul %122#4, %c2_i64 : i64
+    %128 = cute.ptrtoint(%iter_3) : !cute.ptr<f16, gmem, align<16>> to i64
+    %129 = llvm.getelementptr %121[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %129 : i64, !llvm.ptr
-    %130 = llvm.getelementptr %115[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %130 = llvm.getelementptr %121[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %130 : i64, !llvm.ptr
-    %131 = llvm.getelementptr %115[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %131 = llvm.getelementptr %121[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %131 : i64, !llvm.ptr
-    %132 = llvm.getelementptr %115[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %132 = llvm.getelementptr %121[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %132 : i64, !llvm.ptr
-    %133 = llvm.getelementptr %115[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %133 = llvm.getelementptr %121[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %133 : i64, !llvm.ptr
-    %134 = llvm.getelementptr %115[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %134 = llvm.getelementptr %121[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %134 : i64, !llvm.ptr
-    %135 = llvm.getelementptr %115[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %135 = llvm.getelementptr %121[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %135 : i64, !llvm.ptr
-    %136 = llvm.getelementptr %115[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %136 = llvm.getelementptr %121[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %136 : i64, !llvm.ptr
-    %137 = llvm.getelementptr %115[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %137 = llvm.getelementptr %121[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %137 : i64, !llvm.ptr
-    %138 = llvm.getelementptr %115[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %138 = llvm.getelementptr %121[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %138 : i64, !llvm.ptr
-    %139 = llvm.udiv %122, %c16_i64 : i64
-    %140 = llvm.and %139, %c9007199254740991_i64 : i64
-    %141 = llvm.shl %140, %c4_i64 : i64
-    %142 = llvm.getelementptr %115[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %141, %142 : i64, !llvm.ptr
-    %143 = llvm.sub %118, %c1_i64 : i64
-    %144 = llvm.sub %120, %c1_i64 : i64
-    %145 = llvm.sub %c1_i64, %c1_i64 : i64
-    %146 = llvm.sub %c1_i64, %c1_i64 : i64
-    %147 = llvm.mul %143, %119 : i64
-    %148 = llvm.mul %144, %121 : i64
-    %149 = llvm.mul %145, %c0_i64 : i64
-    %150 = llvm.mul %146, %c0_i64 : i64
-    %151 = llvm.add %147, %148 : i64
-    %152 = llvm.add %149, %150 : i64
-    %153 = llvm.mul %117, %c16_i64 : i64
-    %154 = llvm.udiv %153, %c8_i64 : i64
-    %155 = llvm.add %154, %151 : i64
-    %156 = llvm.add %155, %152 : i64
-    %157 = llvm.icmp "uge" %156, %c131072_i64 : i64
-    %158 = llvm.zext %157 : i1 to i64
-    %159 = llvm.shl %158, %c21_i64 : i64
-    %160 = llvm.udiv %119, %c16_i64 : i64
-    %161 = llvm.shl %160, %c32_i64 : i64
-    %162 = llvm.or %c0_i64, %159 : i64
-    %163 = llvm.or %162, %161 : i64
-    %164 = llvm.or %5, %163 : i64
-    %165 = llvm.getelementptr %115[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %164, %165 : i64, !llvm.ptr
-    %166 = llvm.udiv %121, %c16_i64 : i64
-    %167 = llvm.and %166, %c4294967295_i64 : i64
-    %168 = llvm.shl %167, %c0_i64 : i64
-    %169 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %170 = llvm.shl %169, %c32_i64 : i64
-    %171 = llvm.or %168, %170 : i64
-    %172 = llvm.getelementptr %115[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %171, %172 : i64, !llvm.ptr
-    %173 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %174 = llvm.and %173, %c4294967295_i64 : i64
-    %175 = llvm.shl %174, %c0_i64 : i64
-    %176 = llvm.lshr %119, %c36_i64 : i64
-    %177 = llvm.and %176, %c15_i64 : i64
-    %178 = llvm.shl %177, %c32_i64 : i64
-    %179 = llvm.lshr %121, %c36_i64 : i64
-    %180 = llvm.and %179, %c15_i64 : i64
-    %181 = llvm.shl %180, %c36_i64 : i64
-    %182 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %139 = llvm.getelementptr %121[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %139 : i64, !llvm.ptr
+    %140 = llvm.getelementptr %121[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %140 : i64, !llvm.ptr
+    %141 = llvm.getelementptr %121[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %141 : i64, !llvm.ptr
+    %142 = llvm.getelementptr %121[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %142 : i64, !llvm.ptr
+    %143 = llvm.getelementptr %121[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %143 : i64, !llvm.ptr
+    %144 = llvm.getelementptr %121[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %144 : i64, !llvm.ptr
+    %145 = llvm.udiv %128, %c16_i64 : i64
+    %146 = llvm.and %145, %c9007199254740991_i64 : i64
+    %147 = llvm.shl %146, %c4_i64 : i64
+    %148 = llvm.getelementptr %121[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %147, %148 : i64, !llvm.ptr
+    %149 = llvm.sub %124, %c1_i64 : i64
+    %150 = llvm.sub %126, %c1_i64 : i64
+    %151 = llvm.sub %c1_i64, %c1_i64 : i64
+    %152 = llvm.sub %c1_i64, %c1_i64 : i64
+    %153 = llvm.mul %149, %125 : i64
+    %154 = llvm.mul %150, %127 : i64
+    %155 = llvm.mul %151, %c0_i64 : i64
+    %156 = llvm.mul %152, %c0_i64 : i64
+    %157 = llvm.add %153, %154 : i64
+    %158 = llvm.add %155, %156 : i64
+    %159 = llvm.mul %123, %c16_i64 : i64
+    %160 = llvm.udiv %159, %c8_i64 : i64
+    %161 = llvm.add %160, %157 : i64
+    %162 = llvm.add %161, %158 : i64
+    %163 = llvm.icmp "uge" %162, %c131072_i64 : i64
+    %164 = llvm.zext %163 : i1 to i64
+    %165 = llvm.shl %164, %c21_i64 : i64
+    %166 = llvm.udiv %125, %c16_i64 : i64
+    %167 = llvm.shl %166, %c32_i64 : i64
+    %168 = llvm.or %c0_i64, %165 : i64
+    %169 = llvm.or %168, %167 : i64
+    %170 = llvm.or %5, %169 : i64
+    %171 = llvm.getelementptr %121[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %170, %171 : i64, !llvm.ptr
+    %172 = llvm.udiv %127, %c16_i64 : i64
+    %173 = llvm.and %172, %c4294967295_i64 : i64
+    %174 = llvm.shl %173, %c0_i64 : i64
+    %175 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %176 = llvm.shl %175, %c32_i64 : i64
+    %177 = llvm.or %174, %176 : i64
+    %178 = llvm.getelementptr %121[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %177, %178 : i64, !llvm.ptr
+    %179 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %180 = llvm.and %179, %c4294967295_i64 : i64
+    %181 = llvm.shl %180, %c0_i64 : i64
+    %182 = llvm.lshr %125, %c36_i64 : i64
     %183 = llvm.and %182, %c15_i64 : i64
-    %184 = llvm.shl %183, %c40_i64 : i64
-    %185 = llvm.lshr %c0_i64, %c36_i64 : i64
-    %186 = llvm.shl %185, %c44_i64 : i64
-    %187 = llvm.or %178, %181 : i64
-    %188 = llvm.or %184, %186 : i64
-    %189 = llvm.or %187, %188 : i64
-    %190 = llvm.or %175, %189 : i64
-    %191 = llvm.getelementptr %115[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %190, %191 : i64, !llvm.ptr
-    %192 = llvm.sub %117, %c1_i64 : i64
-    %193 = llvm.and %192, %c4294967295_i64 : i64
-    %194 = llvm.shl %193, %c0_i64 : i64
-    %195 = llvm.sub %118, %c1_i64 : i64
-    %196 = llvm.shl %195, %c32_i64 : i64
-    %197 = llvm.or %194, %196 : i64
-    %198 = llvm.getelementptr %115[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %197, %198 : i64, !llvm.ptr
-    %199 = llvm.sub %120, %c1_i64 : i64
-    %200 = llvm.and %199, %c4294967295_i64 : i64
-    %201 = llvm.shl %200, %c0_i64 : i64
-    %202 = llvm.sub %c1_i64, %c1_i64 : i64
-    %203 = llvm.shl %202, %c32_i64 : i64
-    %204 = llvm.or %201, %203 : i64
-    %205 = llvm.getelementptr %115[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %204, %205 : i64, !llvm.ptr
-    %206 = llvm.sub %c1_i64, %c1_i64 : i64
-    %207 = llvm.and %206, %c4294967295_i64 : i64
-    %208 = llvm.or %207, %c0_i64 : i64
-    %209 = llvm.or %208, %4 : i64
-    %210 = llvm.getelementptr %115[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %209, %210 : i64, !llvm.ptr
-    %211 = llvm.getelementptr %115[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %3, %211 : i64, !llvm.ptr
-    %212 = builtin.unrealized_conversion_cast %115 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
-    %213 = cute.ptrtoint(%212) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
-    %214 = llvm.inttoptr %213 : i64 to !llvm.ptr
-    %215 = llvm.load %214 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
-    %216 = builtin.unrealized_conversion_cast %215 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
+    %184 = llvm.shl %183, %c32_i64 : i64
+    %185 = llvm.lshr %127, %c36_i64 : i64
+    %186 = llvm.and %185, %c15_i64 : i64
+    %187 = llvm.shl %186, %c36_i64 : i64
+    %188 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %189 = llvm.and %188, %c15_i64 : i64
+    %190 = llvm.shl %189, %c40_i64 : i64
+    %191 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %192 = llvm.shl %191, %c44_i64 : i64
+    %193 = llvm.or %184, %187 : i64
+    %194 = llvm.or %190, %192 : i64
+    %195 = llvm.or %193, %194 : i64
+    %196 = llvm.or %181, %195 : i64
+    %197 = llvm.getelementptr %121[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %196, %197 : i64, !llvm.ptr
+    %198 = llvm.sub %123, %c1_i64 : i64
+    %199 = llvm.and %198, %c4294967295_i64 : i64
+    %200 = llvm.shl %199, %c0_i64 : i64
+    %201 = llvm.sub %124, %c1_i64 : i64
+    %202 = llvm.shl %201, %c32_i64 : i64
+    %203 = llvm.or %200, %202 : i64
+    %204 = llvm.getelementptr %121[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %203, %204 : i64, !llvm.ptr
+    %205 = llvm.sub %126, %c1_i64 : i64
+    %206 = llvm.and %205, %c4294967295_i64 : i64
+    %207 = llvm.shl %206, %c0_i64 : i64
+    %208 = llvm.sub %c1_i64, %c1_i64 : i64
+    %209 = llvm.shl %208, %c32_i64 : i64
+    %210 = llvm.or %207, %209 : i64
+    %211 = llvm.getelementptr %121[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %210, %211 : i64, !llvm.ptr
+    %212 = llvm.sub %c1_i64, %c1_i64 : i64
+    %213 = llvm.and %212, %c4294967295_i64 : i64
+    %214 = llvm.or %213, %c0_i64 : i64
+    %215 = llvm.or %214, %4 : i64
+    %216 = llvm.getelementptr %121[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %215, %216 : i64, !llvm.ptr
+    %217 = llvm.getelementptr %121[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %3, %217 : i64, !llvm.ptr
+    %218 = builtin.unrealized_conversion_cast %121 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
+    %219 = cute.ptrtoint(%218) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
+    %220 = llvm.inttoptr %219 : i64 to !llvm.ptr
+    %221 = llvm.load %220 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
+    %222 = builtin.unrealized_conversion_cast %221 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
     %atom_5 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
-    %217 = cute_nvgpu.atom.set_value(%atom_5, %216 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
+    %223 = cute_nvgpu.atom.set_value(%atom_5, %222 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_load<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>
     %lay_6 = cute.get_layout(%arg1) : !memref_gmem_f16_
-    %218 = cute.get_shape(%lay_6) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
-    %lay_7 = cute.make_layout(%218, %8) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
-    %view_8 = cute.make_view(%7, %lay_7) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
-    %219 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
+    %224 = cute.get_shape(%lay_6) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
+    %lay_7 = cute.make_layout(%224, %14) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
+    %view_8 = cute.make_view(%13, %lay_7) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
+    %225 = llvm.alloca %c16_i32 x i64 {alignment = 64 : i64} : (i32) -> !llvm.ptr
     %iter_9 = cute.get_iter(%arg2) : !memref_gmem_f16_
     %lay_10 = cute.get_layout(%arg2) : !memref_gmem_f16_
-    %220:5 = cute.get_scalars(%lay_10) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
-    %221 = arith.extui %220#1 : i32 to i64
-    %222 = arith.extui %220#0 : i32 to i64
-    %223 = llvm.mul %220#3, %c2_i64 : i64
-    %224 = arith.extui %220#2 : i32 to i64
-    %225 = llvm.mul %220#4, %c2_i64 : i64
-    %226 = cute.ptrtoint(%iter_9) : !cute.ptr<f16, gmem, align<16>> to i64
-    %227 = llvm.getelementptr %219[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %227 : i64, !llvm.ptr
-    %228 = llvm.getelementptr %219[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %228 : i64, !llvm.ptr
-    %229 = llvm.getelementptr %219[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %229 : i64, !llvm.ptr
-    %230 = llvm.getelementptr %219[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %230 : i64, !llvm.ptr
-    %231 = llvm.getelementptr %219[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %231 : i64, !llvm.ptr
-    %232 = llvm.getelementptr %219[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %c0_i64, %232 : i64, !llvm.ptr
-    %233 = llvm.getelementptr %219[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %226:5 = cute.get_scalars(%lay_10) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
+    %227 = arith.extui %226#1 : i32 to i64
+    %228 = arith.extui %226#0 : i32 to i64
+    %229 = llvm.mul %226#3, %c2_i64 : i64
+    %230 = arith.extui %226#2 : i32 to i64
+    %231 = llvm.mul %226#4, %c2_i64 : i64
+    %232 = cute.ptrtoint(%iter_9) : !cute.ptr<f16, gmem, align<16>> to i64
+    %233 = llvm.getelementptr %225[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %233 : i64, !llvm.ptr
-    %234 = llvm.getelementptr %219[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %234 = llvm.getelementptr %225[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %234 : i64, !llvm.ptr
-    %235 = llvm.getelementptr %219[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %235 = llvm.getelementptr %225[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %235 : i64, !llvm.ptr
-    %236 = llvm.getelementptr %219[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %236 = llvm.getelementptr %225[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %236 : i64, !llvm.ptr
-    %237 = llvm.getelementptr %219[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %237 = llvm.getelementptr %225[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %237 : i64, !llvm.ptr
-    %238 = llvm.getelementptr %219[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %238 = llvm.getelementptr %225[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %238 : i64, !llvm.ptr
-    %239 = llvm.getelementptr %219[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %239 = llvm.getelementptr %225[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %239 : i64, !llvm.ptr
-    %240 = llvm.getelementptr %219[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %240 = llvm.getelementptr %225[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %240 : i64, !llvm.ptr
-    %241 = llvm.getelementptr %219[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %241 = llvm.getelementptr %225[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %241 : i64, !llvm.ptr
-    %242 = llvm.getelementptr %219[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    %242 = llvm.getelementptr %225[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
     llvm.store %c0_i64, %242 : i64, !llvm.ptr
-    %243 = llvm.udiv %226, %c16_i64 : i64
-    %244 = llvm.and %243, %c9007199254740991_i64 : i64
-    %245 = llvm.shl %244, %c4_i64 : i64
-    %246 = llvm.getelementptr %219[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %245, %246 : i64, !llvm.ptr
-    %247 = llvm.sub %222, %c1_i64 : i64
-    %248 = llvm.sub %224, %c1_i64 : i64
-    %249 = llvm.sub %c1_i64, %c1_i64 : i64
-    %250 = llvm.sub %c1_i64, %c1_i64 : i64
-    %251 = llvm.mul %247, %223 : i64
-    %252 = llvm.mul %248, %225 : i64
-    %253 = llvm.mul %249, %c0_i64 : i64
-    %254 = llvm.mul %250, %c0_i64 : i64
-    %255 = llvm.add %251, %252 : i64
-    %256 = llvm.add %253, %254 : i64
-    %257 = llvm.mul %221, %c16_i64 : i64
-    %258 = llvm.udiv %257, %c8_i64 : i64
-    %259 = llvm.add %258, %255 : i64
-    %260 = llvm.add %259, %256 : i64
-    %261 = llvm.icmp "uge" %260, %c131072_i64 : i64
-    %262 = llvm.zext %261 : i1 to i64
-    %263 = llvm.shl %262, %c21_i64 : i64
-    %264 = llvm.udiv %223, %c16_i64 : i64
-    %265 = llvm.shl %264, %c32_i64 : i64
-    %266 = llvm.or %c0_i64, %263 : i64
-    %267 = llvm.or %266, %265 : i64
-    %268 = llvm.or %2, %267 : i64
-    %269 = llvm.getelementptr %219[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %268, %269 : i64, !llvm.ptr
-    %270 = llvm.udiv %225, %c16_i64 : i64
-    %271 = llvm.and %270, %c4294967295_i64 : i64
-    %272 = llvm.shl %271, %c0_i64 : i64
-    %273 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %274 = llvm.shl %273, %c32_i64 : i64
-    %275 = llvm.or %272, %274 : i64
-    %276 = llvm.getelementptr %219[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %275, %276 : i64, !llvm.ptr
-    %277 = llvm.udiv %c0_i64, %c16_i64 : i64
-    %278 = llvm.and %277, %c4294967295_i64 : i64
-    %279 = llvm.shl %278, %c0_i64 : i64
-    %280 = llvm.lshr %223, %c36_i64 : i64
-    %281 = llvm.and %280, %c15_i64 : i64
-    %282 = llvm.shl %281, %c32_i64 : i64
-    %283 = llvm.lshr %225, %c36_i64 : i64
-    %284 = llvm.and %283, %c15_i64 : i64
-    %285 = llvm.shl %284, %c36_i64 : i64
-    %286 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %243 = llvm.getelementptr %225[0, 10] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %243 : i64, !llvm.ptr
+    %244 = llvm.getelementptr %225[0, 11] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %244 : i64, !llvm.ptr
+    %245 = llvm.getelementptr %225[0, 12] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %245 : i64, !llvm.ptr
+    %246 = llvm.getelementptr %225[0, 13] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %246 : i64, !llvm.ptr
+    %247 = llvm.getelementptr %225[0, 14] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %247 : i64, !llvm.ptr
+    %248 = llvm.getelementptr %225[0, 15] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %c0_i64, %248 : i64, !llvm.ptr
+    %249 = llvm.udiv %232, %c16_i64 : i64
+    %250 = llvm.and %249, %c9007199254740991_i64 : i64
+    %251 = llvm.shl %250, %c4_i64 : i64
+    %252 = llvm.getelementptr %225[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %251, %252 : i64, !llvm.ptr
+    %253 = llvm.sub %228, %c1_i64 : i64
+    %254 = llvm.sub %230, %c1_i64 : i64
+    %255 = llvm.sub %c1_i64, %c1_i64 : i64
+    %256 = llvm.sub %c1_i64, %c1_i64 : i64
+    %257 = llvm.mul %253, %229 : i64
+    %258 = llvm.mul %254, %231 : i64
+    %259 = llvm.mul %255, %c0_i64 : i64
+    %260 = llvm.mul %256, %c0_i64 : i64
+    %261 = llvm.add %257, %258 : i64
+    %262 = llvm.add %259, %260 : i64
+    %263 = llvm.mul %227, %c16_i64 : i64
+    %264 = llvm.udiv %263, %c8_i64 : i64
+    %265 = llvm.add %264, %261 : i64
+    %266 = llvm.add %265, %262 : i64
+    %267 = llvm.icmp "uge" %266, %c131072_i64 : i64
+    %268 = llvm.zext %267 : i1 to i64
+    %269 = llvm.shl %268, %c21_i64 : i64
+    %270 = llvm.udiv %229, %c16_i64 : i64
+    %271 = llvm.shl %270, %c32_i64 : i64
+    %272 = llvm.or %c0_i64, %269 : i64
+    %273 = llvm.or %272, %271 : i64
+    %274 = llvm.or %2, %273 : i64
+    %275 = llvm.getelementptr %225[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %274, %275 : i64, !llvm.ptr
+    %276 = llvm.udiv %231, %c16_i64 : i64
+    %277 = llvm.and %276, %c4294967295_i64 : i64
+    %278 = llvm.shl %277, %c0_i64 : i64
+    %279 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %280 = llvm.shl %279, %c32_i64 : i64
+    %281 = llvm.or %278, %280 : i64
+    %282 = llvm.getelementptr %225[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %281, %282 : i64, !llvm.ptr
+    %283 = llvm.udiv %c0_i64, %c16_i64 : i64
+    %284 = llvm.and %283, %c4294967295_i64 : i64
+    %285 = llvm.shl %284, %c0_i64 : i64
+    %286 = llvm.lshr %229, %c36_i64 : i64
     %287 = llvm.and %286, %c15_i64 : i64
-    %288 = llvm.shl %287, %c40_i64 : i64
-    %289 = llvm.lshr %c0_i64, %c36_i64 : i64
-    %290 = llvm.shl %289, %c44_i64 : i64
-    %291 = llvm.or %282, %285 : i64
-    %292 = llvm.or %288, %290 : i64
-    %293 = llvm.or %291, %292 : i64
-    %294 = llvm.or %279, %293 : i64
-    %295 = llvm.getelementptr %219[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %294, %295 : i64, !llvm.ptr
-    %296 = llvm.sub %221, %c1_i64 : i64
-    %297 = llvm.and %296, %c4294967295_i64 : i64
-    %298 = llvm.shl %297, %c0_i64 : i64
-    %299 = llvm.sub %222, %c1_i64 : i64
-    %300 = llvm.shl %299, %c32_i64 : i64
-    %301 = llvm.or %298, %300 : i64
-    %302 = llvm.getelementptr %219[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %301, %302 : i64, !llvm.ptr
-    %303 = llvm.sub %224, %c1_i64 : i64
-    %304 = llvm.and %303, %c4294967295_i64 : i64
-    %305 = llvm.shl %304, %c0_i64 : i64
-    %306 = llvm.sub %c1_i64, %c1_i64 : i64
-    %307 = llvm.shl %306, %c32_i64 : i64
-    %308 = llvm.or %305, %307 : i64
-    %309 = llvm.getelementptr %219[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %308, %309 : i64, !llvm.ptr
-    %310 = llvm.sub %c1_i64, %c1_i64 : i64
-    %311 = llvm.and %310, %c4294967295_i64 : i64
-    %312 = llvm.or %311, %c0_i64 : i64
-    %313 = llvm.or %312, %1 : i64
-    %314 = llvm.getelementptr %219[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %313, %314 : i64, !llvm.ptr
-    %315 = llvm.getelementptr %219[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
-    llvm.store %0, %315 : i64, !llvm.ptr
-    %316 = builtin.unrealized_conversion_cast %219 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
-    %317 = cute.ptrtoint(%316) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
-    %318 = llvm.inttoptr %317 : i64 to !llvm.ptr
-    %319 = llvm.load %318 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
-    %320 = builtin.unrealized_conversion_cast %319 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
+    %288 = llvm.shl %287, %c32_i64 : i64
+    %289 = llvm.lshr %231, %c36_i64 : i64
+    %290 = llvm.and %289, %c15_i64 : i64
+    %291 = llvm.shl %290, %c36_i64 : i64
+    %292 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %293 = llvm.and %292, %c15_i64 : i64
+    %294 = llvm.shl %293, %c40_i64 : i64
+    %295 = llvm.lshr %c0_i64, %c36_i64 : i64
+    %296 = llvm.shl %295, %c44_i64 : i64
+    %297 = llvm.or %288, %291 : i64
+    %298 = llvm.or %294, %296 : i64
+    %299 = llvm.or %297, %298 : i64
+    %300 = llvm.or %285, %299 : i64
+    %301 = llvm.getelementptr %225[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %300, %301 : i64, !llvm.ptr
+    %302 = llvm.sub %227, %c1_i64 : i64
+    %303 = llvm.and %302, %c4294967295_i64 : i64
+    %304 = llvm.shl %303, %c0_i64 : i64
+    %305 = llvm.sub %228, %c1_i64 : i64
+    %306 = llvm.shl %305, %c32_i64 : i64
+    %307 = llvm.or %304, %306 : i64
+    %308 = llvm.getelementptr %225[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %307, %308 : i64, !llvm.ptr
+    %309 = llvm.sub %230, %c1_i64 : i64
+    %310 = llvm.and %309, %c4294967295_i64 : i64
+    %311 = llvm.shl %310, %c0_i64 : i64
+    %312 = llvm.sub %c1_i64, %c1_i64 : i64
+    %313 = llvm.shl %312, %c32_i64 : i64
+    %314 = llvm.or %311, %313 : i64
+    %315 = llvm.getelementptr %225[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %314, %315 : i64, !llvm.ptr
+    %316 = llvm.sub %c1_i64, %c1_i64 : i64
+    %317 = llvm.and %316, %c4294967295_i64 : i64
+    %318 = llvm.or %317, %c0_i64 : i64
+    %319 = llvm.or %318, %1 : i64
+    %320 = llvm.getelementptr %225[0, 6] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %319, %320 : i64, !llvm.ptr
+    %321 = llvm.getelementptr %225[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<16 x i64>
+    llvm.store %0, %321 : i64, !llvm.ptr
+    %322 = builtin.unrealized_conversion_cast %225 : !llvm.ptr to !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>>
+    %323 = cute.ptrtoint(%322) : !cute.ptr<!cute_nvgpu.tma_descriptor_tiled, generic, align<64>> to i64
+    %324 = llvm.inttoptr %323 : i64 to !llvm.ptr
+    %325 = llvm.load %324 {nontemporal} : !llvm.ptr -> !llvm.struct<(array<16 x i64>)>
+    %326 = builtin.unrealized_conversion_cast %325 : !llvm.struct<(array<16 x i64>)> to !cute_nvgpu.tma_descriptor_tiled
     %atom_11 = cute.make_atom() : () -> !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>
-    %321 = cute_nvgpu.atom.set_value(%atom_11, %320 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_store<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>
+    %327 = cute_nvgpu.atom.set_value(%atom_11, %326 : !cute_nvgpu.tma_descriptor_tiled) {field = #cute_nvgpu.atom_copy_field_non_exec_tma_store<tma_desc>} : !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>
     %lay_12 = cute.get_layout(%arg2) : !memref_gmem_f16_
-    %322 = cute.get_shape(%lay_12) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
-    %lay_13 = cute.make_layout(%322, %8) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
-    %view_14 = cute.make_view(%7, %lay_13) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
+    %328 = cute.get_shape(%lay_12) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
+    %lay_13 = cute.make_layout(%328, %14) : !cute.layout<"(?,?,?):(1@1,1@0,1@2)">
+    %view_14 = cute.make_view(%13, %lay_13) : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">
     %lay_15 = cute.get_layout(%arg2) : !memref_gmem_f16_
-    %323:5 = cute.get_scalars(%lay_15) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
-    %324 = arith.ceildivsi %323#0, %c128_i32 : i32
-    %325 = arith.muli %323#3, %c128_i64 : i64
-    %326 = arith.ceildivsi %323#1, %c128_i32 : i32
-    %shape = cute.make_shape(%324, %326, %323#2) : (i32, i32, i32) -> !cute.shape<"((128,128),(?,?,?))">
-    %iv = cute.assume(%325) : (i64) -> !cute.i64<divby 128>
-    %stride = cute.make_stride(%323#3, %iv, %323#4) : (i64, !cute.i64<divby 128>, i64) -> !cute.stride<"((?{i64},1),(?{i64 div=128},128,?{i64}))">
+    %329:5 = cute.get_scalars(%lay_15) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
+    %330 = arith.ceildivsi %329#0, %c128_i32 : i32
+    %331 = arith.muli %329#3, %c128_i64 : i64
+    %332 = arith.ceildivsi %329#1, %c128_i32 : i32
+    %shape = cute.make_shape(%330, %332, %329#2) : (i32, i32, i32) -> !cute.shape<"((128,128),(?,?,?))">
+    %iv = cute.assume(%331) : (i64) -> !cute.i64<divby 128>
+    %stride = cute.make_stride(%329#3, %iv, %329#4) : (i64, !cute.i64<divby 128>, i64) -> !cute.stride<"((?{i64},1),(?{i64 div=128},128,?{i64}))">
     %lay_16 = cute.make_layout(%shape, %stride) : !cute.layout<"((128,128),(?,?,?)):((?{i64},1),(?{i64 div=128},128,?{i64}))">
-    %327:6 = cute.get_scalars(%lay_16) <{only_dynamic}> : !cute.layout<"((128,128),(?,?,?)):((?{i64},1),(?{i64 div=128},128,?{i64}))">
-    %shape_17 = cute.make_shape(%327#0, %327#1, %327#2) : (i32, i32, i32) -> !cute.shape<"(?,?,?)">
-    %iv_18 = cute.assume(%327#4) : (i64) -> !cute.i64<divby 128>
-    %stride_19 = cute.make_stride(%iv_18, %327#5) : (!cute.i64<divby 128>, i64) -> !cute.stride<"(?{i64 div=128},128,?{i64})">
+    %333:6 = cute.get_scalars(%lay_16) <{only_dynamic}> : !cute.layout<"((128,128),(?,?,?)):((?{i64},1),(?{i64 div=128},128,?{i64}))">
+    %shape_17 = cute.make_shape(%333#0, %333#1, %333#2) : (i32, i32, i32) -> !cute.shape<"(?,?,?)">
+    %iv_18 = cute.assume(%333#4) : (i64) -> !cute.i64<divby 128>
+    %stride_19 = cute.make_stride(%iv_18, %333#5) : (!cute.i64<divby 128>, i64) -> !cute.stride<"(?{i64 div=128},128,?{i64})">
     %lay_20 = cute.make_layout(%shape_17, %stride_19) : !cute.layout<"(?,?,?):(?{i64 div=128},128,?{i64})">
-    %328 = cute.get_shape(%lay_20) : (!cute.layout<"(?,?,?):(?{i64 div=128},128,?{i64})">) -> !cute.shape<"(?,?,?)">
-    %e0, %e1, %e2 = cute.get_leaves(%328) : !cute.shape<"(?,?,?)">
+    %334 = cute.get_shape(%lay_20) : (!cute.layout<"(?,?,?):(?{i64 div=128},128,?{i64})">) -> !cute.shape<"(?,?,?)">
+    %e0, %e1, %e2 = cute.get_leaves(%334) : !cute.shape<"(?,?,?)">
     %itup = cute.to_int_tuple(%e0) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %329 = cute.get_scalars(%itup) : !cute.int_tuple<"?">
+    %335 = cute.get_scalars(%itup) : !cute.int_tuple<"?">
     %itup_21 = cute.to_int_tuple(%e1) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %330 = cute.get_scalars(%itup_21) : !cute.int_tuple<"?">
+    %336 = cute.get_scalars(%itup_21) : !cute.int_tuple<"?">
     %itup_22 = cute.to_int_tuple(%e2) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %331 = cute.get_scalars(%itup_22) : !cute.int_tuple<"?">
+    %337 = cute.get_scalars(%itup_22) : !cute.int_tuple<"?">
     %int_tuple = cute.make_int_tuple(%itup, %itup_21, %itup_22) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?,?,?)">
-    %332:3 = cute.get_scalars(%int_tuple) <{only_dynamic}> : !cute.int_tuple<"(?,?,?)">
-    %int_tuple_23 = cute.make_int_tuple(%332#0, %332#1, %332#2) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
+    %338:3 = cute.get_scalars(%int_tuple) <{only_dynamic}> : !cute.int_tuple<"(?,?,?)">
+    %int_tuple_23 = cute.make_int_tuple(%338#0, %338#1, %338#2) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
     %e0_24, %e1_25, %e2_26 = cute.get_leaves(%int_tuple_23) : !cute.int_tuple<"(?,?,?)">
     %shape_27 = cute.make_shape(%e0_24, %e1_25, %e2_26) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,?)">
     %lay_28 = cute.make_layout(%shape_27) : !cute.layout<"(?,?,?):(1,?,?)">
-    %333 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
-    %e0_29, %e1_30, %e2_31 = cute.get_leaves(%333) : !cute.shape<"(?,?,?)">
-    %itup_32 = cute.to_int_tuple(%e0_29) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %itup_33 = cute.to_int_tuple(%e1_30) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %int_tuple_34 = cute.make_int_tuple(%itup_32) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %sz = cute.size(%int_tuple_34) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_35 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
-    %mul = cute.tuple_mul(%e0_35, %6) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-    %int_tuple_36 = cute.make_int_tuple(%itup_33) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %sz_37 = cute.size(%int_tuple_36) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
-    %e0_38 = cute.get_leaves(%sz_37) : !cute.int_tuple<"?">
-    %mul_39 = cute.tuple_mul(%e0_38, %6) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
-    %334 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
-    %e0_40, %e1_41, %e2_42 = cute.get_leaves(%334) : !cute.shape<"(?,?,?)">
-    %itup_43 = cute.to_int_tuple(%e2_42) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %int_tuple_44 = cute.make_int_tuple(%mul, %mul_39, %itup_43) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?,?,?)">
-    %sz_45 = cute.size(%int_tuple_44) : (!cute.int_tuple<"(?,?,?)">) -> !cute.int_tuple<"?">
-    %e0_46 = cute.get_leaves(%sz_45) : !cute.int_tuple<"?">
-    %335 = cute.get_scalars(%e0_46) : !cute.int_tuple<"?">
-    %336 = arith.minsi %335, %c114_i32 : i32
-    %337 = arith.index_cast %336 : i32 to index
-    %338 = gpu.launch_func async [%arg3] @kernels::@kernel_cutlass_kernel___main__HopperWgmmaGemmPersistentKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1_0 clusters in (%c1, %c1, %c1) blocks in (%c1, %c1, %337) threads in (%c256, %c1, %c1)  dynamic_shared_memory_size %c214016_i32 args(%113 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %217 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view_8 : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %321 : !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, %view_14 : !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, %10 : !mma_f16_f16_f32_64x128x16_, %329 : i32, %330 : i32, %331 : i32) {use_pdl = false}
-    return
+    %sz = cute.size(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.int_tuple<"?">
+    %e0_29 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
+    %339 = cute.get_scalars(%e0_29) : !cute.int_tuple<"?">
+    %340 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
+    %e0_30, %e1_31, %e2_32 = cute.get_leaves(%340) : !cute.shape<"(?,?,?)">
+    %itup_33 = cute.to_int_tuple(%e0_30) : !cute.shape<"?"> to !cute.int_tuple<"?">
+    %341 = cute.get_scalars(%itup_33) : !cute.int_tuple<"?">
+    %342 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
+    %e0_34, %e1_35, %e2_36 = cute.get_leaves(%342) : !cute.shape<"(?,?,?)">
+    %itup_37 = cute.to_int_tuple(%e1_35) : !cute.shape<"?"> to !cute.int_tuple<"?">
+    %343 = cute.get_scalars(%itup_37) : !cute.int_tuple<"?">
+    %344 = arith.cmpi eq, %339, %12 : i32
+    %345 = scf.if %344 -> (i8) {
+      scf.yield %11 : i8
+    } else {
+      %396 = arith.cmpi uge, %339, %c-2147483648_i32 : i32
+      %397 = scf.if %396 -> (i8) {
+        scf.yield %10 : i8
+      } else {
+        %398:2 = scf.while (%arg4 = %9, %arg5 = %8) : (i32, i8) -> (i32, i8) {
+          %399 = arith.cmpi ult, %arg4, %339 : i32
+          scf.condition(%399) %arg4, %arg5 : i32, i8
+        } do {
+        ^bb0(%arg4: i32, %arg5: i8):
+          %399 = arith.muli %arg4, %9 : i32
+          %400 = arith.addi %arg5, %8 : i8
+          scf.yield %399, %400 : i32, i8
+        }
+        scf.yield %398#1 : i8
+      }
+      scf.yield %397 : i8
+    }
+    %346 = arith.extui %345 : i8 to i64
+    %347 = arith.extui %339 : i32 to i64
+    %348 = arith.shli %7, %346 : i64
+    %349 = arith.subi %348, %347 : i64
+    %350 = arith.muli %349, %c4294967296_i64 : i64
+    %351 = arith.divui %350, %347 : i64
+    %352 = arith.addi %351, %7 : i64
+    %353 = arith.trunci %352 : i64 to i32
+    %354 = arith.minui %345, %8 : i8
+    %355 = arith.cmpi ult, %345, %8 : i8
+    %356 = arith.subi %345, %8 : i8
+    %357 = arith.select %355, %11, %356 : i8
+    %358 = cute.fast_divmod.make_divisor(%339, %353, %354, %357) : i32 -> !cute.fast_divmod_divisor<32>
+    %359 = arith.cmpi eq, %341, %12 : i32
+    %360 = scf.if %359 -> (i8) {
+      scf.yield %11 : i8
+    } else {
+      %396 = arith.cmpi uge, %341, %c-2147483648_i32 : i32
+      %397 = scf.if %396 -> (i8) {
+        scf.yield %10 : i8
+      } else {
+        %398:2 = scf.while (%arg4 = %9, %arg5 = %8) : (i32, i8) -> (i32, i8) {
+          %399 = arith.cmpi ult, %arg4, %341 : i32
+          scf.condition(%399) %arg4, %arg5 : i32, i8
+        } do {
+        ^bb0(%arg4: i32, %arg5: i8):
+          %399 = arith.muli %arg4, %9 : i32
+          %400 = arith.addi %arg5, %8 : i8
+          scf.yield %399, %400 : i32, i8
+        }
+        scf.yield %398#1 : i8
+      }
+      scf.yield %397 : i8
+    }
+    %361 = arith.extui %360 : i8 to i64
+    %362 = arith.extui %341 : i32 to i64
+    %363 = arith.shli %7, %361 : i64
+    %364 = arith.subi %363, %362 : i64
+    %365 = arith.muli %364, %c4294967296_i64 : i64
+    %366 = arith.divui %365, %362 : i64
+    %367 = arith.addi %366, %7 : i64
+    %368 = arith.trunci %367 : i64 to i32
+    %369 = arith.minui %360, %8 : i8
+    %370 = arith.cmpi ult, %360, %8 : i8
+    %371 = arith.subi %360, %8 : i8
+    %372 = arith.select %370, %11, %371 : i8
+    %373 = cute.fast_divmod.make_divisor(%341, %368, %369, %372) : i32 -> !cute.fast_divmod_divisor<32>
+    %374 = arith.cmpi eq, %343, %12 : i32
+    %375 = scf.if %374 -> (i8) {
+      scf.yield %11 : i8
+    } else {
+      %396 = arith.cmpi uge, %343, %c-2147483648_i32 : i32
+      %397 = scf.if %396 -> (i8) {
+        scf.yield %10 : i8
+      } else {
+        %398:2 = scf.while (%arg4 = %9, %arg5 = %8) : (i32, i8) -> (i32, i8) {
+          %399 = arith.cmpi ult, %arg4, %343 : i32
+          scf.condition(%399) %arg4, %arg5 : i32, i8
+        } do {
+        ^bb0(%arg4: i32, %arg5: i8):
+          %399 = arith.muli %arg4, %9 : i32
+          %400 = arith.addi %arg5, %8 : i8
+          scf.yield %399, %400 : i32, i8
+        }
+        scf.yield %398#1 : i8
+      }
+      scf.yield %397 : i8
+    }
+    %376 = arith.extui %375 : i8 to i64
+    %377 = arith.extui %343 : i32 to i64
+    %378 = arith.shli %7, %376 : i64
+    %379 = arith.subi %378, %377 : i64
+    %380 = arith.muli %379, %c4294967296_i64 : i64
+    %381 = arith.divui %380, %377 : i64
+    %382 = arith.addi %381, %7 : i64
+    %383 = arith.trunci %382 : i64 to i32
+    %384 = arith.minui %375, %8 : i8
+    %385 = arith.cmpi ult, %375, %8 : i8
+    %386 = arith.subi %375, %8 : i8
+    %387 = arith.select %385, %11, %386 : i8
+    %388 = cute.fast_divmod.make_divisor(%343, %383, %384, %387) : i32 -> !cute.fast_divmod_divisor<32>
+    %389 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
+    %e0_38, %e1_39, %e2_40 = cute.get_leaves(%389) : !cute.shape<"(?,?,?)">
+    %itup_41 = cute.to_int_tuple(%e0_38) : !cute.shape<"?"> to !cute.int_tuple<"?">
+    %itup_42 = cute.to_int_tuple(%e1_39) : !cute.shape<"?"> to !cute.int_tuple<"?">
+    %int_tuple_43 = cute.make_int_tuple(%itup_41) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %sz_44 = cute.size(%int_tuple_43) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_45 = cute.get_leaves(%sz_44) : !cute.int_tuple<"?">
+    %mul = cute.tuple_mul(%e0_45, %6) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+    %int_tuple_46 = cute.make_int_tuple(%itup_42) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %sz_47 = cute.size(%int_tuple_46) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %e0_48 = cute.get_leaves(%sz_47) : !cute.int_tuple<"?">
+    %mul_49 = cute.tuple_mul(%e0_48, %6) : (!cute.int_tuple<"?">, !cute.int_tuple<"1">) -> !cute.int_tuple<"?">
+    %390 = cute.get_shape(%lay_28) : (!cute.layout<"(?,?,?):(1,?,?)">) -> !cute.shape<"(?,?,?)">
+    %e0_50, %e1_51, %e2_52 = cute.get_leaves(%390) : !cute.shape<"(?,?,?)">
+    %itup_53 = cute.to_int_tuple(%e2_52) : !cute.shape<"?"> to !cute.int_tuple<"?">
+    %int_tuple_54 = cute.make_int_tuple(%mul, %mul_49, %itup_53) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"(?,?,?)">
+    %sz_55 = cute.size(%int_tuple_54) : (!cute.int_tuple<"(?,?,?)">) -> !cute.int_tuple<"?">
+    %e0_56 = cute.get_leaves(%sz_55) : !cute.int_tuple<"?">
+    %391 = cute.get_scalars(%e0_56) : !cute.int_tuple<"?">
+    %392 = arith.minsi %391, %c1_i32 : i32
+    %393 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c256_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c214016_i64, gridDim = (%c1_i32, %c1_i32, %392), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    cuda.launch_cfg.cluster_dim[%393] (%c1_i32, %c1_i32, %c1_i32) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %394 = cuda.launch_ex @kernels::@kernel_cutlass_kernel___main__HopperWgmmaGemmPersistentKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1_0<%393> (%119, %view, %223, %view_8, %327, %view_14, %16, %335, %336, %337, %358, %373, %388) : !cuda.launch_cfg<max_attrs = 2>, (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !mma_f16_f16_f32_64x128x16_, i32, i32, i32, !cute.fast_divmod_divisor<32>, !cute.fast_divmod_divisor<32>, !cute.fast_divmod_divisor<32>) -> !cuda.result
+    %395 = cuda.cast %394 : !cuda.result -> i32
+    cuda.return_if_error %395 : i32
+    return %c0_i32 : i32
   }
 }
