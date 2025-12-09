@@ -3,6 +3,8 @@
 [INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_stderr.log
 [INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
 [INFO] cute_ir_dump_patch installed.
 Running SIMT GEMM example:
 Running Ampere SIMT GEMM example:
@@ -18,54 +20,57 @@ Compiling kernel with cute.compile ...
 
 
 [PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_0_.mlir (2353 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_001_CuteRemoveStaticArgs.mlir (2358 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_002_MaterializeTmaMulticast.mlir (2358 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_003_SoftwarePipelinePass.mlir (2358 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_004_CuteDesugar.mlir (3063 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_005_CuteExpandOps.mlir (3419 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_006_CuteFoldStatic.mlir (1484 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_007_InsertRangeInformation.mlir (1484 lines)
-[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_008_Canonicalizer.mlir (744 lines)
-[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_009_CSE.mlir (624 lines)
-[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_010_LoopInvariantCodeMotion.mlir (624 lines)
-[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_011_LoopStrengthReductionPass.mlir (630 lines)
-[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_012_ConvertVectorToSCF.mlir (625 lines)
-[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_013_ConvertCuteTypesInScfOps.mlir (631 lines)
-[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_014_SCFToControlFlow.mlir (753 lines)
-[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_015_ArithExpandOpsPass.mlir (897 lines)
-[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_016_ConvertMathToFuncs.mlir (897 lines)
-[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_017_GpuLaunchSinkIndexComputations.mlir (897 lines)
-[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_018_ConvertToLLVMPass.mlir (1456 lines)
-[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_019_ReconcileUnrealizedCasts.mlir (1413 lines)
-[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_020_GpuKernelOutlining.mlir (1413 lines)
-[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_021_SCFToControlFlow.mlir (1413 lines)
-[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_022_ReconcileUnrealizedCasts.mlir (1413 lines)
-[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_023_ConvertToLLVMPass.mlir (1413 lines)
-[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_024_Canonicalizer.mlir (709 lines)
-[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_025_CSE.mlir (674 lines)
-[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_026_ConvertVectorToLLVMPass.mlir (674 lines)
-[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_027_ConvertNVVMToLLVMPass.mlir (680 lines)
-[DUMP] 028_GpuNVVMAttachTarget -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_028_GpuNVVMAttachTarget.mlir (680 lines)
-[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_029_FinalizeMemRefToLLVMConversionPass.mlir (680 lines)
-[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_030_ExpandStridedMetadata.mlir (674 lines)
-[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_031_ArithToLLVMConversionPass.mlir (674 lines)
-[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_032_ConvertFastmathOps.mlir (616 lines)
-[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_033_ConvertGpuOpsToNVVMOps.mlir (623 lines)
-[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_034_StoreGpuLaunchAttribute.mlir (682 lines)
-[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_035_GpuToLLVMConversionPass.mlir (681 lines)
-[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_036_StoreGpuLaunchAttribute.mlir (680 lines)
-[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_037_ConvertMathToLLVMPass.mlir (680 lines)
-[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_038_Canonicalizer.mlir (677 lines)
-[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_039_CSE.mlir (677 lines)
-[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_040_ReconcileUnrealizedCasts.mlir (677 lines)
-[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_041_DIScopeForLLVMFuncOpPass.mlir (677 lines)
-[DUMP] 042_CutlassModuleToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_042_CutlassModuleToBinaryPass.mlir (52 lines)
-[DUMP] 043_ExternalKernelForGpuLaunchPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_043_ExternalKernelForGpuLaunchPass.mlir (94 lines)
-[DUMP] per-pass IR split -> 43 files
-Compilation time: 2.4266 seconds
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_0_.mlir (2384 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_001_CuteRemoveStaticArgs.mlir (2389 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_002_MaterializeTmaMulticast.mlir (2389 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_003_SoftwarePipelinePass.mlir (2389 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_004_CuteDesugar.mlir (3094 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_005_CuteExpandOps.mlir (3450 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_006_CuteFoldStatic.mlir (1487 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_007_InsertRangeInformation.mlir (1487 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_008_Canonicalizer.mlir (746 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_009_CSE.mlir (626 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_010_LoopInvariantCodeMotion.mlir (626 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_011_LoopStrengthReductionPass.mlir (632 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_012_ConvertVectorToSCF.mlir (627 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_013_ConvertCuteTypesInScfOps.mlir (633 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_014_SCFToControlFlow.mlir (755 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_015_ArithExpandOpsPass.mlir (899 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_016_ConvertMathToFuncs.mlir (899 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_017_GpuLaunchSinkIndexComputations.mlir (899 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_018_ConvertToLLVMPass.mlir (1478 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_019_ReconcileUnrealizedCasts.mlir (1435 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_020_GpuKernelOutlining.mlir (1435 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_021_SCFToControlFlow.mlir (1435 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_022_ReconcileUnrealizedCasts.mlir (1435 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_023_ConvertToLLVMPass.mlir (1435 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_024_Canonicalizer.mlir (728 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_025_CSE.mlir (693 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_026_ConvertVectorToLLVMPass.mlir (693 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_027_ConvertNVVMToLLVMPass.mlir (699 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_028_CudaComputeTargetPass.mlir (620 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_029_FinalizeMemRefToLLVMConversionPass.mlir (699 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_030_ExpandStridedMetadata.mlir (693 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_031_ArithToLLVMConversionPass.mlir (693 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_032_ConvertFastmathOps.mlir (614 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_033_ConvertGpuOpsToNVVMOps.mlir (621 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_034_StoreGpuLaunchAttribute.mlir (700 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_035_GpuToLLVMConversionPass.mlir (700 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_036_StoreGpuLaunchAttribute.mlir (700 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_037_ConvertMathToLLVMPass.mlir (700 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_038_Canonicalizer.mlir (700 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_039_CSE.mlir (700 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_040_ReconcileUnrealizedCasts.mlir (700 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_041_DIScopeForLLVMFuncOpPass.mlir (700 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_042_CudaToBinaryPass.mlir (88 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_043_ConvertToLLVMPass.mlir (242 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_044_ReconcileUnrealizedCasts.mlir (240 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/sgemm/sgemm_045_CudaErrorHandlingPass.mlir (247 lines)
+[DUMP] per-pass IR split -> 45 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+Compilation time: 4.0131 seconds
 Executing GEMM kernel...
 Verifying results...
 Results verified successfully!
-Kernel execution time: 0.0262 ms
+Kernel execution time: 0.0399 ms
 PASS

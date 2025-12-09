@@ -28,7 +28,7 @@
 #loop_annotation1 = #llvm.loop_annotation<unroll = #loop_unroll1>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64div641div64div64div64_tensorptrf16gmemalign16odiv64div641div64div64div64_te_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f32_, %arg3: !memref_gmem_f32_, %arg4: !memref_gmem_f32_1, %arg5: f32, %arg6: f32, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: i32, %arg11: i32, %arg12: i32) attributes {cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 8, 16, 1>} {
+    cuda.kernel @kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64i64div641div64div64div64_tensorptrf16gmemalign16odiv64i64div641div64div64di_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f32_, %arg3: !memref_gmem_f32_, %arg4: !memref_gmem_f32_1, %arg5: f32, %arg6: f32, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: i32, %arg11: i32, %arg12: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 8, 16, 1>} {
       %c1_i32 = arith.constant 1 : i32
       %c31_i32 = arith.constant 31 : i32
       %c4_i32 = arith.constant 4 : i32
@@ -86,11 +86,11 @@ module attributes {gpu.container_module} {
             %idx_13 = cute.crd2idx(%coord_12, %lay_2) : (!cute.coord<"(_,?)">, !cute.layout<"(2,?):(1,2)">) -> !cute.int_tuple<"?{div=2}">
             %ptr_14 = cute.add_offset(%ptr, %idx_13) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<f16, gmem, align<4>>
             %view = cute.make_view(%ptr_14) : !memref_gmem_f16_1
-            %27 = cute.memref.load_vec %view, row_major : !memref_gmem_f16_1
+            %27 = cute.memref.load_vec %view : !memref_gmem_f16_1
             %idx_15 = cute.crd2idx(%coord_12, %lay_11) : (!cute.coord<"(_,?)">, !cute.layout<"(2,?):(1,2)">) -> !cute.int_tuple<"?{div=2}">
             %ptr_16 = cute.add_offset(%ptr_9, %idx_15) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<f16, gmem, align<4>>
             %view_17 = cute.make_view(%ptr_16) : !memref_gmem_f16_1
-            %28 = cute.memref.load_vec %view_17, row_major : !memref_gmem_f16_1
+            %28 = cute.memref.load_vec %view_17 : !memref_gmem_f16_1
             %29 = arith.mulf %27, %28 : vector<2xf16>
             %30 = arith.extf %29 : vector<2xf16> to vector<2xf32>
             %31 = vector.reduction <add>, %30, %cst : vector<2xf32> into f32
@@ -116,7 +116,7 @@ module attributes {gpu.container_module} {
       } {loop_annotation = #loop_annotation}
       return
     }
-    func.func public @kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1(%arg0: !mma_f16_f16_f32_128x128x16_, %arg1: !mma_f16_f16_f32_128x128x16_, %arg2: !mma_f16_f16_f32_128x128x16_1, %arg3: !mma_f16_f16_f32_128x128x16_2, %arg4: !mma_f16_f16_f32_128x128x16_3, %arg5: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg6: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg7: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg8: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg9: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg10: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg11: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg12: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg13: !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %arg14: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg15: !memref_gmem_f16_2, %arg16: !memref_gmem_f16_2, %arg17: !memref_gmem_f32_1, %arg18: f32, %arg19: !memref_gmem_f32_, %arg20: i32, %arg21: i32, %arg22: i32, %arg23: i32, %arg24: i32, %arg25: i32) attributes {cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 512, 1, 1>} {
+    cuda.kernel @kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1(%arg0: !mma_f16_f16_f32_128x128x16_, %arg1: !mma_f16_f16_f32_128x128x16_, %arg2: !mma_f16_f16_f32_128x128x16_1, %arg3: !mma_f16_f16_f32_128x128x16_2, %arg4: !mma_f16_f16_f32_128x128x16_3, %arg5: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg6: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg7: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %arg8: !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %arg9: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg10: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg11: !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %arg12: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg13: !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %arg14: !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %arg15: !memref_gmem_f16_2, %arg16: !memref_gmem_f16_2, %arg17: !memref_gmem_f32_1, %arg18: f32, %arg19: !memref_gmem_f32_, %arg20: i32, %arg21: i32, %arg22: i32, %arg23: i32, %arg24: i32, %arg25: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.minctasm = 1 : i32, nvvm.reqntid = array<i32: 512, 1, 1>} {
       %cst = arith.constant dense<0.000000e+00> : vector<1xf32>
       %0 = cute.static : !cute.layout<"((4096,1),(1,2)):((1,0),(0,4096))">
       %1 = cute.static : !cute.layout<"(4,(8)):(1,(4))">
@@ -574,13 +574,14 @@ module attributes {gpu.container_module} {
           %155 = cute.get_scalars(%72) : !cute.int_tuple<"1">
           scf.for %arg26 = %c0_i32 to %155 step %c1_i32  : i32 {
             %187 = cute_nvgpu.atom.get_value(%154 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %188 = cute_nvgpu.atom.get_value(%154 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%154 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) -> !cute.ptr<generic, align<64>>
-            %188:4 = cute.get_scalars(%int_tuple_119) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_41 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%188#0, %188#1, %188#2, %188#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %189:4 = cute.get_scalars(%int_tuple_119) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_41 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3] : i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
             %tup_163 = cute.add_offset(%int_tuple_119, %54) : (!cute.int_tuple<"(?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?)">
             %ptr_164 = cute.add_offset(%iter_41, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %189:4 = cute.get_scalars(%tup_163) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_164 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %190:4 = cute.get_scalars(%tup_163) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_164 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%190#0, %190#1, %190#2, %190#3] : i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %coord_120 = cute.make_coord(%94, %95) : (i32, i32) -> !cute.coord<"(_,0,0,((0,?),?))">
           %idx_121 = cute.crd2idx(%coord_120, %lay_107) : (!cute.coord<"(_,0,0,((0,?),?))">, !cute.layout<"(((64,128),2),?,?,((?,?),?)):(((1@0,1@1),64@0),128@1,128@0,((1@2,1@3),1@4))">) -> !cute.int_tuple<"(0,0,0,?,?)">
@@ -591,13 +592,14 @@ module attributes {gpu.container_module} {
           %157 = cute_nvgpu.atom.set_value(%156, %dyn_117 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>
           scf.for %arg26 = %c0_i32 to %155 step %c1_i32  : i32 {
             %187 = cute_nvgpu.atom.get_value(%157 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %188 = cute_nvgpu.atom.get_value(%157 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%157 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-            %188:5 = cute.get_scalars(%int_tuple_127) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_40 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%188#0, %188#1, %188#2, %188#3, %188#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %189:5 = cute.get_scalars(%int_tuple_127) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_40 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3, %189#4] : i32, i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
             %tup_163 = cute.add_offset(%int_tuple_127, %54) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
             %ptr_164 = cute.add_offset(%iter_40, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %189:5 = cute.get_scalars(%tup_163) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_164 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3, %189#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %190:5 = cute.get_scalars(%tup_163) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_164 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%190#0, %190#1, %190#2, %190#3, %190#4] : i32, i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %158 = builtin.unrealized_conversion_cast %ptr_25 : !cute.ptr<i64, smem> to !llvm.ptr<3>
           nvvm.mbarrier.try_wait.parity.shared %158, %c1_i32, %c10000000_i32 : !llvm.ptr<3>, i32, i32
@@ -631,7 +633,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_45, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           %165 = arith.addi %161, %c1_i32 : i32
           %coord_134 = cute.make_coord(%165) : (i32) -> !cute.coord<"?">
@@ -654,7 +656,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_45, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           %168 = arith.addi %161, %c2_i32 : i32
           %coord_135 = cute.make_coord(%168) : (i32) -> !cute.coord<"?">
@@ -677,7 +679,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_45, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           %171 = arith.addi %161, %c3_i32 : i32
           %coord_136 = cute.make_coord(%171) : (i32) -> !cute.coord<"?">
@@ -700,7 +702,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_45, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           %dyn_137 = cute.derefine(%iter_24) : !cute.ptr<i64, smem, align<16>> to !cute.ptr<i64, smem>
           %174 = builtin.unrealized_conversion_cast %dyn_137 : !cute.ptr<i64, smem> to !llvm.ptr<3>
@@ -728,14 +730,15 @@ module attributes {gpu.container_module} {
           %179 = cute_nvgpu.atom.set_value(%178, %dyn_138 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>
           scf.for %arg26 = %c0_i32 to %155 step %c1_i32  : i32 {
             %187 = cute_nvgpu.atom.get_value(%179 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %188 = cute_nvgpu.atom.get_value(%179 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%179 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">>) -> !cute.ptr<generic, align<64>>
-            %188:4 = cute.get_scalars(%dyn_146) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_42 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%188#0, %188#1, %188#2, %188#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %189:4 = cute.get_scalars(%dyn_146) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_42 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3] : i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
             %tup_163 = cute.add_offset(%int_tuple_145, %54) : (!cute.int_tuple<"(0,?{div=128},?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(64,?{div=128},?,?)">
             %dyn_164 = cute.derefine(%tup_163) : !cute.int_tuple<"(64,?{div=128},?,?)"> to !cute.int_tuple<"(?,?,?,?)">
             %ptr_165 = cute.add_offset(%iter_42, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %189:4 = cute.get_scalars(%dyn_164) : !cute.int_tuple<"(?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_165 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3] : i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %190:4 = cute.get_scalars(%dyn_164) : !cute.int_tuple<"(?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_165 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%190#0, %190#1, %190#2, %190#3] : i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %idx_147 = cute.crd2idx(%coord_120, %lay_115) : (!cute.coord<"(_,0,0,((0,?),?))">, !cute.layout<"(((64,128),2),?,?,((?,?),?)):(((1@0,1@1),64@0),128@1,128@0,((1@2,1@3),1@4))">) -> !cute.int_tuple<"(0,0,0,?,?)">
           %tup_148 = cute.add_offset(%int_tuple_71, %idx_147) : (!cute.int_tuple<"(0,0,0,0,0)">, !cute.int_tuple<"(0,0,0,?,?)">) -> !cute.int_tuple<"(0,0,0,?,?)">
@@ -746,14 +749,15 @@ module attributes {gpu.container_module} {
           %181 = cute_nvgpu.atom.set_value(%180, %dyn_138 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>
           scf.for %arg26 = %c0_i32 to %155 step %c1_i32  : i32 {
             %187 = cute_nvgpu.atom.get_value(%181 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+            %188 = cute_nvgpu.atom.get_value(%181 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
             %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%181 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-            %188:5 = cute.get_scalars(%dyn_155) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_43 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%188#0, %188#1, %188#2, %188#3, %188#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %189:5 = cute.get_scalars(%dyn_155) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_43 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3, %189#4] : i32, i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
             %tup_163 = cute.add_offset(%int_tuple_154, %54) : (!cute.int_tuple<"(0,0,0,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(64,0,0,?,?)">
             %dyn_164 = cute.derefine(%tup_163) : !cute.int_tuple<"(64,0,0,?,?)"> to !cute.int_tuple<"(?,?,?,?,?)">
             %ptr_165 = cute.add_offset(%iter_43, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-            %189:5 = cute.get_scalars(%dyn_164) : !cute.int_tuple<"(?,?,?,?,?)">
-            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_165 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%189#0, %189#1, %189#2, %189#3, %189#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+            %190:5 = cute.get_scalars(%dyn_164) : !cute.int_tuple<"(?,?,?,?,?)">
+            cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_165 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %187 : !cute.ptr<smem, align<8>>, [%190#0, %190#1, %190#2, %190#3, %190#4] : i32, i32, i32, i32, i32) cache_policy = %188 mode = <tiled> num_cta = 1 : i32
           } {llvm.loop_annotation = #loop_annotation1}
           %182 = builtin.unrealized_conversion_cast %ptr_27 : !cute.ptr<i64, smem> to !llvm.ptr<3>
           nvvm.mbarrier.try_wait.parity.shared %182, %c1_i32, %c10000000_i32 : !llvm.ptr<3>, i32, i32
@@ -780,7 +784,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_46, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           scf.if %167 {
             %coord_163 = cute.make_coord(%165, %94, %95) : (i32, i32, i32) -> !cute.coord<"(_,?,((0,?),?))">
@@ -799,7 +803,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_46, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           scf.if %170 {
             %coord_163 = cute.make_coord(%168, %94, %95) : (i32, i32, i32) -> !cute.coord<"(_,?,((0,?),?))">
@@ -818,7 +822,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_46, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           scf.if %173 {
             %coord_163 = cute.make_coord(%171, %94, %95) : (i32, i32, i32) -> !cute.coord<"(_,?,((0,?),?))">
@@ -837,7 +841,7 @@ module attributes {gpu.container_module} {
             %idx_164 = cute.crd2idx(%coord_163, %51) : (!cute.coord<"(_,?,0)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
             %ptr_165 = cute.add_offset(%iter_46, %idx_164) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
             %view_166 = cute.make_view(%ptr_165) : !memref_smem_f32_1
-            cute.memref.store_vec %cst, %view_166, row_major : !memref_smem_f32_1
+            cute.memref.store_vec %cst, %view_166 : !memref_smem_f32_1
           }
           %dyn_161 = cute.derefine(%iter_26) : !cute.ptr<i64, smem, align<64>> to !cute.ptr<i64, smem>
           %184 = builtin.unrealized_conversion_cast %dyn_161 : !cute.ptr<i64, smem> to !llvm.ptr<3>
@@ -880,13 +884,14 @@ module attributes {gpu.container_module} {
             %193 = cute_nvgpu.atom.set_value(%156, %ptr_165 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>
             scf.for %arg43 = %c0_i32 to %155 step %c1_i32  : i32 {
               %236 = cute_nvgpu.atom.get_value(%193 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %237 = cute_nvgpu.atom.get_value(%193 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
               %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%193 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-              %237:5 = cute.get_scalars(%int_tuple_177) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_176 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%237#0, %237#1, %237#2, %237#3, %237#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %238:5 = cute.get_scalars(%int_tuple_177) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_176 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%238#0, %238#1, %238#2, %238#3, %238#4] : i32, i32, i32, i32, i32) cache_policy = %237 mode = <tiled> num_cta = 1 : i32
               %tup_200 = cute.add_offset(%int_tuple_177, %54) : (!cute.int_tuple<"(?,?,?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(?,?,?,?,?)">
               %ptr_201 = cute.add_offset(%ptr_176, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-              %238:5 = cute.get_scalars(%tup_200) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_201 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%238#0, %238#1, %238#2, %238#3, %238#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %239:5 = cute.get_scalars(%tup_200) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_201 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%239#0, %239#1, %239#2, %239#3, %239#4] : i32, i32, i32, i32, i32) cache_policy = %237 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation1}
             %194 = arith.addi %arg32, %c1_i32 : i32
             %195 = arith.addi %arg31, %c1_i32 : i32
@@ -924,7 +929,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_45, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             %204 = arith.addi %201, %c1_i32 : i32
             %coord_181 = cute.make_coord(%204) : (i32) -> !cute.coord<"?">
@@ -947,7 +952,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_45, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             %207 = arith.addi %201, %c2_i32 : i32
             %coord_182 = cute.make_coord(%207) : (i32) -> !cute.coord<"?">
@@ -970,7 +975,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_45, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             %210 = arith.addi %201, %c3_i32 : i32
             %coord_183 = cute.make_coord(%210) : (i32) -> !cute.coord<"?">
@@ -993,7 +998,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_45, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             %ptr_184 = cute.add_offset(%iter_24, %int_tuple_178) : (!cute.ptr<i64, smem, align<16>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
             %213 = builtin.unrealized_conversion_cast %ptr_184 : !cute.ptr<i64, smem> to !llvm.ptr<3>
@@ -1027,14 +1032,15 @@ module attributes {gpu.container_module} {
             %221 = cute_nvgpu.atom.set_value(%180, %ptr_187 : !cute.ptr<i64, smem>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>
             scf.for %arg43 = %c0_i32 to %155 step %c1_i32  : i32 {
               %236 = cute_nvgpu.atom.get_value(%221 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<tma_bar>} : !cute.ptr<smem, align<8>>
+              %237 = cute_nvgpu.atom.get_value(%221 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmaload<cache_policy>} : i64
               %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%221 : !cute_nvgpu.atom.tma_load<f16, copy_bits = 131072, mode = tiled, num_cta = 1, g_stride = <"()"> tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-              %237:5 = cute.get_scalars(%dyn_196) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_43 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%237#0, %237#1, %237#2, %237#3, %237#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %238:5 = cute.get_scalars(%dyn_196) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %iter_43 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%238#0, %238#1, %238#2, %238#3, %238#4] : i32, i32, i32, i32, i32) cache_policy = %237 mode = <tiled> num_cta = 1 : i32
               %tup_200 = cute.add_offset(%int_tuple_195, %54) : (!cute.int_tuple<"(0,?{div=128},?,?,?)">, !cute.int_tuple<"(64,0)">) -> !cute.int_tuple<"(64,?{div=128},?,?,?)">
               %dyn_201 = cute.derefine(%tup_200) : !cute.int_tuple<"(64,?{div=128},?,?,?)"> to !cute.int_tuple<"(?,?,?,?,?)">
               %ptr_202 = cute.add_offset(%iter_43, %53) : (!cute.ptr<f16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"8192">) -> !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
-              %238:5 = cute.get_scalars(%dyn_201) : !cute.int_tuple<"(?,?,?,?,?)">
-              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_202 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%238#0, %238#1, %238#2, %238#3, %238#4] : i32, i32, i32, i32, i32) mode = <tiled> num_cta = 1 : i32
+              %239:5 = cute.get_scalars(%dyn_201) : !cute.int_tuple<"(?,?,?,?,?)">
+              cute_nvgpu.arch.copy.SM100.tma_load(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_202 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>, %236 : !cute.ptr<smem, align<8>>, [%239#0, %239#1, %239#2, %239#3, %239#4] : i32, i32, i32, i32, i32) cache_policy = %237 mode = <tiled> num_cta = 1 : i32
             } {llvm.loop_annotation = #loop_annotation1}
             %222 = arith.addi %arg38, %c1_i32 : i32
             %223 = arith.addi %arg37, %c1_i32 : i32
@@ -1067,7 +1073,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_46, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             scf.if %206 {
               %coord_200 = cute.make_coord(%204, %190#1, %189, %95) : (i32, i32, i32, i32) -> !cute.coord<"(_,?,((?,?),?))">
@@ -1086,7 +1092,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_46, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             scf.if %209 {
               %coord_200 = cute.make_coord(%207, %190#1, %189, %95) : (i32, i32, i32, i32) -> !cute.coord<"(_,?,((?,?),?))">
@@ -1105,7 +1111,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_46, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             scf.if %212 {
               %coord_200 = cute.make_coord(%210, %190#1, %189, %95) : (i32, i32, i32, i32) -> !cute.coord<"(_,?,((?,?),?))">
@@ -1124,7 +1130,7 @@ module attributes {gpu.container_module} {
               %idx_201 = cute.crd2idx(%coord_200, %51) : (!cute.coord<"(_,?,?)">, !cute.layout<"(1,128,1):(0,1,0)">) -> !cute.int_tuple<"?">
               %ptr_202 = cute.add_offset(%iter_46, %idx_201) : (!cute.ptr<f32, smem, align<1024>>, !cute.int_tuple<"?">) -> !cute.ptr<f32, smem>
               %view_203 = cute.make_view(%ptr_202) : !memref_smem_f32_1
-              cute.memref.store_vec %cst, %view_203, row_major : !memref_smem_f32_1
+              cute.memref.store_vec %cst, %view_203 : !memref_smem_f32_1
             }
             %ptr_199 = cute.add_offset(%iter_26, %int_tuple_197) : (!cute.ptr<i64, smem, align<64>>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
             %228 = builtin.unrealized_conversion_cast %ptr_199 : !cute.ptr<i64, smem> to !llvm.ptr<3>
@@ -1774,11 +1780,11 @@ module attributes {gpu.container_module} {
                   %idx_245 = cute.crd2idx(%coord_244, %39) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
                   %ptr_246 = cute.add_offset(%iter_215, %idx_245) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                   %view_247 = cute.make_view(%ptr_246) : !memref_rmem_f32_1
-                  %266 = cute.memref.load_vec %view_247, row_major : !memref_rmem_f32_1
+                  %266 = cute.memref.load_vec %view_247 : !memref_rmem_f32_1
                   %ptr_248 = cute.add_offset(%iter_224, %idx_245) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                   %view_249 = cute.make_view(%ptr_248) : !memref_rmem_f16_1
                   %267 = arith.truncf %266 : vector<4xf32> to vector<4xf16>
-                  cute.memref.store_vec %267, %view_249, row_major : !memref_rmem_f16_1
+                  cute.memref.store_vec %267, %view_249 : !memref_rmem_f16_1
                 } {loop_annotation = #loop_annotation}
                 nvvm.tcgen05.wait <load>
                 nvvm.barrier id = %c3_i32 number_of_threads = %c256_i32
@@ -1897,11 +1903,11 @@ module attributes {gpu.container_module} {
                   %idx_245 = cute.crd2idx(%coord_244, %39) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
                   %ptr_246 = cute.add_offset(%iter_216, %idx_245) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                   %view_247 = cute.make_view(%ptr_246) : !memref_rmem_f32_1
-                  %266 = cute.memref.load_vec %view_247, row_major : !memref_rmem_f32_1
+                  %266 = cute.memref.load_vec %view_247 : !memref_rmem_f32_1
                   %ptr_248 = cute.add_offset(%iter_235, %idx_245) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                   %view_249 = cute.make_view(%ptr_248) : !memref_rmem_f16_1
                   %267 = arith.truncf %266 : vector<4xf32> to vector<4xf16>
-                  cute.memref.store_vec %267, %view_249, row_major : !memref_rmem_f16_1
+                  cute.memref.store_vec %267, %view_249 : !memref_rmem_f16_1
                 } {loop_annotation = #loop_annotation}
                 nvvm.tcgen05.wait <load>
                 %ptr_236 = cute.add_offset(%ptr_31, %int_tuple_230) : (!cute.ptr<i64, smem>, !cute.int_tuple<"?">) -> !cute.ptr<i64, smem>
@@ -2102,11 +2108,11 @@ module attributes {gpu.container_module} {
                 %idx_216 = cute.crd2idx(%coord_215, %39) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
                 %ptr_217 = cute.add_offset(%iter_167, %idx_216) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                 %view_218 = cute.make_view(%ptr_217) : !memref_rmem_f32_1
-                %217 = cute.memref.load_vec %view_218, row_major : !memref_rmem_f32_1
+                %217 = cute.memref.load_vec %view_218 : !memref_rmem_f32_1
                 %ptr_219 = cute.add_offset(%iter_171, %idx_216) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                 %view_220 = cute.make_view(%ptr_219) : !memref_rmem_f16_1
                 %218 = arith.truncf %217 : vector<4xf32> to vector<4xf16>
-                cute.memref.store_vec %218, %view_220, row_major : !memref_rmem_f16_1
+                cute.memref.store_vec %218, %view_220 : !memref_rmem_f16_1
               } {loop_annotation = #loop_annotation}
               %rmem_172 = cute.memref.alloca() : !memref_rmem_i8_
               %iter_173 = cute.get_iter(%rmem_172) : !memref_rmem_i8_
@@ -2234,11 +2240,11 @@ module attributes {gpu.container_module} {
                 %idx_216 = cute.crd2idx(%coord_215, %39) : (!cute.coord<"(_,?)">, !cute.layout<"(4,16):(1,4)">) -> !cute.int_tuple<"?{div=4}">
                 %ptr_217 = cute.add_offset(%iter_128, %idx_216) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
                 %view_218 = cute.make_view(%ptr_217) : !memref_rmem_f32_1
-                %217 = cute.memref.load_vec %view_218, row_major : !memref_rmem_f32_1
+                %217 = cute.memref.load_vec %view_218 : !memref_rmem_f32_1
                 %ptr_219 = cute.add_offset(%iter_210, %idx_216) : (!cute.ptr<f16, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, rmem, align<8>>
                 %view_220 = cute.make_view(%ptr_219) : !memref_rmem_f16_1
                 %218 = arith.truncf %217 : vector<4xf32> to vector<4xf16>
-                cute.memref.store_vec %218, %view_220, row_major : !memref_rmem_f16_1
+                cute.memref.store_vec %218, %view_220 : !memref_rmem_f16_1
               } {loop_annotation = #loop_annotation}
               %rmem_211 = cute.memref.alloca() : !memref_rmem_i8_
               %iter_212 = cute.get_iter(%rmem_211) : !memref_rmem_i8_
@@ -2393,8 +2399,9 @@ module attributes {gpu.container_module} {
                       %173 = cute.get_scalars(%72) : !cute.int_tuple<"1">
                       scf.for %arg42 = %c0_i32 to %173 step %c1_i32  : i32 {
                         %TMADescAddr = cute_nvgpu.get_tma_desc_addr(%172 : !cute_nvgpu.atom.tma_reduce<f32, copy_bits = 131072, mode = tiled, kind = ADD, g_stride = <"()"> tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) -> !cute.ptr<generic, align<64>>
-                        %174:5 = cute.get_scalars(%int_tuple_93) : !cute.int_tuple<"(?{div=32},?{div=128},?,?,?)">
-                        cute_nvgpu.arch.copy.SM100.tma_reduce(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_89 : !cute.ptr<f32, smem, align<1024>, S<3,4,3>>, [%174#0, %174#1, %174#2, %174#3, %174#4] : i32, i32, i32, i32, i32) mode = <tiled> kind = <ADD>
+                        %174 = cute_nvgpu.atom.get_value(%172 : !cute_nvgpu.atom.tma_reduce<f32, copy_bits = 131072, mode = tiled, kind = ADD, g_stride = <"()"> tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">>) {field = #cute_nvgpu.atom_copy_field_tmareduce<cache_policy>} : i64
+                        %175:5 = cute.get_scalars(%int_tuple_93) : !cute.int_tuple<"(?{div=32},?{div=128},?,?,?)">
+                        cute_nvgpu.arch.copy.SM100.tma_reduce(%TMADescAddr : !cute.ptr<generic, align<64>>, %ptr_89 : !cute.ptr<f32, smem, align<1024>, S<3,4,3>>, [%175#0, %175#1, %175#2, %175#3, %175#4] : i32, i32, i32, i32, i32) cache_policy = %174 mode = <tiled> kind = <ADD>
                       } {llvm.loop_annotation = #loop_annotation1}
                       nvvm.cp.async.bulk.commit.group
                     }
@@ -2434,7 +2441,7 @@ module attributes {gpu.container_module} {
       }
       return
     }
-    func.func public @kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64div641div64div64div64___None__2(%arg0: !memref_gmem_f32_2, %arg1: !memref_gmem_f16_, %arg2: i32, %arg3: i32, %arg4: f32) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 16, 8, 1>} {
+    cuda.kernel @kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64i64div641div64div64div64___None__2(%arg0: !memref_gmem_f32_2, %arg1: !memref_gmem_f16_, %arg2: i32, %arg3: i32, %arg4: f32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 16, 8, 1>} {
       %c16_i32 = arith.constant 16 : i32
       %0 = cute.static : !cute.stride<"(1,4)">
       %c4_i32 = arith.constant 4 : i32
@@ -2480,21 +2487,22 @@ module attributes {gpu.container_module} {
             %idx_12 = cute.crd2idx(%coord_11, %lay_2) : (!cute.coord<"(_,?)">, !cute.layout<"(4,?):(1,4)">) -> !cute.int_tuple<"?{div=4}">
             %ptr_13 = cute.add_offset(%ptr, %idx_12) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem>
             %view = cute.make_view(%ptr_13) : !memref_gmem_f32_3
-            %17 = cute.memref.load_vec %view, row_major : !memref_gmem_f32_3
+            %17 = cute.memref.load_vec %view : !memref_gmem_f32_3
             %18 = vector.broadcast %arg4 : f32 to vector<4xf32>
             %19 = arith.mulf %18, %17 : vector<4xf32>
             %idx_14 = cute.crd2idx(%coord_11, %lay_10) : (!cute.coord<"(_,?)">, !cute.layout<"(4,?):(1,4)">) -> !cute.int_tuple<"?{div=4}">
             %ptr_15 = cute.add_offset(%ptr_8, %idx_14) : (!cute.ptr<f16, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f16, gmem, align<8>>
             %view_16 = cute.make_view(%ptr_15) : !memref_gmem_f16_3
             %20 = arith.truncf %19 : vector<4xf32> to vector<4xf16>
-            cute.memref.store_vec %20, %view_16, row_major : !memref_gmem_f16_3
+            cute.memref.store_vec %20, %view_16 : !memref_gmem_f16_3
           }
         }
       }
       return
     }
   }
-  func.func @cutlass___call_____main__BlackwellFusedMultiHeadAttentionBackward_object_at__1024_1024_128_1_8_1_Tensorgmemodiv64i64div641i64div64i64div64i64div64_Tensorgmemodiv64i64div641i64div64(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: i32, %arg4: i32, %arg5: i32, %arg6: !memref_gmem_f16_4, %arg7: !memref_gmem_f16_4, %arg8: !memref_gmem_f16_4, %arg9: !memref_gmem_f16_4, %arg10: !memref_gmem_f16_4, %arg11: !memref_gmem_f16_4, %arg12: !memref_gmem_f16_4, %arg13: !memref_gmem_f16_4, %arg14: !memref_gmem_f32_4, %arg15: f32, %arg16: !memref_gmem_i8_, %arg17: !gpu.async.token) attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__BlackwellFusedMultiHeadAttentionBackward_object_at__1024_1024_128_1_8_1_Tensorgmemodiv64i64div641i64div64i64div64i64div64_Tensorgmemodiv64i64div641i64div64(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: i32, %arg4: i32, %arg5: i32, %arg6: !memref_gmem_f16_4, %arg7: !memref_gmem_f16_4, %arg8: !memref_gmem_f16_4, %arg9: !memref_gmem_f16_4, %arg10: !memref_gmem_f16_4, %arg11: !memref_gmem_f16_4, %arg12: !memref_gmem_f16_4, %arg13: !memref_gmem_f16_4, %arg14: !memref_gmem_f32_4, %arg15: f32, %arg16: !memref_gmem_i8_, %arg17: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+    %c232448_i64 = arith.constant 232448 : i64
     %0 = llvm.mlir.constant(2233785415175766016 : i64) : i64
     %1 = llvm.mlir.constant(287682 : i64) : i64
     %c7_i32 = arith.constant 7 : i32
@@ -2502,16 +2510,11 @@ module attributes {gpu.container_module} {
     %3 = llvm.mlir.constant(127 : i64) : i64
     %4 = llvm.mlir.constant(4539628424389459968 : i64) : i64
     %5 = llvm.mlir.constant(287538 : i64) : i64
-    %c232448_i32 = arith.constant 232448 : i32
-    %c512 = arith.constant 512 : index
+    %c512_i32 = arith.constant 512 : i32
     %c128_i32 = arith.constant 128 : i32
-    %c1 = arith.constant 1 : index
-    %c16 = arith.constant 16 : index
-    %c8 = arith.constant 8 : index
     %cst = arith.constant -1.44269502 : f32
     %cst_0 = arith.constant -1.000000e+00 : f32
     %6 = cute.static : !cute.int_tuple<"4">
-    %c8_i32 = arith.constant 8 : i32
     %7 = cute.static : !cute.int_tuple<"(0,0,0,0,0)">
     %8 = cute.static : !cute.stride<"(1@1,1@0,((1@2,1@3),1@4))">
     %9 = cute.static : !cute.int_tuple<"(0,0,0,0)">
@@ -2534,8 +2537,9 @@ module attributes {gpu.container_module} {
     %c16_i32 = arith.constant 16 : i32
     %false = arith.constant false
     %c0_i32 = arith.constant 0 : i32
-    %c1_i32 = arith.constant 1 : i32
     %11 = cute.static : !cute.int_tuple<"1">
+    %c1_i32 = arith.constant 1 : i32
+    %c8_i32 = arith.constant 8 : i32
     %iter = cute.get_iter(%arg6) : !memref_gmem_f16_4
     %iter_1 = cute.get_iter(%arg7) : !memref_gmem_f16_4
     %iter_2 = cute.get_iter(%arg8) : !memref_gmem_f16_4
@@ -3233,27 +3237,33 @@ module attributes {gpu.container_module} {
     %462 = cute.get_scalars(%e0_134) : !cute.int_tuple<"?">
     %463 = cute.get_scalars(%e0_99) : !cute.int_tuple<"?">
     %464 = cute.get_scalars(%e0_102) : !cute.int_tuple<"?">
-    %465 = arith.index_cast %462 : i32 to index
-    %466 = arith.index_cast %463 : i32 to index
-    %467 = arith.index_cast %464 : i32 to index
-    %468 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64div641div64div64div64_tensorptrf16gmemalign16odiv64div641div64div64div64_te_0 clusters in (%c1, %c1, %c1) blocks in (%465, %466, %467) threads in (%c8, %c16, %c1)  dynamic_shared_memory_size %c0_i32 args(%view : !memref_gmem_f16_, %view_71 : !memref_gmem_f16_, %view_118 : !memref_gmem_f32_, %view_86 : !memref_gmem_f32_, %view_119 : !memref_gmem_f32_1, %cst_0 : f32, %cst : f32, %arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i32, %arg4 : i32, %arg5 : i32) {use_pdl = false}
+    %465 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c8_i32, %c16_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%462, %463, %464), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    cuda.launch_cfg.cluster_dim[%465] (%c1_i32, %c1_i32, %c1_i32) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %466 = cuda.launch_ex @kernels::@kernel_cutlass_sum_OdO___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf16gmemalign16odiv64i64div641div64div64div64_tensorptrf16gmemalign16odiv64i64div641div64div64di_0<%465> (%view, %view_71, %view_118, %view_86, %view_119, %cst_0, %cst, %arg0, %arg1, %arg2, %arg3, %arg4, %arg5) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f16_, !memref_gmem_f16_, !memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, f32, f32, i32, i32, i32, i32, i32, i32) -> !cuda.result
+    %467 = cuda.cast %466 : !cuda.result -> i32
+    cuda.return_if_error %467 : i32
     %int_tuple_135 = cute.make_int_tuple(%arg1) : (i32) -> !cute.int_tuple<"?">
-    %469 = cute.get_scalars(%int_tuple_135) <{only_dynamic}> : !cute.int_tuple<"?">
-    %470 = arith.ceildivsi %469, %c128_i32 : i32
-    %int_tuple_136 = cute.make_int_tuple(%470) : (i32) -> !cute.int_tuple<"?">
+    %468 = cute.get_scalars(%int_tuple_135) <{only_dynamic}> : !cute.int_tuple<"?">
+    %469 = arith.ceildivsi %468, %c128_i32 : i32
+    %int_tuple_136 = cute.make_int_tuple(%469) : (i32) -> !cute.int_tuple<"?">
     %e0_137 = cute.get_leaves(%int_tuple_136) : !cute.int_tuple<"?">
-    %471 = cute.get_scalars(%e0_137) : !cute.int_tuple<"?">
+    %470 = cute.get_scalars(%e0_137) : !cute.int_tuple<"?">
     %sz_138 = cute.size(%int_tuple_20) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
     %e0_139 = cute.get_leaves(%sz_138) : !cute.int_tuple<"?">
-    %472 = cute.get_scalars(%e0_139) : !cute.int_tuple<"?">
-    %473 = arith.index_cast %471 : i32 to index
-    %474 = arith.index_cast %472 : i32 to index
-    %475 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1 clusters in (%c1, %c1, %c1) blocks in (%473, %474, %467) threads in (%c512, %c1, %c1)  dynamic_shared_memory_size %c232448_i32 args(%29 : !mma_f16_f16_f32_128x128x16_, %29 : !mma_f16_f16_f32_128x128x16_, %33 : !mma_f16_f16_f32_128x128x16_1, %37 : !mma_f16_f16_f32_128x128x16_2, %41 : !mma_f16_f16_f32_128x128x16_3, %136 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %view_92 : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %222 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, %view_94 : !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, %321 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %view_97 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %349 : !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, %view_97 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %458 : !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, %view_128 : !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, %view_69 : !memref_gmem_f16_2, %view_70 : !memref_gmem_f16_2, %view_119 : !memref_gmem_f32_1, %arg15 : f32, %view_118 : !memref_gmem_f32_, %arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i32, %arg4 : i32, %arg5 : i32) {use_pdl = false}
-    %476 = arith.maxsi %arg0, %arg1 : i32
-    %477 = arith.addi %476, %c7_i32 : i32
-    %478 = arith.floordivsi %477, %c8_i32 : i32
-    %479 = arith.index_cast %478 : i32 to index
-    %480 = gpu.launch_func async [%arg17] @kernels::@kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64div641div64div64div64___None__2 clusters in (%c1, %c1, %c1) blocks in (%466, %467, %479) threads in (%c16, %c8, %c1)  dynamic_shared_memory_size %c0_i32 args(%view_125 : !memref_gmem_f32_2, %view_68 : !memref_gmem_f16_, %arg0 : i32, %arg2 : i32, %arg15 : f32) {use_pdl = false}
-    return
+    %471 = cute.get_scalars(%e0_139) : !cute.int_tuple<"?">
+    %472 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c512_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c232448_i64, gridDim = (%470, %471, %464), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    cuda.launch_cfg.cluster_dim[%472] (%c1_i32, %c1_i32, %c1_i32) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %473 = cuda.launch_ex @kernels::@kernel_cutlass_bwd___main__BlackwellFusedMultiHeadAttentionBackward_object_at__TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK12812816_TVLayoutA1128161281128_TVL_1<%472> (%29, %29, %33, %37, %41, %136, %view_92, %222, %view_94, %321, %view_97, %349, %view_97, %458, %view_128, %view_69, %view_70, %view_119, %arg15, %view_118, %arg0, %arg1, %arg2, %arg3, %arg4, %arg5) : !cuda.launch_cfg<max_attrs = 2>, (!mma_f16_f16_f32_128x128x16_, !mma_f16_f16_f32_128x128x16_, !mma_f16_f16_f32_128x128x16_1, !mma_f16_f16_f32_128x128x16_2, !mma_f16_f16_f32_128x128x16_3, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1):(1@1,1@0,1@1@0@2,1@1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((0,1@2),1@3))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?{div=64},((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !cute_nvgpu.atom.non_exec_tiled_tma_reduce<ADD, f32, copy_bits = 131072, tma_gbasis = <"(32,128,1,1,(1)):(1@1,1@0,1@0@0@2,1@1@0@2,(1@1@2))">, internal_val_type = f32>, !cute.coord_tensor<"(0,0,0,0,0)", "(?,?,((?,?),?)):(1@1,1@0,((1@2,1@3),1@4))">, !memref_gmem_f16_2, !memref_gmem_f16_2, !memref_gmem_f32_1, f32, !memref_gmem_f32_, i32, i32, i32, i32, i32, i32) -> !cuda.result
+    %474 = cuda.cast %473 : !cuda.result -> i32
+    cuda.return_if_error %474 : i32
+    %475 = arith.maxsi %arg0, %arg1 : i32
+    %476 = arith.addi %475, %c7_i32 : i32
+    %477 = arith.floordivsi %476, %c8_i32 : i32
+    %478 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c16_i32, %c8_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%463, %464, %477), stream = %arg17) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    cuda.launch_cfg.cluster_dim[%478] (%c1_i32, %c1_i32, %c1_i32) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    %479 = cuda.launch_ex @kernels::@kernel_cutlass_convert___main__BlackwellFusedMultiHeadAttentionBackward_object_at__tensorptrf32gmemo1_tensorptrf16gmemalign16odiv64i64div641div64div64div64___None__2<%478> (%view_125, %view_68, %arg0, %arg2, %arg15) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_2, !memref_gmem_f16_, i32, i32, f32) -> !cuda.result
+    %480 = cuda.cast %479 : !cuda.result -> i32
+    cuda.return_if_error %480 : i32
+    return %c0_i32 : i32
   }
 }

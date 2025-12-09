@@ -11,7 +11,10 @@
 # This is the second tutorial GEMM. It builds on the first tutorial by adding 2CTA MMA
 # instructions with a 2x1 cluster.
 import sys
-sys.path.append("/os.path.join(os.path.dirname(__file__), "../dump")")
+import os
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dump_dir = os.path.join(base_dir, "..","..","dump")
+sys.path.append(dump_dir)
 
 import cute_ir_dump_patch as cid
 cid.install()

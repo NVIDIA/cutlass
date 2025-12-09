@@ -1,8 +1,6 @@
-!memref_gmem_i32_ = !cute.memref<i32, gmem, "(?):(1)">
-!memref_gmem_i8_ = !cute.memref<i8, gmem, "(?):(1)">
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    llvm.func @kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) attributes {gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} {
+    llvm.func @kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} {
       %0 = llvm.mlir.constant(-1 : i32) : i32
       %1 = llvm.mlir.constant(10 : i32) : i32
       %2 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
@@ -49,21 +47,47 @@ module attributes {gpu.container_module} {
       llvm.return
     }
   }
-  llvm.func @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) attributes {llvm.emit_c_interface} {
-    %0 = builtin.unrealized_conversion_cast %arg3 : !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)> to !memref_gmem_i8_
-    %1 = builtin.unrealized_conversion_cast %arg2 : !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)> to !memref_gmem_i8_
-    %2 = builtin.unrealized_conversion_cast %arg1 : !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)> to !memref_gmem_i8_
-    %3 = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)> to !memref_gmem_i32_
-    %4 = llvm.mlir.constant(1 : index) : i64
-    %5 = builtin.unrealized_conversion_cast %4 : i64 to index
-    %6 = llvm.mlir.constant(32 : index) : i64
-    %7 = builtin.unrealized_conversion_cast %6 : i64 to index
-    %8 = llvm.mlir.constant(0 : i32) : i32
-    gpu.launch_func  @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0 blocks in (%5, %5, %5) threads in (%7, %5, %5)  dynamic_shared_memory_size %8 args(%3 : !memref_gmem_i32_, %2 : !memref_gmem_i8_, %1 : !memref_gmem_i8_, %0 : !memref_gmem_i8_) {use_pdl = false}
-    llvm.return
+  llvm.func @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = llvm.mlir.constant(1 : i32) : i32
+    %1 = llvm.mlir.constant(32 : i32) : i32
+    %2 = llvm.mlir.constant(0 : i32) : i32
+    %3 = llvm.mlir.constant(0 : i64) : i64
+    %4 = llvm.inttoptr %3 : i64 to !llvm.ptr
+    %5 = llvm.mlir.constant(1 : i32) : i32
+    %6 = llvm.alloca %5 x !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)> : (i32) -> !llvm.ptr
+    %7 = llvm.alloca %5 x !llvm.array<2 x struct<(i32, array<4 x i8>, array<64 x i8>)>> : (i32) -> !llvm.ptr
+    %8 = llvm.getelementptr %6[0, 4] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %7, %8 : !llvm.ptr, !llvm.ptr
+    %9 = llvm.getelementptr %6[0, 1, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %1, %9 : i32, !llvm.ptr
+    %10 = llvm.getelementptr %6[0, 1, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %0, %10 : i32, !llvm.ptr
+    %11 = llvm.getelementptr %6[0, 1, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %0, %11 : i32, !llvm.ptr
+    %12 = llvm.getelementptr %6[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %3, %12 : i64, !llvm.ptr
+    %13 = llvm.getelementptr %6[0, 0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %0, %13 : i32, !llvm.ptr
+    %14 = llvm.getelementptr %6[0, 0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %0, %14 : i32, !llvm.ptr
+    %15 = llvm.getelementptr %6[0, 0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %0, %15 : i32, !llvm.ptr
+    %16 = llvm.getelementptr %6[0, 5] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    %17 = llvm.mlir.constant(0 : i32) : i32
+    llvm.store %17, %16 : i32, !llvm.ptr
+    %18 = llvm.getelementptr %6[0, 3] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(array<3 x i32>, array<3 x i32>, i64, ptr, ptr, i32)>
+    llvm.store %4, %18 : !llvm.ptr, !llvm.ptr
+    %19 = llvm.alloca %5 x !llvm.array<1 x ptr> : (i32) -> !llvm.ptr
+    %20 = llvm.getelementptr %19[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<1 x ptr>
+    llvm.store %6, %20 : !llvm.ptr, !llvm.ptr
+    %21 = builtin.unrealized_conversion_cast %19 : !llvm.ptr to !cuda.launch_cfg<max_attrs = 2>
+    %22 = cuda.launch_ex @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0<%21> (%arg0, %arg1, %arg2, %arg3) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) -> !cuda.result
+    %23 = builtin.unrealized_conversion_cast %22 : !cuda.result to i32
+    cuda.return_if_error %23 : i32
+    llvm.return %2 : i32
   }
-  llvm.func @_mlir_ciface_cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) attributes {llvm.emit_c_interface} {
-    llvm.call @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) -> ()
-    llvm.return
+  llvm.func @_mlir_ciface_cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, %arg3: !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = llvm.call @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0, %arg1, %arg2, %arg3) : (!llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(i32, struct<()>)>)>) -> i32
+    llvm.return %0 : i32
   }
 }

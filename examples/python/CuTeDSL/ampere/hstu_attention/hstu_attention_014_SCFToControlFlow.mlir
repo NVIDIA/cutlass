@@ -22,7 +22,7 @@
 #loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    func.func public @kernel_cutlass_kernel___main__HSTUAttentionForwardAmpere_object_at__tensorptrbf16gmemalign16odiv8div8div8div81_tensorptrbf16gmemalign16odiv8div8div8div81_tensorptrbf16gmemalign16odiv8div8_0(%arg0: !memref_gmem_bf16_, %arg1: !memref_gmem_bf16_, %arg2: !memref_gmem_bf16_, %arg3: !memref_gmem_bf16_, %arg4: !memref_gmem_bf16_) attributes {cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    cuda.kernel @kernel_cutlass_kernel___main__HSTUAttentionForwardAmpere_object_at__tensorptrbf16gmemalign16odiv8i64div8i64div8i64div81_tensorptrbf16gmemalign16odiv8i64div8i64div8i64div81_tensorptrbf16gm_0(%arg0: !memref_gmem_bf16_, %arg1: !memref_gmem_bf16_, %arg2: !memref_gmem_bf16_, %arg3: !memref_gmem_bf16_, %arg4: !memref_gmem_bf16_) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %cst = arith.constant dense<5.000000e-01> : vector<32xf32>
       %cst_0 = arith.constant dense<0.000000e+00> : vector<8xbf16>
       %cst_1 = arith.constant dense<0.000000e+00> : vector<16xbf16>
@@ -378,7 +378,7 @@ module attributes {gpu.container_module} {
       %rmem_134 = cute.memref.alloca() : !memref_rmem_bf16_1
       %rmem_135 = cute.memref.alloca() : !memref_rmem_bf16_2
       %rmem_136 = cute.memref.alloca() : !memref_rmem_f32_
-      cute.memref.store_vec %cst_2, %rmem_136, row_major : !memref_rmem_f32_
+      cute.memref.store_vec %cst_2, %rmem_136 : !memref_rmem_f32_
       %atom = cute.make_atom() : () -> !cute_nvgpu.atom.ldsm<val_type = bf16, mode = <"(8,8)">, sz_pattern = u16, num_matrices = 4, n>
       %atom_137 = cute.make_atom() : () -> !cute_nvgpu.atom.ldsm<val_type = bf16, mode = <"(8,8)">, sz_pattern = u16, num_matrices = 4, t>
       %187 = cute.make_tiled_copy(%atom) : !copy_ldsm_4_
@@ -583,7 +583,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb6
     ^bb5:  // pred: ^bb0
       %view = cute.make_view(%ptr_107) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view : !memref_smem_bf16_
       cf.br ^bb6
     ^bb6:  // 2 preds: ^bb4, ^bb5
       %tup_259 = cute.add_offset(%tup_215, %90) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,16,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -623,7 +623,7 @@ module attributes {gpu.container_module} {
     ^bb11:  // pred: ^bb6
       %ptr_278 = cute.add_offset(%ptr_107, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
       %view_279 = cute.make_view(%ptr_278) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_279, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_279 : !memref_smem_bf16_
       cf.br ^bb12
     ^bb12:  // 2 preds: ^bb10, ^bb11
       %tup_280 = cute.add_offset(%tup_215, %87) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,32,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -663,7 +663,7 @@ module attributes {gpu.container_module} {
     ^bb17:  // pred: ^bb12
       %ptr_299 = cute.add_offset(%ptr_107, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
       %view_300 = cute.make_view(%ptr_299) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_300, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_300 : !memref_smem_bf16_
       cf.br ^bb18
     ^bb18:  // 2 preds: ^bb16, ^bb17
       %tup_301 = cute.add_offset(%tup_215, %84) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,48,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -703,7 +703,7 @@ module attributes {gpu.container_module} {
     ^bb23:  // pred: ^bb18
       %ptr_320 = cute.add_offset(%ptr_107, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
       %view_321 = cute.make_view(%ptr_320) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_321, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_321 : !memref_smem_bf16_
       cf.br ^bb24
     ^bb24:  // 2 preds: ^bb22, ^bb23
       %coord_322 = cute.make_coord(%e1_236) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
@@ -742,7 +742,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb30
     ^bb29:  // pred: ^bb24
       %view_337 = cute.make_view(%ptr_116) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_337, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_337 : !memref_smem_bf16_
       cf.br ^bb30
     ^bb30:  // 2 preds: ^bb28, ^bb29
       %tup_338 = cute.add_offset(%tup_216, %90) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,16,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -783,7 +783,7 @@ module attributes {gpu.container_module} {
     ^bb35:  // pred: ^bb30
       %ptr_358 = cute.add_offset(%ptr_116, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
       %view_359 = cute.make_view(%ptr_358) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_359, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_359 : !memref_smem_bf16_
       cf.br ^bb36
     ^bb36:  // 2 preds: ^bb34, ^bb35
       %tup_360 = cute.add_offset(%tup_216, %87) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,32,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -824,7 +824,7 @@ module attributes {gpu.container_module} {
     ^bb41:  // pred: ^bb36
       %ptr_380 = cute.add_offset(%ptr_116, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
       %view_381 = cute.make_view(%ptr_380) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_381, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_381 : !memref_smem_bf16_
       cf.br ^bb42
     ^bb42:  // 2 preds: ^bb40, ^bb41
       %tup_382 = cute.add_offset(%tup_216, %84) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,48,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
@@ -865,7 +865,7 @@ module attributes {gpu.container_module} {
     ^bb47:  // pred: ^bb42
       %ptr_402 = cute.add_offset(%ptr_116, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
       %view_403 = cute.make_view(%ptr_402) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_403, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_403 : !memref_smem_bf16_
       cf.br ^bb48
     ^bb48:  // 2 preds: ^bb46, ^bb47
       %coord_404 = cute.make_coord(%sub_16) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,0,0,?)">
@@ -906,7 +906,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb54
     ^bb53:  // pred: ^bb48
       %view_420 = cute.make_view(%ptr_133) : !memref_smem_bf16_1
-      cute.memref.store_vec %cst_0, %view_420, row_major : !memref_smem_bf16_1
+      cute.memref.store_vec %cst_0, %view_420 : !memref_smem_bf16_1
       cf.br ^bb54
     ^bb54:  // 2 preds: ^bb52, ^bb53
       %coord_421 = cute.make_coord(%sub_16) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,1,0,?)">
@@ -945,7 +945,7 @@ module attributes {gpu.container_module} {
     ^bb59:  // pred: ^bb54
       %ptr_436 = cute.add_offset(%ptr_133, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
       %view_437 = cute.make_view(%ptr_436) : !memref_smem_bf16_1
-      cute.memref.store_vec %cst_0, %view_437, row_major : !memref_smem_bf16_1
+      cute.memref.store_vec %cst_0, %view_437 : !memref_smem_bf16_1
       cf.br ^bb60
     ^bb60:  // 2 preds: ^bb58, ^bb59
       %coord_438 = cute.make_coord(%sub_16) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,2,0,?)">
@@ -984,7 +984,7 @@ module attributes {gpu.container_module} {
     ^bb65:  // pred: ^bb60
       %ptr_453 = cute.add_offset(%ptr_133, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
       %view_454 = cute.make_view(%ptr_453) : !memref_smem_bf16_1
-      cute.memref.store_vec %cst_0, %view_454, row_major : !memref_smem_bf16_1
+      cute.memref.store_vec %cst_0, %view_454 : !memref_smem_bf16_1
       cf.br ^bb66
     ^bb66:  // 2 preds: ^bb64, ^bb65
       %coord_455 = cute.make_coord(%sub_16) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,3,0,?)">
@@ -1023,7 +1023,7 @@ module attributes {gpu.container_module} {
     ^bb71:  // pred: ^bb66
       %ptr_470 = cute.add_offset(%ptr_133, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
       %view_471 = cute.make_view(%ptr_470) : !memref_smem_bf16_1
-      cute.memref.store_vec %cst_0, %view_471, row_major : !memref_smem_bf16_1
+      cute.memref.store_vec %cst_0, %view_471 : !memref_smem_bf16_1
       cf.br ^bb72
     ^bb72:  // 2 preds: ^bb70, ^bb71
       nvvm.cp.async.commit.group
@@ -1272,7 +1272,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb81
     ^bb80:  // pred: ^bb75
       %view_613 = cute.make_view(%ptr_125) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_613, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_613 : !memref_smem_bf16_
       cf.br ^bb81
     ^bb81:  // 2 preds: ^bb79, ^bb80
       %469 = arith.cmpi slt, %304, %460 : i32
@@ -1309,7 +1309,7 @@ module attributes {gpu.container_module} {
     ^bb86:  // pred: ^bb81
       %ptr_628 = cute.add_offset(%ptr_125, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
       %view_629 = cute.make_view(%ptr_628) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_629, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_629 : !memref_smem_bf16_
       cf.br ^bb87
     ^bb87:  // 2 preds: ^bb85, ^bb86
       %477 = arith.cmpi slt, %313, %460 : i32
@@ -1346,7 +1346,7 @@ module attributes {gpu.container_module} {
     ^bb92:  // pred: ^bb87
       %ptr_644 = cute.add_offset(%ptr_125, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
       %view_645 = cute.make_view(%ptr_644) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_645, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_645 : !memref_smem_bf16_
       cf.br ^bb93
     ^bb93:  // 2 preds: ^bb91, ^bb92
       %485 = arith.cmpi slt, %322, %460 : i32
@@ -1383,7 +1383,7 @@ module attributes {gpu.container_module} {
     ^bb98:  // pred: ^bb93
       %ptr_660 = cute.add_offset(%ptr_125, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
       %view_661 = cute.make_view(%ptr_660) : !memref_smem_bf16_
-      cute.memref.store_vec %cst_1, %view_661, row_major : !memref_smem_bf16_
+      cute.memref.store_vec %cst_1, %view_661 : !memref_smem_bf16_
       cf.br ^bb99
     ^bb99:  // 2 preds: ^bb97, ^bb98
       cf.br ^bb104
@@ -1463,9 +1463,9 @@ module attributes {gpu.container_module} {
       %514 = arith.addi %503, %c1_i32 : i32
       cf.br ^bb105(%514 : i32)
     ^bb107:  // pred: ^bb105
-      %515 = cute.memref.load_vec %rmem_687, row_major : !memref_rmem_bf16_3
+      %515 = cute.memref.load_vec %rmem_687 : !memref_rmem_bf16_3
       %516 = arith.extf %515 : vector<32xbf16> to vector<32xf32>
-      cute.memref.store_vec %516, %rmem_686, row_major : !memref_rmem_f32_1
+      cute.memref.store_vec %516, %rmem_686 : !memref_rmem_f32_1
       cf.br ^bb108(%c0_i32 : i32)
     ^bb108(%517: i32):  // 2 preds: ^bb107, ^bb109
       %518 = arith.cmpi slt, %517, %385 : i32
@@ -2307,7 +2307,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb237
     ^bb236:  // pred: ^bb231
       %view_840 = cute.make_view(%ptr_133) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_840, row_major : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_840 : !memref_smem_bf16_2
       cf.br ^bb237
     ^bb237:  // 2 preds: ^bb235, ^bb236
       cf.cond_br %346, ^bb238, ^bb242
@@ -2331,7 +2331,7 @@ module attributes {gpu.container_module} {
     ^bb242:  // pred: ^bb237
       %ptr_847 = cute.add_offset(%ptr_133, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
       %view_848 = cute.make_view(%ptr_847) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_848, row_major : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_848 : !memref_smem_bf16_2
       cf.br ^bb243
     ^bb243:  // 2 preds: ^bb241, ^bb242
       cf.cond_br %358, ^bb244, ^bb248
@@ -2355,7 +2355,7 @@ module attributes {gpu.container_module} {
     ^bb248:  // pred: ^bb243
       %ptr_855 = cute.add_offset(%ptr_133, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
       %view_856 = cute.make_view(%ptr_855) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_856, row_major : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_856 : !memref_smem_bf16_2
       cf.br ^bb249
     ^bb249:  // 2 preds: ^bb247, ^bb248
       cf.cond_br %370, ^bb250, ^bb254
@@ -2379,15 +2379,15 @@ module attributes {gpu.container_module} {
     ^bb254:  // pred: ^bb249
       %ptr_863 = cute.add_offset(%ptr_133, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
       %view_864 = cute.make_view(%ptr_863) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_864, row_major : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_864 : !memref_smem_bf16_2
       cf.br ^bb255
     ^bb255:  // 2 preds: ^bb253, ^bb254
       nvvm.cp.async.commit.group
       cf.br ^bb256
     ^bb256:  // 2 preds: ^bb227, ^bb255
-      %907 = cute.memref.load_vec %rmem_686, row_major : !memref_rmem_f32_1
+      %907 = cute.memref.load_vec %rmem_686 : !memref_rmem_f32_1
       %908 = arith.mulf %907, %cst : vector<32xf32>
-      cute.memref.store_vec %908, %rmem_686, row_major : !memref_rmem_f32_1
+      cute.memref.store_vec %908, %rmem_686 : !memref_rmem_f32_1
       %909 = cute.memref.load(%rmem_686, %97) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">) -> f32
       %910 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %909 : (f32) -> f32
       cute.memref.store(%rmem_686, %97, %910) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">, f32) -> ()
@@ -2484,15 +2484,15 @@ module attributes {gpu.container_module} {
       %971 = cute.memref.load(%rmem_686, %13) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">) -> f32
       %972 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %971 : (f32) -> f32
       cute.memref.store(%rmem_686, %13, %972) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">, f32) -> ()
-      %973 = cute.memref.load_vec %rmem_686, row_major : !memref_rmem_f32_1
+      %973 = cute.memref.load_vec %rmem_686 : !memref_rmem_f32_1
       %974 = arith.mulf %908, %973 : vector<32xf32>
       %975 = arith.addf %974, %908 : vector<32xf32>
-      cute.memref.store_vec %975, %rmem_686, row_major : !memref_rmem_f32_1
+      cute.memref.store_vec %975, %rmem_686 : !memref_rmem_f32_1
       %rmem_865 = cute.memref.alloca() : !memref_rmem_bf16_3
       %iter_866 = cute.get_iter(%rmem_865) : !memref_rmem_bf16_3
-      %976 = cute.memref.load_vec %rmem_686, row_major : !memref_rmem_f32_1
+      %976 = cute.memref.load_vec %rmem_686 : !memref_rmem_f32_1
       %977 = arith.truncf %976 : vector<32xf32> to vector<32xbf16>
-      cute.memref.store_vec %977, %rmem_865, row_major : !memref_rmem_bf16_3
+      cute.memref.store_vec %977, %rmem_865 : !memref_rmem_bf16_3
       cf.br ^bb257(%c0_i32 : i32)
     ^bb257(%978: i32):  // 2 preds: ^bb256, ^bb258
       %979 = arith.cmpi slt, %978, %394 : i32
@@ -2836,9 +2836,9 @@ module attributes {gpu.container_module} {
       cf.br ^bb73(%1146 : i32)
     ^bb305:  // pred: ^bb73
       %rmem_926 = cute.memref.alloca() : !memref_rmem_bf16_4
-      %1147 = cute.memref.load_vec %rmem_136, row_major : !memref_rmem_f32_
+      %1147 = cute.memref.load_vec %rmem_136 : !memref_rmem_f32_
       %1148 = arith.truncf %1147 : vector<64xf32> to vector<64xbf16>
-      cute.memref.store_vec %1148, %rmem_926, row_major : !memref_rmem_bf16_4
+      cute.memref.store_vec %1148, %rmem_926 : !memref_rmem_bf16_4
       %iter_927 = cute.recast_iter(%iter_94) : !cute.ptr<bf16, smem, align<1024>> to !cute.ptr<bf16, smem, align<1024>, S<3,4,3>>
       %atom_928 = cute.make_atom() : () -> !cute_nvgpu.atom.universal_copy<bf16>
       %1149 = cute.make_tiled_copy(%atom_928) : !copy_simt
@@ -3153,11 +3153,12 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass___call_____main__HSTUAttentionForwardAmpere_object_at__Tensorgmemodiv8i64div8i64div8i64div81_Tensorgmemodiv8i64div8i64div8i64div81_Tensorgmemodiv8i64div8i64div8i64div81_Ten(%arg0: !memref_gmem_bf16_, %arg1: !memref_gmem_bf16_, %arg2: !memref_gmem_bf16_, %arg3: !memref_gmem_bf16_, %arg4: !memref_gmem_bf16_, %arg5: !gpu.async.token) attributes {llvm.emit_c_interface} {
-    %c57344_i32 = arith.constant 57344 : i32
-    %c1 = arith.constant 1 : index
-    %c128 = arith.constant 128 : index
-    %c4 = arith.constant 4 : index
+  func.func @cutlass___call_____main__HSTUAttentionForwardAmpere_object_at__Tensorgmemodiv8i64div8i64div8i64div81_Tensorgmemodiv8i64div8i64div8i64div81_Tensorgmemodiv8i64div8i64div8i64div81_Ten(%arg0: !memref_gmem_bf16_, %arg1: !memref_gmem_bf16_, %arg2: !memref_gmem_bf16_, %arg3: !memref_gmem_bf16_, %arg4: !memref_gmem_bf16_, %arg5: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+    %c57344_i64 = arith.constant 57344 : i64
+    %c0_i32 = arith.constant 0 : i32
+    %c4_i32 = arith.constant 4 : i32
+    %c1_i32 = arith.constant 1 : i32
+    %c128_i32 = arith.constant 128 : i32
     %c64_i32 = arith.constant 64 : i32
     %atom = cute.make_atom() : () -> !cute_nvgpu.atom.simt_async_copy<bf16, cache = always, 128 b>
     %atom_0 = cute.make_atom() : () -> !cute_nvgpu.atom.universal_copy<bf16, 128 b>
@@ -3173,8 +3174,10 @@ module attributes {gpu.container_module} {
     %int_tuple_1 = cute.make_int_tuple(%4) : (i32) -> !cute.int_tuple<"?">
     %e0_2 = cute.get_leaves(%int_tuple_1) : !cute.int_tuple<"?">
     %5 = cute.get_scalars(%e0_2) : !cute.int_tuple<"?">
-    %6 = arith.index_cast %5 : i32 to index
-    %7 = gpu.launch_func async [%arg5] @kernels::@kernel_cutlass_kernel___main__HSTUAttentionForwardAmpere_object_at__tensorptrbf16gmemalign16odiv8div8div8div81_tensorptrbf16gmemalign16odiv8div8div8div81_tensorptrbf16gmemalign16odiv8div8_0 blocks in (%c4, %c4, %6) threads in (%c128, %c1, %c1)  dynamic_shared_memory_size %c57344_i32 args(%arg0 : !memref_gmem_bf16_, %arg1 : !memref_gmem_bf16_, %arg2 : !memref_gmem_bf16_, %arg3 : !memref_gmem_bf16_, %arg4 : !memref_gmem_bf16_) {use_pdl = false}
-    return
+    %6 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c128_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c57344_i64, gridDim = (%c4_i32, %c4_i32, %5), stream = %arg5) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %7 = cuda.launch_ex @kernels::@kernel_cutlass_kernel___main__HSTUAttentionForwardAmpere_object_at__tensorptrbf16gmemalign16odiv8i64div8i64div8i64div81_tensorptrbf16gmemalign16odiv8i64div8i64div8i64div81_tensorptrbf16gm_0<%6> (%arg0, %arg1, %arg2, %arg3, %arg4) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_bf16_, !memref_gmem_bf16_, !memref_gmem_bf16_, !memref_gmem_bf16_, !memref_gmem_bf16_) -> !cuda.result
+    %8 = cuda.cast %7 : !cuda.result -> i32
+    cuda.return_if_error %8 : i32
+    return %c0_i32 : i32
   }
 }
