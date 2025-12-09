@@ -1890,6 +1890,7 @@ struct HostCollectiveEpilogue {
                                        typename Gemm::EpilogueOutputOp>;
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
 
+
   // Scale factor Generation related
   using SfStrategy = cutlass::reference::host::SfStrategy;
   static constexpr bool IsBlockScaleSupported            = FusionOp::IsBlockScaleSupported;
