@@ -805,6 +805,7 @@ public:
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
         }
 
+        // TODO: Equip the SM100 TileScheduler with is_last_tile
         if constexpr (!IsBlockScaled) {
           if (scheduler.is_last_tile(work_tile_info)) {
             // Hint on an early release of global memory resources.
