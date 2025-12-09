@@ -800,6 +800,7 @@ public:
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
 
+      #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
       // It is possible to have work tiles start off invalid,
       // so we have to check that first.
       if (not work_tile_info.is_valid()) {
@@ -810,6 +811,7 @@ public:
 
         return;
       }
+      #endif
       
       if constexpr (IsSchedDynamicPersistent) {
         // Consumer0's initial tile is static. It starts consuming the 2nd tile.
@@ -866,6 +868,7 @@ public:
         // Update starting mainloop pipeline state for the next tile
         mainloop_pipe_consumer_state.advance(k_tile_count * NumMmaWarpGroups);
 
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
         if (scheduler.is_last_tile(work_tile_info, NumMmaWarpGroups)) {
           // Hint on an early release of global memory resources.
           // The timing of calling this function only influences performance,
@@ -873,6 +876,7 @@ public:
           cutlass::arch::launch_dependent_grids();
 
         }
+        #endif
 
         // Order two Math WG's Epilogue one after the other
         math_wg_order_barrier.wait();
