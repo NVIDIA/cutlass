@@ -3,6 +3,8 @@
 # CUTLASS 4.x
 
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
+
+### CuTe DSL
 * New features
   - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi
   - Supported variadic tuples for JIT function argument in tvm-ffi
