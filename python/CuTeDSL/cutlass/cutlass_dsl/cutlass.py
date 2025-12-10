@@ -43,9 +43,9 @@ from ..base_dsl.dsl import is_dynamic_expression, extract_mlir_values
 from ..base_dsl.typing import *
 from ..base_dsl.typing import DynamicExpression, get_mlir_types
 from ..base_dsl.runtime.jit_arg_adapters import is_arg_spec_constexpr
+from ..base_dsl.jit_executor import ExecutionArgs
 from ..base_dsl.runtime import cuda as cuda_helpers
 from .cuda_stream_adapter import CudaDialectStreamAdapter
-
 from .cuda_jit_executor import CudaDialectJitCompiledFunction
 
 # MLIR Imports
@@ -421,12 +421,13 @@ class CutlassBaseDSL(BaseDSL):
             # attach extra ABI function to the MLIR module
             from .tvm_ffi_provider import (
                 TVMFFIJitCompiledFunction,
+                TVMFFIJitCompiledFunctionWithKwargs,
                 TVMFFICuteCallProvider,
             )
             from cutlass.base_dsl.tvm_ffi_builder import attach_ffi_func
 
             assert self._tvm_ffi_args_spec_converter is not None
-            tvm_ffi_spec_params = self._tvm_ffi_args_spec_converter(
+            tvm_ffi_spec_params, kwargs_wrapper_spec = self._tvm_ffi_args_spec_converter(
                 function_name, args_spec, full_args, full_kwargs
             )
             tvm_ffi_provider = TVMFFICuteCallProvider(function_name)
@@ -444,6 +445,15 @@ class CutlassBaseDSL(BaseDSL):
                     )
                 module.operation.verify()
 
+            def _make_compiled_func(*args, **kwargs):
+                if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
+                    return TVMFFIJitCompiledFunctionWithKwargs(
+                        *args, **kwargs,
+                        kwargs_wrapper_spec=kwargs_wrapper_spec
+                    )
+                else:
+                    return TVMFFIJitCompiledFunction(*args, **kwargs)
+
             # ensure the compiler can run post-compile hook after its passes
             # the context will restore the previous post-compile hook after it exits
             with compiler.PostCompileHookContext(
@@ -456,7 +466,7 @@ class CutlassBaseDSL(BaseDSL):
                     pipeline,
                     args_spec,
                     no_cache,
-                    TVMFFIJitCompiledFunction,
+                    _make_compiled_func,
                     full_args=full_args,
                     full_kwargs=full_kwargs,
                     dynamic_args=dynamic_args,

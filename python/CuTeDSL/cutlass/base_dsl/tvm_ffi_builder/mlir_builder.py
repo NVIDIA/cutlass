@@ -38,6 +38,7 @@ class MLIRTypeBuilder:
         self.gpu_ptr_type = llvm.PointerType.get(address_space=1)
         # did not find a programmatic way to get the void type
         self.void_type = ir.Type.parse("!llvm.void")
+        self.llvm_internal_linkage = ir.Attribute.parse("#llvm.linkage<internal>")
 
     def ptr_type_with_address_space(
         self, address_space: Optional[int] = None
@@ -374,8 +375,10 @@ class MLIRBuilder(MLIRTypeBuilder):
         params_type: Sequence[ir.Type],
         ret_type: ir.Type,
         internal: bool = False,
+        llvm_func_attrs: Sequence[str] = (),
     ) -> tuple[list[ir.Value], ir.Block]:
-        """Create a function with the given signature."""
+        """Create a function with the given signature.
+        """
         func_op = llvm.func(
             name,
             function_type=self.as_attr(
@@ -383,9 +386,15 @@ class MLIRBuilder(MLIRTypeBuilder):
             ),
         )
         if internal:
-            func_op.attributes["llvm.linkage"] = ir.StringAttr.get("private")
+            func_op.attributes["linkage"] = self.llvm_internal_linkage
         else:
             func_op.attributes["llvm.emit_c_interface"] = ir.UnitAttr.get()
+
+        # Add LLVM function attributes via passthrough
+        if llvm_func_attrs:
+            func_op.attributes["passthrough"] = ir.ArrayAttr.get(
+                [ir.StringAttr.get(attr) for attr in llvm_func_attrs]
+            )
 
         params = []
         func_body: Any = func_op.body

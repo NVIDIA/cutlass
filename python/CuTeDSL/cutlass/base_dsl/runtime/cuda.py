@@ -21,6 +21,7 @@ import os
 import ctypes
 
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cudart
 import cuda.bindings.nvrtc as nvrtc
 
 # Local module imports
@@ -44,6 +45,8 @@ def _cudaGetErrorEnum(error):
     if isinstance(error, cuda.CUresult):
         err, name = cuda.cuGetErrorName(error)
         return name if err == cuda.CUresult.CUDA_SUCCESS else "<unknown>"
+    elif isinstance(error, cudart.cudaError_t):
+        return cudart.cudaGetErrorName(error)[1]
     elif isinstance(error, nvrtc.nvrtcResult):
         return nvrtc.nvrtcGetErrorString(error)[1]
     else:

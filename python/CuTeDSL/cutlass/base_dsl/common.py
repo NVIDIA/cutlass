@@ -195,6 +195,10 @@ def _get_friendly_cuda_error_message(error_code, error_name):
             f"2. SM ARCH setting",
             f"3. Steps to reproduce",
         ),
+        "cudaErrorInsufficientDriver": (
+            f"1. Run nvidia-smi to confirm CUDA driver version",
+            f"2. Ensure the CUDA driver version meets the requirement of the installed cuda-python package",
+        ),
     }
 
     message = f"{error_name} (error code: {error_code}) \n" \
