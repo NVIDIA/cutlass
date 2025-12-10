@@ -48,9 +48,11 @@ import cutlass.cute.testing as testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cute.typing import Int32, Int64, Float32
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(current_dir, ".."))
-from utils import fmha_helpers as fmha_utils
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
+from helpers import fmha_helpers as fmha_utils
 
 """
 A fused multi-head attention (FMHA) example for the NVIDIA Blackwell SM100 architecture using CUTE DSL
@@ -245,7 +247,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         k_iter: cute.Pointer,
         v_iter: cute.Pointer,
         o_iter: cute.Pointer,
-        problem_size: Tuple[Int32, Int32, Int32, Int32, Int32, Int32],
+        problem_size: Tuple[Int32, Int32, Int32, Int32, Int32, Int32, Int32],
         cum_seqlen_q: Optional[cute.Tensor],
         cum_seqlen_k: Optional[cute.Tensor],
         lse_iter: Optional[cute.Pointer],

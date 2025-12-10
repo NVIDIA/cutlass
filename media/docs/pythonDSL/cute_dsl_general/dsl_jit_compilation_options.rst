@@ -62,6 +62,10 @@ You can provide additional compilation options as a string when calling ``cute.c
      - The GPU architecture to compile for.
      - ""
      - str
+   * - ``enable-tvm-ffi``
+     - Enable Apache TVM FFI.
+     - False
+     - bool
 
 You can use the following code to specify compilation options:
 

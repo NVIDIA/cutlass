@@ -734,11 +734,6 @@ public:
     mainloop_ab_pipeline.init_masks(cluster_shape);
     mainloop_sf_pipeline.init_masks(cluster_shape);
     accumulator_pipeline.init_masks(cluster_shape);
-    // TileID scheduler
-    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
-    auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
-
     //
     // TMEM "Allocation"
     //
@@ -748,6 +743,15 @@ public:
     auto acc_shape = partition_shape_C(tiled_mma, take<0,2>(TileShape{}));
     Tensor accumulators = cutlass::detail::make_sm100_accumulator<AccumulatorPipelineStageCount, IsOverlappingAccum>(
         tiled_mma, acc_shape, EpilogueTile{});
+
+    // TileID scheduler
+    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
+
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
+    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
+    auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
 
     pipeline_init_wait(cluster_size);
 

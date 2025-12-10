@@ -39,6 +39,7 @@ from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
@@ -235,22 +236,18 @@ class BlockwiseMaskedGroupedGemmKernel:
         self.num_regs_epilogue_warps = 216
         self.num_regs_acc_update_warps = 216
 
-        # Set barrier id for cta sync, epilogue sync and tmem ptr sync
-        self.cta_sync_barrier = pipeline.NamedBarrier(
-            barrier_id=1,
-            num_threads=self.threads_per_cta,
-        )
+        # Set barrier id for epilogue sync and tmem ptr sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
-            barrier_id=2,
+            barrier_id=1,
             num_threads=32 * len(self.epilog_warp_id),
         )
         self.tmem_alloc_barrier = pipeline.NamedBarrier(
-            barrier_id=3,
+            barrier_id=2,
             num_threads=32
             * len((self.mma_warp_id, *self.epilog_warp_id, *self.acc_update_warp_id)),
         )
         self.sched_sync_barrier = pipeline.NamedBarrier(
-            barrier_id=4,
+            barrier_id=3,
             num_threads=self.threads_per_warp,
         )
         self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
@@ -723,6 +720,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
 
         # Initialize mainloop scale_pipeline (barrier) and states
@@ -739,6 +737,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             num_stages=self.num_scale_stage,
             producer_group=scale_pipeline_producer_group,
             consumer_group=scale_pipeline_consumer_group,
+            defer_sync=True,
         )
 
         # Initialize acc_pipeline (barrier) and states
@@ -755,6 +754,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             producer_group=acc_pipeline_producer_group,
             consumer_group=acc_pipeline_consumer_group,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
 
         # Initialize epilogue pipeline (barrier) and states
@@ -771,6 +771,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             num_stages=1,
             producer_group=epi_pipeline_producer_group,
             consumer_group=epi_pipeline_consumer_group,
+            defer_sync=True,
         )
 
         # Initialize tile info pipeline (barrier) and states
@@ -787,6 +788,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             num_stages=self.num_tile_stage,
             producer_group=tile_info_pipeline_producer_group,
             consumer_group=tile_info_pipeline_consumer_group,
+            defer_sync=True,
         )
 
         # Tensor memory dealloc barrier init
@@ -799,8 +801,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         #
         # Setup smem tensor A/B/C/Scale
@@ -988,10 +989,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         #
         # Cluster wait before tensor memory alloc
         #
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
-        else:
-            self.cta_sync_barrier.arrive_and_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         #
         # Specialized Schedule warp
@@ -2012,15 +2010,9 @@ class BlockwiseMaskedGroupedGemmKernel:
                 tcgen05.copy.Ld16x256bOp(tcgen05.copy.Repetition(8)),
                 self.acc_dtype,
             )
-        elif cutlass.const_expr(self.mma_tiler[0] == 128):
+        else:
             tmem_load_atom = cute.make_copy_atom(
                 tcgen05.copy.Ld32x32bOp(tcgen05.copy.Repetition(32)),
-                self.acc_dtype,
-            )
-        else:
-            # default: 16dp
-            tmem_load_atom = cute.make_copy_atom(
-                tcgen05.copy.Ld16x256bOp(tcgen05.copy.Repetition(1)),
                 self.acc_dtype,
             )
         if cutlass.const_expr(self.mma_tiler[0] == 64):
@@ -2028,15 +2020,9 @@ class BlockwiseMaskedGroupedGemmKernel:
                 tcgen05.copy.St16x256bOp(tcgen05.copy.Repetition(8)),
                 self.acc_dtype,
             )
-        elif cutlass.const_expr(self.mma_tiler[0] == 128):
+        else:
             tmem_store_atom = cute.make_copy_atom(
                 tcgen05.copy.St32x32bOp(tcgen05.copy.Repetition(32)),
-                self.acc_dtype,
-            )
-        else:
-            # default: 16dp
-            tmem_store_atom = cute.make_copy_atom(
-                tcgen05.copy.St16x256bOp(tcgen05.copy.Repetition(1)),
                 self.acc_dtype,
             )
 

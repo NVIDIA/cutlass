@@ -58,8 +58,26 @@ void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
     float_e5m2_t,                           // ElementB
     half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    void,                                   // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
     float_e4m3_t                            // ElementD

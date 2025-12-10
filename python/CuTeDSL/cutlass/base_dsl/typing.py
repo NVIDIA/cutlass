@@ -1416,6 +1416,9 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     def __rxor__(self, other, *, loc=None, ip=None):
         return self.__xor__(other, loc=loc, ip=ip)
 
+    def __tvm_ffi_int__(self):
+        return self.value
+
 
 class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     """A class representing floating-point values.
@@ -1495,6 +1498,9 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
             Float.__init__(self, x.value)
         else:
             raise DSLRuntimeError(f"{x} to Float conversion is not supported")
+
+    def __tvm_ffi_float__(self):
+        return self.value
 
 
 class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.bool):

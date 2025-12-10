@@ -82,6 +82,42 @@ void initialize_gemm_reference_operations_fp8in_bf16out(Manifest &manifest) {
     float,                                  // ElementAccumulator
     bfloat16_t                              // ElementD
   >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+    >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

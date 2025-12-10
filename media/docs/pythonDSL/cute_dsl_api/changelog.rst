@@ -2,29 +2,35 @@
 Changelog for CuTe DSL API changes
 ======================================
 
-`4.3.0 <https://github.com/NVIDIA/cutlass/releases/tree/main>`_ (2025-10-07)
+`4.3.0 <https://github.com/NVIDIA/cutlass/releases/tree/main>`_ (2025-10-20)
 ==============================================================================
 
 * Debuggability improvements:
+
   - Supported source location tracking for DSL APIs
-  - Supported dumping PTX and SASS code
-* Remove deprecated ``cutlass.<arch>_utils.SMEM_CAPACITY["<arch_str>"]`` and ``cutlass.utils.ampere_helpers``
-* Support calling nested functions without capturing variables inside dynamic control flow
-* Replace usage of ``cute.arch.barrier`` in examples with corresponding APIs in ``pipeline``
+  - Supported dumping PTX and CUBIN
+
+* Removed deprecated ``cutlass.<arch>_utils.SMEM_CAPACITY["<arch_str>"]`` and ``cutlass.utils.ampere_helpers``
+* Supported calling nested functions without capturing variables inside dynamic control flow
+* Replaced usage of ``cute.arch.barrier`` in examples with corresponding APIs in ``pipeline``
+
   - Use ``pipeline.sync`` for simple cases like synchronizing the whole CTA
   - Use ``pipeline.NamedBarrier`` to customize barriers with different participating threads and barrier id
+
 * Added new APIs ``repeat`` and ``repeat_as_tuple``
-* Added new APIs ``make_rmem_tensor`` to replace ``make_fragment`` with better naming
+* Added new APIs ``make_rmem_tensor`` to create tensor in register memory (replace ``make_fragment`` with better naming)
 * Added new APIs ``make_rmem_tensor_like`` which create rmem tensor from a tensor using the same shape with compact col-major strides
 * Added ``TmemAllocator`` for allocating tensor memory
 * Updated ``SmemAllocator.allocate`` to support allocation of a single scalar value
 * Fixed ``TensorSSA.reduce`` to support static value as initial value
 * Updated docstring for following APIs to be more concise and easier to understand:
+
   - ``make_layout_tv``
   - ``is_static``
   - ``PipelineAsync``
   - ``SmemAllocator``
-* Fixed documentation for ``pipeline``, ``utils`` and ``cute.math``
+
+* Fixed documentation for ``pipeline``, ``utils`` and ``cute.math`` (``cute.math`` is part of top level documentation)
 
 
 `4.2.0 <https://github.com/NVIDIA/cutlass/releases/tag/v4.2.0>`_ (2025-09-10)
@@ -32,7 +38,9 @@ Changelog for CuTe DSL API changes
 
 * Added back ``cute.make_tiled_copy`` per the request from community
 * Added support for explicit and implicit broadcast in ``TensorSSA``
+
   - ``cutlass.cute.TensorSSA``: support ``broadcast_to`` and implicit broadcasting for binary operations.
+
 * Supported printing ``TensorSSA`` value in ``cutlass.cute.print_tensor``
 * Updated ``cute.gemm`` to support all dispatch patterns and improved checks for illegal inputs
 * Introduced automatic kernel smem usage calculation for launch config.

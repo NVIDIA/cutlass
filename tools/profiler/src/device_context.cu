@@ -75,6 +75,27 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   return allocation;
 }
 
+/// creates a reference tensor of existing ptr, a given type, capacity (elements), and name
+DeviceAllocation *DeviceContext::create_ref_tensor(
+  Options const &options,
+  std::string const &name,
+  library::NumericTypeID type,
+  library::LayoutTypeID layout_id,
+  std::vector<int> const &extent,
+  std::vector<int64_t> const &stride,
+  void* ref_pointer_,
+  int batch_count,
+  size_t device_index) {
+
+  int device = options.device.device_id(device_index);
+  device_memory_.emplace_back(type, layout_id, extent, stride, ref_pointer_, batch_count,
+                              device);
+  DeviceAllocation *allocation = &device_memory_.back();
+
+  allocations_[name] = allocation;
+  return allocation;
+}
+
 static void initialize_allocation_with_data_distribution(
   Options const &options,
   int seed_shift,

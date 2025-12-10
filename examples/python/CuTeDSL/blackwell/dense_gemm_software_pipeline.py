@@ -36,6 +36,7 @@ import cutlass
 import cutlass.cute as cute
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
@@ -535,6 +536,7 @@ class DenseGemmKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         ).make_participants()
 
         # Initialize acc_pipeline (barrier) and states
@@ -549,6 +551,7 @@ class DenseGemmKernel:
             producer_group=acc_pipeline_producer_group,
             consumer_group=acc_pipeline_consumer_group,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
         acc_producer_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Producer, self.num_acc_stage
@@ -569,8 +572,7 @@ class DenseGemmKernel:
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         #
         # Setup smem tensor A/B/C
@@ -686,8 +688,7 @@ class DenseGemmKernel:
         #
         # Cluster wait before tensor memory alloc
         #
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         # Alloc tensor memory buffer
         tmem.allocate(self.num_tmem_alloc_cols)

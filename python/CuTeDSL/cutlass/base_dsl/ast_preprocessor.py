@@ -526,6 +526,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.generic_visit(node)
                 self.loop_nest_level -= 1
 
+            def visit_FunctionDef(self, node):
+                # Stop at nested function def
+                return
+
         checker = EarlyExitChecker(kind)
         checker.generic_visit(tree)
         if not checker.has_early_exit:
@@ -1325,6 +1329,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     node,
                 )
             elif func.id in ["min", "max"]:
+                self.import_top_module = True
                 return ast.copy_location(
                     ast.Call(
                         func=self._create_module_attribute(
@@ -1334,8 +1339,27 @@ class DSLPreprocessor(ast.NodeTransformer):
                             lineno=node.lineno,
                             col_offset=node.col_offset,
                         ),
-                        args=[node.args[0], node.args[1]],
+                        args=node.args,
                         keywords=[],
+                    ),
+                    node,
+                )
+            elif func.id == "super" and node.args == [] and node.keywords == []:
+                # If it's a Python3 argument free super(), rewrite to old style super with args
+                # So if this call is under dynamic control flow, it still works.
+                return ast.copy_location(
+                    ast.Call(
+                        func=func,
+                        args=node.args
+                        + [
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="__class__",
+                                ctx=ast.Load(),
+                            ),
+                            ast.Name(id="self", ctx=ast.Load()),
+                        ],
+                        keywords=node.keywords,
                     ),
                     node,
                 )
@@ -1848,21 +1872,41 @@ class DSLPreprocessor(ast.NodeTransformer):
                     # Handle elif case
                     elif_node = node.orelse[0]
                     nested_if_name = elif_region_name
-                    # Recursion for nested elif
-                    nested_if = self.create_if_function(
-                        nested_if_name, elif_node, write_args, full_write_args_count
-                    )
-                    else_block = ast.FunctionDef(
-                        name=else_block_name,
-                        args=func_then_else_arguments,
-                        body=[
-                            nested_if,
-                            ast.Return(
-                                value=ast.Name(id=nested_if_name, ctx=ast.Load())
-                            ),
-                        ],
-                        decorator_list=[],
-                    )
+                    # AST cannot distinguish between the following two cases:
+                    #     elif pred:
+                    # and
+                    #     else:
+                    #         if pred:
+                    # And under both cases, the `pred` can be a const_expr, so we need to handle it here.
+                    if self.is_node_constexpr(elif_node):
+                        self.generic_visit(elif_node)
+                        check = self._insert_cf_symbol_check(elif_node.test.func)
+                        else_block = ast.FunctionDef(
+                            name=else_block_name,
+                            args=func_then_else_arguments,
+                            body=[
+                                check,
+                                elif_node,
+                                ast.Return(value=return_list),
+                            ],
+                            decorator_list=[],
+                        )
+                    else:
+                        # Recursion for nested elif
+                        nested_if = self.create_if_function(
+                            nested_if_name, elif_node, write_args, full_write_args_count
+                        )
+                        else_block = ast.FunctionDef(
+                            name=else_block_name,
+                            args=func_then_else_arguments,
+                            body=[
+                                nested_if,
+                                ast.Return(
+                                    value=ast.Name(id=nested_if_name, ctx=ast.Load())
+                                ),
+                            ],
+                            decorator_list=[],
+                        )
                 else:
                     else_body = []
                     for stmt in node.orelse:

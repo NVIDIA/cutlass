@@ -423,16 +423,10 @@ struct ExampleRunner {
     // For SFD tensor layout
     using Sm1xxBlockScaledOutputConfig = typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 
-    // printf("\nStrideC = ");
-    // print(StrideC{});
-
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, {M, K, L});
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, {N, K, L});
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, {M, N, L});
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, {M, N, L});
-
-    // printf("\nstride_C = ");
-    // print(stride_C);
 
     layout_A = make_layout(make_shape(M, K, L), stride_A);
     layout_B = make_layout(make_shape(N, K, L), stride_B);
@@ -441,16 +435,6 @@ struct ExampleRunner {
     layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, L));
     layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, L));
     layout_SFD = SfdOutputCfg::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, L));
-
-    // printf("\nlayout_A = ");
-    // print(layout_A);
-    // printf("\nlayout_B = ");
-    // print(layout_B);
-    // printf("\nlayout_C = ");
-    // print(layout_C);
-
-    // printf("\nsize(layout_A)=%lld", (long long)size(layout_A));
-    // printf("\n");
 
     block_A.reset(cutlass::make_Coord(size(layout_A)));
     block_B.reset(cutlass::make_Coord(size(layout_B)));
@@ -481,27 +465,53 @@ struct ExampleRunner {
     block_Normconst.sync_device();
   }
 
+  /// Populates a Gemm::Arguments structure from the given commandline options
+  typename Gemm::Arguments args_from_options(ProblemShapeType problem_size, cutlass::KernelHardwareInfo const& hw_info)
+  {
+    if constexpr (std::is_same_v<MainloopScheduleType, cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100>){
+      return typename Gemm::Arguments {
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        { // Mainloop arguments
+          block_A.device_data(), 
+          block_B.device_data(), 
+          block_SFA.device_data(),
+          block_SFB.device_data()
+        },
+        { // Epilogue arguments
+          {},
+          block_C.device_data(), stride_C,
+          block_D.device_data(), stride_D
+        },
+        hw_info
+      };
+    } 
+    else {
+      return typename Gemm::Arguments {
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        { // Mainloop arguments
+          block_A.device_data(), stride_A,
+          block_B.device_data(), stride_B,
+          block_SFA.device_data(), layout_SFA,
+          block_SFB.device_data(), layout_SFB
+        },
+        { // Epilogue arguments
+          {},
+          block_C.device_data(), stride_C,
+          block_D.device_data(), stride_D
+        },
+        hw_info
+      };
+    }
+  }
+
   bool run(Options const& options, cutlass::KernelHardwareInfo const& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
 
-    typename Gemm::Arguments arguments {
-      cutlass::gemm::GemmUniversalMode::kGemm,
-      problem_size,
-      { // Mainloop arguments
-        block_A.device_data(), stride_A,
-        block_B.device_data(), stride_B,
-        block_SFA.device_data(), layout_SFA,
-        block_SFB.device_data(), layout_SFB
-      },
-      { // Epilogue arguments
-        {},
-        block_C.device_data(), stride_C,
-        block_D.device_data(), stride_D
-      },
-      hw_info
-    };
+    typename Gemm::Arguments arguments = args_from_options(problem_size, hw_info);
 
     if constexpr (IsBlockScaleSupported) {
       arguments.epilogue.thread.block_scale_factor_ptr = block_SFD.device_data();

@@ -378,13 +378,40 @@ private:
     }
 
     // Construct a sign bit mask for handling negative zeros 
-    ElementAMmaRawUnit sign_mask = ElementAMmaRawUnit{ 0 };
-    if constexpr (has_negative_zero_v<ElementA>) {
-      ElementAMmaRawUnit one_sign_mask = static_cast<ElementAMmaRawUnit>(~(ElementAMmaRawUnit{ 1 } << (cute::sizeof_bits_v<ElementA> - 1)));
-      for (int i = 0; i < sizeof(ElementAMmaRawUnit) / sizeof(ElementAUint); ++i) {
-        sign_mask = static_cast<ElementAMmaRawUnit>((int32_t)sign_mask | (int32_t)one_sign_mask << (i * cute::sizeof_bits_v<ElementA>));
+    // Compute the mask value at compile time, then construct ElementAMmaRawUnit from it
+    // Case 1: float_e2m1_t (4-bit), uint4_t container, ElemsARawPerElementAMmaRaw 1 element
+    //   - Result: negzero_mask_value = 0b0111 (stored in uint8_t as 0b0000_0111)
+    //
+    // Case 2: float_e2m1_t (4-bit), uint8_t container, ElemsARawPerElementAMmaRaw 2 elements
+    //   - Result: negzero_mask_value = 0b0111_0111
+    //
+    // Case 3: float_e4m3_t (8-bit), uint8_t container, ElemsARawPerElementAMmaRaw 1 element
+    //   - Result: negzero_mask_value = 0b0111_1111 = 0x7F
+    // Note: Lambda returns uint32_t (constexpr-compatible) instead of ElementAMmaRawUnit (non-literal type)
+    constexpr uint32_t negzero_mask_value = []() constexpr -> uint32_t {
+      constexpr int ElementAMmaRawNumBits = cute::sizeof_bits_v<ElementAMmaRaw>;
+      constexpr int ElementANumBits = cute::sizeof_bits_v<ElementA>;
+      
+      if constexpr (has_negative_zero_v<ElementA>) {
+        // Create mask for one ElementA: all bits set except the sign bit (MSB)
+        // ElementANumBits = 4: (1 << 3) - 1 = 0b0111
+        // ElementANumBits = 8: (1 << 7) - 1 = 0b0111_1111
+        constexpr uint32_t ElementASignMask = (1u << (ElementANumBits - 1)) - 1;
+
+        // Replicate the single-element mask across all packed elements
+        if constexpr (ElemsARawPerElementAMmaRaw == 1) {
+          return ElementASignMask;
+        }
+        else if constexpr (ElemsARawPerElementAMmaRaw == 2) {
+          return (ElementASignMask << ElementANumBits) | ElementASignMask;
+        }
       }
-    }
+      // No negative zero: return all bits set to 1 (no masking needed)
+      return (1u << ElementAMmaRawNumBits) - 1;
+    }();
+    
+    // Construct ElementAMmaRawUnit from the compile-time computed mask value
+    const ElementAMmaRawUnit negzero_mask_out_sign_mask = ElementAMmaRawUnit{negzero_mask_value};
 
     // * Compress
     // cACsAC is always row major order
@@ -410,17 +437,21 @@ private:
           // * Find None Zero Element Idx within Chunk
           CUTE_UNROLL
           for (int elt_log_idx = 0; elt_log_idx < OneChunkSizeA{}; ++elt_log_idx) {
-            ElementAMmaRawUnit elem_A = tAsA[elt_log_idx];
+            // Iterate through all ElementAMma within one logical chunk
+            ElementAMmaRawUnit tAsA_i = tAsA[elt_log_idx];
             
-            // Handle negative 0
-            ElementAMmaRawUnit masked_elem_A = elem_A;
+            // Mask off the signed bit s.t. negative zero is same as positive zero
+            ElementAMmaRawUnit tAsA_i_negzero_masked_out = tAsA_i;
             if constexpr (has_negative_zero_v<ElementA>) {
-              masked_elem_A = elem_A & sign_mask;
+              // For sub-bytes, LSB will contain valid bits.
+              // e.g. for float_e2m1_t, tAsA_i is stored in uint8_t with 0x0000yyyy where yyyy denote valid bits.
+              tAsA_i_negzero_masked_out = tAsA_i & negzero_mask_out_sign_mask;
             }
 
-            if (masked_elem_A != ElementAMmaRawUnit{0}) {
+            // Record this ElmentAMma if it's none zero
+            if (tAsA_i_negzero_masked_out != ElementAMmaRawUnit{0}) {
               non_zero_elt_log_idx[non_zero_cnt] = elt_log_idx;
-              tACsAC[non_zero_cnt] = elem_A;
+              tACsAC[non_zero_cnt] = tAsA_i;
               non_zero_cnt++;
             }
           }

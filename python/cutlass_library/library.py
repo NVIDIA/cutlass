@@ -322,7 +322,8 @@ def is_complex(data_type):
   return False
 
 def is_block_scaled(gemm_kind):
-  return gemm_kind in (GemmKind.BlockScaledUniversal3x, GemmKind.GroupedBlockScaledUniversal3x, GemmKind.BlockScaledSparseUniversal3x)
+  return gemm_kind in (GemmKind.BlockScaledUniversal3x, GemmKind.GroupedBlockScaledUniversal3x, GemmKind.BlockScaledSparseUniversal3x, 
+    GemmKind.BlockScaledMoeGroupedUniversal3x)
 
 def is_blockwise(gemm_kind):
   return gemm_kind in (GemmKind.BlockwiseUniversal3x, GemmKind.GroupedBlockwiseUniversal3x)
@@ -331,6 +332,8 @@ def is_grouped(gemm_kind):
   return gemm_kind in (GemmKind.GroupedUniversal3x, 
     GemmKind.GroupedBlockScaledUniversal3x, GemmKind.GroupedBlockwiseUniversal3x)
 
+def is_moe(gemm_kind):
+  return gemm_kind in (GemmKind.MoeGroupedUniversal3x, GemmKind.BlockScaledMoeGroupedUniversal3x)
 #
 def get_complex_from_real(real_type):
   for r, c in RealComplexBijection:
@@ -513,6 +516,8 @@ class KernelScheduleType(enum.Enum):
 
   TmaWarpSpecialized1SmSm100 = enum_auto()
   TmaWarpSpecialized2SmSm100 = enum_auto()
+  WarpSpecialized1SmSm100 = enum_auto()
+
   ImplicitTmaWarpSpecialized1SmSm100 = enum_auto()
   ImplicitTmaWarpSpecialized2SmSm100 = enum_auto()
 
@@ -527,6 +532,9 @@ class KernelScheduleType(enum.Enum):
   PtrArrayMxf4TmaWarpSpecialized2SmSm100 = enum_auto()
   PtrArrayMxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
   PtrArrayMxf8f6f4TmaWarpSpecialized2SmSm100 = enum_auto()
+
+  MixedTmaCpAsyncWarpSpecialized1SmSm100 = enum_auto()
+  MixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100 = enum_auto()
 
   SparseTmaWarpSpecialized1SmSm100 = enum_auto()
   SparseTmaWarpSpecialized2SmSm100 = enum_auto()
@@ -621,6 +629,7 @@ KernelScheduleTag = {
 
   KernelScheduleType.TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm100',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm100',
+  KernelScheduleType.WarpSpecialized1SmSm100: 'cutlass::gemm::KernelWarpSpecialized1SmSm100',
 
   KernelScheduleType.ImplicitTmaWarpSpecialized1SmSm100: 'cutlass::conv::KernelImplicitTmaWarpSpecialized1SmSm100',
   KernelScheduleType.ImplicitTmaWarpSpecialized2SmSm100: 'cutlass::conv::KernelImplicitTmaWarpSpecialized2SmSm100',
@@ -641,7 +650,8 @@ KernelScheduleTag = {
 
   KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockwise1SmSm100',
   KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockwise2SmSm100',
-
+  KernelScheduleType.MixedTmaCpAsyncWarpSpecialized1SmSm100: 'cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100',
+  KernelScheduleType.MixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100: 'cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100',
   KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmMxf4Sm100',
   KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmMxf4Sm100',
   KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmNvf4Sm100',
@@ -738,6 +748,7 @@ KernelScheduleSuffixes = {
 
   KernelScheduleType.TmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: '_2sm',
+  KernelScheduleType.WarpSpecialized1SmSm100: '_cpasync_1sm',
 
   KernelScheduleType.ImplicitTmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.ImplicitTmaWarpSpecialized2SmSm100: '_2sm',
@@ -757,6 +768,9 @@ KernelScheduleSuffixes = {
   KernelScheduleType.BlockwiseTmaWarpSpecialized2SmSm100: '_2sm',
   KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized2SmSm100: '_2sm',
+
+  KernelScheduleType.MixedTmaCpAsyncWarpSpecialized1SmSm100: '_mixed_cpasync_1sm',
+  KernelScheduleType.MixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100: '_mixed_cpasync_1sm',
 
   KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: '_o_vs32_1sm',
   KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: '_o_vs32_2sm',
@@ -1208,6 +1222,9 @@ class GemmKind(enum.Enum):
   BlockwiseUniversal3x = enum_auto()
   GroupedBlockwiseUniversal3x = enum_auto()
   BlockScaledSparseUniversal3x = enum_auto()
+  MoeGroupedUniversal3x = enum_auto()
+  BlockScaledMoeGroupedUniversal3x = enum_auto()
+
 
 #
 GemmKindNames = {
@@ -1224,7 +1241,9 @@ GemmKindNames = {
   GemmKind.GroupedBlockScaledUniversal3x: "gemm_grouped",
   GemmKind.BlockwiseUniversal3x: "gemm",
   GemmKind.GroupedBlockwiseUniversal3x: "gemm_grouped",
-  GemmKind.BlockScaledSparseUniversal3x: "spgemm"
+  GemmKind.BlockScaledSparseUniversal3x: "spgemm",
+  GemmKind.MoeGroupedUniversal3x: "moe_gemm",
+  GemmKind.BlockScaledMoeGroupedUniversal3x: "moe_gemm",
 }
 
 #

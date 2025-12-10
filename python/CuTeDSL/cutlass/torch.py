@@ -47,6 +47,11 @@ def dtype(ty: Type[Numeric]):
         Float8E4M3FN: torch.float8_e4m3fn,
         Float8E4M3B11FNUZ: torch.float8_e4m3fnuz,
     }
+
+    # float8_e8m0fnu is introduced in latest version of torch
+    if hasattr(torch, "float8_e8m0fnu"):
+        torch_type_map[Float8E8M0FNU] = torch.float8_e8m0fnu
+
     if torch_dtype is None:
         torch_dtype = torch_type_map.get(ty)
 
@@ -160,6 +165,16 @@ def create_and_permute_torch_tensor(
     return dtype_torch_tensor
 
 
+def get_leading_dim(torch_tensor: torch.Tensor) -> int:
+    """
+    Get the leading dimension of a torch tensor
+    """
+    for i, stride in enumerate(torch_tensor.stride()):
+        if stride == 1:
+            return i
+    return None
+
+
 def convert_cute_tensor(
     f32_torch_tensor: "torch.Tensor",
     cute_tensor: Tensor,
@@ -184,8 +199,10 @@ def convert_cute_tensor(
     }:
         fp32_cute_tensor = from_dlpack(f32_torch_tensor)
         if is_dynamic_layout:
+            # note: dim_order to not always maps to leading dimension,
+            # so we need to get the leading dimension from the torch tensor strides
             fp32_cute_tensor = fp32_cute_tensor.mark_layout_dynamic(
-                f32_torch_tensor.dim_order()[-1]
+                leading_dim=get_leading_dim(f32_torch_tensor)
             )
         # Copy and convert from f32 cute tensor to dtype cute tensor
         cute.testing.convert(fp32_cute_tensor, cute_tensor)
@@ -292,11 +309,9 @@ def cute_tensor_like(
     # create cute tensor using the device buffer
     cute_tensor = from_dlpack(torch_tensor, assumed_align=assumed_align)
     cute_tensor.element_type = cutlass_dtype
+
     if is_dynamic_layout:
-        for i, stride in enumerate(torch_tensor.stride()):
-            if stride == 1:
-                leading_dim = i
-                break
+        leading_dim = get_leading_dim(torch_tensor)
         cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
 
     # initialize the cute tensor data
@@ -311,5 +326,4 @@ def cute_tensor_like(
         )
     else:
         torch_tensor.copy_(data_ref.to(dtype=torch_dtype))
-
     return cute_tensor, torch_tensor

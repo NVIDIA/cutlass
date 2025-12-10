@@ -328,6 +328,7 @@ struct BlockScaleDescription {
 struct GroupedGemmDescription : public OperationDescription {
   GemmDescription gemm;
   std::optional<BlockScaleDescription> block_scales;
+  bool is_moe{false};
 };
 
 /// Description of all GEMM computations

@@ -22,7 +22,7 @@ from cutlass._mlir import ir
 
 from ...atom import CopyOp, Trait
 from ...tensor import ReductionOp
-from ...typing import Int16, Pointer, Integer, Numeric
+from ...typing import Int16, Int64, Pointer, Integer, Numeric
 from ..common import OpError
 from ..tcgen05.mma import CtaGroup
 
@@ -113,6 +113,7 @@ TMA_MBAR_PTR_FIELD_NAME = "tma_bar"
 TMA_MCAST_MASK_FIELD_NAME = "mcast_mask"
 TMA_DESC_PTR_FIELD_NAME = "tma_descriptor_ptr"
 TMA_BYTE_MASK_FIELD_NAME = "byte_mask"
+TMA_CACHE_POLICY_FIELD_NAME = "cache_policy"
 
 
 class TmaCopyOp(CopyOp):
@@ -184,6 +185,10 @@ class CopyBulkTensorTileG2SOp(TmaCopyOp):
 class CopyBulkTensorTileG2SNonExecTrait(Trait):
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
+
+    def with_(self, *, loc=None, ip=None, **kwargs) -> "CopyBulkTensorTileG2STrait":
+        return CopyBulkTensorTileG2STrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
     def unpack(
         self,
         *,
@@ -191,13 +196,15 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
         ip=None,
         tma_bar_ptr: Optional[Pointer] = None,
         tma_desc_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
         **kwargs,
     ):
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
-        using `cute.copy`. Any other kw arguments will be ignored instead of triggering an error.
+        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -215,8 +222,24 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.value, loc=loc, ip=ip
+            )
         return exec_value
 
+
+class CopyBulkTensorTileG2STrait(Trait):
+    pass
 
 #
 # TMA GMEM -> SMEM multicast copies
@@ -277,6 +300,13 @@ class CopyBulkTensorTileG2SMulticastOp(TmaCopyOp):
 
 
 class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
+    def with_(
+        self, *, loc=None, ip=None, **kwargs
+    ) -> "CopyBulkTensorTileG2SMulticastTrait":
+        return CopyBulkTensorTileG2SMulticastTrait(
+            self.unpack(loc=loc, ip=ip, **kwargs)
+        )
+
     def unpack(
         self,
         *,
@@ -285,12 +315,14 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
         tma_bar_ptr: Optional[Pointer] = None,
         mcast_mask=None,
         tma_desc_ptr=None,
+        cache_policy: Optional[Int64] = None,
     ):
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
-        provided when using `cute.copy`.
+        provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
+        l2 cache eviction priority.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -312,6 +344,19 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.value, loc=loc, ip=ip
+            )
         # Set the tma_bar_ptr at last to ensure that the atom creation and setting
         # operations above can be moved outside the loop
         attr_str = "#cute_nvgpu.atom_copy_field_tmaload<tma_bar>"
@@ -320,6 +365,9 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
             exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
         )
         return exec_value
+
+class CopyBulkTensorTileG2SMulticastTrait(Trait):
+    pass
 
 
 #
@@ -351,14 +399,24 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
-    ) -> "CopyBulkTensorTileS2GTrait":
+    ) -> "CopyBulkTensorTileS2GNonExecTrait":
         raise NotImplementedError(
             "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
 
 
-class CopyBulkTensorTileS2GTrait(Trait):
-    def unpack(self, *, loc=None, ip=None, tma_desc_ptr: Optional[Pointer] = None):
+class CopyBulkTensorTileS2GNonExecTrait(Trait):
+    def with_(self, *, loc=None, ip=None, **kwargs) -> "CopyBulkTensorTileS2GTrait":
+        return CopyBulkTensorTileS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+    def unpack(
+        self,
+        *,
+        loc=None,
+        ip=None,
+        tma_desc_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
+    ):
         """
         Custom implementation of unpack for non-executable TMAs.
         """
@@ -371,7 +429,24 @@ class CopyBulkTensorTileS2GTrait(Trait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.value, loc=loc, ip=ip
+            )
         return exec_value
+
+
+class CopyBulkTensorTileS2GTrait(Trait):
+    pass
 
 
 @dataclass(frozen=True)
@@ -400,7 +475,7 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
-    ) -> "CopyReduceBulkTensorTileS2GTrait":
+    ) -> "CopyReduceBulkTensorTileS2GNonExecTrait":
         raise NotImplementedError(
             "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
@@ -426,8 +501,20 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
             assert False, "unrecognized self.reduction_kind"
 
 
-class CopyReduceBulkTensorTileS2GTrait(Trait):
-    def unpack(self, *, loc=None, ip=None, tma_desc_ptr: Optional[Pointer] = None):
+class CopyReduceBulkTensorTileS2GNonExecTrait(Trait):
+    def with_(
+        self, *, loc=None, ip=None, **kwargs
+    ) -> "CopyReduceBulkTensorTileS2GTrait":
+        return CopyReduceBulkTensorTileS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+    def unpack(
+        self,
+        *,
+        loc=None,
+        ip=None,
+        tma_desc_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
+    ):
         """
         Custom implementation of unpack for non-executable TMAs.
         """
@@ -440,7 +527,23 @@ class CopyReduceBulkTensorTileS2GTrait(Trait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmareduce<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.value, loc=loc, ip=ip
+            )
         return exec_value
+
+
+class CopyReduceBulkTensorTileS2GTrait(Trait):
+    pass
 
 
 #
@@ -494,13 +597,15 @@ class CopyBulkG2STrait(Trait):
         loc=None,
         ip=None,
         mbar_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
         **kwargs,
     ):
         """
         Custom implementation of unpack for bulk copy load.
 
         The non-multicast bulk load requires a `mbar_ptr` keyword argument to be provided when
-        using `cute.copy`. Any other kw arguments will be ignored instead of triggering an error.
+        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(mbar_ptr, Pointer):
             raise ValueError(
@@ -511,6 +616,18 @@ class CopyBulkG2STrait(Trait):
         val = _cute_nvgpu_ir.atom_set_value(
             self.value, attr, mbar_ptr.value, loc=loc, ip=ip
         )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            val = _cute_nvgpu_ir.atom_set_value(
+                val, attr, cache_policy.value, loc=loc, ip=ip
+            )
         return val
 
 
@@ -566,6 +683,7 @@ class CopyBulkG2SMulticastTrait(Trait):
         ip=None,
         mbar_ptr: Optional[Pointer] = None,
         mcast_mask: Optional[Integer] = None,
+        cache_policy: Optional[Int64] = None,
         **kwargs,
     ):
         """
@@ -592,6 +710,18 @@ class CopyBulkG2SMulticastTrait(Trait):
         val = _cute_nvgpu_ir.atom_set_value(
             val, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            val = _cute_nvgpu_ir.atom_set_value(
+                val, attr, cache_policy.value, loc=loc, ip=ip
+            )
         return val
 
 

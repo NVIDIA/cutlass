@@ -35,8 +35,8 @@ from .copy import (
     CopyReduceBulkTensorTileS2GOp,
     CopyBulkTensorTileG2SNonExecTrait,
     CopyBulkTensorTileG2SMulticastNonExecTrait,
-    CopyBulkTensorTileS2GTrait,
-    CopyReduceBulkTensorTileS2GTrait,
+    CopyBulkTensorTileS2GNonExecTrait,
+    CopyReduceBulkTensorTileS2GNonExecTrait,
 )
 
 
@@ -156,7 +156,7 @@ def make_tiled_tma_atom(
             loc=loc,
             ip=ip,
         )
-        return atom.CopyAtom(op, CopyBulkTensorTileS2GTrait(res[0])), res[1]
+        return atom.CopyAtom(op, CopyBulkTensorTileS2GNonExecTrait(res[0])), res[1]
     elif isinstance(op, CopyReduceBulkTensorTileS2GOp):
         res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_reduce(
             gmem_tensor.value,
@@ -167,7 +167,10 @@ def make_tiled_tma_atom(
             loc=loc,
             ip=ip,
         )
-        return atom.CopyAtom(op, CopyReduceBulkTensorTileS2GTrait(res[0])), res[1]
+        return (
+            atom.CopyAtom(op, CopyReduceBulkTensorTileS2GNonExecTrait(res[0])),
+            res[1],
+        )
     else:
         raise ValueError(f"expects a bulk tensor (TMA) Copy Op, but got {op}")
 

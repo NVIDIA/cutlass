@@ -48,6 +48,7 @@
 #include "cutlass/trace.h"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
+#include "cutlass/arch/grid_dependency_control.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -418,7 +419,7 @@ public:
 
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -580,6 +581,9 @@ public:
 
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();
+
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
 
     auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
@@ -990,6 +994,11 @@ public:
 
         // Get next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
+
+        if (!next_work_tile_info.is_valid()) {
+          cutlass::arch::launch_dependent_grids();
+        }
+
         work_tile_info = next_work_tile_info;
         if (increment_pipe) {
           ++tile_scheduler_pipe_consumer_state;

@@ -26,18 +26,18 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-set(TEST_MIXTRAL_A --m=28672 --n=4 --k=4096 --l=8)
-set(TEST_MIXTRAL_B --m=4096 --n=4 --k=14336 --l=8)
-set(TEST_DEEPSEEK_A --m=4096 --n=1 --k=7168 --l=256)
-set(TEST_DEEPSEEK_B --m=7168 --n=1 --k=2048 --l=256)
-set(TEST_IRREGULAR_MNK --m=4080 --n=9 --k=4112 --l=8)       # M,N,K not multiples of tile size
+set(TEST_MIXTRAL_A --m=28672 --n=4 --k=4096 --groups=8 --iterations=0)
+set(TEST_MIXTRAL_B --m=4096 --n=4 --k=14336 --groups=8 --iterations=0)
+set(TEST_DEEPSEEK_A --m=4096 --n=1 --k=7168 --groups=256 --iterations=0)
+set(TEST_DEEPSEEK_B --m=7168 --n=1 --k=2048 --groups=256 --iterations=0)
+set(TEST_IRREGULAR_MNK --m=4080 --n=9 --k=4112 --groups=8 --iterations=0)       # M,N,K not mugroupstipgroupses of tigroupse size
 
-set(TEST_DEEPSEEK_A_FP4 --m=1024 --n=1 --k=7168 --l=256)     # TP=1 shape is too large for PackedVectorLayout
-set(TEST_DEEPSEEK_B_FP4 --m=7168 --n=1 --k=512 --l=256)
-set(TEST_IRREGULAR_MNK_FP4 --m=4080 --n=9 --k=4160 --l=8)
+set(TEST_DEEPSEEK_A_FP4 --m=1024 --n=1 --k=7168 --groups=256 --iterations=0)     # TP=1 shape is too groupsarge for PackedVectorLayout
+set(TEST_DEEPSEEK_B_FP4 --m=7168 --n=1 --k=512 --groups=256 --iterations=0)
+set(TEST_IRREGULAR_MNK_FP4 --m=4080 --n=9 --k=4160 --groups=8 --iterations=0)
 
 set(TEST_FIXED --m=2048 --n=5120 --k=8192 --iterations=0)                           # Fixed problem sizes
-set(TEST_SPARSE_GROUPS --sparse_test --sparse_prob=0.3 --iterations=0)
+set(TEST_FIXED_SMALL --m=2048 --n=512 --k=8192 --groups=2 --iterations=0)                           # Fixed problem sizes
 
 if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 cutlass_example_add_executable(
@@ -61,7 +61,13 @@ cutlass_example_add_executable(
   92_blackwell_moe_gemm_rcgrouped.cu
   TEST_COMMAND_OPTIONS
   TEST_FIXED
-  TEST_SPARSE_GROUPS
+)
+
+cutlass_example_add_executable(
+  92_blackwell_moe_gemm_blockscaled_rcgrouped
+  92_blackwell_moe_gemm_blockscaled_rcgrouped.cu
+  TEST_COMMAND_OPTIONS
+  TEST_FIXED_SMALL
 )
 
 cutlass_example_add_executable(

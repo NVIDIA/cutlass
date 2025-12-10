@@ -277,7 +277,7 @@ public:
 
 // Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
 #else
 
     enum class WarpGroupRole {

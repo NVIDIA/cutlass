@@ -15,7 +15,7 @@ and executes it using MLIR's ExecutionEngine.
 
 """
 
-from typing import Sequence, Optional, Tuple
+from typing import Sequence, Optional, Tuple, Callable
 import os
 import sys
 import inspect
@@ -99,6 +99,8 @@ class Compiler:
         self.execution_engine = execution_engine
         # Flag to track if CUDA dependencies have been checked once in this process
         self._cuda_dependencies_checked = False
+        # Post-compile hook to run on Module
+        self._post_compile_hook: Optional[Callable[[ir.Module], None]] = None
 
     def _process_error(self, error_msg: str) -> Tuple[Optional[str], Optional[str]]:
         """Process error message to extract NVVM error and IR context"""
@@ -158,11 +160,13 @@ class Compiler:
                 ) from e
             raise e
 
+        if self._post_compile_hook:
+            self._post_compile_hook(module)
+
     def jit(self, module, opt_level: int = 2, shared_libs: Sequence[str] = ()):
         """Wraps the module in a JIT execution engine."""
         # Check CUDA driver and GPU dependencies before JIT execution (once per process)
         self._check_cuda_dependencies_once(shared_libs)
-
         # If pre-checks passed, attempt to create ExecutionEngine
         # Any failures at this point are likely non-CUDA related
         return self.execution_engine.ExecutionEngine(
@@ -214,6 +218,23 @@ class Compiler:
             raise CudaDriverDependencyError(
                 message=error_message,
             )
+
+
+class PostCompileHookContext:
+    """Context manager for post-compile hook for a compiler."""
+
+    def __init__(self, compiler: Compiler, hook: Callable[[ir.Module], None]):
+        self.compiler = compiler
+        self.hook = hook
+        self.prev_post_compile_hook = None
+
+    def __enter__(self):
+        self.prev_post_compile_hook = self.compiler._post_compile_hook
+        self.compiler._post_compile_hook = self.hook
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.compiler._post_compile_hook = self.prev_post_compile_hook
 
 
 class CompileOption:
@@ -276,6 +297,11 @@ class BooleanBasedFileDumpOption(CompileOption):
         return ""
 
 
+class EmptyCompileOption(CompileOption):
+    def serialize(self):
+        return ""
+
+
 class OptLevel(CompileOption):
     option_name = "opt-level"
 
@@ -329,6 +355,14 @@ class GPUArch(StringCompileOption):
         self._value = value
 
 
+class EnableTVMFFI(EmptyCompileOption):
+    pass
+
+
+class DumpDir(EmptyCompileOption):
+    option_name = "dump-dir"
+
+
 class CompileOptions:
     """
     This class encapsulates compilation options to configure the JIT compilation.
@@ -349,6 +383,8 @@ class CompileOptions:
             KeepPTX: KeepPTX(False),
             GPUArch: GPUArch(""),
             LinkLibraries: LinkLibraries(""),
+            EnableTVMFFI: EnableTVMFFI(False),
+            DumpDir: DumpDir(""),
         }
 
         if options is not None:
@@ -376,15 +412,33 @@ class CompileOptions:
             self.options[EnableAssertions].value = True
         if envar.lineinfo:
             self.options[GenerateLineInfo].value = True
+        if envar.enable_tvm_ffi:
+            self.options[EnableTVMFFI].value = True
 
         # Update the dump path if the option is set
+        arch = (
+            envar.arch
+            if self.options[GPUArch].value == ""
+            else self.options[GPUArch].value
+        )
+        dump_dir = (
+            envar.dump_dir
+            if self.options[DumpDir].value == ""
+            else self.options[DumpDir].value
+        )
         if self.options[KeepPTX].value:
             self.options[KeepPTX].dump_path = os.path.join(
-                envar.dump_dir, f"{function_name}.ptx"
+                dump_dir, f"{function_name}"
+            )
+            self.options[KeepPTX].full_ptx_path = os.path.join(
+                dump_dir, f"{function_name}.{arch}.ptx"
             )
         if self.options[KeepCUBIN].value:
             self.options[KeepCUBIN].dump_path = os.path.join(
-                envar.dump_dir, f"{function_name}.cubin"
+                dump_dir, f"{function_name}"
+            )
+            self.options[KeepCUBIN].full_cubin_path = os.path.join(
+                dump_dir, f"{function_name}.{arch}.cubin"
             )
 
     @property
@@ -400,10 +454,36 @@ class CompileOptions:
         return self.options[KeepPTX].dump_path if self.options[KeepPTX].value else None
 
     @property
+    def full_ptx_path(self) -> str | None:
+        return (
+            self.options[KeepPTX].full_ptx_path if self.options[KeepPTX].value else None
+        )
+
+    @property
     def dump_cubin_path(self) -> str | None:
         return (
             self.options[KeepCUBIN].dump_path if self.options[KeepCUBIN].value else None
         )
+
+    @property
+    def full_cubin_path(self) -> str | None:
+        return (
+            self.options[KeepCUBIN].full_cubin_path
+            if self.options[KeepCUBIN].value
+            else None
+        )
+
+    @property
+    def enable_tvm_ffi(self) -> bool:
+        ret = self.options[EnableTVMFFI].value
+        if ret:
+            try:
+                import tvm_ffi
+            except ModuleNotFoundError:
+                raise DSLRuntimeError(
+                    "TVM FFI is not installed, please install it via `pip install apache-tvm-ffi`"
+                )
+        return ret
 
     def to_str(self) -> str:
         """
@@ -433,6 +513,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
             "keep_cubin": KeepCUBIN,
             "keep_ptx": KeepPTX,
             "gpu_arch": GPUArch,
+            "enable_tvm_ffi": EnableTVMFFI,
+            "dump_dir": DumpDir,
         }
         return mapping[option_str]
 
@@ -448,6 +530,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
     parser.add_argument("--keep-ptx", action="store_true", default=False)
     parser.add_argument("--ptxas-options", type=str, default="")
     parser.add_argument("--gpu-arch", type=str, default="")
+    parser.add_argument("--enable-tvm-ffi", action="store_true", default=False)
+    parser.add_argument("--dump-dir", type=str, default="")
     compile_options = CompileOptions()
     try:
         # Use shlex to properly handle options with spaces
@@ -473,7 +557,7 @@ class CompileCallable:
     def __init__(self, options=None):
         def preprocess_options(option):
             if type(option) is type and issubclass(
-                option, (BooleanCompileOption, BooleanBasedFileDumpOption)
+                option, (BooleanCompileOption, BooleanBasedFileDumpOption, EnableTVMFFI)
             ):
                 # Automatically creates a True instance of the option
                 return option(True)
@@ -553,6 +637,9 @@ class CompileCallable:
 
         # process compile options, extract the options and remove them from the kwargs
         options = kwargs.pop("options", None)
+        if isinstance(options, str) and len(options) == 0:
+            options = None
+
         if options is not None and isinstance(options, str):
             compile_options = _parse_compile_options_from_str(options)
         else:

@@ -90,7 +90,7 @@ class Sm90Emitter:
             tile_description=operation.tile_description,
             schedule=operation.tile_description.epilogue_schedule,
             element_c=operation.C.element,
-            element_d=operation.C.element,
+            element_d=operation.D.element,
             fusion_callbacks=fusion_callbacks
         )
 

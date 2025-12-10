@@ -649,17 +649,20 @@ public:
     transform2mma_pipeline.init_masks(cluster_shape);
     mma2accum_pipeline.init_masks(cluster_shape);
 
+    // Allocate accumulators
+    auto acc_shape = collective_mainloop.partition_accumulator_shape();
+
     // TileID scheduler
     TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
 
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
+    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
 
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
-
-    // Allocate accumulators
-    auto acc_shape = collective_mainloop.partition_accumulator_shape();
 
     // NOTE: we can assume the tmem buf starts at zero since we allocate all tmem in this kernel
     auto bulk_tmem = TiledMma::make_fragment_C(append(acc_shape,

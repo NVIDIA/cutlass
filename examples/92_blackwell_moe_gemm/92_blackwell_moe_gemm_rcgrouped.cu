@@ -41,7 +41,7 @@
 
     To run this example:
 
-      $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_rcgrouped --m=2048 --n=2048 --k=2048 --groups=10
+      $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_rcgrouped --m=128 --k=128 --groups=10
 
       The above example command makes all 10 groups to be sized at the given m, n, k sizes.
       Skipping any of the problem dimensions randomizes it across the different groups.
@@ -93,7 +93,8 @@
 #include "helper.h"
 using namespace cute;
 
-using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
+using ProblemShape = cutlass::gemm::MoEProblemShape<Shape<int,int,int>>; // <M,N,K> per group
+
 using ElementA = cutlass::float_e4m3_t;                                    // Element type for A matrix operand
 using ElementB = cutlass::float_e4m3_t;                                    // Element type for B matrix operand
 using ElementC = cutlass::half_t;                                          // Element type for C and D matrix operands
@@ -192,14 +193,11 @@ using StrideB = typename Gemm::GemmKernel::InternalStrideB;
 using StrideC = typename Gemm::GemmKernel::InternalStrideC;
 using StrideD = typename Gemm::GemmKernel::InternalStrideD;
 
-StrideA stride_A;
-
 // Host-side allocations
 std::vector<int64_t> offset_B;
 std::vector<int64_t> offset_C;
 std::vector<int64_t> offset_D;
 
-std::vector<StrideB> stride_B_host;
 std::vector<StrideC> stride_C_host;
 std::vector<StrideD> stride_D_host;
 
@@ -207,7 +205,7 @@ std::vector<ElementAccumulator> alpha_host;
 std::vector<ElementAccumulator> beta_host;
 
 // Device-side allocations
-cutlass::DeviceAllocation<typename ProblemShape::UnderlyingProblemShape> problem_sizes;
+cutlass::DeviceAllocation<int32_t> tokens_per_expert;
 
 cutlass::DeviceAllocation<typename Gemm::ElementA> block_A;
 cutlass::DeviceAllocation<typename Gemm::ElementB> block_B;
@@ -223,7 +221,6 @@ cutlass::DeviceAllocation<const typename Gemm::ElementC *> ptr_C;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput *> ptr_D;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput *> ptr_ref_D;
 
-cutlass::DeviceAllocation<StrideB> stride_B;
 cutlass::DeviceAllocation<StrideC> stride_C;
 cutlass::DeviceAllocation<StrideD> stride_D;
 
@@ -251,13 +248,14 @@ struct Options {
   float beta  = FLT_MAX;
   int iterations = 1000;
   int warmup = 1000;
-  int m = 1024, n = 2048, k = 512, groups = 10;
+  int m = 128, n = 128, k = 128, groups = 10;
   double sparse_prob = 0.1;
   dim3 cluster_shape = dim3(4,2,1);
   dim3 cluster_shape_fallback = dim3(2,1,1);
   RasterOrderOptions raster_order = RasterOrderOptions::AlongM;
   int max_sm_count = INT_MAX;
   std::string benchmark_path;
+  std::vector<int32_t> tokens_per_expert_host;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
   int const tma_alignment_bits = 128;
   int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
@@ -342,6 +340,7 @@ struct Options {
         n = alignment * ((rand() % 64) + 1);
       }
       problem_sizes_host.push_back({m, n, k});
+      tokens_per_expert_host.push_back(n);
     }
   }
 
@@ -393,6 +392,7 @@ struct Options {
       }
 
       problem_sizes_host.push_back({m, n, k});
+      tokens_per_expert_host.push_back(n);
     }
   }
 
@@ -424,8 +424,11 @@ struct Options {
         extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
+      tokens_per_expert_host.push_back(extent.n());
     }
     groups = static_cast<int>(problem_sizes_host.size());
+    m = get<0>(problem_sizes_host.at(0));
+    k = get<2>(problem_sizes_host.at(0));
 
     return true;
   }
@@ -512,8 +515,6 @@ bool initialize_block(
     scope_min = static_cast<Element>(-8);
   }
 
-  scope_min = static_cast<Element>(0);
-  scope_max = static_cast<Element>(2);
   cutlass::reference::device::BlockFillRandomUniform(
     block.get(), block.size(), seed, scope_max, scope_min, 0);
 
@@ -545,7 +546,6 @@ void allocate(const Options &options) {
     total_elements_C += elements_C;
     total_elements_D += elements_D;
 
-    stride_B_host.push_back(cutlass::make_cute_packed_stride(StrideB{}, {N, K, 1}));
     stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1}));
     stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1}));
 
@@ -558,7 +558,6 @@ void allocate(const Options &options) {
   block_alpha.reset(options.groups);
   block_beta.reset(options.groups);
 
-  stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.groups));
   auto a_coord = cutlass::make_Coord(options.m * options.groups, options.k);
   block_A.reset(a_coord.product());
 
@@ -569,8 +568,9 @@ void initialize(const Options &options) {
 
   uint64_t seed = 2020;
 
-  problem_sizes.reset(options.groups);
-  problem_sizes.copy_from_host(options.problem_sizes_host.data());
+  // Setting up tokens_per_expert array
+  tokens_per_expert.reset(options.tokens_per_expert_host.size());
+  tokens_per_expert.copy_from_host(options.tokens_per_expert_host.data());
 
   //
   // Assign pointers
@@ -600,9 +600,6 @@ void initialize(const Options &options) {
 
   ptr_D.reset(options.groups);
   ptr_D.copy_from_host(ptr_D_host.data());
-
-  stride_B.reset(options.groups);
-  stride_B.copy_from_host(stride_B_host.data());
 
   stride_C.reset(options.groups);
   stride_C.copy_from_host(stride_C_host.data());
@@ -675,12 +672,12 @@ typename Gemm::Arguments args_from_options(Options &options)
 
   typename Gemm::GemmKernel::TileSchedulerArguments scheduler;
   scheduler.raster_order = options.raster_order;
-  
+
   arguments = typename Gemm::Arguments {
     cutlass::gemm::GemmUniversalMode::kGrouped,
-    {options.groups, problem_sizes.get(), options.problem_sizes_host.data()},
-    {block_A.get(), stride_A, ptr_B.get(), stride_B.get()},
-    {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
+    {options.m, options.n, options.k, options.groups, tokens_per_expert.get()},
+    {block_A.get(), ptr_B.get()},
+    {fusion_args, ptr_C.get(), nullptr, ptr_D.get(), nullptr},
     hw_info, scheduler
   };
 

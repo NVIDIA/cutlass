@@ -856,7 +856,7 @@ public:
       TensorStorage& shared_tensors,
       TensorMap tensormap
       )
-  {
+  { 
     auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
         acc_pipeline,
         acc_pipe_consumer_state,

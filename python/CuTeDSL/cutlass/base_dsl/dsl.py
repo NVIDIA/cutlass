@@ -27,6 +27,7 @@ import re
 import inspect
 import argparse
 import hashlib
+import weakref
 from functools import lru_cache, wraps
 from collections import namedtuple, OrderedDict
 from abc import ABC, abstractmethod
@@ -345,6 +346,7 @@ class BaseDSL:
 
         if preprocess:
             self.preprocessor = DSLPreprocessor(dsl_package_name)
+
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
 
@@ -370,10 +372,10 @@ class BaseDSL:
 
             atexit.register(restore_excepthook, origin_excepthook)
 
-    def dump_cache(self):
+    def dump_cache(self, path=None):
         if not self.envar.disable_file_caching:
             dump_cache_to_path(
-                self.name, self.jit_cache, self.envar.file_caching_capacity
+                self.name, self.jit_cache, self.envar.file_caching_capacity, path=path
             )
 
     @lru_cache(maxsize=1)
@@ -756,6 +758,7 @@ class BaseDSL:
         args_spec: inspect.FullArgSpec,
         *,
         is_host=True,
+        compile_only=False,
     ):
         """Generate JIT function arguments."""
 
@@ -806,7 +809,10 @@ class BaseDSL:
                     jit_adapted_args.append(arg)
 
                 if is_host:
-                    jit_exec_arg.extend(get_c_pointers(arg))
+                    if self.envar.enable_tvm_ffi:
+                        jit_exec_arg.extend([arg])
+                    else:
+                        jit_exec_arg.extend(get_c_pointers(arg))
                     jit_arg_type.extend(get_mlir_types(arg))
                 else:
                     dyn_vals = extract_mlir_values(arg)
@@ -814,7 +820,10 @@ class BaseDSL:
                     jit_arg_type.extend([v.type for v in dyn_vals])
 
                 if not jit_arg_type or not jit_exec_arg:
-                    if (is_host and hasattr(arg, "__c_pointers__")) or (
+                    # when it is compile only, we don't have to prepare the executable arguments.
+                    if (
+                        is_host and (compile_only or hasattr(arg, "__c_pointers__"))
+                    ) or (
                         not is_host
                         and hasattr(arg, "__extract_mlir_values__")
                         and hasattr(arg, "__new_from_mlir_values__")
@@ -845,20 +854,32 @@ class BaseDSL:
         return jit_exec_args, jit_arg_types, jit_arg_attrs, jit_adapted_args
 
     def generate_mlir_function_types(
-        self, func, function_name, input_args, kwargs, args_spec: inspect.FullArgSpec
+        self,
+        func,
+        function_name,
+        input_args,
+        kwargs,
+        args_spec: inspect.FullArgSpec,
+        compile_only=False,
     ):
         """Convert input arguments to MLIR function signature also convert numpy arrays to memref."""
 
         exe_args, types, attrs, adapted_args = self._generate_jit_func_args(
-            func, function_name, input_args, kwargs, args_spec, is_host=True
+            func,
+            function_name,
+            input_args,
+            kwargs,
+            args_spec,
+            is_host=True,
+            compile_only=compile_only,
         )
 
         log().debug("Execution Arguments: %s", ", ".join(map(str, exe_args)))
         log().debug("Types: %s", ", ".join(map(str, types)))
 
-        assert len(exe_args) == len(types), (
-            "expects the same number of arguments and function parameters"
-        )
+        assert (
+            compile_only or self.envar.enable_tvm_ffi or len(exe_args) == len(types)
+        ), "expects the same number of arguments and function parameters"
 
         return exe_args, types, adapted_args
 
@@ -867,6 +888,7 @@ class BaseDSL:
         cluster: list = None
         grid: list = field(default_factory=lambda: [1, 1, 1])
         block: list = field(default_factory=lambda: [1, 1, 1])
+        max_number_threads: list = field(default_factory=lambda: [0, 0, 0])
         smem: int = None
         async_deps: list = field(default_factory=list)
         has_cluster: bool = False
@@ -905,6 +927,13 @@ class BaseDSL:
                 self.cluster = [None, None, None]
             elif len(self.cluster) != 3:
                 raise DSLRuntimeError(f"Expect 3d cluster!")
+
+        def has_max_number_threads(self):
+            """Check if max_number_threads is given by user"""
+            return all(
+                value == 0 if not is_dynamic_expression(value) else False
+                for value in self.max_number_threads
+            )
 
     def diagnostic(self):
         """Check command line parameters and enables diagnostic"""
@@ -1029,7 +1058,6 @@ class BaseDSL:
                 pipeline = re.sub(r"{.+}", opt_str, pipeline)
             else:
                 pipeline = pipeline.rstrip(")") + f"{{{opt_str}}})"
-        log().debug(f"Using pipeline = {pipeline}")
         return pipeline
 
     def get_shared_libs(self) -> list:
@@ -1101,6 +1129,18 @@ class BaseDSL:
 
         return module
 
+    def get_return_types(self) -> List[ir.Type]:
+        """
+        Get the return types of the host function.
+        """
+        return []
+
+    def generate_default_return_values(self, ip=None) -> List[ir.Value]:
+        """
+        Generate the default return values of the host function.
+        """
+        return []
+
     def generate_original_ir(
         self,
         ir,
@@ -1115,27 +1155,35 @@ class BaseDSL:
         frame=None,
     ):
         def build_ir_module():
-            module = ir.Module.create(loc=self.get_location(frame))
+            loc = self.get_location(frame)
+            module = ir.Module.create(loc=loc)
             unit_attr = ir.UnitAttr.get()
             module.operation.attributes["gpu.container_module"] = unit_attr
 
             with ir.InsertionPoint(module.body):
                 # Always generate gpu module. It's canonicalized by the compiler when it's not used.
-                self._build_gpu_module(gpu_module_attrs, loc=self.get_location(frame))
+                self._build_gpu_module(gpu_module_attrs, loc=loc)
 
+                ret_types = self.get_return_types()
                 fop = func.FuncOp(
-                    function_name, (func_types, []), loc=self.get_location(frame)
+                    function_name, (func_types, ret_types), loc=loc
                 )
                 fop.attributes["llvm.emit_c_interface"] = ir.UnitAttr.get()
                 log().debug("Generated Function OP [%s]", fop)
-                with ir.InsertionPoint(fop.add_entry_block()):
+                # Attach per-argument source locations if supported by the FuncOp binding.
+                arg_locs = [loc for _ in range(len(func_types))]
+                entry_block = fop.add_entry_block(arg_locs=arg_locs)
+                with ir.InsertionPoint(entry_block):
                     ir_args, ir_kwargs = self.generate_execution_arguments(
                         args, kwargs, fop, args_spec
                     )
                     # Call user function body
                     try:
                         result = funcBody(*ir_args, **ir_kwargs)
-                        func.ReturnOp([], loc=self.get_location(frame))
+                        default_ret_values = self.generate_default_return_values(
+                            ir.InsertionPoint.current
+                        )
+                        func.ReturnOp(default_ret_values, loc=loc)
                     except NameError as name_error:
                         raise DSLRuntimeError(
                             f"💥💥💥 Error during runtime code generation for function `{funcBody.__name__}` 💥💥💥",
@@ -1165,6 +1213,12 @@ class BaseDSL:
         args_spec,
         no_cache,
         func_type=JitCompiledFunction,
+        *,
+        full_args=None,
+        full_kwargs=None,
+        dynamic_args=None,
+        dynamic_kwargs=None,
+        original_function_name=None,
     ):
         # If `gpu-arch` is set by compile_options, use it. Otherwise, use the arch from the environment variable.
         compile_gpu_arch = (
@@ -1178,6 +1232,7 @@ class BaseDSL:
         pipeline = self.preprocess_pipeline(
             self._get_pipeline(pipeline), compile_gpu_arch
         )
+        log().debug(f"Using pipeline = {pipeline}")
         shared_libs = self.get_shared_libs()
         profiler = timer(enable=self.envar.jit_time_profiling)
         if (
@@ -1212,7 +1267,7 @@ class BaseDSL:
             )
         capi_func = profiler(engine.lookup)(function_name) if engine else None
 
-        fn = JitCompiledFunction(
+        fn = func_type(
             module,
             engine,
             capi_func,
@@ -1221,11 +1276,14 @@ class BaseDSL:
             self.kernel_info,
             jit_time_profiling=self.envar.jit_time_profiling,
             jit_function_artifacts=JitFunctionArtifacts(
-                PTX=self.compile_options.dump_ptx_path,
-                CUBIN=self.compile_options.dump_cubin_path,
+                PTX=self.compile_options.full_ptx_path,
+                CUBIN=self.compile_options.full_cubin_path,
                 MLIR=(self.dump_mlir_path if self.envar.keep_ir else None),
             ),
         )
+
+        # set dynamic arguments if the jit_function is a JitCompiledFunction for AOT generation.
+        fn.set_dynamic_args(dynamic_args, dynamic_kwargs)
 
         if not no_cache:
             # module stored in cache is compiled.
@@ -1243,6 +1301,34 @@ class BaseDSL:
         # reset the compile options after the compilation is done.
         self.compile_options = CompileOptions()
 
+    def extract_dynamic_args(self, funcBody, args, kwargs, args_spec):
+        """This function is used to extract the original dynamic arguments for AOT C header generation.
+        The dynamic argument is the argument which is not marked as `Constexpr` in the function signature.
+        """
+        dynamic_args = []
+        dynamic_kwargs = OrderedDict()
+        for i, arg in enumerate(args):
+            if not is_argument_constexpr(
+                arg,
+                args_spec.annotations.get(args_spec.args[i], None),
+                args_spec.args[i],
+                i,
+                funcBody,
+            ):
+                try:
+                    dynamic_args.append(weakref.proxy(arg))
+                except TypeError:
+                    # If arg cannot be weakly referenced (e.g., int, float)
+                    dynamic_args.append(arg)
+        for i, (k, v) in enumerate(kwargs.items()):
+            if not is_argument_constexpr(v, args_spec.kwonlyargs[i], k, i, funcBody):
+                try:
+                    dynamic_kwargs[k] = weakref.proxy(v)
+                except TypeError:
+                    # If v cannot be weakly referenced (e.g., int, float)
+                    dynamic_kwargs[k] = v
+        return dynamic_args, dynamic_kwargs
+
     def generate_mlir(
         self,
         funcBody,
@@ -1258,49 +1344,65 @@ class BaseDSL:
         frame=None,
     ):
         """Generate MLIR module and compile iself.T_provider."""
-        with ir.Context(), ir.Location.unknown():
-            # Convert input arguments to MLIR arguments
-            exe_args, func_types, adapted_args = self.generate_mlir_function_types(
-                funcBody, function_name, args, kwargs, args_spec
-            )
-
-            # Generate original ir module and its hash value.
-            module, module_hash, result = self.generate_original_ir(
-                ir,
-                func,
-                funcBody,
-                kwargs,
-                function_name,
-                func_types,
-                gpu_module_attrs,
-                args,
-                args_spec,
-                frame=frame,
-            )
-
-            # dryrun is used to only generate IR
-            if self.envar.dryrun:
-                return result
-
-            if (
-                no_cache
-                or module_hash not in self.jit_cache
-                or self.jit_cache[module_hash].capi_func is None
-            ):
-                # no cache or cache miss, do ir generation/compilation/jit engine
-                jit_function = self.compile_and_cache(
-                    module, module_hash, function_name, pipeline, args_spec, no_cache
+        with ir.Context(), self.get_location(frame):
+            try:
+                # Convert input arguments to MLIR arguments
+                exe_args, func_types, adapted_args = self.generate_mlir_function_types(
+                    funcBody, function_name, args, kwargs, args_spec, compile_only
                 )
-            else:
-                # cache hit
-                log().info(
-                    "JIT cache hit IN-MEMORY function=[%s] module_hash=[%s]",
+                dynamic_args, dynamic_kwargs = self.extract_dynamic_args(
+                    funcBody, args, kwargs, args_spec
+                )
+                original_function_name = funcBody.__name__
+
+                # Generate original ir module and its hash value.
+                module, module_hash, result = self.generate_original_ir(
+                    ir,
+                    func,
+                    funcBody,
+                    kwargs,
                     function_name,
-                    module_hash,
+                    func_types,
+                    gpu_module_attrs,
+                    args,
+                    args_spec,
+                    frame=frame,
                 )
-                jit_function = self.jit_cache[module_hash]
 
-            self.post_compilation_cleanup()
+                # dryrun is used to only generate IR
+                if self.envar.dryrun:
+                    return result
+
+                if (
+                    no_cache
+                    or module_hash not in self.jit_cache
+                    or self.jit_cache[module_hash].capi_func is None
+                ):
+                    # no cache or cache miss, do ir generation/compilation/jit engine
+                    jit_function = self.compile_and_cache(
+                        module,
+                        module_hash,
+                        function_name,
+                        pipeline,
+                        args_spec,
+                        no_cache,
+                        full_args=args,
+                        full_kwargs=kwargs,
+                        dynamic_args=dynamic_args,
+                        dynamic_kwargs=dynamic_kwargs,
+                        original_function_name=original_function_name,
+                    )
+                else:
+                    # cache hit
+                    log().info(
+                        "JIT cache hit IN-MEMORY function=[%s] module_hash=[%s]",
+                        function_name,
+                        module_hash,
+                    )
+                    jit_function = self.jit_cache[module_hash]
+
+            finally:
+                self.post_compilation_cleanup()
 
         # If compile_only is set, bypass execution return the jit_executor directly
         if compile_only:
@@ -1569,13 +1671,13 @@ class BaseDSL:
         """
         ret = None
 
-        with ir.Context(), ir.Location.unknown():
+        with ir.Context(), self.get_location():
             loc = self.get_location()
             module = ir.Module.create(loc=loc)
             unit_attr = ir.UnitAttr.get()
             module.operation.attributes["gpu.container_module"] = unit_attr
             with ir.InsertionPoint(module.body):
-                self._build_gpu_module({})
+                self._build_gpu_module({}, loc=loc)
                 ret, kernel_name = kernel_generator()
                 log().debug(
                     f"Kernel generator returned: ret={ret}, kernel_name={kernel_name}"

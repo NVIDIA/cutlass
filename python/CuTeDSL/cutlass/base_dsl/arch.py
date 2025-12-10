@@ -11,7 +11,7 @@
 
 from enum import Enum
 import re
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 
 class Arch(Enum):
@@ -32,6 +32,9 @@ class Arch(Enum):
     sm_101 = (10, 1, "")
     sm_101a = (10, 1, "a")
     sm_101f = (10, 1, "f")
+    sm_103 = (10, 3, "")
+    sm_103a = (10, 3, "a")
+    sm_103f = (10, 3, "f")
     sm_110 = (11, 0, "")
     sm_110a = (11, 0, "a")
     sm_110f = (11, 0, "f")
@@ -49,16 +52,50 @@ class Arch(Enum):
 
     @classmethod
     def _missing_(cls, value):
-        """Support creating Arch enum from (major, minor, suffix) tuple"""
-        if not isinstance(value, tuple):
-            raise ValueError(f"invalid arguments for Arch: {value}")
-        major, minor, suffix = None, None, None
-        if len(value) == 2:
+        if isinstance(value, tuple) and len(value) == 2:
+            # Support creating Arch enum from (major, minor) tuple
+            # Arch(major, minor) is equivalent to Arch(major, minor, "")
             major, minor, suffix = *value, ""
+            return cls((major, minor, suffix))
         else:
             raise ValueError(f"invalid arguments for Arch: {value}")
+        
 
-        return cls(major, minor, suffix)
+    # attributes to get arch list of specific families
+    @classmethod
+    def AmpereArchs(cls) -> Tuple["Arch"]:
+        return (Arch.sm_80, Arch.sm_86, Arch.sm_87)
+
+    @classmethod
+    def AdaArchs(cls) -> Tuple["Arch"]:
+        return (Arch.sm_89,)
+
+    @classmethod
+    def HopperArchs(cls) -> Tuple["Arch"]:
+        return (Arch.sm_90, Arch.sm_90a)
+
+    @classmethod
+    def BlackwellArchs(cls) -> Tuple["Arch"]:
+        return (
+            Arch.sm_100,
+            Arch.sm_100a,
+            Arch.sm_100f,
+            Arch.sm_101,
+            Arch.sm_101a,
+            Arch.sm_101f,
+            Arch.sm_103,
+            Arch.sm_103a,
+            Arch.sm_103f,
+            Arch.sm_110,
+            Arch.sm_110a,
+            Arch.sm_110f,
+            Arch.sm_120,
+            Arch.sm_120a,
+            Arch.sm_120f,
+            Arch.sm_121,
+            Arch.sm_121a,
+            Arch.sm_121f,
+        )
 
     def __repr__(self):
         return self.__str__()

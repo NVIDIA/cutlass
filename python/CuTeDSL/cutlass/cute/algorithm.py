@@ -221,8 +221,8 @@ def autovec_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
     upper_bound = math.gcd(upper_bound, src.iterator.max_alignment * 8)
     upper_bound = math.gcd(upper_bound, dst.iterator.max_alignment * 8)
 
-    # Finally, we put a cap at 128b
-    num_bits_per_copy = math.gcd(upper_bound, 128)
+    # Finally, we put a cap at 256b
+    num_bits_per_copy = math.gcd(upper_bound, 256)
 
     if (num_common_elements > 1) and (num_bits_per_copy % 8 == 0):
         num_common_elements = num_bits_per_copy // src.element_type.width
@@ -355,7 +355,7 @@ def copy(
 
     .. code-block:: python
 
-        cute.copy(tma_atom, src, dst, tma_bar_ptr=mbar_ptr, mcast_mask=mask)
+        cute.copy(tma_atom, src, dst, tma_bar_ptr=mbar_ptr, mcast_mask=mask, cache_policy=policy)
 
     Optional predication is supported through an additional tensor parameter. For partitioned tensors with
     logical profile ``((ATOM_V,ATOM_REST),REST,...)``, the predication tensor must maintain profile

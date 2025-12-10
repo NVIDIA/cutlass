@@ -45,6 +45,7 @@
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/sm100_callbacks_tma_warpspecialized.hpp"
 #include "cutlass/detail/layout.hpp"
+#include "cutlass/detail/collective/moe_stride_utils.hpp"
 #include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
@@ -1473,26 +1474,40 @@ public:
 
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
+        ElementC const* ptr_C = nullptr;
+        Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), InternalStrideC{}));
         if (params.dC != nullptr) {
-          ElementC const* ptr_C = nullptr;
-          Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
-
-          cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
-                                                  prob_shape, prob_stride);
-          // Convert strides to byte strides
-          for (uint64_t& stride : prob_stride) {
-            stride = (stride * sizeof_bits_v<ElementC>) / 8;
-          }
-          cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_C,
-                                                                  prob_shape,
-                                                                  prob_stride);
+          tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
         }
+        else {
+          auto internal_shape_c = make_shape(static_cast<int>(M), static_cast<int>(N), 1);
+          InternalStrideC stride_c = make_internal_packed_stride(InternalStrideC{}, internal_shape_c);
+          tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), stride_c));
+        }
+
+        cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
+                                                prob_shape, prob_stride);
+        // Convert strides to byte strides
+        for (uint64_t& stride : prob_stride) {
+          stride = (stride * sizeof_bits_v<ElementC>) / 8;
+        }
+        cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_C,
+                                                                prob_shape,
+                                                                prob_stride);
+
       }
     }
     else if constexpr (is_destination_supported) {
       ElementD const* ptr_D = nullptr;
-      Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
-
+      Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), InternalStrideD{}));
+      if (params.dD != nullptr) {
+        tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
+      }
+      else {
+        auto internal_shape_d = make_shape(static_cast<int>(M), static_cast<int>(N), 1);
+        InternalStrideD stride_d = make_internal_packed_stride(InternalStrideD{}, internal_shape_d);
+        tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), stride_d));
+      }  
       cute::detail::fill_tma_gmem_shape_stride(params.tma_store_d, tensor_d, 
                                                prob_shape, prob_stride);
       // Convert strides to byte strides
@@ -1501,8 +1516,8 @@ public:
       }
 
       cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_D,
-                                                              prob_shape,
-                                                              prob_stride);
+                                                            prob_shape,
+                                                            prob_stride);
     }
   }
 

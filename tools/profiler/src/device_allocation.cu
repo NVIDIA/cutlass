@@ -326,8 +326,38 @@ DeviceAllocation::DeviceAllocation(
   reset(type, layout_id, extent, stride, batch_count);
 }
 
+DeviceAllocation::DeviceAllocation(
+  library::NumericTypeID type,
+  library::LayoutTypeID layout_id,
+  std::vector<int> const &extent,
+  std::vector<int64_t> const &stride,
+  void* ref_pointer_,
+  int batch_count,
+  int device
+):
+  type_(type), batch_stride_(size_t(0)), capacity_(size_t(0)),
+  pointer_(ref_pointer_), batch_count_(1), device_(device), free_memory_(false) {
+
+  tensor_ref_buffer_.resize(sizeof(pointer_) + (sizeof(int64_t) * library::get_layout_stride_rank(layout_id)), 0);
+
+  type_ = type;
+
+  layout_ = layout_id;
+  stride_ = stride;
+  extent_ = extent;
+  batch_count_ = batch_count;
+
+  batch_stride_ = construct_layout(
+    tensor_ref_buffer_.data() + sizeof(pointer_),
+    layout_id,
+    extent,
+    stride_);
+
+  capacity_ = batch_stride_ * batch_count_;
+}
+
 DeviceAllocation::~DeviceAllocation() {
-  if (pointer_) {
+  if (pointer_ and free_memory_) {
     int current_device;
     cudaGetDevice(&current_device);
 
@@ -343,7 +373,7 @@ DeviceAllocation::~DeviceAllocation() {
 }
 
 DeviceAllocation &DeviceAllocation::reset() {
-  if (pointer_) {
+  if (pointer_ and free_memory_) {
     int current_device;
     cudaGetDevice(&current_device);
 
@@ -366,6 +396,7 @@ DeviceAllocation &DeviceAllocation::reset() {
   extent_.clear();
   tensor_ref_buffer_.clear();
   batch_count_ = 1;
+  free_memory_ = true;
 
   return *this;
 }

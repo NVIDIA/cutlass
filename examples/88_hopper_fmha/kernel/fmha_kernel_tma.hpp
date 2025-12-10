@@ -138,7 +138,7 @@ struct FmhaKernelTma {
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
 #if ! defined(CUTLASS_ARCH_MMA_SM90A_ENABLED)
-    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
     TileScheduler tile_scheduler{params.tile_scheduler};
 

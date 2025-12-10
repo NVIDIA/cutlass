@@ -57,6 +57,15 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int4b_t,
     int8_t,
+    void,
+    int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
     int8_t,
     int32_t,
     int32_t,
@@ -67,7 +76,27 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int4b_t,
     int8_t,
+    void,
     int32_t,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, int32_t>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
+    void,
     float,
     int32_t,
     int32_t,
@@ -85,6 +114,16 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
+    void,
+    float,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     int8_t,
     int4b_t,
     int32_t,
@@ -94,7 +133,26 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int8_t,
     int4b_t,
+    void,
+    int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     int8_t,
+    int4b_t,
+    int8_t,
+    int32_t,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, int32_t>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    void,
     int32_t,
     int32_t,
     int8_t,
@@ -114,7 +172,27 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int8_t,
     int4b_t,
+    void,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     int8_t,
+    int4b_t,
+    int8_t,
+    float,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    void,
     float,
     int32_t,
     int8_t,

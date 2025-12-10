@@ -38,6 +38,7 @@ import cutlass.cute.testing as testing
 import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 
@@ -232,9 +233,8 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
             )
         )
         # Set barrier id for cta sync, epilogue sync and tmem ptr sync
-        self.cta_sync_bar_id = 1
-        self.epilog_sync_bar_id = 2
-        self.tmem_alloc_sync_bar_id = 3
+        self.epilog_sync_bar_id = 1
+        self.tmem_alloc_sync_bar_id = 2
         self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
 
     def _setup_attributes(self):
@@ -635,6 +635,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
 
         # Initialize acc_pipeline (barrier) and states
@@ -651,6 +652,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
             producer_group=acc_pipeline_producer_group,
             consumer_group=acc_pipeline_consumer_group,
             cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
         )
 
         # Load C pipeline
@@ -665,6 +667,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
             producer_group=c_producer_group,
             consumer_group=c_consumer_group,
             tx_count=self.tma_c_load_bytes,
+            defer_sync=True,
         )
 
         tmem_alloc_barrier = pipeline.NamedBarrier(
@@ -681,8 +684,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         #
         # Setup smem tensor A/B/C/D
@@ -796,9 +798,6 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
 
         # Named barriers
         #
-        cta_sync_barrier = pipeline.NamedBarrier(
-            self.cta_sync_bar_id, self.threads_per_cta
-        )
         epilog_sync_barrier = pipeline.NamedBarrier(
             self.epilog_sync_bar_id, 32 * len(self.epilog_warp_ids)
         )
@@ -806,10 +805,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
         #
         # Cluster wait before tensor memory alloc
         #
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_wait()
-        else:
-            cta_sync_barrier.arrive_and_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         #
         # Specialized TMA load warp
