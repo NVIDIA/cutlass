@@ -15,12 +15,14 @@ from cutlass.base_dsl.tvm_ffi_builder import (
     rename_tvm_ffi_function,
     spec,
 )
+from cutlass.base_dsl.export import get_export_module
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
-from cutlass._mlir._mlir_libs._cutlass_ir import _execution_engine_extra
+from cutlass._mlir._mlir_libs._cutlass_ir import _aot_support
 from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
 from cutlass.base_dsl.common import DSLRuntimeError
-from typing import Optional
+from cutlass.base_dsl.jit_executor import ExecutionArgs
+from typing import Optional, Callable
 import tvm_ffi
 
 
@@ -400,41 +402,52 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         return current_block
 
 
-class TVMFFIJitCompiledFunction(tvm_ffi.Function, CudaDialectJitCompiledFunction):
-    """TVM FFI Function that contains metadata of the compiled function and interface to the FFI layer.
+def _inplace_hide_symbols(ir_module: ir.Module, hide_check: Callable[[str], bool]):
+    """Walk through the IRModule, hide functions that do not yet have linkage set.
 
-    This function should not be directly used after
+    @param ir_module: The ir module to hide the symbols.
+    @param hide_check: The callback to check if the symbol should be hidden.
+    @return: The ir module with the symbols hidden.
     """
+    defined_symbols = set()
+    def walk_llvm_func_op(op):
+        # not a declaration
+        if (
+            op.name == "llvm.func"
+            and len(op.opview.operation.regions) > 0
+            and len(op.opview.operation.regions[0].blocks) > 0
+        ):
+            func_name = op.attributes["sym_name"].value
+            defined_symbols.add(func_name)
 
+        return ir.WalkResult.ADVANCE
+
+    def walk_and_hide_symbols(op):
+        # Handle llvm.func operations
+        if op.name == "llvm.func":
+            func_name = op.attributes["sym_name"].value
+            # Only set linkage if it doesn't already have one
+            if func_name in defined_symbols and hide_check(func_name):
+                # Set to internal linkage to hide the symbol
+                op.attributes["linkage"] = ir.Attribute.parse("#llvm.linkage<internal>")
+        return ir.WalkResult.ADVANCE
+
+    with ir_module.context:
+        ir_module.operation.walk(walk_llvm_func_op)
+        ir_module.operation.walk(walk_and_hide_symbols)
+
+
+def _get_format_from_object_file_path(object_file_path: str) -> str:
+    format = object_file_path.split(".")[-1]
+    if format not in ("o", "ll", "bc"):
+        return "o"
+    return format
+
+
+class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
+    """Base class for TVM FFI compiled function."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # initialize the tvm_ffi.Function from the current execution engine
-        self._init_ffi_function()
-
-    # use direct call to the tvm_ffi.Function.__call__
-    # to avoid most of python overhead
-    __call__ = tvm_ffi.Function.__call__
-
-    def _init_ffi_function(self):
-        """Initialize the tvm_ffi.Function from the current execution engine.
-
-        This function must be called at once during compilation time.
-        The reason why it is not called during init is because the original
-        flow may already created an execution engine and the function is not
-        guaranteed to be initialized at that time.
-        """
-        if self.__chandle__() != 0:
-            raise DSLRuntimeError("TVM FFI function is already initialized")
-        # get the MLIR function pointer from the execution engine
-        if self.engine is not None:
-            tvm_ffi_function_ptr = self.engine.raw_lookup(
-                "__tvm_ffi_" + self.function_name
-            )
-            tvm_ffi_function = tvm_ffi.Function.__from_mlir_packed_safe_call__(
-                tvm_ffi_function_ptr
-            )
-            # move the handle from the tvm_ffi.Function to the current instance
-            self.__move_handle_from__(tvm_ffi_function)
 
     def to(self, device=None):
         """TVM FFI function itself is already support all devices."""
@@ -444,18 +457,111 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, CudaDialectJitCompiledFunction
         """Run the compiled program. This override is needed for implicit compile and execution."""
         return self.__call__(*exe_args)
 
-    def export_to_c(self, object_file_path: str, function_name: str = None):
+    def export_to_c(
+        self, object_file_path: str, function_name: str = None,
+        *,
+        enable_pic: bool = True,
+        export_only_tvm_ffi_symbols: bool = False
+    ):
         """Export the TVM FFI function to an object file.
 
         :param object_file_path: The path to the object file.
         :param function_name: The name of the function to export.
+        :param enable_pic: Whether to enable PIC relocation needed for shared library loading.
+        :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
+        :param host_target_triple: If not provided, the current host target is used.
         """
-        if function_name is not None and function_name != self.function_name:
-            mod = self.ir_module
-            rename_tvm_ffi_function(mod, self.function_name, function_name)
-        else:
-            mod = self.ir_module
-
-        _execution_engine_extra.dump_object_file_pic(
-            mod, object_file_path, "__tvm_ffi_" + function_name, 2
+        # prefix internal function by function name
+        internal_symbol_prefix = "__cute_internal_" + function_name
+        mod = self.ir_module
+        mod = get_export_module(
+            self.ir_module, internal_symbol_prefix,
+            preserve_symbols=[f"__tvm_ffi_{self.function_name}"]
         )
+
+        rename_tvm_ffi_function(mod, self.function_name, function_name)
+        if export_only_tvm_ffi_symbols:
+            _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
+
+        format = _get_format_from_object_file_path(object_file_path)
+        out_bytes = _aot_support.export_module_to_bytes(
+            mod, format=format, opt_level=3, enable_pic=enable_pic
+        )
+
+        with open(object_file_path, "wb") as f:
+            f.write(out_bytes)
+
+    def _create_tvm_ffi_function(self):
+        """Create the tvm_ffi.Function from the current execution engine.
+        """
+        if self.engine is not None:
+            tvm_ffi_function_ptr = self.engine.raw_lookup(
+                "__tvm_ffi_" + self.function_name
+            )
+            tvm_ffi_function = tvm_ffi.Function.__from_mlir_packed_safe_call__(
+                tvm_ffi_function_ptr, keep_alive_object=self.engine)
+            return tvm_ffi_function
+        return None
+
+
+class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase):
+    """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # initialize the tvm_ffi.Function from the current execution engine
+        if self.__chandle__() != 0:
+            raise DSLRuntimeError("TVM FFI function is already initialized")
+        tvm_ffi_function = self._create_tvm_ffi_function()
+        if tvm_ffi_function is not None:
+            # move the handle from the tvm_ffi.Function to the current instance
+            self.__move_handle_from__(tvm_ffi_function)
+
+    # use direct call to the tvm_ffi.Function.__call__
+    # to avoid most of python overhead
+    __call__ = tvm_ffi.Function.__call__
+
+
+class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
+    """TVM FFI Function with kwargs wrapper support
+    """
+
+    def __init__(self, *args, **kwargs):
+        assert "kwargs_wrapper_spec" in kwargs, "kwargs_wrapper_spec is required"
+        kwargs_wrapper_spec = kwargs.pop("kwargs_wrapper_spec")
+        super().__init__(*args, **kwargs)
+        # initialize the tvm_ffi.Function from the current execution engine
+        self._tvm_ffi_function = self._create_tvm_ffi_function()
+        if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
+            try:
+                from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+                self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
+                    self._tvm_ffi_function,
+                    arg_names=kwargs_wrapper_spec.arg_names,
+                    arg_defaults=kwargs_wrapper_spec.arg_defaults,
+                    kwonly_names=kwargs_wrapper_spec.kwonly_names,
+                    kwonly_defaults=kwargs_wrapper_spec.kwonly_defaults,
+                )
+            except ImportError:
+                raise DSLRuntimeError("install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults")
+        else:
+            # positional only is probably fine
+            self._kwargs_wrapper = self._tvm_ffi_function
+
+    def __call__(self, *args, **kwargs):
+        """Call the TVM FFI function with kwargs wrapper.
+        """
+        return self._kwargs_wrapper(*args, **kwargs)
+
+    def __tvm_ffi_object__(self):
+        return self._tvm_ffi_function
+
+
+def supports_kwargs_wrapper() -> bool:
+    """Check if the kwargs wrapper is supported."""
+    try:
+        from tvm_ffi.utils import kwargs_wrapper # type: ignore
+        return True
+    except ImportError:
+        return False

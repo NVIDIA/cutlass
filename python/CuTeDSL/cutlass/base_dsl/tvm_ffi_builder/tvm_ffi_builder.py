@@ -668,12 +668,14 @@ class TVMFFIBuilder(MLIRBuilder):
             param_types.append(self.ptr_type)  # p0, p1, ..., pN-1
 
         # Create the helper function
+        # Mark as noinline since error handling is a slow path and benefits from not inlining
         with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
             params, entry_block = self.function(
                 name=helper_name,
                 params_type=param_types,
                 ret_type=self.void_type,
                 internal=True,
+                llvm_func_attrs=["noinline"],
             )
 
             kind_param = params[0]
@@ -1244,12 +1246,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         else:
             assert isinstance(var, int)
             with ir.InsertionPoint(current_block):
-                if not skip_cast_and_check:
-                    expected_value = self.i64(var)
-                else:
-                    expected_value = self.downcast_i64_to_lower_bits(
-                        self.i64(var), var.dtype
-                    )
+                expected_value = self.i64(var)
 
             error_msg_mismatch = [
                 error_prefix_mismatch,
@@ -1983,13 +1980,21 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
 
             # decode parameters to populate the matched var binding
-            for arg_index, param in enumerate(params_list):
+            # Track the actual FFI argument index separately from parameter index
+            # since some parameters (like EnvStream) are not passed as FFI arguments
+            ffi_arg_index = 0
+            for param in params_list:
+                # Skip EnvStream parameters as they are not in the FFI args array
+                if isinstance(param, spec.EnvStream):
+                    continue
+
                 arg_context = ArgContext(
                     param_name=param.name,
-                    arg_index=arg_index,
+                    arg_index=ffi_arg_index,
                     tuple_indices=[],
                 )
-                current_block = self.decode_param(current_block, param, args, arg_index, arg_context)
+                current_block = self.decode_param(current_block, param, args, ffi_arg_index, arg_context)
+                ffi_arg_index += 1
 
             with ir.InsertionPoint(current_block):
                 env_stream = self.find_env_stream(params_list)
@@ -2047,7 +2052,9 @@ def attach_ffi_func(
     builder.attach_ffi_func(symbol_name, params, call_provider, fn_display_name)
 
 
-def rename_tvm_ffi_function(module: ir.Module, old_name: str, new_name: str) -> None:
+def rename_tvm_ffi_function(
+    module: ir.Module, old_name: str, new_name: str,
+) -> None:
     """Rename the TVM FFI function in the module.
 
     Parameters

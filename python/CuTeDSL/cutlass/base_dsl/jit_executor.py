@@ -16,7 +16,7 @@ This module provides jit executor related classes
 import ctypes
 import inspect
 import io
-from typing import Union, Optional
+from typing import Union, Optional, NamedTuple, Any, Sequence
 import weakref
 import threading
 import collections
@@ -132,6 +132,15 @@ def load_kernels_from_ir_module(module, kernel_info) -> list[CudaModuleAndKernel
     return list(kernel_modules.values())
 
 
+
+class KwargsWrapperSpec(NamedTuple):
+    """A specification for keyword arguments wrapper."""
+    arg_names: list[str]
+    arg_defaults: tuple[Any, ...]
+    kwonly_names: list[str]
+    kwonly_defaults: dict[str, Any]
+
+
 class ExecutionArgs:
     """Helper that wraps the function signature spec to filter exeuction and compile time arguments."""
 
@@ -216,6 +225,59 @@ class ExecutionArgs:
 
         return exe_args, adapted_args
 
+    def get_kwargs_wrapper_spec(self, exclude_arg_names: Sequence[str] = ()) -> KwargsWrapperSpec:
+        """
+        This function is used to get the kwargs wrapper spec from the original args_spec.
+        """
+        excluded_arg_names = set(exclude_arg_names)
+        arg_spec = self.original_args_spec
+
+        if arg_spec.defaults:
+            defaults_start_idx = len(arg_spec.args) - len(arg_spec.defaults)
+        else:
+            defaults_start_idx = len(arg_spec.args)
+
+        arg_names = []
+        arg_defaults = []
+        kwonly_names = []
+        kwonly_defaults = {}
+
+       # Filter arguments and maintain their properties
+        for i, arg_name in enumerate(arg_spec.args):
+            arg_type = arg_spec.annotations.get(arg_name, None)
+
+            # Skip compile-time arguments
+            if is_arg_spec_constexpr(arg_type, arg_name, i, self.function_name):
+                continue
+            if arg_name in excluded_arg_names:
+                continue
+            arg_names.append(arg_name)
+
+            if i >= defaults_start_idx:
+                arg_defaults.append(arg_spec.defaults[i - defaults_start_idx])
+
+        if arg_spec.kwonlyargs:
+            for i, kwarg in enumerate(arg_spec.kwonlyargs):
+                arg_type = arg_spec.annotations.get(kwarg, None)
+
+                # Skip compile-time arguments
+                if is_arg_spec_constexpr(arg_type, kwarg, i, self.function_name):
+                    continue
+
+                if kwarg in excluded_arg_names:
+                    continue
+
+                kwonly_names.append(kwarg)
+                if arg_spec.kwonlydefaults and kwarg in arg_spec.kwonlydefaults:
+                    kwonly_defaults[kwarg] = arg_spec.kwonlydefaults[kwarg]
+
+        return KwargsWrapperSpec(
+            arg_names=arg_names,
+            arg_defaults=tuple(arg_defaults),
+            kwonly_names=kwonly_names,
+            kwonly_defaults=kwonly_defaults,
+        )
+
     def get_rectified_args_from_original_args(self, full_args, full_kwargs):
         """
         This function is used to rectify the original arguments to the runtime
@@ -233,6 +295,7 @@ class ExecutionArgs:
             defaults_start_idx = len(arg_spec.args)
 
         runtime_args = []
+
         # Filter arguments and maintain their properties
         for i, arg_name in enumerate(arg_spec.args):
             arg_type = arg_spec.annotations.get(arg_name, None)
@@ -241,12 +304,24 @@ class ExecutionArgs:
             if is_arg_spec_constexpr(arg_type, arg_name, i, self.function_name):
                 continue
 
-            # Keep corresponding default if it exists
-            if i >= defaults_start_idx:
+            # Check if argument was provided by user, otherwise use default
+            if i < len(full_args):
+                # User provided this argument - use it
+                runtime_args.append(full_args[i])
+            elif i >= defaults_start_idx:
+                # Argument not provided, but has default - use default
                 default_idx = i - defaults_start_idx
                 runtime_args.append(arg_spec.defaults[default_idx])
             else:
-                runtime_args.append(full_args[i])
+                # Required argument missing
+                raise DSLRuntimeError(
+                    f"Missing required argument '{arg_name}' at position {i}",
+                    context={
+                        "function_name": self.function_name,
+                        "expected_args": len(arg_spec.args),
+                        "provided_args": len(full_args),
+                    }
+                )
 
         # Filter keyword-only arguments
         runtime_kwargs = {}
