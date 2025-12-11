@@ -27,16 +27,20 @@ from typing import Union
 
 cubin_suffix = "cubin"
 
-def get_export_module(ir_module: ir.Module, symbol_prefix: str):
+def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symbols = None):
     """Get the export module which is cloned from the original compiled ir module, and add the prefix
     to avoid the symbol conflict.
 
     @param ir_module: The original compiled ir module. Comes from the JitCompiledFunction.ir_module.
     @param symbol_prefix: The prefix name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
+    @param preserve_symbols: Optional symbols to preserve in the export module.
     @return: The export module of the function.
     """
     # Add prefix for symbol names to avoid conflict with other functions
     defined_symbols = set()
+
+    if preserve_symbols is None:
+        preserve_symbols = set()
 
     def walk_llvm_func_op(op):
         # not a declaration
@@ -45,23 +49,61 @@ def get_export_module(ir_module: ir.Module, symbol_prefix: str):
             and len(op.opview.operation.regions) > 0
             and len(op.opview.operation.regions[0].blocks) > 0
         ):
-            defined_symbols.add(op.attributes["sym_name"].value)
+            func_name = op.attributes["sym_name"].value
+            # skip preserving symbols
+            if func_name in preserve_symbols:
+                return ir.WalkResult.ADVANCE
+            defined_symbols.add(func_name)
             op.attributes["sym_name"] = ir.StringAttr.get(
-                symbol_prefix + "_" + op.attributes["sym_name"].value
+                symbol_prefix + "_" + func_name
             )
         return ir.WalkResult.ADVANCE
 
-    def walk_llvm_call_op(op):
+    def walk_llvm_references(op):
+        # Rename function calls
         if op.name == "llvm.call" and op.attributes["callee"].value in defined_symbols:
             op.attributes["callee"] = ir.FlatSymbolRefAttr.get(
                 symbol_prefix + "_" + op.attributes["callee"].value
             )
+        # Rename addressof references
+        elif op.name == "llvm.mlir.addressof" and op.attributes["global_name"].value in defined_symbols:
+            op.attributes["global_name"] = ir.FlatSymbolRefAttr.get(
+                symbol_prefix + "_" + op.attributes["global_name"].value
+            )
+        # Rename global_ctors references
+        elif op.name == "llvm.mlir.global_ctors" and "ctors" in op.attributes:
+            ctors = list(op.attributes["ctors"])
+            renamed_ctors = []
+            for ctor in ctors:
+                if ctor.value in defined_symbols:
+                    renamed_ctors.append(ir.FlatSymbolRefAttr.get(
+                        symbol_prefix + "_" + ctor.value
+                    ))
+                else:
+                    renamed_ctors.append(ctor)
+            if renamed_ctors:
+                op.attributes["ctors"] = ir.ArrayAttr.get(renamed_ctors)
+        # Rename global_dtors references
+        elif op.name == "llvm.mlir.global_dtors" and "dtors" in op.attributes:
+            dtors = list(op.attributes["dtors"])
+            renamed_dtors = []
+            for dtor in dtors:
+                if dtor.value in defined_symbols:
+                    renamed_dtors.append(ir.FlatSymbolRefAttr.get(
+                        symbol_prefix + "_" + dtor.value
+                    ))
+                else:
+                    renamed_dtors.append(dtor)
+            if renamed_dtors:
+                op.attributes["dtors"] = ir.ArrayAttr.get(renamed_dtors)
         return ir.WalkResult.ADVANCE
 
     with ir.Context():
         export_module = ir.Module.parse(str(ir_module))
+        # First pass: collect and rename function definitions
         export_module.operation.walk(walk_llvm_func_op)
-        export_module.operation.walk(walk_llvm_call_op)
+        # Second pass: rename call and addressof references
+        export_module.operation.walk(walk_llvm_references)
     return export_module
 
 
