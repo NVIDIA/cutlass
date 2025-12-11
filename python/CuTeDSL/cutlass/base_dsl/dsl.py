@@ -318,11 +318,8 @@ class BaseDSL:
         self.envar = self._env_class(self.name)
         self.enable_preprocessor = preprocess
         # This cache uses hash of original ir and env as key, allows dump/load to/from file. Enabled by default
-        self.jit_cache = (
-            dict()
-            if self.envar.disable_file_caching
-            else load_cache_from_path(self.name, self.envar.file_caching_capacity)
-        )
+        self.jit_cache = dict()
+
         self.host_jit_decorator_name = f"@{BaseDSL.jit.__name__}"
         self.device_jit_decorator_name = f"@{BaseDSL.kernel.__name__}"
 
@@ -372,12 +369,6 @@ class BaseDSL:
 
             atexit.register(restore_excepthook, origin_excepthook)
 
-    def dump_cache(self, path=None):
-        if not self.envar.disable_file_caching:
-            dump_cache_to_path(
-                self.name, self.jit_cache, self.envar.file_caching_capacity, path=path
-            )
-
     @lru_cache(maxsize=1)
     def print_warning_once(self, message):
         log().warning(f"Warning: {message}")
@@ -392,9 +383,6 @@ class BaseDSL:
     def _get_dsl(cls):
         # Instantiate the DSL Class once
         main_dsl = cls()
-        if not main_dsl.no_cache:
-            # register atexit callback
-            atexit.register(main_dsl.dump_cache)
         return main_dsl
 
     @staticmethod
@@ -1235,6 +1223,16 @@ class BaseDSL:
         log().debug(f"Using pipeline = {pipeline}")
         shared_libs = self.get_shared_libs()
         profiler = timer(enable=self.envar.jit_time_profiling)
+        # try load the file cache
+        load_from_file_cache = False
+        if not no_cache:
+            fn = load_cache_from_path(
+                self.name, module_hash, bytecode_reader=read_bytecode_and_check_crc32
+            )
+            if fn is not None:
+                load_from_file_cache = True
+                self.jit_cache[module_hash] = fn
+
         if (
             no_cache
             or module_hash not in self.jit_cache
@@ -1288,6 +1286,16 @@ class BaseDSL:
         if not no_cache:
             # module stored in cache is compiled.
             self.jit_cache[module_hash] = fn
+            # write through the file cache if enabled.
+            if not self.envar.disable_file_caching and not load_from_file_cache:
+                dump_cache_to_path(
+                    self.name,
+                    fn,
+                    module_hash,
+                    bytecode_writer=lambda f: write_bytecode_with_crc32(
+                        f, fn.ir_module
+                    ),
+                )
 
         return fn
 

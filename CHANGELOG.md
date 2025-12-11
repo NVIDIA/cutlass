@@ -2,6 +2,17 @@
 
 # CUTLASS 4.x
 
+## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
+
+### CuTe DSL
+* New features
+  - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi
+  - Supported variadic tuples for JIT function argument in tvm-ffi
+
+* Bug fixing and improvements
+  - Fixed an issue when JIT function argument with union type annotation for tvm-ffi
+  - Clearer error message for the case of runtime error cudaErrorInsufficientDriver
+
 ## [4.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.2) (2025-12-05)
 
 ### CuTe DSL

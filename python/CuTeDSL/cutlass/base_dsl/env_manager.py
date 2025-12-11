@@ -311,7 +311,6 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
     - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
     - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
-    - [DSL_NAME]_FILE_CACHING_CAPACITY: Limits the number of the cache save/load files (default: 1000)
     - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
     - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
     """
@@ -349,9 +348,6 @@ class EnvironmentVarManager(LogEnvironmentManager):
         )
         self.disable_file_caching = get_bool_env_var(
             f"{prefix}_DISABLE_FILE_CACHING", False
-        )
-        self.file_caching_capacity = get_int_env_var(
-            f"{prefix}_FILE_CACHING_CAPACITY", 1000
         )
         # set cuda
         self.cuda_toolkit = get_cuda_toolkit_path()

@@ -28,8 +28,9 @@ from ..base_dsl.jit_executor import (
     JitFunctionArtifacts,
 )
 from ..base_dsl.utils.logger import log
-from ..base_dsl.common import DSLCudaRuntimeError, DSLRuntimeError
+from ..base_dsl.common import DSLRuntimeError
 from ..base_dsl.typing import Int32
+from ..base_dsl.runtime.cuda import checkCudaErrors
 
 class CudaDialectJitModule:
     """Holds the execution engine and cuda libraries."""
@@ -113,10 +114,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
     @functools.cached_property
     def num_devices(self):
         """Returns the number of CUDA devices available."""
-        dev_err, devs = cuda_runtime.cudaGetDeviceCount()
-        if dev_err != cuda_runtime.cudaError_t.cudaSuccess:
-            raise DSLCudaRuntimeError(dev_err, cuda_runtime.cudaGetErrorName(dev_err))
-        return devs
+        return checkCudaErrors(cuda_runtime.cudaGetDeviceCount())
 
     def _deserializer(self):
         """Load the cuda library from the binary execution engine.
@@ -148,12 +146,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
         cuda_init(packed_args)
 
-        if err.value != 0:
-            error_code = err.value
-            error_name = cuda_runtime.cudaGetErrorName(
-                cuda_runtime.cudaError_t(error_code)
-            )
-            raise DSLCudaRuntimeError(error_code, error_name)
+        checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
         cuda_load_args = [pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
@@ -161,12 +154,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             packed_args[i] = ctypes.cast(cuda_load_args[i], ctypes.c_void_p)
         cuda_load(packed_args)
 
-        if err.value != 0:
-            error_code = err.value
-            error_name = cuda_runtime.cudaGetErrorName(
-                cuda_runtime.cudaError_t(error_code)
-            )
-            raise DSLCudaRuntimeError(error_code, error_name)
+        checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
         return [cuda_runtime.cudaLibrary_t(library.value)]
 
@@ -229,12 +217,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
         cuda_init(packed_args)
 
-        if err.value != 0:
-            error_code = err.value
-            error_name = cuda_runtime.cudaGetErrorName(
-                cuda_runtime.cudaError_t(error_code)
-            )
-            raise DSLCudaRuntimeError(error_code, error_name)
+        checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
         device_id = ctypes.c_int32(0)
         pointer_to_device_id = ctypes.pointer(device_id)
@@ -247,18 +230,9 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         for dev in range(self.num_devices):
             device_id.value = dev
             cuda_load_to_device(packed_args)
-            if err.value != 0:
-                raise DSLCudaRuntimeError(
-                    err.value,
-                    cuda_runtime.cudaGetErrorName(cuda_runtime.cudaError_t(err.value)),
-                )
+            checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
-        if err.value != 0:
-            error_code = err.value
-            error_name = cuda_runtime.cudaGetErrorName(
-                cuda_runtime.cudaError_t(error_code)
-            )
-            raise DSLCudaRuntimeError(error_code, error_name)
+        checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
         return [cuda_runtime.cudaLibrary_t(library.value)]
 
