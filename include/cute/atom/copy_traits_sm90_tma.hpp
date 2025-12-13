@@ -1052,6 +1052,14 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
         tma_l2Promotion,
         tma_oobFill);
 
+    int64_t max_tma_offset = gmem_prob_shape[0];
+    for (int i = 1; i < tma_dim; ++i) {
+      max_tma_offset += gmem_prob_shape[i] * gmem_prob_stride[i];
+    }
+    if (max_tma_offset < 128*1024) {
+      ((uint64_t*) &tma_desc)[1] &= ~(uint64_t) (1<<21);
+    }
+
     if (result != CUDA_SUCCESS) {
       std::cerr << "TMA Desc Addr:   " << &tma_desc
                 << "\nformat         " << tma_format
