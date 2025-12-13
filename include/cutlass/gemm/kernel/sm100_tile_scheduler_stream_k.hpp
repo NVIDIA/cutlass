@@ -226,7 +226,12 @@ public:
   PipelineState<Stages> 
   advance_to_next_work(Pipeline& clc_pipeline, PipelineState<Stages> clc_pipe_producer_state) const {
     return sm100_scheduler_.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
- }
+  }
+
+  CUTLASS_DEVICE
+  bool is_last_tile(WorkTileInfo work_tile_info, uint32_t advance_count = 1) const {
+    return false;
+  }
 
   // Given the inputs, computes the total number of output blocks this problem will compute over
   template<class ProblemShape>

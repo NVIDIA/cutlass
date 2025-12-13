@@ -449,6 +449,11 @@ public:
     return clc_pipe_producer_state;
   }
 
+  CUTLASS_DEVICE
+  bool is_last_tile(WorkTileInfo& work_tile_info, uint32_t advance_count = 1) const {
+    return false;
+  }
+
   // Kernel helper function to get next work tile
   template <class TileSchedulerPipeline, class TileSchedulerPipelineState>
   CUTLASS_HOST_DEVICE
