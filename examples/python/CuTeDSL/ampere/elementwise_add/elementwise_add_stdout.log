@@ -1,0 +1,94 @@
+[INFO] Run tag: elementwise_add
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] cute_ir_dump_patch installed.
+
+Running Elementwise Add test with:
+Tensor dimensions: [1024, 1024]
+Input and Output Data type: Float32
+Input tensor shapes:
+a: torch.Size([1024, 1024]), dtype: torch.float32
+b: torch.Size([1024, 1024]), dtype: torch.float32
+c: torch.Size([1024, 1024]), dtype: torch.float32
+
+Compiling kernel with cute.compile ...
+[DSL INFO] Input Tensors:
+[DSL INFO]   mA = !cute.memref<f32, gmem, "(?,?):(?{i64},1)">
+[DSL INFO]   mB = !cute.memref<f32, gmem, "(?,?):(?{i64},1)">
+[DSL INFO] Tiling Parameters:
+[DSL INFO]   tiler_mn = (16, 128) per thread block
+[DSL INFO]   tv_layout = ((32,4),(4,4)):((64,4),(16,1))
+[DSL INFO] Tiled Tensors:
+[DSL INFO]   gA = !cute.memref<f32, gmem, "((16,128),(?,?)):((?{i64},1),(?{i64 div=16},128))">
+[DSL INFO]   gB = !cute.memref<f32, gmem, "((16,128),(?,?)):((?{i64},1),(?{i64 div=16},128))">
+[DSL INFO]   gC = !cute.memref<f32, gmem, "((16,128),(?,?)):((?{i64},1),(?{i64 div=16},128))">
+[DSL INFO]   coord tensor = !cute.coord_tensor<"(0,0)", "((16,128),(?,?)):((1@0,1@1),(16@0,128@1))">
+[DSL INFO] Sliced Tensors per thread block:
+[DSL INFO]   blkA = !cute.memref<f32, gmem, "(16,128):(?{i64},1)">
+[DSL INFO]   blkB = !cute.memref<f32, gmem, "(16,128):(?{i64},1)">
+[DSL INFO]   blkC = !cute.memref<f32, gmem, "(16,128):(?{i64},1)">
+[DSL INFO]   blkCrd = !cute.coord_tensor<"(?{div=16},?{div=128})", "(16,128):(1@0,1@1)">
+[DSL INFO] Sliced Tensors per thread:
+[DSL INFO]   thrA = !cute.memref<f32, gmem, "((1,(4,4)),1,1):((0,(1,?{i64})),0,0)">
+[DSL INFO]   thrB = !cute.memref<f32, gmem, "((1,(4,4)),1,1):((0,(1,?{i64})),0,0)">
+[DSL INFO]   thrC = !cute.memref<f32, gmem, "((1,(4,4)),1,1):((0,(1,?{i64})),0,0)">
+[DSL INFO]   thrCrd = !cute.coord_tensor<"(?{div=4},?{div=4})", "((1,(4,4)),1,1):((0,(1@1,1@0)),0,0)">
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_0_.mlir (598 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_001_CuteRemoveStaticArgs.mlir (600 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_002_MaterializeTmaMulticast.mlir (600 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_003_SoftwarePipelinePass.mlir (600 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_004_CuteDesugar.mlir (814 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_005_CuteExpandOps.mlir (1824 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_006_CuteFoldStatic.mlir (1313 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_007_InsertRangeInformation.mlir (1313 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_008_Canonicalizer.mlir (948 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_009_CSE.mlir (921 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_010_LoopInvariantCodeMotion.mlir (921 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_011_LoopStrengthReductionPass.mlir (921 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_012_ConvertVectorToSCF.mlir (921 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_013_ConvertCuteTypesInScfOps.mlir (921 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_014_SCFToControlFlow.mlir (1041 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_015_ArithExpandOpsPass.mlir (1185 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_016_ConvertMathToFuncs.mlir (1185 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_017_GpuLaunchSinkIndexComputations.mlir (1185 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_018_ConvertToLLVMPass.mlir (1614 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_019_ReconcileUnrealizedCasts.mlir (1328 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_020_GpuKernelOutlining.mlir (1328 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_021_SCFToControlFlow.mlir (1328 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_022_ReconcileUnrealizedCasts.mlir (1328 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_023_ConvertToLLVMPass.mlir (1328 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_024_Canonicalizer.mlir (937 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_025_CSE.mlir (897 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_026_ConvertVectorToLLVMPass.mlir (897 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_027_ConvertNVVMToLLVMPass.mlir (897 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_028_CudaComputeTargetPass.mlir (686 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_029_FinalizeMemRefToLLVMConversionPass.mlir (897 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_030_ExpandStridedMetadata.mlir (897 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_031_ArithToLLVMConversionPass.mlir (897 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_032_ConvertFastmathOps.mlir (686 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_033_ConvertGpuOpsToNVVMOps.mlir (686 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_034_StoreGpuLaunchAttribute.mlir (897 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_035_GpuToLLVMConversionPass.mlir (897 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_036_StoreGpuLaunchAttribute.mlir (897 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_037_ConvertMathToLLVMPass.mlir (897 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_038_Canonicalizer.mlir (897 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_039_CSE.mlir (897 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_040_ReconcileUnrealizedCasts.mlir (897 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_041_DIScopeForLLVMFuncOpPass.mlir (897 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_042_CudaToBinaryPass.mlir (221 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_043_ConvertToLLVMPass.mlir (391 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_044_ReconcileUnrealizedCasts.mlir (389 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add/elementwise_add_045_CudaErrorHandlingPass.mlir (396 lines)
+[DUMP] per-pass IR split -> 45 files
+Compilation time: 1.7105 seconds
+Executing vector add kernel...
+Verifying results...
+Results verified successfully!
+
+PASS

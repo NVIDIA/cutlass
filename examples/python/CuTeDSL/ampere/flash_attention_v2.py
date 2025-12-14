@@ -25,7 +25,14 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+import sys
+import os
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dump_dir = os.path.join(base_dir, "..","dump")
+sys.path.append(dump_dir)
 
+import cute_ir_dump_patch as cid
+cid.install()
 import argparse
 from types import SimpleNamespace
 from typing import Type, Callable
