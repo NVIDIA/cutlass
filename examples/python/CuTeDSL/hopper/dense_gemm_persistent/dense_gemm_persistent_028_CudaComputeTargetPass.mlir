@@ -111,7 +111,6 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %80 = llvm.icmp "ne" %79, %20 : i32
     %81 = llvm.mlir.constant(0 : i32) : i32
     llvm.inline_asm has_side_effects asm_dialect = att "fence.mbarrier_init.release.cluster;", "n" %81 : (i32) -> ()
-    nvvm.barrier
     %82 = llvm.extractvalue %arg1[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32, i32)>, struct<()>)>)> 
     %83 = llvm.extractvalue %82[0, 0] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
     %84 = llvm.extractvalue %82[0, 1] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 

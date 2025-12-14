@@ -19,15 +19,15 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %15 = llvm.mlir.constant(5 : i32) : i32
     %16 = llvm.mlir.constant(0 : i32) : i32
     %17 = llvm.mlir.constant(4 : i32) : i32
-    %18 = llvm.mlir.constant(false) : i1
-    %19 = llvm.mlir.constant(-128 : i32) : i32
-    %20 = llvm.mlir.constant(128 : i64) : i64
-    %21 = llvm.mlir.constant(10000000 : i32) : i32
-    %22 = llvm.mlir.constant(true) : i1
-    %23 = llvm.mlir.constant(32768 : i32) : i32
-    %24 = llvm.mlir.constant(7 : i32) : i32
-    %25 = llvm.mlir.constant(2 : i32) : i32
-    %26 = llvm.mlir.constant(160 : i32) : i32
+    %18 = llvm.mlir.constant(-128 : i32) : i32
+    %19 = llvm.mlir.constant(128 : i64) : i64
+    %20 = llvm.mlir.constant(10000000 : i32) : i32
+    %21 = llvm.mlir.constant(true) : i1
+    %22 = llvm.mlir.constant(32768 : i32) : i32
+    %23 = llvm.mlir.constant(7 : i32) : i32
+    %24 = llvm.mlir.constant(2 : i32) : i32
+    %25 = llvm.mlir.constant(160 : i32) : i32
+    %26 = llvm.mlir.constant(false) : i1
     %27 = llvm.mlir.constant(136317200 : i32) : i32
     %28 = llvm.mlir.constant(13 : i32) : i32
     %29 = llvm.mlir.constant(14 : i32) : i32
@@ -54,7 +54,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %50 = llvm.mul %49, %14 : i32
     %51 = llvm.icmp "ne" %48, %50 : i32
     %52 = llvm.icmp "slt" %48, %16 : i32
-    %53 = llvm.icmp "ne" %52, %18 : i1
+    %53 = llvm.icmp "ne" %52, %26 : i1
     %54 = llvm.and %51, %53 : i1
     %55 = llvm.add %49, %12 : i32
     %56 = llvm.select %54, %55, %49 : i1, i32
@@ -105,8 +105,6 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     nvvm.mbarrier.init.shared %75, %36 : !llvm.ptr<3>, i32
     llvm.br ^bb6
   ^bb6:  // 2 preds: ^bb4, ^bb5
-    llvm.inline_asm has_side_effects asm_dialect = att "fence.mbarrier_init.release.cluster;", "n" %16 : (i32) -> ()
-    nvvm.barrier
     llvm.cond_br %62, ^bb7, ^bb8
   ^bb7:  // pred: ^bb6
     nvvm.mbarrier.init.shared %60, %36 : !llvm.ptr<3>, i32
@@ -123,10 +121,9 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb10
   ^bb10:  // 2 preds: ^bb8, ^bb9
     llvm.inline_asm has_side_effects asm_dialect = att "fence.mbarrier_init.release.cluster;", "n" %16 : (i32) -> ()
-    nvvm.barrier
     %79 = llvm.ptrtoint %59 : !llvm.ptr<3> to i32
     %80 = llvm.add %79, %34 : i32
-    %81 = llvm.and %80, %19 : i32
+    %81 = llvm.and %80, %18 : i32
     %82 = llvm.sext %81 : i32 to i64
     %83 = llvm.inttoptr %82 : i64 to !llvm.ptr<3>
     %84 = llvm.getelementptr %83[114688] : (!llvm.ptr<3>) -> !llvm.ptr<3>, i8
@@ -134,7 +131,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %86 = llvm.extractvalue %85[0, 0] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
     %87 = llvm.extractvalue %85[0, 1] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
     %88 = llvm.extractvalue %85[0, 2] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
-    %89 = llvm.select %22, %12, %36 : i1, i32
+    %89 = llvm.select %21, %12, %36 : i1, i32
     %90 = llvm.add %89, %86 : i32
     %91 = llvm.sdiv %90, %35 : i32
     %92 = llvm.add %91, %36 : i32
@@ -143,8 +140,8 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %95 = llvm.sub %16, %94 : i32
     %96 = llvm.icmp "slt" %86, %16 : i32
     %97 = llvm.icmp "sgt" %86, %16 : i32
-    %98 = llvm.and %96, %18 : i1
-    %99 = llvm.and %97, %22 : i1
+    %98 = llvm.and %96, %26 : i1
+    %99 = llvm.and %97, %21 : i1
     %100 = llvm.or %98, %99 : i1
     %101 = llvm.select %100, %92, %95 : i1, i32
     %102 = llvm.add %89, %87 : i32
@@ -155,8 +152,8 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %107 = llvm.sub %16, %106 : i32
     %108 = llvm.icmp "slt" %87, %16 : i32
     %109 = llvm.icmp "sgt" %87, %16 : i32
-    %110 = llvm.and %108, %18 : i1
-    %111 = llvm.and %109, %22 : i1
+    %110 = llvm.and %108, %26 : i1
+    %111 = llvm.and %109, %21 : i1
     %112 = llvm.or %110, %111 : i1
     %113 = llvm.select %112, %104, %107 : i1, i32
     %114 = llvm.insertvalue %101, %13[0] : !llvm.struct<(i32, i32, i32)> 
@@ -178,11 +175,11 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %130 = llvm.sub %16, %129 : i32
     %131 = llvm.icmp "slt" %120, %16 : i32
     %132 = llvm.icmp "sgt" %120, %16 : i32
-    %133 = llvm.and %131, %18 : i1
-    %134 = llvm.and %132, %22 : i1
+    %133 = llvm.and %131, %26 : i1
+    %134 = llvm.and %132, %21 : i1
     %135 = llvm.or %133, %134 : i1
     %136 = llvm.select %135, %127, %130 : i1, i32
-    %137 = llvm.mul %123, %20 : i64
+    %137 = llvm.mul %123, %19 : i64
     %138 = llvm.add %89, %121 : i32
     %139 = llvm.sdiv %138, %35 : i32
     %140 = llvm.add %139, %36 : i32
@@ -191,8 +188,8 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %143 = llvm.sub %16, %142 : i32
     %144 = llvm.icmp "slt" %121, %16 : i32
     %145 = llvm.icmp "sgt" %121, %16 : i32
-    %146 = llvm.and %144, %18 : i1
-    %147 = llvm.and %145, %22 : i1
+    %146 = llvm.and %144, %26 : i1
+    %147 = llvm.and %145, %21 : i1
     %148 = llvm.or %146, %147 : i1
     %149 = llvm.select %148, %140, %143 : i1, i32
     %150 = llvm.insertvalue %136, %13[0] : !llvm.struct<(i32, i32, i32)> 
@@ -309,19 +306,19 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.cond_br %261, ^bb16, ^bb17
   ^bb16:  // pred: ^bb15
     %262 = llvm.getelementptr %69[%257] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %262, %258, %21 : (!llvm.ptr<3>, i32, i32) -> ()
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %262, %258, %20 : (!llvm.ptr<3>, i32, i32) -> ()
     llvm.br ^bb17
   ^bb17:  // 2 preds: ^bb15, ^bb16
     %263 = nvvm.elect.sync -> i1
     llvm.cond_br %263, ^bb18, ^bb19
   ^bb18:  // pred: ^bb17
     %264 = llvm.getelementptr %10[%257] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    nvvm.mbarrier.txn %264, %23 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
+    nvvm.mbarrier.txn %264, %22 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
     llvm.br ^bb19
   ^bb19:  // 2 preds: ^bb17, ^bb18
     %265 = llvm.add %257, %36 : i32
     %266 = llvm.add %256, %36 : i32
-    %267 = llvm.icmp "eq" %265, %24 : i32
+    %267 = llvm.icmp "eq" %265, %23 : i32
     %268 = llvm.select %267, %16, %265 : i1, i32
     llvm.cond_br %267, ^bb20, ^bb21
   ^bb20:  // pred: ^bb19
@@ -334,7 +331,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
   ^bb23:  // pred: ^bb22
     %271 = llvm.mul %256, %14 : i32
     %272 = llvm.mul %257, %2 : i32
-    %273 = llvm.getelementptr %83[%272] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i32
+    %273 = llvm.getelementptr %83[%272] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, f32
     %274 = llvm.getelementptr %10[%257] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
     %275 = llvm.extractvalue %3[3] : !llvm.struct<(ptr, ptr<3>, i16, i64, struct<()>)> 
     llvm.br ^bb24(%16 : i32)
@@ -351,7 +348,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %279 = llvm.add %276, %36 : i32
     llvm.br ^bb24(%279 : i32)
   ^bb28:  // pred: ^bb24
-    %280 = llvm.getelementptr %84[%272] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i32
+    %280 = llvm.getelementptr %84[%272] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, f32
     llvm.br ^bb29(%16 : i32)
   ^bb29(%281: i32):  // 2 preds: ^bb28, ^bb32
     %282 = llvm.icmp "slt" %281, %36 : i32
@@ -373,7 +370,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %287 = nvvm.mbarrier.wait.parity %286, %270 {kind = #nvvm.mbar_wait<try>} : !llvm.ptr<3>, i32 -> i1
     llvm.br ^bb36(%287 : i1)
   ^bb35:  // pred: ^bb33
-    llvm.br ^bb36(%22 : i1)
+    llvm.br ^bb36(%21 : i1)
   ^bb36(%288: i1):  // 2 preds: ^bb34, ^bb35
     llvm.br ^bb37
   ^bb37:  // pred: ^bb36
@@ -406,7 +403,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb12(%305, %312, %310, %291, %257, %258, %290 : i32, i32, i32, i1, i32, i32, i32)
   ^bb39:  // pred: ^bb12
     %313 = llvm.add %247, %36 : i32
-    %314 = llvm.icmp "eq" %313, %24 : i32
+    %314 = llvm.icmp "eq" %313, %23 : i32
     %315 = llvm.select %314, %16, %313 : i1, i32
     llvm.cond_br %314, ^bb40, ^bb41
   ^bb40:  // pred: ^bb39
@@ -418,7 +415,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb43
   ^bb43:  // pred: ^bb42
     %318 = llvm.add %315, %36 : i32
-    %319 = llvm.icmp "eq" %318, %24 : i32
+    %319 = llvm.icmp "eq" %318, %23 : i32
     %320 = llvm.select %319, %16, %318 : i1, i32
     llvm.cond_br %319, ^bb44, ^bb45
   ^bb44:  // pred: ^bb43
@@ -430,7 +427,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb47
   ^bb47:  // pred: ^bb46
     %323 = llvm.add %320, %36 : i32
-    %324 = llvm.icmp "eq" %323, %24 : i32
+    %324 = llvm.icmp "eq" %323, %23 : i32
     %325 = llvm.select %324, %16, %323 : i1, i32
     llvm.cond_br %324, ^bb48, ^bb49
   ^bb48:  // pred: ^bb47
@@ -442,7 +439,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb51
   ^bb51:  // pred: ^bb50
     %328 = llvm.add %325, %36 : i32
-    %329 = llvm.icmp "eq" %328, %24 : i32
+    %329 = llvm.icmp "eq" %328, %23 : i32
     %330 = llvm.select %329, %16, %328 : i1, i32
     llvm.cond_br %329, ^bb52, ^bb53
   ^bb52:  // pred: ^bb51
@@ -454,7 +451,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb55
   ^bb55:  // pred: ^bb54
     %333 = llvm.add %330, %36 : i32
-    %334 = llvm.icmp "eq" %333, %24 : i32
+    %334 = llvm.icmp "eq" %333, %23 : i32
     %335 = llvm.select %334, %16, %333 : i1, i32
     llvm.cond_br %334, ^bb56, ^bb57
   ^bb56:  // pred: ^bb55
@@ -466,7 +463,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb59
   ^bb59:  // pred: ^bb58
     %338 = llvm.add %335, %36 : i32
-    %339 = llvm.icmp "eq" %338, %24 : i32
+    %339 = llvm.icmp "eq" %338, %23 : i32
     %340 = llvm.select %339, %16, %338 : i1, i32
     llvm.cond_br %339, ^bb60, ^bb61
   ^bb60:  // pred: ^bb59
@@ -478,12 +475,12 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb63
   ^bb63:  // pred: ^bb62
     %343 = llvm.getelementptr %69[%340] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %343, %342, %21 : (!llvm.ptr<3>, i32, i32) -> ()
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %343, %342, %20 : (!llvm.ptr<3>, i32, i32) -> ()
     %344 = nvvm.elect.sync -> i1
     llvm.cond_br %344, ^bb64, ^bb65
   ^bb64:  // pred: ^bb63
     %345 = llvm.getelementptr %10[%340] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    nvvm.mbarrier.txn %345, %23 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
+    nvvm.mbarrier.txn %345, %22 {kind = #nvvm.mbar_txn_kind<arrive_expect_tx>} : !llvm.ptr<3>, i32
     llvm.br ^bb65
   ^bb65:  // 2 preds: ^bb63, ^bb64
     llvm.br ^bb66
@@ -491,7 +488,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %346 = llvm.icmp "eq" %57, %17 : i32
     llvm.cond_br %346, ^bb67, ^bb112
   ^bb67:  // pred: ^bb66
-    nvvm.barrier id = %25 number_of_threads = %26
+    nvvm.barrier id = %24 number_of_threads = %25
     %347 = llvm.load %61 : !llvm.ptr<3> -> i32
     %348 = nvvm.read.ptx.sreg.ctaid.z range <i32, 0, 65535> : i32
     %349 = nvvm.read.ptx.sreg.nctaid.x range <i32, 1, 2147483647> : i32
@@ -536,8 +533,8 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %391 = llvm.getelementptr %10[%383] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
     %392 = nvvm.mbarrier.wait.parity %391, %384 {kind = #nvvm.mbar_wait<try>} : !llvm.ptr<3>, i32 -> i1
     %393 = llvm.getelementptr %77[%386] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %393, %387, %21 : (!llvm.ptr<3>, i32, i32) -> ()
-    %394 = llvm.insertvalue %18, %385[0] : !llvm.struct<(i1, i1, i1)> 
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %393, %387, %20 : (!llvm.ptr<3>, i32, i32) -> ()
+    %394 = llvm.insertvalue %26, %385[0] : !llvm.struct<(i1, i1, i1)> 
     llvm.br ^bb70(%16, %392, %16, %383, %384, %394 : i32, i1, i32, i32, i32, !llvm.struct<(i1, i1, i1)>)
   ^bb70(%395: i32, %396: i1, %397: i32, %398: i32, %399: i32, %400: !llvm.struct<(i1, i1, i1)>):  // 2 preds: ^bb69, ^bb97
     %401 = llvm.icmp "slt" %395, %118 : i32
@@ -548,12 +545,12 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.cond_br %403, ^bb72, ^bb73
   ^bb72:  // pred: ^bb71
     %404 = llvm.getelementptr %10[%398] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %404, %399, %21 : (!llvm.ptr<3>, i32, i32) -> ()
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %404, %399, %20 : (!llvm.ptr<3>, i32, i32) -> ()
     llvm.br ^bb73
   ^bb73:  // 2 preds: ^bb71, ^bb72
     %405 = llvm.add %398, %36 : i32
     %406 = llvm.add %397, %36 : i32
-    %407 = llvm.icmp "eq" %405, %24 : i32
+    %407 = llvm.icmp "eq" %405, %23 : i32
     %408 = llvm.select %407, %16, %405 : i1, i32
     llvm.cond_br %407, ^bb74, ^bb75
   ^bb74:  // pred: ^bb73
@@ -569,7 +566,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %413 = llvm.icmp "slt" %411, %17 : i32
     llvm.cond_br %413, ^bb79, ^bb91 {loop_annotation = #llvm.loop_annotation<unroll = <full = true>>}
   ^bb79:  // pred: ^bb78
-    %414 = llvm.mul %411, %25 : i32
+    %414 = llvm.mul %411, %24 : i32
     %415 = llvm.mul %398, %1 : i32
     %416 = llvm.add %414, %415 : i32
     %417 = llvm.bitcast %189 : i64 to vector<2xi32>
@@ -622,7 +619,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %446 = llvm.add %436, %36 : i32
     llvm.br ^bb80(%446 : i32)
   ^bb90:  // pred: ^bb80
-    %447 = llvm.insertvalue %22, %412[0] : !llvm.struct<(i1, i1, i1)> 
+    %447 = llvm.insertvalue %21, %412[0] : !llvm.struct<(i1, i1, i1)> 
     %448 = llvm.add %411, %36 : i32
     llvm.br ^bb78(%448, %447 : i32, !llvm.struct<(i1, i1, i1)>)
   ^bb91:  // pred: ^bb78
@@ -640,7 +637,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %453 = nvvm.mbarrier.wait.parity %452, %410 {kind = #nvvm.mbar_wait<try>} : !llvm.ptr<3>, i32 -> i1
     llvm.br ^bb96(%453 : i1)
   ^bb95:  // pred: ^bb93
-    llvm.br ^bb96(%22 : i1)
+    llvm.br ^bb96(%21 : i1)
   ^bb96(%454: i1):  // 2 preds: ^bb94, ^bb95
     llvm.br ^bb97
   ^bb97:  // pred: ^bb96
@@ -655,7 +652,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb100
   ^bb100:  // 2 preds: ^bb98, ^bb99
     %458 = llvm.add %386, %36 : i32
-    %459 = llvm.icmp "eq" %458, %25 : i32
+    %459 = llvm.icmp "eq" %458, %24 : i32
     %460 = llvm.select %459, %16, %458 : i1, i32
     llvm.cond_br %459, ^bb101, ^bb102
   ^bb101:  // pred: ^bb100
@@ -685,12 +682,12 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
   ^bb105:  // pred: ^bb68
     %478 = nvvm.read.ptx.sreg.cluster.ctarank : i32
     %479 = nvvm.shfl.sync  idx %12, %478, %16, %11 : i32 -> i32
-    %480 = llvm.srem %479, %25 : i32
+    %480 = llvm.srem %479, %24 : i32
     %481 = llvm.icmp "eq" %480, %16 : i32
     llvm.cond_br %481, ^bb106, ^bb111
   ^bb106:  // pred: ^bb105
     %482 = llvm.add %386, %36 : i32
-    %483 = llvm.icmp "eq" %482, %25 : i32
+    %483 = llvm.icmp "eq" %482, %24 : i32
     %484 = llvm.select %483, %16, %482 : i1, i32
     llvm.cond_br %483, ^bb107, ^bb108
   ^bb107:  // pred: ^bb106
@@ -702,7 +699,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb110
   ^bb110:  // pred: ^bb109
     %487 = llvm.getelementptr %77[%484] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %487, %486, %21 : (!llvm.ptr<3>, i32, i32) -> ()
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %487, %486, %20 : (!llvm.ptr<3>, i32, i32) -> ()
     llvm.br ^bb111
   ^bb111:  // 2 preds: ^bb105, ^bb110
     llvm.br ^bb112
@@ -715,7 +712,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     nvvm.tcgen05.alloc %61, %30 : !llvm.ptr<3>, i32
     llvm.br ^bb115
   ^bb115:  // 2 preds: ^bb113, ^bb114
-    nvvm.barrier id = %25 number_of_threads = %26
+    nvvm.barrier id = %24 number_of_threads = %25
     %489 = llvm.load %61 : !llvm.ptr<3> -> i32
     %490 = nvvm.read.ptx.sreg.ctaid.z range <i32, 0, 65535> : i32
     %491 = nvvm.read.ptx.sreg.nctaid.x range <i32, 1, 2147483647> : i32
@@ -950,7 +947,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     %723 = llvm.mul %711, %35 : i32
     %724 = llvm.add %498, %723 : i32
     %725 = llvm.getelementptr %60[%711] : (!llvm.ptr<3>, i32) -> !llvm.ptr<3>, i64
-    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %725, %712, %21 : (!llvm.ptr<3>, i32, i32) -> ()
+    llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09.reg .pred       P1; \0A\09LAB_WAIT: \0A\09mbarrier.try_wait.parity.shared.b64 P1, [$0], $1, $2; \0A\09@P1 bra.uni DONE; \0A\09bra.uni     LAB_WAIT; \0A\09DONE: \0A\09}", "r,r,n" %725, %712, %20 : (!llvm.ptr<3>, i32, i32) -> ()
     llvm.br ^bb118(%16 : i32)
   ^bb118(%726: i32):  // 2 preds: ^bb117, ^bb119
     %727 = llvm.icmp "slt" %726, %36 : i32
@@ -1363,7 +1360,7 @@ gpu.module @kernels attributes {compute_targets = [#cuda.compute_target<sass, co
     llvm.br ^bb125
   ^bb125:  // 2 preds: ^bb123, ^bb124
     %992 = llvm.add %711, %36 : i32
-    %993 = llvm.icmp "eq" %992, %25 : i32
+    %993 = llvm.icmp "eq" %992, %24 : i32
     %994 = llvm.select %993, %16, %992 : i1, i32
     llvm.cond_br %993, ^bb126, ^bb127
   ^bb126:  // pred: ^bb125

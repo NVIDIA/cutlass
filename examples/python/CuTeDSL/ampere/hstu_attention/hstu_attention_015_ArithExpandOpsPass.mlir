@@ -2576,937 +2576,965 @@ module attributes {gpu.container_module} {
       %1134 = arith.addi %1129, %c1_i32 : i32
       cf.br ^bb229(%1134 : i32)
     ^bb231:  // pred: ^bb229
-      cf.cond_br %573, ^bb232, ^bb236
+      %coord_883 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,0,0,?)">
+      %idx_884 = cute.crd2idx(%coord_883, %lay_268) : (!cute.coord<"(0,0,0,?)">, !cute.layout<"((8,1),4,1,?):((1@3,0),16@2,0,64@3)">) -> !cute.int_tuple<"(0,0,0,?{div=64})">
+      %tup_885 = cute.add_offset(%tup_266, %idx_884) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,0,?{div=64})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_886, %e1_887, %e2_888, %e3_889 = cute.get_leaves(%tup_885) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_890 = cute.make_coord(%e1_887) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1135 = cute.get_scalars(%coord_890) : !cute.coord<"?">
+      %1136 = arith.cmpi slt, %1135, %572 : i32
+      cf.cond_br %1136, ^bb232, ^bb236
     ^bb232:  // pred: ^bb231
-      %coord_883 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,0,_,?)">
-      %idx_884 = cute.crd2idx(%coord_883, %lay_162) : (!cute.coord<"(_,0,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{div=64}">
-      %ptr_885 = cute.add_offset(%ptr_158, %idx_884) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %iter_886 = cute.recast_iter(%ptr_885) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
-      %iter_887 = cute.recast_iter(%ptr_163) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
+      %coord_891 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,0,_,?)">
+      %idx_892 = cute.crd2idx(%coord_891, %lay_162) : (!cute.coord<"(_,0,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{div=64}">
+      %ptr_893 = cute.add_offset(%ptr_158, %idx_892) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %iter_894 = cute.recast_iter(%ptr_893) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
+      %iter_895 = cute.recast_iter(%ptr_163) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
       cf.br ^bb233(%c0_i32 : i32)
-    ^bb233(%1135: i32):  // 2 preds: ^bb232, ^bb234
-      %1136 = arith.cmpi slt, %1135, %625 : i32
-      cf.cond_br %1136, ^bb234, ^bb235 {llvm.loop_annotation = #loop_annotation}
+    ^bb233(%1137: i32):  // 2 preds: ^bb232, ^bb234
+      %1138 = arith.cmpi slt, %1137, %625 : i32
+      cf.cond_br %1138, ^bb234, ^bb235 {llvm.loop_annotation = #loop_annotation}
     ^bb234:  // pred: ^bb233
-      cute_nvgpu.arch.copy.SM80.cp_async(%iter_887 : !cute.ptr<i128, smem>, %iter_886 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
-      %1137 = arith.addi %1135, %c1_i32 : i32
-      cf.br ^bb233(%1137 : i32)
+      cute_nvgpu.arch.copy.SM80.cp_async(%iter_895 : !cute.ptr<i128, smem>, %iter_894 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
+      %1139 = arith.addi %1137, %c1_i32 : i32
+      cf.br ^bb233(%1139 : i32)
     ^bb235:  // pred: ^bb233
       cf.br ^bb237
     ^bb236:  // pred: ^bb231
-      %view_888 = cute.make_view(%ptr_163) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_888 : !memref_smem_bf16_2
+      %view_896 = cute.make_view(%ptr_163) : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_896 : !memref_smem_bf16_2
       cf.br ^bb237
     ^bb237:  // 2 preds: ^bb235, ^bb236
-      cf.cond_br %586, ^bb238, ^bb242
+      %coord_897 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,1,0,?)">
+      %idx_898 = cute.crd2idx(%coord_897, %lay_268) : (!cute.coord<"(0,1,0,?)">, !cute.layout<"((8,1),4,1,?):((1@3,0),16@2,0,64@3)">) -> !cute.int_tuple<"(0,0,16,?{div=64})">
+      %tup_899 = cute.add_offset(%tup_266, %idx_898) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,16,?{div=64})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_900, %e1_901, %e2_902, %e3_903 = cute.get_leaves(%tup_899) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_904 = cute.make_coord(%e1_901) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1140 = cute.get_scalars(%coord_904) : !cute.coord<"?">
+      %1141 = arith.cmpi slt, %1140, %572 : i32
+      cf.cond_br %1141, ^bb238, ^bb242
     ^bb238:  // pred: ^bb237
-      %coord_889 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,1,_,?)">
-      %idx_890 = cute.crd2idx(%coord_889, %lay_162) : (!cute.coord<"(_,1,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
-      %ptr_891 = cute.add_offset(%ptr_158, %idx_890) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %ptr_892 = cute.add_offset(%ptr_163, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
-      %iter_893 = cute.recast_iter(%ptr_891) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
-      %iter_894 = cute.recast_iter(%ptr_892) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
+      %coord_905 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,1,_,?)">
+      %idx_906 = cute.crd2idx(%coord_905, %lay_162) : (!cute.coord<"(_,1,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
+      %ptr_907 = cute.add_offset(%ptr_158, %idx_906) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %ptr_908 = cute.add_offset(%ptr_163, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
+      %iter_909 = cute.recast_iter(%ptr_907) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
+      %iter_910 = cute.recast_iter(%ptr_908) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
       cf.br ^bb239(%c0_i32 : i32)
-    ^bb239(%1138: i32):  // 2 preds: ^bb238, ^bb240
-      %1139 = arith.cmpi slt, %1138, %625 : i32
-      cf.cond_br %1139, ^bb240, ^bb241 {llvm.loop_annotation = #loop_annotation}
+    ^bb239(%1142: i32):  // 2 preds: ^bb238, ^bb240
+      %1143 = arith.cmpi slt, %1142, %625 : i32
+      cf.cond_br %1143, ^bb240, ^bb241 {llvm.loop_annotation = #loop_annotation}
     ^bb240:  // pred: ^bb239
-      cute_nvgpu.arch.copy.SM80.cp_async(%iter_894 : !cute.ptr<i128, smem>, %iter_893 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
-      %1140 = arith.addi %1138, %c1_i32 : i32
-      cf.br ^bb239(%1140 : i32)
+      cute_nvgpu.arch.copy.SM80.cp_async(%iter_910 : !cute.ptr<i128, smem>, %iter_909 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
+      %1144 = arith.addi %1142, %c1_i32 : i32
+      cf.br ^bb239(%1144 : i32)
     ^bb241:  // pred: ^bb239
       cf.br ^bb243
     ^bb242:  // pred: ^bb237
-      %ptr_895 = cute.add_offset(%ptr_163, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
-      %view_896 = cute.make_view(%ptr_895) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_896 : !memref_smem_bf16_2
+      %ptr_911 = cute.add_offset(%ptr_163, %88) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"1024">) -> !cute.ptr<bf16, smem, align<16>>
+      %view_912 = cute.make_view(%ptr_911) : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_912 : !memref_smem_bf16_2
       cf.br ^bb243
     ^bb243:  // 2 preds: ^bb241, ^bb242
-      cf.cond_br %598, ^bb244, ^bb248
+      %coord_913 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,2,0,?)">
+      %idx_914 = cute.crd2idx(%coord_913, %lay_268) : (!cute.coord<"(0,2,0,?)">, !cute.layout<"((8,1),4,1,?):((1@3,0),16@2,0,64@3)">) -> !cute.int_tuple<"(0,0,32,?{div=64})">
+      %tup_915 = cute.add_offset(%tup_266, %idx_914) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,32,?{div=64})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_916, %e1_917, %e2_918, %e3_919 = cute.get_leaves(%tup_915) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_920 = cute.make_coord(%e1_917) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1145 = cute.get_scalars(%coord_920) : !cute.coord<"?">
+      %1146 = arith.cmpi slt, %1145, %572 : i32
+      cf.cond_br %1146, ^bb244, ^bb248
     ^bb244:  // pred: ^bb243
-      %coord_897 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,2,_,?)">
-      %idx_898 = cute.crd2idx(%coord_897, %lay_162) : (!cute.coord<"(_,2,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
-      %ptr_899 = cute.add_offset(%ptr_158, %idx_898) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %ptr_900 = cute.add_offset(%ptr_163, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
-      %iter_901 = cute.recast_iter(%ptr_899) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
-      %iter_902 = cute.recast_iter(%ptr_900) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
+      %coord_921 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,2,_,?)">
+      %idx_922 = cute.crd2idx(%coord_921, %lay_162) : (!cute.coord<"(_,2,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
+      %ptr_923 = cute.add_offset(%ptr_158, %idx_922) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %ptr_924 = cute.add_offset(%ptr_163, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
+      %iter_925 = cute.recast_iter(%ptr_923) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
+      %iter_926 = cute.recast_iter(%ptr_924) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
       cf.br ^bb245(%c0_i32 : i32)
-    ^bb245(%1141: i32):  // 2 preds: ^bb244, ^bb246
-      %1142 = arith.cmpi slt, %1141, %625 : i32
-      cf.cond_br %1142, ^bb246, ^bb247 {llvm.loop_annotation = #loop_annotation}
+    ^bb245(%1147: i32):  // 2 preds: ^bb244, ^bb246
+      %1148 = arith.cmpi slt, %1147, %625 : i32
+      cf.cond_br %1148, ^bb246, ^bb247 {llvm.loop_annotation = #loop_annotation}
     ^bb246:  // pred: ^bb245
-      cute_nvgpu.arch.copy.SM80.cp_async(%iter_902 : !cute.ptr<i128, smem>, %iter_901 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
-      %1143 = arith.addi %1141, %c1_i32 : i32
-      cf.br ^bb245(%1143 : i32)
+      cute_nvgpu.arch.copy.SM80.cp_async(%iter_926 : !cute.ptr<i128, smem>, %iter_925 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
+      %1149 = arith.addi %1147, %c1_i32 : i32
+      cf.br ^bb245(%1149 : i32)
     ^bb247:  // pred: ^bb245
       cf.br ^bb249
     ^bb248:  // pred: ^bb243
-      %ptr_903 = cute.add_offset(%ptr_163, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
-      %view_904 = cute.make_view(%ptr_903) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_904 : !memref_smem_bf16_2
+      %ptr_927 = cute.add_offset(%ptr_163, %85) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"2048">) -> !cute.ptr<bf16, smem, align<16>>
+      %view_928 = cute.make_view(%ptr_927) : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_928 : !memref_smem_bf16_2
       cf.br ^bb249
     ^bb249:  // 2 preds: ^bb247, ^bb248
-      cf.cond_br %610, ^bb250, ^bb254
+      %coord_929 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(0,3,0,?)">
+      %idx_930 = cute.crd2idx(%coord_929, %lay_268) : (!cute.coord<"(0,3,0,?)">, !cute.layout<"((8,1),4,1,?):((1@3,0),16@2,0,64@3)">) -> !cute.int_tuple<"(0,0,48,?{div=64})">
+      %tup_931 = cute.add_offset(%tup_266, %idx_930) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,48,?{div=64})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_932, %e1_933, %e2_934, %e3_935 = cute.get_leaves(%tup_931) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_936 = cute.make_coord(%e1_933) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1150 = cute.get_scalars(%coord_936) : !cute.coord<"?">
+      %1151 = arith.cmpi slt, %1150, %572 : i32
+      cf.cond_br %1151, ^bb250, ^bb254
     ^bb250:  // pred: ^bb249
-      %coord_905 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,3,_,?)">
-      %idx_906 = cute.crd2idx(%coord_905, %lay_162) : (!cute.coord<"(_,3,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
-      %ptr_907 = cute.add_offset(%ptr_158, %idx_906) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %ptr_908 = cute.add_offset(%ptr_163, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
-      %iter_909 = cute.recast_iter(%ptr_907) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
-      %iter_910 = cute.recast_iter(%ptr_908) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
+      %coord_937 = cute.make_coord(%sub_858) : (!cute.int_tuple<"?">) -> !cute.coord<"(_,3,_,?)">
+      %idx_938 = cute.crd2idx(%coord_937, %lay_162) : (!cute.coord<"(_,3,_,?)">, !cute.layout<"((8,1),4,1,?):((1,0),?{i64 div=128},0,64)">) -> !cute.int_tuple<"?{i64 div=64}">
+      %ptr_939 = cute.add_offset(%ptr_158, %idx_938) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %ptr_940 = cute.add_offset(%ptr_163, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
+      %iter_941 = cute.recast_iter(%ptr_939) : !cute.ptr<bf16, gmem, align<16>> to !cute.ptr<i128, gmem>
+      %iter_942 = cute.recast_iter(%ptr_940) : !cute.ptr<bf16, smem, align<16>> to !cute.ptr<i128, smem>
       cf.br ^bb251(%c0_i32 : i32)
-    ^bb251(%1144: i32):  // 2 preds: ^bb250, ^bb252
-      %1145 = arith.cmpi slt, %1144, %625 : i32
-      cf.cond_br %1145, ^bb252, ^bb253 {llvm.loop_annotation = #loop_annotation}
+    ^bb251(%1152: i32):  // 2 preds: ^bb250, ^bb252
+      %1153 = arith.cmpi slt, %1152, %625 : i32
+      cf.cond_br %1153, ^bb252, ^bb253 {llvm.loop_annotation = #loop_annotation}
     ^bb252:  // pred: ^bb251
-      cute_nvgpu.arch.copy.SM80.cp_async(%iter_910 : !cute.ptr<i128, smem>, %iter_909 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
-      %1146 = arith.addi %1144, %c1_i32 : i32
-      cf.br ^bb251(%1146 : i32)
+      cute_nvgpu.arch.copy.SM80.cp_async(%iter_942 : !cute.ptr<i128, smem>, %iter_941 : !cute.ptr<i128, gmem>) {cache_mode = <always>}
+      %1154 = arith.addi %1152, %c1_i32 : i32
+      cf.br ^bb251(%1154 : i32)
     ^bb253:  // pred: ^bb251
       cf.br ^bb255
     ^bb254:  // pred: ^bb249
-      %ptr_911 = cute.add_offset(%ptr_163, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
-      %view_912 = cute.make_view(%ptr_911) : !memref_smem_bf16_2
-      cute.memref.store_vec %cst_0, %view_912 : !memref_smem_bf16_2
+      %ptr_943 = cute.add_offset(%ptr_163, %82) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"3072">) -> !cute.ptr<bf16, smem, align<16>>
+      %view_944 = cute.make_view(%ptr_943) : !memref_smem_bf16_2
+      cute.memref.store_vec %cst_0, %view_944 : !memref_smem_bf16_2
       cf.br ^bb255
     ^bb255:  // 2 preds: ^bb253, ^bb254
       nvvm.cp.async.commit.group
       cf.br ^bb256
     ^bb256:  // 2 preds: ^bb227, ^bb255
-      %1147 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
-      %1148 = arith.mulf %1147, %cst : vector<32xf32>
-      cute.memref.store_vec %1148, %rmem_734 : !memref_rmem_f32_1
-      %1149 = cute.memref.load(%rmem_734, %97) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">) -> f32
-      %1150 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1149 : (f32) -> f32
-      cute.memref.store(%rmem_734, %97, %1150) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">, f32) -> ()
-      %1151 = cute.memref.load(%rmem_734, %95) : (!memref_rmem_f32_1, !cute.coord<"(0,0,1)">) -> f32
-      %1152 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1151 : (f32) -> f32
-      cute.memref.store(%rmem_734, %95, %1152) : (!memref_rmem_f32_1, !cute.coord<"(0,0,1)">, f32) -> ()
-      %1153 = cute.memref.load(%rmem_734, %42) : (!memref_rmem_f32_1, !cute.coord<"(0,0,2)">) -> f32
-      %1154 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1153 : (f32) -> f32
-      cute.memref.store(%rmem_734, %42, %1154) : (!memref_rmem_f32_1, !cute.coord<"(0,0,2)">, f32) -> ()
-      %1155 = cute.memref.load(%rmem_734, %41) : (!memref_rmem_f32_1, !cute.coord<"(0,0,3)">) -> f32
-      %1156 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1155 : (f32) -> f32
-      cute.memref.store(%rmem_734, %41, %1156) : (!memref_rmem_f32_1, !cute.coord<"(0,0,3)">, f32) -> ()
-      %1157 = cute.memref.load(%rmem_734, %40) : (!memref_rmem_f32_1, !cute.coord<"(0,0,4)">) -> f32
+      %1155 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
+      %1156 = arith.mulf %1155, %cst : vector<32xf32>
+      cute.memref.store_vec %1156, %rmem_734 : !memref_rmem_f32_1
+      %1157 = cute.memref.load(%rmem_734, %97) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">) -> f32
       %1158 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1157 : (f32) -> f32
-      cute.memref.store(%rmem_734, %40, %1158) : (!memref_rmem_f32_1, !cute.coord<"(0,0,4)">, f32) -> ()
-      %1159 = cute.memref.load(%rmem_734, %39) : (!memref_rmem_f32_1, !cute.coord<"(0,0,5)">) -> f32
+      cute.memref.store(%rmem_734, %97, %1158) : (!memref_rmem_f32_1, !cute.coord<"(0,0,0)">, f32) -> ()
+      %1159 = cute.memref.load(%rmem_734, %95) : (!memref_rmem_f32_1, !cute.coord<"(0,0,1)">) -> f32
       %1160 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1159 : (f32) -> f32
-      cute.memref.store(%rmem_734, %39, %1160) : (!memref_rmem_f32_1, !cute.coord<"(0,0,5)">, f32) -> ()
-      %1161 = cute.memref.load(%rmem_734, %38) : (!memref_rmem_f32_1, !cute.coord<"(0,0,6)">) -> f32
+      cute.memref.store(%rmem_734, %95, %1160) : (!memref_rmem_f32_1, !cute.coord<"(0,0,1)">, f32) -> ()
+      %1161 = cute.memref.load(%rmem_734, %42) : (!memref_rmem_f32_1, !cute.coord<"(0,0,2)">) -> f32
       %1162 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1161 : (f32) -> f32
-      cute.memref.store(%rmem_734, %38, %1162) : (!memref_rmem_f32_1, !cute.coord<"(0,0,6)">, f32) -> ()
-      %1163 = cute.memref.load(%rmem_734, %37) : (!memref_rmem_f32_1, !cute.coord<"(0,0,7)">) -> f32
+      cute.memref.store(%rmem_734, %42, %1162) : (!memref_rmem_f32_1, !cute.coord<"(0,0,2)">, f32) -> ()
+      %1163 = cute.memref.load(%rmem_734, %41) : (!memref_rmem_f32_1, !cute.coord<"(0,0,3)">) -> f32
       %1164 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1163 : (f32) -> f32
-      cute.memref.store(%rmem_734, %37, %1164) : (!memref_rmem_f32_1, !cute.coord<"(0,0,7)">, f32) -> ()
-      %1165 = cute.memref.load(%rmem_734, %36) : (!memref_rmem_f32_1, !cute.coord<"(1,0,0)">) -> f32
+      cute.memref.store(%rmem_734, %41, %1164) : (!memref_rmem_f32_1, !cute.coord<"(0,0,3)">, f32) -> ()
+      %1165 = cute.memref.load(%rmem_734, %40) : (!memref_rmem_f32_1, !cute.coord<"(0,0,4)">) -> f32
       %1166 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1165 : (f32) -> f32
-      cute.memref.store(%rmem_734, %36, %1166) : (!memref_rmem_f32_1, !cute.coord<"(1,0,0)">, f32) -> ()
-      %1167 = cute.memref.load(%rmem_734, %35) : (!memref_rmem_f32_1, !cute.coord<"(1,0,1)">) -> f32
+      cute.memref.store(%rmem_734, %40, %1166) : (!memref_rmem_f32_1, !cute.coord<"(0,0,4)">, f32) -> ()
+      %1167 = cute.memref.load(%rmem_734, %39) : (!memref_rmem_f32_1, !cute.coord<"(0,0,5)">) -> f32
       %1168 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1167 : (f32) -> f32
-      cute.memref.store(%rmem_734, %35, %1168) : (!memref_rmem_f32_1, !cute.coord<"(1,0,1)">, f32) -> ()
-      %1169 = cute.memref.load(%rmem_734, %34) : (!memref_rmem_f32_1, !cute.coord<"(1,0,2)">) -> f32
+      cute.memref.store(%rmem_734, %39, %1168) : (!memref_rmem_f32_1, !cute.coord<"(0,0,5)">, f32) -> ()
+      %1169 = cute.memref.load(%rmem_734, %38) : (!memref_rmem_f32_1, !cute.coord<"(0,0,6)">) -> f32
       %1170 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1169 : (f32) -> f32
-      cute.memref.store(%rmem_734, %34, %1170) : (!memref_rmem_f32_1, !cute.coord<"(1,0,2)">, f32) -> ()
-      %1171 = cute.memref.load(%rmem_734, %33) : (!memref_rmem_f32_1, !cute.coord<"(1,0,3)">) -> f32
+      cute.memref.store(%rmem_734, %38, %1170) : (!memref_rmem_f32_1, !cute.coord<"(0,0,6)">, f32) -> ()
+      %1171 = cute.memref.load(%rmem_734, %37) : (!memref_rmem_f32_1, !cute.coord<"(0,0,7)">) -> f32
       %1172 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1171 : (f32) -> f32
-      cute.memref.store(%rmem_734, %33, %1172) : (!memref_rmem_f32_1, !cute.coord<"(1,0,3)">, f32) -> ()
-      %1173 = cute.memref.load(%rmem_734, %32) : (!memref_rmem_f32_1, !cute.coord<"(1,0,4)">) -> f32
+      cute.memref.store(%rmem_734, %37, %1172) : (!memref_rmem_f32_1, !cute.coord<"(0,0,7)">, f32) -> ()
+      %1173 = cute.memref.load(%rmem_734, %36) : (!memref_rmem_f32_1, !cute.coord<"(1,0,0)">) -> f32
       %1174 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1173 : (f32) -> f32
-      cute.memref.store(%rmem_734, %32, %1174) : (!memref_rmem_f32_1, !cute.coord<"(1,0,4)">, f32) -> ()
-      %1175 = cute.memref.load(%rmem_734, %31) : (!memref_rmem_f32_1, !cute.coord<"(1,0,5)">) -> f32
+      cute.memref.store(%rmem_734, %36, %1174) : (!memref_rmem_f32_1, !cute.coord<"(1,0,0)">, f32) -> ()
+      %1175 = cute.memref.load(%rmem_734, %35) : (!memref_rmem_f32_1, !cute.coord<"(1,0,1)">) -> f32
       %1176 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1175 : (f32) -> f32
-      cute.memref.store(%rmem_734, %31, %1176) : (!memref_rmem_f32_1, !cute.coord<"(1,0,5)">, f32) -> ()
-      %1177 = cute.memref.load(%rmem_734, %30) : (!memref_rmem_f32_1, !cute.coord<"(1,0,6)">) -> f32
+      cute.memref.store(%rmem_734, %35, %1176) : (!memref_rmem_f32_1, !cute.coord<"(1,0,1)">, f32) -> ()
+      %1177 = cute.memref.load(%rmem_734, %34) : (!memref_rmem_f32_1, !cute.coord<"(1,0,2)">) -> f32
       %1178 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1177 : (f32) -> f32
-      cute.memref.store(%rmem_734, %30, %1178) : (!memref_rmem_f32_1, !cute.coord<"(1,0,6)">, f32) -> ()
-      %1179 = cute.memref.load(%rmem_734, %29) : (!memref_rmem_f32_1, !cute.coord<"(1,0,7)">) -> f32
+      cute.memref.store(%rmem_734, %34, %1178) : (!memref_rmem_f32_1, !cute.coord<"(1,0,2)">, f32) -> ()
+      %1179 = cute.memref.load(%rmem_734, %33) : (!memref_rmem_f32_1, !cute.coord<"(1,0,3)">) -> f32
       %1180 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1179 : (f32) -> f32
-      cute.memref.store(%rmem_734, %29, %1180) : (!memref_rmem_f32_1, !cute.coord<"(1,0,7)">, f32) -> ()
-      %1181 = cute.memref.load(%rmem_734, %28) : (!memref_rmem_f32_1, !cute.coord<"(2,0,0)">) -> f32
+      cute.memref.store(%rmem_734, %33, %1180) : (!memref_rmem_f32_1, !cute.coord<"(1,0,3)">, f32) -> ()
+      %1181 = cute.memref.load(%rmem_734, %32) : (!memref_rmem_f32_1, !cute.coord<"(1,0,4)">) -> f32
       %1182 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1181 : (f32) -> f32
-      cute.memref.store(%rmem_734, %28, %1182) : (!memref_rmem_f32_1, !cute.coord<"(2,0,0)">, f32) -> ()
-      %1183 = cute.memref.load(%rmem_734, %27) : (!memref_rmem_f32_1, !cute.coord<"(2,0,1)">) -> f32
+      cute.memref.store(%rmem_734, %32, %1182) : (!memref_rmem_f32_1, !cute.coord<"(1,0,4)">, f32) -> ()
+      %1183 = cute.memref.load(%rmem_734, %31) : (!memref_rmem_f32_1, !cute.coord<"(1,0,5)">) -> f32
       %1184 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1183 : (f32) -> f32
-      cute.memref.store(%rmem_734, %27, %1184) : (!memref_rmem_f32_1, !cute.coord<"(2,0,1)">, f32) -> ()
-      %1185 = cute.memref.load(%rmem_734, %26) : (!memref_rmem_f32_1, !cute.coord<"(2,0,2)">) -> f32
+      cute.memref.store(%rmem_734, %31, %1184) : (!memref_rmem_f32_1, !cute.coord<"(1,0,5)">, f32) -> ()
+      %1185 = cute.memref.load(%rmem_734, %30) : (!memref_rmem_f32_1, !cute.coord<"(1,0,6)">) -> f32
       %1186 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1185 : (f32) -> f32
-      cute.memref.store(%rmem_734, %26, %1186) : (!memref_rmem_f32_1, !cute.coord<"(2,0,2)">, f32) -> ()
-      %1187 = cute.memref.load(%rmem_734, %25) : (!memref_rmem_f32_1, !cute.coord<"(2,0,3)">) -> f32
+      cute.memref.store(%rmem_734, %30, %1186) : (!memref_rmem_f32_1, !cute.coord<"(1,0,6)">, f32) -> ()
+      %1187 = cute.memref.load(%rmem_734, %29) : (!memref_rmem_f32_1, !cute.coord<"(1,0,7)">) -> f32
       %1188 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1187 : (f32) -> f32
-      cute.memref.store(%rmem_734, %25, %1188) : (!memref_rmem_f32_1, !cute.coord<"(2,0,3)">, f32) -> ()
-      %1189 = cute.memref.load(%rmem_734, %24) : (!memref_rmem_f32_1, !cute.coord<"(2,0,4)">) -> f32
+      cute.memref.store(%rmem_734, %29, %1188) : (!memref_rmem_f32_1, !cute.coord<"(1,0,7)">, f32) -> ()
+      %1189 = cute.memref.load(%rmem_734, %28) : (!memref_rmem_f32_1, !cute.coord<"(2,0,0)">) -> f32
       %1190 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1189 : (f32) -> f32
-      cute.memref.store(%rmem_734, %24, %1190) : (!memref_rmem_f32_1, !cute.coord<"(2,0,4)">, f32) -> ()
-      %1191 = cute.memref.load(%rmem_734, %23) : (!memref_rmem_f32_1, !cute.coord<"(2,0,5)">) -> f32
+      cute.memref.store(%rmem_734, %28, %1190) : (!memref_rmem_f32_1, !cute.coord<"(2,0,0)">, f32) -> ()
+      %1191 = cute.memref.load(%rmem_734, %27) : (!memref_rmem_f32_1, !cute.coord<"(2,0,1)">) -> f32
       %1192 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1191 : (f32) -> f32
-      cute.memref.store(%rmem_734, %23, %1192) : (!memref_rmem_f32_1, !cute.coord<"(2,0,5)">, f32) -> ()
-      %1193 = cute.memref.load(%rmem_734, %22) : (!memref_rmem_f32_1, !cute.coord<"(2,0,6)">) -> f32
+      cute.memref.store(%rmem_734, %27, %1192) : (!memref_rmem_f32_1, !cute.coord<"(2,0,1)">, f32) -> ()
+      %1193 = cute.memref.load(%rmem_734, %26) : (!memref_rmem_f32_1, !cute.coord<"(2,0,2)">) -> f32
       %1194 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1193 : (f32) -> f32
-      cute.memref.store(%rmem_734, %22, %1194) : (!memref_rmem_f32_1, !cute.coord<"(2,0,6)">, f32) -> ()
-      %1195 = cute.memref.load(%rmem_734, %21) : (!memref_rmem_f32_1, !cute.coord<"(2,0,7)">) -> f32
+      cute.memref.store(%rmem_734, %26, %1194) : (!memref_rmem_f32_1, !cute.coord<"(2,0,2)">, f32) -> ()
+      %1195 = cute.memref.load(%rmem_734, %25) : (!memref_rmem_f32_1, !cute.coord<"(2,0,3)">) -> f32
       %1196 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1195 : (f32) -> f32
-      cute.memref.store(%rmem_734, %21, %1196) : (!memref_rmem_f32_1, !cute.coord<"(2,0,7)">, f32) -> ()
-      %1197 = cute.memref.load(%rmem_734, %20) : (!memref_rmem_f32_1, !cute.coord<"(3,0,0)">) -> f32
+      cute.memref.store(%rmem_734, %25, %1196) : (!memref_rmem_f32_1, !cute.coord<"(2,0,3)">, f32) -> ()
+      %1197 = cute.memref.load(%rmem_734, %24) : (!memref_rmem_f32_1, !cute.coord<"(2,0,4)">) -> f32
       %1198 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1197 : (f32) -> f32
-      cute.memref.store(%rmem_734, %20, %1198) : (!memref_rmem_f32_1, !cute.coord<"(3,0,0)">, f32) -> ()
-      %1199 = cute.memref.load(%rmem_734, %19) : (!memref_rmem_f32_1, !cute.coord<"(3,0,1)">) -> f32
+      cute.memref.store(%rmem_734, %24, %1198) : (!memref_rmem_f32_1, !cute.coord<"(2,0,4)">, f32) -> ()
+      %1199 = cute.memref.load(%rmem_734, %23) : (!memref_rmem_f32_1, !cute.coord<"(2,0,5)">) -> f32
       %1200 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1199 : (f32) -> f32
-      cute.memref.store(%rmem_734, %19, %1200) : (!memref_rmem_f32_1, !cute.coord<"(3,0,1)">, f32) -> ()
-      %1201 = cute.memref.load(%rmem_734, %18) : (!memref_rmem_f32_1, !cute.coord<"(3,0,2)">) -> f32
+      cute.memref.store(%rmem_734, %23, %1200) : (!memref_rmem_f32_1, !cute.coord<"(2,0,5)">, f32) -> ()
+      %1201 = cute.memref.load(%rmem_734, %22) : (!memref_rmem_f32_1, !cute.coord<"(2,0,6)">) -> f32
       %1202 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1201 : (f32) -> f32
-      cute.memref.store(%rmem_734, %18, %1202) : (!memref_rmem_f32_1, !cute.coord<"(3,0,2)">, f32) -> ()
-      %1203 = cute.memref.load(%rmem_734, %17) : (!memref_rmem_f32_1, !cute.coord<"(3,0,3)">) -> f32
+      cute.memref.store(%rmem_734, %22, %1202) : (!memref_rmem_f32_1, !cute.coord<"(2,0,6)">, f32) -> ()
+      %1203 = cute.memref.load(%rmem_734, %21) : (!memref_rmem_f32_1, !cute.coord<"(2,0,7)">) -> f32
       %1204 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1203 : (f32) -> f32
-      cute.memref.store(%rmem_734, %17, %1204) : (!memref_rmem_f32_1, !cute.coord<"(3,0,3)">, f32) -> ()
-      %1205 = cute.memref.load(%rmem_734, %16) : (!memref_rmem_f32_1, !cute.coord<"(3,0,4)">) -> f32
+      cute.memref.store(%rmem_734, %21, %1204) : (!memref_rmem_f32_1, !cute.coord<"(2,0,7)">, f32) -> ()
+      %1205 = cute.memref.load(%rmem_734, %20) : (!memref_rmem_f32_1, !cute.coord<"(3,0,0)">) -> f32
       %1206 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1205 : (f32) -> f32
-      cute.memref.store(%rmem_734, %16, %1206) : (!memref_rmem_f32_1, !cute.coord<"(3,0,4)">, f32) -> ()
-      %1207 = cute.memref.load(%rmem_734, %15) : (!memref_rmem_f32_1, !cute.coord<"(3,0,5)">) -> f32
+      cute.memref.store(%rmem_734, %20, %1206) : (!memref_rmem_f32_1, !cute.coord<"(3,0,0)">, f32) -> ()
+      %1207 = cute.memref.load(%rmem_734, %19) : (!memref_rmem_f32_1, !cute.coord<"(3,0,1)">) -> f32
       %1208 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1207 : (f32) -> f32
-      cute.memref.store(%rmem_734, %15, %1208) : (!memref_rmem_f32_1, !cute.coord<"(3,0,5)">, f32) -> ()
-      %1209 = cute.memref.load(%rmem_734, %14) : (!memref_rmem_f32_1, !cute.coord<"(3,0,6)">) -> f32
+      cute.memref.store(%rmem_734, %19, %1208) : (!memref_rmem_f32_1, !cute.coord<"(3,0,1)">, f32) -> ()
+      %1209 = cute.memref.load(%rmem_734, %18) : (!memref_rmem_f32_1, !cute.coord<"(3,0,2)">) -> f32
       %1210 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1209 : (f32) -> f32
-      cute.memref.store(%rmem_734, %14, %1210) : (!memref_rmem_f32_1, !cute.coord<"(3,0,6)">, f32) -> ()
-      %1211 = cute.memref.load(%rmem_734, %13) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">) -> f32
+      cute.memref.store(%rmem_734, %18, %1210) : (!memref_rmem_f32_1, !cute.coord<"(3,0,2)">, f32) -> ()
+      %1211 = cute.memref.load(%rmem_734, %17) : (!memref_rmem_f32_1, !cute.coord<"(3,0,3)">) -> f32
       %1212 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1211 : (f32) -> f32
-      cute.memref.store(%rmem_734, %13, %1212) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">, f32) -> ()
-      %1213 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
-      %1214 = arith.mulf %1148, %1213 : vector<32xf32>
-      %1215 = arith.addf %1214, %1148 : vector<32xf32>
-      cute.memref.store_vec %1215, %rmem_734 : !memref_rmem_f32_1
-      %rmem_913 = cute.memref.alloca() : !memref_rmem_bf16_3
-      %iter_914 = cute.get_iter(%rmem_913) : !memref_rmem_bf16_3
-      %1216 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
-      %1217 = arith.truncf %1216 : vector<32xf32> to vector<32xbf16>
-      cute.memref.store_vec %1217, %rmem_913 : !memref_rmem_bf16_3
+      cute.memref.store(%rmem_734, %17, %1212) : (!memref_rmem_f32_1, !cute.coord<"(3,0,3)">, f32) -> ()
+      %1213 = cute.memref.load(%rmem_734, %16) : (!memref_rmem_f32_1, !cute.coord<"(3,0,4)">) -> f32
+      %1214 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1213 : (f32) -> f32
+      cute.memref.store(%rmem_734, %16, %1214) : (!memref_rmem_f32_1, !cute.coord<"(3,0,4)">, f32) -> ()
+      %1215 = cute.memref.load(%rmem_734, %15) : (!memref_rmem_f32_1, !cute.coord<"(3,0,5)">) -> f32
+      %1216 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1215 : (f32) -> f32
+      cute.memref.store(%rmem_734, %15, %1216) : (!memref_rmem_f32_1, !cute.coord<"(3,0,5)">, f32) -> ()
+      %1217 = cute.memref.load(%rmem_734, %14) : (!memref_rmem_f32_1, !cute.coord<"(3,0,6)">) -> f32
+      %1218 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1217 : (f32) -> f32
+      cute.memref.store(%rmem_734, %14, %1218) : (!memref_rmem_f32_1, !cute.coord<"(3,0,6)">, f32) -> ()
+      %1219 = cute.memref.load(%rmem_734, %13) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">) -> f32
+      %1220 = llvm.inline_asm asm_dialect = att "tanh.approx.f32 $0, $1;", "=f,f" %1219 : (f32) -> f32
+      cute.memref.store(%rmem_734, %13, %1220) : (!memref_rmem_f32_1, !cute.coord<"(3,0,7)">, f32) -> ()
+      %1221 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
+      %1222 = arith.mulf %1156, %1221 : vector<32xf32>
+      %1223 = arith.addf %1222, %1156 : vector<32xf32>
+      cute.memref.store_vec %1223, %rmem_734 : !memref_rmem_f32_1
+      %rmem_945 = cute.memref.alloca() : !memref_rmem_bf16_3
+      %iter_946 = cute.get_iter(%rmem_945) : !memref_rmem_bf16_3
+      %1224 = cute.memref.load_vec %rmem_734 : !memref_rmem_f32_1
+      %1225 = arith.truncf %1224 : vector<32xf32> to vector<32xbf16>
+      cute.memref.store_vec %1225, %rmem_945 : !memref_rmem_bf16_3
       cf.br ^bb257(%c0_i32 : i32)
-    ^bb257(%1218: i32):  // 2 preds: ^bb256, ^bb258
-      %1219 = arith.cmpi slt, %1218, %634 : i32
-      cf.cond_br %1219, ^bb258, ^bb259 {llvm.loop_annotation = #loop_annotation}
+    ^bb257(%1226: i32):  // 2 preds: ^bb256, ^bb258
+      %1227 = arith.cmpi slt, %1226, %634 : i32
+      cf.cond_br %1227, ^bb258, ^bb259 {llvm.loop_annotation = #loop_annotation}
     ^bb258:  // pred: ^bb257
-      %coord_915 = cute.make_coord(%1218) : (i32) -> !cute.coord<"(_,?)">
-      %idx_916 = cute.crd2idx(%coord_915, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
-      %ptr_917 = cute.add_offset(%ptr_186, %idx_916) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
-      %idx_918 = cute.crd2idx(%coord_915, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_919 = cute.add_offset(%iter_189, %idx_918) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1220 = cute_nvgpu.arch.copy.ldsm %ptr_917{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
-      %1221 = vector.extractelement %1220[%70 : i32] : vector<4xi32>
-      %1222 = builtin.unrealized_conversion_cast %ptr_919 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1221, %1222 : i32, !llvm.ptr
-      %1223 = vector.extractelement %1220[%69 : i32] : vector<4xi32>
-      %ptr_920 = cute.add_offset(%ptr_919, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1224 = builtin.unrealized_conversion_cast %ptr_920 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1223, %1224 : i32, !llvm.ptr
-      %1225 = vector.extractelement %1220[%68 : i32] : vector<4xi32>
-      %ptr_921 = cute.add_offset(%ptr_919, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1226 = builtin.unrealized_conversion_cast %ptr_921 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1225, %1226 : i32, !llvm.ptr
-      %1227 = vector.extractelement %1220[%67 : i32] : vector<4xi32>
-      %ptr_922 = cute.add_offset(%ptr_919, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1228 = builtin.unrealized_conversion_cast %ptr_922 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1227, %1228 : i32, !llvm.ptr
-      %1229 = arith.addi %1218, %c1_i32 : i32
-      cf.br ^bb257(%1229 : i32)
+      %coord_947 = cute.make_coord(%1226) : (i32) -> !cute.coord<"(_,?)">
+      %idx_948 = cute.crd2idx(%coord_947, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
+      %ptr_949 = cute.add_offset(%ptr_186, %idx_948) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
+      %idx_950 = cute.crd2idx(%coord_947, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_951 = cute.add_offset(%iter_189, %idx_950) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1228 = cute_nvgpu.arch.copy.ldsm %ptr_949{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
+      %1229 = vector.extractelement %1228[%70 : i32] : vector<4xi32>
+      %1230 = builtin.unrealized_conversion_cast %ptr_951 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1229, %1230 : i32, !llvm.ptr
+      %1231 = vector.extractelement %1228[%69 : i32] : vector<4xi32>
+      %ptr_952 = cute.add_offset(%ptr_951, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1232 = builtin.unrealized_conversion_cast %ptr_952 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1231, %1232 : i32, !llvm.ptr
+      %1233 = vector.extractelement %1228[%68 : i32] : vector<4xi32>
+      %ptr_953 = cute.add_offset(%ptr_951, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1234 = builtin.unrealized_conversion_cast %ptr_953 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1233, %1234 : i32, !llvm.ptr
+      %1235 = vector.extractelement %1228[%67 : i32] : vector<4xi32>
+      %ptr_954 = cute.add_offset(%ptr_951, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1236 = builtin.unrealized_conversion_cast %ptr_954 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1235, %1236 : i32, !llvm.ptr
+      %1237 = arith.addi %1226, %c1_i32 : i32
+      cf.br ^bb257(%1237 : i32)
     ^bb259:  // pred: ^bb257
       cf.br ^bb260(%c0_i32 : i32)
-    ^bb260(%1230: i32):  // 2 preds: ^bb259, ^bb261
-      %1231 = arith.cmpi slt, %1230, %634 : i32
-      cf.cond_br %1231, ^bb261, ^bb262 {llvm.loop_annotation = #loop_annotation}
+    ^bb260(%1238: i32):  // 2 preds: ^bb259, ^bb261
+      %1239 = arith.cmpi slt, %1238, %634 : i32
+      cf.cond_br %1239, ^bb261, ^bb262 {llvm.loop_annotation = #loop_annotation}
     ^bb261:  // pred: ^bb260
-      %coord_923 = cute.make_coord(%1230) : (i32) -> !cute.coord<"(_,?)">
-      %idx_924 = cute.crd2idx(%coord_923, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
-      %ptr_925 = cute.add_offset(%ptr_633, %idx_924) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
-      %idx_926 = cute.crd2idx(%coord_923, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_927 = cute.add_offset(%ptr_634, %idx_926) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1232 = cute_nvgpu.arch.copy.ldsm %ptr_925{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
-      %1233 = vector.extractelement %1232[%70 : i32] : vector<4xi32>
-      %1234 = builtin.unrealized_conversion_cast %ptr_927 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1233, %1234 : i32, !llvm.ptr
-      %1235 = vector.extractelement %1232[%69 : i32] : vector<4xi32>
-      %ptr_928 = cute.add_offset(%ptr_927, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1236 = builtin.unrealized_conversion_cast %ptr_928 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1235, %1236 : i32, !llvm.ptr
-      %1237 = vector.extractelement %1232[%68 : i32] : vector<4xi32>
-      %ptr_929 = cute.add_offset(%ptr_927, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1238 = builtin.unrealized_conversion_cast %ptr_929 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1237, %1238 : i32, !llvm.ptr
-      %1239 = vector.extractelement %1232[%67 : i32] : vector<4xi32>
-      %ptr_930 = cute.add_offset(%ptr_927, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1240 = builtin.unrealized_conversion_cast %ptr_930 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1239, %1240 : i32, !llvm.ptr
-      %1241 = arith.addi %1230, %c1_i32 : i32
-      cf.br ^bb260(%1241 : i32)
+      %coord_955 = cute.make_coord(%1238) : (i32) -> !cute.coord<"(_,?)">
+      %idx_956 = cute.crd2idx(%coord_955, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
+      %ptr_957 = cute.add_offset(%ptr_633, %idx_956) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
+      %idx_958 = cute.crd2idx(%coord_955, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_959 = cute.add_offset(%ptr_634, %idx_958) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1240 = cute_nvgpu.arch.copy.ldsm %ptr_957{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
+      %1241 = vector.extractelement %1240[%70 : i32] : vector<4xi32>
+      %1242 = builtin.unrealized_conversion_cast %ptr_959 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1241, %1242 : i32, !llvm.ptr
+      %1243 = vector.extractelement %1240[%69 : i32] : vector<4xi32>
+      %ptr_960 = cute.add_offset(%ptr_959, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1244 = builtin.unrealized_conversion_cast %ptr_960 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1243, %1244 : i32, !llvm.ptr
+      %1245 = vector.extractelement %1240[%68 : i32] : vector<4xi32>
+      %ptr_961 = cute.add_offset(%ptr_959, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1246 = builtin.unrealized_conversion_cast %ptr_961 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1245, %1246 : i32, !llvm.ptr
+      %1247 = vector.extractelement %1240[%67 : i32] : vector<4xi32>
+      %ptr_962 = cute.add_offset(%ptr_959, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1248 = builtin.unrealized_conversion_cast %ptr_962 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1247, %1248 : i32, !llvm.ptr
+      %1249 = arith.addi %1238, %c1_i32 : i32
+      cf.br ^bb260(%1249 : i32)
     ^bb262:  // pred: ^bb260
-      %1242 = builtin.unrealized_conversion_cast %iter_914 : !cute.ptr<bf16, rmem, align<32>> to !llvm.ptr
-      %1243 = llvm.getelementptr %1242[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1244 = llvm.getelementptr %1242[2] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1245 = llvm.getelementptr %1242[3] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1250 = builtin.unrealized_conversion_cast %iter_946 : !cute.ptr<bf16, rmem, align<32>> to !llvm.ptr
+      %1251 = llvm.getelementptr %1250[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1252 = llvm.getelementptr %1250[2] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1253 = llvm.getelementptr %1250[3] : (!llvm.ptr) -> !llvm.ptr, i32
       cf.br ^bb263(%c0_i32 : i32)
-    ^bb263(%1246: i32):  // 2 preds: ^bb262, ^bb270
-      %1247 = arith.cmpi slt, %1246, %625 : i32
-      cf.cond_br %1247, ^bb264, ^bb271 {llvm.loop_annotation = #loop_annotation}
+    ^bb263(%1254: i32):  // 2 preds: ^bb262, ^bb270
+      %1255 = arith.cmpi slt, %1254, %625 : i32
+      cf.cond_br %1255, ^bb264, ^bb271 {llvm.loop_annotation = #loop_annotation}
     ^bb264:  // pred: ^bb263
       cf.br ^bb265(%c0_i32 : i32)
-    ^bb265(%1248: i32):  // 2 preds: ^bb264, ^bb269
-      %1249 = arith.cmpi slt, %1248, %625 : i32
-      cf.cond_br %1249, ^bb266, ^bb270 {llvm.loop_annotation = #loop_annotation}
+    ^bb265(%1256: i32):  // 2 preds: ^bb264, ^bb269
+      %1257 = arith.cmpi slt, %1256, %625 : i32
+      cf.cond_br %1257, ^bb266, ^bb270 {llvm.loop_annotation = #loop_annotation}
     ^bb266:  // pred: ^bb265
       cf.br ^bb267(%c0_i32 : i32)
-    ^bb267(%1250: i32):  // 2 preds: ^bb266, ^bb268
-      %1251 = arith.cmpi slt, %1250, %694 : i32
-      cf.cond_br %1251, ^bb268, ^bb269 {llvm.loop_annotation = #loop_annotation}
+    ^bb267(%1258: i32):  // 2 preds: ^bb266, ^bb268
+      %1259 = arith.cmpi slt, %1258, %694 : i32
+      cf.cond_br %1259, ^bb268, ^bb269 {llvm.loop_annotation = #loop_annotation}
     ^bb268:  // pred: ^bb267
-      %coord_931 = cute.make_coord(%1250, %1246) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %coord_932 = cute.make_coord(%1248, %1250) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %idx_933 = cute.crd2idx(%coord_931, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_934 = cute.add_offset(%iter_189, %idx_933) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %idx_935 = cute.crd2idx(%coord_932, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_936 = cute.add_offset(%iter_635, %idx_935) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
-      %1252 = llvm.load %1242 : !llvm.ptr -> i32
-      %1253 = llvm.load %1243 : !llvm.ptr -> i32
-      %1254 = llvm.load %1244 : !llvm.ptr -> i32
-      %1255 = llvm.load %1245 : !llvm.ptr -> i32
-      %1256 = builtin.unrealized_conversion_cast %ptr_934 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      %1257 = llvm.load %1256 : !llvm.ptr -> i32
-      %1258 = llvm.getelementptr %1256[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1259 = llvm.load %1258 : !llvm.ptr -> i32
-      %1260 = builtin.unrealized_conversion_cast %ptr_936 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
-      %1261 = llvm.load %1260 : !llvm.ptr -> f32
-      %1262 = llvm.getelementptr %1260[1] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1263 = llvm.load %1262 : !llvm.ptr -> f32
-      %1264 = llvm.getelementptr %1260[2] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1265 = llvm.load %1264 : !llvm.ptr -> f32
-      %1266 = llvm.getelementptr %1260[3] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1267 = llvm.load %1266 : !llvm.ptr -> f32
-      %1268:4 = cute_nvgpu.arch.mma.SM80 A[%1252, %1253, %1254, %1255]  B[%1257, %1259]  C[%1261, %1263, %1265, %1267] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
-      llvm.store %1268#0, %1260 : f32, !llvm.ptr
-      llvm.store %1268#1, %1262 : f32, !llvm.ptr
-      llvm.store %1268#2, %1264 : f32, !llvm.ptr
-      llvm.store %1268#3, %1266 : f32, !llvm.ptr
-      %1269 = arith.addi %1250, %c1_i32 : i32
-      cf.br ^bb267(%1269 : i32)
+      %coord_963 = cute.make_coord(%1258, %1254) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %coord_964 = cute.make_coord(%1256, %1258) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %idx_965 = cute.crd2idx(%coord_963, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_966 = cute.add_offset(%iter_189, %idx_965) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %idx_967 = cute.crd2idx(%coord_964, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_968 = cute.add_offset(%iter_635, %idx_967) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
+      %1260 = llvm.load %1250 : !llvm.ptr -> i32
+      %1261 = llvm.load %1251 : !llvm.ptr -> i32
+      %1262 = llvm.load %1252 : !llvm.ptr -> i32
+      %1263 = llvm.load %1253 : !llvm.ptr -> i32
+      %1264 = builtin.unrealized_conversion_cast %ptr_966 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      %1265 = llvm.load %1264 : !llvm.ptr -> i32
+      %1266 = llvm.getelementptr %1264[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1267 = llvm.load %1266 : !llvm.ptr -> i32
+      %1268 = builtin.unrealized_conversion_cast %ptr_968 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
+      %1269 = llvm.load %1268 : !llvm.ptr -> f32
+      %1270 = llvm.getelementptr %1268[1] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1271 = llvm.load %1270 : !llvm.ptr -> f32
+      %1272 = llvm.getelementptr %1268[2] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1273 = llvm.load %1272 : !llvm.ptr -> f32
+      %1274 = llvm.getelementptr %1268[3] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1275 = llvm.load %1274 : !llvm.ptr -> f32
+      %1276:4 = cute_nvgpu.arch.mma.SM80 A[%1260, %1261, %1262, %1263]  B[%1265, %1267]  C[%1269, %1271, %1273, %1275] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
+      llvm.store %1276#0, %1268 : f32, !llvm.ptr
+      llvm.store %1276#1, %1270 : f32, !llvm.ptr
+      llvm.store %1276#2, %1272 : f32, !llvm.ptr
+      llvm.store %1276#3, %1274 : f32, !llvm.ptr
+      %1277 = arith.addi %1258, %c1_i32 : i32
+      cf.br ^bb267(%1277 : i32)
     ^bb269:  // pred: ^bb267
-      %1270 = arith.addi %1248, %c1_i32 : i32
-      cf.br ^bb265(%1270 : i32)
+      %1278 = arith.addi %1256, %c1_i32 : i32
+      cf.br ^bb265(%1278 : i32)
     ^bb270:  // pred: ^bb265
-      %1271 = arith.addi %1246, %c1_i32 : i32
-      cf.br ^bb263(%1271 : i32)
+      %1279 = arith.addi %1254, %c1_i32 : i32
+      cf.br ^bb263(%1279 : i32)
     ^bb271:  // pred: ^bb263
       cf.br ^bb272(%c0_i32 : i32)
-    ^bb272(%1272: i32):  // 2 preds: ^bb271, ^bb273
-      %1273 = arith.cmpi slt, %1272, %634 : i32
-      cf.cond_br %1273, ^bb273, ^bb274 {llvm.loop_annotation = #loop_annotation}
+    ^bb272(%1280: i32):  // 2 preds: ^bb271, ^bb273
+      %1281 = arith.cmpi slt, %1280, %634 : i32
+      cf.cond_br %1281, ^bb273, ^bb274 {llvm.loop_annotation = #loop_annotation}
     ^bb273:  // pred: ^bb272
-      %coord_937 = cute.make_coord(%1272) : (i32) -> !cute.coord<"(_,?)">
-      %idx_938 = cute.crd2idx(%coord_937, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
-      %ptr_939 = cute.add_offset(%ptr_636, %idx_938) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
-      %idx_940 = cute.crd2idx(%coord_937, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_941 = cute.add_offset(%ptr_637, %idx_940) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1274 = cute_nvgpu.arch.copy.ldsm %ptr_939{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
-      %1275 = vector.extractelement %1274[%70 : i32] : vector<4xi32>
-      %1276 = builtin.unrealized_conversion_cast %ptr_941 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1275, %1276 : i32, !llvm.ptr
-      %1277 = vector.extractelement %1274[%69 : i32] : vector<4xi32>
-      %ptr_942 = cute.add_offset(%ptr_941, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1278 = builtin.unrealized_conversion_cast %ptr_942 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1277, %1278 : i32, !llvm.ptr
-      %1279 = vector.extractelement %1274[%68 : i32] : vector<4xi32>
-      %ptr_943 = cute.add_offset(%ptr_941, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1280 = builtin.unrealized_conversion_cast %ptr_943 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1279, %1280 : i32, !llvm.ptr
-      %1281 = vector.extractelement %1274[%67 : i32] : vector<4xi32>
-      %ptr_944 = cute.add_offset(%ptr_941, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1282 = builtin.unrealized_conversion_cast %ptr_944 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1281, %1282 : i32, !llvm.ptr
-      %1283 = arith.addi %1272, %c1_i32 : i32
-      cf.br ^bb272(%1283 : i32)
+      %coord_969 = cute.make_coord(%1280) : (i32) -> !cute.coord<"(_,?)">
+      %idx_970 = cute.crd2idx(%coord_969, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
+      %ptr_971 = cute.add_offset(%ptr_636, %idx_970) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
+      %idx_972 = cute.crd2idx(%coord_969, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_973 = cute.add_offset(%ptr_637, %idx_972) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1282 = cute_nvgpu.arch.copy.ldsm %ptr_971{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
+      %1283 = vector.extractelement %1282[%70 : i32] : vector<4xi32>
+      %1284 = builtin.unrealized_conversion_cast %ptr_973 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1283, %1284 : i32, !llvm.ptr
+      %1285 = vector.extractelement %1282[%69 : i32] : vector<4xi32>
+      %ptr_974 = cute.add_offset(%ptr_973, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1286 = builtin.unrealized_conversion_cast %ptr_974 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1285, %1286 : i32, !llvm.ptr
+      %1287 = vector.extractelement %1282[%68 : i32] : vector<4xi32>
+      %ptr_975 = cute.add_offset(%ptr_973, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1288 = builtin.unrealized_conversion_cast %ptr_975 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1287, %1288 : i32, !llvm.ptr
+      %1289 = vector.extractelement %1282[%67 : i32] : vector<4xi32>
+      %ptr_976 = cute.add_offset(%ptr_973, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1290 = builtin.unrealized_conversion_cast %ptr_976 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1289, %1290 : i32, !llvm.ptr
+      %1291 = arith.addi %1280, %c1_i32 : i32
+      cf.br ^bb272(%1291 : i32)
     ^bb274:  // pred: ^bb272
-      %ptr_945 = cute.add_offset(%iter_914, %76) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"8">) -> !cute.ptr<bf16, rmem, align<16>>
-      %1284 = builtin.unrealized_conversion_cast %ptr_945 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1285 = llvm.getelementptr %1284[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1286 = llvm.getelementptr %1284[2] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1287 = llvm.getelementptr %1284[3] : (!llvm.ptr) -> !llvm.ptr, i32
+      %ptr_977 = cute.add_offset(%iter_946, %76) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"8">) -> !cute.ptr<bf16, rmem, align<16>>
+      %1292 = builtin.unrealized_conversion_cast %ptr_977 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1293 = llvm.getelementptr %1292[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1294 = llvm.getelementptr %1292[2] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1295 = llvm.getelementptr %1292[3] : (!llvm.ptr) -> !llvm.ptr, i32
       cf.br ^bb275(%c0_i32 : i32)
-    ^bb275(%1288: i32):  // 2 preds: ^bb274, ^bb282
-      %1289 = arith.cmpi slt, %1288, %625 : i32
-      cf.cond_br %1289, ^bb276, ^bb283 {llvm.loop_annotation = #loop_annotation}
+    ^bb275(%1296: i32):  // 2 preds: ^bb274, ^bb282
+      %1297 = arith.cmpi slt, %1296, %625 : i32
+      cf.cond_br %1297, ^bb276, ^bb283 {llvm.loop_annotation = #loop_annotation}
     ^bb276:  // pred: ^bb275
       cf.br ^bb277(%c0_i32 : i32)
-    ^bb277(%1290: i32):  // 2 preds: ^bb276, ^bb281
-      %1291 = arith.cmpi slt, %1290, %625 : i32
-      cf.cond_br %1291, ^bb278, ^bb282 {llvm.loop_annotation = #loop_annotation}
+    ^bb277(%1298: i32):  // 2 preds: ^bb276, ^bb281
+      %1299 = arith.cmpi slt, %1298, %625 : i32
+      cf.cond_br %1299, ^bb278, ^bb282 {llvm.loop_annotation = #loop_annotation}
     ^bb278:  // pred: ^bb277
       cf.br ^bb279(%c0_i32 : i32)
-    ^bb279(%1292: i32):  // 2 preds: ^bb278, ^bb280
-      %1293 = arith.cmpi slt, %1292, %694 : i32
-      cf.cond_br %1293, ^bb280, ^bb281 {llvm.loop_annotation = #loop_annotation}
+    ^bb279(%1300: i32):  // 2 preds: ^bb278, ^bb280
+      %1301 = arith.cmpi slt, %1300, %694 : i32
+      cf.cond_br %1301, ^bb280, ^bb281 {llvm.loop_annotation = #loop_annotation}
     ^bb280:  // pred: ^bb279
-      %coord_946 = cute.make_coord(%1292, %1288) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %coord_947 = cute.make_coord(%1290, %1292) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %idx_948 = cute.crd2idx(%coord_946, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_949 = cute.add_offset(%ptr_634, %idx_948) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %idx_950 = cute.crd2idx(%coord_947, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_951 = cute.add_offset(%iter_635, %idx_950) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
-      %1294 = llvm.load %1284 : !llvm.ptr -> i32
-      %1295 = llvm.load %1285 : !llvm.ptr -> i32
-      %1296 = llvm.load %1286 : !llvm.ptr -> i32
-      %1297 = llvm.load %1287 : !llvm.ptr -> i32
-      %1298 = builtin.unrealized_conversion_cast %ptr_949 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      %1299 = llvm.load %1298 : !llvm.ptr -> i32
-      %1300 = llvm.getelementptr %1298[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1301 = llvm.load %1300 : !llvm.ptr -> i32
-      %1302 = builtin.unrealized_conversion_cast %ptr_951 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
-      %1303 = llvm.load %1302 : !llvm.ptr -> f32
-      %1304 = llvm.getelementptr %1302[1] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1305 = llvm.load %1304 : !llvm.ptr -> f32
-      %1306 = llvm.getelementptr %1302[2] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1307 = llvm.load %1306 : !llvm.ptr -> f32
-      %1308 = llvm.getelementptr %1302[3] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1309 = llvm.load %1308 : !llvm.ptr -> f32
-      %1310:4 = cute_nvgpu.arch.mma.SM80 A[%1294, %1295, %1296, %1297]  B[%1299, %1301]  C[%1303, %1305, %1307, %1309] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
-      llvm.store %1310#0, %1302 : f32, !llvm.ptr
-      llvm.store %1310#1, %1304 : f32, !llvm.ptr
-      llvm.store %1310#2, %1306 : f32, !llvm.ptr
-      llvm.store %1310#3, %1308 : f32, !llvm.ptr
-      %1311 = arith.addi %1292, %c1_i32 : i32
-      cf.br ^bb279(%1311 : i32)
+      %coord_978 = cute.make_coord(%1300, %1296) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %coord_979 = cute.make_coord(%1298, %1300) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %idx_980 = cute.crd2idx(%coord_978, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_981 = cute.add_offset(%ptr_634, %idx_980) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %idx_982 = cute.crd2idx(%coord_979, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_983 = cute.add_offset(%iter_635, %idx_982) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
+      %1302 = llvm.load %1292 : !llvm.ptr -> i32
+      %1303 = llvm.load %1293 : !llvm.ptr -> i32
+      %1304 = llvm.load %1294 : !llvm.ptr -> i32
+      %1305 = llvm.load %1295 : !llvm.ptr -> i32
+      %1306 = builtin.unrealized_conversion_cast %ptr_981 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      %1307 = llvm.load %1306 : !llvm.ptr -> i32
+      %1308 = llvm.getelementptr %1306[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1309 = llvm.load %1308 : !llvm.ptr -> i32
+      %1310 = builtin.unrealized_conversion_cast %ptr_983 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
+      %1311 = llvm.load %1310 : !llvm.ptr -> f32
+      %1312 = llvm.getelementptr %1310[1] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1313 = llvm.load %1312 : !llvm.ptr -> f32
+      %1314 = llvm.getelementptr %1310[2] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1315 = llvm.load %1314 : !llvm.ptr -> f32
+      %1316 = llvm.getelementptr %1310[3] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1317 = llvm.load %1316 : !llvm.ptr -> f32
+      %1318:4 = cute_nvgpu.arch.mma.SM80 A[%1302, %1303, %1304, %1305]  B[%1307, %1309]  C[%1311, %1313, %1315, %1317] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
+      llvm.store %1318#0, %1310 : f32, !llvm.ptr
+      llvm.store %1318#1, %1312 : f32, !llvm.ptr
+      llvm.store %1318#2, %1314 : f32, !llvm.ptr
+      llvm.store %1318#3, %1316 : f32, !llvm.ptr
+      %1319 = arith.addi %1300, %c1_i32 : i32
+      cf.br ^bb279(%1319 : i32)
     ^bb281:  // pred: ^bb279
-      %1312 = arith.addi %1290, %c1_i32 : i32
-      cf.br ^bb277(%1312 : i32)
+      %1320 = arith.addi %1298, %c1_i32 : i32
+      cf.br ^bb277(%1320 : i32)
     ^bb282:  // pred: ^bb277
-      %1313 = arith.addi %1288, %c1_i32 : i32
-      cf.br ^bb275(%1313 : i32)
+      %1321 = arith.addi %1296, %c1_i32 : i32
+      cf.br ^bb275(%1321 : i32)
     ^bb283:  // pred: ^bb275
       cf.br ^bb284(%c0_i32 : i32)
-    ^bb284(%1314: i32):  // 2 preds: ^bb283, ^bb285
-      %1315 = arith.cmpi slt, %1314, %634 : i32
-      cf.cond_br %1315, ^bb285, ^bb286 {llvm.loop_annotation = #loop_annotation}
+    ^bb284(%1322: i32):  // 2 preds: ^bb283, ^bb285
+      %1323 = arith.cmpi slt, %1322, %634 : i32
+      cf.cond_br %1323, ^bb285, ^bb286 {llvm.loop_annotation = #loop_annotation}
     ^bb285:  // pred: ^bb284
-      %coord_952 = cute.make_coord(%1314) : (i32) -> !cute.coord<"(_,?)">
-      %idx_953 = cute.crd2idx(%coord_952, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
-      %ptr_954 = cute.add_offset(%ptr_638, %idx_953) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
-      %idx_955 = cute.crd2idx(%coord_952, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_956 = cute.add_offset(%ptr_639, %idx_955) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1316 = cute_nvgpu.arch.copy.ldsm %ptr_954{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
-      %1317 = vector.extractelement %1316[%70 : i32] : vector<4xi32>
-      %1318 = builtin.unrealized_conversion_cast %ptr_956 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1317, %1318 : i32, !llvm.ptr
-      %1319 = vector.extractelement %1316[%69 : i32] : vector<4xi32>
-      %ptr_957 = cute.add_offset(%ptr_956, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1320 = builtin.unrealized_conversion_cast %ptr_957 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1319, %1320 : i32, !llvm.ptr
-      %1321 = vector.extractelement %1316[%68 : i32] : vector<4xi32>
-      %ptr_958 = cute.add_offset(%ptr_956, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
-      %1322 = builtin.unrealized_conversion_cast %ptr_958 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      llvm.store %1321, %1322 : i32, !llvm.ptr
-      %1323 = vector.extractelement %1316[%67 : i32] : vector<4xi32>
-      %ptr_959 = cute.add_offset(%ptr_956, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
-      %1324 = builtin.unrealized_conversion_cast %ptr_959 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      llvm.store %1323, %1324 : i32, !llvm.ptr
-      %1325 = arith.addi %1314, %c1_i32 : i32
-      cf.br ^bb284(%1325 : i32)
+      %coord_984 = cute.make_coord(%1322) : (i32) -> !cute.coord<"(_,?)">
+      %idx_985 = cute.crd2idx(%coord_984, %lay_632) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((((2,2),2)))):((1,0),((((?{div=16},?{div=32}),4096))))">) -> !cute.int_tuple<"?{div=16}">
+      %ptr_986 = cute.add_offset(%ptr_638, %idx_985) : (!cute.ptr<bf16, smem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<16>>
+      %idx_987 = cute.crd2idx(%coord_984, %9) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),(((4,2)))):((1,0),(((8,128))))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_988 = cute.add_offset(%ptr_639, %idx_987) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1324 = cute_nvgpu.arch.copy.ldsm %ptr_986{matrix_shape = <"(8,8)">, sz_pattern = <u16>, num_matrices = 4 : i32, transpose} : <bf16, smem, align<16>> -> vector<4xi32>
+      %1325 = vector.extractelement %1324[%70 : i32] : vector<4xi32>
+      %1326 = builtin.unrealized_conversion_cast %ptr_988 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1325, %1326 : i32, !llvm.ptr
+      %1327 = vector.extractelement %1324[%69 : i32] : vector<4xi32>
+      %ptr_989 = cute.add_offset(%ptr_988, %91) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1328 = builtin.unrealized_conversion_cast %ptr_989 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1327, %1328 : i32, !llvm.ptr
+      %1329 = vector.extractelement %1324[%68 : i32] : vector<4xi32>
+      %ptr_990 = cute.add_offset(%ptr_988, %71) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
+      %1330 = builtin.unrealized_conversion_cast %ptr_990 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      llvm.store %1329, %1330 : i32, !llvm.ptr
+      %1331 = vector.extractelement %1324[%67 : i32] : vector<4xi32>
+      %ptr_991 = cute.add_offset(%ptr_988, %66) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
+      %1332 = builtin.unrealized_conversion_cast %ptr_991 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      llvm.store %1331, %1332 : i32, !llvm.ptr
+      %1333 = arith.addi %1322, %c1_i32 : i32
+      cf.br ^bb284(%1333 : i32)
     ^bb286:  // pred: ^bb284
-      %ptr_960 = cute.add_offset(%iter_914, %60) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"16">) -> !cute.ptr<bf16, rmem, align<32>>
-      %1326 = builtin.unrealized_conversion_cast %ptr_960 : !cute.ptr<bf16, rmem, align<32>> to !llvm.ptr
-      %1327 = llvm.getelementptr %1326[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1328 = llvm.getelementptr %1326[2] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1329 = llvm.getelementptr %1326[3] : (!llvm.ptr) -> !llvm.ptr, i32
+      %ptr_992 = cute.add_offset(%iter_946, %60) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"16">) -> !cute.ptr<bf16, rmem, align<32>>
+      %1334 = builtin.unrealized_conversion_cast %ptr_992 : !cute.ptr<bf16, rmem, align<32>> to !llvm.ptr
+      %1335 = llvm.getelementptr %1334[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1336 = llvm.getelementptr %1334[2] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1337 = llvm.getelementptr %1334[3] : (!llvm.ptr) -> !llvm.ptr, i32
       cf.br ^bb287(%c0_i32 : i32)
-    ^bb287(%1330: i32):  // 2 preds: ^bb286, ^bb294
-      %1331 = arith.cmpi slt, %1330, %625 : i32
-      cf.cond_br %1331, ^bb288, ^bb295 {llvm.loop_annotation = #loop_annotation}
+    ^bb287(%1338: i32):  // 2 preds: ^bb286, ^bb294
+      %1339 = arith.cmpi slt, %1338, %625 : i32
+      cf.cond_br %1339, ^bb288, ^bb295 {llvm.loop_annotation = #loop_annotation}
     ^bb288:  // pred: ^bb287
       cf.br ^bb289(%c0_i32 : i32)
-    ^bb289(%1332: i32):  // 2 preds: ^bb288, ^bb293
-      %1333 = arith.cmpi slt, %1332, %625 : i32
-      cf.cond_br %1333, ^bb290, ^bb294 {llvm.loop_annotation = #loop_annotation}
+    ^bb289(%1340: i32):  // 2 preds: ^bb288, ^bb293
+      %1341 = arith.cmpi slt, %1340, %625 : i32
+      cf.cond_br %1341, ^bb290, ^bb294 {llvm.loop_annotation = #loop_annotation}
     ^bb290:  // pred: ^bb289
       cf.br ^bb291(%c0_i32 : i32)
-    ^bb291(%1334: i32):  // 2 preds: ^bb290, ^bb292
-      %1335 = arith.cmpi slt, %1334, %694 : i32
-      cf.cond_br %1335, ^bb292, ^bb293 {llvm.loop_annotation = #loop_annotation}
+    ^bb291(%1342: i32):  // 2 preds: ^bb290, ^bb292
+      %1343 = arith.cmpi slt, %1342, %694 : i32
+      cf.cond_br %1343, ^bb292, ^bb293 {llvm.loop_annotation = #loop_annotation}
     ^bb292:  // pred: ^bb291
-      %coord_961 = cute.make_coord(%1334, %1330) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %coord_962 = cute.make_coord(%1332, %1334) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %idx_963 = cute.crd2idx(%coord_961, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_964 = cute.add_offset(%ptr_637, %idx_963) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %idx_965 = cute.crd2idx(%coord_962, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_966 = cute.add_offset(%iter_635, %idx_965) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
-      %1336 = llvm.load %1326 : !llvm.ptr -> i32
-      %1337 = llvm.load %1327 : !llvm.ptr -> i32
-      %1338 = llvm.load %1328 : !llvm.ptr -> i32
-      %1339 = llvm.load %1329 : !llvm.ptr -> i32
-      %1340 = builtin.unrealized_conversion_cast %ptr_964 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      %1341 = llvm.load %1340 : !llvm.ptr -> i32
-      %1342 = llvm.getelementptr %1340[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1343 = llvm.load %1342 : !llvm.ptr -> i32
-      %1344 = builtin.unrealized_conversion_cast %ptr_966 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
-      %1345 = llvm.load %1344 : !llvm.ptr -> f32
-      %1346 = llvm.getelementptr %1344[1] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1347 = llvm.load %1346 : !llvm.ptr -> f32
-      %1348 = llvm.getelementptr %1344[2] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1349 = llvm.load %1348 : !llvm.ptr -> f32
-      %1350 = llvm.getelementptr %1344[3] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1351 = llvm.load %1350 : !llvm.ptr -> f32
-      %1352:4 = cute_nvgpu.arch.mma.SM80 A[%1336, %1337, %1338, %1339]  B[%1341, %1343]  C[%1345, %1347, %1349, %1351] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
-      llvm.store %1352#0, %1344 : f32, !llvm.ptr
-      llvm.store %1352#1, %1346 : f32, !llvm.ptr
-      llvm.store %1352#2, %1348 : f32, !llvm.ptr
-      llvm.store %1352#3, %1350 : f32, !llvm.ptr
-      %1353 = arith.addi %1334, %c1_i32 : i32
-      cf.br ^bb291(%1353 : i32)
+      %coord_993 = cute.make_coord(%1342, %1338) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %coord_994 = cute.make_coord(%1340, %1342) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %idx_995 = cute.crd2idx(%coord_993, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_996 = cute.add_offset(%ptr_637, %idx_995) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %idx_997 = cute.crd2idx(%coord_994, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_998 = cute.add_offset(%iter_635, %idx_997) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
+      %1344 = llvm.load %1334 : !llvm.ptr -> i32
+      %1345 = llvm.load %1335 : !llvm.ptr -> i32
+      %1346 = llvm.load %1336 : !llvm.ptr -> i32
+      %1347 = llvm.load %1337 : !llvm.ptr -> i32
+      %1348 = builtin.unrealized_conversion_cast %ptr_996 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      %1349 = llvm.load %1348 : !llvm.ptr -> i32
+      %1350 = llvm.getelementptr %1348[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1351 = llvm.load %1350 : !llvm.ptr -> i32
+      %1352 = builtin.unrealized_conversion_cast %ptr_998 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
+      %1353 = llvm.load %1352 : !llvm.ptr -> f32
+      %1354 = llvm.getelementptr %1352[1] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1355 = llvm.load %1354 : !llvm.ptr -> f32
+      %1356 = llvm.getelementptr %1352[2] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1357 = llvm.load %1356 : !llvm.ptr -> f32
+      %1358 = llvm.getelementptr %1352[3] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1359 = llvm.load %1358 : !llvm.ptr -> f32
+      %1360:4 = cute_nvgpu.arch.mma.SM80 A[%1344, %1345, %1346, %1347]  B[%1349, %1351]  C[%1353, %1355, %1357, %1359] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
+      llvm.store %1360#0, %1352 : f32, !llvm.ptr
+      llvm.store %1360#1, %1354 : f32, !llvm.ptr
+      llvm.store %1360#2, %1356 : f32, !llvm.ptr
+      llvm.store %1360#3, %1358 : f32, !llvm.ptr
+      %1361 = arith.addi %1342, %c1_i32 : i32
+      cf.br ^bb291(%1361 : i32)
     ^bb293:  // pred: ^bb291
-      %1354 = arith.addi %1332, %c1_i32 : i32
-      cf.br ^bb289(%1354 : i32)
+      %1362 = arith.addi %1340, %c1_i32 : i32
+      cf.br ^bb289(%1362 : i32)
     ^bb294:  // pred: ^bb289
-      %1355 = arith.addi %1330, %c1_i32 : i32
-      cf.br ^bb287(%1355 : i32)
+      %1363 = arith.addi %1338, %c1_i32 : i32
+      cf.br ^bb287(%1363 : i32)
     ^bb295:  // pred: ^bb287
-      %ptr_967 = cute.add_offset(%iter_914, %50) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"24">) -> !cute.ptr<bf16, rmem, align<16>>
-      %1356 = builtin.unrealized_conversion_cast %ptr_967 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1357 = llvm.getelementptr %1356[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1358 = llvm.getelementptr %1356[2] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1359 = llvm.getelementptr %1356[3] : (!llvm.ptr) -> !llvm.ptr, i32
+      %ptr_999 = cute.add_offset(%iter_946, %50) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"24">) -> !cute.ptr<bf16, rmem, align<16>>
+      %1364 = builtin.unrealized_conversion_cast %ptr_999 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1365 = llvm.getelementptr %1364[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1366 = llvm.getelementptr %1364[2] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1367 = llvm.getelementptr %1364[3] : (!llvm.ptr) -> !llvm.ptr, i32
       cf.br ^bb296(%c0_i32 : i32)
-    ^bb296(%1360: i32):  // 2 preds: ^bb295, ^bb303
-      %1361 = arith.cmpi slt, %1360, %625 : i32
-      cf.cond_br %1361, ^bb297, ^bb304 {llvm.loop_annotation = #loop_annotation}
+    ^bb296(%1368: i32):  // 2 preds: ^bb295, ^bb303
+      %1369 = arith.cmpi slt, %1368, %625 : i32
+      cf.cond_br %1369, ^bb297, ^bb304 {llvm.loop_annotation = #loop_annotation}
     ^bb297:  // pred: ^bb296
       cf.br ^bb298(%c0_i32 : i32)
-    ^bb298(%1362: i32):  // 2 preds: ^bb297, ^bb302
-      %1363 = arith.cmpi slt, %1362, %625 : i32
-      cf.cond_br %1363, ^bb299, ^bb303 {llvm.loop_annotation = #loop_annotation}
+    ^bb298(%1370: i32):  // 2 preds: ^bb297, ^bb302
+      %1371 = arith.cmpi slt, %1370, %625 : i32
+      cf.cond_br %1371, ^bb299, ^bb303 {llvm.loop_annotation = #loop_annotation}
     ^bb299:  // pred: ^bb298
       cf.br ^bb300(%c0_i32 : i32)
-    ^bb300(%1364: i32):  // 2 preds: ^bb299, ^bb301
-      %1365 = arith.cmpi slt, %1364, %694 : i32
-      cf.cond_br %1365, ^bb301, ^bb302 {llvm.loop_annotation = #loop_annotation}
+    ^bb300(%1372: i32):  // 2 preds: ^bb299, ^bb301
+      %1373 = arith.cmpi slt, %1372, %694 : i32
+      cf.cond_br %1373, ^bb301, ^bb302 {llvm.loop_annotation = #loop_annotation}
     ^bb301:  // pred: ^bb300
-      %coord_968 = cute.make_coord(%1364, %1360) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %coord_969 = cute.make_coord(%1362, %1364) : (i32, i32) -> !cute.coord<"(_,?,?)">
-      %idx_970 = cute.crd2idx(%coord_968, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_971 = cute.add_offset(%ptr_639, %idx_970) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
-      %idx_972 = cute.crd2idx(%coord_969, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_973 = cute.add_offset(%iter_635, %idx_972) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
-      %1366 = llvm.load %1356 : !llvm.ptr -> i32
-      %1367 = llvm.load %1357 : !llvm.ptr -> i32
-      %1368 = llvm.load %1358 : !llvm.ptr -> i32
-      %1369 = llvm.load %1359 : !llvm.ptr -> i32
-      %1370 = builtin.unrealized_conversion_cast %ptr_971 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      %1371 = llvm.load %1370 : !llvm.ptr -> i32
-      %1372 = llvm.getelementptr %1370[1] : (!llvm.ptr) -> !llvm.ptr, i32
-      %1373 = llvm.load %1372 : !llvm.ptr -> i32
-      %1374 = builtin.unrealized_conversion_cast %ptr_973 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
-      %1375 = llvm.load %1374 : !llvm.ptr -> f32
-      %1376 = llvm.getelementptr %1374[1] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1377 = llvm.load %1376 : !llvm.ptr -> f32
-      %1378 = llvm.getelementptr %1374[2] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1379 = llvm.load %1378 : !llvm.ptr -> f32
-      %1380 = llvm.getelementptr %1374[3] : (!llvm.ptr) -> !llvm.ptr, f32
-      %1381 = llvm.load %1380 : !llvm.ptr -> f32
-      %1382:4 = cute_nvgpu.arch.mma.SM80 A[%1366, %1367, %1368, %1369]  B[%1371, %1373]  C[%1375, %1377, %1379, %1381] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
-      llvm.store %1382#0, %1374 : f32, !llvm.ptr
-      llvm.store %1382#1, %1376 : f32, !llvm.ptr
-      llvm.store %1382#2, %1378 : f32, !llvm.ptr
-      llvm.store %1382#3, %1380 : f32, !llvm.ptr
-      %1383 = arith.addi %1364, %c1_i32 : i32
-      cf.br ^bb300(%1383 : i32)
+      %coord_1000 = cute.make_coord(%1372, %1368) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %coord_1001 = cute.make_coord(%1370, %1372) : (i32, i32) -> !cute.coord<"(_,?,?)">
+      %idx_1002 = cute.crd2idx(%coord_1000, %8) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),(8,2),1):((1,2),(4,128),0)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_1003 = cute.add_offset(%ptr_639, %idx_1002) : (!cute.ptr<bf16, rmem, align<8>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<bf16, rmem, align<8>>
+      %idx_1004 = cute.crd2idx(%coord_1001, %110) : (!cute.coord<"(_,?,?)">, !cute.layout<"((2,2),1,16):((1,2),0,4)">) -> !cute.int_tuple<"?{div=4}">
+      %ptr_1005 = cute.add_offset(%iter_635, %idx_1004) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, rmem, align<16>>
+      %1374 = llvm.load %1364 : !llvm.ptr -> i32
+      %1375 = llvm.load %1365 : !llvm.ptr -> i32
+      %1376 = llvm.load %1366 : !llvm.ptr -> i32
+      %1377 = llvm.load %1367 : !llvm.ptr -> i32
+      %1378 = builtin.unrealized_conversion_cast %ptr_1003 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      %1379 = llvm.load %1378 : !llvm.ptr -> i32
+      %1380 = llvm.getelementptr %1378[1] : (!llvm.ptr) -> !llvm.ptr, i32
+      %1381 = llvm.load %1380 : !llvm.ptr -> i32
+      %1382 = builtin.unrealized_conversion_cast %ptr_1005 : !cute.ptr<f32, rmem, align<16>> to !llvm.ptr
+      %1383 = llvm.load %1382 : !llvm.ptr -> f32
+      %1384 = llvm.getelementptr %1382[1] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1385 = llvm.load %1384 : !llvm.ptr -> f32
+      %1386 = llvm.getelementptr %1382[2] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1387 = llvm.load %1386 : !llvm.ptr -> f32
+      %1388 = llvm.getelementptr %1382[3] : (!llvm.ptr) -> !llvm.ptr, f32
+      %1389 = llvm.load %1388 : !llvm.ptr -> f32
+      %1390:4 = cute_nvgpu.arch.mma.SM80 A[%1374, %1375, %1376, %1377]  B[%1379, %1381]  C[%1383, %1385, %1387, %1389] < {a_type = bf16, b_type = bf16, shape_MNK = #cute.shape<"(16,8,16)">}> : (i32, i32, f32) -> (f32, f32, f32, f32)
+      llvm.store %1390#0, %1382 : f32, !llvm.ptr
+      llvm.store %1390#1, %1384 : f32, !llvm.ptr
+      llvm.store %1390#2, %1386 : f32, !llvm.ptr
+      llvm.store %1390#3, %1388 : f32, !llvm.ptr
+      %1391 = arith.addi %1372, %c1_i32 : i32
+      cf.br ^bb300(%1391 : i32)
     ^bb302:  // pred: ^bb300
-      %1384 = arith.addi %1362, %c1_i32 : i32
-      cf.br ^bb298(%1384 : i32)
+      %1392 = arith.addi %1370, %c1_i32 : i32
+      cf.br ^bb298(%1392 : i32)
     ^bb303:  // pred: ^bb298
-      %1385 = arith.addi %1360, %c1_i32 : i32
-      cf.br ^bb296(%1385 : i32)
+      %1393 = arith.addi %1368, %c1_i32 : i32
+      cf.br ^bb296(%1393 : i32)
     ^bb304:  // pred: ^bb296
-      %1386 = arith.addi %695, %c1_i32 : i32
-      cf.br ^bb73(%1386 : i32)
+      %1394 = arith.addi %695, %c1_i32 : i32
+      cf.br ^bb73(%1394 : i32)
     ^bb305:  // pred: ^bb73
-      %rmem_974 = cute.memref.alloca() : !memref_rmem_bf16_4
-      %1387 = cute.memref.load_vec %rmem_166 : !memref_rmem_f32_
-      %1388 = arith.truncf %1387 : vector<64xf32> to vector<64xbf16>
-      cute.memref.store_vec %1388, %rmem_974 : !memref_rmem_bf16_4
-      %iter_975 = cute.recast_iter(%iter_124) : !cute.ptr<bf16, smem, align<1024>> to !cute.ptr<bf16, smem, align<1024>, S<3,4,3>>
-      %atom_976 = cute.make_atom() : () -> !cute_nvgpu.atom.universal_copy<bf16>
-      %1389 = cute.make_tiled_copy(%atom_976) : !copy_simt
-      %iter_977 = cute.get_iter(%rmem_974) : !memref_rmem_bf16_4
-      %1390 = arith.divsi %306, %c4_i32 : i32
-      %1391 = arith.remsi %306, %c4_i32 : i32
-      %1392 = arith.muli %1391, %c2_i32 : i32
-      %1393 = arith.divsi %1390, %c8_i32 : i32
-      %1394 = arith.remsi %1390, %c8_i32 : i32
-      %1395 = arith.muli %1394, %c64_i32 : i32
-      %1396 = arith.addi %1392, %1395 : i32
-      %1397 = arith.muli %1393, %c1024_i32 : i32
-      %1398 = arith.addi %1396, %1397 : i32
-      %iv_978 = cute.assume(%1398) : (i32) -> !cute.i32<divby 2>
-      %int_tuple_979 = cute.make_int_tuple(%iv_978) : (!cute.i32<divby 2>) -> !cute.int_tuple<"?{div=2}">
-      %ptr_980 = cute.add_offset(%iter_975, %int_tuple_979) : (!cute.ptr<bf16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %1399 = cute.get_scalars(%76) : !cute.int_tuple<"8">
+      %rmem_1006 = cute.memref.alloca() : !memref_rmem_bf16_4
+      %1395 = cute.memref.load_vec %rmem_166 : !memref_rmem_f32_
+      %1396 = arith.truncf %1395 : vector<64xf32> to vector<64xbf16>
+      cute.memref.store_vec %1396, %rmem_1006 : !memref_rmem_bf16_4
+      %iter_1007 = cute.recast_iter(%iter_124) : !cute.ptr<bf16, smem, align<1024>> to !cute.ptr<bf16, smem, align<1024>, S<3,4,3>>
+      %atom_1008 = cute.make_atom() : () -> !cute_nvgpu.atom.universal_copy<bf16>
+      %1397 = cute.make_tiled_copy(%atom_1008) : !copy_simt
+      %iter_1009 = cute.get_iter(%rmem_1006) : !memref_rmem_bf16_4
+      %1398 = arith.divsi %306, %c4_i32 : i32
+      %1399 = arith.remsi %306, %c4_i32 : i32
+      %1400 = arith.muli %1399, %c2_i32 : i32
+      %1401 = arith.divsi %1398, %c8_i32 : i32
+      %1402 = arith.remsi %1398, %c8_i32 : i32
+      %1403 = arith.muli %1402, %c64_i32 : i32
+      %1404 = arith.addi %1400, %1403 : i32
+      %1405 = arith.muli %1401, %c1024_i32 : i32
+      %1406 = arith.addi %1404, %1405 : i32
+      %iv_1010 = cute.assume(%1406) : (i32) -> !cute.i32<divby 2>
+      %int_tuple_1011 = cute.make_int_tuple(%iv_1010) : (!cute.i32<divby 2>) -> !cute.int_tuple<"?{div=2}">
+      %ptr_1012 = cute.add_offset(%iter_1007, %int_tuple_1011) : (!cute.ptr<bf16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=2}">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %1407 = cute.get_scalars(%76) : !cute.int_tuple<"8">
       cf.br ^bb306(%c0_i32 : i32)
-    ^bb306(%1400: i32):  // 2 preds: ^bb305, ^bb307
-      %1401 = arith.cmpi slt, %1400, %1399 : i32
-      cf.cond_br %1401, ^bb307, ^bb308 {llvm.loop_annotation = #loop_annotation}
+    ^bb306(%1408: i32):  // 2 preds: ^bb305, ^bb307
+      %1409 = arith.cmpi slt, %1408, %1407 : i32
+      cf.cond_br %1409, ^bb307, ^bb308 {llvm.loop_annotation = #loop_annotation}
     ^bb307:  // pred: ^bb306
-      %coord_981 = cute.make_coord(%1400) : (i32) -> !cute.coord<"(_,?)">
-      %idx_982 = cute.crd2idx(%coord_981, %6) : (!cute.coord<"(_,?)">, !cute.layout<"((1,8),((1,8))):((0,1),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_983 = cute.add_offset(%iter_977, %idx_982) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %idx_984 = cute.crd2idx(%coord_981, %5) : (!cute.coord<"(_,?)">, !cute.layout<"((1,(2,2,2)),((1,(4,2)))):((0,(1,512,8)),((0,(16,4096))))">) -> !cute.int_tuple<"?{div=16}">
-      %ptr_985 = cute.add_offset(%ptr_980, %idx_984) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %swizzled = cute.apply_swizzle(%ptr_985) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %1402 = builtin.unrealized_conversion_cast %ptr_983 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1403 = builtin.unrealized_conversion_cast %swizzled : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
-      %1404 = llvm.load %1402 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
-      llvm.store %1404, %1403 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
-      %ptr_986 = cute.add_offset(%ptr_983, %91) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
-      %ptr_987 = cute.add_offset(%ptr_985, %4) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"512">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %swizzled_988 = cute.apply_swizzle(%ptr_987) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %1405 = builtin.unrealized_conversion_cast %ptr_986 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      %1406 = builtin.unrealized_conversion_cast %swizzled_988 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
-      %1407 = llvm.load %1405 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
-      llvm.store %1407, %1406 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
-      %ptr_989 = cute.add_offset(%ptr_983, %71) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
-      %ptr_990 = cute.add_offset(%ptr_985, %76) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"8">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %swizzled_991 = cute.apply_swizzle(%ptr_990) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %1408 = builtin.unrealized_conversion_cast %ptr_989 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
-      %1409 = builtin.unrealized_conversion_cast %swizzled_991 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
-      %1410 = llvm.load %1408 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
-      llvm.store %1410, %1409 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
-      %ptr_992 = cute.add_offset(%ptr_983, %66) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
-      %ptr_993 = cute.add_offset(%ptr_985, %3) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"520">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %swizzled_994 = cute.apply_swizzle(%ptr_993) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
-      %1411 = builtin.unrealized_conversion_cast %ptr_992 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
-      %1412 = builtin.unrealized_conversion_cast %swizzled_994 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
-      %1413 = llvm.load %1411 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
-      llvm.store %1413, %1412 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
-      %1414 = arith.addi %1400, %c1_i32 : i32
-      cf.br ^bb306(%1414 : i32)
+      %coord_1013 = cute.make_coord(%1408) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1014 = cute.crd2idx(%coord_1013, %6) : (!cute.coord<"(_,?)">, !cute.layout<"((1,8),((1,8))):((0,1),((0,8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1015 = cute.add_offset(%iter_1009, %idx_1014) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %idx_1016 = cute.crd2idx(%coord_1013, %5) : (!cute.coord<"(_,?)">, !cute.layout<"((1,(2,2,2)),((1,(4,2)))):((0,(1,512,8)),((0,(16,4096))))">) -> !cute.int_tuple<"?{div=16}">
+      %ptr_1017 = cute.add_offset(%ptr_1012, %idx_1016) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %swizzled = cute.apply_swizzle(%ptr_1017) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %1410 = builtin.unrealized_conversion_cast %ptr_1015 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1411 = builtin.unrealized_conversion_cast %swizzled : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
+      %1412 = llvm.load %1410 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
+      llvm.store %1412, %1411 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
+      %ptr_1018 = cute.add_offset(%ptr_1015, %91) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"2">) -> !cute.ptr<bf16, rmem, align<4>>
+      %ptr_1019 = cute.add_offset(%ptr_1017, %4) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"512">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %swizzled_1020 = cute.apply_swizzle(%ptr_1019) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %1413 = builtin.unrealized_conversion_cast %ptr_1018 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      %1414 = builtin.unrealized_conversion_cast %swizzled_1020 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
+      %1415 = llvm.load %1413 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
+      llvm.store %1415, %1414 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
+      %ptr_1021 = cute.add_offset(%ptr_1015, %71) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"4">) -> !cute.ptr<bf16, rmem, align<8>>
+      %ptr_1022 = cute.add_offset(%ptr_1017, %76) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"8">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %swizzled_1023 = cute.apply_swizzle(%ptr_1022) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %1416 = builtin.unrealized_conversion_cast %ptr_1021 : !cute.ptr<bf16, rmem, align<8>> to !llvm.ptr
+      %1417 = builtin.unrealized_conversion_cast %swizzled_1023 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
+      %1418 = llvm.load %1416 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
+      llvm.store %1418, %1417 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
+      %ptr_1024 = cute.add_offset(%ptr_1015, %66) : (!cute.ptr<bf16, rmem, align<16>>, !cute.int_tuple<"6">) -> !cute.ptr<bf16, rmem, align<4>>
+      %ptr_1025 = cute.add_offset(%ptr_1017, %3) : (!cute.ptr<bf16, smem, align<4>, S<3,4,3>>, !cute.int_tuple<"520">) -> !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %swizzled_1026 = cute.apply_swizzle(%ptr_1025) : !cute.ptr<bf16, smem, align<4>, S<3,4,3>>
+      %1419 = builtin.unrealized_conversion_cast %ptr_1024 : !cute.ptr<bf16, rmem, align<4>> to !llvm.ptr
+      %1420 = builtin.unrealized_conversion_cast %swizzled_1026 : !cute.ptr<bf16, smem, align<4>, S<3,4,3>> to !llvm.ptr<3>
+      %1421 = llvm.load %1419 {alignment = 4 : i64} : !llvm.ptr -> vector<2xbf16>
+      llvm.store %1421, %1420 {alignment = 4 : i64} : vector<2xbf16>, !llvm.ptr<3>
+      %1422 = arith.addi %1408, %c1_i32 : i32
+      cf.br ^bb306(%1422 : i32)
     ^bb308:  // pred: ^bb306
-      %lay_995 = cute.get_layout(%arg3) : !memref_gmem_bf16_
-      %1415:7 = cute.get_scalars(%lay_995) <{only_dynamic}> : !cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">
-      %iv_996 = cute.assume(%1415#3) : (i32) -> !cute.i32<divby 8>
-      %shape_997 = cute.make_shape(%1415#1, %iv_996) : (i32, !cute.i32<divby 8>) -> !cute.shape<"(?,?{div=8})">
-      %iv_998 = cute.assume(%1415#5) : (i64) -> !cute.i64<divby 8>
-      %stride_999 = cute.make_stride(%iv_998) : (!cute.i64<divby 8>) -> !cute.stride<"(?{i64 div=8},1)">
-      %lay_1000 = cute.make_layout(%shape_997, %stride_999) : !cute.layout<"(?,?{div=8}):(?{i64 div=8},1)">
-      %idx_1001 = cute.crd2idx(%coord, %lay_995) : (!cute.coord<"(?,_,?,_)">, !cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">) -> !cute.int_tuple<"?{i64 div=8}">
-      %iter_1002 = cute.get_iter(%arg3) : !memref_gmem_bf16_
-      %ptr_1003 = cute.add_offset(%iter_1002, %idx_1001) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=8}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %1416:3 = cute.get_scalars(%lay_1000) <{only_dynamic}> : !cute.layout<"(?,?{div=8}):(?{i64 div=8},1)">
-      %c1_i32_1004 = arith.constant 1 : i32
-      %c0_i32_1005 = arith.constant 0 : i32
-      %c-1_i32_1006 = arith.constant -1 : i32
-      %1417 = arith.cmpi sgt, %c64_i32, %c0_i32_1005 : i32
-      %1418 = arith.select %1417, %c-1_i32_1006, %c1_i32_1004 : i32
-      %1419 = arith.addi %1418, %1416#0 : i32
-      %1420 = arith.divsi %1419, %c64_i32 : i32
-      %1421 = arith.addi %c1_i32_1004, %1420 : i32
-      %1422 = arith.subi %c0_i32_1005, %1416#0 : i32
-      %1423 = arith.divsi %1422, %c64_i32 : i32
-      %1424 = arith.subi %c0_i32_1005, %1423 : i32
-      %1425 = arith.cmpi slt, %1416#0, %c0_i32_1005 : i32
-      %1426 = arith.cmpi sgt, %1416#0, %c0_i32_1005 : i32
-      %1427 = arith.cmpi slt, %c64_i32, %c0_i32_1005 : i32
-      %1428 = arith.cmpi sgt, %c64_i32, %c0_i32_1005 : i32
-      %1429 = arith.andi %1425, %1427 : i1
-      %1430 = arith.andi %1426, %1428 : i1
-      %1431 = arith.ori %1429, %1430 : i1
-      %1432 = arith.select %1431, %1421, %1424 : i32
-      %1433 = arith.muli %1416#2, %c64_i64 : i64
-      %c1_i32_1007 = arith.constant 1 : i32
-      %c0_i32_1008 = arith.constant 0 : i32
-      %c-1_i32_1009 = arith.constant -1 : i32
-      %1434 = arith.cmpi sgt, %c128_i32, %c0_i32_1008 : i32
-      %1435 = arith.select %1434, %c-1_i32_1009, %c1_i32_1007 : i32
-      %1436 = arith.addi %1435, %1416#1 : i32
-      %1437 = arith.divsi %1436, %c128_i32 : i32
-      %1438 = arith.addi %c1_i32_1007, %1437 : i32
-      %1439 = arith.subi %c0_i32_1008, %1416#1 : i32
-      %1440 = arith.divsi %1439, %c128_i32 : i32
-      %1441 = arith.subi %c0_i32_1008, %1440 : i32
-      %1442 = arith.cmpi slt, %1416#1, %c0_i32_1008 : i32
-      %1443 = arith.cmpi sgt, %1416#1, %c0_i32_1008 : i32
-      %1444 = arith.cmpi slt, %c128_i32, %c0_i32_1008 : i32
-      %1445 = arith.cmpi sgt, %c128_i32, %c0_i32_1008 : i32
-      %1446 = arith.andi %1442, %1444 : i1
-      %1447 = arith.andi %1443, %1445 : i1
-      %1448 = arith.ori %1446, %1447 : i1
-      %1449 = arith.select %1448, %1438, %1441 : i32
-      %shape_1010 = cute.make_shape(%1432, %1449) : (i32, i32) -> !cute.shape<"((64,128),(?,?))">
-      %iv_1011 = cute.assume(%1416#2) : (i64) -> !cute.i64<divby 8>
-      %iv_1012 = cute.assume(%1433) : (i64) -> !cute.i64<divby 512>
-      %stride_1013 = cute.make_stride(%iv_1011, %iv_1012) : (!cute.i64<divby 8>, !cute.i64<divby 512>) -> !cute.stride<"((?{i64 div=8},1),(?{i64 div=512},128))">
-      %lay_1014 = cute.make_layout(%shape_1010, %stride_1013) : !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">
-      %1450:4 = cute.get_scalars(%lay_1014) <{only_dynamic}> : !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">
-      %iv_1015 = cute.assume(%1450#2) : (i64) -> !cute.i64<divby 8>
-      %stride_1016 = cute.make_stride(%iv_1015) : (!cute.i64<divby 8>) -> !cute.stride<"(?{i64 div=8},1)">
-      %lay_1017 = cute.make_layout(%115, %stride_1016) : !cute.layout<"(64,128):(?{i64 div=8},1)">
-      %idx_1018 = cute.crd2idx(%coord_26, %lay_1014) : (!cute.coord<"((_,_),(?,0))">, !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">) -> !cute.int_tuple<"?{i64 div=512}">
-      %ptr_1019 = cute.add_offset(%ptr_1003, %idx_1018) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=512}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %1451 = arith.addi %310, %317 : i32
-      %iv_1020 = cute.assume(%1451) : (i32) -> !cute.i32<divby 8>
-      %int_tuple_1021 = cute.make_int_tuple(%iv_1020) : (!cute.i32<divby 8>) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1022 = cute.add_offset(%iter_975, %int_tuple_1021) : (!cute.ptr<bf16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
-      %1452 = cute.get_scalars(%lay_1017) <{only_dynamic}> : !cute.layout<"(64,128):(?{i64 div=8},1)">
-      %1453 = arith.muli %1452, %c16_i64 : i64
-      %1454 = arith.muli %311, %1452 : i64
-      %1455 = arith.addi %313, %1454 : i64
-      %iv_1023 = cute.assume(%1455) : (i64) -> !cute.i64<divby 8>
-      %int_tuple_1024 = cute.make_int_tuple(%iv_1023) : (!cute.i64<divby 8>) -> !cute.int_tuple<"?{i64 div=8}">
-      %ptr_1025 = cute.add_offset(%ptr_1019, %int_tuple_1024) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=8}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %iv_1026 = cute.assume(%1453) : (i64) -> !cute.i64<divby 128>
-      %stride_1027 = cute.make_stride(%iv_1026) : (!cute.i64<divby 128>) -> !cute.stride<"((1,0),?{i64 div=128},64)">
-      %lay_1028 = cute.make_layout(%111, %stride_1027) : !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">
-      %rmem_1029 = cute.memref.alloca() : !memref_rmem_bf16_5
-      %iter_1030 = cute.get_iter(%rmem_1029) : !memref_rmem_bf16_5
+      %lay_1027 = cute.get_layout(%arg3) : !memref_gmem_bf16_
+      %1423:7 = cute.get_scalars(%lay_1027) <{only_dynamic}> : !cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">
+      %iv_1028 = cute.assume(%1423#3) : (i32) -> !cute.i32<divby 8>
+      %shape_1029 = cute.make_shape(%1423#1, %iv_1028) : (i32, !cute.i32<divby 8>) -> !cute.shape<"(?,?{div=8})">
+      %iv_1030 = cute.assume(%1423#5) : (i64) -> !cute.i64<divby 8>
+      %stride_1031 = cute.make_stride(%iv_1030) : (!cute.i64<divby 8>) -> !cute.stride<"(?{i64 div=8},1)">
+      %lay_1032 = cute.make_layout(%shape_1029, %stride_1031) : !cute.layout<"(?,?{div=8}):(?{i64 div=8},1)">
+      %idx_1033 = cute.crd2idx(%coord, %lay_1027) : (!cute.coord<"(?,_,?,_)">, !cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">) -> !cute.int_tuple<"?{i64 div=8}">
+      %iter_1034 = cute.get_iter(%arg3) : !memref_gmem_bf16_
+      %ptr_1035 = cute.add_offset(%iter_1034, %idx_1033) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=8}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %1424:3 = cute.get_scalars(%lay_1032) <{only_dynamic}> : !cute.layout<"(?,?{div=8}):(?{i64 div=8},1)">
+      %c1_i32_1036 = arith.constant 1 : i32
+      %c0_i32_1037 = arith.constant 0 : i32
+      %c-1_i32_1038 = arith.constant -1 : i32
+      %1425 = arith.cmpi sgt, %c64_i32, %c0_i32_1037 : i32
+      %1426 = arith.select %1425, %c-1_i32_1038, %c1_i32_1036 : i32
+      %1427 = arith.addi %1426, %1424#0 : i32
+      %1428 = arith.divsi %1427, %c64_i32 : i32
+      %1429 = arith.addi %c1_i32_1036, %1428 : i32
+      %1430 = arith.subi %c0_i32_1037, %1424#0 : i32
+      %1431 = arith.divsi %1430, %c64_i32 : i32
+      %1432 = arith.subi %c0_i32_1037, %1431 : i32
+      %1433 = arith.cmpi slt, %1424#0, %c0_i32_1037 : i32
+      %1434 = arith.cmpi sgt, %1424#0, %c0_i32_1037 : i32
+      %1435 = arith.cmpi slt, %c64_i32, %c0_i32_1037 : i32
+      %1436 = arith.cmpi sgt, %c64_i32, %c0_i32_1037 : i32
+      %1437 = arith.andi %1433, %1435 : i1
+      %1438 = arith.andi %1434, %1436 : i1
+      %1439 = arith.ori %1437, %1438 : i1
+      %1440 = arith.select %1439, %1429, %1432 : i32
+      %1441 = arith.muli %1424#2, %c64_i64 : i64
+      %c1_i32_1039 = arith.constant 1 : i32
+      %c0_i32_1040 = arith.constant 0 : i32
+      %c-1_i32_1041 = arith.constant -1 : i32
+      %1442 = arith.cmpi sgt, %c128_i32, %c0_i32_1040 : i32
+      %1443 = arith.select %1442, %c-1_i32_1041, %c1_i32_1039 : i32
+      %1444 = arith.addi %1443, %1424#1 : i32
+      %1445 = arith.divsi %1444, %c128_i32 : i32
+      %1446 = arith.addi %c1_i32_1039, %1445 : i32
+      %1447 = arith.subi %c0_i32_1040, %1424#1 : i32
+      %1448 = arith.divsi %1447, %c128_i32 : i32
+      %1449 = arith.subi %c0_i32_1040, %1448 : i32
+      %1450 = arith.cmpi slt, %1424#1, %c0_i32_1040 : i32
+      %1451 = arith.cmpi sgt, %1424#1, %c0_i32_1040 : i32
+      %1452 = arith.cmpi slt, %c128_i32, %c0_i32_1040 : i32
+      %1453 = arith.cmpi sgt, %c128_i32, %c0_i32_1040 : i32
+      %1454 = arith.andi %1450, %1452 : i1
+      %1455 = arith.andi %1451, %1453 : i1
+      %1456 = arith.ori %1454, %1455 : i1
+      %1457 = arith.select %1456, %1446, %1449 : i32
+      %shape_1042 = cute.make_shape(%1440, %1457) : (i32, i32) -> !cute.shape<"((64,128),(?,?))">
+      %iv_1043 = cute.assume(%1424#2) : (i64) -> !cute.i64<divby 8>
+      %iv_1044 = cute.assume(%1441) : (i64) -> !cute.i64<divby 512>
+      %stride_1045 = cute.make_stride(%iv_1043, %iv_1044) : (!cute.i64<divby 8>, !cute.i64<divby 512>) -> !cute.stride<"((?{i64 div=8},1),(?{i64 div=512},128))">
+      %lay_1046 = cute.make_layout(%shape_1042, %stride_1045) : !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">
+      %1458:4 = cute.get_scalars(%lay_1046) <{only_dynamic}> : !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">
+      %iv_1047 = cute.assume(%1458#2) : (i64) -> !cute.i64<divby 8>
+      %stride_1048 = cute.make_stride(%iv_1047) : (!cute.i64<divby 8>) -> !cute.stride<"(?{i64 div=8},1)">
+      %lay_1049 = cute.make_layout(%115, %stride_1048) : !cute.layout<"(64,128):(?{i64 div=8},1)">
+      %idx_1050 = cute.crd2idx(%coord_26, %lay_1046) : (!cute.coord<"((_,_),(?,0))">, !cute.layout<"((64,128),(?,?)):((?{i64 div=8},1),(?{i64 div=512},128))">) -> !cute.int_tuple<"?{i64 div=512}">
+      %ptr_1051 = cute.add_offset(%ptr_1035, %idx_1050) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=512}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %1459 = arith.addi %310, %317 : i32
+      %iv_1052 = cute.assume(%1459) : (i32) -> !cute.i32<divby 8>
+      %int_tuple_1053 = cute.make_int_tuple(%iv_1052) : (!cute.i32<divby 8>) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1054 = cute.add_offset(%iter_1007, %int_tuple_1053) : (!cute.ptr<bf16, smem, align<1024>, S<3,4,3>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
+      %1460 = cute.get_scalars(%lay_1049) <{only_dynamic}> : !cute.layout<"(64,128):(?{i64 div=8},1)">
+      %1461 = arith.muli %1460, %c16_i64 : i64
+      %1462 = arith.muli %311, %1460 : i64
+      %1463 = arith.addi %313, %1462 : i64
+      %iv_1055 = cute.assume(%1463) : (i64) -> !cute.i64<divby 8>
+      %int_tuple_1056 = cute.make_int_tuple(%iv_1055) : (!cute.i64<divby 8>) -> !cute.int_tuple<"?{i64 div=8}">
+      %ptr_1057 = cute.add_offset(%ptr_1051, %int_tuple_1056) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=8}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %iv_1058 = cute.assume(%1461) : (i64) -> !cute.i64<divby 128>
+      %stride_1059 = cute.make_stride(%iv_1058) : (!cute.i64<divby 128>) -> !cute.stride<"((1,0),?{i64 div=128},64)">
+      %lay_1060 = cute.make_layout(%111, %stride_1059) : !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">
+      %rmem_1061 = cute.memref.alloca() : !memref_rmem_bf16_5
+      %iter_1062 = cute.get_iter(%rmem_1061) : !memref_rmem_bf16_5
       nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
-      %swizzled_1031 = cute.apply_swizzle(%ptr_1022) : !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
+      %swizzled_1063 = cute.apply_swizzle(%ptr_1054) : !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
       cf.br ^bb309(%c0_i32 : i32)
-    ^bb309(%1456: i32):  // 2 preds: ^bb308, ^bb310
-      %1457 = arith.cmpi slt, %1456, %1399 : i32
-      cf.cond_br %1457, ^bb310, ^bb311 {llvm.loop_annotation = #loop_annotation}
+    ^bb309(%1464: i32):  // 2 preds: ^bb308, ^bb310
+      %1465 = arith.cmpi slt, %1464, %1407 : i32
+      cf.cond_br %1465, ^bb310, ^bb311 {llvm.loop_annotation = #loop_annotation}
     ^bb310:  // pred: ^bb309
-      %coord_1032 = cute.make_coord(%1456) : (i32) -> !cute.coord<"(_,?)">
-      %idx_1033 = cute.crd2idx(%coord_1032, %78) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((4,2))):((1,0),((1024,4096)))">) -> !cute.int_tuple<"?{div=1024}">
-      %idx_1034 = cute.crd2idx(%coord_1032, %2) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((4,2))):((1,0),((16,8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1035 = cute.add_offset(%iter_1030, %idx_1034) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %ptr_1036 = cute.add_offset(%swizzled_1031, %idx_1033) : (!cute.ptr<bf16, smem, align<16>, S<3,4,3>>, !cute.int_tuple<"?{div=1024}">) -> !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
-      %1458 = builtin.unrealized_conversion_cast %ptr_1036 : !cute.ptr<bf16, smem, align<16>, S<3,4,3>> to !llvm.ptr<3>
-      %1459 = builtin.unrealized_conversion_cast %ptr_1035 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1460 = llvm.load %1458 {alignment = 16 : i64} : !llvm.ptr<3> -> vector<8xbf16>
-      llvm.store %1460, %1459 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr
-      %1461 = arith.addi %1456, %c1_i32 : i32
-      cf.br ^bb309(%1461 : i32)
+      %coord_1064 = cute.make_coord(%1464) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1065 = cute.crd2idx(%coord_1064, %78) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((4,2))):((1,0),((1024,4096)))">) -> !cute.int_tuple<"?{div=1024}">
+      %idx_1066 = cute.crd2idx(%coord_1064, %2) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((4,2))):((1,0),((16,8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1067 = cute.add_offset(%iter_1062, %idx_1066) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %ptr_1068 = cute.add_offset(%swizzled_1063, %idx_1065) : (!cute.ptr<bf16, smem, align<16>, S<3,4,3>>, !cute.int_tuple<"?{div=1024}">) -> !cute.ptr<bf16, smem, align<16>, S<3,4,3>>
+      %1466 = builtin.unrealized_conversion_cast %ptr_1068 : !cute.ptr<bf16, smem, align<16>, S<3,4,3>> to !llvm.ptr<3>
+      %1467 = builtin.unrealized_conversion_cast %ptr_1067 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1468 = llvm.load %1466 {alignment = 16 : i64} : !llvm.ptr<3> -> vector<8xbf16>
+      llvm.store %1468, %1467 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr
+      %1469 = arith.addi %1464, %c1_i32 : i32
+      cf.br ^bb309(%1469 : i32)
     ^bb311:  // pred: ^bb309
-      %1462 = cute.get_shape(%lay_995) : (!cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">) -> !cute.shape<"(?,?,?,?{div=8})">
-      %e0_1037, %e1_1038, %e2_1039, %e3_1040 = cute.get_leaves(%1462) : !cute.shape<"(?,?,?,?{div=8})">
-      %itup_1041 = cute.to_int_tuple(%e0_1037) : !cute.shape<"?"> to !cute.int_tuple<"?">
-      %itup_1042 = cute.to_int_tuple(%e1_1038) : !cute.shape<"?"> to !cute.int_tuple<"?">
-      %itup_1043 = cute.to_int_tuple(%e2_1039) : !cute.shape<"?"> to !cute.int_tuple<"?">
-      %itup_1044 = cute.to_int_tuple(%e3_1040) : !cute.shape<"?{div=8}"> to !cute.int_tuple<"?{div=8}">
-      %shape_1045 = cute.make_shape(%itup_1041, %itup_1042, %itup_1043, %itup_1044) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?{div=8}">) -> !cute.shape<"(?,?,?,?{div=8})">
-      %lay_1046 = cute.make_layout(%shape_1045, %104) : !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">
-      %1463:4 = cute.get_scalars(%lay_1046) <{only_dynamic}> : !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">
-      %iv_1047 = cute.assume(%1463#3) : (i32) -> !cute.i32<divby 8>
-      %shape_1048 = cute.make_shape(%1463#1, %iv_1047) : (i32, !cute.i32<divby 8>) -> !cute.shape<"(?,?{div=8})">
-      %lay_1049 = cute.make_layout(%shape_1048, %103) : !cute.layout<"(?,?{div=8}):(1@1,1@3)">
-      %idx_1050 = cute.crd2idx(%coord, %lay_1046) : (!cute.coord<"(?,_,?,_)">, !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">) -> !cute.int_tuple<"(?,0,?,0)">
-      %tup_1051 = cute.add_offset(%105, %idx_1050) : (!cute.int_tuple<"(0,0,0,0)">, !cute.int_tuple<"(?,0,?,0)">) -> !cute.int_tuple<"(?,0,?,0)">
-      %1464:2 = cute.get_scalars(%lay_1049) <{only_dynamic}> : !cute.layout<"(?,?{div=8}):(1@1,1@3)">
-      %c1_i32_1052 = arith.constant 1 : i32
-      %c0_i32_1053 = arith.constant 0 : i32
-      %c-1_i32_1054 = arith.constant -1 : i32
-      %1465 = arith.cmpi sgt, %c64_i32, %c0_i32_1053 : i32
-      %1466 = arith.select %1465, %c-1_i32_1054, %c1_i32_1052 : i32
-      %1467 = arith.addi %1466, %1464#0 : i32
-      %1468 = arith.divsi %1467, %c64_i32 : i32
-      %1469 = arith.addi %c1_i32_1052, %1468 : i32
-      %1470 = arith.subi %c0_i32_1053, %1464#0 : i32
-      %1471 = arith.divsi %1470, %c64_i32 : i32
-      %1472 = arith.subi %c0_i32_1053, %1471 : i32
-      %1473 = arith.cmpi slt, %1464#0, %c0_i32_1053 : i32
-      %1474 = arith.cmpi sgt, %1464#0, %c0_i32_1053 : i32
-      %1475 = arith.cmpi slt, %c64_i32, %c0_i32_1053 : i32
-      %1476 = arith.cmpi sgt, %c64_i32, %c0_i32_1053 : i32
-      %1477 = arith.andi %1473, %1475 : i1
-      %1478 = arith.andi %1474, %1476 : i1
-      %1479 = arith.ori %1477, %1478 : i1
-      %1480 = arith.select %1479, %1469, %1472 : i32
-      %c1_i32_1055 = arith.constant 1 : i32
-      %c0_i32_1056 = arith.constant 0 : i32
-      %c-1_i32_1057 = arith.constant -1 : i32
-      %1481 = arith.cmpi sgt, %c128_i32, %c0_i32_1056 : i32
-      %1482 = arith.select %1481, %c-1_i32_1057, %c1_i32_1055 : i32
-      %1483 = arith.addi %1482, %1464#1 : i32
-      %1484 = arith.divsi %1483, %c128_i32 : i32
-      %1485 = arith.addi %c1_i32_1055, %1484 : i32
-      %1486 = arith.subi %c0_i32_1056, %1464#1 : i32
-      %1487 = arith.divsi %1486, %c128_i32 : i32
-      %1488 = arith.subi %c0_i32_1056, %1487 : i32
-      %1489 = arith.cmpi slt, %1464#1, %c0_i32_1056 : i32
-      %1490 = arith.cmpi sgt, %1464#1, %c0_i32_1056 : i32
-      %1491 = arith.cmpi slt, %c128_i32, %c0_i32_1056 : i32
-      %1492 = arith.cmpi sgt, %c128_i32, %c0_i32_1056 : i32
-      %1493 = arith.andi %1489, %1491 : i1
-      %1494 = arith.andi %1490, %1492 : i1
-      %1495 = arith.ori %1493, %1494 : i1
-      %1496 = arith.select %1495, %1485, %1488 : i32
-      %shape_1058 = cute.make_shape(%1480, %1496) : (i32, i32) -> !cute.shape<"((64,128),(?,?))">
-      %lay_1059 = cute.make_layout(%shape_1058, %102) : !cute.layout<"((64,128),(?,?)):((1@1,1@3),(64@1,128@3))">
-      %idx_1060 = cute.crd2idx(%coord_26, %lay_1059) : (!cute.coord<"((_,_),(?,0))">, !cute.layout<"((64,128),(?,?)):((1@1,1@3),(64@1,128@3))">) -> !cute.int_tuple<"(0,?{div=64},0,0)">
-      %tup_1061 = cute.add_offset(%tup_1051, %idx_1060) : (!cute.int_tuple<"(?,0,?,0)">, !cute.int_tuple<"(0,?{div=64},0,0)">) -> !cute.int_tuple<"(?,?{div=64},?,0)">
-      %tup_1062 = cute.add_offset(%tup_1061, %int_tuple_262) : (!cute.int_tuple<"(?,?{div=64},?,0)">, !cute.int_tuple<"(0,?,0,?{div=8})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
-      %rmem_1063 = cute.memref.alloca() : !memref_rmem_i8_
-      %e0_1064, %e1_1065, %e2_1066, %e3_1067 = cute.get_leaves(%tup_1062) : !cute.int_tuple<"(?,?,?,?{div=8})">
-      %coord_1068 = cute.make_coord(%e3_1067) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
-      %coord_1069 = cute.make_coord(%itup_1044) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
-      %1497 = cute.get_scalars(%coord_1068) : !cute.coord<"?{div=8}">
-      %1498 = cute.get_scalars(%coord_1069) : !cute.coord<"?{div=8}">
-      %1499 = arith.cmpi slt, %1497, %1498 : i32
-      %1500 = arith.extui %1499 : i1 to i8
-      cute.memref.store(%rmem_1063, %97, %1500) : (!memref_rmem_i8_, !cute.coord<"(0,0,0)">, i8) -> ()
-      %tup_1070 = cute.add_offset(%tup_1062, %96) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,0,64)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
-      %e0_1071, %e1_1072, %e2_1073, %e3_1074 = cute.get_leaves(%tup_1070) : !cute.int_tuple<"(?,?,?,?{div=8})">
-      %coord_1075 = cute.make_coord(%e3_1074) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
-      %1501 = cute.get_scalars(%coord_1075) : !cute.coord<"?{div=8}">
-      %1502 = arith.cmpi slt, %1501, %1498 : i32
-      %1503 = arith.extui %1502 : i1 to i8
-      cute.memref.store(%rmem_1063, %95, %1503) : (!memref_rmem_i8_, !cute.coord<"(0,0,1)">, i8) -> ()
-      %coord_1076 = cute.make_coord(%e1_1065) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
-      %coord_1077 = cute.make_coord(%itup_1042) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
-      %1504 = cute.get_scalars(%coord_1076) : !cute.coord<"?">
-      %1505 = cute.get_scalars(%coord_1077) : !cute.coord<"?">
-      %1506 = arith.cmpi slt, %1504, %1505 : i32
-      cf.cond_br %1506, ^bb312, ^bb318
+      %1470 = cute.get_shape(%lay_1027) : (!cute.layout<"(?,?,?,?{div=8}):(?{i64 div=8},?{i64 div=8},?{i64 div=8},1)">) -> !cute.shape<"(?,?,?,?{div=8})">
+      %e0_1069, %e1_1070, %e2_1071, %e3_1072 = cute.get_leaves(%1470) : !cute.shape<"(?,?,?,?{div=8})">
+      %itup_1073 = cute.to_int_tuple(%e0_1069) : !cute.shape<"?"> to !cute.int_tuple<"?">
+      %itup_1074 = cute.to_int_tuple(%e1_1070) : !cute.shape<"?"> to !cute.int_tuple<"?">
+      %itup_1075 = cute.to_int_tuple(%e2_1071) : !cute.shape<"?"> to !cute.int_tuple<"?">
+      %itup_1076 = cute.to_int_tuple(%e3_1072) : !cute.shape<"?{div=8}"> to !cute.int_tuple<"?{div=8}">
+      %shape_1077 = cute.make_shape(%itup_1073, %itup_1074, %itup_1075, %itup_1076) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?{div=8}">) -> !cute.shape<"(?,?,?,?{div=8})">
+      %lay_1078 = cute.make_layout(%shape_1077, %104) : !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">
+      %1471:4 = cute.get_scalars(%lay_1078) <{only_dynamic}> : !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">
+      %iv_1079 = cute.assume(%1471#3) : (i32) -> !cute.i32<divby 8>
+      %shape_1080 = cute.make_shape(%1471#1, %iv_1079) : (i32, !cute.i32<divby 8>) -> !cute.shape<"(?,?{div=8})">
+      %lay_1081 = cute.make_layout(%shape_1080, %103) : !cute.layout<"(?,?{div=8}):(1@1,1@3)">
+      %idx_1082 = cute.crd2idx(%coord, %lay_1078) : (!cute.coord<"(?,_,?,_)">, !cute.layout<"(?,?,?,?{div=8}):(1@0,1@1,1@2,1@3)">) -> !cute.int_tuple<"(?,0,?,0)">
+      %tup_1083 = cute.add_offset(%105, %idx_1082) : (!cute.int_tuple<"(0,0,0,0)">, !cute.int_tuple<"(?,0,?,0)">) -> !cute.int_tuple<"(?,0,?,0)">
+      %1472:2 = cute.get_scalars(%lay_1081) <{only_dynamic}> : !cute.layout<"(?,?{div=8}):(1@1,1@3)">
+      %c1_i32_1084 = arith.constant 1 : i32
+      %c0_i32_1085 = arith.constant 0 : i32
+      %c-1_i32_1086 = arith.constant -1 : i32
+      %1473 = arith.cmpi sgt, %c64_i32, %c0_i32_1085 : i32
+      %1474 = arith.select %1473, %c-1_i32_1086, %c1_i32_1084 : i32
+      %1475 = arith.addi %1474, %1472#0 : i32
+      %1476 = arith.divsi %1475, %c64_i32 : i32
+      %1477 = arith.addi %c1_i32_1084, %1476 : i32
+      %1478 = arith.subi %c0_i32_1085, %1472#0 : i32
+      %1479 = arith.divsi %1478, %c64_i32 : i32
+      %1480 = arith.subi %c0_i32_1085, %1479 : i32
+      %1481 = arith.cmpi slt, %1472#0, %c0_i32_1085 : i32
+      %1482 = arith.cmpi sgt, %1472#0, %c0_i32_1085 : i32
+      %1483 = arith.cmpi slt, %c64_i32, %c0_i32_1085 : i32
+      %1484 = arith.cmpi sgt, %c64_i32, %c0_i32_1085 : i32
+      %1485 = arith.andi %1481, %1483 : i1
+      %1486 = arith.andi %1482, %1484 : i1
+      %1487 = arith.ori %1485, %1486 : i1
+      %1488 = arith.select %1487, %1477, %1480 : i32
+      %c1_i32_1087 = arith.constant 1 : i32
+      %c0_i32_1088 = arith.constant 0 : i32
+      %c-1_i32_1089 = arith.constant -1 : i32
+      %1489 = arith.cmpi sgt, %c128_i32, %c0_i32_1088 : i32
+      %1490 = arith.select %1489, %c-1_i32_1089, %c1_i32_1087 : i32
+      %1491 = arith.addi %1490, %1472#1 : i32
+      %1492 = arith.divsi %1491, %c128_i32 : i32
+      %1493 = arith.addi %c1_i32_1087, %1492 : i32
+      %1494 = arith.subi %c0_i32_1088, %1472#1 : i32
+      %1495 = arith.divsi %1494, %c128_i32 : i32
+      %1496 = arith.subi %c0_i32_1088, %1495 : i32
+      %1497 = arith.cmpi slt, %1472#1, %c0_i32_1088 : i32
+      %1498 = arith.cmpi sgt, %1472#1, %c0_i32_1088 : i32
+      %1499 = arith.cmpi slt, %c128_i32, %c0_i32_1088 : i32
+      %1500 = arith.cmpi sgt, %c128_i32, %c0_i32_1088 : i32
+      %1501 = arith.andi %1497, %1499 : i1
+      %1502 = arith.andi %1498, %1500 : i1
+      %1503 = arith.ori %1501, %1502 : i1
+      %1504 = arith.select %1503, %1493, %1496 : i32
+      %shape_1090 = cute.make_shape(%1488, %1504) : (i32, i32) -> !cute.shape<"((64,128),(?,?))">
+      %lay_1091 = cute.make_layout(%shape_1090, %102) : !cute.layout<"((64,128),(?,?)):((1@1,1@3),(64@1,128@3))">
+      %idx_1092 = cute.crd2idx(%coord_26, %lay_1091) : (!cute.coord<"((_,_),(?,0))">, !cute.layout<"((64,128),(?,?)):((1@1,1@3),(64@1,128@3))">) -> !cute.int_tuple<"(0,?{div=64},0,0)">
+      %tup_1093 = cute.add_offset(%tup_1083, %idx_1092) : (!cute.int_tuple<"(?,0,?,0)">, !cute.int_tuple<"(0,?{div=64},0,0)">) -> !cute.int_tuple<"(?,?{div=64},?,0)">
+      %tup_1094 = cute.add_offset(%tup_1093, %int_tuple_262) : (!cute.int_tuple<"(?,?{div=64},?,0)">, !cute.int_tuple<"(0,?,0,?{div=8})">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %rmem_1095 = cute.memref.alloca() : !memref_rmem_i8_
+      %e0_1096, %e1_1097, %e2_1098, %e3_1099 = cute.get_leaves(%tup_1094) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_1100 = cute.make_coord(%e3_1099) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
+      %coord_1101 = cute.make_coord(%itup_1076) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
+      %1505 = cute.get_scalars(%coord_1100) : !cute.coord<"?{div=8}">
+      %1506 = cute.get_scalars(%coord_1101) : !cute.coord<"?{div=8}">
+      %1507 = arith.cmpi slt, %1505, %1506 : i32
+      %1508 = arith.extui %1507 : i1 to i8
+      cute.memref.store(%rmem_1095, %97, %1508) : (!memref_rmem_i8_, !cute.coord<"(0,0,0)">, i8) -> ()
+      %tup_1102 = cute.add_offset(%tup_1094, %96) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,0,0,64)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_1103, %e1_1104, %e2_1105, %e3_1106 = cute.get_leaves(%tup_1102) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_1107 = cute.make_coord(%e3_1106) : (!cute.int_tuple<"?{div=8}">) -> !cute.coord<"?{div=8}">
+      %1509 = cute.get_scalars(%coord_1107) : !cute.coord<"?{div=8}">
+      %1510 = arith.cmpi slt, %1509, %1506 : i32
+      %1511 = arith.extui %1510 : i1 to i8
+      cute.memref.store(%rmem_1095, %95, %1511) : (!memref_rmem_i8_, !cute.coord<"(0,0,1)">, i8) -> ()
+      %coord_1108 = cute.make_coord(%e1_1097) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %coord_1109 = cute.make_coord(%itup_1074) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1512 = cute.get_scalars(%coord_1108) : !cute.coord<"?">
+      %1513 = cute.get_scalars(%coord_1109) : !cute.coord<"?">
+      %1514 = arith.cmpi slt, %1512, %1513 : i32
+      cf.cond_br %1514, ^bb312, ^bb318
     ^bb312:  // pred: ^bb311
-      %iter_1078 = cute.get_iter(%rmem_1063) : !memref_rmem_i8_
-      %1507 = cute.get_scalars(%91) : !cute.int_tuple<"2">
+      %iter_1110 = cute.get_iter(%rmem_1095) : !memref_rmem_i8_
+      %1515 = cute.get_scalars(%91) : !cute.int_tuple<"2">
       cf.br ^bb313(%c0_i32 : i32)
-    ^bb313(%1508: i32):  // 2 preds: ^bb312, ^bb316
-      %1509 = arith.cmpi slt, %1508, %1507 : i32
-      cf.cond_br %1509, ^bb314, ^bb317 {llvm.loop_annotation = #loop_annotation}
+    ^bb313(%1516: i32):  // 2 preds: ^bb312, ^bb316
+      %1517 = arith.cmpi slt, %1516, %1515 : i32
+      cf.cond_br %1517, ^bb314, ^bb317 {llvm.loop_annotation = #loop_annotation}
     ^bb314:  // pred: ^bb313
-      %coord_1079 = cute.make_coord(%1508) : (i32) -> !cute.coord<"(_,?)">
-      %idx_1080 = cute.crd2idx(%coord_1079, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1081 = cute.add_offset(%iter_1030, %idx_1080) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %idx_1082 = cute.crd2idx(%coord_1079, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
-      %ptr_1083 = cute.add_offset(%ptr_1025, %idx_1082) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %idx_1084 = cute.crd2idx(%coord_1079, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
-      %ptr_1085 = cute.add_offset(%iter_1078, %idx_1084) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
-      %1510 = builtin.unrealized_conversion_cast %ptr_1085 : !cute.ptr<i8, rmem> to !llvm.ptr
-      %1511 = llvm.load %1510 : !llvm.ptr -> i8
-      %1512 = llvm.icmp "ne" %1511, %0 : i8
-      cf.cond_br %1512, ^bb315, ^bb316
+      %coord_1111 = cute.make_coord(%1516) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1112 = cute.crd2idx(%coord_1111, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1113 = cute.add_offset(%iter_1062, %idx_1112) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %idx_1114 = cute.crd2idx(%coord_1111, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
+      %ptr_1115 = cute.add_offset(%ptr_1057, %idx_1114) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %idx_1116 = cute.crd2idx(%coord_1111, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
+      %ptr_1117 = cute.add_offset(%iter_1110, %idx_1116) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
+      %1518 = builtin.unrealized_conversion_cast %ptr_1117 : !cute.ptr<i8, rmem> to !llvm.ptr
+      %1519 = llvm.load %1518 : !llvm.ptr -> i8
+      %1520 = llvm.icmp "ne" %1519, %0 : i8
+      cf.cond_br %1520, ^bb315, ^bb316
     ^bb315:  // pred: ^bb314
-      %1513 = builtin.unrealized_conversion_cast %ptr_1081 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1514 = builtin.unrealized_conversion_cast %ptr_1083 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
-      %1515 = llvm.load %1513 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
-      llvm.store %1515, %1514 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
+      %1521 = builtin.unrealized_conversion_cast %ptr_1113 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1522 = builtin.unrealized_conversion_cast %ptr_1115 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
+      %1523 = llvm.load %1521 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
+      llvm.store %1523, %1522 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
       cf.br ^bb316
     ^bb316:  // 2 preds: ^bb314, ^bb315
-      %1516 = arith.addi %1508, %c1_i32 : i32
-      cf.br ^bb313(%1516 : i32)
+      %1524 = arith.addi %1516, %c1_i32 : i32
+      cf.br ^bb313(%1524 : i32)
     ^bb317:  // pred: ^bb313
       cf.br ^bb318
     ^bb318:  // 2 preds: ^bb311, ^bb317
-      %tup_1086 = cute.add_offset(%tup_1062, %90) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,16,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
-      %e0_1087, %e1_1088, %e2_1089, %e3_1090 = cute.get_leaves(%tup_1086) : !cute.int_tuple<"(?,?,?,?{div=8})">
-      %coord_1091 = cute.make_coord(%e1_1088) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
-      %1517 = cute.get_scalars(%coord_1091) : !cute.coord<"?">
-      %1518 = arith.cmpi slt, %1517, %1505 : i32
-      cf.cond_br %1518, ^bb319, ^bb325
+      %tup_1118 = cute.add_offset(%tup_1094, %90) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,16,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_1119, %e1_1120, %e2_1121, %e3_1122 = cute.get_leaves(%tup_1118) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_1123 = cute.make_coord(%e1_1120) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1525 = cute.get_scalars(%coord_1123) : !cute.coord<"?">
+      %1526 = arith.cmpi slt, %1525, %1513 : i32
+      cf.cond_br %1526, ^bb319, ^bb325
     ^bb319:  // pred: ^bb318
-      %ptr_1092 = cute.add_offset(%iter_1030, %60) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"16">) -> !cute.ptr<bf16, rmem, align<32>>
-      %idx_1093 = cute.crd2idx(%89, %lay_1028) : (!cute.coord<"(_,1,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=128}">
-      %ptr_1094 = cute.add_offset(%ptr_1025, %idx_1093) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=128}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %iter_1095 = cute.get_iter(%rmem_1063) : !memref_rmem_i8_
-      %1519 = cute.get_scalars(%91) : !cute.int_tuple<"2">
+      %ptr_1124 = cute.add_offset(%iter_1062, %60) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"16">) -> !cute.ptr<bf16, rmem, align<32>>
+      %idx_1125 = cute.crd2idx(%89, %lay_1060) : (!cute.coord<"(_,1,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=128}">
+      %ptr_1126 = cute.add_offset(%ptr_1057, %idx_1125) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=128}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %iter_1127 = cute.get_iter(%rmem_1095) : !memref_rmem_i8_
+      %1527 = cute.get_scalars(%91) : !cute.int_tuple<"2">
       cf.br ^bb320(%c0_i32 : i32)
-    ^bb320(%1520: i32):  // 2 preds: ^bb319, ^bb323
-      %1521 = arith.cmpi slt, %1520, %1519 : i32
-      cf.cond_br %1521, ^bb321, ^bb324 {llvm.loop_annotation = #loop_annotation}
+    ^bb320(%1528: i32):  // 2 preds: ^bb319, ^bb323
+      %1529 = arith.cmpi slt, %1528, %1527 : i32
+      cf.cond_br %1529, ^bb321, ^bb324 {llvm.loop_annotation = #loop_annotation}
     ^bb321:  // pred: ^bb320
-      %coord_1096 = cute.make_coord(%1520) : (i32) -> !cute.coord<"(_,?)">
-      %idx_1097 = cute.crd2idx(%coord_1096, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1098 = cute.add_offset(%ptr_1092, %idx_1097) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %idx_1099 = cute.crd2idx(%coord_1096, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
-      %ptr_1100 = cute.add_offset(%ptr_1094, %idx_1099) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %idx_1101 = cute.crd2idx(%coord_1096, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
-      %ptr_1102 = cute.add_offset(%iter_1095, %idx_1101) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
-      %1522 = builtin.unrealized_conversion_cast %ptr_1102 : !cute.ptr<i8, rmem> to !llvm.ptr
-      %1523 = llvm.load %1522 : !llvm.ptr -> i8
-      %1524 = llvm.icmp "ne" %1523, %0 : i8
-      cf.cond_br %1524, ^bb322, ^bb323
+      %coord_1128 = cute.make_coord(%1528) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1129 = cute.crd2idx(%coord_1128, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1130 = cute.add_offset(%ptr_1124, %idx_1129) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %idx_1131 = cute.crd2idx(%coord_1128, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
+      %ptr_1132 = cute.add_offset(%ptr_1126, %idx_1131) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %idx_1133 = cute.crd2idx(%coord_1128, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
+      %ptr_1134 = cute.add_offset(%iter_1127, %idx_1133) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
+      %1530 = builtin.unrealized_conversion_cast %ptr_1134 : !cute.ptr<i8, rmem> to !llvm.ptr
+      %1531 = llvm.load %1530 : !llvm.ptr -> i8
+      %1532 = llvm.icmp "ne" %1531, %0 : i8
+      cf.cond_br %1532, ^bb322, ^bb323
     ^bb322:  // pred: ^bb321
-      %1525 = builtin.unrealized_conversion_cast %ptr_1098 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1526 = builtin.unrealized_conversion_cast %ptr_1100 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
-      %1527 = llvm.load %1525 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
-      llvm.store %1527, %1526 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
+      %1533 = builtin.unrealized_conversion_cast %ptr_1130 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1534 = builtin.unrealized_conversion_cast %ptr_1132 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
+      %1535 = llvm.load %1533 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
+      llvm.store %1535, %1534 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
       cf.br ^bb323
     ^bb323:  // 2 preds: ^bb321, ^bb322
-      %1528 = arith.addi %1520, %c1_i32 : i32
-      cf.br ^bb320(%1528 : i32)
+      %1536 = arith.addi %1528, %c1_i32 : i32
+      cf.br ^bb320(%1536 : i32)
     ^bb324:  // pred: ^bb320
       cf.br ^bb325
     ^bb325:  // 2 preds: ^bb318, ^bb324
-      %tup_1103 = cute.add_offset(%tup_1062, %87) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,32,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
-      %e0_1104, %e1_1105, %e2_1106, %e3_1107 = cute.get_leaves(%tup_1103) : !cute.int_tuple<"(?,?,?,?{div=8})">
-      %coord_1108 = cute.make_coord(%e1_1105) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
-      %1529 = cute.get_scalars(%coord_1108) : !cute.coord<"?">
-      %1530 = arith.cmpi slt, %1529, %1505 : i32
-      cf.cond_br %1530, ^bb326, ^bb332
+      %tup_1135 = cute.add_offset(%tup_1094, %87) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,32,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_1136, %e1_1137, %e2_1138, %e3_1139 = cute.get_leaves(%tup_1135) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_1140 = cute.make_coord(%e1_1137) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1537 = cute.get_scalars(%coord_1140) : !cute.coord<"?">
+      %1538 = arith.cmpi slt, %1537, %1513 : i32
+      cf.cond_br %1538, ^bb326, ^bb332
     ^bb326:  // pred: ^bb325
-      %ptr_1109 = cute.add_offset(%iter_1030, %63) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"32">) -> !cute.ptr<bf16, rmem, align<32>>
-      %idx_1110 = cute.crd2idx(%86, %lay_1028) : (!cute.coord<"(_,2,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=256}">
-      %ptr_1111 = cute.add_offset(%ptr_1025, %idx_1110) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=256}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %iter_1112 = cute.get_iter(%rmem_1063) : !memref_rmem_i8_
-      %1531 = cute.get_scalars(%91) : !cute.int_tuple<"2">
+      %ptr_1141 = cute.add_offset(%iter_1062, %63) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"32">) -> !cute.ptr<bf16, rmem, align<32>>
+      %idx_1142 = cute.crd2idx(%86, %lay_1060) : (!cute.coord<"(_,2,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=256}">
+      %ptr_1143 = cute.add_offset(%ptr_1057, %idx_1142) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=256}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %iter_1144 = cute.get_iter(%rmem_1095) : !memref_rmem_i8_
+      %1539 = cute.get_scalars(%91) : !cute.int_tuple<"2">
       cf.br ^bb327(%c0_i32 : i32)
-    ^bb327(%1532: i32):  // 2 preds: ^bb326, ^bb330
-      %1533 = arith.cmpi slt, %1532, %1531 : i32
-      cf.cond_br %1533, ^bb328, ^bb331 {llvm.loop_annotation = #loop_annotation}
+    ^bb327(%1540: i32):  // 2 preds: ^bb326, ^bb330
+      %1541 = arith.cmpi slt, %1540, %1539 : i32
+      cf.cond_br %1541, ^bb328, ^bb331 {llvm.loop_annotation = #loop_annotation}
     ^bb328:  // pred: ^bb327
-      %coord_1113 = cute.make_coord(%1532) : (i32) -> !cute.coord<"(_,?)">
-      %idx_1114 = cute.crd2idx(%coord_1113, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1115 = cute.add_offset(%ptr_1109, %idx_1114) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %idx_1116 = cute.crd2idx(%coord_1113, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
-      %ptr_1117 = cute.add_offset(%ptr_1111, %idx_1116) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %idx_1118 = cute.crd2idx(%coord_1113, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
-      %ptr_1119 = cute.add_offset(%iter_1112, %idx_1118) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
-      %1534 = builtin.unrealized_conversion_cast %ptr_1119 : !cute.ptr<i8, rmem> to !llvm.ptr
-      %1535 = llvm.load %1534 : !llvm.ptr -> i8
-      %1536 = llvm.icmp "ne" %1535, %0 : i8
-      cf.cond_br %1536, ^bb329, ^bb330
+      %coord_1145 = cute.make_coord(%1540) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1146 = cute.crd2idx(%coord_1145, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1147 = cute.add_offset(%ptr_1141, %idx_1146) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %idx_1148 = cute.crd2idx(%coord_1145, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
+      %ptr_1149 = cute.add_offset(%ptr_1143, %idx_1148) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %idx_1150 = cute.crd2idx(%coord_1145, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
+      %ptr_1151 = cute.add_offset(%iter_1144, %idx_1150) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
+      %1542 = builtin.unrealized_conversion_cast %ptr_1151 : !cute.ptr<i8, rmem> to !llvm.ptr
+      %1543 = llvm.load %1542 : !llvm.ptr -> i8
+      %1544 = llvm.icmp "ne" %1543, %0 : i8
+      cf.cond_br %1544, ^bb329, ^bb330
     ^bb329:  // pred: ^bb328
-      %1537 = builtin.unrealized_conversion_cast %ptr_1115 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1538 = builtin.unrealized_conversion_cast %ptr_1117 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
-      %1539 = llvm.load %1537 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
-      llvm.store %1539, %1538 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
+      %1545 = builtin.unrealized_conversion_cast %ptr_1147 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1546 = builtin.unrealized_conversion_cast %ptr_1149 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
+      %1547 = llvm.load %1545 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
+      llvm.store %1547, %1546 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
       cf.br ^bb330
     ^bb330:  // 2 preds: ^bb328, ^bb329
-      %1540 = arith.addi %1532, %c1_i32 : i32
-      cf.br ^bb327(%1540 : i32)
+      %1548 = arith.addi %1540, %c1_i32 : i32
+      cf.br ^bb327(%1548 : i32)
     ^bb331:  // pred: ^bb327
       cf.br ^bb332
     ^bb332:  // 2 preds: ^bb325, ^bb331
-      %tup_1120 = cute.add_offset(%tup_1062, %84) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,48,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
-      %e0_1121, %e1_1122, %e2_1123, %e3_1124 = cute.get_leaves(%tup_1120) : !cute.int_tuple<"(?,?,?,?{div=8})">
-      %coord_1125 = cute.make_coord(%e1_1122) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
-      %1541 = cute.get_scalars(%coord_1125) : !cute.coord<"?">
-      %1542 = arith.cmpi slt, %1541, %1505 : i32
-      cf.cond_br %1542, ^bb333, ^bb339
+      %tup_1152 = cute.add_offset(%tup_1094, %84) : (!cute.int_tuple<"(?,?,?,?{div=8})">, !cute.int_tuple<"(0,48,0,0)">) -> !cute.int_tuple<"(?,?,?,?{div=8})">
+      %e0_1153, %e1_1154, %e2_1155, %e3_1156 = cute.get_leaves(%tup_1152) : !cute.int_tuple<"(?,?,?,?{div=8})">
+      %coord_1157 = cute.make_coord(%e1_1154) : (!cute.int_tuple<"?">) -> !cute.coord<"?">
+      %1549 = cute.get_scalars(%coord_1157) : !cute.coord<"?">
+      %1550 = arith.cmpi slt, %1549, %1513 : i32
+      cf.cond_br %1550, ^bb333, ^bb339
     ^bb333:  // pred: ^bb332
-      %ptr_1126 = cute.add_offset(%iter_1030, %54) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"48">) -> !cute.ptr<bf16, rmem, align<32>>
-      %idx_1127 = cute.crd2idx(%83, %lay_1028) : (!cute.coord<"(_,3,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=384}">
-      %ptr_1128 = cute.add_offset(%ptr_1025, %idx_1127) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=384}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %iter_1129 = cute.get_iter(%rmem_1063) : !memref_rmem_i8_
-      %1543 = cute.get_scalars(%91) : !cute.int_tuple<"2">
+      %ptr_1158 = cute.add_offset(%iter_1062, %54) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"48">) -> !cute.ptr<bf16, rmem, align<32>>
+      %idx_1159 = cute.crd2idx(%83, %lay_1060) : (!cute.coord<"(_,3,_)">, !cute.layout<"((8,1),4,2):((1,0),?{i64 div=128},64)">) -> !cute.int_tuple<"?{i64 div=384}">
+      %ptr_1160 = cute.add_offset(%ptr_1057, %idx_1159) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{i64 div=384}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %iter_1161 = cute.get_iter(%rmem_1095) : !memref_rmem_i8_
+      %1551 = cute.get_scalars(%91) : !cute.int_tuple<"2">
       cf.br ^bb334(%c0_i32 : i32)
-    ^bb334(%1544: i32):  // 2 preds: ^bb333, ^bb337
-      %1545 = arith.cmpi slt, %1544, %1543 : i32
-      cf.cond_br %1545, ^bb335, ^bb338 {llvm.loop_annotation = #loop_annotation}
+    ^bb334(%1552: i32):  // 2 preds: ^bb333, ^bb337
+      %1553 = arith.cmpi slt, %1552, %1551 : i32
+      cf.cond_br %1553, ^bb335, ^bb338 {llvm.loop_annotation = #loop_annotation}
     ^bb335:  // pred: ^bb334
-      %coord_1130 = cute.make_coord(%1544) : (i32) -> !cute.coord<"(_,?)">
-      %idx_1131 = cute.crd2idx(%coord_1130, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
-      %ptr_1132 = cute.add_offset(%ptr_1126, %idx_1131) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
-      %idx_1133 = cute.crd2idx(%coord_1130, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
-      %ptr_1134 = cute.add_offset(%ptr_1128, %idx_1133) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
-      %idx_1135 = cute.crd2idx(%coord_1130, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
-      %ptr_1136 = cute.add_offset(%iter_1129, %idx_1135) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
-      %1546 = builtin.unrealized_conversion_cast %ptr_1136 : !cute.ptr<i8, rmem> to !llvm.ptr
-      %1547 = llvm.load %1546 : !llvm.ptr -> i8
-      %1548 = llvm.icmp "ne" %1547, %0 : i8
-      cf.cond_br %1548, ^bb336, ^bb337
+      %coord_1162 = cute.make_coord(%1552) : (i32) -> !cute.coord<"(_,?)">
+      %idx_1163 = cute.crd2idx(%coord_1162, %1) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((8)))">) -> !cute.int_tuple<"?{div=8}">
+      %ptr_1164 = cute.add_offset(%ptr_1158, %idx_1163) : (!cute.ptr<bf16, rmem, align<32>>, !cute.int_tuple<"?{div=8}">) -> !cute.ptr<bf16, rmem, align<16>>
+      %idx_1165 = cute.crd2idx(%coord_1162, %94) : (!cute.coord<"(_,?)">, !cute.layout<"((8,1),((2))):((1,0),((64)))">) -> !cute.int_tuple<"?{div=64}">
+      %ptr_1166 = cute.add_offset(%ptr_1160, %idx_1165) : (!cute.ptr<bf16, gmem, align<16>>, !cute.int_tuple<"?{div=64}">) -> !cute.ptr<bf16, gmem, align<16>>
+      %idx_1167 = cute.crd2idx(%coord_1162, %92) : (!cute.coord<"(_,?)">, !cute.layout<"(1,((2))):(2,((1)))">) -> !cute.int_tuple<"?">
+      %ptr_1168 = cute.add_offset(%iter_1161, %idx_1167) : (!cute.ptr<i8, rmem, align<32>>, !cute.int_tuple<"?">) -> !cute.ptr<i8, rmem>
+      %1554 = builtin.unrealized_conversion_cast %ptr_1168 : !cute.ptr<i8, rmem> to !llvm.ptr
+      %1555 = llvm.load %1554 : !llvm.ptr -> i8
+      %1556 = llvm.icmp "ne" %1555, %0 : i8
+      cf.cond_br %1556, ^bb336, ^bb337
     ^bb336:  // pred: ^bb335
-      %1549 = builtin.unrealized_conversion_cast %ptr_1132 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
-      %1550 = builtin.unrealized_conversion_cast %ptr_1134 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
-      %1551 = llvm.load %1549 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
-      llvm.store %1551, %1550 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
+      %1557 = builtin.unrealized_conversion_cast %ptr_1164 : !cute.ptr<bf16, rmem, align<16>> to !llvm.ptr
+      %1558 = builtin.unrealized_conversion_cast %ptr_1166 : !cute.ptr<bf16, gmem, align<16>> to !llvm.ptr<1>
+      %1559 = llvm.load %1557 {alignment = 16 : i64} : !llvm.ptr -> vector<8xbf16>
+      llvm.store %1559, %1558 {alignment = 16 : i64} : vector<8xbf16>, !llvm.ptr<1>
       cf.br ^bb337
     ^bb337:  // 2 preds: ^bb335, ^bb336
-      %1552 = arith.addi %1544, %c1_i32 : i32
-      cf.br ^bb334(%1552 : i32)
+      %1560 = arith.addi %1552, %c1_i32 : i32
+      cf.br ^bb334(%1560 : i32)
     ^bb338:  // pred: ^bb334
       cf.br ^bb339
     ^bb339:  // 2 preds: ^bb332, ^bb338

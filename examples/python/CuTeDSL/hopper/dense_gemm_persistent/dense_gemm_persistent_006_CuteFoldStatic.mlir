@@ -360,10 +360,6 @@ module attributes {gpu.container_module} {
         scf.yield %164 : i1
       }
       nvvm.fence.mbarrier.init
-      nvvm.barrier
-      scf.if %false {
-        nvvm.cluster.arrive.relaxed
-      }
       %113 = cute.static : !cute.layout<"((8,16),(64,1),(1,6)):((64,512),(1,0),(0,8192))">
       %iter_13 = cute.recast_iter(%ptr_9) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
       %view = cute.make_view(%iter_13, %113) : !memref_smem_f16_
@@ -473,11 +469,7 @@ module attributes {gpu.container_module} {
       %sz_75 = cute.size(%lay_74) <{mode = [3]}> : (!cute.layout<"(128,64,?,?,?):(1@1,1@0,128@1,64@0,1@2)">) -> !cute.int_tuple<"?">
       %e0_76 = cute.get_leaves(%sz_75) : !cute.int_tuple<"?">
       %152 = cute.get_scalars(%e0_76) : !cute.int_tuple<"?">
-      scf.if %false {
-        nvvm.cluster.wait
-      } else {
-        nvvm.barrier
-      }
+      nvvm.barrier
       %153 = arith.cmpi slt, %150, %c1_i32 : i32
       scf.if %153 {
         nvvm.setmaxregister  decrease 40
@@ -5837,7 +5829,7 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_1_CUstream(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
+  func.func @cutlass___call_____main__HopperWgmmaGemmPersistentKernel_object_at__Tensorgmemoi641i64_Tensorgmemoi641i64_Tensorgmemoi641i64_114_CUstream(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_, %arg2: !memref_gmem_f16_, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
     %false = arith.constant false
     %atom = cute.make_atom() : () -> !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
     %0 = cute_nvgpu.atom.set_value(%atom, %false : i1) {field = #cute_nvgpu.atom_mma_field_sm90<accum_c>} : !cute_nvgpu.sm90.mma<64x128x16, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss>
@@ -6664,10 +6656,10 @@ module attributes {gpu.container_module} {
     %sz_181 = cute.size(%int_tuple_180) : (!cute.int_tuple<"(?,?,?)">) -> !cute.int_tuple<"?">
     %e0_182 = cute.get_leaves(%sz_181) : !cute.int_tuple<"?">
     %458 = cute.get_scalars(%e0_182) : !cute.int_tuple<"?">
+    %c114_i32 = arith.constant 114 : i32
+    %459 = arith.minsi %458, %c114_i32 : i32
     %c1_i32 = arith.constant 1 : i32
-    %459 = arith.minsi %458, %c1_i32 : i32
-    %c1_i32_183 = arith.constant 1 : i32
-    %460 = arith.floordivsi %459, %c1_i32_183 : i32
+    %460 = arith.floordivsi %459, %c1_i32 : i32
     %461 = cute.static : !cute.layout<"1:0">
     %462 = cute.static : !cute.layout<"(1,8192):(0,1)">
     %463 = cute.static : !cute.layout<"(1,8192):(0,1)">
@@ -6687,10 +6679,10 @@ module attributes {gpu.container_module} {
     %c214016_i32 = arith.constant 214016 : i32
     %477 = arith.extsi %c214016_i32 : i32 to i64
     %c256_i32 = arith.constant 256 : i32
+    %c1_i32_183 = arith.constant 1 : i32
+    %478 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c256_i32, %c1_i32_183, %c1_i32_183), dynamicSmemBytes = %477, gridDim = (%c1_i32_183, %c1_i32_183, %460), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
     %c1_i32_184 = arith.constant 1 : i32
-    %478 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c256_i32, %c1_i32_184, %c1_i32_184), dynamicSmemBytes = %477, gridDim = (%c1_i32_184, %c1_i32_184, %460), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %c1_i32_185 = arith.constant 1 : i32
-    cuda.launch_cfg.cluster_dim[%478] (%c1_i32_185, %c1_i32_185, %c1_i32_185) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
+    cuda.launch_cfg.cluster_dim[%478] (%c1_i32_184, %c1_i32_184, %c1_i32_184) : !cuda.launch_cfg<max_attrs = 2>, i32, i32, i32
     %479 = cuda.launch_ex @kernels::@kernel_cutlass_kernel___main__HopperWgmmaGemmPersistentKernel_object_at__CopyAtom_ThrID10_TVLayoutSrc1819201_TVLayoutDst1819201_Valuetypef16_tensor000o111012_CopyAtom_ThrID10_TVLayoutSrc1_0<%478> (%127, %view, %249, %view_81, %371, %view_133, %1, %382, %383, %384, %411, %432, %453) : !cuda.launch_cfg<max_attrs = 2>, (!cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_load<sm_90, f16, copy_bits = 131072, tma_gbasis = <"(64,128,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !cute_nvgpu.atom.non_exec_tiled_tma_store<f16, copy_bits = 32768, tma_gbasis = <"(32,64,1):(1@1,1@0,1@2)">, internal_val_type = f16>, !cute.coord_tensor<"(0,0,0)", "(?,?,?):(1@1,1@0,1@2)">, !mma_f16_f16_f32_64x128x16_, i32, i32, i32, !cute.fast_divmod_divisor<32>, !cute.fast_divmod_divisor<32>, !cute.fast_divmod_divisor<32>) -> !cuda.result
     %480 = cuda.cast %479 : !cuda.result -> i32
     cuda.return_if_error %480 : i32

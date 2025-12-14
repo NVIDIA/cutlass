@@ -6,7 +6,7 @@
 !memref_smem_f32_ = !cute.memref<f32, smem, align<32>, "(16,2):(1,16)">
 !memref_smem_f32_1 = !cute.memref<f32, smem, align<128>, "(8,4):(1,8)">
 !memref_smem_f32_2 = !cute.memref<f32, smem, align<128>, "(8,2):(1,8)">
-#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1158:0)
+#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1146:0)
 #loc1 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator.py":179:0)
 #loc41 = loc("loc = self.get_location(frame)"(#loc))
 #loc42 = loc("kernel(const_a, dst_a, const_b, dst_b, const_c, dst_c).launch("(#loc1))
@@ -282,7 +282,7 @@ module attributes {gpu.container_module} {
     return %c0_i32 : i32 loc(#loc41)
   } loc(#loc41)
 } loc(#loc41)
-#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":658:0)
+#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":646:0)
 #loc3 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":171:0)
 #loc4 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":158:0)
 #loc5 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":802:0)
@@ -290,7 +290,7 @@ module attributes {gpu.container_module} {
 #loc7 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/utils/smem_allocator.py":162:0)
 #loc8 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/utils/smem_allocator.py":178:0)
 #loc9 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator.py":105:0)
-#loc10 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1347:0)
+#loc10 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1355:0)
 #loc11 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/utils/smem_allocator.py":187:0)
 #loc12 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/utils/smem_allocator.py":176:0)
 #loc13 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/typing.py":846:0)

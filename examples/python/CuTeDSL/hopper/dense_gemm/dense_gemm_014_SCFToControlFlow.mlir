@@ -330,7 +330,6 @@ module attributes {gpu.container_module} {
       %216 = arith.select %214, %c1_i32, %215 : i32
       %217 = arith.cmpi ne, %216, %c0_i32 : i32
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %iter_34 = cute.recast_iter(%ptr) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
       %iter_35 = cute.recast_iter(%ptr_12) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
       %iter_36 = cute.recast_iter(%iter_34) : !cute.ptr<f16, smem, align<1024>, S<3,4,3>> to !cute.ptr<f16, smem, align<1024>, S<2,4,3>>

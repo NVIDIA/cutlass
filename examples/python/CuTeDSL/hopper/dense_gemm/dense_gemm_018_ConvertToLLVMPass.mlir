@@ -470,7 +470,6 @@ module attributes {gpu.container_module} {
       %407 = llvm.select %405, %214, %406 : i1, i32
       %408 = llvm.icmp "ne" %407, %216 : i32
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %409 = llvm.mlir.undef : !llvm.struct<(i32, i32, i32)>
       %410 = llvm.insertvalue %335, %409[0] : !llvm.struct<(i32, i32, i32)> 
       %411 = llvm.insertvalue %336, %410[1] : !llvm.struct<(i32, i32, i32)> 

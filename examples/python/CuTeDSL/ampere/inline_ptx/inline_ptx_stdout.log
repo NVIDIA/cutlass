@@ -3,8 +3,6 @@
 [INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_stderr.log
 [INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
-[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
-[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
 [INFO] cute_ir_dump_patch installed.
 
 
@@ -57,7 +55,6 @@
 [DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_044_ReconcileUnrealizedCasts.mlir (213 lines)
 [DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_045_CudaErrorHandlingPass.mlir (220 lines)
 [DUMP] per-pass IR split -> 45 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 
 
 
@@ -109,7 +106,6 @@
 [DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_044_ReconcileUnrealizedCasts.mlir (213 lines)
 [DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx/inline_ptx_045_CudaErrorHandlingPass.mlir (220 lines)
 [DUMP] per-pass IR split -> 45 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 Verifying ballot results...
 Verifying any results...
 tensor(True, device='cuda:0')

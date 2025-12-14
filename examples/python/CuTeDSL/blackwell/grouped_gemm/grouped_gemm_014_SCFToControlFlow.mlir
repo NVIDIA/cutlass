@@ -43,13 +43,13 @@ module attributes {gpu.container_module} {
       %c136314896_i32 = arith.constant 136314896 : i32
       %11 = cute.static : !cute.layout<"(1,1,4,6):(0,0,2,1024)">
       %12 = cute.static : !cute.layout<"((128,128),1,1,2):((65536,1),0,0,128)">
-      %c3_i32 = arith.constant 3 : i32
       %13 = cute.static : !cute.layout<"((8192,1),6):((1,0),8192)">
       %c32768_i32 = arith.constant 32768 : i32
       %c10000000_i32 = arith.constant 10000000 : i32
       %14 = cute.static : !cute.stride<"(((1@0,1@1),0),64@0)">
       %true = arith.constant true
       %c160_i32 = arith.constant 160 : i32
+      %c3_i32 = arith.constant 3 : i32
       %15 = cute.static : !cute.layout<"(2,3,2):(6,2,1)">
       %16 = cute.static : !cute.coord<"2">
       %c31_i32 = arith.constant 31 : i32
@@ -59,8 +59,8 @@ module attributes {gpu.container_module} {
       %18 = cute.static : !cute.coord<"0">
       %19 = cute.static : !cute.layout<"(2,4):(4,1)">
       %c-1_i32 = arith.constant -1 : i32
+      %false = arith.constant false
       %20 = cute.static : !cute.layout<"(1,3,16):(48,16,1)">
-      %c192_i32 = arith.constant 192 : i32
       %21 = cute.static : !cute.stride<"(((1@0,1@1),0),128@1,64@0,1@2)">
       %22 = cute.static : !cute.stride<"(((1@1,1@0),0,16@0),128@1,64@0,1@2)">
       %23 = cute.static : !cute.stride<"((1@1,1@0),0,0,128@1,128@0,1@2)">
@@ -72,7 +72,6 @@ module attributes {gpu.container_module} {
       %29 = cute.static : !cute.stride<"((1@1,1@0),(128@1,64@0,1@2))">
       %c64_i32 = arith.constant 64 : i32
       %c128_i32 = arith.constant 128 : i32
-      %false = arith.constant false
       %c2_i32 = arith.constant 2 : i32
       %c4_i32 = arith.constant 4 : i32
       %c6_i32 = arith.constant 6 : i32
@@ -242,7 +241,7 @@ module attributes {gpu.container_module} {
       %lay_53 = cute.make_layout(%shape_52, %21) : !cute.layout<"(((64,128),1),?,?,?):(((1@0,1@1),0),128@1,64@0,1@2)">
       %ummaSmemDesc = cute_nvgpu.make_umma_smem_desc(%iter_23 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>) layout = <"((128,16),1,4,6):((64,1),0,16,8192)">, major = <k> -> !cute_nvgpu.smem_desc
       %ummaSmemDesc_54 = cute_nvgpu.make_umma_smem_desc(%iter_24 : !cute.ptr<f16, smem, align<1024>, S<3,4,3>>) layout = <"((128,16),1,4,6):((64,1),0,16,8192)">, major = <k> -> !cute_nvgpu.smem_desc
-      nvvm.barrier id = %c1_i32 number_of_threads = %c192_i32
+      nvvm.barrier
       %90 = nvvm.read.ptx.sreg.nctaid.x range <i32, 1, 2147483647> : i32
       %91 = nvvm.read.ptx.sreg.nctaid.y range <i32, 1, 65535> : i32
       %92 = nvvm.read.ptx.sreg.nctaid.z range <i32, 1, 65535> : i32
@@ -567,7 +566,7 @@ module attributes {gpu.container_module} {
       %267 = arith.select %266, %true, %166 : i1
       cf.cond_br %266, ^bb64, ^bb65
     ^bb64:  // pred: ^bb63
-      nvvm.barrier id = %c4_i32 number_of_threads = %c160_i32
+      nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
       cf.br ^bb65
     ^bb65:  // 2 preds: ^bb63, ^bb64
       cf.cond_br %53, ^bb66, ^bb69
@@ -758,7 +757,7 @@ module attributes {gpu.container_module} {
     ^bb97:  // 2 preds: ^bb16, ^bb96
       cf.cond_br %64, ^bb98, ^bb168
     ^bb98:  // pred: ^bb97
-      nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
+      nvvm.barrier id = %c2_i32 number_of_threads = %c160_i32
       %tmem_ptr = cute_nvgpu.arch.sm100.retrieve_tmem_ptr(%iter) : !cute.ptr<i32, smem, align<8>> -> !cute.ptr<f32, tmem, align<16>>
       %int_tuple_175 = cute.make_int_tuple(%90, %91, %92) : (i32, i32, i32) -> !cute.int_tuple<"(?,?,?)">
       %sz_176 = cute.size(%int_tuple_175) : (!cute.int_tuple<"(?,?,?)">) -> !cute.int_tuple<"?">
@@ -1139,7 +1138,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb177
     ^bb177:  // 2 preds: ^bb173, ^bb176
       nvvm.bar.warp.sync %c-1_i32 : i32
-      nvvm.barrier id = %c4_i32 number_of_threads = %c160_i32
+      nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
       cf.cond_br %57, ^bb178, ^bb181
     ^bb178:  // pred: ^bb177
       %561 = nvvm.elect.sync -> i1
@@ -1156,7 +1155,7 @@ module attributes {gpu.container_module} {
       cute_nvgpu.arch.sm100.alloc_tmem(%c256_i32, %iter) [ cta_1] : i32, !cute.ptr<i32, smem, align<8>>
       cf.br ^bb183
     ^bb183:  // 2 preds: ^bb181, ^bb182
-      nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
+      nvvm.barrier id = %c2_i32 number_of_threads = %c160_i32
       %tmem_ptr_224 = cute_nvgpu.arch.sm100.retrieve_tmem_ptr(%iter) : !cute.ptr<i32, smem, align<8>> -> !cute.ptr<f32, tmem, align<16>>
       %coord_225 = cute.make_coord(%41) : (i32) -> !cute.coord<"?">
       %562 = cute.get_scalars(%coord_225) <{only_dynamic}> : !cute.coord<"?">
@@ -1550,7 +1549,7 @@ module attributes {gpu.container_module} {
       cf.br ^bb241(%750 : i32)
     ^bb243:  // pred: ^bb241
       nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
-      nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+      nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
       cf.cond_br %57, ^bb244, ^bb248
     ^bb244:  // pred: ^bb243
       %coord_338 = cute.make_coord(%732) : (i32) -> !cute.coord<"(_,?)">
@@ -1582,7 +1581,7 @@ module attributes {gpu.container_module} {
       nvvm.cp.async.bulk.wait_group 3 {read}
       cf.br ^bb248
     ^bb248:  // 2 preds: ^bb243, ^bb247
-      nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+      nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
       %760 = arith.addi %732, %c1_i32 : i32
       %761 = arith.cmpi eq, %760, %c4_i32 : i32
       %762 = arith.select %761, %c0_i32, %760 : i32
@@ -1637,7 +1636,7 @@ module attributes {gpu.container_module} {
       cute_nvgpu.arch.sm100.relinquish_tmem_alloc_permit [ cta_1]
       cf.br ^bb254
     ^bb254:  // 2 preds: ^bb252, ^bb253
-      nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+      nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
       cf.cond_br %57, ^bb255, ^bb256
     ^bb255:  // pred: ^bb254
       cute_nvgpu.arch.sm100.dealloc_tmem(%tmem_ptr_224, %c256_i32) [ cta_1] : !cute.ptr<f32, tmem, align<16>>, i32

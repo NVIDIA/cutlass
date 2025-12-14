@@ -206,7 +206,6 @@ module attributes {gpu.container_module} {
       %144 = llvm.select %142, %36, %143 : i1, i32
       %145 = llvm.icmp "ne" %144, %22 : i32
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %146 = llvm.extractvalue %arg1[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32, i32)>, struct<()>)>)> 
       %147 = llvm.extractvalue %146[0, 0] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
       %148 = llvm.extractvalue %146[0, 1] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 

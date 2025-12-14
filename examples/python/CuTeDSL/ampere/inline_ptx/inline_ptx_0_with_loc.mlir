@@ -2,7 +2,7 @@
 
 !memref_gmem_i32_ = !cute.memref<i32, gmem, "(?):(1)">
 !memref_gmem_i8_ = !cute.memref<i8, gmem, "(?):(1)">
-#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1158:0)
+#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1146:0)
 #loc1 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":181:0)
 #loc19 = loc("loc = self.get_location(frame)"(#loc))
 #loc20 = loc("vote_kernel("(#loc1))
@@ -157,12 +157,12 @@ module attributes {gpu.container_module} {
     return %c0_i32_37 : i32 loc(#loc19)
   } loc(#loc19)
 } loc(#loc19)
-#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":658:0)
+#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":646:0)
 #loc3 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":171:0)
 #loc4 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":158:0)
 #loc5 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":802:0)
 #loc6 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":144:0)
-#loc7 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1347:0)
+#loc7 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1355:0)
 #loc8 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/typing.py":846:0)
 #loc9 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":147:0)
 #loc10 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":152:0)
@@ -196,7 +196,7 @@ module attributes {gpu.container_module} {
 
 !memref_gmem_i32_ = !cute.memref<i32, gmem, "(?):(1)">
 !memref_gmem_i8_ = !cute.memref<i8, gmem, "(?):(1)">
-#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1158:0)
+#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1146:0)
 #loc1 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":181:0)
 #loc19 = loc("loc = self.get_location(frame)"(#loc))
 #loc20 = loc("vote_kernel("(#loc1))
@@ -351,12 +351,12 @@ module attributes {gpu.container_module} {
     return %c0_i32_37 : i32 loc(#loc19)
   } loc(#loc19)
 } loc(#loc19)
-#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":658:0)
+#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":646:0)
 #loc3 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":171:0)
 #loc4 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":158:0)
 #loc5 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":802:0)
 #loc6 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":144:0)
-#loc7 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1347:0)
+#loc7 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1355:0)
 #loc8 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/typing.py":846:0)
 #loc9 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":149:0)
 #loc10 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/inline_ptx.py":154:0)

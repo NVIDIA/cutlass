@@ -30,20 +30,18 @@ module attributes {gpu.container_module} {
       %c16_i32 = arith.constant 16 : i32
       %c2097152_i32 = arith.constant 2097152 : i32
       %c256_i32 = arith.constant 256 : i32
-      %c2_i32 = arith.constant 2 : i32
       %c14_i32 = arith.constant 14 : i32
       %c13_i32 = arith.constant 13 : i32
       %c136317200_i32 = arith.constant 136317200 : i32
       %11 = cute.static : !cute.layout<"(1,1,4,6):(0,0,2,1024)">
       %12 = cute.static : !cute.layout<"((128,128),1,1,2):((65536,1),0,0,128)">
       %c160_i32 = arith.constant 160 : i32
-      %c3_i32 = arith.constant 3 : i32
+      %c2_i32 = arith.constant 2 : i32
       %c6_i32 = arith.constant 6 : i32
       %13 = cute.static : !cute.layout<"((4096,1),6):((1,0),4096)">
       %c32768_i32 = arith.constant 32768 : i32
       %c10000000_i32 = arith.constant 10000000 : i32
       %14 = cute.static : !cute.stride<"(((1@0,1@1),0),32@0)">
-      %c224_i32 = arith.constant 224 : i32
       %15 = cute.static : !cute.stride<"(((1@0,1@1),0),128@1,32@0,1@2)">
       %16 = cute.static : !cute.stride<"(((1@1,1@0),0,8@0),128@1,32@0,1@2)">
       %17 = cute.static : !cute.stride<"((1@1,1@0),0,0,128@1,128@0,1@2)">
@@ -155,8 +153,6 @@ module attributes {gpu.container_module} {
         %90 = builtin.unrealized_conversion_cast %ptr_64 : !cute.ptr<i64, smem> to !llvm.ptr<3>
         nvvm.mbarrier.init.shared %90, %c1_i32 : !llvm.ptr<3>, i32
       }
-      nvvm.fence.mbarrier.init
-      nvvm.barrier
       %iter_9 = cute.recast_iter(%ptr) : !cute.ptr<i8, smem, align<32>> to !cute.ptr<i64, smem, align<32>>
       scf.if %51 {
         %85 = builtin.unrealized_conversion_cast %iter_9 : !cute.ptr<i64, smem, align<32>> to !llvm.ptr<3>
@@ -174,8 +170,6 @@ module attributes {gpu.container_module} {
         %86 = builtin.unrealized_conversion_cast %ptr_56 : !cute.ptr<i64, smem> to !llvm.ptr<3>
         nvvm.mbarrier.init.shared %86, %c4_i32 : !llvm.ptr<3>, i32
       }
-      nvvm.fence.mbarrier.init
-      nvvm.barrier
       %iter_11 = cute.recast_iter(%ptr_1) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<i64, smem, align<128>>
       scf.if %51 {
         %85 = builtin.unrealized_conversion_cast %iter_11 : !cute.ptr<i64, smem, align<128>> to !llvm.ptr<3>
@@ -199,7 +193,6 @@ module attributes {gpu.container_module} {
       %55 = arith.select %53, %c1_i32, %54 : i32
       %56 = arith.cmpi ne, %55, %c0_i32 : i32
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %iter_13 = cute.recast_iter(%ptr_4) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f32, smem, align<1024>, S<2,4,3>>
       %iter_14 = cute.recast_iter(%ptr_3) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f32, smem, align<1024>, S<2,4,3>>
       %iter_15 = cute.recast_iter(%ptr_5) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<tf32, smem, align<1024>, S<3,4,3>>
@@ -269,7 +262,7 @@ module attributes {gpu.container_module} {
       %lay_53 = cute.make_layout(%shape_52, %15) : !cute.layout<"(((32,128),1),?,?,?):(((1@0,1@1),0),128@1,32@0,1@2)">
       %ummaSmemDesc = cute_nvgpu.make_umma_smem_desc(%iter_15 : !cute.ptr<tf32, smem, align<1024>, S<3,4,3>>) layout = <"((128,8),1,4,6):((32,1),0,8,4096)">, major = <k> -> !cute_nvgpu.smem_desc
       %ummaSmemDesc_54 = cute_nvgpu.make_umma_smem_desc(%iter_16 : !cute.ptr<tf32, smem, align<1024>, S<3,4,3>>) layout = <"((128,8),1,4,6):((32,1),0,8,4096)">, major = <k> -> !cute_nvgpu.smem_desc
-      nvvm.barrier id = %c1_i32 number_of_threads = %c224_i32
+      nvvm.barrier
       scf.if %50 {
         %85 = nvvm.read.ptx.sreg.ctaid.z range <i32, 0, 65535> : i32
         %86 = nvvm.read.ptx.sreg.nctaid.x range <i32, 1, 2147483647> : i32
@@ -517,7 +510,7 @@ module attributes {gpu.container_module} {
       }
       %82 = arith.cmpi eq, %49, %c4_i32 : i32
       scf.if %82 {
-        nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
+        nvvm.barrier id = %c2_i32 number_of_threads = %c160_i32
         %tmem_ptr = cute_nvgpu.arch.sm100.retrieve_tmem_ptr(%iter) : !cute.ptr<i32, smem, align<8>> -> !cute.ptr<f32, tmem, align<16>>
         %85 = nvvm.read.ptx.sreg.ctaid.z range <i32, 0, 65535> : i32
         %86 = nvvm.read.ptx.sreg.nctaid.x range <i32, 1, 2147483647> : i32
@@ -704,7 +697,7 @@ module attributes {gpu.container_module} {
         scf.if %51 {
           cute_nvgpu.arch.sm100.alloc_tmem(%c256_i32, %iter) [ cta_1] : i32, !cute.ptr<i32, smem, align<8>>
         }
-        nvvm.barrier id = %c3_i32 number_of_threads = %c160_i32
+        nvvm.barrier id = %c2_i32 number_of_threads = %c160_i32
         %tmem_ptr = cute_nvgpu.arch.sm100.retrieve_tmem_ptr(%iter) : !cute.ptr<i32, smem, align<8>> -> !cute.ptr<f32, tmem, align<16>>
         %coord = cute.make_coord(%38) : (i32) -> !cute.coord<"?">
         %85 = cute.get_scalars(%coord) <{only_dynamic}> : !cute.coord<"?">
@@ -924,7 +917,7 @@ module attributes {gpu.container_module} {
               llvm.store %211, %207 {alignment = 16 : i64} : vector<4xf32>, !llvm.ptr<3>
             } {llvm.loop_annotation = #loop_annotation}
             nvvm.fence.proxy {kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}
-            nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+            nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
             scf.if %51 {
               %coord_140 = cute.make_coord(%203) : (i32) -> !cute.coord<"(_,?)">
               %idx_141 = cute.crd2idx(%coord_140, %2) : (!cute.coord<"(_,?)">, !cute.layout<"((2048,1),(1,2)):((1,0),(0,2048))">) -> !cute.int_tuple<"?{div=2048}">
@@ -944,7 +937,7 @@ module attributes {gpu.container_module} {
               nvvm.cp.async.bulk.commit.group
               nvvm.cp.async.bulk.wait_group 1 {read}
             }
-            nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+            nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
             scf.yield %193, %195, %196 : i32, i32, i32
           }
           %154 = nvvm.elect.sync -> i1
@@ -1001,7 +994,7 @@ module attributes {gpu.container_module} {
         scf.if %51 {
           cute_nvgpu.arch.sm100.relinquish_tmem_alloc_permit [ cta_1]
         }
-        nvvm.barrier id = %c2_i32 number_of_threads = %c128_i32
+        nvvm.barrier id = %c1_i32 number_of_threads = %c128_i32
         scf.if %51 {
           cute_nvgpu.arch.sm100.dealloc_tmem(%tmem_ptr, %c256_i32) [ cta_1] : !cute.ptr<f32, tmem, align<16>>, i32
         }
