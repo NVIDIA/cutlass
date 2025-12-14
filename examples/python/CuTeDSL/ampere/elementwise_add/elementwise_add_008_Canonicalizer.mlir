@@ -876,7 +876,7 @@ module attributes {gpu.container_module} {
       return
     }
   }
-  func.func @cutlass_elementwise_add_tensor02841_02912_01912_08313_09196_09403_10126_01202_16746_01064_01796_23174_06047_09508_18613_09638_07238_13885_01225_14714_08045_25177_11321_05292_11895_(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_1) -> i32 attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_add_tensor_11032_05810_07178_04202_14205_07574_02934_04618_12152_01212_04481_01082_15156_02895_18373_01055_06905_00592_06973_10689_21883_00355_01292_08202_14995(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_1) -> i32 attributes {llvm.emit_c_interface} {
     %c1_i32 = arith.constant 1 : i32
     %c0_i64 = arith.constant 0 : i64
     %c0_i32 = arith.constant 0 : i32

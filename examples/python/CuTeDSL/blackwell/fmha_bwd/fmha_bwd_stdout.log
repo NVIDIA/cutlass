@@ -76,4 +76,4 @@ Compiling kernel with cute.compile ...
 [DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/fmha_bwd/fmha_bwd_045_CudaErrorHandlingPass.mlir (1604 lines)
 [DUMP] per-pass IR split -> 45 files
 [INFO] COMPILE-ONLY mode: skip JIT & execution completely.
-Compilation time: 16.2798 seconds
+Compilation time: 17.3364 seconds
