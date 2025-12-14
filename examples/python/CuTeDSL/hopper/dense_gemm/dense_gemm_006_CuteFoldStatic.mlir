@@ -292,10 +292,6 @@ module attributes {gpu.container_module} {
         scf.yield %656 : i1
       }
       nvvm.fence.mbarrier.init
-      nvvm.barrier
-      scf.if %false {
-        nvvm.cluster.arrive.relaxed
-      }
       %92 = cute.static : !cute.layout<"((8,16),(64,1),(1,7)):((64,512),(1,0),(0,8192))">
       %iter_6 = cute.recast_iter(%ptr_3) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<f16, smem, align<1024>, S<3,4,3>>
       %view = cute.make_view(%iter_6, %92) : !memref_smem_f16_
@@ -410,11 +406,7 @@ module attributes {gpu.container_module} {
       %view_77 = cute.make_view(%gmmaSmemDesc_76) : !cute_nvgpu.smem_desc_view<!cute_nvgpu.smem_desc, "(1,1,4,(1,7)):(0,0,2,(0,1024))">
       %125 = cute.static : !cute.layout<"((2,2,16),2,1):((1,2,4),64,0)">
       %rmem = cute.memref.alloca(%125) : !memref_rmem_f32_
-      scf.if %false {
-        nvvm.cluster.wait
-      } else {
-        nvvm.barrier
-      }
+      nvvm.barrier
       %lay_78 = cute.get_layout(%view_18) : !cute.coord_tensor<"(0,?{div=128},?)", "(128,64,?):(1@1,1@0,64@0)">
       %sz_79 = cute.size(%lay_78) <{mode = [2]}> : (!cute.layout<"(128,64,?):(1@1,1@0,64@0)">) -> !cute.int_tuple<"?">
       %e0_80 = cute.get_leaves(%sz_79) : !cute.int_tuple<"?">

@@ -28,7 +28,7 @@
 !memref_tmem_f32_5 = !cute.memref<f32, tmem, align<16>, "(((64,32),1),1):(((1,65536),0),0)">
 !memref_tmem_f32_6 = !cute.memref<f32, tmem, align<16>, "(((64,32),1),(1)):(((1,65536),0),(0))">
 !mma_f16_f16_f32_256x256x16_ = !cute.tiled_mma<!cute_nvgpu.sm100.mma<256x256x16, num_cta = 2, ab_major = (k, k), elem_type = (f16, f16, f32), frag_kind = ss, c_scale_exp = 0>, atom_layout_MNK = <"(1,1,1):(0,0,0)">>
-#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1158:0)
+#loc = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1146:0)
 #loc1 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":427:0)
 #loc218 = loc("loc = self.get_location(frame)"(#loc))
 #loc219 = loc("kernel("(#loc1))
@@ -2070,7 +2070,7 @@ module attributes {gpu.container_module} {
     return %c0_i32 : i32 loc(#loc218)
   } loc(#loc218)
 } loc(#loc218)
-#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":658:0)
+#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":646:0)
 #loc3 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":163:0)
 #loc4 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":171:0)
 #loc5 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/atom.py":338:0)
@@ -2089,7 +2089,7 @@ module attributes {gpu.container_module} {
 #loc18 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":108:0)
 #loc19 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":109:0)
 #loc20 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/typing.py":846:0)
-#loc21 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1347:0)
+#loc21 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":1355:0)
 #loc22 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":110:0)
 #loc23 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":111:0)
 #loc24 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py":112:0)
@@ -2250,7 +2250,7 @@ module attributes {gpu.container_module} {
 #loc179 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":1544:0)
 #loc180 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/algorithm.py":215:0)
 #loc181 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/_mlir/dialects/_cute_ops_gen.py":1817:0)
-#loc182 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/cutlass.py":1144:0)
+#loc182 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/cutlass.py":1154:0)
 #loc183 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/tree_utils.py":690:0)
 #loc184 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/arch/mbar.py":226:0)
 #loc185 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/pipeline/helpers.py":276:0)

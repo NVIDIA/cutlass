@@ -5,7 +5,7 @@
 module attributes {gpu.container_module} {
   gpu.module @kernels {
     llvm.mlir.global external @__dynamic_shmem__0() {addr_space = 3 : i32, alignment = 1024 : i64, dso_local} : !llvm.array<0 x i8>
-    llvm.func @kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o512256162561131072_S_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    llvm.func @kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o51225616256113_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %0 = llvm.mlir.undef : !llvm.struct<(ptr<3>, struct<(struct<()>, i32)>)>
       %1 = llvm.mlir.undef : !llvm.struct<(struct<()>, i32)>
       %2 = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(i32, i32)>)>
@@ -868,7 +868,7 @@ module attributes {gpu.container_module} {
     %30 = llvm.getelementptr %29[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<1 x ptr>
     llvm.store %17, %30 : !llvm.ptr, !llvm.ptr
     %31 = builtin.unrealized_conversion_cast %29 : !llvm.ptr to !cuda.launch_cfg<max_attrs = 2>
-    %32 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o512256162561131072_S_0<%31> (%11, %13, %15, %6) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, i32) -> !cuda.result
+    %32 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o51225616256113_0<%31> (%11, %13, %15, %6) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, !llvm.struct<(ptr<1>, struct<(struct<()>, struct<()>)>)>, i32) -> !cuda.result
     %33 = builtin.unrealized_conversion_cast %32 : !cuda.result to i32
     cuda.return_if_error %33 : i32
     llvm.return %2 : i32

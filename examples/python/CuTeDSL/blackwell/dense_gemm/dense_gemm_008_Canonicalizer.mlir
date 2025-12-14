@@ -275,8 +275,6 @@ module attributes {gpu.container_module} {
         %304 = builtin.unrealized_conversion_cast %ptr_88 : !cute.ptr<i64, smem> to !llvm.ptr<3>
         nvvm.mbarrier.init.shared %304, %c1_i32 : !llvm.ptr<3>, i32
       }
-      nvvm.fence.mbarrier.init
-      nvvm.barrier
       %iter_4 = cute.recast_iter(%ptr_0) : !cute.ptr<i8, smem, align<16>> to !cute.ptr<i64, smem, align<16>>
       %182 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
       %183 = nvvm.read.ptx.sreg.tid.y range <i32, 0, 1024> : i32
@@ -314,7 +312,6 @@ module attributes {gpu.container_module} {
         nvvm.mbarrier.init.shared %298, %c128_i32 : !llvm.ptr<3>, i32
       }
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %208 = cute.ptrtoint(%ptr) : !cute.ptr<i8, smem, align<16>> to i32
       %209 = arith.addi %208, %c127_i32 : i32
       %210 = arith.andi %209, %c-128_i32 : i32
@@ -385,6 +382,7 @@ module attributes {gpu.container_module} {
       %lay_41 = cute.make_layout(%shape_40, %122) : !cute.layout<"(((32,128),1),?,?,?):(((1@0,1@1),0),128@1,32@0,1@2)">
       %ummaSmemDesc = cute_nvgpu.make_umma_smem_desc(%iter_7 : !cute.ptr<tf32, smem, align<128>, S<3,4,3>>) layout = <"((128,8),1,4,7):((32,1),0,8,4096)">, major = <k> -> !cute_nvgpu.smem_desc
       %ummaSmemDesc_42 = cute_nvgpu.make_umma_smem_desc(%iter_8 : !cute.ptr<tf32, smem, align<128>, S<3,4,3>>) layout = <"((128,8),1,4,7):((32,1),0,8,4096)">, major = <k> -> !cute_nvgpu.smem_desc
+      nvvm.barrier
       %234 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
       %235 = nvvm.read.ptx.sreg.tid.y range <i32, 0, 1024> : i32
       %236 = nvvm.read.ptx.sreg.tid.z range <i32, 0, 64> : i32

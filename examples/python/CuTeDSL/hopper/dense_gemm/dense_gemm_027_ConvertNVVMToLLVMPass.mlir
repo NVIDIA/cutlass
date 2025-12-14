@@ -206,7 +206,6 @@ module attributes {gpu.container_module} {
       %144 = llvm.icmp "ne" %143, %22 : i32
       %145 = llvm.mlir.constant(0 : i32) : i32
       llvm.inline_asm has_side_effects asm_dialect = att "fence.mbarrier_init.release.cluster;", "n" %145 : (i32) -> ()
-      nvvm.barrier
       %146 = llvm.extractvalue %arg1[1] : !llvm.struct<(struct<()>, struct<(struct<(i32, i32, i32)>, struct<()>)>)> 
       %147 = llvm.extractvalue %146[0, 0] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 
       %148 = llvm.extractvalue %146[0, 1] : !llvm.struct<(struct<(i32, i32, i32)>, struct<()>)> 

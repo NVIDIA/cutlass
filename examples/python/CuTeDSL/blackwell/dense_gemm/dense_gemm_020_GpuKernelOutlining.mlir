@@ -275,8 +275,6 @@ module attributes {gpu.container_module} {
       nvvm.mbarrier.init.shared %235, %164 : !llvm.ptr<3>, i32
       llvm.br ^bb6
     ^bb6:  // 2 preds: ^bb4, ^bb5
-      nvvm.fence.mbarrier.init
-      nvvm.barrier
       llvm.cond_br %192, ^bb7, ^bb8
     ^bb7:  // pred: ^bb6
       nvvm.mbarrier.init.shared %201, %164 : !llvm.ptr<3>, i32
@@ -290,7 +288,6 @@ module attributes {gpu.container_module} {
       llvm.br ^bb10
     ^bb10:  // 2 preds: ^bb8, ^bb9
       nvvm.fence.mbarrier.init
-      nvvm.barrier
       %238 = llvm.ptrtoint %199 : !llvm.ptr<3> to i32
       %239 = llvm.add %238, %10 : i32
       %240 = llvm.and %239, %152 : i32
@@ -587,6 +584,7 @@ module attributes {gpu.container_module} {
       %531 = llvm.mlir.constant(64 : i32) : i32
       %532 = llvm.mlir.constant(1 : i32) : i32
       %533 = nvvm.mma_smem_desc(%528, %532, %531, %530, %529) : (i32, i32, i32, i8, i8) -> i64
+      nvvm.barrier
       llvm.cond_br %192, ^bb11, ^bb12
     ^bb11:  // pred: ^bb10
       nvvm.tcgen05.alloc %203, %153 : !llvm.ptr<3>, i32

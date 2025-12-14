@@ -3,8 +3,6 @@
 [INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_stderr.log
 [INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
-[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
-[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
 [INFO] cute_ir_dump_patch installed.
 
 Running TensorOpGemm test with:
@@ -17,9 +15,9 @@ c: torch.Size([16, 512, 256]), dtype: torch.float16
 
 [DSL INFO] Input Parameters:
 [DSL INFO]   mnkl: (512, 256, 128, 16)
-[DSL INFO]   buffer_a: <__main__.BufferWithLayout object at 0x7fd285f8f5b0>
-[DSL INFO]   buffer_b: <__main__.BufferWithLayout object at 0x7fd285f8f550>
-[DSL INFO]   buffer_c: <__main__.BufferWithLayout object at 0x7fd285f8f4f0>
+[DSL INFO]   buffer_a: <__main__.BufferWithLayout object at 0x7fdb0490bb50>
+[DSL INFO]   buffer_b: <__main__.BufferWithLayout object at 0x7fdb0490baf0>
+[DSL INFO]   buffer_c: <__main__.BufferWithLayout object at 0x7fdb0490ba90>
 [DSL INFO]   acc_dtype: Float32
 [DSL INFO]   atom_layout_mnk: (2, 2, 1)
 
@@ -86,19 +84,18 @@ c: torch.Size([16, 512, 256]), dtype: torch.float16
 [DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_044_ReconcileUnrealizedCasts.mlir (225 lines)
 [DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_045_CudaErrorHandlingPass.mlir (232 lines)
 [DUMP] per-pass IR split -> 45 files
-[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 
 [DSL INFO] Results verified successfully!
 First few elements of result: 
-tensor([[[ 11.5078,  -5.6836,   8.7422],
-         [ -5.1875,   1.1436,  -0.5400],
-         [-14.3281,   1.6836,  -3.1113]],
+tensor([[[ -0.2661,   3.9668,   5.6016],
+         [ -1.6416,   5.0117,  17.0312],
+         [  6.0820,   6.1211,   3.3320]],
 
-        [[  5.4414,  -5.6641,   3.2344],
-         [ -5.6211,  17.5781, -16.5000],
-         [ -3.9141,   3.4062,  -7.7852]],
+        [[  3.8359,   9.1797,  -6.6445],
+         [-12.4375,  12.7266,   2.9707],
+         [ -1.4844,  -6.2734,   6.7930]],
 
-        [[-10.9922,  -0.0836,  25.1719],
-         [ -0.2482,   5.9727,  -8.7578],
-         [-11.6172,  -3.8594,  24.1719]]], device='cuda:0',
+        [[ 10.8438,   6.9648,   7.0352],
+         [  4.2539,   8.6484,  11.6250],
+         [ 14.9062,   7.8125,  -0.2366]]], device='cuda:0',
        dtype=torch.float16)

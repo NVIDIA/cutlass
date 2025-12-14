@@ -433,7 +433,7 @@ module attributes {gpu.container_module} {
       return loc(#loc66)
     } loc(#loc67)
   } loc(#loc66)
-  func.func @cutlass_elementwise_add_tensor02841_02912_01912_08313_09196_09403_10126_01202_16746_01064_01796_23174_06047_09508_18613_09638_07238_13885_01225_14714_08045_25177_11321_05292_11895_(%arg0: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc)), %arg1: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc)), %arg2: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc))) -> i32 attributes {llvm.emit_c_interface} {
+  func.func @cutlass_elementwise_add_tensor_11032_05810_07178_04202_14205_07574_02934_04618_12152_01212_04481_01082_15156_02895_18373_01055_06905_00592_06973_10689_21883_00355_01292_08202_14995(%arg0: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc)), %arg1: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc)), %arg2: !memref_gmem_f32_4 loc("run_elementwise_add("(#loc))) -> i32 attributes {llvm.emit_c_interface} {
     %iter = cute.get_iter(%arg0) : !memref_gmem_f32_4 loc(#loc68)
     %iter_0 = cute.get_iter(%arg1) : !memref_gmem_f32_4 loc(#loc68)
     %iter_1 = cute.get_iter(%arg2) : !memref_gmem_f32_4 loc(#loc68)
@@ -601,7 +601,7 @@ module attributes {gpu.container_module} {
     return %c0_i32_136 : i32 loc(#loc66)
   } loc(#loc66)
 } loc(#loc66)
-#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":658:0)
+#loc2 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/dsl.py":646:0)
 #loc3 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":163:0)
 #loc4 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":171:0)
 #loc5 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/tensor.py":158:0)
@@ -637,7 +637,7 @@ module attributes {gpu.container_module} {
 #loc35 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/cutlass_ast_decorators.py":204:0)
 #loc36 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add.py":200:0)
 #loc37 = loc("/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/elementwise_add.py":201:0)
-#loc38 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/cutlass.py":1144:0)
+#loc38 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/cutlass.py":1154:0)
 #loc39 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cutlass_dsl/tree_utils.py":690:0)
 #loc40 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/core.py":2201:0)
 #loc41 = loc("/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/cute/algorithm.py":390:0)

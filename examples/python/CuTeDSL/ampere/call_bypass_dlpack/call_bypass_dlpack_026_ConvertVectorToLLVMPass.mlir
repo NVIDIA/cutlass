@@ -5,7 +5,7 @@
 module attributes {gpu.container_module} {
   gpu.module @kernels {
     llvm.mlir.global external @__dynamic_shmem__0() {addr_space = 3 : i32, alignment = 1024 : i64, dso_local} : !llvm.array<0 x i8>
-    llvm.func @kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv8div8div81div64_S333o0o64_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    llvm.func @kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv8div8div81div64_S33_0(%arg0: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg1: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg2: !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, gpu.kernel, nvvm.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %cst = arith.constant dense<0> : vector<1xi8>
       %cst_0 = arith.constant dense<0.000000e+00> : vector<8xf16>
       %0 = llvm.mlir.undef : !llvm.struct<(ptr<3>, struct<(struct<()>, i32)>)>
@@ -1163,7 +1163,7 @@ module attributes {gpu.container_module} {
     %93 = llvm.getelementptr %92[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<1 x ptr>
     llvm.store %80, %93 : !llvm.ptr, !llvm.ptr
     %94 = builtin.unrealized_conversion_cast %92 : !llvm.ptr to !cuda.launch_cfg<max_attrs = 2>
-    %95 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv8div8div81div64_S333o0o64_0<%94> (%39, %41, %43, %70) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, i32) -> !cuda.result
+    %95 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv81div8div8_tensorptrf16gmemalign32odiv8div8div81div64_S33_0<%94> (%39, %41, %43, %70) : !cuda.launch_cfg<max_attrs = 2>, (!llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, !llvm.struct<(ptr<1>, struct<(struct<(i32, i32, i32)>, struct<(i32, i32)>)>)>, i32) -> !cuda.result
     %96 = builtin.unrealized_conversion_cast %95 : !cuda.result to i32
     cuda.return_if_error %96 : i32
     llvm.return %7 : i32

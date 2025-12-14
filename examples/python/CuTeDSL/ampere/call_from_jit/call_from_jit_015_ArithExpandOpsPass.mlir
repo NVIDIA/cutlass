@@ -22,7 +22,7 @@
 #loop_annotation1 = #llvm.loop_annotation<unroll = #loop_unroll1>
 module attributes {gpu.container_module} {
   gpu.module @kernels {
-    cuda.kernel @kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o512256162561131072_S_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_1, %arg2: !memref_gmem_f16_2, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
+    cuda.kernel @kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o51225616256113_0(%arg0: !memref_gmem_f16_, %arg1: !memref_gmem_f16_1, %arg2: !memref_gmem_f16_2, %arg3: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
       %cst = arith.constant dense<0.000000e+00> : vector<128xf32>
       %cst_0 = arith.constant dense<0.000000e+00> : vector<96xf16>
       %c15_i64 = arith.constant 15 : i64
@@ -1002,7 +1002,7 @@ module attributes {gpu.container_module} {
     %5 = cute.make_tiled_copy(%atom_2) : !copy_simt
     %6 = cuda.cast %c0_i64 : i64 -> !cuda.stream
     %7 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c128_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c49152_i64, gridDim = (%c8_i32, %c1_i32, %c16_i32), stream = %6) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %8 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_tensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o512256162561131072_S_0<%7> (%view, %view_0, %view_1, %c2_i32) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f16_, !memref_gmem_f16_1, !memref_gmem_f16_2, i32) -> !cuda.result
+    %8 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_amperetensorop_gemmTensorOpGemm_object_at__tensorptrf16gmemalign32o51212816128165536_tensorptrf16gmemalign32o25612816128132768_tensorptrf16gmemalign32o51225616256113_0<%7> (%view, %view_0, %view_1, %c2_i32) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f16_, !memref_gmem_f16_1, !memref_gmem_f16_2, i32) -> !cuda.result
     %9 = cuda.cast %8 : !cuda.result -> i32
     cuda.return_if_error %9 : i32
     return %c0_i32 : i32
