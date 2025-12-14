@@ -1,0 +1,75 @@
+[INFO] Run tag: flash_attention_v2
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] cute_ir_dump_patch installed.
+Running Ampere SM80 FlashAttentionForward test with:
+  dtype: BFloat16
+  batch_size: 4
+  seqlen_q: 8192
+  seqlen_k: 8192
+  num_head: 16
+  head_dim: 128
+  softmax_scale: 0.5
+  m_block_size: 128
+  n_block_size: 64
+  num_threads: 128
+  is_causal: False
+  warmup_iterations: 3
+  iterations: 10
+  skip_ref_check: False
+  use_cold_l2: False
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_0_.mlir (12763 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_001_CuteRemoveStaticArgs.mlir (12769 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_002_MaterializeTmaMulticast.mlir (12769 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_003_SoftwarePipelinePass.mlir (12769 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_004_CuteDesugar.mlir (18305 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_005_CuteExpandOps.mlir (22984 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_006_CuteFoldStatic.mlir (11417 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_007_InsertRangeInformation.mlir (11417 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_008_Canonicalizer.mlir (5678 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_009_CSE.mlir (4318 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_010_LoopInvariantCodeMotion.mlir (4318 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_011_LoopStrengthReductionPass.mlir (4318 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_012_ConvertVectorToSCF.mlir (4318 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_013_ConvertCuteTypesInScfOps.mlir (4318 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_014_SCFToControlFlow.mlir (5424 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_015_ArithExpandOpsPass.mlir (5748 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_016_ConvertMathToFuncs.mlir (5748 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_017_GpuLaunchSinkIndexComputations.mlir (5748 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_018_ConvertToLLVMPass.mlir (11436 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_019_ReconcileUnrealizedCasts.mlir (10802 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_020_GpuKernelOutlining.mlir (10802 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_021_SCFToControlFlow.mlir (10802 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_022_ReconcileUnrealizedCasts.mlir (10802 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_023_ConvertToLLVMPass.mlir (10802 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_024_Canonicalizer.mlir (6619 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_025_CSE.mlir (6278 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_026_ConvertVectorToLLVMPass.mlir (6814 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_027_ConvertNVVMToLLVMPass.mlir (6833 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_028_CudaComputeTargetPass.mlir (6766 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_029_FinalizeMemRefToLLVMConversionPass.mlir (6833 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_030_ExpandStridedMetadata.mlir (6555 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_031_ArithToLLVMConversionPass.mlir (6555 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_032_ConvertFastmathOps.mlir (7000 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_033_ConvertGpuOpsToNVVMOps.mlir (6881 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_034_StoreGpuLaunchAttribute.mlir (6948 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_035_GpuToLLVMConversionPass.mlir (6940 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_036_StoreGpuLaunchAttribute.mlir (6940 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_037_ConvertMathToLLVMPass.mlir (6940 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_038_Canonicalizer.mlir (6940 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_039_CSE.mlir (6940 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_040_ReconcileUnrealizedCasts.mlir (6940 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_041_DIScopeForLLVMFuncOpPass.mlir (6940 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_042_CudaToBinaryPass.mlir (77 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_043_ConvertToLLVMPass.mlir (242 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_044_ReconcileUnrealizedCasts.mlir (240 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/flash_attention_v2/flash_attention_v2_045_CudaErrorHandlingPass.mlir (247 lines)
+[DUMP] per-pass IR split -> 45 files
+Results verified successfully!
+PASS
