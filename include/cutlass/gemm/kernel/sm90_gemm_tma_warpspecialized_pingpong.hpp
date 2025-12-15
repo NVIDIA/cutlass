@@ -150,13 +150,13 @@ public:
   // Detect if this is SM120 blockscaled kernel which hits high register pressure
   // on smaller tiles (e.g. 256x128 registers per thread)
   template <typename T>
-  struct is_blockscaled : cute::false_type {};
+  struct IsBlockScaledDispatchPolicy : cute::false_type {};
 
   template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
-  struct is_blockscaled<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
+  struct IsBlockScaledDispatchPolicy<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
     : cute::true_type {};
 
-  static constexpr bool IsBlockScaled = is_blockscaled<DispatchPolicy>::value;
+  static constexpr bool IsBlockScaled = IsBlockScaledDispatchPolicy<DispatchPolicy>::value;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
