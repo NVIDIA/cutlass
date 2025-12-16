@@ -251,6 +251,15 @@ class PersistentDenseGemmEFCKernelImpl:
         a = cute.make_tensor(a.iterator, cute.select(a.layout, [1, 2, 0]))
         # B: (L, K, N) -> (N, K, L)
         b = cute.make_tensor(b.iterator, cute.select(b.layout, [2, 1, 0]))
+
+        # Add batch mode to epilogue parameters
+        supplemental_parameters = (
+            add_batch_mode(t)
+            if isinstance(t, cute.Tensor)
+            else t
+            for t in supplemental_parameters
+        )
+
         # epilogue tensors: (L, M, N) -> (M, N, L)
         supplemental_parameters = (
             cute.make_tensor(t.iterator, cute.select(t.layout, [1, 2, 0]))
