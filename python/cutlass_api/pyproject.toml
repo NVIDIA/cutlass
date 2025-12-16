@@ -1,0 +1,76 @@
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cutlass_api"
+dynamic = ["version"]
+requires-python = ">=3.12"
+
+dependencies = [
+    "nvidia-cutlass-dsl",
+    "apache-tvm-ffi",  # Required for optimal performance. To opt-out: uninstall or set cutlass_api.config.GlobalOptions().use_tvm_ffi=False
+]
+
+[project.optional-dependencies]
+torch = [
+    "torch",
+    "torch-c-dlpack-ext",
+]
+test = [
+    "jupyter",
+    "pytest",
+    "cutlass_api[torch]",
+]
+dev = [
+    "cutlass_api[test]",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.dynamic]
+version = {attr = "cutlass_api.__version__"}
+
+[tool.ruff]
+target-version = "py312"
+src = ["cutlass_api"]
+
+# Exclude fusion/ from all ruff checks
+extend-exclude = [
+    "cutlass_api/fusion",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "PTH",    # flake8-use-pathlib
+    "FA",     # flake8-future-annotations
+    "PERF",   # perflint - performance anti-patterns
+    "FURB",   # refurb - modern Python idioms
+    "PIE",    # flake8-pie - misc improvements
+    "TCH",    # flake8-type-checking
+    "PLE",    # pylint errors
+    "RSE",    # flake8-raise
+]
+ignore = [
+    "SIM103", # nedless-bool        - can be noisy
+    "B905",   # zip(strict=)        - too strict
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future", "standard-library", "third-party", "cutlass", "first-party", "local-folder"]
+known-first-party = ["cutlass_api"]
+
+[tool.ruff.lint.isort.sections]
+cutlass = ["cutlass"]
