@@ -28,38 +28,38 @@ jobs:
           #   gpu: BMG
           #   intel_graphics: STAGING
           #   sycl_target: intel_gpu_bmg_g21
-          #   runner: bmg108629-01
+          #   runner: bmg
           # - compiler: RELEASE
           #   gpu: BMG
           #   intel_graphics: STAGING
           #   sycl_target: intel_gpu_bmg_g21
-          #   runner: bmg108629-01
+          #   runner: bmg
           # - compiler: NIGHTLY
           #   gpu: BMG
           #   intel_graphics: ROLLING
           #   sycl_target: intel_gpu_bmg_g21
-          #   runner: bmg108629-01
+          #   runner: bmg
           - compiler: RELEASE
             gpu: BMG
             intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
             igc_version_major: 2
             igc_version_minor: 18
-            runner: bmg108629-01
+            runner: bmg
           - compiler: RELEASE
             gpu: PVC
             intel_graphics: ROLLING
             sycl_target: intel_gpu_pvc
             igc_version_major: 2
             igc_version_minor: 11
-            runner: pvc146162-01
+            runner: pvc
           - compiler: NIGHTLY
             gpu: PVC
             intel_graphics: ROLLING
             sycl_target: intel_gpu_pvc
             igc_version_major: 2
             igc_version_minor: 11
-            runner: pvc146162-01
+            runner: pvc
 
     name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
     runs-on: ${{ matrix.runner }}
