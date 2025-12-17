@@ -804,13 +804,15 @@ public:
 
       // It is possible to have work tiles start off invalid,
       // so we have to check that first.
-      if (not work_tile_info.is_valid()) {
-        // Hint on an early release of global memory resources.
-        // The timing of calling this function only influences performance,
-        // not functional correctness.
-        cutlass::arch::launch_dependent_grids();
+      if constexpr (!IsSm120Family) {
+        if (not work_tile_info.is_valid()) {
+          // Hint on an early release of global memory resources.
+          // The timing of calling this function only influences performance,
+          // not functional correctness.
+          cutlass::arch::launch_dependent_grids();
 
-        return;
+          return;
+        }
       }
       
       if constexpr (IsSchedDynamicPersistent) {
