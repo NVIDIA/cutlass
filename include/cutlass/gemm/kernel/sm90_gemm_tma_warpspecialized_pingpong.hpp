@@ -147,16 +147,7 @@ public:
   static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
   static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
 
-  // Detect if this is SM120 blockscaled kernel which hits high register pressure
-  // on smaller tiles (e.g. 256x128 registers per thread)
-  template <typename T>
-  struct IsBlockScaledDispatchPolicy : cute::false_type {};
-
-  template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
-  struct IsBlockScaledDispatchPolicy<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
-    : cute::true_type {};
-
-  static constexpr bool IsBlockScaled = IsBlockScaledDispatchPolicy<DispatchPolicy>::value;
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
@@ -877,7 +868,7 @@ public:
         // Update starting mainloop pipeline state for the next tile
         mainloop_pipe_consumer_state.advance(k_tile_count * NumMmaWarpGroups);
 
-        if constexpr (!IsBlockScaled) {
+        if constexpr (!IsSm120Family) {
           if (scheduler.is_last_tile(work_tile_info, NumMmaWarpGroups)) {
             // Hint on an early release of global memory resources.
             // The timing of calling this function only influences performance,
