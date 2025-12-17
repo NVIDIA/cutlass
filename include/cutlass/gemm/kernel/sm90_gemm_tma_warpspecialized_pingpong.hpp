@@ -802,9 +802,9 @@ public:
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
 
-      // It is possible to have work tiles start off invalid,
-      // so we have to check that first.
       if constexpr (!IsSm120Family) {
+        // It is possible to have work tiles start off invalid,
+        // so we have to check that first.
         if (not work_tile_info.is_valid()) {
           // Hint on an early release of global memory resources.
           // The timing of calling this function only influences performance,
