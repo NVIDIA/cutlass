@@ -1,0 +1,141 @@
+name: "Reusable Intel G++ Host Compilation Test Workflow"
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler version'
+        required: true
+        type: string  
+      intel_graphics:
+        description: 'Intel graphics driver version'
+        required: true
+        type: string 
+      DPCPP_VERSION:
+        description: 'DPC++ version'
+        required: false
+        type: string
+      DPCPP_PATH:
+        description: 'DPC++ path'
+        required: false
+        type: string
+
+jobs:
+  run-tests:
+    strategy:
+      matrix:
+        compiler: ${{ fromJSON(inputs.compiler) }}
+        intel_graphics: ${{ fromJSON(inputs.intel_graphics) }}
+        gpu: [BMG, PVC]
+        include:
+          - gpu: BMG
+            sycl_target: intel_gpu_bmg_g21
+            igc_version_major: 2
+            igc_version_minor: 18
+            runner: bmg
+          - gpu: PVC
+            sycl_target: intel_gpu_pvc
+            igc_version_major: 2
+            igc_version_minor: 11
+            runner: pvc
+
+    name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Install Intel graphics drivers
+        uses: ./.github/actions/install-intel-graphics
+        with:
+          GPU: ${{ matrix.gpu }}
+          IGC: ${{ matrix.intel_graphics }}
+      - name: Install DPC++
+        uses: ./.github/actions/install-dpcpp
+        with:
+          DPCPP_RELEASE: ${{ matrix.compiler }}
+          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          GPU: ${{ matrix.gpu }}
+          IGC: ${{ matrix.intel_graphics }}
+      - name: Setup virtual environment
+        shell: bash
+        run: |
+          # Install cmake and ninja if not already available
+          if ! command -v cmake &> /dev/null || ! command -v ninja &> /dev/null; then
+            echo "Installing cmake and/or ninja..."
+            sudo apt update
+            sudo apt install -y cmake ninja-build
+          else
+            echo "cmake and ninja already available"
+          fi
+          . setvars.sh
+          export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
+          export SYCL_PROGRAM_COMPILE_OPTIONS="-ze-opt-large-register-file -gline-tables-only"
+          export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+          export IGC_VectorAliasBBThreshold=100000000000
+          # Persist environment variables to following steps 
+          env >> $GITHUB_ENV
+          which $CXX
+          $CXX --version
+          g++-13 --version
+          sycl-ls
+      - name: Build
+        shell: bash
+        run: |
+          cmake -G Ninja  \
+            -DCUTLASS_ENABLE_SYCL=ON \
+            -DDPCPP_SYCL_TARGET=${{ matrix.sycl_target }} \
+            -DIGC_VERSION_MAJOR=${{ matrix.igc_version_major }} \
+            -DIGC_VERSION_MINOR=${{ matrix.igc_version_minor }} \
+            -DCUTLASS_SYCL_RUNNING_CI=ON \
+            -DCMAKE_CXX_FLAGS="-Werror" \
+            -DDPCPP_HOST_COMPILER=g++-13 \
+            -DDPCPP_HOST_COMPILER_OPTIONS="-Werror"
+          cmake --build .
+
+      - name: Unit test
+        shell: bash
+        run: |
+          # ninja test_unit_cute_core           # Assertion failure in include/cutlass/integer_subbyte.h:105
+          ninja test_unit_cute_intel_xe
+          ninja test_unit_cute_layout
+          ninja test_unit_cute_msvc_compilation
+
+      - name: Examples
+        shell: bash
+        run: |
+          cmake --build . --target test_examples -j 1
+
+      - name: Benchmarks
+        shell: bash
+        run: |
+          ninja cutlass_benchmarks
+
+      - name: Cleanup DPC++
+        if: always()
+        shell: bash
+        run: |
+          echo "Cleaning up DPC++ installation..."
+          # Remove DPCPP directory if it exists
+          DPCPP_PATH="${{ inputs.DPCPP_PATH || '~/dpcpp' }}"
+          DPCPP_PATH=$(eval echo $DPCPP_PATH)  # Expand ~ to home directory
+          if [ -d "$DPCPP_PATH" ]; then
+            echo "Removing DPCPP directory: $DPCPP_PATH"
+            sudo rm -rf "$DPCPP_PATH"
+          fi
+          # For RELEASE installs, remove OneAPI packages
+          if [[ "${{ matrix.compiler }}" == "RELEASE" ]]; then
+            echo "Removing OneAPI packages..."
+            sudo apt remove -y intel-oneapi-runtime-libs intel-oneapi-compiler-dpcpp-cpp || true
+            sudo rm -f /etc/apt/sources.list.d/oneAPI.list
+            sudo rm -f /usr/share/keyrings/oneapi-archive-keyring.gpg
+          fi
+          # Clean up environment files
+          rm -f setvars.sh
+          # Clean up build artifacts
+          rm -rf build/ || true
+          # Reset environment variables that might interfere
+          unset CC CXX CPLUS_INCLUDE_PATH C_INCLUDE_PATH LD_LIBRARY_PATH
+          unset IGC_ExtraOCLOptions SYCL_PROGRAM_COMPILE_OPTIONS ONEAPI_DEVICE_SELECTOR IGC_VectorAliasBBThreshold
+          echo "DPC++ cleanup completed"
