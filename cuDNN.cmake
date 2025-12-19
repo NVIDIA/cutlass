@@ -43,7 +43,8 @@ find_path(
     $ENV{CUDNN_PATH}/include
     $ENV{CUDA_PATH}/include
     ${CUDNN_PATH}/include
-    /usr/include)
+    /usr/include
+    $ENV{CUDNN_PATH})
 
 find_library(
     _CUDNN_LIBRARY cudnn
@@ -61,7 +62,8 @@ find_library(
     ${CUDNN_PATH}/lib/x64
     ${CUDNN_PATH}/lib
     /usr/lib/x86_64-linux-gnu
-    /usr/lib)
+    /usr/lib
+    $ENV{CUDNN_PATH})
 
 if(_CUDNN_INCLUDE_DIR AND _CUDNN_LIBRARY)
 
