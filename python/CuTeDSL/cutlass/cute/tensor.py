@@ -20,7 +20,7 @@ from cutlass.cutlass_dsl import (
     T,
     cutlass_arith,
     _binary_op_type_promote,
-    CuTeDSL,
+    BaseDSL,
 )
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -1776,7 +1776,7 @@ class TensorSSA(cutlass_arith.ArithValue):
                 fast_cvt_func = cvt_i8_bf16_intrinsic
             elif src_dtype == Int4 and dtype == BFloat16:
                 fast_cvt_func = cvt_i4_bf16_intrinsic
-            arch = CuTeDSL._get_dsl().get_arch_enum()
+            arch = BaseDSL._get_dsl().get_arch_enum()
             if fast_cvt_func is not None and arch in fast_cvt_func.supported_archs:
                 res_vect = fast_cvt_func(src, size(self.shape), loc=loc, ip=ip)
             else:

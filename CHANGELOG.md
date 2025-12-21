@@ -2,9 +2,16 @@
 
 # CUTLASS 4.x
 
-## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
+## [4.3.4](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.4) (2025-12-22)
+* New features
+  - Added PDL support along with example [Kernel launch with Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py)
 
-### CuTe DSL
+* Bug fixing and improvements
+  - Fixed a frame refcnt issue with cuda graph
+  - Enhancement for tvm-ffi AoT case for earlier module unload
+  - Fixed order issue in `make_smem_layout_a` in utils/hopper_helpers.py
+
+## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
 * New features
   - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi
   - Supported variadic tuples for JIT function argument in tvm-ffi
@@ -14,8 +21,6 @@
   - Clearer error message for the case of runtime error cudaErrorInsufficientDriver
 
 ## [4.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.2) (2025-12-05)
-
-### CuTe DSL
 * New features
   - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches
 

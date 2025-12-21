@@ -126,16 +126,22 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
             context.module.body.append(parsed_op)
 
-
         with ir.InsertionPoint(current_block):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
-            cuda_load_to_device_ptr = self.address_of("cuda_load_to_device", self.ptr_type)
-            set_error_ptr = self.address_of(
-                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
-            )
+
+        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_init"
+        )
+        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_load_to_device"
+        )
+        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "TVMFFIErrorSetRaisedFromCStr"
+        )
+
+        with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value
             init_result = llvm.call(
                 result=self.i32_type,  # function returns i32
@@ -495,6 +501,13 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         """Create the tvm_ffi.Function from the current execution engine.
         """
         if self.engine is not None:
+            # trigger eager compile of init callbacks
+            cuda_init = self.engine.raw_lookup("cuda_init")
+            cuda_load_to_device = self.engine.raw_lookup("cuda_load_to_device")
+            if cuda_init is None:
+                raise DSLRuntimeError("cuda_init not found")
+            if cuda_load_to_device is None:
+                raise DSLRuntimeError("cuda_load_to_device not found")
             tvm_ffi_function_ptr = self.engine.raw_lookup(
                 "__tvm_ffi_" + self.function_name
             )
