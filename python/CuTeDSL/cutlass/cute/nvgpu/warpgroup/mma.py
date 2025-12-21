@@ -15,7 +15,7 @@ from typing import Type, Any
 
 from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL, T
+from cutlass.cutlass_dsl import BaseDSL, T
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
@@ -130,7 +130,7 @@ class MmaOp(WarpGroupMmaOp):
 
     def __post_init__(self) -> None:
         # Verify arch
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch == Arch.sm_90a:
             raise OpError(
                 self,

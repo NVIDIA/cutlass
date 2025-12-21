@@ -1305,6 +1305,46 @@ def exp_packed_f32x2(
     return exp2(b[0], loc=loc, ip=ip), exp2(b[1], loc=loc, ip=ip)
 
 
+@dsl_user_op
+def griddepcontrol_wait(*, loc=None, ip=None) -> None:
+    """
+    This instruction is used to wait for the previous kernel's grid ending
+    (all blocks of the previous kernel have finished and memflushed), i.e.,
+    the instruction after this instruction will not be issued until the previous
+    grid has finished.
+    """
+    llvm.inline_asm(
+        res=None,
+        operands_=[],
+        asm_string="griddepcontrol.wait;",
+        constraints="",
+        has_side_effects=True,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def griddepcontrol_launch_dependents(*, loc=None, ip=None) -> None:
+    """
+    Issuing the launch_dependents instruction hints a dependent kernel to launch earlier.
+    launch_dependents doesn't impact the functionality but the performance:
+    Launching a dependent kernel too early can compete with current kernels,
+    while launching too late can lead to a long latency.
+    """
+    llvm.inline_asm(
+        res=None,
+        operands_=[],
+        asm_string="griddepcontrol.launch_dependents;",
+        constraints="",
+        has_side_effects=True,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
 
 @dsl_user_op
 def cvt_f4e2m1_f16(src, *, loc=None, ip=None):

@@ -470,7 +470,56 @@ class DSLPreprocessor(ast.NodeTransformer):
                 names=[ast.alias(name=f"{top_module_name}.base_dsl", asname="_dsl_")]
             )
         )
-        transformed_tree.body = import_stmts + transformed_tree.body
+
+        assert len(transformed_tree.body) == 1
+        assert isinstance(transformed_tree.body[0], ast.FunctionDef)
+        transformed_tree.body[0].body = import_stmts + transformed_tree.body[0].body
+        # Remove all decorators from top level function
+        transformed_tree.body[0].decorator_list = []
+
+        # Step 4. Wrap the function with nonlocal captures, if has any
+        # if the function has a nonlocal variable, wrap it in a function and return the function
+        # pseudo code:
+        # def foo():
+        #      nonlocal_var_0 = None
+        #      nonlocal_var_1 = None
+        #      def foo(args):
+        #          ...
+        #      return foo
+        # foo = foo()
+        nonlocals = {v: None for v in function_pointer.__code__.co_freevars}
+
+        if len(nonlocals) > 0:
+            assignments = []
+            for n, _ in nonlocals.items():
+                assignments.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=n, ctx=ast.Store())],
+                        value=ast.Constant(value=None),
+                    )
+                )
+
+            return_expr = [ast.Return(value=ast.Name(id=func_name, ctx=ast.Load()))]
+
+            wrapper_fcn = ast.FunctionDef(
+                name=func_name,
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=assignments + transformed_tree.body + return_expr,
+                decorator_list=[],
+            )
+            invoke = ast.Call(
+                func=ast.Name(id=func_name, ctx=ast.Load()), args=[], keywords=[]
+            )
+            assign = ast.Assign(
+                targets=[ast.Name(id=func_name, ctx=ast.Store())], value=invoke
+            )
+            transformed_tree.body = [wrapper_fcn, assign]
 
         # Step 4. Import cutlass and base_dsl
         ast.fix_missing_locations(transformed_tree)
@@ -1521,6 +1570,15 @@ class DSLPreprocessor(ast.NodeTransformer):
             self.scope_manager.add_to_scope(node.name)
             for arg in node.args.args:
                 self.scope_manager.add_to_scope(arg.arg)
+                arg.annotation = None
+
+            for arg in node.args.kwonlyargs:
+                self.scope_manager.add_to_scope(arg.arg)
+                arg.annotation = None
+
+            for arg in node.args.posonlyargs:
+                self.scope_manager.add_to_scope(arg.arg)
+                arg.annotation = None
 
             self.generic_visit(node)
 

@@ -407,7 +407,7 @@ def benchmark(
     To use CUDA graphs, the callable must be a compiled @cute.jit annotated function.
     When using CUDA graphs, the kernel must be launched in a non-default stream.
 
-    :param callable: The function to benchmark
+    :param callable: The function to benchmark. For jit function, it must be compiled functions.
     :type callable: Callable
     :param warmup_iterations: Number of warmup iterations, defaults to 10
     :type warmup_iterations: int, optional
@@ -475,15 +475,6 @@ def benchmark(
     elapsed_time = float("nan")
 
     if use_cuda_graphs:
-        # Check if the callable is a JitCompiledFunction or JitExecutor
-        # These are functions that can be called to launch kernels
-        compiled_types = (
-            cutlass.base_dsl.jit_executor.JitCompiledFunction,
-            cutlass.base_dsl.jit_executor.JitExecutor,
-        )
-        if not isinstance(callable, compiled_types):
-            raise TypeError("Function must be precompiled to be used with CUDA Graphs")
-
         # Check if the stream is a non-default stream
         if int(stream) == int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT):
             raise ValueError(
