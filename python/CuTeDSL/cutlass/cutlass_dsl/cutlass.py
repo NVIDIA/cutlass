@@ -247,7 +247,10 @@ class CutlassBaseDSL(BaseDSL):
         return False
 
     def _build_gpu_module(self, attrs, loc=None):
+        log().info(f"self : {self}")
+        log().info(f"Building GPU module for {self.name}")
         self.gpu_module = gpu.GPUModuleOp(ir.StringAttr.get("kernels"), loc=loc)
+        log().info(f"GPU module: {self.gpu_module}")
         with ir.InsertionPoint(self.gpu_module.bodyRegion.blocks.append(*[])):
             pass
 
@@ -275,6 +278,9 @@ class CutlassBaseDSL(BaseDSL):
         return pipeline
 
     def _enter_gpu_module(self):
+        log().info(f"self: {self}")
+        log().info(f"Entering GPU module for {self.name}")
+        log().info(f"GPU module: {self.gpu_module}")
         return ir.InsertionPoint(self.gpu_module.bodyRegion.blocks[0])
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
