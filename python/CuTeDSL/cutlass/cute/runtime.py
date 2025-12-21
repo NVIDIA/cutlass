@@ -925,7 +925,17 @@ def load_module(file_path: str, *, enable_tvm_ffi: bool = True):
     if enable_tvm_ffi:
         import tvm_ffi
 
-        return tvm_ffi.load_module(file_path)
+        try:
+            # keep_module_alive=False means the module will be unloaded
+            # after the returned module goes out of scope, this is useful
+            # for frequent loading and unloading of modules. The only requirement
+            # is that the module do not return object that have deleter in the module
+            # and the returned object lives longer than the module.
+            # DSL functions to not have such issue so it is desirable to set this to False.
+            return tvm_ffi.load_module(file_path, keep_module_alive=False)
+        except TypeError:
+            # compatible with tvm-ffi < 0.1.6
+            return tvm_ffi.load_module(file_path)
     else:
         raise DSLRuntimeError(
             "Unimplemented, please load the module with enable_tvm_ffi=True."

@@ -622,18 +622,14 @@ class CompileCallable:
                 func,
             )
 
-        # If it's a wrapped function created by jit decorator, get the original function
-        if hasattr(func, "__wrapped__"):
+        # If it's a wrapped function created by decorators, get the original function
+        while hasattr(func, "__wrapped__"):
             func = func.__wrapped__
 
-        # Lazy initialization of DSL object if has not been initialized
-        # Use local import to avoid circular import
-        from .dsl import BaseDSL
-
-        BaseDSL._lazy_initialize_dsl(func)
-
         if not hasattr(func, "_dsl_object"):
-            raise DSLRuntimeError("Function is not decorated with jit decorator.")
+            raise DSLRuntimeError(
+                f"Function {func} is not decorated with jit decorator."
+            )
 
         # process compile options, extract the options and remove them from the kwargs
         options = kwargs.pop("options", None)
@@ -645,8 +641,4 @@ class CompileCallable:
         else:
             compile_options = self._compile_options
         func._dsl_object.compile_options = compile_options
-        fcn_ptr = func._dsl_object._preprocess_and_execute(func)
-
-        if hasattr(func, "_decorator_frame"):
-            kwargs["_decorator_frame"] = func._decorator_frame
-        return func._dsl_object._func(fcn_ptr, *args, **kwargs)
+        return func._dsl_object._func(func, *args, **kwargs)
