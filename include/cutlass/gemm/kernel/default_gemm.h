@@ -206,6 +206,7 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
+
   /// Define the epilogue
   using Epilogue =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<

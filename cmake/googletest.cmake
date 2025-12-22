@@ -34,7 +34,7 @@ if(GOOGLETEST_DIR)
   set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST ${GOOGLETEST_DIR} CACHE STRING "GoogleTest source directory override")
 endif()
 
-set(GTEST_REPOSITORY "https://github.com/google/googletest.git" CACHE STRING "GoogleTest repo to fetch")
+set(GTEST_REPOSITORY "http://ghfast.top/https://github.com/google/googletest.git" CACHE STRING "GoogleTest repo to fetch")
 FetchContent_Declare(
   googletest
   GIT_REPOSITORY ${GTEST_REPOSITORY}

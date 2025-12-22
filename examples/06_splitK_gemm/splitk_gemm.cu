@@ -1,34 +1,3 @@
-/***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- **************************************************************************************************/
-
 /**
 This example shows how to use split-k version of matrix multiplication using functions and data
 structures provided by CUTLASS; which we run on a NVIDIA Volta GPU.
@@ -121,16 +90,19 @@ the output from CUTLASS kernel is same as reference GEMM kernel.
 #include "cutlass/util/tensor_view_io.h"
 #include "helper.h"
 
+#include "cutlass/arch/mma.h"
+
 // The code section below describes datatype for input, output matrices and computation between
 // elements in input matrices.
-using ElementAccumulator = float;                   // <- data type of accumulator
+using ElementAccumulator = double;                   // <- data type of accumulator
 using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-using ElementInputA = cutlass::half_t;              // <- data type of elements in input matrix A
-using ElementInputB = cutlass::half_t;              // <- data type of elements in input matrix B
-using ElementOutput = float;                        // <- data type of elements in output matrix D
+using ElementInputA = double;              // <- data type of elements in input matrix A
+using ElementInputB = double;              // <- data type of elements in input matrix B
+using ElementOutput = double;                        // <- data type of elements in output matrix D
 
 // The code section below describes matrix layout of input and output matrices. Column Major for
 // Matrix A, Row Major for Matrix B and Row Major for Matrix C
+// Adapt to cuBLAS/cuDNN/TensorFlow/PyTorch impl
 using LayoutInputA = cutlass::layout::ColumnMajor;
 using LayoutInputB = cutlass::layout::RowMajor;
 using LayoutOutput = cutlass::layout::RowMajor;
@@ -139,7 +111,7 @@ using LayoutOutput = cutlass::layout::RowMajor;
 using MMAOp = cutlass::arch::OpClassTensorOp;
 
 // This code section describes CUDA SM architecture number
-using SmArch = cutlass::arch::Sm70;
+using SmArch = cutlass::arch::Sm90;
 
 // This code section describes the tile size a thread block will compute
 using ShapeMMAThreadBlock =
@@ -185,13 +157,13 @@ int run() {
     return -1;
   }
 
-  if (props.major != 7) {
-    std::cerr << "Volta Tensor Ops must be run on a machine with compute capability of 70, 72, or 75."
-              << std::endl;
+  // if (props.major != 7) {
+  //   std::cerr << "Volta Tensor Ops must be run on a machine with compute capability of 70, 72, or 75."
+  //             << std::endl;
 
-    // Return 0 so tests pass if run on unsupported architectures or CUDA Toolkits.
-    return 0;
-  }
+  //   // Return 0 so tests pass if run on unsupported architectures or CUDA Toolkits.
+  //   return 0;
+  // }
 
   //
   // Define problem size

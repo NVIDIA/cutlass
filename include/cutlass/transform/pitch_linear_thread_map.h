@@ -61,6 +61,7 @@ namespace transform {
 ///
 /// This ThreadMap is used by SIMT kernels and operand E of the sparse tensor
 /// kernels.
+/// 「行主序一维拉直 → 顺序切成等长连续段 → 依次分给线程」
 template <
   typename Shape_,
   int Threads,
