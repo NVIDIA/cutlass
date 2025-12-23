@@ -423,13 +423,28 @@ int main(int argc, const char *arg[]) {
   // Run the CUTLASS GEMM test.
   //
 
-  cudaError_t result = TestCutlassGemm(
-    problem[0],     // GEMM M dimension
-    problem[1],     // GEMM N dimension
-    problem[2],     // GEMM K dimension
-    scalars[0],     // alpha
-    scalars[1]      // beta
-  );
+  const int loop = 20;
+  cudaError_t result;
+  GpuTimer timer;
+  timer.start();
+  for (int iter = 0; iter < loop; ++iter) {
+    result = TestCutlassGemm(
+      problem[0],     // GEMM M dimension
+      problem[1],     // GEMM N dimension
+      problem[2],     // GEMM K dimension
+      scalars[0],     // alpha
+      scalars[1]      // beta
+    );
+  }
+  timer.stop();
+
+  // Compute average runtime and GFLOPs.
+  float elapsed_ms = timer.elapsed_millis();
+  double avg_runtime_s = double(elapsed_ms) / double(loop) / 1000;
+  double gflops = 2.0 * double(1.0 * problem[0] * problem[1] * problem[2]) / avg_runtime_s / 1e9;
+
+  std::cout << "  Avg runtime: " << avg_runtime_s << " s" << std::endl;
+  std::cout << "  GFLOPs: " << gflops << std::endl;
 
   if (result == cudaSuccess) {
     std::cout << "Passed." << std::endl;
