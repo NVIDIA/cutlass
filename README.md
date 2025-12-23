@@ -143,6 +143,7 @@ To get started quickly - please refer :
     - Fix a few bugs in distributed gemm API and examples.
     - Fix handling negative zero in sparse compressor.
     - Add missing `wait_on_dependent_grids` for PDL use case.
+    - Work around a driver bug which will cause occasionally errors when executing kernels.
 * Fix some profiler issues:
     - Add some missing reference kernels.
     - Support VoidC reference kernels.
