@@ -471,6 +471,17 @@ make_im2col_tma_copy_desc(
       tma_l2Promotion,
       tma_oob_fill);
 
+  int driver_version = 0;
+  CUresult driver_version_result = cuDriverGetVersion(&driver_version);
+  assert(driver_version_result == CUDA_SUCCESS);
+  if (driver_version <= 13010) {
+    if (cute::bits_to_bytes(
+          cute::cosize(tensor_cwhdn.layout()) *
+          cute::sizeof_bits<typename EngineA::value_type>::value) < 131072) {
+      reinterpret_cast<uint64_t*>(&tma_desc)[1] &= ~(1llu << 21);
+    }
+  }
+
   // The extra asserts help indicate the error's cause.
   assert(encode_result != CUDA_ERROR_DEINITIALIZED);
   assert(encode_result != CUDA_ERROR_NOT_INITIALIZED);
