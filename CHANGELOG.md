@@ -14,7 +14,7 @@
   - Fixed order issue in `make_smem_layout_a` in utils/hopper_helpers.py
 
 ### CUTLASS C++
-* Work around a driver bug which will cause occasionally errors when executing kernels.
+* Work around a driver TMA descriptor related bug which will cause occasionally errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
 
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
 
