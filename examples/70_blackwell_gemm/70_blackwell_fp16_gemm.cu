@@ -440,7 +440,7 @@ int run(Options &options)
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
+  // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
   // and must have compute capability at least 100a.
 
   if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)) {

@@ -738,7 +738,7 @@ int run(OptionType &options, bool host_problem_shapes_available = true)
 
 int main(int argc, char const **args) {
 
-  // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
+  // CUTLASS must be compiled with CUDA 12.3 Toolkit to run this example
   // and must have compute capability at least 90.
   if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 3)) {
     std::cerr << "This example requires CUDA 12.3 or newer.\n";
