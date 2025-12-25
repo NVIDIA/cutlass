@@ -48,8 +48,8 @@
    export IGC_allowDecompose2DBlockFuncs=0
  To build & run this example (from your build dir):
 
-    $ ninja 02_bmg_gemm_f16_u4_s8
-    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f16_u4_s8
+    $ ninja 02_bmg_gemm_f16_u4_f16
+    $ ./examples/sycl/02_bmg_gemm_mixed_dtype/02_bmg_gemm_f16_u4_f16
 
   Call with `--help` for information about available options
 */
@@ -93,16 +93,17 @@ struct Options {
   bool help;
   bool error;
 
+  bool a_narrower;
   int mode;
   int m, n, k, l, iterations;
   int g;
-  int alpha, beta;
+  float alpha, beta;
 
   Options():
     help(false),
     error(false),
     m(5120), n(4096), k(4096), l(1), iterations(20),
-    g(128), mode(2),
+    g(128), mode(2), a_narrower(false),
     alpha(1.f), beta(0.f)
   { }
 
@@ -121,9 +122,12 @@ struct Options {
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("g", g, 128);
     cmd.get_cmd_line_argument("mode", mode, 2);
-    cmd.get_cmd_line_argument("alpha", alpha, 1);
-    cmd.get_cmd_line_argument("beta", beta, 0);
+    cmd.get_cmd_line_argument("alpha", alpha, 1.f);
+    cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
+    if (cmd.check_cmd_line_flag("a_narrower")) {
+      a_narrower = true;
+    }
   }
 
   /// Prints the usage statement.
@@ -138,6 +142,7 @@ struct Options {
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
       << "  --g=<int>                   The size of each group for the scales and zeros. To broadcast a vector of scales or zeros, set the group size to K.\n"
       << "  --mode=<int>                The mode to run the gemm. 0 is Convert Only, 1 is Convert and Scale, 2 is Convert and Scale with Zero Point\n"
+      << "  --a_narrower                If specified, make A the narrower type (B is narrower by default).\n"
       << "  --alpha=<s32>               Epilogue scalar alpha\n"
       << "  --beta=<s32>                Epilogue scalar beta\n\n"
       << "  --iterations=<int>          Iterations\n\n";
@@ -194,7 +199,7 @@ struct ExampleRunner {
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
   using ElementAcc = typename Gemm::ElementAccumulator;
-  using ElementMMA = int8_t;
+  using ElementMMA = std::conditional_t<AIsNarrower, ElementB, ElementA>;
   using ElementQuant = std::conditional_t<AIsNarrower, ElementA, ElementB>;
 
   using ElementScale = typename CollectiveMainloop::NonVoidElementScale;
@@ -206,7 +211,7 @@ struct ExampleRunner {
   using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
-  using ElementAccumulator = typename Gemm::ElementAccumulator;
+  using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
@@ -244,21 +249,19 @@ struct ExampleRunner {
     // Compute reference output (default gemm kernel w/ ElementA == ElementB)
     //
 
-    // Copy atoms (void = automatic selection by CUTLASS)
-    using GmemTiledCopyA = void;
-    using GmemTiledCopyB = void;
+    using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
+    using GmemTiledCopyB = XE_2D_U16x16x16_LD_T;
 
     // Workgroup-level tile
-    using TileShape = Shape<_32, _64, _32>;
+    using TileShape = Shape<_256, _256, _32>;
 
-    // MMA atom (new API using XE_DPAS_TT)
     using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_DPAS_TT<8, int32_t, int8_t, int8_t>>, Layout<TileShape>,
-                                      Layout<Shape<_1, _2, _1>, Stride<_2, _1, _0>>>::TiledMMA;
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<TileShape>,
+                                      Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
     constexpr int PipelineStages = 3;
-    using GEMMDispatchPolicy = cutlass::gemm::MainloopXeL1Staged<PipelineStages>;
-    using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeGeneric;
+    using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+    using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
     using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementAccumulator, ElementCompute,
             ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
@@ -269,14 +272,15 @@ struct ExampleRunner {
     using CollectiveEpilogueRef = cutlass::epilogue::collective::CollectiveEpilogue<
             EpilogueDispatchPolicy,
             TileShape,
-            void,   // Epilogue tile (void = automatic)
             ElementAccumulator,
             cutlass::gemm::TagToStrideC_t<LayoutC>,
             ElementOutput,
             cutlass::gemm::TagToStrideC_t<LayoutD>,
             FusionCallBacks,
-            void,   // Copy atom for C (void = automatic)
-            void>;  // Copy atom for D (void = automatic)
+            XE_2D_U32x8x16_LD_N,
+            void, void,
+            XE_2D_U16x8x16_ST_N,
+            void, void>;
 
     // Mainloop
     using CollectiveMainloopRef = cutlass::gemm::collective::CollectiveMma<
@@ -322,27 +326,40 @@ struct ExampleRunner {
   }
 
   template <class Element>
-  bool initialize_scale(cutlass::DeviceAllocation<Element>& block, Options const& options) {
+  bool initialize_scale(
+    cutlass::DeviceAllocation<Element>& block, 
+    Options const& options) {
 
     if (options.mode == GemmMode::ConvertOnly) {
       // No scales, so just initialize with 1 so we can use the same kernel to dequantize the data.
-      std::vector<Element> stage(block.size(), Element(1));
+      std::vector<Element> stage(block.size(), Element(1.0f));
       block.copy_from_host(stage.data());
-    }
+    } 
     else {
-      initialize_block(block, 2025, Element(1), Element(8)); // scale can't be zero because " x / scale "
+      float elt_max_f = float(cutlass::platform::numeric_limits<ElementQuant>::max());
+      const float max_dequant_val = 4.f;
+      const float min_dequant_val = 0.5f;
+
+      float scope_max(max_dequant_val / elt_max_f);
+      float scope_min(min_dequant_val / elt_max_f);
+
+      cutlass::reference::device::BlockFillRandomUniform(
+        block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
     }
     return true;
   }
 
   template <class Element>
-  bool initialize_zero(cutlass::DeviceAllocation<Element>& block, Options const& options) {
+  bool initialize_zero(
+    cutlass::DeviceAllocation<Element>& block,
+    Options const& options) {
+    
     if (options.mode == GemmMode::ConvertAndScaleWithZeroPoint) {
       cutlass::reference::device::BlockFillRandomUniform(
-        block.get(), block.size(), seed, Element(2), Element(-2));
+        block.get(), block.size(), seed, Element(2.0f), Element(-2.0f));
     } else {
       // No bias, so just initialize with 0 so we can use the same kernel to dequantize the data.
-      std::vector<Element> stage(block.size(), Element(0));
+      std::vector<Element> stage(block.size(), Element(0.0f));
       block.copy_from_host(stage.data());
     }
     return true;
@@ -433,117 +450,14 @@ struct ExampleRunner {
     compat::wait();
   }
 
-  template <
-  class QuantizedElement,
-  class DequantizedElement,
-  class OperandLayout,
-  class ElementScale,
-  class ElementZero,
-  class ScaleLayout,
-  class ZeroLayout>
-  static void dequantize_A(DequantizedElement* dq_buffer,
-                       QuantizedElement const* q_buffer,
-                       OperandLayout const operand_layout,
-                       ElementScale const* scale_buffer,
-                       ElementZero const* zero_buffer,
-                       ScaleLayout const scale_layout,
-                       ZeroLayout const zero_layout,
-                       int const group_size) {
-    if constexpr (std::is_same_v<DequantizedElement, QuantizedElement>) {
-      return;
-    }
-
-    std::vector<uint8_t> dst(size(operand_layout) * sizeof_bits_v<DequantizedElement> / 8, 0);
-    cutlass::device_memory::copy_to_host(dst.data(), (uint8_t*)dq_buffer, dst.size());
-
-    std::vector<uint8_t> src(size(operand_layout) * sizeof_bits_v<QuantizedElement> / 8, 0);
-    cutlass::device_memory::copy_to_host(src.data(), (uint8_t*)q_buffer, src.size());
-
-    std::vector<uint8_t> scale(size(scale_layout) * sizeof_bits_v<ElementScale> / 8, 0);
-    cutlass::device_memory::copy_to_host(scale.data(), (uint8_t*)scale_buffer, scale.size());
-
-    std::vector<uint8_t> zero(size(zero_layout) * sizeof_bits_v<ElementZero> / 8, 0);
-    cutlass::device_memory::copy_to_host(zero.data(), (uint8_t*)zero_buffer, zero.size());
-
-    compat::wait();
-
-    auto dst_tensor = make_tensor(make_gmem_ptr(reinterpret_cast<DequantizedElement*>(dst.data())), select<1, 0, 2>(operand_layout));
-
-    auto src_tensor = [&]() {
-      if constexpr (sizeof_bits_v<QuantizedElement> < 8) {
-        return make_tensor(cute::subbyte_iterator<const QuantizedElement>(src.data()), operand_layout);
-      } else {
-        return make_tensor(make_gmem_ptr(reinterpret_cast<QuantizedElement const *>(src.data())), select<1, 0, 2>(operand_layout));
-      }
-    }();
-
-    auto scale_tensor = make_tensor(make_gmem_ptr(reinterpret_cast<ElementScale const *>(scale.data())), scale_layout);
-
-    auto zero_tensor = [&]() {
-      if constexpr (sizeof_bits_v<ElementZero> < 8) {
-        auto flatten_tensor = flatten(make_tensor(cute::subbyte_iterator<const ElementZero>(zero.data()), zero_layout));
-        static_assert(rank(flatten_tensor.layout()) == 4);
-        return make_tensor(flatten_tensor.data(), select<1, 0, 2, 3>(flatten_tensor.layout()));
-      } else {
-        return make_tensor(make_gmem_ptr(reinterpret_cast<ElementZero const *>(zero.data())), zero_layout);
-      }
-    }();
-
-    auto M = size<1>(src_tensor);
-    auto K = size<0>(src_tensor);
-    auto L = size<2>(src_tensor);
-
-    static constexpr bool is_qnt = cutlass::platform::numeric_limits<DequantizedElement>::is_integer;
-
-    for (int l = 0; l < L; l++) {
-      for (int k= 0; k < K; k++) {
-        for (int m = 0; m < M; m++) {
-          auto src_data = [&]() {
-            if constexpr (is_qnt) {
-              if constexpr (sizeof_bits_v<QuantizedElement> >= 8) {
-                return  src_tensor(k, m, l);
-              } else {
-                return src_tensor(k, m, l).get();
-              }
-            } else {
-              using ret_type = cute::conditional_t<sizeof_bits_v<ElementZero> >= 8, ElementZero, int8_t>;
-              if constexpr (sizeof_bits_v<QuantizedElement> >= 8) {
-                return  (ret_type)(src_tensor(k, m, l));
-              } else {
-                return (ret_type)(src_tensor(k, m, l).get());
-              }
-            }
-         }();
-
-        auto scale_data = scale_tensor(m, k / group_size, l);
-
-        using ret_type = cute::conditional_t<sizeof_bits_v<ElementZero> >= 8, ElementZero, int8_t>;
-        ret_type zero_data = 
-          [&]() {
-            if constexpr (sizeof_bits_v<ElementZero> >= 8) {
-              return zero_tensor(m, k / group_size, l);
-            } else {
-              auto zero_elements_packed_along_k = get<0>(zero_tensor.shape());
-              return (ret_type)(zero_tensor((k / group_size) % zero_elements_packed_along_k, m, k / group_size / zero_elements_packed_along_k, l).get());
-            }
-          }();
-
-          if constexpr (is_qnt) {
-            dst_tensor(k, m, l) = ((int)(src_data / scale_data)) + zero_data;
-          } else {
-            dst_tensor(k, m, l) = (src_data - zero_data) * scale_data;
-          }
-        }
-      }
-    }
-
-    cutlass::device_memory::copy_to_device(dq_buffer, (DequantizedElement*)(raw_pointer_cast(dst_tensor.data())), dst_tensor.size());
-    compat::wait();
-  }
 
   /// Initialize operands to be used in the GEMM and reference GEMM
   void initialize(Options const& options) {
-    auto [M, N, K, L] = ProblemShapeType{options.m, options.n, options.k, options.l};
+    auto problem_shape = ProblemShapeType{options.m, options.n, options.k, options.l};
+    auto& M = cute::get<0>(problem_shape);
+    auto& N = cute::get<1>(problem_shape);
+    auto& K = cute::get<2>(problem_shape);
+    auto& L = cute::get<3>(problem_shape);
 
     auto zero_elements_packed_along_k = get<0>(StrideZero{});
     const int scale_k = cute::ceil_div(options.k, options.g);
@@ -554,7 +468,7 @@ struct ExampleRunner {
     auto shape_scale = cute::make_shape(dq_mn_size, scale_k, L);
     auto shape_zero = [&]() {
       if constexpr (is_tuple_v<std::remove_reference_t<decltype(cute::get<1>(stride_Z))>>) {
-        return cute::make_shape(dq_mn_size, cute::make_shape(zero_elements_packed_along_k, cute::max(1, scale_k / zero_elements_packed_along_k)), options.l);
+        return cute::make_shape(dq_mn_size, cute::make_shape(zero_elements_packed_along_k, cute::max(1, scale_k / zero_elements_packed_along_k)), L);
       } else {
         return shape_scale;
       }
@@ -596,12 +510,10 @@ struct ExampleRunner {
     auto layout_scale = make_layout(shape_scale, stride_S);
     auto layout_zero = make_layout(shape_zero, stride_Z);
 
-    compat::wait();
-
     // Note that we are overwriting the relevant `block_X_dq` here, both were
     // filled by initialize_mixed_dtype_block above
     if constexpr (AIsNarrower) {
-      dequantize_A(block_A_dq.get(), block_A.get(), layout_A,
+      dequantize(block_A_dq.get(), block_A.get(), layout_A,
                         block_scale.get(), block_zero.get(), layout_scale, layout_zero,
                         options.g);
     } else {
@@ -620,7 +532,7 @@ struct ExampleRunner {
         cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
         {block_A.get(), stride_A, block_B.get(), stride_B, block_scale.get(),
-         stride_S, block_zero.get(), stride_Z, options.g},
+         stride_S,  block_zero.get(), stride_Z, options.g},
         {{options.alpha, options.beta},
          block_C.get(),
          stride_C,
@@ -705,11 +617,11 @@ int main(int argc, const char** argv) {
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = int32_t;      // <- data type of accumulator
-  using ElementComputeEpilogue = int32_t;  // <- data type of epilogue operations
-  using ElementInputA = half_t;            // <- data type of elements in input matrix A
-  using ElementInputB = uint4_t;           // <- data type of elements in input matrix B
-  using ElementOutput = half_t;            // <- data type of elements in output matrix D
+  using ElementAccumulator = float;      // <- data type of accumulator
+  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
+  using ElementInputA = uint4_t;         // <- data type of elements in input matrix A
+  using ElementInputB = half_t;          // <- data type of elements in input matrix B
+  using ElementOutput = half_t;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -720,16 +632,16 @@ int main(int argc, const char** argv) {
   using ElementScale = half_t;
 
   using StrideScale = cute::Stride<_1, int64_t, int64_t>;
-  using StrideZero = cute::Stride<_8, cute::Stride<_1, int64_t>, int64_t>; // int4_t zero point packed 8 elements along K dimension and then along M dimension
+  using StrideZero = cute::Stride<_8, cute::Stride<_1, int64_t>, int64_t>; // int4_t zero point packed 8 elements along K dimension and then along N dimension
 
-  using GmemTiledCopyA = XE_2D_Packed_U16x32x32_LD_N;
-  using GmemTiledCopyB = XE_2D_U4x32x16_LD_T;
+  using GmemTiledCopyA = XE_2D_U4x32x16_LD_T;
+  using GmemTiledCopyB = XE_2D_U16x16x32_LD_N;
 
   // Workgroup-level tile
-  using TileShape = Shape<_32, _64, _32>;
+  using TileShape = Shape<_16, _64, _64>;
 
   using TiledMma =
-      typename TiledMMAHelper<MMA_Atom<XE_8x16x32_S32S8S8S32_TT>, Layout<TileShape>,
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<TileShape>,
                                     Layout<Shape<_1, _2, _1>, Stride<_2, _1, _0>>>::TiledMMA;
 
   constexpr int PipelineStages = 3;
@@ -756,29 +668,33 @@ int main(int argc, const char** argv) {
 
   // Use the helpers to avoid template arg repetition
   using GemmAdapterBuilder = typename helpers::MixedGemmUniversalAdapterBuilder<Shape<int, int, int, int>, CollectiveEpilogue>;
-  using MixedBuilderQuant = helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
-                                cutlass::gemm::TagToStrideA_t<LayoutA>,
-                                cutlass::gemm::TagToStrideB_t<LayoutB>,
-                                TiledMma, GmemTiledCopyA, GmemTiledCopyB>;
 
-  if(options.mode ==  GemmMode::ConvertOnly) {
-    std::cout << "Running in ConvertOnly mode." << std::endl;
-    using MainloopConvertOnly = MixedBuilderQuant::template CollectiveMma<
-                                    cute::tuple<ElementInputA>, ElementInputB>;
-    using GemmConvertOnly = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertOnly>;
-    CUTLASS_CHECK(ExampleRunner<GemmConvertOnly>{}.run(options, hw_info));
-  }else if(options.mode == GemmMode::ConvertAndScale){
-    std::cout << "Running in ConvertAndScale mode." << std::endl;
-    using MainloopConvertAndScale = MixedBuilderQuant::template CollectiveMma<
-                                        cute::tuple<ElementInputA, ElementScale, StrideScale>, ElementInputB>;
-    using GemmConvertAndScale = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertAndScale>;
-    CUTLASS_CHECK(ExampleRunner<GemmConvertAndScale>{}.run(options, hw_info));
-  }else{
-    std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
-    using MainloopConvertAndScaleWithZeroPoint = MixedBuilderQuant::template CollectiveMma<
-                                                    cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>,
-                                                    ElementInputB>;
-    using GemmConvertAndScaleWithZeroPoint = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertAndScaleWithZeroPoint>;
-    CUTLASS_CHECK(ExampleRunner<GemmConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
+  if(options.a_narrower){
+    // TODO: this feature not support now
+    std::cout << "Not support setting A as narrower type for int4 now." << std::endl;
+  } else {
+    std::cout << "Setting B as narrower type" << std::endl;
+    using MixedBuilderQuant = helpers::MixedCollectiveMmaBuilder<GEMMDispatchPolicy, TileShape,
+                                  cutlass::gemm::TagToStrideA_t<LayoutA>,
+                                  cutlass::gemm::TagToStrideB_t<LayoutB>,
+                                  TiledMma, GmemTiledCopyB, GmemTiledCopyA>;
+    if(options.mode ==  GemmMode::ConvertOnly) {
+      std::cout << "Running in ConvertOnly mode." << std::endl;
+      using MainloopConvertOnly = MixedBuilderQuant::template CollectiveMma<ElementInputB, cute::tuple<ElementInputA>>;
+      using GemmConvertOnly = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertOnly>;
+      CUTLASS_CHECK(ExampleRunner<GemmConvertOnly>{}.run(options, hw_info));
+    }else if(options.mode == GemmMode::ConvertAndScale){
+      std::cout << "Running in ConvertAndScale mode." << std::endl;
+      using MainloopConvertAndScale = MixedBuilderQuant::template CollectiveMma<
+            ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale>>;
+      using GemmConvertAndScale = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertAndScale>;
+      CUTLASS_CHECK(ExampleRunner<GemmConvertAndScale>{}.run(options, hw_info));
+    }else{
+      std::cout << "Running in ConvertAndScaleWithZeroPoint mode." << std::endl;
+      using MainloopConvertAndScaleWithZeroPoint = MixedBuilderQuant::template CollectiveMma<
+            ElementInputB, cute::tuple<ElementInputA, ElementScale, StrideScale, ElementZero, StrideZero>>;
+      using GemmConvertAndScaleWithZeroPoint = GemmAdapterBuilder::template GemmUniversalAdapter<MainloopConvertAndScaleWithZeroPoint>;
+      CUTLASS_CHECK(ExampleRunner<GemmConvertAndScaleWithZeroPoint>{}.run(options, hw_info));
+    }
   }
 }
