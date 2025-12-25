@@ -1,6 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
- * Copyright (C) 2025 Intel Corporation, All rights reserved.
+* Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,32 +29,61 @@
  *
  **************************************************************************************************/
 
- #pragma once
+#include "cutlass/cutlass.h"
+#include "cutlass/kernel_hardware_info.h"
+#include "cutlass/util/command_line.h"
 
-#include "gemm_configuration_sycl.hpp"
+#include "benchmark_runner.hpp"
+#if defined(SYCL_NVIDIA_TARGET) || !defined(CUTLASS_ENABLE_SYCL)
+#include "benchmarks_cuda.hpp"
+#elif defined(SYCL_INTEL_TARGET)
+#include "benchmarks_sycl.hpp"
+#endif
 
-using Scheduler = cutlass::gemm::device::Scheduler;
+int main(int argc, const char** argv) {
 
-template <
-  typename TileShape,
-  typename Tiler,
-  typename GmemTiledCopyA,
-  typename GmemTiledCopyB>
-using Gemm_Bench_BF16FP32_RRR = cutlass::gemm::device::GemmConfiguration<
-    cutlass::arch::IntelXe,
-    cutlass::bfloat16_t, cutlass::layout::RowMajor,
-    cutlass::bfloat16_t, cutlass::layout::RowMajor,
-    float, cutlass::layout::RowMajor,
-    float,
-    TileShape, Scheduler::Gemm, Tiler,
-    GmemTiledCopyA, GmemTiledCopyB>;
+  BenckmarkOptions options;
 
-using BmgGemm_BF16FP32_TileShape_512_256_32 = Shape<_512, _256, _32>;
-using BmgGemm_BF16FP32_Tile_512_256_32 = typename TiledMMAHelper<MMA_Atom<XE_DPAS_TT<8, float, cute::bfloat16_t>>, Layout<BmgGemm_BF16FP32_TileShape_512_256_32>, Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
-using BmgGemmBF16BF16FP32_RRR_TileShape_512_256_32 = Gemm_Bench_BF16FP32_RRR<BmgGemm_BF16FP32_TileShape_512_256_32, BmgGemm_BF16FP32_Tile_512_256_32, void, void>;
-CUTLASS_CREATE_GEMM_BENCHMARK(BmgGemmBF16BF16FP32_RRR_TileShape_512_256_32);
+  options.parse(argc, argv);
 
-static void register_gemm_benchmarks() {
-// TODO: support sglang cases
-  CUTLASS_BENCHMARK(BmgGemmBF16BF16FP32_RRR_TileShape_512_256_32);
+  if (options.help) {
+    options.print_usage(std::cout) << std::endl;
+    return 0;
+  }
+
+  if (options.config_file.empty()) {
+    std::cerr << "Benchmark configuration file not found." << std::endl;
+    options.error = true;
+  }
+
+  if (options.error) {
+    std::cerr << "Aborting execution." << std::endl;
+    return -1;
+  }
+
+  std::ifstream file(options.config_file);
+
+  if (!file.is_open()) {
+    std::cerr << "Failed to open configuration file: " << options.config_file << std::endl;
+    return 1;
+  }
+
+  register_gemm_benchmarks();
+
+  std::string line;
+  while (std::getline(file, line)) {
+    if (!line.empty() && line.find("#") != 0) {
+      register_benchmarks<cutlass::benchmark::GEMMOptions>(line);
+    }
+  }
+  file.close();
+
+  int argc_bm = 0;
+  ::benchmark::SetDefaultTimeUnit(::benchmark::kMillisecond);
+  ::benchmark::Initialize(&argc_bm, nullptr);
+
+  ::benchmark::RunSpecifiedBenchmarks();
+  ::benchmark::Shutdown();
+
+  return 0;
 }

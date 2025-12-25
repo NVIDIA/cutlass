@@ -117,6 +117,7 @@ set(SUBDIRS gemm)
 
 if(SYCL_INTEL_TARGET)
   list(APPEND SUBDIRS flash_attention)
+  list(APPEND SUBDIRS gemm/legacy)
 endif()
 
 foreach(SUBDIR ${SUBDIRS})
