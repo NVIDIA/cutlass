@@ -2427,6 +2427,60 @@ bool TestSmallFusion(double alpha = 1.0, double beta = 0.0,
     alpha, beta, check_relative_equality, use_device_scalars, vector_scale_mode);
 }
 
+/// Test for Group GEMM with heterogeneous problem shapes
+template <typename Gemm>
+bool TestXeGrouped(
+    const std::vector<cutlass::gemm::GemmCoord>& problem_sizes, 
+    double alpha = 1.0,
+    double beta = 0.0
+) {
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using UnderlyingProblemShape = typename ProblemShapeType::UnderlyingProblemShape;
+  using ElementScalar = typename detail::ElementScalarType<Gemm, float>::Type;
+
+  Testbed3x<Gemm> testbed(CheckEquality::RELATIVE, ScalarLoc::ON_DEVICE, VectorScale::DISABLED);
+
+  bool passed = true;
+  try {
+    // Create host and device arrays from vector of problem sizes
+    std::vector<UnderlyingProblemShape> problem_sizes_host;
+    for (const auto& coord : problem_sizes) {
+      problem_sizes_host.push_back(UnderlyingProblemShape{coord.m(), coord.n(), coord.k()});
+    }
+    
+    // Allocate device memory and copy
+    cutlass::DeviceAllocation<UnderlyingProblemShape> problem_sizes_device;
+    problem_sizes_device.reset(problem_sizes_host.size());
+    problem_sizes_device.copy_from_host(problem_sizes_host.data(), problem_sizes_host.size());
+    
+    // Create GroupProblemShape
+    ProblemShapeType group_problem_shape;
+    group_problem_shape.num_groups = (int32_t)problem_sizes_host.size();
+    group_problem_shape.problem_shapes = problem_sizes_device.get();
+    group_problem_shape.host_problem_shapes = problem_sizes_host.data();
+    
+    passed = testbed.run(
+        group_problem_shape,
+        ElementScalar(alpha),
+        ElementScalar(beta)
+    );
+  }
+  catch (std::exception const& e) {
+    EXPECT_TRUE(false) << "TestXeGrouped: testbed.run threw an exception: " << e.what();
+    return false;
+  }
+  catch (...) {
+    EXPECT_TRUE(false) << "TestXeGrouped: testbed.run threw an unknown exception";
+    return false;
+  }
+
+  EXPECT_TRUE(passed) << "TestXeGrouped: testbed.run failed for " 
+                      << problem_sizes.size() << " grouped problems"
+                      << ", alpha: " << alpha << ", beta: " << beta;
+  
+  return passed;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // TestAll template function overload for grouped GEMM testing with explicit problem sizes

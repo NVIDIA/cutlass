@@ -1,5 +1,5 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # Copyright (c) 2025 INTEL CORPORATION. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -86,6 +86,16 @@ if(CUTLASS_ENABLE_SYCL)
       xe_gemm_fp16_fp8_fp32_tensor_op_fp32_group_gemm.cpp
     )
 
+    # Single unified test executable combining all new test files
+    cutlass_test_unit_add_executable(
+      cutlass_test_unit_gemm_device_unified_tests
+      gemm_universal_lincomb_per_rowbias_eltact.cpp
+      gemm_universal_mainloopintelxexmx16group.cpp
+      gemm_universal_mainloopintelxexmx16_group_fp8.cpp
+      gemm_universal_mainloopintelxexmx16group_precision.cpp
+      gemm_universal_fp_scaling.cpp
+    )
+
     add_custom_target(
       cutlass_test_unit_gemm_device
       DEPENDS
@@ -96,6 +106,7 @@ if(CUTLASS_ENABLE_SYCL)
       cutlass_test_unit_gemm_device_tensorop_xe_group_gemm
       cutlass_test_unit_gemm_device_mixed_dtype_tensorop_xe_group_gemm
       cutlass_test_unit_gemm_device_tensorop_xe
+      cutlass_test_unit_gemm_device_unified_tests
     )
 
     add_custom_target(
