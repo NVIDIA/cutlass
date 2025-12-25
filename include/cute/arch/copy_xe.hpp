@@ -66,19 +66,33 @@ struct XE_1D_LDSM {
   static constexpr size_t N = sizeof(D) / sizeof(S);
   CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
     "register vector only supports 1, 2, 4, 8");
-
+  static constexpr size_t N_d32 = sizeof(D) / sizeof(uint32_t);
+  using StorageT = intel::vector_t<uint32_t, N_d32>;
+  
   template<class S_, class D_>
   CUTE_HOST_DEVICE static void
   copy(const S_ &src, D_ &dst) {
-    #if defined(SYCL_INTEL_TARGET)
+    #if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
       CUTE_STATIC_ASSERT(sizeof(S_) == sizeof(S));
-      auto props = sycl::ext::oneapi::experimental::properties{
-          sycl::ext::oneapi::experimental::contiguous_memory,
-          sycl::ext::oneapi::experimental::alignment<sizeof(D)>};
-      auto sg =
-          sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
-      sycl::ext::oneapi::experimental::group_load(
-          sg, &src, *reinterpret_cast<sycl::vec<S_, N> *>(&dst), props);
+      uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&src);
+      int thr_id_in_subgroup = int(ThreadIdxX()) % intel::sg_size;
+      smem_int_ptr += thr_id_in_subgroup * sizeof(D);
+      auto& data_vec = *reinterpret_cast<StorageT *>(&dst);
+      if constexpr (N_d32 > 1) {
+        asm volatile(
+            "{\n"
+            "lsc_load.slm (M1, 16) %0:d32x%2 flat[%1]:a32 \n"
+            "}\n" : "=rw"(data_vec)
+            : "rw"(smem_int_ptr), "P"(N_d32)
+          );
+      } else {
+        asm volatile(
+            "{\n"
+            "lsc_load.slm (M1, 16) %0:d32 flat[%1]:a32 \n"
+            "}\n" : "=rw"(data_vec)
+            : "rw"(smem_int_ptr)
+          );
+      }
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif
@@ -124,17 +138,34 @@ struct XE_1D_STSM {
   static constexpr size_t N = sizeof(S) / sizeof(D);
   CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
       "register vector only supports 1, 2, 4, 8");
+  static constexpr size_t N_d32 = sizeof(S) / sizeof(uint32_t);
+  using StorageT = intel::vector_t<uint32_t, N_d32>;
 
   template<class S_, class D_>
   CUTE_HOST_DEVICE static void
   copy(S_ const& src, D_ & dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
-      auto props = sycl::ext::oneapi::experimental::properties{
-          sycl::ext::oneapi::experimental::contiguous_memory,
-          sycl::ext::oneapi::experimental::alignment<sizeof(S)>};
-      sycl::ext::oneapi::experimental::group_store(
-          sg, *reinterpret_cast<sycl::vec<D_, N> const *>(&src), &dst, props);
+    #if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
+          uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&dst);
+          int thr_id_in_subgroup = int(ThreadIdxX()) % intel::sg_size;
+          smem_int_ptr += thr_id_in_subgroup * sizeof(S);
+          auto& data_vec = *reinterpret_cast<StorageT const*>(&src);
+          if constexpr (N_d32 > 1) {
+            asm volatile(
+                "{\n"
+                "lsc_store.slm (M1, 16) flat[%1]:a32 %0:d32x%2 \n"
+                "}\n" ::
+                    "rw"(data_vec),
+                "rw"(smem_int_ptr), "P"(N_d32)
+                // , "P"(shift_l)
+              );
+          } else {
+            asm volatile(
+                "{\n"
+                "lsc_store.slm (M1, 16) flat[%1]:a32 %0:d32 \n"
+                "}\n" ::"rw"(data_vec),
+                "rw"(smem_int_ptr)
+              );
+          }
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif
