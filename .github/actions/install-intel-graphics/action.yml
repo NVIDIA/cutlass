@@ -17,34 +17,17 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
+        if [[ "${{ inputs.GPU }}" == "BMG" ]] || [[ "${{ inputs.GPU }}" == "PVC" ]]; then
+          #purge existing intel graphics packages
+          sudo apt-get purge -y 'libigc*' 'intel-igc*' 'libigdgmm*' 'libigdfcl*' \
+          'libze-intel-gpu*' 'libze1' 'libze-dev' 'intel-opencl-icd' \
+          'intel-metrics-discovery' 'intel-gsc' 'intel-ocloc' || true        
           sudo rm -f /etc/apt/sources.list.d/kobuk-team-ubuntu-intel-graphics-*
+
           sudo add-apt-repository ppa:kobuk-team/intel-graphics
           sudo apt update
           sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
             intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc g++
-          dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
-        elif [[ "${{ inputs.GPU }}" == "PVC" ]]; then
-          # PVC: Use LTS drivers + Kobuk compute runtime
-          sudo rm -f /etc/apt/sources.list.d/kobuk-team-ubuntu-intel-graphics-*
-          . /etc/os-release
-          wget -q https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          rm intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          
-          sudo apt update
-          sudo apt install -y \
-            intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
-            libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev \
-            libgles2-mesa-dev libigdgmm12 libxatracker2 mesa-va-drivers \
-            mesa-vdpau-drivers mesa-vulkan-drivers va-driver-all vainfo \
-            libigc-dev intel-igc-cm libigdfcl-dev libigfxcmrt-dev hwinfo
-          
-          sudo add-apt-repository ppa:kobuk-team/intel-graphics
-          sudo apt update
-          sudo apt-get install -y --only-upgrade libze-intel-gpu1 libze-dev intel-metrics-discovery \
-            intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc
           dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
         else
           exit 1
@@ -55,34 +38,17 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
+        if [[ "${{ inputs.GPU }}" == "BMG" ]] || [[ "${{ inputs.GPU }}" == "PVC" ]]; then
+          #purge existing intel graphics packages
+          sudo apt-get purge -y 'libigc*' 'intel-igc*' 'libigdgmm*' 'libigdfcl*' \
+          'libze-intel-gpu*' 'libze1' 'libze-dev' 'intel-opencl-icd' \
+          'intel-metrics-discovery' 'intel-gsc' 'intel-ocloc' || true        
           sudo rm -f /etc/apt/sources.list.d/kobuk-team-ubuntu-intel-graphics-*
+
           sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
           sudo apt update
           sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
             intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc g++
-          dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
-        elif [[ "${{ inputs.GPU }}" == "PVC" ]]; then
-          # PVC: Use LTS drivers + Kobuk staging compute runtime
-          sudo rm -f /etc/apt/sources.list.d/kobuk-team-ubuntu-intel-graphics-*
-          . /etc/os-release
-          wget -q https://repositories.intel.com/gpu/ubuntu/dists/${VERSION_CODENAME}/intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          chmod +x intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          sudo ./intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          rm intel-gpu-ubuntu-${VERSION_CODENAME}.run
-          
-          sudo apt update
-          sudo apt install -y \
-            intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
-            libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev \
-            libgles2-mesa-dev libigdgmm12 libxatracker2 mesa-va-drivers \
-            mesa-vdpau-drivers mesa-vulkan-drivers va-driver-all vainfo \
-            libigc-dev intel-igc-cm libigdfcl-dev libigfxcmrt-dev hwinfo
-          
-          sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
-          sudo apt update
-          sudo apt-get install -y --only-upgrade libze-intel-gpu1 libze-dev intel-metrics-discovery \
-            intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc
           dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
         else
           exit 1
