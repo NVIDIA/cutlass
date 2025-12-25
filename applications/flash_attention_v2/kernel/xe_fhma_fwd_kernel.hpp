@@ -52,7 +52,7 @@ struct FMHAProblemShape {
   using SeqLenType = cute::conditional_t<IsVarLen_, cutlass::fmha::collective::VariableLength, int>;
   int batch;
   int num_heads_q, num_heads_kv;
-  SeqLenType seq_len_qo, seq_len_kv;
+  SeqLenType seq_len_qo, seq_len_kv, seq_len_kv_cache;
   int head_size_qk, head_size_vo;
 };
 
@@ -126,6 +126,10 @@ public:
     StrideV dV;
     ElementO *O;
     StrideO dO;
+    const ElementK *K_cache;
+    StrideK dK_cache{};
+    const ElementV *V_cache;
+    StrideV dV_cache{};
   };
   using KernelParams = KernelArguments;
 
@@ -174,11 +178,11 @@ public:
   static dim3 get_block_shape() { return dim3(SGPerWG::value * intel::sg_size, 1, 1); }
 
   CUTLASS_DEVICE
-  Shape<int, int> get_sequence_length_shape(ProblemShape const& problem_shape, int const& batch) {
+  Shape<int, int, int> get_sequence_length_shape(ProblemShape const& problem_shape, int const& batch) {
     if constexpr (is_var_len) {
-      return cutlass::fmha::collective::apply_variable_length(Shape<VariableLength, VariableLength>{problem_shape.seq_len_qo, problem_shape.seq_len_kv}, batch);
+      return cutlass::fmha::collective::apply_variable_length(Shape<VariableLength, VariableLength, VariableLength>{problem_shape.seq_len_qo, problem_shape.seq_len_kv, problem_shape.seq_len_kv_cache}, batch);
     } else {
-      return Shape<int, int>{problem_shape.seq_len_qo, problem_shape.seq_len_kv};
+      return Shape<int, int, int>{problem_shape.seq_len_qo, problem_shape.seq_len_kv, problem_shape.seq_len_kv_cache};
     }
   }
 
@@ -211,7 +215,7 @@ public:
       int head = head_q / head_group_q;
 
       auto sequence_length_shape = get_sequence_length_shape(s, idx_b);
-      auto [seq_len_qo, seq_len_kv] = sequence_length_shape;
+      auto [seq_len_qo, seq_len_kv, seq_len_kv_cache] = sequence_length_shape;
       if (blk_q * get<0>(TileShapeQK{}) >= seq_len_qo) continue;
 
       auto offset = cute::min(seq_len_qo, seq_len_kv);
@@ -220,18 +224,24 @@ public:
       int seq_coord = cute::min(seq_len_qo, (blk_q * get<0>(TileShapeQK{}) + q_offset_sg));
 
       if (CollectiveMainloop::CausalMask && seq_coord < discard_seq_coord) continue;
-      const int seq_len = CollectiveMainloop::CausalMask ? full_tile_offset + cute::min(seq_len_kv, seq_coord - discard_seq_coord) + q_sg_tile : seq_len_kv;
+      const int seq_len_new = CollectiveMainloop::CausalMask ? full_tile_offset + cute::min(seq_len_kv, seq_coord - discard_seq_coord) + q_sg_tile : seq_len_kv;
+      const int seq_len = seq_len_new + seq_len_kv_cache;
       const int k_blocks = cute::ceil_div(seq_len, get<1>(TileShapeQK{}));
 
       int offset_q = 0, offset_k = 0, offset_v = 0, offset_o = 0;
+      int offset_k_cache = 0, offset_v_cache = 0;
       if constexpr (is_var_len) {
-        int group_heads_q = s.num_heads_q / s.num_heads_kv;
         auto qo_cumulative = s.seq_len_qo.cumulative_length;
         auto kv_cumulative = s.seq_len_kv.cumulative_length;
         offset_q = s.num_heads_q * s.head_size_qk * qo_cumulative[idx_b];
         offset_k = s.num_heads_kv * s.head_size_qk * kv_cumulative[idx_b];
         offset_v = s.num_heads_kv * s.head_size_vo * kv_cumulative[idx_b];
         offset_o = s.num_heads_q * s.head_size_vo * qo_cumulative[idx_b];
+        if (s.seq_len_kv_cache.cumulative_length) {
+          auto kv_cumulative_cache = s.seq_len_kv_cache.cumulative_length;
+          offset_k_cache = s.num_heads_kv * s.head_size_qk * kv_cumulative_cache[idx_b];
+          offset_v_cache = s.num_heads_kv * s.head_size_vo * kv_cumulative_cache[idx_b];
+        }
       }
 
       auto batch_dim = is_var_len ? 1 : s.batch;
@@ -240,19 +250,28 @@ public:
       auto shape_V = make_shape(s.head_size_vo, seq_len_kv, s.num_heads_kv, batch_dim);
       auto shape_O = make_shape(seq_len_qo, s.head_size_vo, s.num_heads_kv, batch_dim);
 
+      auto shape_K_cache = make_shape(seq_len_kv_cache, s.head_size_qk, s.num_heads_kv, batch_dim);
+      auto shape_V_cache = make_shape(s.head_size_vo, seq_len_kv_cache, s.num_heads_kv, batch_dim);
+
       auto dcQ = const_cast<ElementQ*>(p.Q + offset_q);
       auto dcK = const_cast<ElementK*>(p.K + offset_k);
       auto dcV = const_cast<ElementV*>(p.V + offset_v);
+      auto dcK_cache = const_cast<ElementK*>(p.K_cache + offset_k_cache);
+      auto dcV_cache = const_cast<ElementV*>(p.V_cache + offset_v_cache);
       auto ptrO = p.O + offset_o;
 
       auto stride_q = is_var_len ? cutlass::make_cute_packed_stride(StrideQ{}, shape_Q) : p.dQ;
       auto stride_k = is_var_len ? cutlass::make_cute_packed_stride(StrideK{}, shape_K) : p.dK;
       auto stride_v = is_var_len ? cutlass::make_cute_packed_stride(StrideV{}, shape_V) : p.dV;
       auto stride_o = is_var_len ? cutlass::make_cute_packed_stride(StrideO{}, shape_O) : p.dO;
+      auto stride_k_cache = is_var_len ? cutlass::make_cute_packed_stride(StrideK{}, shape_K_cache) : p.dK_cache;
+      auto stride_v_cache = is_var_len ? cutlass::make_cute_packed_stride(StrideV{}, shape_V_cache) : p.dV_cache;
 
       Tensor Q = make_tensor(make_gmem_ptr(dcQ), make_layout(shape_Q, stride_q));
       Tensor K = make_tensor(make_gmem_ptr(dcK), make_layout(shape_K, stride_k));
       Tensor V = make_tensor(make_gmem_ptr(dcV), make_layout(shape_V, stride_v));
+      Tensor K_cache = make_tensor(make_gmem_ptr(dcK_cache), make_layout(shape_K_cache, stride_k_cache));
+      Tensor V_cache = make_tensor(make_gmem_ptr(dcV_cache), make_layout(shape_V_cache, stride_v_cache));
       Tensor O = make_tensor(make_gmem_ptr(ptrO), make_layout(shape_O, stride_o));
 
 
@@ -268,8 +287,11 @@ public:
                V(_,_,head,l_coord),
                tArA, tA_max, tA_sum,
                blk_qv, 0, k_blocks, k_blocks,
-               thr_id, seq_len,
-               full_tile_offset, discard_seq_coord);
+               thr_id, seq_len, seq_len_kv_cache, idx_b,
+               full_tile_offset, discard_seq_coord,
+               K_cache(_,_,head,l_coord),
+               V_cache(_,_,head,l_coord));
+
       if constexpr (!is_empty_v<MainloopSharedStorage> && !is_empty_v<EpilogueSharedStorage>) {
         sycl::group_barrier(get_work_group<3>());
       }
@@ -359,6 +381,10 @@ public:
     StrideV dV;
     ElementO *O;
     StrideO dO;
+    const ElementK *K_cache = nullptr;
+    StrideK dK_cache{};
+    const ElementV *V_cache = nullptr;
+    StrideV dV_cache{};
   };
   using KernelParams = KernelArguments;
 
@@ -538,6 +564,13 @@ public:
       Tensor V = make_tensor(make_gmem_ptr(dcV), make_layout(shape_V, p.dV));    // (v,k,h,b)
       Tensor O = make_tensor(make_gmem_ptr(p.O), make_layout(shape_O, p.dO));    // (q,v,h,b)
 
+      auto shape_K_cache = make_shape(s.seq_len_kv_cache, s.head_size_qk, s.num_heads_kv, s.batch);
+      auto shape_V_cache = make_shape(s.head_size_vo, s.seq_len_kv_cache, s.num_heads_kv, s.batch);
+      auto dcK_cache = const_cast<ElementK*>(p.K_cache);
+      auto dcV_cache = const_cast<ElementV*>(p.V_cache);
+      Tensor K_cache = make_tensor(make_gmem_ptr(dcK_cache), make_layout(shape_K_cache, p.dK_cache));
+      Tensor V_cache = make_tensor(make_gmem_ptr(dcV_cache), make_layout(shape_V_cache, p.dV_cache));
+      
       // O accumulator types
       FragA tArA;
       FragARow tA_max, tA_sum;
@@ -590,7 +623,7 @@ public:
               V(_,_,head_kv,idx_b),
               tArA, tA_max, tA_sum,
               blk_qv, start_blk, end_blk, local_k_blocks,
-              thr_id, s.seq_len_kv, /*for causal*/0, 0);
+              thr_id, s.seq_len_kv, 0, 0, 0, 0);
 
         // partition id of start batch head id in current wg
         int partition_id = get_partition_id(wg_id, batch_head_id, num_blocks_per_wg, local_k_blocks);
