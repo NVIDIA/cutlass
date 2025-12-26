@@ -36,6 +36,7 @@ Base class for Epilogue Visitor Emitter
 
 from cutlass_library import DataTypeTag
 from cutlass_cppgen.backend.evt.ir import TopoVisitorNode, DAGIR
+from cutlass_library.arch_constants import ( INTEL_XE12, INTEL_XE20)
 
 
 class FusionCallbacks:
@@ -53,7 +54,7 @@ class FusionCallbacks:
         self.emit_CD = emit_CD
         self.cc = cc
         self.evt_cc = 90 if cc >= 90 else cc
-        if self.cc < 90:
+        if self.cc not in [INTEL_XE12, INTEL_XE20] and self.cc < 90:
             self.namespace = "threadblock"
         else:
             self.namespace = "fusion"
@@ -103,10 +104,16 @@ class FusionCallbacks:
         if self.dag_ir.in_degree(node.name) == 0:
             return ""
 
-        evt_tmp = f"""
-using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}EVT<
-    {node.name_camel},
-"""
+        if self.cc in [INTEL_XE12, INTEL_XE20]:  
+            evt_tmp = f"""
+    using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Xe{self.evt_cc}EVT<
+        {node.name_camel},
+    """ 
+        else:
+            evt_tmp = f"""
+    using EVT{node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}EVT<
+        {node.name_camel},
+    """
         sorted_children = self.dag_ir.get_all_inputs(node.name)
         evt_node_strs = [f"    {self.get_visitor_name(child_name)}" for child_name in sorted_children]
         evt_tmp += ",\n".join(evt_node_strs) + ">;\n"

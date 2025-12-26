@@ -120,7 +120,7 @@ class EVTFrontendBase:
         self.pass_manager()
         # Set the epilogue type
         self.epilogue_thread_type = self.dag_ir.epilogue_thread_type
-        if cc_map[self.cc] in [90, 100]:
+        if cc_map[self.cc] in [12, 20, 90, 100]:
             self.arg_c_type = self.dag_ir.arg_c_type
             self.arg_d_type = self.dag_ir.arg_d_type
         self.reduction_names = self.dag_ir.reduction_names

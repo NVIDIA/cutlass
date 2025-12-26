@@ -130,12 +130,18 @@ class EVTTestBed:
             dtype = self.element
         
         dtype = torch_type(dtype)
+        if torch.cuda.is_available():
+            device="cuda"
+        elif torch.xpu.is_available():
+            device="xpu"
+        else:
+            device="cpu"
         if fill is None:
             return torch.ceil(
-                torch.empty(size=shape, dtype=dtype, device="cuda").uniform_(-4.5, 3.5)
+                torch.empty(size=shape, dtype=dtype, device=device).uniform_(-4.5, 3.5)
             )
         else:
-            return torch.full(shape, fill, dtype=dtype, device="cuda")
+            return torch.full(shape, fill, dtype=dtype, device=device)
     
     def verify(self, problem_size, input_keys, result_keys, batch_count=1):
         """

@@ -55,7 +55,7 @@ class PassGetArgumentType(EVTPassBase):
 
     def requires(self) -> None:
         # Check "D" is in the node list
-        if cc_map[self.cc] in [90, 100] and (not self.dag_ir.has_node("D")):
+        if cc_map[self.cc] in [12, 20, 90, 100] and (not self.dag_ir.has_node("D")):
             raise SyntaxError(
                 "Sm90+ EVT requires the epilogue to have a returned tensor D, "
                 "but the variable 'D' is not found in the return values.")
@@ -67,7 +67,7 @@ class PassGetArgumentType(EVTPassBase):
             meta = self.dag_ir.get_node_meta(node)
             if not meta.disabled:
                 self.argument_types[node] = meta.underlying_impl.argument_type
-            if node == "D" and cc_map[self.cc] in [90, 100]:
+            if node == "D" and cc_map[self.cc] in [12, 20, 90, 100]:
                 continue
             if isinstance(meta, TopoVisitorNode):
                 self.get_dag_argument_type(node)
@@ -102,6 +102,28 @@ class PassGetArgumentType(EVTPassBase):
         pass
 
     def sm90_set_argument_type(self):
+        self.dag_ir.epilogue_thread_type = self.argument_types[self.dag_ir.get_all_inputs("D")[0]]
+        # Get the tensorD argument type
+        self.dag_ir.arg_d_type = self.dag_ir.get_node_meta("D").underlying_impl.argument_type_d
+
+        # Get the tensorC argument type
+        if self.dag_ir.has_node("C"):
+            self.dag_ir.arg_c_type = self.dag_ir.get_node_meta("C").underlying_impl.argument_type_c
+        else:
+            self.dag_ir.arg_c_type = self.dag_ir.arg_d_type
+
+    def xe12_set_argument_type(self):
+        self.dag_ir.epilogue_thread_type = self.argument_types[self.dag_ir.get_all_inputs("D")[0]]
+        # Get the tensorD argument type
+        self.dag_ir.arg_d_type = self.dag_ir.get_node_meta("D").underlying_impl.argument_type_d
+
+        # Get the tensorC argument type
+        if self.dag_ir.has_node("C"):
+            self.dag_ir.arg_c_type = self.dag_ir.get_node_meta("C").underlying_impl.argument_type_c
+        else:
+            self.dag_ir.arg_c_type = self.dag_ir.arg_d_type
+    
+    def xe20_set_argument_type(self):
         self.dag_ir.epilogue_thread_type = self.argument_types[self.dag_ir.get_all_inputs("D")[0]]
         # Get the tensorD argument type
         self.dag_ir.arg_d_type = self.dag_ir.get_node_meta("D").underlying_impl.argument_type_d

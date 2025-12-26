@@ -146,7 +146,7 @@ class ExecutableOperation:
         packed[0] = ctypes.addressof(cArg)
         if isinstance(stream, dpctl.SyclQueue):
            self.run_with_sycl(launch_config, packed[0], len(host_workspace), stream)
-           return cuda.CUresult.CUDA_SUCCESS
+           return 0
 
         if supports_cluster_launch():
             return self.run_with_clusters(launch_config, packed, stream)

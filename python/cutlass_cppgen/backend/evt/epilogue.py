@@ -37,6 +37,7 @@ Epilogue Visitor interface for compiling, and running visitor-based epilogue.
 import ctypes
 
 from cutlass_cppgen.utils.lazy_import import lazy_import
+from cutlass_library.arch_constants import (INTEL_XE12, INTEL_XE20)
 cuda = lazy_import("cuda.cuda")
 from cutlass_library import DataType
 import numpy as np
@@ -58,7 +59,10 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
     """
     def __init__(self, cc: int, visitor, element_compute=DataType.f32) -> None:
         # Type of Emitter based on CC
-        self.emit_cls = getattr(cutlass_cppgen.backend.evt.backend, f"Sm{cc_map[cc]}Emitter")
+        if cc in [INTEL_XE12, INTEL_XE20]:
+            self.emit_cls = getattr(cutlass_cppgen.backend.evt.backend, f"Xe{cc_map[cc]}Emitter")
+        else:
+            self.emit_cls = getattr(cutlass_cppgen.backend.evt.backend, f"Sm{cc_map[cc]}Emitter")
 
         # Visitor Types
         self.visitor = visitor
@@ -70,7 +74,7 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
 
         # Epilogue Thread Type
         epilogue_thread_type = self.visitor.epilogue_thread_type
-        if cc_map[cc] in [90, 100]:
+        if cc_map[cc] in [12, 20, 90, 100]:
             self.arg_c_type = self.visitor.arg_c_type
             self.arg_d_type = self.visitor.arg_d_type
         output_names = self.visitor.return_names
@@ -114,7 +118,7 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
                 Helper function for extracting device pointer
                 """
                 # Skip the special tensors
-                if cc in [90, 100]:
+                if cc in [12, 20, 90, 100]:
                     if tensor_name in ["C", "D"]:
                         return 0
                 if tensor_name not in kwargs.keys():

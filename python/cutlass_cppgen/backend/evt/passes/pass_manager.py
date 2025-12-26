@@ -40,6 +40,7 @@ import networkx as nx
 
 from cutlass_cppgen.backend.evt.ir import DAGIR
 from cutlass_cppgen.backend.evt.passes.util import cc_map
+from cutlass_library.arch_constants import (INTEL_XE12, INTEL_XE20)
 
 
 class EVTPassBase:
@@ -102,8 +103,21 @@ class EVTPassBase:
             def sm80_func(self):
                 // sm80 specific method
                 return
+
+             # Xe12 specific func
+             def xe12_func(self):
+                // xe12 specific method
+                return
+
+            # Xe20 specific func
+            def xe20_func(self):
+                // xe20 specific method
+                return
         """
-        func_name = f"sm{cc_map[self.cc]}_{func.__name__}"
+        if self.cc in [INTEL_XE12, INTEL_XE20]:
+            func_name = f"xe{cc_map[self.cc]}_{func.__name__}"
+        else:
+            func_name = f"sm{cc_map[self.cc]}_{func.__name__}"
         if hasattr(self, func_name):
             return getattr(self, func_name)
         else:

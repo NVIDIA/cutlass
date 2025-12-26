@@ -46,7 +46,7 @@ from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 cutlass_cppgen.set_log_level(logging.WARNING)
 
 
-@unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
+@unittest.skipIf(device_cc() not in [12, 20, 80, 86, 89, 90], "This unittest is only supported on CC [12, 20, 80, 86, 89, 90]")
 class TestEVTCompute(EVTTestCaseBase):
 
     def test_arith(self):

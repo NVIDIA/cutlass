@@ -38,11 +38,19 @@ from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart = lazy_import("cuda.cudart")
 import numpy as np
+import dpctl
+import torch
 
 import cutlass_cppgen
+from cutlass_cppgen.backend.utils import device
 from cutlass_cppgen.backend.frontend import CupyFrontend, NumpyFrontend, TorchFrontend
 from cutlass_cppgen.backend.memory_manager import DevicePtrWrapper
-from cutlass_cppgen.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
+from cutlass_cppgen.utils.datatypes import (
+    is_cupy_tensor,
+    is_numpy_tensor,
+    is_torch_tensor,
+    is_xpu_tensor
+)
 
 
 class ArgumentBase:
@@ -61,7 +69,10 @@ class ArgumentBase:
         # tensor_C can be interpreted as the bias with bias=True in keyword args
         self.bias = kwargs.get("bias", False)
 
-        self.stream = kwargs.get("stream", default_stream())
+        self.stream = kwargs.get("stream", device.default_stream())
+
+        # Detect if we're using XPU
+        self.is_xpu = isinstance(self.stream, dpctl.SyclQueue) or self._detect_xpu_tensors([A, B, C, D])
 
         # RMM buffers used to track tensor lifetime
         self.buffers = {}
@@ -73,8 +84,35 @@ class ArgumentBase:
         self.ptr_C = self.tensor_to_ptr(C, "C")
         self.ptr_D = self.tensor_to_ptr(D, "D", is_output=True)
         if C is not None:
-            if not isinstance(C, cuda.CUdeviceptr):
+            if not self._is_device_ptr(C):
                 self.tensor_c_numel = prod(C.shape)
+
+    
+    def _detect_xpu_tensors(self, tensors):
+        """Detect if any of the tensors are XPU tensors"""
+        for tensor in tensors:
+            if tensor is not None and is_torch_tensor(tensor):
+                if hasattr(tensor, 'is_xpu') and tensor.is_xpu:
+                    return True
+                if is_xpu_tensor(tensor):
+                    return True
+        return False
+
+    def _is_device_ptr(self, tensor):
+        """Check if tensor is a device pointer"""
+        if self.is_xpu:
+            # For XPU, we use raw pointers (int)
+            return isinstance(tensor, (int, type(None)))
+        else:
+            # For CUDA, we use CUdeviceptr
+            return isinstance(tensor, cuda.CUdeviceptr)
+
+    def _null_ptr(self):
+        """Return appropriate null pointer for the device"""
+        if self.is_xpu:
+            return 0  # Raw pointer for XPU
+        else:
+            return cuda.CUdeviceptr(0)  # CUDA device pointer
 
     def tensor_to_ptr(self, tensor, name, is_output=False):
         """
@@ -82,7 +120,7 @@ class ArgumentBase:
         For numpy.ndarray, it also remembers the host buffer for synchronization
         """
         if tensor is None:
-            return cuda.CUdeviceptr(0)
+            return self._null_ptr()
         if is_numpy_tensor(tensor):
             if is_output:
                 assert name
@@ -134,12 +172,19 @@ class ArgumentBase:
         if not cutlass_cppgen.use_rmm:
             for name, buf in self.buffers.items():
                 if isinstance(buf, DevicePtrWrapper):
-                    err, = cudart.cudaFree(buf.ptr)
-                    if err != cudart.cudaError_t.cudaSuccess:
-                        raise RuntimeError(f"cudaFree failed with error {err}")
+                    if self.is_xpu:
+                        pass
+                    else:
+                        err, = cudart.cudaFree(buf.ptr)
+                        if err != cudart.cudaError_t.cudaSuccess:
+                            raise RuntimeError(f"cudaFree failed with error {err}")
 
             if hasattr(self, "workspace_buffer") and isinstance(self.workspace_buffer, DevicePtrWrapper):
-                err, = cudart.cudaFree(self.workspace_buffer.ptr)
-                if err != cudart.cudaError_t.cudaSuccess:
-                    raise RuntimeError(f"cudaFree failed with error {err}")
+                if self.is_xpu:
+                    # XPU workspace cleanup
+                    pass
+                else:
+                    err, = cudart.cudaFree(self.workspace_buffer.ptr)
+                    if err != cudart.cudaError_t.cudaSuccess:
+                        raise RuntimeError(f"cudaFree failed with error {err}")
                 del self.workspace_buffer

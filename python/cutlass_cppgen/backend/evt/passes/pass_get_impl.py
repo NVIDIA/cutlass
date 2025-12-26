@@ -46,6 +46,7 @@ from cutlass_cppgen.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass_cppgen.backend.evt.passes.pass_no_op_elimination import PassNoOpElimination
 from cutlass_cppgen.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
 from cutlass_cppgen.backend.evt.passes.util import cc_map
+from cutlass_library.arch_constants import (INTEL_XE12, INTEL_XE20)
 
 
 class PassGetImpl(EVTPassBase):
@@ -81,10 +82,14 @@ class PassGetImpl(EVTPassBase):
     def ensures(self) -> None:
         # Some nodes will be lowered to NoOp, eliminate them
         self.no_op_elimination()
+        if self.cc in [INTEL_XE12, INTEL_XE20]:
+           sm_xe_cc_map = f"xe{cc_map[self.cc]}"
+        else:
+            sm_xe_cc_map = f"sm{cc_map[self.cc]}"
         # Lower to cc-specific impl
         for node_meta in self.dag_ir.nodes_meta:
-            node_impl_ccs = getattr(evt_backend, f"sm{cc_map[self.cc]}_nodes")
+            node_impl_ccs = getattr(evt_backend, f"{sm_xe_cc_map}_nodes")
             node_meta.underlying_impl = getattr(
                 node_impl_ccs,
-                f"Sm{cc_map[self.cc]}" + node_meta.underlying_impl.__class__.__name__
+                f"{sm_xe_cc_map}" + node_meta.underlying_impl.__class__.__name__
             )(node_meta)

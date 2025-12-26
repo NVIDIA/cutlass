@@ -39,9 +39,14 @@ from cutlass_cppgen.utils.lazy_import import lazy_import
 cuda = lazy_import("cuda.cuda")
 cudart =  lazy_import("cuda.cudart")
 import dpctl
+bmg_indicators = [
+           "bmg", "battlemage", "xe20", "arc", "alchemist",
+            "dg2", "g21", "b580", "b770", "a770", "a750", "a580"
+        ]
 
 import cutlass_cppgen
 from cutlass_cppgen.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
+from cutlass_library.arch_constants import ( INTEL_XE12, INTEL_XE20)
 
 
 def check_cuda_errors(result: list):
@@ -82,7 +87,11 @@ def device_cc(device: int = -1) -> int:
 
     if cutlass_cppgen._use_sycl:
         # Using '12' to encode Intel PVC as an integer in the expected format.
-        return 12
+        intel_device = cutlass_cppgen._sycl_device
+        device_name = intel_device.name.lower()
+        if any(indicator in device_name for indicator in bmg_indicators):
+            return INTEL_XE20
+        return INTEL_XE12
 
     deviceProp = check_cuda_errors(cudart.cudaGetDeviceProperties(device))
     major = str(deviceProp.major)

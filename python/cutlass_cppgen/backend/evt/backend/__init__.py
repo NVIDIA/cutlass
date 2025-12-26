@@ -36,3 +36,7 @@ from cutlass_cppgen.backend.evt.backend.sm90_emitter import Sm90Emitter
 import cutlass_cppgen.backend.evt.backend.sm90_nodes as sm90_nodes
 from cutlass_cppgen.backend.evt.backend.sm100_emitter import Sm100Emitter
 import cutlass_cppgen.backend.evt.backend.sm100_nodes as sm100_nodes
+from cutlass_cppgen.backend.evt.backend.xe12_emitter import Xe12Emitter
+import cutlass_cppgen.backend.evt.backend.xe12_nodes as xe12_nodes
+from cutlass_cppgen.backend.evt.backend.xe20_emitter import Xe20Emitter
+import cutlass_cppgen.backend.evt.backend.xe20_nodes as xe20_nodes
