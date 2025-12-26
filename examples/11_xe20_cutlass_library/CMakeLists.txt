@@ -32,7 +32,7 @@
 
 # Create shared library for Python integration
 add_library(xe20_cutlass_library_bf16 SHARED
-  xe_20_cutlass_library_b16.cpp
+  xe20_cutlass_library_b16.cpp
 )
 
 # Set library properties (this creates shared library for python example to link)
