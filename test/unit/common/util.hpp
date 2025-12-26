@@ -56,6 +56,9 @@ namespace cutlass {
     }
   }
 
+template<typename T>
+struct MemsetKernelName {};
+
 template <typename T>
 class device_vector;
 
@@ -89,7 +92,7 @@ class device_vector {
   device_vector(std::size_t num_elements, T init_value) { 
     n_elements = num_elements;
     dev_ptr = make_shared(num_elements);
-    compat::launch<kernel::memset<T>>(sycl::range<1>(num_elements), 
+    compat::launch<kernel::memset<T>, MemsetKernelName<T>>(sycl::range<1>(num_elements), 
       sycl::range<1>(32), dev_ptr.get(), init_value, num_elements);
     compat::wait_and_throw(); 
   }
