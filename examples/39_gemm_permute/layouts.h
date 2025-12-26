@@ -71,7 +71,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [n, hn, whn]
+  /// Stride data member - [n, hn, when]
   Stride stride_;
 
 public:

@@ -304,7 +304,7 @@ bool initialize_tensor(
     }
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;
@@ -366,7 +366,7 @@ bool initialize_scale_tensor(
     }
   }
   else {
-    throw std::runtime_error("Not implementated.");
+    throw std::runtime_error("Not implemented.");
   }
 
   return true;

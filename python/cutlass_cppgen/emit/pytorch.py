@@ -622,7 +622,7 @@ class _ArchListSetter:
     Utility context manager for temporarily setting the value of the ``TORCH_CUDA_ARCH_LIST``
     environment variable when building a PyTorch CUDA module.
 
-    ``TORCH_CUDA_ARCH_LIST`` is a space-delmited list of compute capabilites for which a PyTorch
+    ``TORCH_CUDA_ARCH_LIST`` is a space-delmited list of compute capabilities for which a PyTorch
     CUDA module should be compiled.
 
     For example, ``TORCH_CUDA_ARCH_LIST="7.0 8.0"`` would result in the inclusion of
@@ -630,7 +630,7 @@ class _ArchListSetter:
     compilation of the module.
 
     This utility wraps the building of a PyTorch CUDA module with a setting of this environment
-    variable according to the current compute capability being targetted.
+    variable according to the current compute capability being targeted.
 
     Example usage:
 

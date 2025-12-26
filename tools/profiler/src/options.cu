@@ -534,7 +534,7 @@ void Options::Profiling::print_usage(std::ostream &out) const {
 
     << "  --profiling-duration=<duration>             "
     << "    Time to spend profiling each kernel (ms)." << end_of_line
-    << "    Overriden by `profiling-iterations` when `profiling-iterations` > 0." << end_of_line
+    << "    Overridden by `profiling-iterations` when `profiling-iterations` > 0." << end_of_line
     << "    Note that `min-iterations` must also be satisfied.\n\n"
 
     << "  --min-iterations=<iterations>             "

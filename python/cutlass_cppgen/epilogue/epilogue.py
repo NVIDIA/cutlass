@@ -122,7 +122,7 @@ def trace(fn, example_tensors, **kwargs):
     :param example_tensors: example inputs for fn
     :type example_tensors: dict
 
-    .. hightlight:: python
+    .. highlight:: python
     .. code-block:: python
         import cutlass_cppgen.backend.evt
 

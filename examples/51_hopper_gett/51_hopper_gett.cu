@@ -58,7 +58,7 @@
   In the following example, we illustrate how every Hopper GEMM in CUTLASS 3.0 is a GETT in disguise.
   We begin by defining the four modes detailed above as Row, Col (column), Red (reduction), and
   Bat (batch) strides, which we then nest for each of the in/out tensors to create our rank-3 stride
-  tuples. Note that although we do not define the problem shape type explicitely, it too remains a
+  tuples. Note that although we do not define the problem shape type explicitly, it too remains a
   rank-4 shape tuple just like any other batched GEMM, but instead with multi-mode shapes for each
   of the four corresponding multi-modes within it. After this, the same CollectiveMma and
   CollectiveBuilder we describe in examples 50 and 49 are used to create our kernel type. Nothing

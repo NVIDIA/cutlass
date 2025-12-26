@@ -302,7 +302,7 @@ struct B2bFusedGroupedGemmRun
 
     if(status != cutlass::Status::kSuccess) {
         std::cout << "Problem sizes not supported.\n"
-                << "Requirments:\n"
+                << "Requirements:\n"
                 << "    problem_size_0.M = problem_size_1.M\n"
                 << "    problem_size_0.N = problem_size_1.K\n"
                 << "    ThreadblockShape0::kN = problem_size_0.N\n"
