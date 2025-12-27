@@ -403,7 +403,7 @@ using CLayout = Layout<Shape <Shape <  _4, _8, ...>, Shape < _2, _2>>,
                        Stride<Stride<_128, _1, ...>, Stride<_64, _8>>>;
 ```
 
-Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`. where two core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of M 4. As for the stride, this time we go to `(T32, V0)`, which makes it a stride of 32.
+Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`. where two core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of M 4. As for the stride, this time we go to `(T32, V0)`, which makes it a stride of 16.
 
 ```cpp
 // (T128,V4) -> (M64,N8)
