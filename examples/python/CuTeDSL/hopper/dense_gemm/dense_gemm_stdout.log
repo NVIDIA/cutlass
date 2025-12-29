@@ -1,0 +1,68 @@
+[INFO] Run tag: dense_gemm
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] cute_ir_dump_patch installed.
+Running Hopper Dense GEMM with:
+mnkl: (4096, 4096, 4096, 1)
+A dtype: Float16, B dtype: Float16, C dtype: Float16, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Tile Shape: (128, 128), Cluster Shape: (1, 1)
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_0_.mlir (3480 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_001_CuteRemoveStaticArgs.mlir (3484 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_002_MaterializeTmaMulticast.mlir (3484 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_003_SoftwarePipelinePass.mlir (3484 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_004_CuteDesugar.mlir (4374 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_005_CuteExpandOps.mlir (6020 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_006_CuteFoldStatic.mlir (3520 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_007_InsertRangeInformation.mlir (3520 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_008_Canonicalizer.mlir (2269 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_009_CSE.mlir (1980 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_010_LoopInvariantCodeMotion.mlir (1980 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_011_LoopStrengthReductionPass.mlir (1980 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_012_ConvertVectorToSCF.mlir (1980 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_013_ConvertCuteTypesInScfOps.mlir (1984 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_014_SCFToControlFlow.mlir (2225 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_015_ArithExpandOpsPass.mlir (2391 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_016_ConvertMathToFuncs.mlir (2391 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_017_GpuLaunchSinkIndexComputations.mlir (2391 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_018_ConvertToLLVMPass.mlir (5824 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_019_ReconcileUnrealizedCasts.mlir (5752 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_020_GpuKernelOutlining.mlir (5752 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_021_SCFToControlFlow.mlir (5766 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_022_ReconcileUnrealizedCasts.mlir (5766 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_023_ConvertToLLVMPass.mlir (5766 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_024_Canonicalizer.mlir (3067 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_025_CSE.mlir (2710 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_026_ConvertVectorToLLVMPass.mlir (2704 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_027_ConvertNVVMToLLVMPass.mlir (2705 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_028_CudaComputeTargetPass.mlir (2214 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_029_FinalizeMemRefToLLVMConversionPass.mlir (2705 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_030_ExpandStridedMetadata.mlir (2704 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_031_ArithToLLVMConversionPass.mlir (2704 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_032_ConvertFastmathOps.mlir (2213 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_033_ConvertGpuOpsToNVVMOps.mlir (2213 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_034_StoreGpuLaunchAttribute.mlir (2704 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_035_GpuToLLVMConversionPass.mlir (2704 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_036_StoreGpuLaunchAttribute.mlir (2704 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_037_ConvertMathToLLVMPass.mlir (2704 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_038_Canonicalizer.mlir (2704 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_039_CSE.mlir (2704 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_040_ReconcileUnrealizedCasts.mlir (2704 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_041_DIScopeForLLVMFuncOpPass.mlir (2704 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_042_CudaToBinaryPass.mlir (497 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_043_ConvertToLLVMPass.mlir (672 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_044_ReconcileUnrealizedCasts.mlir (670 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/hopper/dense_gemm/dense_gemm_045_CudaErrorHandlingPass.mlir (677 lines)
+[DUMP] per-pass IR split -> 45 files
+PASS
