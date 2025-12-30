@@ -2990,7 +2990,7 @@ def idx2crd(idx, shape, *, loc=None, ip=None):
         @cute.jit
         def foo():
             coord = cute.idx2crd(11, (5,4))
-            # idxwcrd is always col-major 
+            # idx2crd is always col-major 
             # For shape (m, n, l, ...), coord = (idx % m, idx // m % n, idx // m // n % l, ...
             # Computed as: (11 % 5, 11 // 5 % 4) = (1, 2)
             print(coord)
