@@ -2994,7 +2994,7 @@ def idx2crd(idx, shape, *, loc=None, ip=None):
             # For shape (m, n, l, ...), coord = (idx % m, idx // m % n, idx // m // n % l, ...
             # Computed as: (11 % 5, 11 // 5 % 4) = (1, 2)
             print(coord)
-        foo()  # Expected output: (2, 3)
+        foo()  # Expected output: (1, 2)
 
     **Note:**
         Python DSL is aligned with C++ DSL.
