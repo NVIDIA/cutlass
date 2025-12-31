@@ -31,6 +31,14 @@
 
 
 #include <iostream>
+#include <cuda_runtime_api.h>
+
+int getDefaultSmArch() {
+    cudaSetDevice(0);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    return prop.major * 10 + prop.minor;
+}
 
 // Run tests on GPUs 
 
