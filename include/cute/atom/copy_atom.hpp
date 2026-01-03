@@ -406,7 +406,7 @@ template <class... Args,
           class LayoutCopy_TV,
           class Tiler>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_impl(Copy_Atom<Args...> const& atom,
                      LayoutCopy_TV      const&,
                      Tiler              const&)
@@ -420,7 +420,7 @@ make_tiled_copy_impl(Copy_Atom<Args...> const& atom,
 
 template <class... CArgs, class... MArgs>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_A(Copy_Atom<CArgs...> const& copy_atom,
                   TiledMMA<MArgs...>  const& mma)
 {
@@ -429,7 +429,7 @@ make_tiled_copy_A(Copy_Atom<CArgs...> const& copy_atom,
 
 template <class... CArgs, class... MArgs>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_B(Copy_Atom<CArgs...> const& copy_atom,
                   TiledMMA<MArgs...>  const& mma)
 {
@@ -490,7 +490,7 @@ make_tiled_copy_C_atom(Copy_Atom<CArgs...> const& copy_atom,
 template <class... Args,
           class ThrLayout,
           class ValLayout = Layout<_1>>
-CUTE_HOST_DEVICE
+CUTE_HOST_DEVICE constexpr
 auto
 make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
