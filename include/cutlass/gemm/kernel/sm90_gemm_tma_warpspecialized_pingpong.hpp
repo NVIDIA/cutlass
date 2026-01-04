@@ -217,7 +217,6 @@ public:
   to_underlying_arguments(Arguments const& args, void* workspace) {
     CUTLASS_TRACE_HOST("to_underlying_arguments():");
 
-    (void) workspace;
     auto problem_shape = args.problem_shape;
     if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
