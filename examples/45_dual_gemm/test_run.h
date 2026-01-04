@@ -31,9 +31,16 @@
 
 
 #include <iostream>
+#include <cuda_runtime_api.h>
+
+int getDefaultSmArch() {
+    cudaSetDevice(0);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    return prop.major * 10 + prop.minor;
+}
 
 // Run tests on GPUs 
-
 int testRun(int arch, std::vector<bool (*)()> & test_funcs, const std::string & test_name) {
 
   bool supported = false;

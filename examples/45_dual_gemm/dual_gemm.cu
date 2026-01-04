@@ -452,7 +452,7 @@ int main() {
     std::to_string(kBatchCount)
   );
 
-  return testRun(80, funcs, test_name);
+  return testRun(getDefaultSmArch(), funcs, test_name);
 }
 
 
