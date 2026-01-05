@@ -1053,8 +1053,8 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
         tma_oobFill);
    
     int driver_version = 0;
-    CUresult driver_version_result = cuDriverGetVersion(&driver_version);
-    assert(driver_version_result == CUDA_SUCCESS);
+    cudaError_t driver_version_err = cudaDriverGetVersion(&driver_version);
+    assert(driver_version_err == cudaSuccess);
     if (driver_version <= 13010) {      
       if (cute::bits_to_bytes(
             cute::cosize(gtensor.layout()) *
