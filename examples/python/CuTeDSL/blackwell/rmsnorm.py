@@ -46,6 +46,7 @@ from cutlass import Boolean, Float32, Int32, Int64
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
 from cutlass._mlir.dialects import cute as _cute_ir
+from cutlass.cute.runtime import make_ptr
 from cutlass.cute.typing import AddressSpace, Numeric, Pointer, Type as CuteType
 from cutlass.cutlass_dsl import T, dsl_user_op
 
@@ -96,103 +97,6 @@ To collect performance with NCU profiler:
 
     ncu python examples/python/CuTeDSL/blackwell/rmsnorm.py --M 2048 --N 4096 --dtype BFloat16 --skip_ref_check
 """
-
-# =============================================================================
-# Pointer Utilities (for raw pointer API)
-# =============================================================================
-
-
-class _Pointer(Pointer):
-    """Runtime representation of a pointer for CuTe-DSL kernels."""
-
-    def __init__(
-        self,
-        pointer,
-        dtype,
-        mem_space: _cute_ir.AddressSpace = _cute_ir.AddressSpace.generic,
-        assumed_align=None,
-    ):
-        self._pointer = pointer
-        self._dtype = dtype
-        self._addr_space = mem_space
-
-        if assumed_align is None:
-            self._assumed_align = dtype.width // 8
-        else:
-            self._assumed_align = assumed_align
-
-        self._desc = None
-        self._c_pointer = None
-        assert int(self._pointer) % self._assumed_align == 0, (
-            f"pointer must be {self._assumed_align} bytes aligned"
-        )
-
-    def size_in_bytes(self) -> int:
-        return ctypes.sizeof(ctypes.c_void_p(int(self._pointer)))
-
-    def __get_mlir_types__(self):
-        return [self.mlir_type]
-
-    def __c_pointers__(self):
-        if self._c_pointer is None:
-            self._desc = ctypes.c_void_p(int(self._pointer))
-            self._c_pointer = ctypes.addressof(self._desc)
-        return [self._c_pointer]
-
-    def __new_from_mlir_values__(self, values):
-        assert len(values) == 1
-        return values[0]
-
-    @property
-    def mlir_type(self) -> ir.Type:
-        return _cute_ir.PtrType.get(
-            self._dtype.mlir_type, self._addr_space, self._assumed_align
-        )
-
-    @property
-    def dtype(self) -> CuteType[Numeric]:
-        return self._dtype
-
-    @property
-    def memspace(self):
-        return self._addr_space
-
-    def align(self, min_align: int, *, loc=None, ip=None) -> Pointer:
-        raise NotImplementedError("align is not supported in runtime")
-
-    def verify(self, expected_py_type):
-        if expected_py_type is Pointer or (
-            isinstance(expected_py_type, ir.Value) and expected_py_type.ty is Pointer
-        ):
-            return True
-        return False
-
-    def __str__(self) -> str:
-        return f"Ptr<0x{int(self._pointer):016x}@{self._addr_space}>"
-
-    def __repr__(self):
-        return self.__str__()
-
-
-def make_ptr(
-    dtype: CuteType[Numeric],
-    value: Union[int, ctypes._Pointer],
-    mem_space: AddressSpace = AddressSpace.generic,
-    assumed_align: Optional[int] = None,
-) -> Pointer:
-    """Create a CuTe-DSL pointer from a memory address."""
-    if isinstance(value, int):
-        address_value = value
-    elif isinstance(value, ctypes._Pointer):
-        address_value = ctypes.cast(value, ctypes.c_void_p).value
-        assert address_value is not None, "Pointer address is None"
-    else:
-        raise TypeError(
-            f"Expected int or ctypes.POINTER for value but got {type(value)=}"
-        )
-
-    return _Pointer(address_value, dtype, mem_space, assumed_align=assumed_align)
-
 
 # =============================================================================
 # Architecture Detection
@@ -272,26 +176,11 @@ def elem_pointer(x: cute.Tensor, coord, *, loc=None, ip=None) -> cute.Pointer:
 
 
 # =============================================================================
-# Warp and Block/Cluster Reduction Utilities
+# Block/Cluster Reduction Utilities
 # -----------------------------------------------------------------------------
-# Reduction and predication primitives
+# Cluster synchronization primitives (set_block_rank, store_shared_remote)
 # are inspired by Quack: https://github.com/Dao-AILab/quack
 # =============================================================================
-
-
-@cute.jit
-def warp_reduce(val, op, width: cutlass.Constexpr[int] = 32):
-    """Reduce across threads in a warp using butterfly shuffle."""
-    if cutlass.const_expr(isinstance(val, cute.TensorSSA)):
-        res = cute.make_rmem_tensor(val.shape, val.dtype)
-        res.store(val)
-        for i in cutlass.range_constexpr(cute.size(val.shape)):
-            res[i] = warp_reduce(res[i], op, width)
-        return res.load()
-    else:
-        for i in cutlass.range_constexpr(int(math.log2(width))):
-            val = op(val, cute.arch.shuffle_sync_bfly(val, offset=1 << i))
-        return val
 
 
 @cute.jit
@@ -315,7 +204,7 @@ def block_reduce(
     block_reduce_val = init_val
     if lane_idx < warps_per_row:
         block_reduce_val = reduction_buffer[row_idx, lane_idx]
-    return warp_reduce(block_reduce_val, op)
+    return cute.arch.warp_reduction(block_reduce_val, op)
 
 
 @cute.jit
@@ -367,7 +256,7 @@ def cluster_reduce(
         if idx < num_total:
             block_reduce_val = op(block_reduce_val, reduction_buffer[row_idx, idx])
 
-    return warp_reduce(block_reduce_val, op)
+    return cute.arch.warp_reduction(block_reduce_val, op)
 
 
 @cute.jit
@@ -388,7 +277,7 @@ def row_reduce(
         cute.ReductionOp.MAX: cute.arch.fmax,
     }[op]
     warp_width = min(threads_per_row, 32)
-    warp_val = warp_reduce(local_val, warp_op, width=warp_width)
+    warp_val = cute.arch.warp_reduction(local_val, warp_op, threads_in_group=warp_width)
 
     warps_per_row = max(threads_per_row // 32, 1)
 
