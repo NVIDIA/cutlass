@@ -126,10 +126,10 @@ auto choose_xe_reorder_impl(SLayout const& slayout,   // (src thr, src val) -> c
   constexpr auto DV = 32 / sizeof_bits_v<DType>;  // dst elements per 32-bit channel
   constexpr auto rclass = classify_xe_reorder<SV, DV, decltype(rlayout)>();
 
-  if constexpr (rclass == ReorderKind::UU_Universal)
-    return Universal_Reorder_UU<SType, DType>{};
-  else if constexpr (has_xe_optimized_reorder<rclass, SType, DType>())
+  if constexpr (has_xe_optimized_reorder<rclass, SType, DType>())
     return Xe_Reorder<rclass, SType, DType>{};
+  else if constexpr (rclass == ReorderKind::UU_Universal)
+    return Universal_Reorder_UU<SType, DType>{};
   else if constexpr (is_subbyte_v<SType>)
     return ReorderDispatchConvertRelayout{};
   else if constexpr (is_subbyte_v<DType>)

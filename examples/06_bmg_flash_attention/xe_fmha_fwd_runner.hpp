@@ -63,12 +63,12 @@ struct Options {
   bool use_paged_kv = false;
   std::string scheduler;
 
-  int batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, page_size, head_size_qk, head_size_vo, iterations, verify;
+  int batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, page_size, head_size_qk, head_size_vo, iterations, warmup, verify;
   float softmax_scale;
 
   Options()
       : help(false), error(false), is_causal(false), varlen(false), use_paged_kv(false), batch(32), num_heads_q(16), num_heads_kv(16), seq_len_qo(512), head_size_qk(128),
-        seq_len_kv(512), seq_len_kv_cache(0), page_size(128), head_size_vo(128), iterations(100), softmax_scale(1.f), verify(1), scheduler("Individual") {}
+        seq_len_kv(512), seq_len_kv_cache(0), page_size(128), head_size_vo(128), iterations(100), warmup(100), softmax_scale(1.f), verify(1), scheduler("Individual") {}
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -109,6 +109,7 @@ struct Options {
     cmd.get_cmd_line_argument("head_size_vo", head_size_vo, HEAD_DIM);
     cmd.get_cmd_line_argument("head_size_qk", head_size_qk, head_size_vo);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
+    cmd.get_cmd_line_argument("warmup", warmup, 100);
     cmd.get_cmd_line_argument("verify", verify, 1);
 
     if (cmd.check_cmd_line_flag("use_paged_kv")) {
@@ -148,6 +149,7 @@ struct Options {
         << "  --head_size_qk=<int>        Sets the Attention Head dimension of the 1st Matrix Multiplication in Multi-Head Self Attention module\n"
         << "  --head_size_vo=<int>        Sets the Attention Head dimension of the 2nd Matrix Multiplication in Multi-Head Self Attention module\n"
         << "  --iterations=<int>          Iterations\n"
+        << "  --warmup=<int>              Warmup iterations before timing\n"
         << "  --verify=<int>              Specify whether to verify.\n\n";
     return out;
   }
@@ -754,8 +756,10 @@ template <class FMHAKernel, bool isVarLen = false> struct ExampleRunner {
     auto params = FMHAKernel::to_underlying_arguments(arguments, workspace.get());
 
     // Run the GEMM
-    run(params);
-
+    // Warmup runs
+    for (int i = 0; i < options.warmup; ++i) {
+      run(params);
+    }
     compat::wait();
 
     if (options.verify != 0) {
@@ -839,7 +843,7 @@ struct FMHAConfig {
                                                decltype(cutlass::fmha::collective::get_sg_layout_pv(SubgroupLayoutQK{})),
                                                SubgroupLayoutPV_>;
 
-  template <bool isVarLen, bool PagedKV, class Scheduler>
+  template <bool isVarLen, bool CachedKV, bool PagedKV, class Scheduler>
   static int run(const Options &options) {
     //
     // Run examples
@@ -876,7 +880,7 @@ struct FMHAConfig {
     // Mainloop
     using MainloopDispatchPolicy = cutlass::fmha::XeDefault<PipelineStages>;
     using CollectiveMainloop = cutlass::fmha::collective::FMHAFwdMainloop<
-        MainloopDispatchPolicy, Causal, PagedKV,
+        MainloopDispatchPolicy, Causal, CachedKV, PagedKV,
         TiledMMAQK, TiledMMAPV, VTiles,
         TensorQ, TensorK, TensorV,
         TensorK_cache, TensorV_cache,
@@ -907,20 +911,25 @@ struct FMHAConfig {
   }
 
   static int run(const Options &options) {
-    if (persistent) {
+    bool cached_kv = options.seq_len_kv_cache > 0;
+    if constexpr (persistent) {
       if (options.use_paged_kv || options.seq_len_kv_cache > 0) {
         std::cerr << "Error: Persistent kernel does not support paged/cached KV cache (use_paged_kv or seq_len_kv_cache > 0)." << std::endl;
         return -1;
       }
-      return run<false, false, cutlass::fmha::kernel::XeFHMAIndividualPersistentTileScheduler>(options);
+      return run<false, false, false, cutlass::fmha::kernel::XeFHMAIndividualPersistentTileScheduler>(options);
     } else if (options.use_paged_kv && !options.varlen) {
-      return run<false, true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
-    } else if(!options.use_paged_kv && options.varlen) {
-      return run<true, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
-    } else if(!options.use_paged_kv && !options.varlen) {
-      return run<false, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+      return run<false, true, true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    } else if(!options.use_paged_kv && options.varlen && !cached_kv) {
+      return run<true, false, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    } else if(!options.use_paged_kv && !options.varlen && !cached_kv) {
+      return run<false, false, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    } else if (!options.use_paged_kv && options.varlen && cached_kv) {
+      return run<true, true, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+    } else if (!options.use_paged_kv && !options.varlen && cached_kv) {
+      return run<false, true, false, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
     } else {
-      return run<true, true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
+      return run<true, true, true, cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(options);
     }
   }
 };

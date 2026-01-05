@@ -54,6 +54,7 @@ using namespace cute;
 
 template <class DispatchPolicy_,
           bool CausalMask_,
+          bool CachedKV_,
           bool PagedKV_,
           class TiledMMAQK_,          // Tiling for Q*K GEMM
           class TiledMMAPV_,          // Tiling for P*V GEMM
@@ -75,13 +76,13 @@ struct FMHAFwdMainloop {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <int Stages,
-          bool CausalMask_, bool PagedKV_,
+          bool CausalMask_, bool CachedKV_, bool PagedKV_,
           class TiledMMAQK_, class TiledMMAPV_, int VTiles_,
           class TensorQ_, class TensorK_, class TensorV_,
           class TensorK_cache_, class TensorV_cache_,
           class TiledCopyQ_, class TiledCopyK_, class TiledCopyV_,
           class TiledCopyK_cache_, class TiledCopyV_cache_>
-struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
+struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, CachedKV_, PagedKV_,
                        TiledMMAQK_, TiledMMAPV_, VTiles_,
                        TensorQ_, TensorK_, TensorV_,
                        TensorK_cache_, TensorV_cache_,
@@ -142,6 +143,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
   using ElementA = typename TiledMMAPV::ValTypeD;
 
   static constexpr bool CausalMask = CausalMask_;
+  static constexpr bool CachedKV = CachedKV_;
   static constexpr bool PagedKV = PagedKV_;
 
   // User-facing arguments
@@ -335,28 +337,66 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
     bool check_remainder_k = (seq_len % get<1>(TileShapeQK{}) != 0);
 
     /* Main loop, blocked in k. */
-    for (int K = blk_k0; K < blk_k1; K++) {
-      /* Split barrier to keep threads together */
-      barrier_arrive(ScopeWorkgroup);
-
-      bool is_cache = K < kblocks_cache;
-      int physical_K_tile = K;
-      if constexpr (PagedKV) {
-        if (is_cache) {
+    if constexpr (CachedKV) {
+      for (int K = blk_k0; K < kblocks_cache; K++) {
+        int physical_K_tile = K;
+        if constexpr (PagedKV) {
           physical_K_tile = get_physical_k_tile(K, l_coord, seq_len_kv_cache);
         }
-      }
 
-      /* GEMM 1: S = K * Q */
-      clear(tSrS);    /* TODO: fuse w/ initial gemm call */
-      for (int D = 0; D < size<4>(tKgK); D++) {
-        copy(copy_q, tQgQ(_,_,_,D),   tQrQ);
-        if (is_cache) {
+        /* GEMM 1: S = K * Q */
+        clear(tSrS);
+        CUTLASS_PRAGMA_UNROLL
+        for (int D = 0; D < size<4>(tKgK); D++) {
+          copy(copy_q, tQgQ(_,_,_,D),   tQrQ);
           copy(copy_k_cache, tKgK_cache(_,_,_,physical_K_tile,D), tKrK);
-        } else {
-          copy(copy_k, tKgK(_,_,_,K - kblocks_cache,D), tKrK);
+          reorder(tQrQ, tSrQ);
+          reorder(tKrK, tSrK);
+          cute::gemm(mma_qk, tSrQ, tSrK, tSrS);
         }
 
+        /* V prefetch for GEMM 2 */
+        prefetch(prefetch_v_cache, pVgV_cache(_,_,_,physical_K_tile));
+
+        /* Apply softmax and scaling */
+        softmax(K == blk_k0, tSrS, tA_max, tA_sum, tArA);
+        reorder(tSrS, tArP);
+
+        /* GEMM 2: A += P * V, split in v dimension */
+        CUTLASS_PRAGMA_UNROLL
+        for (int VV = 0; VV < VTiles; VV++) {
+          copy(copy_v_cache, tVgV_cache(_,_,_,VV,physical_K_tile), tVrV);
+          reorder(tVrV, tArV);
+          cute::gemm(mma_pv, tArP, tArV, tArA(_,_,_,VV));
+        }
+
+        /* K prefetch */
+        for (int D = 0; D < size<4>(pKgK); D++) {
+          int K_next = K + Stages;
+          bool is_cache_next = K_next < kblocks_cache;
+          int physical_K_next = K_next;
+          if constexpr (PagedKV) {
+            if (is_cache_next) {
+              physical_K_next = get_physical_k_tile(K_next, l_coord, seq_len_kv_cache);
+            }
+          }
+
+          if (is_cache_next) {
+            prefetch(prefetch_k_cache, pKgK_cache(_,_,_,physical_K_next,D));
+          } else {
+            prefetch(prefetch_k, pKgK(_,_,_,K_next-kblocks_cache,D));
+          }
+        }
+      }
+    }
+
+    for (int K = (blk_k0 > kblocks_cache ? blk_k0 : kblocks_cache); K < blk_k1; K++) {
+      /* GEMM 1: S = K * Q */
+      clear(tSrS);
+      CUTLASS_PRAGMA_UNROLL
+      for (int D = 0; D < size<4>(tKgK); D++) {
+        copy(copy_q, tQgQ(_,_,_,D),   tQrQ);
+        copy(copy_k, tKgK(_,_,_,K - kblocks_cache,D), tKrK);
         reorder(tQrQ, tSrQ);
         reorder(tKrK, tSrK);
 
@@ -364,11 +404,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
       }
 
       /* V prefetch for GEMM 2 */
-      if (is_cache) {
-        prefetch(prefetch_v_cache, pVgV_cache(_,_,_,physical_K_tile));
-      } else {
-        prefetch(prefetch_v, pVgV(_,_,_,K-kblocks_cache));
-      }
+      prefetch(prefetch_v, pVgV(_,_,_,K-kblocks_cache));
 
       /* Causal masking */
       if constexpr (CausalMask) {
@@ -390,10 +426,7 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
       /* k masking for remainder tiles */
       if (check_remainder_k && K == total_blk - 1) {
         FragSRow k_rem_mask;
-        int k_val;
-        if (is_cache) k_val = get<0>(tKgK_cache(0,0,0,physical_K_tile,0));
-        else k_val = get<0>(tKgK(0,0,0,K-kblocks_cache,0)) + kblocks_cache * get<1>(TileShapeQK{}); // Adjust global index from relative
-
+        int k_val = get<0>(tKgK(0,0,0,K-kblocks_cache,0)) + kblocks_cache * get<1>(TileShapeQK{});
         int k = k_val + get_sub_group().get_local_id()[0];
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < k_rem_mask.size(); i++, k += intel::sg_size) {
@@ -406,17 +439,13 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
       }
 
       /* Apply softmax and scaling */
-      softmax(K == 0, tSrS, tA_max, tA_sum, tArA);
+      softmax(K == blk_k0, tSrS, tA_max, tA_sum, tArA);
       reorder(tSrS, tArP);
 
       /* GEMM 2: A += P * V, split in v dimension */
       CUTLASS_PRAGMA_UNROLL
       for (int VV = 0; VV < VTiles; VV++) {
-        if (is_cache) {
-          copy(copy_v_cache, tVgV_cache(_,_,_,VV,physical_K_tile), tVrV);
-        } else {
-          copy(copy_v, tVgV(_,_,_,VV,K-kblocks_cache), tVrV);
-        }
+        copy(copy_v, tVgV(_,_,_,VV,K-kblocks_cache), tVrV);
         reorder(tVrV, tArV);
         cute::gemm(mma_pv, tArP, tArV, tArA(_,_,_,VV));
       }
@@ -424,22 +453,8 @@ struct FMHAFwdMainloop<XeDefault<Stages>, CausalMask_, PagedKV_,
       /* K prefetch */
       for (int D = 0; D < size<4>(pKgK); D++) {
         int K_next = K + Stages;
-        bool is_cache_next = K_next < kblocks_cache;
-        int physical_K_next = K_next;
-        if constexpr (PagedKV) {
-          if (is_cache_next) {
-            physical_K_next = get_physical_k_tile(K_next, l_coord, seq_len_kv_cache);
-          }
-        }
-
-        if (is_cache_next) {
-          prefetch(prefetch_k_cache, pKgK_cache(_,_,_,physical_K_next,D));
-        } else {
-          prefetch(prefetch_k, pKgK(_,_,_,K_next-kblocks_cache,D));
-        }
+        prefetch(prefetch_k, pKgK(_,_,_,K_next-kblocks_cache,D));
       }
-
-      barrier_wait(ScopeWorkgroup);
     }
   }
 
