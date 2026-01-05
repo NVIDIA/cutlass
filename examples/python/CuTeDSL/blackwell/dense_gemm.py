@@ -787,11 +787,13 @@ class DenseGemmKernel:
                     # Async arrive AB buffer empty
                     consumer_handle.release()
 
-                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
-                peek_ab_empty_status = ab_producer.try_acquire()
+                if k_tile_idx + 1 < k_tile_cnt - prefetch_k_tile_cnt:
+                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+                    peek_ab_empty_status = ab_producer.try_acquire()
 
-                # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
-                peek_ab_full_status = ab_consumer.try_wait()
+                if k_tile_idx + 1 < k_tile_cnt and is_leader_cta:
+                    # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
+                    peek_ab_full_status = ab_consumer.try_wait()
 
             # Async arrive accumulator buffer full
             if is_leader_cta:

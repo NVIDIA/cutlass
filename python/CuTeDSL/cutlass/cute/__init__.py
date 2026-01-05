@@ -210,7 +210,7 @@ EnableTVMFFI = _dsl.EnableTVMFFI
 # attach the TVM FFI ABI interface postprocessor to the DSL
 from . import _tvm_ffi_args_spec_converter
 
-_tvm_ffi_args_spec_converter.attach_args_spec_converter()
+_tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
 
 # Explicitly export all symbols for documentation generation
 __all__ = [

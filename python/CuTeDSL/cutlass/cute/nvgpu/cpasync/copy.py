@@ -15,7 +15,7 @@ from typing import Optional, Type
 
 from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL
+from cutlass.cutlass_dsl import BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
@@ -146,7 +146,7 @@ class CopyBulkTensorTileG2SOp(TmaCopyOp):
                 self, "expects the 'cta_group' parameter to be a CtaGroup instance"
             )
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -263,7 +263,7 @@ class CopyBulkTensorTileG2SMulticastOp(TmaCopyOp):
                 self, "expects the 'cta_group' parameter to be a CtaGroup instance"
             )
         # Arch verification
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -386,7 +386,7 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
 
     def __post_init__(self):
         # Arch verification
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -561,7 +561,7 @@ class CopyBulkG2SOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -646,7 +646,7 @@ class CopyBulkG2SMulticastOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -740,7 +740,7 @@ class CopyBulkS2GOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,

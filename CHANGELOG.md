@@ -2,6 +2,20 @@
 
 # CUTLASS 4.x
 
+## [4.3.4](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.4) (2025-12-22)
+
+### CuTe DSL
+* New features
+  - Added PDL support along with example [Kernel launch with Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py)
+
+* Bug fixing and improvements
+  - Fixed a frame refcnt issue with cuda graph
+  - Enhancement for tvm-ffi AoT case for earlier module unload
+  - Fixed order issue in `make_smem_layout_a` in utils/hopper_helpers.py
+
+### CUTLASS C++
+* Work around a driver TMA descriptor related bug which will cause occasionally errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
+
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
 
 ### CuTe DSL

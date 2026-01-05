@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.3.3
+# CUTLASS 4.3.4
 
-_CUTLASS 4.3.3 - Dec 2025_
+_CUTLASS 4.3.4 - Dec 2025_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -56,6 +56,7 @@ To get started quickly - please refer :
   - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches.
   - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi.
   - Supported variadic tuples for JIT function argument in tvm-ffi.
+  - Added PDL support along with example [Kernel launch with Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py)
 * Debuggability improvements:
     - Supported source location tracking for DSL APIs (Allow tools like ``nsight`` profiling to correlate perf metrics with Python source code)
     - Supported dumping PTX and CUBIN code: [Hello World Example](https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/notebooks/hello_world.ipynb)
@@ -106,6 +107,9 @@ To get started quickly - please refer :
     - Fixed an issue of allocating max smem when there's statically allocated smem
     - Fixed an issue when JIT function argument with union type annotation for tvm-ffi
     - Clearer error message for the case of runtime error cudaErrorInsufficientDriver
+    - Fixed a frame refcnt issue with cuda graph
+    - Enhancement for tvm-ffi AoT case for earlier module unload
+    - Fixed order issue in make_smem_layout_a in utils/hopper_helpers.py
 
 ## CUTLASS C++
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
@@ -139,6 +143,7 @@ To get started quickly - please refer :
     - Fix a few bugs in distributed gemm API and examples.
     - Fix handling negative zero in sparse compressor.
     - Add missing `wait_on_dependent_grids` for PDL use case.
+    - Work around a driver TMA descriptor related bug which will cause occasionally errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
 * Fix some profiler issues:
     - Add some missing reference kernels.
     - Support VoidC reference kernels.

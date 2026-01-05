@@ -12,7 +12,8 @@
 
 from cutlass.base_dsl.arch import Arch
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.cutlass_dsl import CuTeDSL, dsl_user_op
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
+
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import builtin, arith, llvm, vector
 
@@ -53,7 +54,7 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
     :return: The output 1D vector of bfloat16 with the same length as the input vector.
     :rtype: 1D vector of bfloat16
     """
-    arch = CuTeDSL._get_dsl().get_arch_enum()
+    arch = BaseDSL._get_dsl().get_arch_enum()
     if not arch in cvt_i8_bf16_intrinsic.supported_archs:
         raise DSLRuntimeError(f"cvt_i8_bf16_intrinsic is not supported on {arch}")
     src_pos = 0
@@ -130,7 +131,7 @@ def cvt_i4_bf16_intrinsic(vec_i4, length, *, loc=None, ip=None):
     :return: The output 1D vector of bfloat16 with the same length as the input vector.
     :rtype: 1D vector of bfloat16
     """
-    arch = CuTeDSL._get_dsl().get_arch_enum()
+    arch = BaseDSL._get_dsl().get_arch_enum()
     if not arch in cvt_i4_bf16_intrinsic.supported_archs:
         raise DSLRuntimeError(f"cvt_i4_bf16_intrinsic is not supported on {arch}")
     src_pos = 0

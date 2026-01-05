@@ -15,7 +15,7 @@ from typing import Type
 
 from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL
+from cutlass.cutlass_dsl import BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
@@ -113,7 +113,7 @@ class _LdBase(CopyOp):
         :raises OpError: If pack parameter is not a Pack instance
         """
         # Arch verification
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
             raise OpError(
                 self,
@@ -416,7 +416,7 @@ class _StBase(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
             raise OpError(
                 self,
@@ -625,7 +625,7 @@ class _S2TCopyBase(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch.is_family_of(Arch.sm_100f):
             raise OpError(
                 self,

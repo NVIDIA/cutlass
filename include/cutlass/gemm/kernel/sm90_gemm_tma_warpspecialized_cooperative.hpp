@@ -136,16 +136,16 @@ public:
   // Detect if this is SM120 blockscaled kernel which hits high register pressure
   // on smaller tiles (e.g. 256x128 registers per thread)
   template <typename T>
-  struct is_blockscaled : cute::false_type {};
+  struct IsSm120BlockScaled : cute::false_type {};
   
   template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
-  struct is_blockscaled<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
+  struct IsSm120BlockScaled<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
     : cute::true_type {};
   
-  static constexpr bool IsBlockScaled = is_blockscaled<DispatchPolicy>::value;
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
   
   static constexpr bool HeavyRegisterPressure = 
-    IsBlockScaled ? (RegsPerThread >= 128) : (RegsPerThread >= 208);
+    IsSm120BlockScaled<DispatchPolicy>::value ? (RegsPerThread >= 128) : (RegsPerThread >= 208);
   
   static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
   static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
@@ -804,15 +804,16 @@ public:
           // Update starting mainloop pipeline state for the next tile
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
         }
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        if (scheduler.is_last_tile(work_tile_info)) {
-          // Hint on an early release of global memory resources.
-          // The timing of calling this function only influences performance,
-          // not functional correctness.
-          cutlass::arch::launch_dependent_grids();
 
+        if constexpr (!IsSm120Family) {
+          if (scheduler.is_last_tile(work_tile_info)) {
+            // Hint on an early release of global memory resources.
+            // The timing of calling this function only influences performance,
+            // not functional correctness.
+            cutlass::arch::launch_dependent_grids();
+
+          }
         }
-        #endif
 
         // Index of warp group within consumer warp groups
         int consumer_warp_group_idx = canonical_warp_group_idx() - NumLoadWarpGroups;
