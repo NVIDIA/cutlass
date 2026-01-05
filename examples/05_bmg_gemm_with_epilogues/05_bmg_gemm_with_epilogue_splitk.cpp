@@ -408,6 +408,11 @@ int main(int argc, const char** argv)
     return -1;
   }
 
+  if (options.n < options.num_head * (options.nope_dim + options.rope_dim)) {
+    std::cerr << "n should be greater than num_head * (nope_dim + rope_dim)" << std::endl;
+    return -1;
+  }
+
   //
   // Run examples
   //
