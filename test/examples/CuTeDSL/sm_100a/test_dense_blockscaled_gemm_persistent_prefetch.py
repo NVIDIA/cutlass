@@ -66,6 +66,8 @@ import cutlass
         c_major,
     )
 )
+
+@pytest.mark.arch("100a")
 @pytest.mark.parametrize(
     "mnkl",
     [
@@ -75,6 +77,7 @@ import cutlass
     ],
 )
 @pytest.mark.parametrize(
+
     "ab_dtype, c_dtype, sf_dtype",
     [
         (cutlass.Float8E5M2, cutlass.Float32, cutlass.Float8E8M0FNU),
