@@ -47,7 +47,7 @@ from blackwell.dense_blockscaled_gemm_persistent_prefetch import (
 )
 
 import cutlass
-
+pytestmark = [pytest.mark.arch(["100a"])]
 
 @pytest.mark.invalid_case(
     lambda: not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
@@ -66,8 +66,6 @@ import cutlass
         c_major,
     )
 )
-
-@pytest.mark.arch("100a")
 @pytest.mark.parametrize(
     "mnkl",
     [
