@@ -26,9 +26,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from collections.abc import Callable
 import logging
-from typing import Type
+from collections.abc import Callable
 
 from cutlass_api.arguments import EpilogueArguments
 from cutlass_api.kernel import Kernel
@@ -64,6 +63,7 @@ if available:
             epilogue_args: EpilogueArguments = None,
             cc: int = None,
         ) -> list[Kernel]:
+
             kernels_for_provider = []
             for kernel_cls in cls._kernel_classes:
                 kernels_for_provider.extend(

@@ -68,6 +68,7 @@ def test_gemm_sm100(
     c_dtype: torch.dtype,
     accumulator_type: torch.dtype,
     n_iterations: int,
+    fixture_toggle_tvm_ffi,
 ):
     A = torch.randint(-1, 2, (M, K), device="cuda").to(ab_dtype)
     B = torch.randint(-1, 2, (K, N), device="cuda").to(ab_dtype)

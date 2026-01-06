@@ -81,3 +81,17 @@ class GlobalOptions:
                 "TVM FFI is not installed, please install it via `pip install apache-tvm-ffi`."
             )
         self._options["use_tvm_ffi"] = value
+
+    def save(self, out: dict) -> None:
+        """
+        Save the current options to a dictionary.
+        """
+        for key, value in self._options.items():
+            out[key] = value
+
+    def restore(self, inp: dict) -> None:
+        """
+        Restore the options from a dictionary.
+        """
+        for key, value in inp.items():
+            self._options[key] = value

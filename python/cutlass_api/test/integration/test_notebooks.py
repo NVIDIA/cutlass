@@ -27,6 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -36,10 +37,11 @@ import cutlass_api
 @pytest.mark.parametrize(
     "notebook_name, supported_ccs",
     [
-        ("000_gemm.ipynb", [100, 103]),
+        ("000_gemm.ipynb", [80, 89, 90,100, 103]),
         ("001_gemm_with_fused_epilogue.ipynb", [100, 103]),
         ("002_bring_your_own_kernel.ipynb", [80, 89, 90, 100, 103, 120, 121]),
-        ("003_host_latency_best_practices.ipynb", [100, 103]),
+        ("003_host_latency_best_practices.ipynb", [80, 89, 90, 100, 103]),
+        ("004_fake_tensors.ipynb", [80, 89, 90, 100, 103]),
     ],
 )
 def test_notebooks(notebook_name, supported_ccs):
@@ -74,12 +76,21 @@ def test_notebooks(notebook_name, supported_ccs):
     notebook_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples")
     full_notebook_path = os.path.join(notebook_dir, notebook_name)
 
-    import nbconvert
+    import subprocess
+    import sys
+    from nbconvert.preprocessors import ExecutePreprocessor
     import nbformat
 
-    with open(full_notebook_path, "r") as file:
+    # Register the current Python interpreter as the python3 kernel
+    subprocess.run(
+        [sys.executable, "-m", "ipykernel", "install", "--user", "--name", "python3"],
+        check=True,
+        capture_output=True,
+    )
+
+    with Path(full_notebook_path).open() as file:
         notebook = nbformat.read(file, as_version=4)
-    ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=600, kernel_name="python3")
+    ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
 
     # Execute the notebook. This call will error out on any assertions or errors in the
     # notebook itself. Allow these to propagate up so the test will fail on notebook failure.

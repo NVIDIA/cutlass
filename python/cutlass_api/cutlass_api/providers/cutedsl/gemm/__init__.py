@@ -31,3 +31,4 @@
 # ruff: noqa: F401
 import cutlass_api.providers.cutedsl.gemm.sm100_static_persistent
 import cutlass_api.providers.cutedsl.gemm.sm100_static_persistent_efc
+import cutlass_api.providers.cutedsl.gemm.sm80_tensorop_gemm

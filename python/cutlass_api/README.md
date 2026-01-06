@@ -69,7 +69,7 @@ See CUTLASS's [Compatibility section](https://github.com/NVIDIA/cutlass?tab=read
 ### Current support
 
 * Dense GEMM: `out = A @ B`
-    - Compute capabilities: 100, 103
+    - Compute capabilities: 100, 103 (WIP to expand to more)
     - Input precisions (A and B must be of same type): F16, BF16, TF32, INT8
     - Output precisions: F32, F16, BF16, INT32
     - Epilogue operations:
@@ -78,6 +78,7 @@ See CUTLASS's [Compatibility section](https://github.com/NVIDIA/cutlass?tab=read
         - Auxiliary load of scalar
         - Tensor-tensor elementwise or tensor-scalar addition, multiplication, subtraction, division
         - Elementwise tensor exponent, relu, sigmoid, tanh
+    - Note: Partial support exists on CC 80/89/90 (limited dtypes/tilings coverage)
 
 * Planned additions
     * Block-scaled GEMMs

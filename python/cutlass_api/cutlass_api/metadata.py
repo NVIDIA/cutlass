@@ -68,50 +68,74 @@ def _convert_stride(shape: tuple[int, ...], stride: tuple[int, ...]) -> tuple[in
     return new_stride
 
 
-def _get_max_pow2_alignment(
-    shape: tuple[int, ...], stride: tuple[int, ...], dtype: cutlass.Numeric
-) -> int:
+def _is_tuple_aligned(tup: tuple[int], divisibility: int, contiguous_dim: int) -> bool:
     """
-    Get the maximum power of 2 alignment for a given data type
+    Check if the all elements of the shape/stride tuple are divisible by a given
+    divisibility, except along the contiguous dimension.
+    """
+    return all(
+        t % divisibility == 0 for dim, t in enumerate(tup) if dim != contiguous_dim
+    )
+
+
+def _get_max_pow2_divisibility(shape: tuple[int, ...], stride: tuple[int, ...]) -> int:
+    """
+    Get the maximum power of 2 divisibility met by the given shape and stride.
+    This is the largest power of 2 that divides the number of elements in the major mode (with stride 1).
 
     :param shape: the shape of the tensor
     :type shape: tuple[int, ...]
     :param stride: the stride of the tensor
     :type stride: tuple[int, ...]
-    :param dtype: the data type
-    :type dtype: cutlass.Numeric
 
-    :return: the maximum power of 2 alignment
+    :return: the maximum power of 2 divisibility by which the shape is divisible
     :rtype: int
     """
     if 1 not in stride:
         return 1
-
     major_mode_idx = stride.index(1)
     num_major_elements = shape[major_mode_idx]
-    for alignment in [128, 64, 32, 16, 8, 4, 2]:
-        num_contiguous_elements = alignment * 8 // dtype.width
-        if num_major_elements % num_contiguous_elements == 0:
-            return alignment
-    return 1
+
+    best_divisibility = 1
+    while num_major_elements % (best_divisibility * 2) == 0:
+        best_divisibility *= 2
+    return best_divisibility
 
 
 @dataclass
 class TensorAttributes:
     """
-    Description of a single tensor. This includes the data type, stride, and alignment.
+    Description of a single tensor. This includes the data type, stride, and divisibility.
 
     :param dtype: The data type of the tensor.
     :type dtype: cutlass.Numeric
     :param stride: The stride of the tensor.
     :type stride: tuple[int, ...]
-    :param alignment: The alignment of the tensor
-    :type alignment: int
+    :param divisibility: The divisibility requirement on a tensor's stride & shape elements
+    :type divisibility: int
+    :param ptr_alignment_bytes: The alignment of the tensor's data pointer, in bytes.
+                          By default, it matches the number of bytes in stride/shape alignment.
+    :type ptr_alignment_bytes: int
     """
 
     dtype: cutlass.Numeric  # F32, F16, etc.
     stride: tuple[int, ...]
-    alignment: int
+    divisibility: int
+    ptr_alignment_bytes: int
+
+    def __init__(
+        self,
+        dtype: cutlass.Numeric,
+        stride: tuple[int, ...],
+        divisibility: int,
+        ptr_alignment_bytes: int | None = None,
+    ):
+        self.dtype = dtype
+        self.stride = stride
+        self.divisibility = divisibility
+        self.ptr_alignment_bytes = ptr_alignment_bytes or (
+            (divisibility * dtype.width) // 8
+        )
 
     def supports(self, operand: TensorWrapper | Self) -> Status:
         """
@@ -159,22 +183,37 @@ class TensorAttributes:
         # When setting stride from args, any modes of stride 1 and shape 1
         # are changed to have stride 0. Thus, there will only be one mode
         # with stride 1.
-        if not all_zeros and normalized_operand_stride[expected_stride.index(1)] != 1:
+        contiguous_dim = expected_stride.index(1)
+        if not all_zeros and normalized_operand_stride[contiguous_dim] != 1:
             return Status.fail(
-                f"Expected stride[{expected_stride.index(1)}] to be 1, got {normalized_operand_stride[expected_stride.index(1)]} (strides: {normalized_operand_stride})"
+                f"Expected stride[{contiguous_dim}] to be 1, got "
+                f"{normalized_operand_stride[contiguous_dim]} "
+                f"(strides: {normalized_operand_stride})"
             )
 
-        # Alignment of operand should be divisible by this metadata's alignment
+        # Check that divisibility constraints are met
         if isinstance(operand, TensorWrapper):
-            operand_alignment = _get_max_pow2_alignment(
-                operand.shape, normalized_operand_stride, operand.element_type
-            )
+            if not _is_tuple_aligned(
+                normalized_operand_stride, self.divisibility, contiguous_dim
+            ):
+                return Status.fail(
+                    f"Expected operand stride to be divisible by {self.divisibility} for"
+                    f"all non-contiguous modes, got {normalized_operand_stride}"
+                )
         else:
-            operand_alignment = operand.alignment
+            # When comparing another TensorAttribute, ensure its divisibility is a subset
+            if operand.divisibility % self.divisibility != 0:
+                return Status.fail(
+                    f"Expected operand divisibility {operand.divisibility} to be divisible by {self.divisibility}"
+                )
 
-        if operand_alignment % self.alignment != 0:
+        # Check data ptr alignment, if available
+        if (
+            isinstance(operand, TensorWrapper)
+            and operand.data_ptr % self.ptr_alignment_bytes != 0
+        ):
             return Status.fail(
-                f"Expected operand alignment {operand_alignment} (strides: {normalized_operand_stride}) to be a multiple of {self.alignment}"
+                f"Expected data pointer to be {self.ptr_alignment_bytes}B-aligned."
             )
 
         return Status.success()
@@ -191,11 +230,9 @@ class TensorAttributes:
         :rtype: TensorAttributes
         """
         stride = _convert_stride(tensor.shape, tensor.stride)
-        max_alignment = _get_max_pow2_alignment(
-            tensor.shape, stride, tensor.element_type
-        )
+        max_divisibility = _get_max_pow2_divisibility(tensor.shape, stride)
         return TensorAttributes(
-            dtype=tensor.element_type, stride=stride, alignment=max_alignment
+            dtype=tensor.element_type, stride=stride, divisibility=max_divisibility
         )
 
 

@@ -33,8 +33,8 @@ import pytest
 import torch
 
 import cutlass_api
-from cutlass_api.utils import device_cc
 from cutlass_api.config import GlobalOptions
+from cutlass_api.utils import is_device_cc_supported
 
 torch.manual_seed(2025)
 
@@ -62,7 +62,7 @@ def base_data_types():
 
 
 def supports_sm100af():
-    return device_cc() == 100 and (
+    return is_device_cc_supported({100}) and (
         os.getenv("CUTE_DSL_ARCH", "") in ["", "sm_100a", "sm_100f"]
     )
 
@@ -485,9 +485,7 @@ def test_gemm_fusion_return_acc():
 
     epi_str = "def epi(accum, C): D = relu(accum) + C; return D, accum"
 
-    epi_args = cutlass_api.arguments.EpilogueArguments(
-        epi_str, C=C, D=D, accum=accum
-    )
+    epi_args = cutlass_api.arguments.EpilogueArguments(epi_str, C=C, D=D, accum=accum)
 
     args = cutlass_api.arguments.GemmArguments(
         A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
@@ -628,19 +626,13 @@ def test_gemm_fusion_matmul_input_as_aux():
 @pytest.mark.parametrize(
     "ab_dtype, c_dtype, d_dtype, accumulator_type", base_data_types()
 )
-@pytest.mark.parametrize(
-    "use_tvm_ffi",
-    [True, False],
-)
 @pytest.mark.skipif(
     not supports_sm100af(),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_alpha_beta(
-    M, N, K, L, ab_dtype, c_dtype, d_dtype, accumulator_type, use_tvm_ffi
+    M, N, K, L, ab_dtype, c_dtype, d_dtype, accumulator_type, fixture_toggle_tvm_ffi
 ):
-    GlobalOptions().use_tvm_ffi = use_tvm_ffi
-
     A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
     B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
     C = torch.randint(-1, 2, (L, M, N), device="cuda", dtype=c_dtype)
@@ -680,7 +672,7 @@ def test_gemm_alpha_beta(
     not supports_sm100af(),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
-def test_gemm_big_epi():
+def test_gemm_big_epi(fixture_toggle_tvm_ffi):
     M, N, K, L = 256, 512, 128, 2
     ab_dtype = torch.float16
     c_dtype = torch.float32
@@ -809,7 +801,7 @@ def test_gemm_big_epi():
     not supports_sm100af(),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
-def test_gemm_fusion_not_available():
+def test_gemm_fusion_not_available(fixture_toggle_tvm_ffi):
     M = 256
     N = 512
     K = 1024

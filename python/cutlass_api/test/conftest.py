@@ -26,35 +26,47 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from __future__ import annotations
 
-from dataclasses import dataclass
+import pytest
+
+import cutlass_api
+from cutlass_api.config import GlobalOptions
+
+#
+# Before each test, save the GlobalOptions dict
+# After each test, restore the GlobalOptions dict
+#
+
+global_options = {}
 
 
-@dataclass
-class Status:
-    """
-    A simple status class to wrap an optional exception.
-    """
+def setup_function():
+    global global_options
+    GlobalOptions().save(global_options)
 
-    error: Exception | None = None
 
-    def __bool__(self) -> bool:
-        return self.error is None
+def teardown_function():
+    global global_options
+    GlobalOptions().restore(global_options)
 
-    @classmethod
-    def success(cls) -> Status:
-        """Create a successful status."""
-        return cls()
 
-    @classmethod
-    def fail(cls, error: str | Exception) -> Status:
-        """Create a failed status with an error."""
-        if isinstance(error, str):
-            error = ValueError(error)
-        return cls(error=error)
+#
+# Fixtures for toggling the TVM FFI global option and forcing its enablement or disablement
+#
 
-    def raise_on_error(self) -> None:
-        """Raise the stored exception if this status represents a failure."""
-        if self.error is not None:
-            raise self.error
+
+@pytest.fixture(
+    params=[True, False], ids=["use_tvm_ffi=True", f"use_tvm_ffi=False"], autouse=False
+)
+def fixture_toggle_tvm_ffi(request):
+    GlobalOptions().use_tvm_ffi = request.param
+
+
+@pytest.fixture(autouse=False)
+def fixture_enable_tvm_ffi(request):
+    GlobalOptions().use_tvm_ffi = True
+
+
+@pytest.fixture(autouse=False)
+def fixture_disable_tvm_ffi(request):
+    GlobalOptions().use_tvm_ffi = False

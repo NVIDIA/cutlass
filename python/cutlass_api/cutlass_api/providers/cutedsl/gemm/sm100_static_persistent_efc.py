@@ -128,7 +128,7 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
     }
 
     def __init__(self, metadata: KernelMetadata):
-        self.metadata = metadata
+        super().__init__(metadata)
 
         if metadata.epilogue is not None:
             epilogue_op = EFCConverter.convert(
@@ -249,7 +249,7 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
         """
         row_major_stride = (0, 0, 1)
         col_major_stride = (0, 1, 0)
-        alignment = 16
+        alignment_bytes = 16
 
         for (
             ab_dtype,
@@ -281,15 +281,23 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
                     for stride_A, stride_B, stride_out in itertools.product(
                         [row_major_stride, col_major_stride], repeat=3
                     ):
+                        ab_divisibility = alignment_bytes * 8 // ab_dtype.width
+                        out_divisibility = alignment_bytes * 8 // out_dtype.width
                         # Create TensorAttributes for A, B, and out tensors
                         a_attrs = TensorAttributes(
-                            dtype=ab_dtype, stride=stride_A, alignment=alignment
+                            dtype=ab_dtype,
+                            stride=stride_A,
+                            divisibility=ab_divisibility,
                         )
                         b_attrs = TensorAttributes(
-                            dtype=ab_dtype, stride=stride_B, alignment=alignment
+                            dtype=ab_dtype,
+                            stride=stride_B,
+                            divisibility=ab_divisibility,
                         )
                         out_attrs = TensorAttributes(
-                            dtype=out_dtype, stride=stride_out, alignment=alignment
+                            dtype=out_dtype,
+                            stride=stride_out,
+                            divisibility=out_divisibility,
                         )
 
                         # Create and yield the GemmOperandsMetadata
@@ -303,10 +311,13 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
                         yield operands
 
     def _supports(self, args: GemmArguments) -> Status:
+
         if args.epilogue is not None:
             fusion_metadata = EpilogueMetadata.from_args(args.epilogue)
             if not self._valid_fusion(fusion_metadata):
-                return Status.fail("Provided epilogue fusion is not supported by this kernel")
+                return Status.fail(
+                    "Provided epilogue fusion is not supported by this kernel"
+                )
 
         return Status.success()
 
@@ -436,8 +447,6 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
                 if PersistentDenseGemmEFCKernel._valid_metadata(
                     metadata
                 ) and metadata_filter(metadata):
-                    kernel_list.append(
-                        PersistentDenseGemmEFCKernel(metadata)
-                    )
+                    kernel_list.append(PersistentDenseGemmEFCKernel(metadata))
 
         return kernel_list

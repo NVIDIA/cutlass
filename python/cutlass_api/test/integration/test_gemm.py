@@ -38,7 +38,6 @@ import torch
 import cutlass
 
 import cutlass_api
-from cutlass_api.config import GlobalOptions
 from cutlass_api.utils import is_device_cc_supported
 
 torch.manual_seed(2025)
@@ -62,8 +61,17 @@ logger = logging.getLogger(__name__)
     ],
 )
 @pytest.mark.parametrize(
-    "use_tvm_ffi",
-    [True, False],
+    "a_major, b_major, c_major",
+    [
+        ("k", "k", "n"),
+        ("k", "k", "m"),
+        ("k", "n", "m"),
+        ("k", "n", "n"),
+        ("m", "k", "n"),
+        ("m", "k", "m"),
+        ("m", "n", "m"),
+        ("m", "n", "n"),
+    ],
 )
 @pytest.mark.skipif(
     not is_device_cc_supported({100})
@@ -71,20 +79,29 @@ logger = logging.getLogger(__name__)
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_sm100(
-    M: int,
-    N: int,
-    K: int,
-    L: int,
+    M: int, N: int, K: int, L: int,
     ab_dtype: torch.dtype,
     c_dtype: torch.dtype,
     accumulator_type: torch.dtype,
-    use_tvm_ffi: bool,
+    a_major: str,
+    b_major: str,
+    c_major: str,
+    fixture_toggle_tvm_ffi,
 ):
-    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
-    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
-    D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    if a_major == "k":
+        A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+    else:
+        A = torch.randint(-1, 2, (L, K, M), device="cuda", dtype=ab_dtype).permute(0, 2, 1)
 
-    GlobalOptions().use_tvm_ffi = use_tvm_ffi
+    if b_major == "n":
+        B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+    else:
+        B = torch.randint(-1, 2, (L, N, K), device="cuda", dtype=ab_dtype).permute(0, 2, 1)
+
+    if c_major == "n":
+        D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    else:
+        D = torch.empty((L, N, M), device="cuda", dtype=c_dtype).permute(0, 2, 1)
 
     args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type)
 
@@ -100,16 +117,12 @@ def test_gemm_sm100(
     torch.testing.assert_close(D, reference.to(D.dtype))
 
 
-@pytest.mark.parametrize(
-    "use_tvm_ffi",
-    [True, False],
-)
 @pytest.mark.skipif(
     not is_device_cc_supported({100})
     or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
-def test_gemm_sm100_2d(use_tvm_ffi: bool):
+def test_gemm_sm100_2d(fixture_toggle_tvm_ffi):
     ab_dtype = torch.float16
     c_dtype = torch.float16
     accumulator_type = torch.float32
@@ -119,8 +132,6 @@ def test_gemm_sm100_2d(use_tvm_ffi: bool):
     A = torch.randint(-1, 2, (M, K), device="cuda", dtype=ab_dtype)
     B = torch.randint(-1, 2, (K, N), device="cuda", dtype=ab_dtype)
     D = torch.empty((M, N), device="cuda", dtype=c_dtype)
-
-    GlobalOptions().use_tvm_ffi = use_tvm_ffi
 
     args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type)
 
@@ -141,7 +152,7 @@ def test_gemm_sm100_2d(use_tvm_ffi: bool):
     or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a",
 )
-def test_gemm_sm100_int8():
+def test_gemm_sm100_int8(fixture_toggle_tvm_ffi):
     M, N, K = 256, 512, 128
     A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.int8)
     B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.int8)
@@ -159,27 +170,48 @@ def test_gemm_sm100_int8():
     reference = torch._int_mm(A, B)
     torch.testing.assert_close(D, reference.to(D.dtype))
 
-
-@pytest.mark.skipif(
-    find_spec("tvm_ffi") is None,
-    reason="FP8 currently requires TVM FFI to be installed",
+@pytest.mark.parametrize(
+    "problem_size",
+    [
+        (256, 512, 128),
+        (256, 512, 128, 1),
+        (256, 512, 128, 2),
+    ]
 )
 @pytest.mark.skipif(
     not is_device_cc_supported({100})
     or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a",
 )
-def test_gemm_sm100_fp8():
-    # Currently, FP8 is only supported via TVM FFI.
-    GlobalOptions().use_tvm_ffi = True
+def test_gemm_sm100_fp8(
+    problem_size: tuple[int, ...],
+    fixture_enable_tvm_ffi,  # FP8 currently requires TVM FFI to be installed
+):
+    M, N, K = problem_size[:3]
 
-    M, N, K = 256, 512, 128
-    # Create torch fp8 tensors for A and B
-    A = torch.randint(-1, 2, (M, K), device="cuda").to(torch.float8_e4m3fn)
-    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    identity_scale = torch.ones(1, device="cuda", dtype=torch.float32)
 
-    # Transpose B because torch._scaled_mm expects B to be column-major
-    B = torch.randint(-1, 2, (N, K), device="cuda").to(torch.float8_e4m3fn).T
+    if len(problem_size) == 3:
+        A = torch.randint(-1, 2, (M, K), device="cuda").to(torch.float8_e4m3fn)
+        D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+
+        # Transpose B because torch._scaled_mm expects B to be column-major
+        B = torch.randint(-1, 2, (N, K), device="cuda").to(torch.float8_e4m3fn).T
+
+        reference = torch._scaled_mm(A, B, identity_scale, identity_scale, out_dtype=torch.float32)
+    else:
+        L = problem_size[3]
+        A = torch.randint(-1, 2, (L, M, K), device="cuda").to(torch.float8_e4m3fn)
+        D = torch.empty((L, M, N), device="cuda", dtype=torch.float32)
+
+        # Transpose B because torch._scaled_mm expects B to be column-major
+        B = torch.randint(-1, 2, (L, N, K), device="cuda").to(torch.float8_e4m3fn).permute(0, 2, 1)
+
+        reference = torch.empty((L, M, N), device="cuda", dtype=torch.float32)
+        for l in range(L):
+            reference[l, :, :] = torch._scaled_mm(
+                A[l, :, :], B[l, :, :], identity_scale, identity_scale, out_dtype=torch.float32
+            )
 
     args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type=torch.float32)
     kernels = cutlass_api.get_kernels(args, cc=100)
@@ -190,10 +222,6 @@ def test_gemm_sm100_fp8():
     compiled_artifact = kernel.compile(args)
     kernel.run(args, compiled_artifact=compiled_artifact, assume_supported_args=True)
 
-    identity_scale = torch.ones(1, device="cuda", dtype=torch.float32)
-    reference = torch._scaled_mm(
-        A, B, identity_scale, identity_scale, out_dtype=torch.float32
-    )
     torch.testing.assert_close(D, reference)
 
 
@@ -207,7 +235,7 @@ def test_no_gemms_available():
     args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type=torch.float32)
     kernels = cutlass_api.get_kernels(args, cc=70)
 
-    # There are currenlty no kernels available for compute capability 70.
+    # There are currently no kernels available for compute capability 70.
     assert len(kernels) == 0
 
 

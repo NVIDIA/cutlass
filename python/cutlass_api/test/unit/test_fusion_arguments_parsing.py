@@ -32,7 +32,6 @@ import torch
 
 import cutlass_api
 
-
 pytestmark = pytest.mark.arch("80")
 
 
@@ -69,7 +68,7 @@ def epi(accum, C, alpha, beta):
     except ValueError as e:
         assert "F" in str(e)
     else:
-        assert False, "Failed to catch missing keyword"
+        raise AssertionError("Failed to catch missing keyword")
 
 
 def test_extra_keywords():
@@ -92,4 +91,4 @@ def epi(accum, C, alpha, beta):
     except ValueError as e:
         assert "gamma" in str(e)
     else:
-        assert False, "Failed to catch extra keyword"
+        raise AssertionError("Failed to catch extra keyword")

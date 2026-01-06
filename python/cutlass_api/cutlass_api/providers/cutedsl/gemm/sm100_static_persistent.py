@@ -60,7 +60,6 @@ class PersistentDenseGemmKernel(CuteDslKernel):
         - i.e., Float8E4M3FN for A and Float8E5M2 for B is not supported
 
     :note: Supported A/B data types:
-        - TFloat32
         - Float16/BFloat16
         - Int8/Uint8
         - Float8E4M3FN/Float8E5M2
@@ -85,7 +84,7 @@ class PersistentDenseGemmKernel(CuteDslKernel):
     """
 
     def __init__(self, metadata: KernelMetadata):
-        self.metadata = metadata
+        super().__init__(metadata)
 
         def epilogue_op(x):
             return x
@@ -106,6 +105,7 @@ class PersistentDenseGemmKernel(CuteDslKernel):
         )
 
     def _supports(self, args: GemmArguments) -> Status:
+
         if args.epilogue is not None:
             return Status.fail("This kernel does not support any epilogue fusion.")
         return Status.success()
@@ -149,12 +149,10 @@ class PersistentDenseGemmKernel(CuteDslKernel):
         abtype = operands.A.dtype
 
         # Supported A/B data types:
-        #  - TFloat32
         #  - Float16/BFloat16
         #  - Int8/Uint8
         #  - Float8E4M3FN/Float8E5M2
         if abtype not in [
-            cutlass.Float32,
             cutlass.Float16,
             cutlass.BFloat16,
             cutlass.Int8,
@@ -197,7 +195,11 @@ class PersistentDenseGemmKernel(CuteDslKernel):
             operands.out.dtype == cutlass.Float16
             or operands.out.dtype == cutlass.BFloat16
         ):
-            if operands.accumulator_type not in [cutlass.Float16, cutlass.BFloat16]:
+            if operands.accumulator_type not in [
+                cutlass.Float32,
+                cutlass.Float16,
+                cutlass.BFloat16,
+            ]:
                 return False
         elif operands.out.dtype == cutlass.Int8 or operands.out.dtype == cutlass.Uint8:
             if operands.accumulator_type not in [cutlass.Int32]:
@@ -221,7 +223,6 @@ class PersistentDenseGemmKernel(CuteDslKernel):
         """
         # Supported A/B data types (must be the same)
         ab_dtypes = [
-            cutlass.Float32,
             cutlass.Float16,
             cutlass.BFloat16,
             cutlass.Int8,
@@ -232,15 +233,13 @@ class PersistentDenseGemmKernel(CuteDslKernel):
 
         row_major_stride = (0, 0, 1)
         col_major_stride = (0, 1, 0)
-        alignment = 16
+        alignment_bytes = 16
 
         for ab_dtype in ab_dtypes:
             # Determine valid accumulator types for this A/B dtype
             valid_acc_dtypes = []
 
-            if (
-                ab_dtype.is_float
-            ):  # Float32, Float16, BFloat16, Float8E4M3FN, Float8E5M2
+            if ab_dtype.is_float:
                 valid_acc_dtypes.append(cutlass.Float32)
                 if ab_dtype in [
                     cutlass.Float16,
@@ -277,15 +276,23 @@ class PersistentDenseGemmKernel(CuteDslKernel):
                     for stride_A, stride_B, stride_out in itertools.product(
                         [row_major_stride, col_major_stride], repeat=3
                     ):
+                        ab_divisibility = alignment_bytes * 8 // ab_dtype.width
+                        out_divisibility = alignment_bytes * 8 // out_dtype.width
                         # Create TensorAttributes for A, B, and out tensors
                         a_attrs = TensorAttributes(
-                            dtype=ab_dtype, stride=stride_A, alignment=alignment
+                            dtype=ab_dtype,
+                            stride=stride_A,
+                            divisibility=ab_divisibility,
                         )
                         b_attrs = TensorAttributes(
-                            dtype=ab_dtype, stride=stride_B, alignment=alignment
+                            dtype=ab_dtype,
+                            stride=stride_B,
+                            divisibility=ab_divisibility,
                         )
                         out_attrs = TensorAttributes(
-                            dtype=out_dtype, stride=stride_out, alignment=alignment
+                            dtype=out_dtype,
+                            stride=stride_out,
+                            divisibility=out_divisibility,
                         )
 
                         # Create and yield the GemmOperandsMetadata
@@ -316,26 +323,26 @@ class PersistentDenseGemmKernel(CuteDslKernel):
         if cluster_size_m * cluster_size_n > 16:
             return False
 
+        tile = design.tile_shape
+
         # Constraints based on whether 2CTA instructions are used
         if design.use_2cta_mma is not None:
             if design.use_2cta_mma:
                 if cluster_size_m % 2 != 0:
                     return False
-                if design.tile_shape is not None and design.tile_shape[0] not in [
+                if tile is not None and tile[0] not in [
                     128,
                     256,
                 ]:
                     return False
             else:
-                if design.tile_shape is not None and design.tile_shape[0] not in [
+                if tile is not None and tile[0] not in [
                     64,
                     128,
                 ]:
                     return False
 
-        if design.tile_shape is not None and design.tile_shape[1] not in range(
-            32, 256, 32
-        ):
+        if tile is not None and tile[1] not in range(32, 257, 32):
             return False
 
         if metadata.epilogue is not None:
@@ -407,8 +414,6 @@ class PersistentDenseGemmKernel(CuteDslKernel):
                 if PersistentDenseGemmKernel._valid_metadata(
                     metadata
                 ) and metadata_filter(metadata):
-                    kernel_list.append(
-                        PersistentDenseGemmKernel(metadata)
-                    )
+                    kernel_list.append(PersistentDenseGemmKernel(metadata))
 
         return kernel_list

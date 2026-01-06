@@ -90,7 +90,6 @@ class Manifest:
                     return False
                 return True
 
-
         epilogue_args = None if args is None else args.epilogue
         kernels = [
             k

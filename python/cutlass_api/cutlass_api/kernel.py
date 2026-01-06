@@ -36,12 +36,23 @@ from cutlass_api.arguments import EpilogueArguments, RuntimeArguments
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import KernelMetadata
 from cutlass_api.status import Status
+from cutlass_api.utils import device_cc
 
 
 class Kernel(ABC):
     """
     Base class for all kernels to be implemented in providers
     """
+
+    def __init__(self, metadata: KernelMetadata):
+        self._metadata = metadata
+
+    @property
+    def metadata(self) -> KernelMetadata:
+        """
+        The read-only metadata for the kernel.
+        """
+        return self._metadata
 
     @final
     def supports(self, args: RuntimeArguments) -> Status:

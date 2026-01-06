@@ -60,9 +60,16 @@ class PerformanceControls:
 
 
 class EpilogueArguments:
-    def __init__(self, epilogue_fn: Callable | str | None = None, **kwargs):
+    def __init__(
+        self,
+        epilogue_fn: Callable | str,
+        **kwargs,
+    ):
         """
-        Encapsulation of the epilogue function and its arguments needed to
+        Describes a user-defined epilogue that is performed on top of the operation
+        described by the primary `RuntimeArguments`.
+
+        It encapsulates an epilogue function and its arguments needed to
         determine the functional operation of an epilogue pattern.
 
         To support flexible definition of epilogues, `EpilogueArguments` is
@@ -120,7 +127,10 @@ class EpilogueArguments:
         ```
         A user would need to construct epilogue arguments as follows:
         ```python
-            epi_args = EpilogueArguments(my_epi, alpha=..., C=..., beta=..., D=..., F=...)
+            epi_args = EpilogueArguments(
+                my_epi,
+                alpha=..., C=..., beta=..., D=..., F=...
+            )
         ```
 
         :param epilogue_fn: The epilogue function to be traced.
@@ -263,13 +273,13 @@ class GemmArguments(RuntimeArguments):
     N: Number of columns in B and out
 
     :param A: Input tensor A of shape (L, M, K) or (M, K)
-    :type A: TensorWrapper
+    :type A: TensorLike
     :param B: Input tensor B of shape (L, K, N) or (K, N)
-    :type B: TensorWrapper
+    :type B: TensorLike
     :param out: Output tensor C of shape (L, M, N) or (M, N)
-    :type out: TensorWrapper
+    :type out: TensorLike
     :param accumulator_type: Data type of the accumulator
-    :type accumulator_type: cutlass.Numeric
+    :type accumulator_type: NumericLike
     """
 
     A: TensorLike

@@ -22,6 +22,8 @@ torch = [
 ]
 test = [
     "jupyter",
+    "nbconvert",
+    "nbformat",
     "pytest",
     "cutlass_api[torch]",
 ]

@@ -308,21 +308,54 @@ def leading_dim(tensor) -> int:
 
 def get_stride_order(stride: tuple[int, ...]) -> tuple[int, ...]:
     """
-    Returns the order of the stride of a tensor. For a stride of rank N,
-    the dimension with the smallest stride will have stride order 0 and the
-    dimension with the largest stride will have stride order N-1.
+    Returns the order of the modes of a stride. The returned tuple contains
+    indices of modes in `stride`, sorted from outermost to innermost.
+
+    For example, for a stride (1024, 1, 512), the stride order is (0, 2, 1).
 
     :param stride: The stride of the tensor.
     :type stride: tuple[int, ...]
 
-    :return: The order of the stride of the tensor.
+    :return: The order of the modes of the stride.
+    :rtype: tuple[int, ...]
+    """
+    # The code below performs an == reverse argsort on the stride:
+    #   indices = range(len(stride))
+    #   Sort indices using comparison between stride[i] and stride[j] when
+    #   sorting indices i and j. Sort in descending order.
+    # Example: For a stride (1024, 1, 512), the reverse argsort is (0, 2, 1).
+    return tuple(sorted(range(len(stride)), key=stride.__getitem__, reverse=True))
+
+
+def get_stride_rank(stride: tuple[int, ...]) -> tuple[int, ...]:
+    """
+    Returns the rank of the each mode in the stride of a tensor. For a stride of rank N,
+    the mode with the smallest stride will have stride rank 0 and the
+    mode with the largest stride will have stride rank N-1.
+
+    For example, for a stride (1024, 1, 512), the stride rank is (2, 0, 1).
+
+    :param stride: The stride of the tensor.
+    :type stride: tuple[int, ...]
+
+    :return: The rank of the each mode in the stride of the tensor.
     :rtype: tuple[int, ...]
     """
     # The code below performs an argsort on the stride:
     #   indices = range(len(stride))
     #   Sort indices using comparison between stride[i] and stride[j] when
     #   sorting indices i and j.
-    return tuple(sorted(range(len(stride)), key=stride.__getitem__))
+    # Example: For a stride (1024, 1, 512), the argsorted is (1, 2, 0).
+    argsorted = tuple(sorted(range(len(stride)), key=stride.__getitem__))
+
+    # Set the stride order of each mode to the index of the mode in the
+    # argsorted tuple.
+    # Example: For a stride (1024, 1, 512), the argsorted is (1, 2, 0),
+    # so the stride rank is (2, 0, 1).
+    res = [-1] * len(stride)
+    for i, idx in enumerate(argsorted):
+        res[idx] = i
+    return tuple(res)
 
 
 class TensorWrapper:
@@ -353,6 +386,7 @@ class TensorWrapper:
             self.compile_time_tensor = tensor
             self._shape = tensor.shape
             self._stride = tensor.stride
+            self._data_ptr = tensor.iterator._pointer
         elif GlobalOptions().use_tvm_ffi:
             # If TVM-FFI is enabled, runtime tensor is set simply as the tensor passed in, but
             # we must make a fake tensor for compilation.
@@ -362,28 +396,48 @@ class TensorWrapper:
 
                 rank = self.runtime_tensor.dim()
                 self._stride = self.runtime_tensor.stride()
-                stride_order = get_stride_order(self._stride)
-
+                stride_order = get_stride_rank(self._stride)
+                leading_dim_idx = stride_order.index(0)
                 shape = [cute.SymInt() for _ in range(rank)]
-                shape[stride_order.index(0)] = cute.SymInt(divisibility=16)
+                shape[leading_dim_idx] = cute.SymInt(divisibility=16 * 8 // dtype.width)
                 self._shape = tuple(self.runtime_tensor.shape)
+                self._data_ptr = self.runtime_tensor.data_ptr()
             else:
                 raise ValueError(
                     f"Unsupported tensor type: {type(self.runtime_tensor)}"
                 )
 
             self.compile_time_tensor = cute.runtime.make_fake_compact_tensor(
-                dtype, shape, stride_order=stride_order, assumed_align=16
+                dtype,
+                shape,
+                stride_order=stride_order,
+                assumed_align=16,  # bytes
             )
         else:
             # TVM-FFI is disabled and the tensor passed in is not a cute.Tensor,
             # We must convert it to a cute.Tensor
-            self.runtime_tensor = from_dlpack(
-                tensor, assumed_align=16
-            ).mark_layout_dynamic(leading_dim(tensor))
+            if is_torch_tensor(tensor):
+                dtype = to_cutlass_type(tensor.dtype)
+                stride = tensor.stride()
+            else:
+                raise ValueError(f"Unsupported tensor type: {type(tensor)}")
+            stride_order = get_stride_order(stride)
+            self.runtime_tensor = (
+                from_dlpack(
+                    tensor,
+                    assumed_align=16,  # bytes
+                )
+                .mark_layout_dynamic(leading_dim(tensor))
+                .mark_compact_shape_dynamic(
+                    mode=leading_dim(tensor),
+                    divisibility=16 * 8 // dtype.width,
+                    stride_order=stride_order,
+                )
+            )
 
             self._shape = self.runtime_tensor.shape
             self._stride = self.runtime_tensor.stride
+            self._data_ptr = self.runtime_tensor.iterator._pointer
 
             # Since the runtime tensor is now a cute.Tensor, we can use it at
             # compile time as well
@@ -400,6 +454,10 @@ class TensorWrapper:
     @property
     def stride(self) -> tuple[int, ...]:
         return self._stride
+
+    @property
+    def data_ptr(self) -> int:
+        return self._data_ptr
 
 
 def strides_to_layout_string(*strides: list[tuple[int, ...]]) -> str:

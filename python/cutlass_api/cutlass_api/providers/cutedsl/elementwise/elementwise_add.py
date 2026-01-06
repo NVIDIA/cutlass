@@ -32,6 +32,9 @@ from typing import ClassVar
 
 import cuda.bindings.driver as cuda
 
+import cutlass
+import cutlass.cute as cute
+
 from cutlass_api.arguments import ElementwiseArguments, EpilogueArguments
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import (
@@ -42,9 +45,6 @@ from cutlass_api.metadata import (
 from cutlass_api.providers.cutedsl import CuTeDSLProvider
 from cutlass_api.providers.cutedsl.kernel import CuteDslKernel
 from cutlass_api.utils import to_cuda_stream
-
-import cutlass
-import cutlass.cute as cute
 
 """
 An Elementwise Addition kernel using CuTe DSL:
@@ -60,7 +60,7 @@ class ElementwiseAddKernel(CuteDslKernel):
     ]
 
     def __init__(self, metadata: KernelMetadata):
-        self.metadata = metadata
+        super().__init__(metadata)
         self.impl = ElementwiseAddKernelImpl()
 
     def compile(self, args: ElementwiseArguments, cc: int = None) -> CompiledArtifact:
@@ -99,7 +99,7 @@ class ElementwiseAddKernel(CuteDslKernel):
 
         kernel_list = []
         for dtype in ElementwiseAddKernel._supported_dtypes:
-            alignment = 128 // dtype.width
+            divisibility = 128 // dtype.width
             for stride_A, stride_B, stride_out in product(
                 stride_names.keys(), repeat=3
             ):
@@ -112,17 +112,20 @@ class ElementwiseAddKernel(CuteDslKernel):
 
                 operands = ElementwiseOperandsMetadata(
                     A=TensorAttributes(
-                        dtype=dtype, stride=stride_A, alignment=alignment
+                        dtype=dtype, stride=stride_A, divisibility=divisibility
                     ),
                     B=TensorAttributes(
-                        dtype=dtype, stride=stride_B, alignment=alignment
+                        dtype=dtype, stride=stride_B, divisibility=divisibility
                     ),
                     out=TensorAttributes(
-                        dtype=dtype, stride=stride_out, alignment=alignment
+                        dtype=dtype, stride=stride_out, divisibility=divisibility
                     ),
                 )
                 metadata = KernelMetadata(
-                    operands=operands, kernel_name=kernel_name, kernel_class=ElementwiseAddKernel, min_cc=min_cc
+                    operands=operands,
+                    kernel_name=kernel_name,
+                    kernel_class=ElementwiseAddKernel,
+                    min_cc=min_cc,
                 )
                 if metadata_filter(metadata):
                     kernel_list.append(ElementwiseAddKernel(metadata))

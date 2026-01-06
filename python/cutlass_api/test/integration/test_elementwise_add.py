@@ -32,6 +32,7 @@ import torch
 
 import cutlass_api
 from cutlass_api.utils import device_cc
+from cutlass_api.config import GlobalOptions
 
 
 @pytest.mark.parametrize(
@@ -48,11 +49,7 @@ from cutlass_api.utils import device_cc
         torch.float16,
     ],
 )
-def test_elementwise_add(
-    M: int,
-    N: int,
-    dtype: torch.dtype,
-):
+def test_elementwise_add(M: int, N: int, dtype: torch.dtype, fixture_toggle_tvm_ffi):
     A = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
     B = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
     D = torch.empty((M, N), device="cuda", dtype=dtype)

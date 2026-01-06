@@ -26,11 +26,11 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import cutlass.cute as cute
+
 from cutlass_api.config import GlobalOptions
 from cutlass_api.kernel import Kernel
 from cutlass_api.utils import TensorWrapper
-
-import cutlass.cute as cute
 
 
 class CuteDslKernel(Kernel):

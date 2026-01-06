@@ -27,18 +27,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from collections.abc import Callable
-from typing import Union
 
 import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.testing as testing
-from cutlass.cute.runtime import from_dlpack
-import cutlass.utils as utils
 import cutlass.pipeline as pipeline
-from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
+import cutlass.utils as utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 
 """
 A high-performance persistent batched dense GEMM example for the NVIDIA Blackwell SM100 architecture
@@ -1222,7 +1219,7 @@ class PersistentDenseGemmKernelImpl:
         tAcc: cute.Tensor,
         gC_mnl: cute.Tensor,
         epi_tile: cute.Tile,
-        use_2cta_instrs: Union[cutlass.Boolean, bool],
+        use_2cta_instrs: cutlass.Boolean | bool,
     ) -> tuple[cute.TiledCopy, cute.Tensor, cute.Tensor]:
         """
         Make tiledCopy for tensor memory load, then use it to partition tensor memory (source) and register array (destination).
