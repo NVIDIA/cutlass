@@ -92,3 +92,4 @@ int testRun(int arch, std::vector<bool (*)()> & test_funcs, const std::string & 
     return -1;
 
 }
+
