@@ -31,7 +31,6 @@
 
 
 #include <iostream>
-#include <cuda_runtime_api.h>
 
 int getDefaultSmArch() {
     cudaSetDevice(0);
