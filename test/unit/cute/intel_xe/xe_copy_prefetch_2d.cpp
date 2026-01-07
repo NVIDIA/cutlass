@@ -47,8 +47,8 @@ using namespace compat::experimental;
 
 #if (IGC_VERSION_MAJOR > 2) || (IGC_VERSION_MAJOR == 2 && IGC_VERSION_MINOR >= 18) 
 
-// Kernel name for unique identification
-template<class SrcTensor> 
+// Kernel name for unique identification - includes Bits to ensure uniqueness
+template<class SrcTensor, int Bits, int Height, int Width> 
 class XEPrefetch2DKernelName;
 
 // Device kernel for XE_PREFETCH_2D testing  
@@ -106,7 +106,7 @@ void test_xe_prefetch_2d() {
   
   // Initialize source with test pattern
   for (size_t i = 0; i < host_src.size(); ++i) {
-    host_src[i] = static_cast<Element>(i % 256);
+    host_src[i] = static_cast<Element>(static_cast<float>(i % 256));
   }
 
   // Copy to device
@@ -122,7 +122,7 @@ void test_xe_prefetch_2d() {
   auto gridDim = compat::dim3(1);
   
   launch<xe_prefetch_2d_kernel<decltype(tensor_src), Bits, Height, Width>,
-         XEPrefetch2DKernelName<decltype(tensor_src)>>(
+         XEPrefetch2DKernelName<decltype(tensor_src), Bits, Height, Width>>(
     launch_policy{
       gridDim, blockDim,
       kernel_properties{sycl_exp::sub_group_size<intel::sg_size>}
@@ -148,6 +148,153 @@ TEST(CuTe_Xe, XE_PREFETCH_2D_int16) {
 TEST(CuTe_Xe, XE_PREFETCH_2D_float) {
   test_xe_prefetch_2d<float, 32, 2, 16>();
   test_xe_prefetch_2d<float, 32, 4, 16>();
+}
+
+
+// Test 4: 8-bit Minimal Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_8bit_Minimal) {
+  test_xe_prefetch_2d<uint8_t, 8, 1, 32>();
+}
+
+// Test 5: 8-bit Small Height
+TEST(CuTe_Xe, XE_PREFETCH_2D_8bit_SmallHeight) {
+  test_xe_prefetch_2d<uint8_t, 8, 2, 64>();
+}
+
+// Test 6: 8-bit Medium Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_8bit_Medium) {
+  test_xe_prefetch_2d<uint8_t, 8, 4, 64>();
+}
+
+// Test 7: 8-bit Large Height
+TEST(CuTe_Xe, XE_PREFETCH_2D_8bit_LargeHeight) {
+  test_xe_prefetch_2d<uint8_t, 8, 8, 64>();
+}
+
+// Test 8: 8-bit Wide Configuration (respecting 512-bit width limit)
+TEST(CuTe_Xe, XE_PREFETCH_2D_8bit_Wide) {
+  test_xe_prefetch_2d<int8_t, 8, 4, 64>();  // 8*64=512 bits (max)
+}
+
+// Test 9: 16-bit Minimal Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_16bit_Minimal) {
+  test_xe_prefetch_2d<int16_t, 16, 1, 16>();
+}
+
+// Test 10: 16-bit Small Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_16bit_Small) {
+  test_xe_prefetch_2d<int16_t, 16, 2, 32>();
+}
+
+// Test 11: 16-bit Medium Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_16bit_Medium) {
+  test_xe_prefetch_2d<uint16_t, 16, 4, 32>();
+}
+
+// Test 12: 16-bit Large Height
+TEST(CuTe_Xe, XE_PREFETCH_2D_16bit_LargeHeight) {
+  test_xe_prefetch_2d<int16_t, 16, 8, 32>();
+}
+
+// Test 13: 16-bit Wide Configuration (respecting 512-bit width limit)
+TEST(CuTe_Xe, XE_PREFETCH_2D_16bit_Wide) {
+  test_xe_prefetch_2d<bfloat16_t, 16, 4, 32>();  // 16*32=512 bits (max)
+}
+
+// Test 14: 32-bit Minimal Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_32bit_Minimal) {
+  test_xe_prefetch_2d<float, 32, 1, 16>();  // 32*16=512 bits (max)
+}
+
+// Test 15: 32-bit Small Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_32bit_Small) {
+  test_xe_prefetch_2d<float, 32, 2, 16>();
+}
+
+// Test 16: 32-bit Medium Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_32bit_Medium) {
+  test_xe_prefetch_2d<int32_t, 32, 4, 16>();
+}
+
+// Test 17: 32-bit Large Height
+TEST(CuTe_Xe, XE_PREFETCH_2D_32bit_LargeHeight) {
+  test_xe_prefetch_2d<float, 32, 8, 16>();
+}
+
+// Test 18: 32-bit Wide Configuration (respecting 512-bit width limit)
+TEST(CuTe_Xe, XE_PREFETCH_2D_32bit_Wide) {
+  test_xe_prefetch_2d<float, 32, 4, 16>();  // 32*16=512 bits (max)
+}
+
+// Test 19: 64-bit Small Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_64bit_Small) {
+  test_xe_prefetch_2d<double, 64, 2, 8>();  // 64*8=512 bits (max)
+}
+
+// Test 20: 64-bit Medium Configuration
+TEST(CuTe_Xe, XE_PREFETCH_2D_64bit_Medium) {
+  test_xe_prefetch_2d<double, 64, 4, 8>();  // 64*8=512 bits (max)
+}
+
+// Test 21: 64-bit Large Height  
+TEST(CuTe_Xe, XE_PREFETCH_2D_64bit_LargeHeight) {
+  test_xe_prefetch_2d<int64_t, 64, 8, 8>();  // 64*8=512 bits (max)
+}
+
+// Test 22: Mixed Data Types - Power of Two Heights
+TEST(CuTe_Xe, XE_PREFETCH_2D_PowerOfTwo_Heights) {
+  // 8-bit with power-of-two heights
+  test_xe_prefetch_2d<uint8_t, 8, 16, 64>();
+  test_xe_prefetch_2d<uint8_t, 8, 32, 32>();
+  
+  // 16-bit with power-of-two heights
+  test_xe_prefetch_2d<int16_t, 16, 16, 32>();
+  
+  // 32-bit with power-of-two heights
+  test_xe_prefetch_2d<float, 32, 16, 16>();
+}
+
+// Test 23: Various Width Configurations
+TEST(CuTe_Xe, XE_PREFETCH_2D_VariousWidths) {
+  // 8-bit with various widths
+  test_xe_prefetch_2d<uint8_t, 8, 4, 16>();
+  test_xe_prefetch_2d<uint8_t, 8, 4, 32>();
+  
+  // 16-bit with various widths
+  test_xe_prefetch_2d<int16_t, 16, 4, 8>();
+  test_xe_prefetch_2d<int16_t, 16, 4, 16>();
+  
+  // 32-bit with various widths
+  test_xe_prefetch_2d<float, 32, 4, 4>();
+  test_xe_prefetch_2d<float, 32, 4, 8>();
+}
+
+// Test 24: Square Tiles
+TEST(CuTe_Xe, XE_PREFETCH_2D_SquareTiles) {
+  // 8-bit square (in memory view)
+  test_xe_prefetch_2d<uint8_t, 8, 8, 8>();
+  
+  // 16-bit square
+  test_xe_prefetch_2d<int16_t, 16, 4, 4>();
+  
+  // 32-bit square
+  test_xe_prefetch_2d<float, 32, 4, 4>();
+}
+
+// Test 25: Tall Tiles (Height > Width)
+TEST(CuTe_Xe, XE_PREFETCH_2D_TallTiles) {
+  test_xe_prefetch_2d<uint8_t, 8, 16, 8>();
+  test_xe_prefetch_2d<int16_t, 16, 8, 4>();
+  test_xe_prefetch_2d<float, 32, 8, 4>();
+}
+
+// Test 26: Cache Line Optimization
+TEST(CuTe_Xe, XE_PREFETCH_2D_CacheOptimized) {
+  // Configurations aligned to cache lines (64 bytes)
+  test_xe_prefetch_2d<uint8_t, 8, 4, 64>();   // 64 bytes per row
+  test_xe_prefetch_2d<int16_t, 16, 4, 32>();  // 64 bytes per row
+  test_xe_prefetch_2d<float, 32, 4, 16>();    // 64 bytes per row
+  test_xe_prefetch_2d<double, 64, 4, 8>();    // 64 bytes per row
 }
 
 #else
