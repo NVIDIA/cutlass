@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -772,7 +772,6 @@ int main_single(int argc, char const **args) {
       << "(compute capability major 10) and CUDA 12.8 or greater.\n";
     return 0;
   }
-
   //
   // Parse options
   //

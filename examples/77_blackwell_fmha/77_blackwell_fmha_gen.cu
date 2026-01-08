@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -498,7 +498,7 @@ struct ExampleRunner {
       initialize_block(block_new_v, seed + 2021, options.init_style_new_v);
     }
 
-    initialize_block(block_cache_k, seed + 2024 - 2025, options.init_style_cache_k);
+    initialize_block(block_cache_k, seed + 2024 - 2026, options.init_style_cache_k);
     initialize_block(block_cache_v, seed + 2025, options.init_style_cache_v);
 
     block_ref_cache_k.copy_from_device(block_cache_k.get(), block_cache_k.size());
@@ -728,6 +728,15 @@ int main_single(int argc, char const **args) {
       << "later (compute capability 90 or greater) and CUDA 12.0 or greater.\n";
     return 0;
   }
+
+  if (props.major != 10 || (props.minor != 0 && props.minor != 3)) {
+    std::cout
+      << "This example requires a GPU of NVIDIA's Blackwell Architecture "
+      << "(compute capability 90) and CUDA 12.0 or greater.\n";
+    return 0;
+  }
+
+
   //
   // Parse options
   //

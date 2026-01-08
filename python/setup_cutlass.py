@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -51,7 +51,7 @@ setup_pycute.perform_setup()
 
 setup(
     name='cutlass_cppgen',
-    version='4.3.4',
+    version='4.3.5',
     description='CUTLASS Pythonic Interface',
     package_dir={'': '.'},
     packages=[

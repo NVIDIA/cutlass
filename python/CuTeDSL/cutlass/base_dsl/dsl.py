@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -229,38 +229,6 @@ def new_from_mlir_values(obj, values):
         assert len(values) == 0, f"{obj} expects 0 values, but got {values}"
         return obj
 
-@dataclass(frozen=True)
-class DSLLocation:
-    """
-    Represents Python source location information for MLIR DSL code.
-
-    Attributes:
-        filename (str): Name of the Python source file.
-        lineno (int): Line number in the source file.
-        col_offset (int): Column offset in the source line.
-        function_name (str): Name of the function in which the location occurs.
-
-    This is used primarily to annotate or trace locations in generated MLIR IR
-    back to the original Python code for better diagnostic and debugging.
-    """
-
-    filename: str
-    lineno: int
-    col_offset: int
-    function_name: str
-
-
-@dataclass
-class PreprocessSessionData:
-    """
-    Holds metadata and transformed AST related to a DSL preprocessing session.
-
-    Attributes:
-        decorator_globals (dict): The global variables from the decorator's environment,
-            captured for possible AST or code evaluation during preprocessing.
-    """
-    decorator_globals: dict
-
 
 class DSLSingletonMeta(type):
     """
@@ -314,6 +282,27 @@ class DSLSingletonMeta(type):
         log().info(f"DSL singleton instances after clearing: {cls._instances}")
 
 
+@dataclass(frozen=True)
+class DSLLocation:
+    """
+    Represents Python source location information for MLIR DSL code.
+
+    Attributes:
+        filename (str): Name of the Python source file.
+        lineno (int): Line number in the source file.
+        col_offset (int): Column offset in the source line.
+        function_name (str): Name of the function in which the location occurs.
+
+    This is used primarily to annotate or trace locations in generated MLIR IR
+    back to the original Python code for better diagnostic and debugging.
+    """
+
+    filename: str
+    lineno: int
+    col_offset: int
+    function_name: str
+
+
 class BaseDSL(metaclass=DSLSingletonMeta):
     gpu_module = None
     _env_class = EnvironmentVarManager
@@ -354,7 +343,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.name = name
         self.compiler_provider = compiler_provider
         self.pass_sm_arch_name = pass_sm_arch_name
-        self.preprocess_session_data = None
         self.decorator_location = None
         self.no_cache = False
         self.device_compilation_only = device_compilation_only
@@ -437,44 +425,40 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         return dkwargs.pop("preprocess", True)
 
     @staticmethod
-    def _get_original_function(fcn_ptr, name):
+    def _lazy_initialize_dsl(func):
         """
-        Get the original function from the decorated function
+        Lazy initialization of DSL object if has not been initialized
         """
-
-        while not hasattr(fcn_ptr, "__name__") or fcn_ptr.__name__ != name:
-            # If the function is wrapped with functools, get from __wrapped__
-            if hasattr(fcn_ptr, "__wrapped__"):
-                fcn_ptr = fcn_ptr.__wrapped__
-            elif isinstance(fcn_ptr, staticmethod):
-                fcn_ptr = fcn_ptr.__func__
-            # If the function is wrapped manually, it's the first in clousure
-            elif callable(fcn_ptr.__closure__[0].cell_contents):
-                fcn_ptr = fcn_ptr.__closure__[0].cell_contents
-            else:
-                raise DSLRuntimeError(
-                    f"Cannot find the original function {name} in the closure chain"
-                )
-        return fcn_ptr
+        if hasattr(func, "_dsl_cls"):
+            func._dsl_object = func._dsl_cls._get_dsl()
+            delattr(func, "_dsl_cls")
 
     @staticmethod
     def _preprocess_and_replace_code(func):
         """
         Run ast transformation and return the materialized function pointer
         """
+        # Ensure the DSL instance is materialized before touching _dsl_object
+        BaseDSL._lazy_initialize_dsl(func)
 
-        if hasattr(func, "_preprocess_session_data"):
-            # If the function ptr is already materialized, use the existing one
-            func._dsl_object.preprocess_session_data = func._preprocess_session_data
-            func._dsl_object.decorator_location = func._decorator_location
-            transformed_ast = func._dsl_object.run_preprocessor(func)
-            fcn_ptr = func._dsl_object.get_function_ptr(func, transformed_ast)
+        # Update the decorator location to the new function
+        func._dsl_object.decorator_location = func._decorator_location
+
+        if getattr(func, "_preprocessed", False) is True:
+            # already preprocessed, skip
+            return
+
+        if not func._dsl_object.enable_preprocessor:
+            func._preprocessed = True
+            return
+
+        fcn_ptr = func._dsl_object.run_preprocessor(func)
+        if fcn_ptr:
             func.__code__ = (
                 fcn_ptr.__code__
                 if not isinstance(fcn_ptr, staticmethod)
                 else fcn_ptr.__func__.__code__
             )
-        return func
 
     @staticmethod
     def jit_runner(cls, executor_name, frame, *dargs, **dkwargs):
@@ -485,22 +469,26 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         def jit_runner_decorator(func):
             # Run preprocessor that alters AST
-            func._dsl_object = cls._get_dsl()
+            func._dsl_cls = cls
             func._decorator_location = BaseDSL.get_location_from_frame(frame)
-            if (
-                func._dsl_object.enable_preprocessor
-                and func._dsl_object._can_preprocess(**dkwargs)
+            if not hasattr(func, "_preprocessed") and not BaseDSL._can_preprocess(
+                **dkwargs
             ):
-                # For an annotated function, add some DSL attributes
-                # When materializing the AST, we need decorator's frame
-                func._preprocess_session_data = PreprocessSessionData(
-                    decorator_globals=frame.f_globals,
-                )
-                BaseDSL._preprocess_and_replace_code(func)
+                func._preprocessed = True
 
             @wraps(func)
             def jit_wrapper(*args, **kwargs):
-                return getattr(func._dsl_object, executor_name)(func, *args, **kwargs)
+                BaseDSL._preprocess_and_replace_code(func)
+
+                custom_name = getattr(jit_wrapper, "_name_prefix", None)
+                if custom_name:
+                    return getattr(func._dsl_object, executor_name)(
+                        func, *args, **kwargs, _name_prefix=custom_name
+                    )
+                else:
+                    return getattr(func._dsl_object, executor_name)(
+                        func, *args, **kwargs
+                    )
 
             def set_name_prefix(name: str):
                 jit_wrapper._name_prefix = name
@@ -701,26 +689,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Generates executable value for the given tensor descriptor.
         """
         pass
-
-    def _get_globals(self):
-        """
-        Combines global and local variables from the current context and the
-        caller's frame comes. This includes the current module's globals, the
-        global variables from the caller's frame, and the local variables from
-        the caller's frame.
-
-        "self.frame" is used to fetch the caller's frame.
-
-        AST preprocessor generates a new python code, so the resulting globals
-        dictionary is used to execute the python code.
-        """
-        all_globals = {}
-        if (
-            self.preprocess_session_data
-            and self.preprocess_session_data.decorator_globals
-        ):
-            all_globals.update(self.preprocess_session_data.decorator_globals)
-        return all_globals
 
     @abstractmethod
     def _is_tensor_descriptor(self, maybe_tensor_descriptor) -> bool:
@@ -986,18 +954,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
     @staticmethod
     def get_location_from_frame(frame):
-        frameInfo = inspect.getframeinfo(frame)
         return DSLLocation(
-            filename=frameInfo.filename,
-            lineno=frameInfo.lineno,
-            col_offset=(
-                frameInfo.positions.col_offset if hasattr(frameInfo, "positions") else 0
-            ),
-            function_name=(
-                "".join([c.strip() for c in frameInfo.code_context])
-                if frameInfo.code_context
-                else frameInfo.function
-            ),
+            filename=inspect.getsourcefile(frame),
+            lineno=frame.f_lineno,
+            col_offset=0,
+            function_name=frame.f_code.co_name,
         )
 
     def get_ir_location(self, location: DSLLocation = None):
@@ -1352,8 +1313,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.num_kernels = 0
         # reset the compile options after the compilation is done.
         self.compile_options = CompileOptions()
-        # reset preprocess session data after the compilation is done.
-        self.preprocess_session_data = None
         # reset decorator location after the compilation is done.
         self.decorator_location = None
 
@@ -1468,36 +1427,37 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         return result
 
-    def run_preprocessor(self, funcBody):
-        if not hasattr(funcBody, "_preprocessed"):
-            function_name = funcBody.__name__
-            self.funcBody = funcBody
-            log().info("Started preprocessing [%s]", function_name)
-            exec_globals = self._get_globals()
-            transformed_ast = self.preprocessor.transform(funcBody, exec_globals)
+    def run_preprocessor(self, original_function):
+        function_name = original_function.__name__
+        self.funcBody = original_function
+        log().info("Started preprocessing [%s]", function_name)
+        exec_globals = {}
+        if original_function.__globals__ is not None:
+            exec_globals.update(original_function.__globals__)
+        with self.preprocessor.get_session() as preprocessor_session:
+            transformed_ast = preprocessor_session.transform(
+                original_function, exec_globals
+            )
             if self.envar.print_after_preprocessor:
                 log().info(
-                    f"# Printing unparsed AST after preprocess of func=`{function_name}` id=`{id(funcBody)}`"
+                    f"# Printing unparsed AST after preprocess of func=`{function_name}` id=`{id(original_function)}`"
                 )
                 DSLPreprocessor.print_ast(transformed_ast)
-            funcBody._preprocessed = True
-            return transformed_ast
-        return None
+            file_name = inspect.getsourcefile(original_function)
+            code_object = compile(
+                transformed_ast,
+                filename=file_name,
+                mode="exec",
+            )
 
-    def get_function_ptr(self, original_function, transformed_ast):
-        file_name = inspect.getsourcefile(original_function)
-        code_object = compile(
-            transformed_ast,
-            filename=file_name,
-            mode="exec",
-        )
+            original_function._preprocessed = True
 
-        return self.preprocessor.exec(
-            original_function.__name__,
-            original_function,
-            code_object,
-            self._get_globals(),
-        )
+            return preprocessor_session.exec(
+                original_function.__name__,
+                original_function,
+                code_object,
+                exec_globals,
+            )
 
     def _get_function_bound_args(self, sig, func_name, *args, **kwargs):
         """
@@ -1573,7 +1533,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         pipeline = kwargs.pop("pipeline", None)
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
-        self.decorator_location = getattr(funcBody, "_decorator_location", None)
 
         # Disable cache
         no_cache = kwargs.pop("no_cache", False)

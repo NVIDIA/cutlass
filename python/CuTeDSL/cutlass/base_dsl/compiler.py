@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -626,6 +626,10 @@ class CompileCallable:
         while hasattr(func, "__wrapped__"):
             func = func.__wrapped__
 
+        from .dsl import BaseDSL
+
+        BaseDSL._lazy_initialize_dsl(func)
+
         if not hasattr(func, "_dsl_object"):
             raise DSLRuntimeError(
                 f"Function {func} is not decorated with jit decorator."
@@ -641,4 +645,9 @@ class CompileCallable:
         else:
             compile_options = self._compile_options
         func._dsl_object.compile_options = compile_options
+
+        # Preprocess the function if not already preprocessed
+        func._dsl_object._preprocess_and_replace_code(func)
+
+        # Run the function
         return func._dsl_object._func(func, *args, **kwargs)
