@@ -44,6 +44,8 @@
 namespace cutlass::fmha::collective {
 
 using namespace cute;
+using namespace constexpr_type_map;
+using namespace constexpr_constexpr_map;
 
 template<
   class Element_,
@@ -84,8 +86,31 @@ struct Sm100FmhaGenMainloopWarpspecialized {
   using StrideO = decltype(replace<0>(StrideO_{}, 0));
   using Mask = Mask_;
 
+  using TileM = decltype(get<0>(TileShape{})); // seq Q dim
+  static_assert(TileM::value == 64 || TileM::value == 128, "Only expecting TileM to be 64 or 128");
   static constexpr int StageCountQ = get<1>(TileShape{}) == 256 ? 1 : 2;
-  static constexpr int StageCountKV = 256 * 11 / get<1>(TileShape{});
+  // Choose StageCountKV based on:
+  // - Tile shape on the M (i.e., Query) dimension
+  // - Element size
+  using StageCountKVSelector = kValTyMap<
+    void,
+    kValTyPair<64,
+      kValValMap<
+        65536 /* default, arbitrarily large to trigger smem OOM error */,
+        kValValPair<1, 12>, // fp8
+        kValValPair<2, 6>  // bf16/fp16
+      >>,
+    kValTyPair<128,
+      kValValMap<
+        65536 /* default, arbitrarily large to trigger smem OOM error */,
+        kValValPair<1, 11>, // fp8
+        kValValPair<2, 5>  // bf16/fp16
+      >>
+  >;
+  static constexpr int StageCountKV = StageCountQ *
+    StageCountKVSelector::
+      template query<TileM::value>::
+      template query<sizeof(Element)>;
 
   using StagesQ = cutlass::gemm::collective::StageCount<StageCountQ>;
   using StagesKV = cutlass::gemm::collective::StageCount<StageCountKV>;
@@ -127,28 +152,65 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     };
   };
 
-  enum class TmemAllocation : uint32_t {
-    kSizeS = 128,
-    kSizeO = 128,
-    kSizeP = 32,
-    S0 = 0,
-    S1 = S0 + kSizeS,
-    V0 = S0,  // stats storage from softmax to correction
-    V1 = S1,
-    P0 = S0 + kSizeP,
-    P1 = S1 + kSizeP,
-    O0 = S1 + kSizeS,
-    O1 = O0 + kSizeO,
-    kEnd = O1 + kSizeO
-  };
-
   // indices for V0 / V1
   enum : int {
     kIdxOldRowMax = 0,
     kIdxNewRowMax = 1,
     kIdxFinalRowSum = 0,
-    kIdxFinalRowMax = 1
+    kIdxFinalRowMax = 1,
+    kIdxStatsEnd = 2
   };
+
+  // Each storage reserves kTMEM_V_COLUMNS for row max/sum stats
+  // TileM=64 uses 16dp32b --> two threads processing a row
+  // TileM=128 uses 32dp32b --> one thread processing a row
+  using kTMEM_V_COLUMNS = typename kValTyMap<void,
+      kValTyPair<64, Int<kIdxStatsEnd*2>>,
+      kValTyPair<128, Int<kIdxStatsEnd>>
+      >::template query<TileM::value>;
+
+  // TMEM column allocation, offset will be used to calc the lower 16-bit of tmem addresses.
+  // TMEM row/lane dimension is for the Q dim.
+  //
+  // TMEM address layout:
+  // https://asciiflow.com/#/share/eJyrVspLzE1VslIqyU3NjU9MSSlKLS6Oz0mszC8tUdJRAjJSi4Cy1TFKZalFxZn5eTFKVkY6MUoVQNrSxATIqgSJmBsAWSWpFSVAToySAjYQ4uvqqwC1QAFiATZlMTF5WLUTCVC1P5rSpBAdZhALZihEBwBZMEFDuKAhTBC%2FQY%2Bmtzya0pAdBiQeTdsFEdDIDtbNDtOE84EcXeySGIaDjEFG0zahi0zZgyGCSxCO5pCuBavsGmyCE2BhAvMP3F%2FIHiRSEMgAGgdOFD6JeanFVDCMym7DiCHMkMIadltID24ytGAVXIIj1aKh7GAsmmHJlnTl2f64BTDzIxhEB4OzIqqQIZJQtD8010b7Q3JqjFKtUi0Ac90R%2Fw%3D%3D)
+  //
+  //            | [V0] |  [P0]   | [V1] |  [P1]   |
+  //            |<-kV->|<(kS-kV)>|<-kV->|<(kS-kV)>|
+  // -----^-----+------+---------+------+---------+------+------+
+  //      |     |      |         |      |         |      |      |
+  // TMEM Lanes |      |         |      |         |      |      |
+  //      |     |      |         |      |         |      |      |
+  // -----v-----+------+---------+------+---------+------+------+
+  //            |<------kS------>|<------kS------>|<-kO->|<-kO->|
+  //            |      [S0]      |      [S1]      | [O0] | [O1] |
+  enum class TmemAllocation : uint32_t {
+    kSizeS = get<1>(TileShapeQK{}), // i.e., KV dim in a tile
+    kSizeO = get<2>(TileShapeQK{}), // i.e., head dim
+    // carve kSizeS to two parts: first 1/4 for V0/V1 stats storage; the rest for P0/P1
+    // 1/4 is wasting some storage here but there seems to be column-wise address alignment requirements not found in spec.
+    // Since there is enough storage left for P0/P1, chose to not debug alignment issues.
+    kSizeV = kSizeS / 4,
+    // P will be casted to the same type as V
+    kSizeP = kSizeS * sizeof(Element) / sizeof(float),
+    S0 = 0,
+    S1 = S0 + kSizeS,
+    V0 = S0,  // stats storage from softmax to correction
+    V1 = S1,
+    P0 = V0 + kSizeV,
+    P1 = V1 + kSizeV,
+    O0 = S1 + kSizeS,
+    O1 = O0 + kSizeO,
+    kEnd = O1 + kSizeO
+  };
+  static_assert(static_cast<uint32_t>(TmemAllocation::kEnd) <= 512, "Exceeds TMEM 512 columns");
+  static_assert(
+    static_cast<uint32_t>(TmemAllocation::kSizeV) + static_cast<uint32_t>(TmemAllocation::kSizeP) <=
+    static_cast<uint32_t>(TmemAllocation::kSizeS),
+    "Not enough storage to carve V and P out of S");
+  static_assert(
+    static_cast<uint32_t>(kTMEM_V_COLUMNS::value) <= static_cast<uint32_t>(TmemAllocation::kSizeV),
+    "Not enough storage reserved for V");
 
   // from load to mma warp, protects q in smem
   using PipelineQ = cutlass::PipelineUmmaConsumerAsync<
@@ -524,27 +586,56 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       PipelineS& pipeline_s, typename PipelineS::PipelineState& pipeline_s_consumer_state,
       PipelineC& pipeline_c, typename PipelineC::PipelineState& pipeline_c_producer_state,
       OrderBarrierSoftmax& order_s) {
-
-    Tensor tScS = typename CollectiveMmaQK::TiledMma{}.get_slice(0).partition_C(cS);
+    int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);
+    Tensor tScS =
+        typename CollectiveMmaQK::TiledMma{}.get_slice(0).partition_C(cS);
 
     Tensor tStS = partition_fragment_C(typename CollectiveMmaQK::TiledMma{}, select<0,1>(TileShapeQK{}));
     tStS.data() = uint32_t(stage == _0{} ? TmemAllocation::S0 : TmemAllocation::S1);
 
-    Tensor tStS_v = tStS.compose(make_layout(make_shape(_128{}, _2{})));
+    Tensor tStS_v = tStS.compose(make_layout(make_shape(TileM{}, kTMEM_V_COLUMNS{})));
     tStS_v.data() = uint32_t(stage == _0{} ? TmemAllocation::V0 : TmemAllocation::V1);
-    Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
+    Tensor tScS_v = tScS.compose(make_layout(make_shape(TileM{}, kTMEM_V_COLUMNS{})));
 
     auto tilePlikeFP32 = size<1>(TileShapeQK{}) / Int<sizeof(float)>{} * Int<sizeof(Element)>{};
-    Tensor tStS_P = tStS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
+    Tensor tStS_P = tStS.compose(make_layout(make_shape(TileM{}, tilePlikeFP32)));
     tStS_P.data() = warp_uniform(uint32_t(stage == _0{} ? TmemAllocation::P0 : TmemAllocation::P1));
-    Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
+    Tensor tScS_P = tScS.compose(make_layout(make_shape(TileM{}, tilePlikeFP32)));
 
-    // Each thread owns a single row
-    using TMEM_LOAD = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_LOAD_32dp32b8x, SM100_TMEM_LOAD_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
-    using TMEM_STORE = conditional_t<size<1>(TileShapeQK{}) < _128{}, SM100_TMEM_STORE_32dp32b8x, SM100_TMEM_STORE_32dp32b32x>;  // 4x32 threads with 128 cols of 8b elem
-    using TMEM_STORE_V = SM100_TMEM_STORE_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
+    using TMEM_LOAD_1xOP = typename kValTyMap<void,
+        // Two threads collaborate on a single row
+        kValTyPair<64, SM100_TMEM_LOAD_16dp32b1x>,
+        // Each thread owns a single row
+        kValTyPair<128, SM100_TMEM_LOAD_32dp32b1x>
+      >::template query<TileM::value>;
+    using TMEM_STORE_1xOP = decltype(TMEM::tmem_load_to_store(TMEM_LOAD_1xOP{}));
 
-    int thread_idx = threadIdx.x % (4 * cutlass::NumThreadsPerWarp);
+    // Summary of per-thread compute logic, each thread process all (TileM=128)/half(TileM=64) of a row:
+    // 1. Read all data going to processed by this thread from one row of S=QK.
+    // 2. Compute the "row_max" of that row of S.
+    // 3. Loop through that row of S via `kTMEMOpsPerRow` number of TMEM_LOAD/STORE
+    // instructions, each processing `kTmemLoadNcells` elements:
+    //   3.1 P=softmax(S)
+    //   3.2 Convert P's dtype from ElementQK -> Element, each conversion step processes `kConversionsPerStep` elements.
+    //   3.3 Store the converted P to TMEM, unblocks MMA_PV.
+    //
+    // Considerations for `kTMEMOpsPerRow`: it determines the intermediate
+    // registers required to perform "3.1 softmax" and "3.2 conversion", in
+    // addition to the input data (a row of S).
+
+    constexpr int kTMEMOpsPerRow = kValValMap<0 /* default, trigger static_assert error*/,
+        kValValPair<64, 1>,  // each thread processes half of a row.
+        kValValPair<128, 2>  // each thread processes an entire row, but convert+store half at a time to reduce reg pressure.
+      >::template query<TileM::value>;
+    static_assert(size<1>(TileShapeQK{}) % kTMEMOpsPerRow == 0);
+    constexpr int kTmemLoadNcells = size<1>(TileShapeQK{}) / kTMEMOpsPerRow;
+    constexpr int kTmemStoreNcells = kTmemLoadNcells * sizeof_bits_v<Element> / sizeof_bits_v<float>;
+    using TMEM_LOAD = decltype(TMEM::op_repeater<TMEM_LOAD_1xOP, kTmemLoadNcells * 32>());
+    using TMEM_STORE = decltype(TMEM::op_repeater<TMEM_STORE_1xOP, kTmemStoreNcells * 32>());
+    using TMEM_STORE_V = typename kValTyMap<void,
+        kValTyPair<64, SM100_TMEM_STORE_16dp32b2x>,
+        kValTyPair<128, SM100_TMEM_STORE_32dp32b2x> // 4x32 threads with 2 cols of 32b elem
+      >::template query<TileM::value>;
 
     auto tiled_tmem_load = make_tmem_copy(TMEM_LOAD{}, tStS);
     auto thr_tmem_load   = tiled_tmem_load.get_slice(thread_idx);
@@ -578,7 +669,8 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     ElementQK old_row_max = row_max;
     {
-      // compute rowmax
+      // compute rowmax with steps of 4 elements
+      static_assert(size(tTMEM_LOADrS) % 4 == 0);
       float row_max_0 = row_max;
       float row_max_1 = row_max;
       float row_max_2 = row_max;
@@ -593,11 +685,17 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       row_max = ::fmax(row_max_0, row_max_1);
       row_max = ::fmax(row_max, row_max_2);
       row_max = ::fmax(row_max, row_max_3);
+      if constexpr (TileM{} == 64) {
+        // Need to perform intra-warp reduction corresponding to the 16dp tmem.ld reg layout
+        // reduction group: (0,16), (1,17), ..., (15,31)
+        float other_row_max = __shfl_xor_sync(0xffffffff, row_max, 16);
+        row_max = ::fmax(row_max, other_row_max);
+      }
     }
-
     ElementQK row_max_safe = row_max == -INFINITY ? 0 : row_max;
 
     Tensor tTMEM_STOREVrS = make_tensor<ElementQK>(shape(tTMEM_STOREVcS));
+    static_assert(size(tTMEM_STOREVrS) == 2);
     tTMEM_STOREVrS(kIdxOldRowMax) = old_row_max;
     tTMEM_STOREVrS(kIdxNewRowMax) = row_max_safe;
     copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
@@ -621,12 +719,17 @@ struct Sm100FmhaGenMainloopWarpspecialized {
 
     NumericArrayConverter<Element, ElementQK, kConversionsPerStep> convert;
 
-    const int kReleasePipeCount = 10;  // must be multiple of 2
+    // `kReleasePipeCount` is for synchronizing between the two softmax warps (i.e., order_s).
+    // Note that order_s is not for correctness, but as a scheduling optimization to overlap softmax and mma while avoid overlapping two softmax warps (both warp_idx==0).
+    // The synchronization happens `kReleasePipeCount` iterations before the end of all softmax operations because barrier takes time to propogate.
+    constexpr int kReleasePipeCount = 10;  // must be multiple of kConversionsPerStep
+    static_assert(kReleasePipeCount % kConversionsPerStep == 0);
 
     order_s.wait();
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size(tTMEM_LOADrS); i += 2) {
+    for (int i = 0; i < size(tTMEM_LOADrS); i += kConversionsPerStep) {
+      static_assert(size(tTMEM_LOADrS) % kConversionsPerStep == 0);
       float2 in = make_float2(
         tTMEM_LOADrS(i + 0),
         tTMEM_LOADrS(i + 1)
@@ -651,18 +754,18 @@ struct Sm100FmhaGenMainloopWarpspecialized {
         order_s.arrive();
       }
 
-      // this prevents register spills in fp16
-      if constexpr (size<2>(tTMEM_STORErS_x4) == _2{}) {
-        if (i == size(tTMEM_LOADrS) - 6) {
-          copy(tiled_tmem_store, tTMEM_STORErS_x4(_, _, 0), tTMEM_STOREtS_x4(_, _, 0));
-        }
+      // Write back the processed TMEM cells at the TMEMOp granularity.
+      // This is to allow register reuse, thus reducing max live registers and spills.
+      constexpr int kNcellsPerTMEMOp = size<0>(shape(tTMEM_LOADrS));
+      if ((i % kNcellsPerTMEMOp) == (kNcellsPerTMEMOp - kConversionsPerStep)) {
+        const int tmem_i = i / kNcellsPerTMEMOp;
+        // tmem_store(reg_S) -> op_P
+        copy(tiled_tmem_store, tTMEM_STORErS_x4(_, _, tmem_i), tTMEM_STOREtS_x4(_, _, tmem_i));
       }
     }
 
-    // tmem_store(reg_S8) -> op_P
     CUTE_STATIC_ASSERT_V(size<2>(tTMEM_STORErS_x4) <= _2{});
     CUTE_STATIC_ASSERT_V(size<1>(tTMEM_STORErS_x4) == _1{});
-    copy(tiled_tmem_store, tTMEM_STORErS_x4(_, _, size<2>(tTMEM_STORErS_x4) - 1), tTMEM_STOREtS_x4(_, _, size<2>(tTMEM_STORErS_x4) - 1));
 
     cutlass::arch::fence_view_async_tmem_store();
 
@@ -704,6 +807,11 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     row_sum = local_row_sum;
 
     if (final_call) {
+      if constexpr (TileM{} == 64) {
+          // shuffle and aggregate row_sum across T0 and T16 due to 16dp32b thr->val layout.
+          row_sum += __shfl_xor_sync(0xffffffff, row_sum, 16);
+      }
+
       // re-acquire the S part in the final step
       pipeline_s.consumer_wait(pipeline_s_consumer_state);
 
@@ -794,16 +902,31 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 32 / sizeof(ElementOut);
 
-    using TMEM_LOAD = std::conditional_t<kCorrectionTileSize == 32, SM100_TMEM_LOAD_32dp32b32x, SM100_TMEM_LOAD_32dp32b16x>;  // 4x32 threads with 64 cols of 32b elem
+
+    // Choose TMEM OP based on
+    // - TileM shape
+    // - kCorrectionTileSize
+    using TMEM_LOAD_OPMAP = kValTyMap<void,
+        kValTyPair<64,
+          kValTyMap</* default */ SM100_TMEM_LOAD_16dp32b8x,
+            kValTyPair<32, SM100_TMEM_LOAD_16dp32b16x>
+          >
+        >,
+        kValTyPair<128,
+          kValTyMap</* default*/ SM100_TMEM_LOAD_32dp32b16x,
+            kValTyPair<32, SM100_TMEM_LOAD_32dp32b32x>
+        >> // 4x32 threads with 64 cols of 32b elem
+    >;
+    using TMEM_LOAD = typename TMEM_LOAD_OPMAP::template query<TileM::value>::template query<kCorrectionTileSize>;
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
     Tensor tOgO = mma.get_slice(0).partition_C(gO);
 
-    Tensor tOtO_i = tOtO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
-    Tensor tOcO_i = tOcO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
-    Tensor tOgO_i = tOgO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
+    Tensor tOtO_i = tOtO.compose(make_layout(make_shape(TileM{}, Int<kCorrectionTileSize>{})));
+    Tensor tOcO_i = tOcO.compose(make_layout(make_shape(TileM{}, Int<kCorrectionTileSize>{})));
+    Tensor tOgO_i = tOgO.compose(make_layout(make_shape(TileM{}, Int<kCorrectionTileSize>{})));
 
     Tensor tOtO0 = tOtO_i;
     tOtO0.data() = tOtO0.data().get() + uint32_t(TmemAllocation::O0);
@@ -891,16 +1014,22 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 32;
 
-    using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x;  // 4x32 threads with 64 cols of 32b elem
-    using TMEM_STORE = SM100_TMEM_STORE_32dp32b32x;  // 4x32 threads with 64 cols of 32b elem
+    using TMEM_LOAD = typename kValTyMap<void,
+        kValTyPair<64, SM100_TMEM_LOAD_16dp32b16x>,
+        kValTyPair<128, SM100_TMEM_LOAD_32dp32b32x> // 4x32 threads with 64 cols of 32b elem
+      >::template query<TileM::value>;
+    using TMEM_STORE = typename kValTyMap<void,
+        kValTyPair<64, SM100_TMEM_STORE_16dp32b16x>,
+        kValTyPair<128, SM100_TMEM_STORE_32dp32b32x> // 4x32 threads with 64 cols of 32b elem
+      >::template query<TileM::value>;
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor cO = make_identity_tensor(select<0,1>(TileShapePV{}));
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
 
-    Tensor tOtO_i = tOtO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
-    Tensor tOcO_i = tOcO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
+    Tensor tOtO_i = tOtO.compose(make_layout(make_shape(TileM{}, Int<kCorrectionTileSize>{})));
+    Tensor tOcO_i = tOcO.compose(make_layout(make_shape(TileM{}, Int<kCorrectionTileSize>{})));
 
     tOtO_i.data() = tOtO_i.data().get() + tmem_O;
 
@@ -985,10 +1114,13 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     Tensor cS = make_identity_tensor(select<0,1>(TileShapeQK{}));
     Tensor tScS = typename CollectiveMmaQK::TiledMma{}.get_slice(0).partition_C(cS);
 
-    Tensor tStS_v = tStS.compose(make_layout(make_shape(_128{}, _2{})));
-    Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
+    Tensor tStS_v = tStS.compose(make_layout(make_shape(TileM{}, kTMEM_V_COLUMNS{})));
+    Tensor tScS_v = tScS.compose(make_layout(make_shape(TileM{}, kTMEM_V_COLUMNS{})));
 
-    using TMEM_LOAD_V = SM100_TMEM_LOAD_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
+    using TMEM_LOAD_V = typename kValTyMap<void,
+        kValTyPair<64, SM100_TMEM_LOAD_16dp32b2x>,
+        kValTyPair<128, SM100_TMEM_LOAD_32dp32b2x> // 4x32 threads with 2 cols of 32b elem
+      >::template query<TileM::value>;
 
     auto tiled_tmem_loadv = make_tmem_copy(TMEM_LOAD_V{}, tStS_v);
     auto thr_tmem_loadv  = tiled_tmem_loadv.get_slice(thread_idx);
@@ -1017,6 +1149,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       pipeline_s0_c.consumer_wait(pipeline_s0_c_consumer_state);
 
       Tensor tTMEM_LOADVrS = make_tensor<ElementQK>(shape(tTMEM_LOADVcS));
+      static_assert(size(tTMEM_LOADVrS) == 2);
 
       // read row_wise new global max
       copy(tiled_tmem_loadv, tTMEM_LOADVtS0, tTMEM_LOADVrS);
