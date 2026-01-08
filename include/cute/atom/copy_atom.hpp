@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -490,8 +490,8 @@ make_tiled_copy_C_atom(Copy_Atom<CArgs...> const& copy_atom,
 template <class... Args,
           class ThrLayout,
           class ValLayout = Layout<_1>>
-CUTE_HOST_DEVICE constexpr
-auto
+CUTE_HOST_DEVICE
+auto constexpr
 make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
                 ValLayout          const& val_layout = {})     // (m,n) -> val_idx

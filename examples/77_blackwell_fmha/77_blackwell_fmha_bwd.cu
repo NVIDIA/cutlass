@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -950,8 +950,7 @@ int main_single(int argc, char const **args) {
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
       << "(compute capability 100a)." << std::endl;
     return 0;
-  }
-  
+  }  
   //
   // Parse options
   //
