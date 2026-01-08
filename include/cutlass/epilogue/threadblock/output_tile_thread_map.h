@@ -240,7 +240,7 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, tru
 
   static int const kAccessWidth = 
     (Detail::kTargetAccessRows > Detail::kShapeRow ?
-      kWarpSize / Detail::kShapeRow
+      const_min(Detail::kShapeWidth, kWarpSize / Detail::kShapeRow)
       : const_min(
           Detail::kShapeWidth,
         const_min(kWarpSize, kMemoryAccessSize / (kElementsPerAccess * kElementSize / 8))
