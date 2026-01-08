@@ -950,8 +950,7 @@ int main_single(int argc, char const **args) {
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
       << "(compute capability 100a)." << std::endl;
     return 0;
-  }
-  
+  }  
   //
   // Parse options
   //

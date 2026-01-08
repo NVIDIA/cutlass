@@ -51,7 +51,7 @@ setup_pycute.perform_setup()
 
 setup(
     name='cutlass_cppgen',
-    version='4.3.4',
+    version='4.3.5',
     description='CUTLASS Pythonic Interface',
     package_dir={'': '.'},
     packages=[

@@ -778,7 +778,6 @@ int main_single(int argc, char const **args) {
       << "(compute capability 100a)." << std::endl;
     return 0;
   }
-
   //
   // Parse options
   //

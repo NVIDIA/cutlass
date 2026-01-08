@@ -728,12 +728,13 @@ int main_single(int argc, char const **args) {
     return 0;
   }
 
-  if (props.major != 10) {
-    std::cerr
+  if (props.major != 10 || (props.minor != 0 && props.minor != 3)) {
+    std::cout
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
-      << "(compute capability 100a)." << std::endl;
+      << "(compute capability 90) and CUDA 12.0 or greater.\n";
     return 0;
   }
+
 
   //
   // Parse options
