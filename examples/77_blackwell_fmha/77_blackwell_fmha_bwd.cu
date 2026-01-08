@@ -944,8 +944,7 @@ int main_single(int argc, char const **args) {
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
       << "(compute capability 100a) and CUDA 12.8 or greater.\n";
     return 0;
-  }
-  
+  }  
   //
   // Parse options
   //

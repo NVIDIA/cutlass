@@ -57,7 +57,7 @@ The simplest way to use the profiler is to pass `m`, `n`, and `k` as well as you
 per kernel to determine best rasterization orders, swizzles, and cluster sizes. Passing `blockwiseGemm`
 or `GroupedGemm` through the operation flag will determine which set of operations will be profiled.
 
-For examle, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
+For example, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
 granularity m = 1, scale granularity n = 128, and scale granularity k = 128 for the problem size 8192x8192x8192:
 ```
 cutlass_profiler --operation=blockwiseGemm \

@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.3.4
+# CUTLASS 4.3.5
 
-_CUTLASS 4.3.4 - Dec 2025_
+_CUTLASS 4.3.5 - Jan 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -110,6 +110,8 @@ To get started quickly - please refer :
     - Fixed a frame refcnt issue with cuda graph
     - Enhancement for tvm-ffi AoT case for earlier module unload
     - Fixed order issue in make_smem_layout_a in utils/hopper_helpers.py
+    - Fixed the unexpected CPU overhead issue introduced by 4.3.4
+* Update copyright to 2026.
 
 ## CUTLASS C++
 * Further enhance Blackwell SM100 Attention kernels in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
@@ -143,12 +145,14 @@ To get started quickly - please refer :
     - Fix a few bugs in distributed gemm API and examples.
     - Fix handling negative zero in sparse compressor.
     - Add missing `wait_on_dependent_grids` for PDL use case.
-    - Work around a driver TMA descriptor related bug which will cause occasionally errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
+    - Work around a driver bug which will cause occasionally errors when executing kernels.
+    - Use CUDA Driver Get Version Runtime APIs Rather than Driver APIs.
 * Fix some profiler issues:
     - Add some missing reference kernels.
     - Support VoidC reference kernels.
     - Add calculation of scale factor A and B in function `bytes_with_problem_shape` of block scaled profiler.
     - Fix an issue when epilogue tile N is not divided by default subtile N.
+* Update copyright to 2026.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

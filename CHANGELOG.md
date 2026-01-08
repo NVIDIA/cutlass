@@ -2,6 +2,17 @@
 
 # CUTLASS 4.x
 
+## [4.3.5](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.5) (2026-01-09)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed the unexpected CPU overhead issue introduced by 4.3.4
+* Update copyright to 2026.
+
+### CUTLASS C++
+* Update copyright to 2026.
+* Use CUDA Driver Get Version Runtime APIs Rather than Driver APIs.
+
 ## [4.3.4](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.4) (2025-12-22)
 
 ### CuTe DSL
@@ -14,7 +25,7 @@
   - Fixed order issue in `make_smem_layout_a` in utils/hopper_helpers.py
 
 ### CUTLASS C++
-* Work around a driver TMA descriptor related bug which will cause occasionally errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
+* Work around a driver bug which will cause occasionally errors when executing kernels.
 
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
 

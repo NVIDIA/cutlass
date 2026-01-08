@@ -772,7 +772,6 @@ int main_single(int argc, char const **args) {
       << "(compute capability major 10) and CUDA 12.8 or greater.\n";
     return 0;
   }
-
   //
   // Parse options
   //

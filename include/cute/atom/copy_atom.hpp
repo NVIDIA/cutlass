@@ -491,7 +491,7 @@ template <class... Args,
           class ThrLayout,
           class ValLayout = Layout<_1>>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
                 ValLayout          const& val_layout = {})     // (m,n) -> val_idx
