@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,26 @@
 #include "cutlass/fast_math.h"
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace debug {
 
+template<class Tag, int V>
+struct kv;
+
+struct kShapeRow;
+struct kShapeWidth;
+struct kTargetMemoryAccessWidth;
+struct kTargetAccessRows;
+struct kAccessWidth;
+struct kAccessRows;
+struct kIterationsRow;
+struct kDeltaRow;
+struct kIterationsColumn;
+struct kDeltaColumn;
+
+template<class... KVs>
+struct dump;   // intentionally left undefined
+
+} // namespace debug
 namespace cutlass {
 namespace epilogue {
 namespace threadblock {
@@ -229,9 +248,25 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, tru
   static int const kElementSize = ElementSize;
 
   struct Detail {
+    #ifdef DPHPC
+    static int const kShapeRow = 
+      (Shape::kRow%WarpsRemaining) != 0 
+      && (((Shape::kColumn / kElementsPerAccess)%WarpsRemaining) == 0) ?
+        ( (WarpsRemaining%2 == 0)
+          ? Shape::kRow / 2
+          : Shape::kRow)
+        : Shape::kRow / WarpsRemaining;
+    static int const kShapeWidth = 
+      (Shape::kRow%WarpsRemaining) != 0 
+      && (((Shape::kColumn/kElementsPerAccess)%WarpsRemaining) == 0) ?
+        ( (WarpsRemaining%2 == 0)
+          ? Shape::kColumn / kElementsPerAccess / (WarpsRemaining/2)
+          : Shape::kColumn / kElementsPerAccess / WarpsRemaining)
+        : Shape::kColumn / kElementsPerAccess;
+    #else
     static int const kShapeRow = Shape::kRow / WarpsRemaining;
     static int const kShapeWidth = Shape::kColumn / kElementsPerAccess;
-
+    #endif
     static int const kTargetMemoryAccessWidth = 
       kMemoryAccessSize / (kElementsPerAccess * kElementSize / 8);
 
@@ -241,9 +276,10 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, tru
   static int const kAccessWidth = 
     (Detail::kTargetAccessRows > Detail::kShapeRow ?
       const_min(Detail::kShapeWidth, kWarpSize / Detail::kShapeRow)
+      // kWarpSize / Detail::kShapeRow
       : const_min(
           Detail::kShapeWidth,
-        const_min(kWarpSize, kMemoryAccessSize / (kElementsPerAccess * kElementSize / 8))
+        const_min(kWarpSize, Detail::kTargetMemoryAccessWidth)
         ));
 
   static int const kAccessRows =
@@ -256,6 +292,22 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, tru
 
   static int const kIterationsColumn = Detail::kShapeWidth / kAccessWidth;
   static int const kDeltaColumn = kAccessWidth * kElementsPerAccess;
+
+  #ifdef DEBUGDUMP
+  using DebugDump = debug::dump<
+    debug::kv<debug::kShapeRow, Detail::kShapeRow>,
+    debug::kv<debug::kShapeWidth, Detail::kShapeWidth>,
+    debug::kv<debug::kTargetMemoryAccessWidth, Detail::kTargetMemoryAccessWidth>,
+    debug::kv<debug::kTargetAccessRows, Detail::kTargetAccessRows>,
+    debug::kv<debug::kAccessWidth, kAccessWidth>,
+    debug::kv<debug::kAccessRows, kAccessRows>,
+    debug::kv<debug::kIterationsRow, kIterationsRow>,
+    debug::kv<debug::kDeltaRow, kDeltaRow>,
+    debug::kv<debug::kIterationsColumn, kIterationsColumn>,
+    debug::kv<debug::kDeltaColumn, kDeltaColumn>,
+  >;
+  static_assert(sizeof(DebugDump) == 0, "DEBUG: Turn this assertion only on for debugging.");
+  #endif
 
   static_assert( kAccessWidth * kElementsPerAccess <= Shape::kColumn, "Accessing too many elements per access");
   static_assert( kIterationsColumn > 0, "Iteration Count Column must be > 0" );
