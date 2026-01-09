@@ -66,7 +66,7 @@ int testRun(int arch, std::vector<bool (*)()> & test_funcs, const std::string & 
     return -1;
   }
 
-  if (!(props.major == arch_major && props.minor == arch_minor)) {
+  if ((props.major < arch_major) || (props.major == arch_major && props.minor < arch_minor)) {
     supported = false;
   }
 
