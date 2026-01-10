@@ -12300,14 +12300,14 @@ if __name__ == "__main__":
   if args.heuristics_problems_file:
     filter_manifest_and_write_heuristics_file(manifest, args)
 
-  # GenerateSM50(manifest, args.cuda_version)
-  # GenerateSM60(manifest, args.cuda_version)
-  # GenerateSM61(manifest, args.cuda_version)
-  # GenerateSM70(manifest, args.cuda_version)
-  # GenerateSM75(manifest, args.cuda_version)
-  # GenerateSM80(manifest, args.cuda_version)
-  # GenerateSM89(manifest, args.cuda_version)
-  # GenerateSM90(manifest, args.cuda_version)
+  GenerateSM50(manifest, args.cuda_version)
+  GenerateSM60(manifest, args.cuda_version)
+  GenerateSM61(manifest, args.cuda_version)
+  GenerateSM70(manifest, args.cuda_version)
+  GenerateSM75(manifest, args.cuda_version)
+  GenerateSM80(manifest, args.cuda_version)
+  GenerateSM89(manifest, args.cuda_version)
+  GenerateSM90(manifest, args.cuda_version)
 
   blackwell_arch_list = [
     "100a", "100f",
@@ -12320,7 +12320,7 @@ if __name__ == "__main__":
   blackwell_enabled_arch = any(arch in blackwell_arch_list for arch in archs)
   if blackwell_enabled_arch:
     GenerateSM100(manifest, args.cuda_version)
-    # GenerateSM120(manifest, args.cuda_version)
+    GenerateSM120(manifest, args.cuda_version)
 
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
