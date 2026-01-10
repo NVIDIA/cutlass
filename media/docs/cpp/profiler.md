@@ -171,7 +171,7 @@ Instruction shape levels control the selection of MMA shapes used in kernel gene
 
 The detailed definition of the three instantiation levels controlling cluster shape and instruction shape can be found in [sm100_shapes.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/sm100_shapes.py).
 
-You can use `python/cutlass_library/generator.py` to test your `DCUTLASS_LIBRARY_KERNELS` filter string (useful if your cmake build is taking too long because it's generating too many irrelevant kernels):
+You can use `python/cutlass_library/generator.py` to test your `DCUTLASS_LIBRARY_KERNELS` filter string (useful if your cmake build is taking too long because it's generating too many kernels you don't need):
 
 ```
 python python/cutlass_library/generator.py \
@@ -184,7 +184,7 @@ python python/cutlass_library/generator.py \
   --disable-cutlass-package-imports
 ```
 
-This will output a list of kernels in `./all_kernels.txt` that match the kernel string. 
+This will output a list of kernels in `./all_kernels.txt` that match the kernel string so you can further narrow down your filter string.
 
 ## CUTLASS Profiler usage
 
