@@ -7100,10 +7100,19 @@ def GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
+      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
+      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
+
+      # For SM100 nosmem epilogue with EpilogueTileAuto the epilogue N tile is min(64, cta_n).
+      # The underlying CUTE shape_div enforces a compile-time divisibility condition between cta_n and 64.
+      # This means we can only safely instantiate kernels where either cta_n <= 64 or cta_n is a multiple of 64.
+      if cta_n > 64 and (cta_n % 64 != 0):
+        continue
+
       tile_descriptions.append(
         TileDescription([
-          math_inst.instruction_shape[0]     * multiplier_1sm[0],
-          math_inst.instruction_shape[1]     * multiplier_1sm[1],
+          cta_m,
+          cta_n,
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
@@ -7186,6 +7195,8 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   grouped = is_grouped(gemm_kind)
 
   math_instructions_1sm, math_instructions_2sm = generate_fp8_math_instructions_sm100(instantiation_level, enable_runtime_dtype=not grouped)
+
+  # print(math_instructions_1sm)
 
   cluster_shapes_1sm, cluster_shapes_2sm = generate_cluster_shapes_sm100(instantiation_level)
 
@@ -7493,10 +7504,20 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
+      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
+      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
+
+      # SM100 nosmem epilogue for fp8 alignx uses EpilogueTileAuto with N-tile = min(64, cta_n).
+      # CUTE's shape_div then requires a compile-time divisibility condition between cta_n and 64.
+      # Only instantiate kernels where cta_n <= 64 or cta_n is an exact multiple of 64 to avoid
+      # violating that "Divisibility Condition" static_assert.
+      if cta_n > 64 and (cta_n % 64 != 0):
+        continue
+
       tile_descriptions.append(
         TileDescription([
-          math_inst.instruction_shape[0]     * multiplier_1sm[0],
-          math_inst.instruction_shape[1]     * multiplier_1sm[1],
+          cta_m,
+          cta_n,
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
@@ -11725,64 +11746,64 @@ def GenerateSM100(manifest, cuda_version):
     for old_cc, new_cc in [('101f', '110f')]:
       arch_family_cc = [cc.replace(old_cc, new_cc) for cc in arch_family_cc]
 
-  #
-  # Dense Gemm
-  #
-  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version)
-  GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version)
-  GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version)
+  # #
+  # # Dense Gemm
+  # #
+  # GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version)
+  # GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version)
+  # GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version)
 
-  if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
-    GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  # if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
+  #   GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
 
   GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version)
   GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version)
   # grouped GEMM
-  GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
-  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
-  # MOE grouped GEMM
-  GenerateSM100_TensorOp_16b_UMMA_moe_gemm(manifest, cuda_version)
-  GenerateSM100_TensorOp_fp8_UMMA_moe_gemm(manifest, cuda_version)
-  GenerateSM100_TensorOp_mixed_8bits_UMMA_moe_gemm_with_block_scaled(manifest, cuda_version)
-  GenerateSM100_TensorOp_fp4_UMMA_MoE_gemm_with_block_scaled(manifest, cuda_version)
-  # StreamK is included in regular generation
-  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  # GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  # # MOE grouped GEMM
+  # GenerateSM100_TensorOp_16b_UMMA_moe_gemm(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp8_UMMA_moe_gemm(manifest, cuda_version)
+  # GenerateSM100_TensorOp_mixed_8bits_UMMA_moe_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp4_UMMA_MoE_gemm_with_block_scaled(manifest, cuda_version)
+  # # StreamK is included in regular generation
+  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
 
-  # Blockwise kernels
-  GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version)
-  GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockwiseUniversal3x)
+  # # Blockwise kernels
+  # GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockwiseUniversal3x)
 
-  #
-  # Sparse Gemm
-  #
-  GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version)
-  GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version)
-  if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
-    GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
-  GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version)
-  GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
+  # #
+  # # Sparse Gemm
+  # #
+  # GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version)
+  # GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version)
+  # if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
+  #   GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  # GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version)
+  # GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
 
-  #
-  # Block Scaled Gemm
-  #
-  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
-  GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version,  gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  # #
+  # # Block Scaled Gemm
+  # #
+  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  # GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version,  gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
   
-  GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
-  #
-  # Block Scaled Sparse Gemm
-  #
-  GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  GenerateSM100_SparseTensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  # #
+  # # Block Scaled Sparse Gemm
+  # #
+  # GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  # GenerateSM100_SparseTensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
 
-  #
-  # Conv
-  #
-  GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version)
-  GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version)
+  # #
+  # # Conv
+  # #
+  # GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version)
+  # GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version)
 
 
 def GenerateSM120(manifest, cuda_version):
@@ -12281,14 +12302,14 @@ if __name__ == "__main__":
   if args.heuristics_problems_file:
     filter_manifest_and_write_heuristics_file(manifest, args)
 
-  GenerateSM50(manifest, args.cuda_version)
-  GenerateSM60(manifest, args.cuda_version)
-  GenerateSM61(manifest, args.cuda_version)
-  GenerateSM70(manifest, args.cuda_version)
-  GenerateSM75(manifest, args.cuda_version)
-  GenerateSM80(manifest, args.cuda_version)
-  GenerateSM89(manifest, args.cuda_version)
-  GenerateSM90(manifest, args.cuda_version)
+  # GenerateSM50(manifest, args.cuda_version)
+  # GenerateSM60(manifest, args.cuda_version)
+  # GenerateSM61(manifest, args.cuda_version)
+  # GenerateSM70(manifest, args.cuda_version)
+  # GenerateSM75(manifest, args.cuda_version)
+  # GenerateSM80(manifest, args.cuda_version)
+  # GenerateSM89(manifest, args.cuda_version)
+  # GenerateSM90(manifest, args.cuda_version)
 
   blackwell_arch_list = [
     "100a", "100f",
@@ -12301,7 +12322,7 @@ if __name__ == "__main__":
   blackwell_enabled_arch = any(arch in blackwell_arch_list for arch in archs)
   if blackwell_enabled_arch:
     GenerateSM100(manifest, args.cuda_version)
-    GenerateSM120(manifest, args.cuda_version)
+    # GenerateSM120(manifest, args.cuda_version)
 
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
