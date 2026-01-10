@@ -11744,64 +11744,64 @@ def GenerateSM100(manifest, cuda_version):
     for old_cc, new_cc in [('101f', '110f')]:
       arch_family_cc = [cc.replace(old_cc, new_cc) for cc in arch_family_cc]
 
-  # #
-  # # Dense Gemm
-  # #
-  # GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version)
-  # GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version)
-  # GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version)
+  #
+  # Dense Gemm
+  #
+  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version)
+  GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version)
+  GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version)
 
-  # if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
-  #   GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
+    GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
 
   GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version)
   GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version)
   # grouped GEMM
-  # GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
-  # GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
-  # # MOE grouped GEMM
-  # GenerateSM100_TensorOp_16b_UMMA_moe_gemm(manifest, cuda_version)
-  # GenerateSM100_TensorOp_fp8_UMMA_moe_gemm(manifest, cuda_version)
-  # GenerateSM100_TensorOp_mixed_8bits_UMMA_moe_gemm_with_block_scaled(manifest, cuda_version)
-  # GenerateSM100_TensorOp_fp4_UMMA_MoE_gemm_with_block_scaled(manifest, cuda_version)
-  # # StreamK is included in regular generation
-  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  # MOE grouped GEMM
+  GenerateSM100_TensorOp_16b_UMMA_moe_gemm(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp8_UMMA_moe_gemm(manifest, cuda_version)
+  GenerateSM100_TensorOp_mixed_8bits_UMMA_moe_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp4_UMMA_MoE_gemm_with_block_scaled(manifest, cuda_version)
+  # StreamK is included in regular generation
+  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
 
-  # # Blockwise kernels
-  # GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version)
-  # GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockwiseUniversal3x)
+  # Blockwise kernels
+  GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockwiseUniversal3x)
 
-  # #
-  # # Sparse Gemm
-  # #
-  # GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version)
-  # GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version)
-  # if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
-  #   GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
-  # GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version)
-  # GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
+  #
+  # Sparse Gemm
+  #
+  GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version)
+  GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version)
+  if not bool(set(manifest.compute_capabilities_feature_set).intersection(arch_family_cc)):
+    GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version)
+  GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
 
-  # #
-  # # Block Scaled Gemm
-  # #
-  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  # GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
-  # GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  # GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version,  gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  #
+  # Block Scaled Gemm
+  #
+  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version,  gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
   
-  # GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  # GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
-  # #
-  # # Block Scaled Sparse Gemm
-  # #
-  # GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
-  # GenerateSM100_SparseTensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
+  #
+  # Block Scaled Sparse Gemm
+  #
+  GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM100_SparseTensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
 
-  # #
-  # # Conv
-  # #
-  # GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version)
-  # GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version)
+  #
+  # Conv
+  #
+  GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version)
 
 
 def GenerateSM120(manifest, cuda_version):
