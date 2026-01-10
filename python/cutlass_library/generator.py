@@ -7100,10 +7100,19 @@ def GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
+      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
+      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
+
+      # For SM100 nosmem epilogue with EpilogueTileAuto the epilogue N tile is min(64, cta_n).
+      # The underlying CUTE shape_div enforces a compile-time divisibility condition between cta_n and 64.
+      # This means we can only safely instantiate kernels where either cta_n <= 64 or cta_n is a multiple of 64.
+      if cta_n > 64 and (cta_n % 64 != 0):
+        continue
+
       tile_descriptions.append(
         TileDescription([
-          math_inst.instruction_shape[0]     * multiplier_1sm[0],
-          math_inst.instruction_shape[1]     * multiplier_1sm[1],
+          cta_m,
+          cta_n,
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
@@ -7493,10 +7502,20 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
+      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
+      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
+
+      # SM100 nosmem epilogue for fp8 alignx uses EpilogueTileAuto with N-tile = min(64, cta_n).
+      # CUTE's shape_div then requires a compile-time divisibility condition between cta_n and 64.
+      # Only instantiate kernels where cta_n <= 64 or cta_n is an exact multiple of 64 to avoid
+      # violating that "Divisibility Condition" static_assert.
+      if cta_n > 64 and (cta_n % 64 != 0):
+        continue
+
       tile_descriptions.append(
         TileDescription([
-          math_inst.instruction_shape[0]     * multiplier_1sm[0],
-          math_inst.instruction_shape[1]     * multiplier_1sm[1],
+          cta_m,
+          cta_n,
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
