@@ -26,74 +26,44 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
+import functools
+import os
 import pytest
+import random
+import torch
 
 import cutlass_api
-from cutlass_api.config import GlobalOptions
 
 
-# Global variable to store the test level, accessible at collection time
-_test_level = None
+torch.manual_seed(2025)
+random.seed(2025)
 
 
-def get_test_level():
-    """Get the test level set via --level CLI option."""
-    return _test_level
+def test_incorrect_offset_length():
+    """
+    Offset tensors are required to have `problem_count` elements.
 
+    Test that no kernels are found when this is violated.
+    """
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--level",
-        action="store",
-        default="L0",
-        type=str,
-        choices=["L0", "L1", "L2"],
-        help="Test level to run",
+    problem_count, m, n, k = 12, 8192, 128, 512
+
+    A = torch.empty((1, m, k), device="cuda", dtype=torch.float16)
+    B = torch.empty((problem_count, n, k), device="cuda", dtype=torch.float16).permute(
+        0, 2, 1
+    )
+    out = torch.empty((1, m, n), device="cuda", dtype=torch.float32)
+
+    # Incorrect: should have `problem_count` elements
+    offsets = torch.empty((problem_count + 1,), device="cuda", dtype=torch.int32)
+
+    args = cutlass_api.arguments.GroupedGemmArguments(
+        A=A,
+        B=B,
+        out=out,
+        accumulator_type=torch.float32,
+        offsets=offsets,
     )
 
-
-def pytest_configure(config):
-    global _test_level
-
-    _test_level = config.getoption("--level", "L0")
-
-
-#
-# Before each test, save the GlobalOptions dict
-# After each test, restore the GlobalOptions dict
-#
-
-global_options = {}
-
-
-def setup_function():
-    global global_options
-    GlobalOptions().save(global_options)
-
-
-def teardown_function():
-    global global_options
-    GlobalOptions().restore(global_options)
-
-
-#
-# Fixtures for toggling the TVM FFI global option and forcing its enablement or disablement
-#
-
-
-@pytest.fixture(
-    params=[True, False], ids=["use_tvm_ffi=True", f"use_tvm_ffi=False"], autouse=False
-)
-def fixture_toggle_tvm_ffi(request):
-    GlobalOptions().use_tvm_ffi = request.param
-
-
-@pytest.fixture(autouse=False)
-def fixture_enable_tvm_ffi(request):
-    GlobalOptions().use_tvm_ffi = True
-
-
-@pytest.fixture(autouse=False)
-def fixture_disable_tvm_ffi(request):
-    GlobalOptions().use_tvm_ffi = False
+    kernels = cutlass_api.get_kernels(args, cc=100)
+    assert len(kernels) == 0

@@ -28,9 +28,11 @@
 
 from __future__ import annotations
 
+from abc import ABC
+import copy
 from collections import OrderedDict
 from dataclasses import dataclass, field, fields
-from typing import TYPE_CHECKING, get_type_hints
+from typing import TYPE_CHECKING, Any, get_type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,10 +47,10 @@ import cutlass.cute as cute
 
 from cutlass_api.fusion import EmptyTensor, trace, trace_in_out
 from cutlass_api.fusion.library import LayoutType
+from cutlass_api.library import ScaleMode, ScaleSwizzleMode
 from cutlass_api.typing import NumericLike, TensorLike
 from cutlass_api.utils import (
     TensorWrapper,
-    add_batch_mode,
     is_torch_tensor,
     to_cutlass_type,
 )
@@ -172,10 +174,6 @@ class EpilogueArguments:
         """Returns the list of names of the input and output parameters of the epilogue"""
         return list(self.tensors.keys())
 
-    def add_batch_modes(self):
-        for name in self.tensors:
-            self.tensors[name] = add_batch_mode(self.tensors[name])
-
     def to_tensor_wrappers(self, permute: list[int] | None = None):
         """Converts the input and output parameters of the epilogue to TensorWrappers"""
         for k, v in self.tensors.items():
@@ -215,6 +213,42 @@ class EpilogueArguments:
         )
 
 
+def convert_to_internal_types(caller, metadata: dict[str, Any] = None):
+    """
+    Converts fields of the caller to internal types. Current fields that are converted:
+      * TensorLike -> TensorWrapper
+      * NumericLike -> cutlass.Numeric
+      * Classes that implement _convert_to_internal_types -> their internal types
+
+    :param caller: The caller object to convert the fields of
+    :type caller: Any
+    :param metadata: Additional metadata to be used for conversion
+    :type metadata: dict[str, Any] | None
+    """
+
+    type_hints = get_type_hints(type(caller))
+    for f in fields(caller):
+        hint = type_hints.get(f.name)
+        value = getattr(caller, f.name)
+
+        global_metadata = {} if metadata is None else copy.deepcopy(metadata)
+        global_metadata.update(f.metadata)
+
+        if hint is TensorLike:
+            # Find all fields that are annotated as TensorLike,
+            # and wrap them in TensorWrapper
+            setattr(caller, f.name, TensorWrapper(value, **global_metadata))
+        elif hint is NumericLike:
+            # Find all fields that are annotated as NumericLike,
+            # and convert them to cutlass.Numeric
+            setattr(caller, f.name, to_cutlass_type(value))
+        elif hasattr(value, "_convert_to_internal_types"):
+            # If the field is an instance of a class that implements
+            # _convert_to_internal_types, convert it to internal types
+            value._convert_to_internal_types(metadata=global_metadata)
+            setattr(caller, f.name, value)
+
+
 @dataclass
 class RuntimeArguments:
     """
@@ -231,7 +265,6 @@ class RuntimeArguments:
     :type performance: Optional[PerformanceControls]
     """
 
-    epilogue: EpilogueArguments | None = field(default=None, kw_only=True)
     performance: PerformanceControls | None = field(default=None, kw_only=True)
 
     def _validate(self):
@@ -241,24 +274,92 @@ class RuntimeArguments:
         """
 
     def __post_init__(self):
-        self._validate()
-        self._convert_to_internal_types()
+        convert_to_internal_types(self)
 
-    def _convert_to_internal_types(self):
-        """
-        Converts all fields to their internal types.
-        """
-        type_hints = get_type_hints(type(self))
-        for f in fields(self):
-            hint = type_hints.get(f.name)
-            value = getattr(self, f.name)
 
-            # Find all fields that are annotated as TensorLike,
-            # and wrap them in TensorWrapper
-            if hint is TensorLike:
-                setattr(self, f.name, TensorWrapper(value))
-            elif hint is NumericLike:
-                setattr(self, f.name, to_cutlass_type(value))
+class KernelOperand(ABC):
+    """
+    Base class for all operands to kernels.
+    """
+
+    def _convert_to_internal_types(self, metadata: dict[str, Any] = None):
+        convert_to_internal_types(self, metadata=metadata)
+
+
+@dataclass
+class DenseTensor(KernelOperand):
+    """
+    Representation of a dense tensor operand.
+    """
+
+    tensor: TensorLike
+
+    def __getattr__(self, attr: str) -> Any:
+        if hasattr(self.tensor, attr):
+            return getattr(self.tensor, attr)
+        else:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{attr}'"
+            )
+
+
+def kernel_operand_or_default(operand: TensorLike | KernelOperand) -> KernelOperand:
+    """
+    If operand is already a KernelOperand, return it. Otherwise, wrap it in a DenseTensor.
+    This is used for convenience interfaces to avoid needing to wrap dense tensors in a DenseTensor
+    class.
+
+    :param operand: The operand to convert
+    :type operand: TensorLike | KernelOperand
+    :return: The operand wrapped in a DenseTensor if it is a TensorLike, otherwise the operand itself
+    :rtype: KernelOperand
+    """
+    if isinstance(operand, TensorLike):
+        return DenseTensor(operand)
+    else:
+        return operand
+
+
+@dataclass
+class ScaledTensor(KernelOperand):
+    """
+    Representation of a scaled tensor operand. This includes:
+      * A base tensor. This is a KernelOperand subclass.
+      * A tensor containing scale factors
+      * Scale mode and swizzle mode
+
+    An example of its creation is the following:
+    ```python
+    A = torch.rand(...)
+    scale_A = torch.rand(...)
+    arg = ScaledTensor(A, scale_A, ScaleMode.Blockwise1x32, ScaleSwizzleMode.Swizzle32x4x4)
+    ```
+    """
+
+    base: KernelOperand
+    scale: DenseTensor
+    mode: ScaleMode | tuple[int, ...]
+    swizzle: ScaleSwizzleMode
+
+    def __init__(
+        self,
+        base: KernelOperand | TensorLike,
+        scale: DenseTensor | TensorLike,
+        mode: ScaleMode | tuple[int, ...],
+        swizzle: ScaleSwizzleMode,
+    ):
+        self.base = kernel_operand_or_default(base)
+        self.scale = kernel_operand_or_default(scale)
+        self.mode = mode
+        self.swizzle = swizzle
+
+    def __getattr__(self, attr: str) -> Any:
+        if hasattr(self.base, attr):
+            return getattr(self.base, attr)
+        else:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{attr}'"
+            )
 
 
 @dataclass
@@ -273,24 +374,70 @@ class GemmArguments(RuntimeArguments):
     N: Number of columns in B and out
 
     :param A: Input tensor A of shape (L, M, K) or (M, K)
-    :type A: TensorLike
+    :type A: KernelOperand
     :param B: Input tensor B of shape (L, K, N) or (K, N)
-    :type B: TensorLike
+    :type B: KernelOperand
     :param out: Output tensor C of shape (L, M, N) or (M, N)
-    :type out: TensorLike
+    :type out: KernelOperand
     :param accumulator_type: Data type of the accumulator
     :type accumulator_type: NumericLike
     """
 
-    A: TensorLike
-    B: TensorLike
-    out: TensorLike
+    A: KernelOperand
+    B: KernelOperand
+    out: KernelOperand
     accumulator_type: NumericLike
+    epilogue: EpilogueArguments | None
 
-    def to_operands_metadata(self) -> GemmOperandsMetadata:
-        from cutlass_api.metadata import GemmOperandsMetadata
+    def __init__(
+        self,
+        A: TensorLike | KernelOperand,
+        B: TensorLike | KernelOperand,
+        out: TensorLike | KernelOperand,
+        accumulator_type: NumericLike,
+        epilogue: EpilogueArguments | None = None,
+    ):
+        """
+        Construct a GemmArguments object.
 
-        return GemmOperandsMetadata.from_args(self)
+        For convenience, construction for `A`, `B`, and `out` that are operands
+        to a dense GEMM can be passed in without wrapping them in `DenseTensor`.
+
+        ```python
+           GemmArguments(A, B, out, accumulator_type)
+           # is equivalent to:
+           GemmArguments(DenseTensor(A), DenseTensor(B), DenseTensor(out), accumulator_type)
+        ```
+
+        Other operand types must explicitly wrap tensors in a `KernelOperand` subclass.
+        For example, a scaled GEMM can be constructed as:
+        ```python
+           GemmArguments(
+               ScaledTensor(A, ScaleATensor, scale_mode, scale_swizzle),
+               ScaledTensor(B, ScaleBTensor, scale_mode, scale_swizzle),
+               out, # No need to wrap out in a `DenseTensor`
+               accumulator_type,
+           )
+        ```
+
+        :param A: Input tensor A of shape (L, M, K) or (M, K)
+        :type A: TensorLike | KernelOperand
+        :param B: Input tensor B of shape (L, K, N) or (K, N)
+        :type B: TensorLike | KernelOperand
+        :param out: Output tensor C of shape (L, M, N) or (M, N)
+        :type out: TensorLike | KernelOperand
+        :param accumulator_type: Data type of the accumulator
+        :type accumulator_type: NumericLike
+        :param epilogue: Optional custom epilogue fusion to be performed after the GEMM.
+        :type epilogue: Optional[EpilogueArguments]
+        """
+        self.A = kernel_operand_or_default(A)
+        self.B = kernel_operand_or_default(B)
+        self.out = kernel_operand_or_default(out)
+
+        self.accumulator_type = accumulator_type
+        self.epilogue = epilogue
+        super().__init__()
 
     def _validate(self):
         """
@@ -329,12 +476,78 @@ class GemmArguments(RuntimeArguments):
                 f"out & A must have the same rank and batch dimension (if any). out shape (L, M, N): {self.out.shape}, A shape (L, M, K): {self.A.shape}"
             )
 
-        if isinstance(self.epilogue, EpilogueArguments):
+    def _convert_epilogue(self):
+        """Converts the epilogue to an internal representation using internal types."""
+        if self.epilogue is not None:
             L = self.A.shape[0] if len(self.A.shape) == 3 else 1
             M, N = self.A.shape[-2], self.B.shape[-1]
             accum_shape = (L, M, N)
             self.epilogue.trace(accum_shape, self.accumulator_type)
             self.epilogue.to_tensor_wrappers()
+
+    def __post_init__(self):
+        self._validate()
+        self._convert_epilogue()
+        super().__post_init__()
+
+
+@dataclass
+class GroupedGemmArguments(RuntimeArguments):
+    """
+    Arguments for a grouped GEMM operation. A grouped GEMM performs a series
+    of independent GEMM operations.
+
+    The most basic formulation of a grouped GEMM is one in which one has lists
+    of A tensors and lists of B tensors, and computes the following:
+    ```python
+    for i in range(problems_in_group):
+        out[i] = A[i] @ B[i]
+    ```
+
+    Note that each constituent GEMM operation can have different sizes.
+
+    Though the abstract formulation of a grouped GEMM treats operands as parts
+    of a list, in practice, the operands are often packed together contiguously in memory.
+    In this case, an `offsets` tensor delineates the ending positions of each problem in the group.
+
+    Currently-supported variants of a grouped GEMM are:
+    * Contiguous offset 2D/3D:
+      * A is a tensor of shape (TotalM, K) or (1, TotalM, K)
+      * B is a tensor of shape (problems_in_group, K, N)
+      * out is a tensor of shape (TotalM, N) or (1, TotalM, N)
+      * offsets is a tensor delineating the ending positions of each problem in the group.
+      ```python
+          start = 0
+          for i in range(problems_in_group):
+              end = offsets[i]
+              out[start:end, :] = A[start:end, :] @ B[i, :, :]
+              start = end
+      ```
+    """
+
+    A: KernelOperand
+    B: KernelOperand
+    out: KernelOperand
+    accumulator_type: NumericLike
+    offsets: KernelOperand = field(metadata={"alignment_bytes": 4})
+    epilogue: EpilogueArguments | None
+
+    def __init__(
+        self,
+        A: TensorLike | KernelOperand,
+        B: TensorLike | KernelOperand,
+        out: TensorLike | KernelOperand,
+        accumulator_type: NumericLike,
+        offsets: TensorLike | KernelOperand,
+        epilogue: EpilogueArguments | None = None,
+    ):
+        self.A = kernel_operand_or_default(A)
+        self.B = kernel_operand_or_default(B)
+        self.out = kernel_operand_or_default(out)
+        self.accumulator_type = accumulator_type
+        self.offsets = kernel_operand_or_default(offsets)
+        self.epilogue = epilogue
+        super().__init__()
 
 
 @dataclass
@@ -343,21 +556,27 @@ class ElementwiseArguments(RuntimeArguments):
     Arguments needed for an elementwise operation.
 
     :param A: The input tensor A.
-    :type A: TensorLike
+    :type A: TensorLike | KernelOperand
     :param B: The input tensor B.
-    :type B: TensorLike
+    :type B: TensorLike | KernelOperand
     :param out: The output tensor.
-    :type out: TensorLike
+    :type out: TensorLike | KernelOperand
     """
 
-    A: TensorLike
-    B: TensorLike
-    out: TensorLike
+    A: KernelOperand
+    B: KernelOperand
+    out: KernelOperand
 
-    def to_operands_metadata(self) -> ElementwiseOperandsMetadata:
-        from cutlass_api.metadata import ElementwiseOperandsMetadata
-
-        return ElementwiseOperandsMetadata.from_args(self)
+    def __init__(
+        self,
+        A: TensorLike | KernelOperand,
+        B: TensorLike | KernelOperand,
+        out: TensorLike | KernelOperand,
+    ):
+        self.A = kernel_operand_or_default(A)
+        self.B = kernel_operand_or_default(B)
+        self.out = kernel_operand_or_default(out)
+        super().__init__()
 
     def _validate(self):
         """
@@ -371,3 +590,7 @@ class ElementwiseArguments(RuntimeArguments):
             raise ValueError(
                 f"out.shape ({self.out.shape}) must be equal to A.shape ({self.A.shape})"
             )
+
+    def __post_init__(self):
+        self._validate()
+        super().__post_init__()

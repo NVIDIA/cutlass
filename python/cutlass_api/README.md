@@ -69,8 +69,8 @@ See CUTLASS's [Compatibility section](https://github.com/NVIDIA/cutlass?tab=read
 ### Current support
 
 * Dense GEMM: `out = A @ B`
-    - Compute capabilities: 100, 103 (WIP to expand to more)
-    - Input precisions (A and B must be of same type): F16, BF16, TF32, INT8
+    - Compute capabilities: 100, 103
+    - Input precisions (A and B must be of same type): F16, BF16, INT8
     - Output precisions: F32, F16, BF16, INT32
     - Epilogue operations:
         - Auxiliary load of tensors equal in rank and shape of `out`
@@ -79,10 +79,20 @@ See CUTLASS's [Compatibility section](https://github.com/NVIDIA/cutlass?tab=read
         - Tensor-tensor elementwise or tensor-scalar addition, multiplication, subtraction, division
         - Elementwise tensor exponent, relu, sigmoid, tanh
     - Note: Partial support exists on CC 80/89/90 (limited dtypes/tilings coverage)
+* Block-scaled dense GEMM:
+    - Compute capabilities: 100, 103
+    - Input precisions: MXFP8 (F8E4M3, F8E5M2)
+    - Output precisions: F32, F16, BF16, F8E4M3, F8E5M2
+    - Scale factor precisions: F8E8M0
+* Grouped GEMM
+    - Contiguous offset 2d-3d grouped GEMM: `(TotalM, K) @ (G, K, N) -> (TotalM, N)`
+        - Compute capability: 100
+        - Input precisions: F16, BF16, F8E4M3, F8E5M2
+        - Output precisions: F32, F16, BF16
 
 * Planned additions
-    * Block-scaled GEMMs
-    * Grouped GEMMs
+    * Block-scaled GEMMs (additional precisions)
+    * Grouped GEMMs (additional variants and precisions)
     * Additional epilogue operations
         * Reductions
         * Row/column broadcasts

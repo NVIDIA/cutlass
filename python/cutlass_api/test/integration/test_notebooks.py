@@ -37,11 +37,12 @@ import cutlass_api
 @pytest.mark.parametrize(
     "notebook_name, supported_ccs",
     [
-        ("000_gemm.ipynb", [80, 89, 90,100, 103]),
+        ("000_gemm.ipynb", [80, 89, 90, 100, 103]),
         ("001_gemm_with_fused_epilogue.ipynb", [100, 103]),
         ("002_bring_your_own_kernel.ipynb", [80, 89, 90, 100, 103, 120, 121]),
         ("003_host_latency_best_practices.ipynb", [80, 89, 90, 100, 103]),
         ("004_fake_tensors.ipynb", [80, 89, 90, 100, 103]),
+        ("005_grouped_gemm_contiguous_offset.ipynb", [100]),
     ],
 )
 def test_notebooks(notebook_name, supported_ccs):

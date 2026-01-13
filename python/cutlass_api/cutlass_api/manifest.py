@@ -90,7 +90,7 @@ class Manifest:
                     return False
                 return True
 
-        epilogue_args = None if args is None else args.epilogue
+        epilogue_args = getattr(args, "epilogue", None)
         kernels = [
             k
             # Generate kernels from all providers

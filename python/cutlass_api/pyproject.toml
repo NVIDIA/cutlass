@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 
 dependencies = [
     "nvidia-cutlass-dsl",
-    "apache-tvm-ffi",  # Required for optimal performance. To opt-out: uninstall or set cutlass_api.config.GlobalOptions().use_tvm_ffi=False
+    "apache-tvm-ffi",  # Required for best performance. To opt-out: uninstall or set cutlass_api.config.GlobalOptions().use_tvm_ffi=False
 ]
 
 [project.optional-dependencies]

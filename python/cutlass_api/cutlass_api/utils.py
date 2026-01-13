@@ -47,6 +47,36 @@ if TYPE_CHECKING:
     import torch
 
 
+def ceil_div(a: int, b: int) -> int:
+    """
+    Compute the ceiling division of a by b.
+
+    :param a: The dividend.
+    :type a: int
+    :param b: The divisor.
+    :type b: int
+
+    :return: The ceiling division of a by b.
+    :rtype: int
+    """
+    return (a + b - 1) // b
+
+
+def round_up(a: int, b: int) -> int:
+    """
+    Round a up to the nearest multiple of b.
+
+    :param a: The value to round up.
+    :type a: int
+    :param b: The multiple to round up to.
+    :type b: int
+
+    :return: The value of a rounded up to the nearest multiple of b.
+    :rtype: int
+    """
+    return ((a + b - 1) // b) * b
+
+
 def is_numpy_available() -> bool:
     """Check if numpy is available."""
     return importlib.util.find_spec("numpy") is not None
@@ -173,6 +203,7 @@ def cutlass_type_from_torch_type(dtype) -> type[cutlass.Numeric]:
         torch.float8_e5m2: cutlass.Float8E5M2,
         torch.float8_e4m3fn: cutlass.Float8E4M3FN,
         torch.float8_e4m3fnuz: cutlass.Float8E4M3B11FNUZ,
+        torch.float8_e8m0fnu: cutlass.Float8E8M0FNU,
     }
 
     try:
@@ -234,52 +265,6 @@ def to_cuda_stream(
         if isinstance(stream, torch.cuda.Stream):
             return cuda.CUstream(stream.cuda_stream)
     raise ValueError(f"Unsupported stream type: {type(stream)}")
-
-
-def add_batch_mode(
-    tensor: cute.Tensor | torch.Tensor,
-) -> cute.Tensor | torch.Tensor:
-    """
-    Adds a batch mode to the tensor.
-    If the tensor is a torch.Tensor and has rank 2,
-    it will be unsqueezed along the first dimension.
-
-    :param tensor: The tensor to add batch mode to.
-    :type tensor: Union[cute.Tensor, "torch.Tensor"]
-
-    :return: The tensor with batch mode added.
-    :rtype: Union[cute.Tensor, "torch.Tensor"]
-    """
-    if is_torch_tensor(tensor):
-        if tensor.dim() == 2:
-            return tensor.unsqueeze(0)
-        elif tensor.dim() < 2 or tensor.dim() > 3:
-            raise ValueError(f"Expected 2-3 dimensions, got {tensor.dim()}")
-        return tensor
-
-    return tensor
-
-
-def permute_batch_mode(
-    tensor: cute.Tensor | torch.Tensor,
-) -> cute.Tensor | torch.Tensor:
-    """
-    Permute the batch mode of the tensor.
-    If the tensor is a torch.Tensor and has rank 3,
-    it will be permuted along the first dimension.
-
-    :param tensor: The tensor to permute.
-    :type tensor: Union[cute.Tensor, "torch.Tensor"]
-
-    :return: The tensor with batch mode permuted.
-    :rtype: Union[cute.Tensor, "torch.Tensor"]
-    """
-    if is_torch_tensor(tensor):
-        if tensor.dim() != 3:
-            raise ValueError(f"Expected 3 dimensions, got {tensor.dim()}")
-        return tensor.permute([1, 2, 0])
-    else:
-        raise ValueError(f"Unsupported type: {type(tensor)}")
 
 
 def leading_dim(tensor) -> int:
@@ -378,7 +363,7 @@ class TensorWrapper:
     is enabled.
     """
 
-    def __init__(self, tensor: Any):
+    def __init__(self, tensor: Any, alignment_bytes: int = 16):
         if isinstance(tensor, cute.Tensor):
             # Regardless of whether TVM-FFI is enabled, if the tensor passed in is a cute.Tensor,
             # it can be used as the runtime tensor and compile time tensor.
@@ -399,7 +384,9 @@ class TensorWrapper:
                 stride_order = get_stride_rank(self._stride)
                 leading_dim_idx = stride_order.index(0)
                 shape = [cute.SymInt() for _ in range(rank)]
-                shape[leading_dim_idx] = cute.SymInt(divisibility=16 * 8 // dtype.width)
+                shape[leading_dim_idx] = cute.SymInt(
+                    divisibility=alignment_bytes * 8 // dtype.width
+                )
                 self._shape = tuple(self.runtime_tensor.shape)
                 self._data_ptr = self.runtime_tensor.data_ptr()
             else:
@@ -411,7 +398,7 @@ class TensorWrapper:
                 dtype,
                 shape,
                 stride_order=stride_order,
-                assumed_align=16,  # bytes
+                assumed_align=alignment_bytes,
             )
         else:
             # TVM-FFI is disabled and the tensor passed in is not a cute.Tensor,
@@ -425,12 +412,12 @@ class TensorWrapper:
             self.runtime_tensor = (
                 from_dlpack(
                     tensor,
-                    assumed_align=16,  # bytes
+                    assumed_align=alignment_bytes,
                 )
                 .mark_layout_dynamic(leading_dim(tensor))
                 .mark_compact_shape_dynamic(
                     mode=leading_dim(tensor),
-                    divisibility=16 * 8 // dtype.width,
+                    divisibility=alignment_bytes * 8 // dtype.width,
                     stride_order=stride_order,
                 )
             )
@@ -458,6 +445,12 @@ class TensorWrapper:
     @property
     def data_ptr(self) -> int:
         return self._data_ptr
+
+    def numel(self) -> int:
+        num = self._shape[0]
+        for i in range(1, len(self._shape)):
+            num *= self._shape[i]
+        return num
 
 
 def strides_to_layout_string(*strides: list[tuple[int, ...]]) -> str:

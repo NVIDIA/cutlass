@@ -37,15 +37,16 @@ from cutlass_api.arguments import (
 )
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import (
+    DenseTensorAttributes,
     GemmOperandsMetadata,
     KernelMetadata,
-    TensorAttributes,
 )
 from cutlass_api.providers.cutedsl import CuTeDSLProvider
 from cutlass_api.providers.cutedsl.kernel import CuteDslKernel
 from cutlass_api.status import Status
 from cutlass_api.utils import strides_to_layout_string, to_cuda_stream, tuple_to_string
 from cutlass_api.metadata import BLASDesignMetadata
+
 from .implementations.sm80_tensorop_gemm_impl import Sm80TensorOpGemmImpl
 
 
@@ -77,20 +78,14 @@ class Sm80TensorOpGemmKernel(CuteDslKernel):
             metadata.operands.accumulator_type
             )
 
-    def _supports(self, args: GemmArguments) -> Status:
-
-        if args.epilogue is not None:
-            return Status.fail("This kernel does not support any epilogue fusion.")
-        return Status.success()
-
     def compile(self, args: GemmArguments, cc: int = None) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
 
         compiled_kernel = self.cute_compile(
             self.impl,
-            args.A,
-            args.B,
-            args.out,
+            args.A.tensor,
+            args.B.tensor,
+            args.out.tensor,
             stream,
         )
         return CompiledArtifact(compiled_kernel, self)
@@ -104,7 +99,9 @@ class Sm80TensorOpGemmKernel(CuteDslKernel):
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_gemm = compiled_artifact.compiled_obj
-        self.cute_run(compiled_gemm, args.A, args.B, args.out, stream)
+        self.cute_run(
+            compiled_gemm, args.A.tensor, args.B.tensor, args.out.tensor, stream
+        )
 
     @staticmethod
     def _valid_operands(operands: GemmOperandsMetadata) -> bool:
@@ -155,17 +152,17 @@ class Sm80TensorOpGemmKernel(CuteDslKernel):
                         out_divisibility = alignment_bytes * 8 // out_dtype.width
 
                         # Create TensorAttributes for A, B, and out tensors
-                        a_attrs = TensorAttributes(
+                        a_attrs = DenseTensorAttributes(
                             dtype=ab_dtype,
                             stride=stride_A,
                             divisibility=ab_divisibility,
                         )
-                        b_attrs = TensorAttributes(
+                        b_attrs = DenseTensorAttributes(
                             dtype=ab_dtype,
                             stride=stride_B,
                             divisibility=ab_divisibility,
                         )
-                        out_attrs = TensorAttributes(
+                        out_attrs = DenseTensorAttributes(
                             dtype=out_dtype,
                             stride=stride_out,
                             divisibility=out_divisibility,

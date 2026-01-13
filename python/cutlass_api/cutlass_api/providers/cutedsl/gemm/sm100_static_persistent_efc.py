@@ -37,11 +37,11 @@ from cutlass_api.arguments import (
 )
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import (
+    DenseTensorAttributes,
     EpilogueMetadata,
     GemmOperandsMetadata,
     KernelMetadata,
     Sm100DesignMetadata,
-    TensorAttributes,
 )
 from cutlass_api.providers.cutedsl import CuTeDSLProvider
 from cutlass_api.providers.cutedsl.evt.converter import EFCConverter
@@ -284,17 +284,17 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
                         ab_divisibility = alignment_bytes * 8 // ab_dtype.width
                         out_divisibility = alignment_bytes * 8 // out_dtype.width
                         # Create TensorAttributes for A, B, and out tensors
-                        a_attrs = TensorAttributes(
+                        a_attrs = DenseTensorAttributes(
                             dtype=ab_dtype,
                             stride=stride_A,
                             divisibility=ab_divisibility,
                         )
-                        b_attrs = TensorAttributes(
+                        b_attrs = DenseTensorAttributes(
                             dtype=ab_dtype,
                             stride=stride_B,
                             divisibility=ab_divisibility,
                         )
-                        out_attrs = TensorAttributes(
+                        out_attrs = DenseTensorAttributes(
                             dtype=out_dtype,
                             stride=stride_out,
                             divisibility=out_divisibility,
@@ -311,7 +311,6 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
                         yield operands
 
     def _supports(self, args: GemmArguments) -> Status:
-
         if args.epilogue is not None:
             fusion_metadata = EpilogueMetadata.from_args(args.epilogue)
             if not self._valid_fusion(fusion_metadata):
@@ -339,8 +338,8 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
         self.impl.efc.compile(epilogue_params)
         compiled_gemm = self.cute_compile(
             self.impl,
-            args.A,
-            args.B,
+            args.A.tensor,
+            args.B.tensor,
             max_active_clusters,
             stream,
             self.impl.efc.jit.pack_arguments(*epilogue_params),
@@ -376,7 +375,9 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
             epilogue_params = [args.out]
 
         compiled_gemm = compiled_artifact.compiled_obj
-        self.cute_run(compiled_gemm, args.A, args.B, stream, *epilogue_params)
+        self.cute_run(
+            compiled_gemm, args.A.tensor, args.B.tensor, stream, *epilogue_params
+        )
 
     @staticmethod
     def generate_kernels(

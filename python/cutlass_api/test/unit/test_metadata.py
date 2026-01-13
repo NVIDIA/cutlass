@@ -37,7 +37,7 @@ from cutlass_api.arguments import ElementwiseArguments
 from cutlass_api.config import GlobalOptions
 from cutlass_api.metadata import (
     ElementwiseOperandsMetadata,
-    TensorAttributes,
+    DenseTensorAttributes,
 )
 
 
@@ -49,7 +49,9 @@ class NoopKernelForTesting(cutlass_api.providers.cutedsl.kernel.CuteDslKernel):
 
     def compile(self, args: ElementwiseArguments):
         stream = cute.runtime.make_fake_stream()
-        return self.cute_compile(self.impl, args.A, args.B, args.out, stream)
+        return self.cute_compile(
+            self.impl, args.A.tensor, args.B.tensor, args.out.tensor, stream
+        )
 
     def _run(
         self,
@@ -58,10 +60,12 @@ class NoopKernelForTesting(cutlass_api.providers.cutedsl.kernel.CuteDslKernel):
         stream,
         workspace=None,
     ):
-        self.cute_run(compiled_artifact, args.A, args.B, args.out, stream)
+        self.cute_run(
+            compiled_artifact, args.A.tensor, args.B.tensor, args.out.tensor, stream
+        )
 
     def generate_kernels(_ignored_filter, _ignored_epilogue_args, _ignored_cc):
-        attrs = TensorAttributes(
+        attrs = DenseTensorAttributes(
             stride=(0, 1),
             dtype=cutlass.Float16,
             divisibility=8,

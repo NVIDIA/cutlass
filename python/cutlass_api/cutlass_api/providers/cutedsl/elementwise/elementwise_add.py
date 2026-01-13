@@ -38,9 +38,9 @@ import cutlass.cute as cute
 from cutlass_api.arguments import ElementwiseArguments, EpilogueArguments
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import (
+    DenseTensorAttributes,
     ElementwiseOperandsMetadata,
     KernelMetadata,
-    TensorAttributes,
 )
 from cutlass_api.providers.cutedsl import CuTeDSLProvider
 from cutlass_api.providers.cutedsl.kernel import CuteDslKernel
@@ -65,7 +65,9 @@ class ElementwiseAddKernel(CuteDslKernel):
 
     def compile(self, args: ElementwiseArguments, cc: int = None) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
-        compiled_kernel = self.cute_compile(self.impl, args.A, args.B, args.out, stream)
+        compiled_kernel = self.cute_compile(
+            self.impl, args.A.tensor, args.B.tensor, args.out.tensor, stream
+        )
         return CompiledArtifact(compiled_kernel, self)
 
     def _run(
@@ -77,7 +79,9 @@ class ElementwiseAddKernel(CuteDslKernel):
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_kernel = compiled_artifact.compiled_obj
-        self.cute_run(compiled_kernel, args.A, args.B, args.out, stream)
+        self.cute_run(
+            compiled_kernel, args.A.tensor, args.B.tensor, args.out.tensor, stream
+        )
 
     @staticmethod
     def generate_kernels(
@@ -111,13 +115,13 @@ class ElementwiseAddKernel(CuteDslKernel):
                 )
 
                 operands = ElementwiseOperandsMetadata(
-                    A=TensorAttributes(
+                    A=DenseTensorAttributes(
                         dtype=dtype, stride=stride_A, divisibility=divisibility
                     ),
-                    B=TensorAttributes(
+                    B=DenseTensorAttributes(
                         dtype=dtype, stride=stride_B, divisibility=divisibility
                     ),
-                    out=TensorAttributes(
+                    out=DenseTensorAttributes(
                         dtype=dtype, stride=stride_out, divisibility=divisibility
                     ),
                 )
