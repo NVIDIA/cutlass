@@ -1217,13 +1217,13 @@ install(
   FILES
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   )
 
 install(
   EXPORT NvidiaCutlass
   NAMESPACE nvidia::cutlass::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   FILE NvidiaCutlassTargets.cmake
   )
 
