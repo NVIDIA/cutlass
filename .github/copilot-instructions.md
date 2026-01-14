@@ -41,7 +41,7 @@ ninja
 
 Build / Test / Lint summary
 ---------------------------
-- **Bootstrap**: No special bootstrap required. Python dependencies in `pyproject.toml` (`networkx`, `numpy`, `pydot`, `scipy`, `treelib`) are needed for Python tests. Install with `pip install -e .` in project root.
+- **Bootstrap**: No special bootstrap required. Python dependencies in `pyproject.toml` (`networkx`, `numpy`, `pydot`, `scipy`, `treelib`, `ml_dtypes`) are needed for Python tests. Install with `pip install -e .` in project root.
 - **Build**: Use CMake 3.22+ and Ninja (see commands above). **ALWAYS** run from clean build directory to avoid stale state.
 - **C++ Unit Tests**: After build, run `cmake --build . --target test_unit` (runs all unit tests in `test/unit/`).
 - **C++ Examples**: `cmake --build . --target test_examples` (builds and validates examples in `examples/`).

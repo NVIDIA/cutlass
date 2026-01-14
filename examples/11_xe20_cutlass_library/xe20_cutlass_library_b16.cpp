@@ -30,7 +30,6 @@
  ***************************************************************************************************/
 
 
-
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -95,31 +94,29 @@ struct identity_op {
   T operator()(T val) const { return val; }
 };
 
-
-
-using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_epilogue =
+using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_epilogue =
   typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Xe20, cutlass::arch::OpClassTensorOp,
     cute::Shape<cute::_256, cute::_256, cute::_32>,
     cute::Shape<cute::_1, cute::_1, cute::_1>,
     cutlass::epilogue::collective::EpilogueTileAuto,
     float, float,
-    float, cutlass::layout::RowMajor, 4,
-    float, cutlass::layout::RowMajor, 4,
+    cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8, // Bias
+    cutlass::bfloat16_t, cutlass::layout::RowMajor, 8,  // Output
     cutlass::epilogue::collective::EpilogueScheduleAuto,
     cutlass::epilogue::fusion::LinearCombination<
+      cutlass::bfloat16_t,
       float,
-      float,
-      float,
+      cutlass::bfloat16_t,
       float
     >
   >::CollectiveOp;
 
-using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_mainloop =
+using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_mainloop =
   typename cutlass::gemm::collective::CollectiveBuilder<
     cutlass::arch::Xe20, cutlass::arch::OpClassTensorOp,
-    cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
-    cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
+    cutlass::bfloat16_t, cutlass::layout::RowMajor, 8,  // A
+    cutlass::bfloat16_t, cutlass::layout::RowMajor, 8,  // B
     float,
     cute::Shape<cute::_256, cute::_256, cute::_32>,
     cute::Shape<cute::_1, cute::_1, cute::_1>,
@@ -128,25 +125,24 @@ using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_mainloop =
   >::CollectiveOp;
 
 // Gemm operator cutlass3x_xe11_tensorop_gemm_bf16_128x256_16x0_tn_align2
-using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_base = cutlass::gemm::kernel::GemmUniversal<
+using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_base = cutlass::gemm::kernel::GemmUniversal<
     cute::Shape<int,int,int,int>,
-    cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_mainloop,
-    cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_epilogue,
+    cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_mainloop,
+    cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_epilogue,
     cutlass::gemm::PersistentScheduler>;
 
 // Define named type
-struct cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8 :
-public cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_base { };
+struct cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8 :
+public cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_base { };
 
-
-  using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_device_type = cutlass::gemm::device::GemmUniversalAdapter<cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8>;
+using cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_device_type = cutlass::gemm::device::GemmUniversalAdapter<cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8>;
 
 // When workspace_size is not a nullptr, populates requested workspace_size and returns.
 // Otherwise, computes the Gemm kernel using the given workspace ptr.
 extern "C" {
-PT_EXPORT int sycl_tla_gemm_xe20_bf16(const uint16_t* X, const uint16_t* W, uint16_t* Y, const int M, const int N, const int K, const int B, const int lda, const int ldb, const int ldc, const int ldd, const int X_offset, const int W_offset, const int Y_offset, const uint8_t swizzle, size_t* workspace_size, uint8_t* workspace, sycl::queue* stream) {
+PT_EXPORT int sycl_tla_gemm_xe20_bf16(const cutlass::bfloat16_t* X, const cutlass::bfloat16_t* W, const cutlass::bfloat16_t* Bias, cutlass::bfloat16_t* Y, const int M, const int N, const int K, const int B, const int lda, const int ldb, const int ldc, const int ldd, const int X_offset, const int W_offset, const int Bias_offset, const int Y_offset, const uint8_t swizzle, size_t* workspace_size, uint8_t* workspace, sycl::queue* stream) {
   try {
-  using ElementComputeEpilogue = cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_device_type::ElementAccumulator;
+  using ElementComputeEpilogue = cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_device_type::ElementAccumulator;
   using coord_t = cutlass::gemm::GemmCoord::Index;
   static cutlass::KernelHardwareInfo hw_info;
   if (hw_info.sm_count == 0) {
@@ -154,8 +150,63 @@ PT_EXPORT int sycl_tla_gemm_xe20_bf16(const uint16_t* X, const uint16_t* W, uint
     CUTLASS_TRACE_HOST("Query result for SM count per device: " << hw_info.sm_count);
   }
 
+  cutlass::DeviceAllocation<cutlass::bfloat16_t> block_A;
+  cutlass::DeviceAllocation<cutlass::bfloat16_t> block_B;
+  cutlass::DeviceAllocation<cutlass::bfloat16_t> block_C;
+  cutlass::DeviceAllocation<cutlass::bfloat16_t> block_D;
+
+  if (!workspace_size) {
+    if (!X || !W) {
+      std::cerr << "Input host pointers null!" << std::endl;
+      return -1;
+    }
+    else {
+      block_A.reset(static_cast<std::size_t>(M) * K * B);
+      block_B.reset(static_cast<std::size_t>(K) * N * B);
+      if (!block_A.get() || !block_B.get()) {
+        std::cerr << "Device allocation of inputs failed!" << std::endl;
+        return -1;
+      }
+      compat::wait();
+      compat::memcpy(block_A.get(), (X + X_offset), (M * K * B) * sizeof(cutlass::bfloat16_t));
+      compat::wait();
+      compat::memcpy(block_B.get(), (W + W_offset), (K * N * B) * sizeof(cutlass::bfloat16_t));
+      compat::wait();
+    }
+
+    if (!Bias) {
+      std::cerr << "Bias host pointer null!" << std::endl;
+      return -1;
+    }
+    else {
+      block_C.reset(static_cast<std::size_t>(M) * N * B);
+      if (!block_C.get()) {
+        std::cerr << "Device allocation of bias failed!" << std::endl;
+        return -1;
+      }
+      compat::wait();
+      compat::memcpy(block_C.get(), (Bias + Bias_offset), (M * N * B) * sizeof(cutlass::bfloat16_t));
+      compat::wait();
+    }
+
+    if (!Y) {
+      std::cerr << "Output host pointer null!" << std::endl;
+      return -1;
+    }
+    else {
+      block_D.reset(static_cast<std::size_t>(M) * N * B);
+      if (!block_D.get()) {
+        std::cerr << "Device allocation of output failed!" << std::endl;
+        return -1;
+      }
+      compat::wait();
+      compat::memset(block_D.get(), 0, (M * N * B) * sizeof(cutlass::bfloat16_t));
+      compat::wait();
+    }
+  }
+
   // Initialize GemmUniversal3xInstance arguments using constructor
-  cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_device_type::Arguments arguments{
+  cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_device_type::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,  // GemmUniversalMode mode
     {
       static_cast<coord_t>(M),
@@ -164,28 +215,30 @@ PT_EXPORT int sycl_tla_gemm_xe20_bf16(const uint16_t* X, const uint16_t* W, uint
       static_cast<coord_t>(B)
     }, // ProblemShape problem_shape
     {
-      (cutlass::bfloat16_t*)(X + X_offset),  // ElementA const* ptr_A
-      cute::make_tuple(cute::Int<1>{}, int64_t(lda), int64_t(0)),  // StrideA dA (column-major: stride_m=1, stride_n=lda, batch=0)
-      (cutlass::bfloat16_t*)(W + W_offset),  // ElementB const* ptr_B
-      cute::make_tuple(int64_t(ldb), cute::Int<1>{}, int64_t(0)),  // StrideB dB (column-major: stride_m=ldb, stride_n=1, batch=0)
+      (cutlass::bfloat16_t*)(block_A.get()),  // ElementA const* ptr_A
+      {int64_t(lda), cute::Int<1>{}, int64_t(0)},
+      (cutlass::bfloat16_t*)(block_B.get()),  // ElementB const* ptr_B
+      {cute::Int<1>{}, int64_t(ldb), int64_t(0)},
     },  // MainloopArguments mainloop
 
     // see https://tinyurl.com/4rk89z48
     {
-      {ElementComputeEpilogue(1), ElementComputeEpilogue(0)},  // thread, typename FusionCallbacks::Arguments ( EVT ) or ThreadEpilogueOp::Params (non-EVT )
-      nullptr,  // ElementC const* ptr_C
-      cute::make_tuple(int64_t(0), cute::Int<1>{}, int64_t(0)),  // StrideC dC (row-major: stride_m, stride_n=1, batch=0)
-      (float*)(Y + Y_offset),  // ElementD ptr_D (output is float, not bfloat16)
-      cute::make_tuple(int64_t(ldd), cute::Int<1>{}, int64_t(0)),  // StrideD dD (row-major: stride_m=ldd, stride_n=1, batch=0)
+      {1.f, 1.f},  // thread, typename FusionCallbacks::Arguments ( EVT ) or ThreadEpilogueOp::Params (non-EVT )
+      (cutlass::bfloat16_t*)(block_C.get()),  // ElementC const* ptr_C
+      {cute::Int<1>{}, int64_t(ldc), int64_t(0)},
+      (cutlass::bfloat16_t*)(block_D.get()),  // ElementD const* ptr_D
+      {int64_t(ldd), cute::Int<1>{}, int64_t(0)},
     },  // EpilogueArguments epilogue,
     hw_info
   };
+
   arguments.scheduler.max_swizzle_size = swizzle;
-  cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8_device_type gemm_op;
+  cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8_device_type gemm_op;
   if (workspace_size) {
     *workspace_size = gemm_op.get_workspace_size(arguments);
     return 0;
   }
+
   // check for null pointers after workspace size, since querying workspace size doesn't require valid data pointers
 #ifndef CUTLASS_BACKEND_DISABLE_CHECKS
   {
@@ -209,6 +262,10 @@ PT_EXPORT int sycl_tla_gemm_xe20_bf16(const uint16_t* X, const uint16_t* W, uint
   {
     auto status = gemm_op(stream);
     CUTLASS_CHECK(status);
+
+    compat::wait();
+    compat::memcpy((Y + Y_offset), block_D.get(), (M * N * B) * sizeof(cutlass::bfloat16_t));
+    compat::wait();
   }
   }
   catch (std::exception& e) {
@@ -222,4 +279,4 @@ PT_EXPORT int sycl_tla_gemm_xe20_bf16(const uint16_t* X, const uint16_t* W, uint
 }
 }
 
-// configuration name: cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_nn_align8
+// configuration name: cutlass3x_xe20_tensorop_gemm_bf16_256x256_32x0_tt_align8

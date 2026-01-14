@@ -68,6 +68,7 @@ template <
   typename ScalarType,
   typename ComputeType,
   typename ElementD = ElementC,
+  typename LayoutD = LayoutC,
   typename ConvertOp = NumericConverter<ElementD, ScalarType>,
   typename InnerProductOp = multiply_add<ComputeType>
 >
@@ -80,7 +81,7 @@ void GemmComplex(
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
-  TensorRef<ElementD, LayoutC> tensor_d,
+  TensorRef<ElementD, LayoutD> tensor_d,
   ComputeType initial_accum,
   int batch_count = 1,
   int64_t batch_stride_A = 0,
@@ -91,7 +92,8 @@ void GemmComplex(
   static_assert(
     LayoutA::kRank == 2 &&
     LayoutB::kRank == 2 &&
-    LayoutC::kRank == 2, "Tensors must be of rank 2");
+    LayoutC::kRank == 2 &&
+    LayoutD::kRank == 2, "Tensors must be of rank 2");
 
   // Note: batch is ignored.
   int const M = problem_size.m();
@@ -187,7 +189,8 @@ template <
   typename ElementC,
   typename LayoutC,
   typename ScalarType,
-  typename ElementD = ElementC
+  typename ElementD = ElementC,
+  typename LayoutD = LayoutC
 >
 void GemmComplex(
   gemm::GemmCoord problem_size,
@@ -198,7 +201,7 @@ void GemmComplex(
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
-  TensorRef<ElementD, LayoutC> tensor_d) {
+  TensorRef<ElementD, LayoutD> tensor_d) {
 
   GemmComplex(problem_size, alpha, tensor_a, transform_a, tensor_b, transform_b, beta, tensor_c, tensor_d, ScalarType(0));
 }

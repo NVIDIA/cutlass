@@ -101,7 +101,6 @@ struct CollectiveBuilder<
 
   static_assert(IsGroup == std::is_pointer_v<StrideC>, "Group GEMM should have a pointer to strides");
   static_assert(IsGroup == std::is_pointer_v<StrideD>, "Group GEMM should have a pointer to strides");
-  static_assert(get<1>(std::remove_pointer_t<StrideC>{}) == 1, "Only N-major/row-major layouts for C are supported in the Xe epilogue collective builder");
   static_assert(get<1>(std::remove_pointer_t<StrideD>{}) == 1, "Only N-major/row-major layouts for D are supported in the Xe epilogue collective builder");
 
   // Use default copy operations.

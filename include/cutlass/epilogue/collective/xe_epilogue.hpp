@@ -271,7 +271,19 @@ public:
                                        DefaultEpilogueTile,
                                        EpilogueTile_>;
 
-    using DefaultCopyOpG2R =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
+    // Check if C is in column-major layout or not
+    constexpr bool IsColMajorC = cutlass::gemm::detail::is_major<0, StrideC>();
+    // Actual transpose load supports either 32-bit or 64-bit data element size only
+    static constexpr int CopyBitsCTranspose = cute::max(CopyBitsC, 32);
+    // For sub-32-bit data types, calculate the number of elements packed into 32-bits
+    static constexpr int Sub32BitFactor = CopyBitsCTranspose / CopyBitsC;
+    // Get copy atom operations for non-transposed and transposed load respectively
+    using DefaultCopyOpG2RNonTranspose =  XE_LOAD_2D<CopyBitsC, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{}))>;
+    using DefaultCopyOpG2RTranspose = XE_LOAD_2D_TRANSPOSE<CopyBitsCTranspose, cute::gcd(512 / CopyBitsC, get<1>(EpilogueTile{})), cute::gcd(8 / Sub32BitFactor, get<0>(EpilogueTile{}))>;
+    // Use transpose load if C is in column-major layout
+    // Use non-transpose load for C otherwise
+    using DefaultCopyOpG2R = conditional_t<IsColMajorC, DefaultCopyOpG2RTranspose, DefaultCopyOpG2RNonTranspose>;
+
     using DefaultCopyOpR2G = XE_STORE_2D<CopyBitsD, cute::gcd(8, get<0>(EpilogueTile{})), cute::gcd(512 / CopyBitsD, get<1>(EpilogueTile{}))>;
 
     using ActualGmemTiledCopyC = replace_void_t<CopyOpG2R, DefaultCopyOpG2R>;

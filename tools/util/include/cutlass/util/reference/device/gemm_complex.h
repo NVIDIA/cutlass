@@ -69,6 +69,7 @@ template <
   typename ScalarType,
   typename ComputeType,
   typename ElementD = ElementC,
+  typename LayoutD = LayoutC,
   typename ConvertOp = NumericConverter<ElementD, ScalarType>,
   typename InnerProductOp = multiply_add<ComputeType>,
   int kMblock = 4,
@@ -88,7 +89,7 @@ __global__ void
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
-  TensorRef<ElementD, LayoutC> tensor_d,
+  TensorRef<ElementD, LayoutD> tensor_d,
   ComputeType initial_accum,
   int batch_count = 1,
   int64_t batch_stride_A = 0,
@@ -99,7 +100,8 @@ __global__ void
   static_assert(
     LayoutA::kRank == 2 &&
     LayoutB::kRank == 2 &&
-    LayoutC::kRank == 2, "Tensors must be of rank 2");
+    LayoutC::kRank == 2 &&
+    LayoutD::kRank == 2, "Tensors must be of rank 2");
 
   int const M = problem_size.m();
   int const N = problem_size.n();
@@ -213,6 +215,7 @@ template <
   typename ScalarType,
   typename ComputeType,
   typename ElementD = ElementC,
+  typename LayoutD = LayoutC,
   typename ConvertOp = NumericConverter<ElementD, ScalarType>,
   typename InnerProductOp = multiply_add<ComputeType>
 >
@@ -225,7 +228,7 @@ void GemmComplex(
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
-  TensorRef<ElementD, LayoutC> tensor_d,
+  TensorRef<ElementD, LayoutD> tensor_d,
   ComputeType initial_accum,
   int batch_count = 1,
   int64_t batch_stride_A = 0,
@@ -236,8 +239,9 @@ void GemmComplex(
   static_assert(
     LayoutA::kRank == 2 &&
     LayoutB::kRank == 2 &&
-    LayoutC::kRank == 2, "Tensors must be of rank 2");
- 
+    LayoutC::kRank == 2 &&
+    LayoutD::kRank == 2, "Tensors must be of rank 2");
+
   int const kMblock = 4;
   int const kNblock = 4;
 
@@ -265,6 +269,7 @@ using compat::dim3;
                       ScalarType,
                       ComputeType,
                       ElementD,
+                      LayoutD,
                       ConvertOp,
                       InnerProductOp,
                       kMblock,
@@ -279,6 +284,7 @@ using compat::dim3;
                       ScalarType,
                       ComputeType,
                       ElementD,
+                      LayoutD,
                       ConvertOp,
                       InnerProductOp,
                       decltype(kMblock),
@@ -311,6 +317,7 @@ using compat::dim3;
       ScalarType,
       ComputeType,
       ElementD,
+      LayoutD,
       ConvertOp,
       InnerProductOp,
       kMblock,
@@ -356,6 +363,7 @@ using compat::dim3;
                       ScalarType,
                       ComputeType,
                       ElementD,
+                      LayoutD,
                       ConvertOp,
                       InnerProductOp,
                       kBigMblock,
@@ -370,6 +378,7 @@ using compat::dim3;
                       ScalarType,
                       ComputeType,
                       ElementD,
+                      LayoutD,
                       ConvertOp,
                       InnerProductOp
                     >>(Biggrid, Bigblock, 
@@ -400,6 +409,7 @@ using compat::dim3;
       ScalarType,
       ComputeType,
       ElementD,
+      LayoutD,
       ConvertOp,
       InnerProductOp,
       kBigMblock,
@@ -439,7 +449,8 @@ template <
   typename ElementC,
   typename LayoutC,
   typename ScalarType,
-  typename ElementD = ElementC
+  typename ElementD = ElementC,
+  typename LayoutD = LayoutC
 >
 void GemmComplex(
   gemm::GemmCoord problem_size,
@@ -450,7 +461,7 @@ void GemmComplex(
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
-  TensorRef<ElementD, LayoutC> tensor_d) {
+  TensorRef<ElementD, LayoutD> tensor_d) {
 
   GemmComplex(problem_size, alpha, tensor_a, transform_a, tensor_b, transform_b, beta, tensor_c, tensor_d, ScalarType(0));
 }

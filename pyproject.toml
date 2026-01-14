@@ -19,7 +19,8 @@ dependencies = [
   "numpy",
   "pydot",
   "scipy",
-  "treelib"
+  "treelib",
+  "ml_dtypes"
 ]
 
 [project.urls]

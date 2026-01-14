@@ -36,6 +36,7 @@ Test the generated CUTLASS GEMM kernel (sycl_tla_gemm_xe20_bf16)
 import ctypes
 from ctypes import c_void_p, c_int, c_size_t, c_uint8, c_uint16, POINTER, byref
 import numpy as np
+from ml_dtypes import bfloat16
 import time
 from pathlib import Path
 
@@ -54,15 +55,16 @@ def test_sycl_tla_gemm_xe20_bf16():
     
     # Define function signature
     # int sycl_tla_gemm_xe20_bf16(
-    #   const uint16_t* X, const uint16_t* W, uint16_t* Y,
+    #   const cutlass::bfloat16_t* X, const cutlass::bfloat16_t* W, const cutlass::bfloat16_t* Bias, cutlass::bfloat16_t* Y,
     #   const int M, const int N, const int K, const int B,
     #   const int lda, const int ldb, const int ldc, const int ldd,
-    #   const int X_offset, const int W_offset, const int Y_offset,
+    #   const int X_offset, const int W_offset, const int Bias_offset, const int Y_offset,
     #   const uint8_t swizzle,
     #   size_t* workspace_size, uint8_t* workspace, sycl::queue* stream)
     lib.sycl_tla_gemm_xe20_bf16.argtypes = [
         c_void_p,  # X (input A)
         c_void_p,  # W (input B)
+        c_void_p,  # Bias (input Bias)
         c_void_p,  # Y (output)
         c_int,     # M
         c_int,     # N
@@ -74,16 +76,17 @@ def test_sycl_tla_gemm_xe20_bf16():
         c_int,     # ldd
         c_int,     # X_offset
         c_int,     # W_offset
+        c_int,     # Bias_offset
         c_int,     # Y_offset
         c_uint8,   # swizzle
         POINTER(c_size_t),  # workspace_size
         c_void_p,  # workspace
         c_void_p,  # stream (sycl::queue*)
     ]
-    lib.sycl_tla_gemm_xe20_bf16.restype = c_int
+    lib.sycl_tla_gemm_xe20_bf16.restype = c_uint16
     
     print("="*80)
-    print("Testing sycl_tla_gemm_xe20_bf16 (BF16 256x256x32 GEMM)")
+    print("Testing sycl_tla_gemm_xe20_bf16 (BF16 256x256x32 GEMM With Bias)")
     print("="*80)
     
     # Problem dimensions (matching the kernel tile: 256x256x32)
@@ -91,26 +94,42 @@ def test_sycl_tla_gemm_xe20_bf16():
     N = 256
     K = 32
     B = 1  # batch size
-    
+
+    # # Use small problem shape for debugging
+    # M = 8
+    # N = 8
+    # K = 8
+    # B = 1
+
     print(f"\nProblem size: M={M}, N={N}, K={K}, B={B}")
-    print(f"  A: {M} x {K} (bfloat16, column-major)")
-    print(f"  B: {K} x {N} (bfloat16, column-major)")
-    print(f"  C: {M} x {N} (float, row-major)")
+    print(f"  A: {M} x {K} (bfloat16, row-major)")
+    print(f"  B: {K} x {N} (bfloat16, row-major)")
+    print(f"  C: {M} x {N} (bfloat16, column-major)")
+    print(f"  D: {M} x {N} (bfloat16, row-major)")
     
     # Leading dimensions (column-major for inputs, row-major for output)
-    lda = M   # column-major: leading dimension is M
-    ldb = K   # column-major: leading dimension is K
-    ldc = 0   # not used (ptr_C is nullptr)
-    ldd = N   # row-major: leading dimension is N
+    lda = K   # MxK row-major: leading dimension is K
+    ldb = N   # KXN row-major: leading dimension is N
+    ldc = M   # MXN column-major: leading dimension is M
+    ldd = N   # MXN row-major: leading dimension is N
     
-    print(f"\nLeading dimensions: lda={lda}, ldb={ldb}, ldd={ldd}")
+    print(f"\nLeading dimensions: lda={lda}, ldb={ldb}, ldc={ldc}, ldd={ldd}")
     
-    # Allocate input/output matrices
-    # Note: Using uint16 to represent bfloat16 in memory
-    X = np.random.randint(0, 100, size=(M * K), dtype=np.uint16)
-    W = np.random.randint(0, 100, size=(K * N), dtype=np.uint16)
-    Y = np.zeros(M * N, dtype=np.float32)  # Output is float32
-    
+    # Initialize input/output matrices with random values
+    X = np.random.uniform(low=0, high=100, size=(M * K)).astype(bfloat16)
+    W = np.random.uniform(low=0, high=100, size=(K * N)).astype(bfloat16)
+    Bias = np.random.uniform(low=0, high=100, size=(M * N)).astype(bfloat16)
+    Y = np.zeros(M * N, dtype=bfloat16)
+
+    # # Initialize inputs with known values for debugging
+    # X    = 128 * np.ones(M * K, dtype=bfloat16)
+    # W    =   2 * np.ones(K * N, dtype=bfloat16)
+    # Bias = 100 * np.ones(M * N, dtype=bfloat16)
+    # Bias[ 8] = 111
+    # Bias[16] = 222
+    # Bias[24] = 333
+    # Y = np.zeros(M * N, dtype=bfloat16)
+
     print(f"\nAllocated matrices:")
     print(f"  X: {X.nbytes} bytes")
     print(f"  W: {W.nbytes} bytes")
@@ -122,10 +141,11 @@ def test_sycl_tla_gemm_xe20_bf16():
     result = lib.sycl_tla_gemm_xe20_bf16(
         c_void_p(),  # X (not needed for workspace query)
         c_void_p(),  # W
+        c_void_p(),  # Bias
         c_void_p(),  # Y
         M, N, K, B,
         lda, ldb, ldc, ldd,
-        0, 0, 0,  # offsets
+        0, 0, 0, 0,  # offsets
         1,  # swizzle
         byref(workspace_size),
         c_void_p(),  # workspace
@@ -151,20 +171,21 @@ def test_sycl_tla_gemm_xe20_bf16():
     
     X_ptr = X.ctypes.data_as(c_void_p)
     W_ptr = W.ctypes.data_as(c_void_p)
+    Bias_ptr = Bias.ctypes.data_as(c_void_p)
     Y_ptr = Y.ctypes.data_as(c_void_p)
-    
+
     # Warmup run
     result = lib.sycl_tla_gemm_xe20_bf16(
-        X_ptr, W_ptr, Y_ptr,
+        X_ptr, W_ptr, Bias_ptr, Y_ptr,
         M, N, K, B,
         lda, ldb, ldc, ldd,
-        0, 0, 0,  # offsets
+        0, 0, 0, 0,  # offsets
         1,  # swizzle
         None,  # workspace_size (None = execute mode, not query)
         workspace_ptr,
         c_void_p(),  # stream (NULL = use default)
     )
-    
+
     if result != 0:
         print(f"   ✗ GEMM execution failed with code {result}")
         return
@@ -179,10 +200,10 @@ def test_sycl_tla_gemm_xe20_bf16():
     for i in range(num_runs):
         start = time.time()
         result = lib.sycl_tla_gemm_xe20_bf16(
-            X_ptr, W_ptr, Y_ptr,
+            X_ptr, W_ptr, Bias_ptr, Y_ptr,
             M, N, K, B,
             lda, ldb, ldc, ldd,
-            0, 0, 0,
+            0, 0, 0, 0,
             1,
             None,  # workspace_size (None = execute mode)
             workspace_ptr,
@@ -227,7 +248,7 @@ def test_sycl_tla_gemm_xe20_bf16():
     non_zero = np.count_nonzero(Y)
     print(f"\nOutput sanity check:")
     print(f"  Non-zero elements: {non_zero}/{Y.size}")
-    print(f"  Output range: [{Y.min():.3f}, {Y.max():.3f}]")
+    print(f"  Output range: [{Y.min()}, {Y.max()}]")
     
     return avg_gflops
 

@@ -19,7 +19,7 @@ examples/
 ├── 00_bmg_gemm/                     # Intel GPU examples
 ├── 01_bmg_gemm_with_collective_builder/
 ├── ...
-├── 10_bmg_grouped_gemm_mixed_dtype/
+├── 13_bmg_gemm_bias/
 ├── cute/                            # CuTe tutorial examples
 │   └── tutorial/                    
 ├── generics/                        # Device-agnostic SYCL examples
@@ -76,6 +76,10 @@ The following examples are optimized for Intel GPU architectures using SYCL:
 * [10_bmg_grouped_gemm_mixed_dtype](10_bmg_grouped_gemm_mixed_dtype/)
 
     Mixed precision Grouped GEMM operations on Intel PVC/BMG
+
+* [13_bmg_gemm_bias](13_bmg_gemm_bias/)
+
+    Examples for testing simple GEMM with bias addition on Intel PVC/BMG
 
 ## Device-Agnostic SYCL Examples
 
