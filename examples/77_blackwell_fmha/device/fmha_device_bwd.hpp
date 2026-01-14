@@ -170,8 +170,10 @@ private:
     auto [H_R, H_K] = H;
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
-    auto stride_sum_OdO = make_stride(_1{}, make_stride(make_stride(Q, Q*H_R), B == 1 ? 0 : Q*H_R*H_K));
-    auto stride_scaled_lse = make_stride(_1{}, make_stride(make_stride(Q, Q*H_R), B == 1 ? 0 : Q*H_R*H_K));
+    // Round up LSE and SumOdO temporaries to tile-size multiples for cp.async.bulk
+    int Q_padded = cutlass::round_up(Q, 128);  // Tile size multiple padding
+    auto stride_sum_OdO = make_stride(_1{}, make_stride(make_stride(Q_padded, Q_padded*H_R), B == 1 ? 0 : Q_padded*H_R*H_K));
+    auto stride_scaled_lse = make_stride(_1{}, make_stride(make_stride(Q_padded, Q_padded*H_R), B == 1 ? 0 : Q_padded*H_R*H_K));
     auto log2_e = log2f(expf(1.0f));
     return typename OperationSumOdO::Arguments {
       args.problem_shape,
@@ -258,11 +260,13 @@ public:
     auto [H, B] = product_each(HB);
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
+    // Round up LSE and SumOdO temporaries to tile-size multiples for cp.async.bulk
+    int Q_padded = cutlass::round_up(Q, 128);  // Tile size multiple padding
     size_t workspace_bytes = 0;
-    // OdO vector
-    workspace_bytes += B*H*Q * sizeof(ElementAccumulator);
-    // scaled LSE vector
-    workspace_bytes += B*H*Q * sizeof(ElementAccumulator);
+    // OdO vector - with tile-size multiple padding
+    workspace_bytes += B*H*Q_padded * sizeof(ElementAccumulator);
+    // scaled LSE vector - with tile-size multiple padding
+    workspace_bytes += B*H*Q_padded * sizeof(ElementAccumulator);
     // FP32 versions of outputs that are churned (start off with Q only)
     workspace_bytes += B*H*Q*D * sizeof(ElementAccumulator);
     return workspace_bytes;
@@ -307,11 +311,13 @@ public:
     auto [H, B] = product_each(HB);
     D = cutlass::round_up(D, 8);  // Alignment
     int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
+    // Round up LSE and SumOdO temporaries to tile-size multiples for cp.async.bulk
+    int Q_padded = cutlass::round_up(Q, 128);  // Tile size multiple padding
     char* workspace_chr = reinterpret_cast<char*>(workspace);
     ElementAccumulator* sum_OdO = reinterpret_cast<ElementAccumulator*>(workspace_chr);
-    workspace_chr += B*H*Q * sizeof(ElementAccumulator);
+    workspace_chr += B*H*Q_padded * sizeof(ElementAccumulator);
     ElementAccumulator* scaled_lse = reinterpret_cast<ElementAccumulator*>(workspace_chr);
-    workspace_chr += B*H*Q * sizeof(ElementAccumulator);
+    workspace_chr += B*H*Q_padded * sizeof(ElementAccumulator);
     ElementAccumulator* dQ_acc = reinterpret_cast<ElementAccumulator*>(workspace_chr);
     return initialize_split(args, dQ_acc, sum_OdO, scaled_lse, stream);
   }
