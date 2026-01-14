@@ -1,4 +1,4 @@
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,7 @@ set(TEST_EPILOGUE --alpha=0.5 --beta=0.5 --iterations=0)                        
 set(TEST_EPILOGUE_LARGE_GROUP --alpha=1.5 --beta=2.0 --groups=50 --iterations=0)    # Random problem sizes
 
 set(TEST_EPILOGUE_OP --beta=0.5 --iterations=1)                                     # Random problem sizes
-set(TEST_EPILOGUE_OP_LARGE_GROUP --alpha=1.5 --iterations=1)                        # Random problem sizes
+set(TEST_EPILOGUE_OP_LARGE_GROUP --alpha=1.5  --groups=50 --iterations=1)           # Random problem sizes
 
 set(TEST_FIXED --m=2048 --n=5120 --k=8192 --iterations=0)                           # Fixed problem sizes
 set(TEST_FIXED_LARGE_GROUP --m=2048 --n=512 --k=512 --groups=51 --iterations=0)     # Fixed problem sizes
@@ -49,7 +49,7 @@ set(TEST_SMALL_LARGE_GROUP --m=128 --n=128 --groups=50 --iterations=0)          
 set(TEST_RANDOM_PERF --iterations=10)                                               # Random problem sizes
 set(TEST_RANDOM_PERF_LARGE_GROUP --groups=50 --iterations=10)                       # Random problem sizes
 
-if(CUTLASS_NVCC_ARCHS STREQUAL "100a")
+if("100a" IN_LIST CUTLASS_NVCC_ARCHS)
 cutlass_example_add_executable(
   75_blackwell_grouped_gemm
   75_blackwell_grouped_gemm.cu

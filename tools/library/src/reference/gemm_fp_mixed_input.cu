@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,8 +55,26 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int8_t,
+    half_t,
+    void,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     uint8_t,
     half_t,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    uint8_t,
+    half_t,
+    void,
+    float,
     float,
     float
   >(manifest);
@@ -69,6 +87,16 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int8_t,
+    half_t,
+    void,
+    float,
+    float,
+    half_t
+  >(manifest);
+
+
+  make_gemm_real_canonical_layouts<
     uint8_t,
     half_t,
     half_t,
@@ -76,7 +104,25 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    uint8_t,
+    half_t,
+    void,
+    float,
+    float,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     int8_t,
+    half_t,
+    half_t,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    half_t,
+    void,
     half_t,
     half_t,
     half_t
@@ -90,6 +136,15 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    uint8_t,
+    half_t,
+    void,
+    half_t,
+    half_t,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     half_t,
     int8_t,
     float,
@@ -98,7 +153,25 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     half_t,
+    int8_t,
+    void,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
     uint8_t,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    uint8_t,
+    void,
+    float,
     float,
     float
   >(manifest);
@@ -110,9 +183,28 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
     half_t
   >(manifest);
 
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    int8_t,
+    void,
+    half_t,
+    half_t,
+    half_t
+  >(manifest);
+
   make_gemm_real_canonical_layouts<
     half_t,
     uint8_t,
+    half_t,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    uint8_t,
+    void,
+    half_t,
     half_t,
     half_t
   >(manifest);
@@ -126,9 +218,28 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     half_t,
+    int8_t,
+    void,
+    float,
+    float,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    half_t,
     uint8_t,
     half_t,
     float 
+  >(manifest);
+
+
+  make_gemm_real_canonical_layouts<
+    half_t,
+    uint8_t,
+    void,
+    float,
+    float,
+    half_t
   >(manifest);
 
   // bfloat16_t mixed with 8-bit integer input
@@ -140,8 +251,26 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int8_t,
+    bfloat16_t,
+    void,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     uint8_t,
     bfloat16_t,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    uint8_t,
+    bfloat16_t,
+    void,
+    float,
     float,
     float
   >(manifest);
@@ -154,6 +283,15 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int8_t,
+    bfloat16_t,
+    void,
+    float,
+    float,
+    bfloat16_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     uint8_t,
     bfloat16_t,
     bfloat16_t,
@@ -161,8 +299,26 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    uint8_t,
+    bfloat16_t,
+    void,
+    float,
+    float,
+    bfloat16_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     bfloat16_t,
     int8_t,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    int8_t,
+    void,
+    float,
     float,
     float
   >(manifest);
@@ -176,6 +332,15 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     bfloat16_t,
+    uint8_t,
+    void,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
     int8_t,
     bfloat16_t,
     float
@@ -183,9 +348,27 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
 
   make_gemm_real_canonical_layouts<
     bfloat16_t,
+    int8_t,
+    void,
+    float,
+    float,
+    bfloat16_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
     uint8_t,
     bfloat16_t,
     float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    uint8_t,
+    void,
+    float,
+    float,
+    bfloat16_t
   >(manifest);
 }
 

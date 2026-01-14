@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -237,6 +237,7 @@ sm100_make_trivial_tiled_mma_blockwise() {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementA,
   class GmemLayoutATagPair,
   int AlignmentA,
@@ -250,7 +251,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     ElementA,
     GmemLayoutATagPair,
@@ -264,6 +265,8 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       not cute::is_tuple_v<ElementA>   && not cute::is_tuple_v<ElementB> &&
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
       cute::is_tuple_v<GmemLayoutATagPair>   && cute::is_tuple_v<GmemLayoutBTagPair> &&
@@ -369,7 +372,9 @@ struct CollectiveBuilder<
       IsArrayOfPointersGemm
     >::KernelSmemCarveout;
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
   using MainloopABPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
@@ -399,7 +404,7 @@ struct CollectiveBuilder<
   using ScaleTileShape = cute::Shape<BlockTileScale_M, BlockTileScale_N, BlockTileScale_K>;
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockwise<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, 
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, 
       ElementAccumulator, ScaleTileShape, SmemTileShape, MainloopABPipelineStorage,
       MainloopSFPipelineStorage>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, B, and scales.");

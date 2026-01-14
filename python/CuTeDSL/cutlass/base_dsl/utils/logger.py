@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -76,6 +76,24 @@ def setup_log(
         logger.addHandler(file_handler)
 
     return logger
+
+
+def _init_logger_with_client_name(prefix):
+    from ..env_manager import LogEnvironmentManager
+
+    log_env = LogEnvironmentManager(prefix)
+
+    if log_env.log_to_console == False and log_env.jit_time_profiling:
+        log_env.log_to_console = True
+        log_env.log_level = 20  # info level
+
+    setup_log(
+        prefix,
+        log_env.log_to_console,
+        log_env.log_to_file,
+        f"{prefix}.log",
+        log_env.log_level,
+    )
 
 
 logger = setup_log("generic")

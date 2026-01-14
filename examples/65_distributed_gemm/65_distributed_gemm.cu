@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -132,7 +132,7 @@ using namespace cute;
 using TP = _8;
 static constexpr int TP_ = TP{};
 
-#if defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && \
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) && \
   (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 // Distributed GEMM tiling/sharding schedule
@@ -252,7 +252,7 @@ HostTensorB tensor_B_arr[TP_];
 HostTensorD tensor_C_arr[TP_];
 HostTensorD tensor_D_arr[TP_];
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) &&
+#endif // (defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) &&
        // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -345,8 +345,7 @@ struct Result {
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && \
-  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -403,9 +402,9 @@ void initialize(const Options &options) {
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, shape_C);
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, shape_D);
 
-  auto a_coord = cutlass::make_Coord(size(shape_A), 1);
-  auto b_coord = cutlass::make_Coord(size(shape_B), 1);
-  auto c_coord = cutlass::make_Coord(size(shape_C), 1);
+  auto a_coord = cutlass::make_Coord(size<2>(shape_A)*size<0>(shape_A), size<1>(shape_A));
+  auto b_coord = cutlass::make_Coord(size<2>(shape_B)*size<0>(shape_B), size<1>(shape_B));
+  auto c_coord = cutlass::make_Coord(size<2>(shape_C)*size<0>(shape_C), size<1>(shape_C));
 
   tensor_A.resize(a_coord);
   tensor_B.resize(b_coord);
@@ -650,7 +649,7 @@ int run(Options &options) {
     arguments_[device_idx] = dist_gemm_args_from_options(options, device_idx, stream_arr[device_idx]);
 
     // Using the arguments, query for extra workspace required for matrix multiplication computation
-    size_t workspace_size = DistGemm::get_workspace_size(arguments_[device_idx]);
+    size_t workspace_size = DistGemm::get_workspace_size(arguments_, device_idx);
     size_t exclusive_workspace_size = DistGemm::get_exclusive_workspace_size();
 
     workspace_arr[device_idx] = cutlass::device_memory::allocation<uint8_t>(workspace_size);
@@ -804,8 +803,7 @@ int run(Options &options) {
   return 0;
 }
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) &&
-       // (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
+#endif //(__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -859,7 +857,7 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if (defined(CUTLASS_ARCH_MMA_SM90A_ENABLED) && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6)))
+#if ((__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6)))
   run(options);
 #else
     std::cerr

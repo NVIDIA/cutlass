@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,7 +39,7 @@
 
   Usage:
   $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_regular 
-  --m=28672 --n=4 --k=4096 --l=8
+  --m=7168 --n=128 --k=512 --l=8
 
 */
 
@@ -320,19 +320,38 @@ struct ExampleRunner {
     initialize_block(block_C, seed + 2021);
   }
 
+
+  /// Populates a Gemm::Arguments structure from the given commandline options
+  typename Gemm::Arguments args_from_options(ProblemShapeType problem_size, cutlass::KernelHardwareInfo const& hw_info)
+  {
+    if constexpr (std::is_same_v<MainloopScheduleType, cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100>){
+      return typename Gemm::Arguments {
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        {block_A.get(), block_B.get()},
+        {{}, // epilogue.thread
+         block_C.get(), stride_C, block_D.get(), stride_D},
+        hw_info
+      };
+    } 
+    else {
+      return typename Gemm::Arguments {
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        {block_A.get(), stride_A, block_B.get(), stride_B},
+        {{}, // epilogue.thread
+         block_C.get(), stride_C, block_D.get(), stride_D},
+        hw_info
+      };
+    }
+  }
+
   bool run(Options const& options, cutlass::KernelHardwareInfo const& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
 
-    typename Gemm::Arguments arguments{
-      cutlass::gemm::GemmUniversalMode::kGemm,
-      problem_size,
-      {block_A.get(), stride_A, block_B.get(), stride_B},
-      {{}, // epilogue.thread
-       block_C.get(), stride_C, block_D.get(), stride_D},
-      hw_info
-    };
+    typename Gemm::Arguments arguments = args_from_options(problem_size, hw_info);
 
     // arguments.scheduler.max_swizzle_size = options.swizzle;
     
@@ -471,7 +490,7 @@ int main(int argc, char const **args) {
   runner_tma.run(options, hw_info);
 
   std::cout << "Running kernel with CPASYNC load:" << std::endl;
-  ExampleRunner<cutlass::gemm::KernelWarpSpecialized1SmSm100> runner_cpasync;
+  ExampleRunner runner_cpasync;
   runner_cpasync.run(options, hw_info);
 
   std::cout << "Running kernel with mixed TMA+CPASYNC load:" << std::endl;

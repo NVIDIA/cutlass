@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -315,6 +315,12 @@ SM100_MMA_SHAPES_MXF8F6F4_DENSE_1SM = {
 }
 
 
+SM100_MMA_SHAPES_MXF8F6F4_SPARSE_1SM = {
+    (128, 128, 32): 0,
+    (128, 192, 32): 1,
+    (128, 256, 32): 0,
+}
+
 SM100_MMA_SHAPES_MXF8F6F4_DENSE_2SM = {
     (256,  64, 32): 1,
     (256, 128, 32): 0,
@@ -324,6 +330,15 @@ SM100_MMA_SHAPES_MXF8F6F4_DENSE_2SM = {
 
 }
 
+
+SM100_MMA_SHAPES_MXF8F6F4_SPARSE_2SM = {
+    (256, 128, 32): 0,
+    (256, 192, 32): 1,
+    (256, 256, 32): 0,
+
+}
+
+
 # MXF4NVF4
 SM100_MMA_SHAPES_MXF4NVF4_DENSE_1SM = {
     (128,  64, 64): 1,
@@ -332,11 +347,26 @@ SM100_MMA_SHAPES_MXF4NVF4_DENSE_1SM = {
     (128, 256, 64): 0,
 }
 
+
+SM100_MMA_SHAPES_MXF4NVF4_SPARSE_1SM = {
+    (128, 128, 64): 0,
+    (128, 256, 64): 0,
+}
+
+
 SM100_MMA_SHAPES_MXF4NVF4_DENSE_2SM = {
     # Multiples of 16 for N
     (256,  64, 64): 1,
     (256, 128, 64): 0,
     (256, 192, 64): 1,
+    (256, 256, 64): 0,
+
+}
+
+
+SM100_MMA_SHAPES_MXF4NVF4_SPARSE_2SM = {
+    # Multiples of 16 for N
+    (256, 128, 64): 0,
     (256, 256, 64): 0,
 
 }

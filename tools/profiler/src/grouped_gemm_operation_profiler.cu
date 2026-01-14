@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -177,7 +177,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
   library::GroupedGemmDescription const& operation_desc,
   ProblemSpace const& problem_space,
   ProblemSpace::Problem const& problem) {
-
+  bool is_moe = operation_desc.is_moe;
   this->mode = library::GemmUniversalMode::kGrouped;
 
   std::bitset<3> args_exist;
@@ -189,7 +189,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
                   arg_as_int(k, "k", problem_space, problem);
   std::string problem_file;
   args_exist[2] = arg_as_string(problem_file, "problem-sizes-file", problem_space, problem);
-
+  int max_m = 0, max_n = 0, max_k = 0;
   if (args_exist.count() == 0) {
     int num_groups = 8;
     problem_sizes.resize(num_groups);
@@ -204,6 +204,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
       problem_sizes[i] = {m, n, k};
       problem_sizes_3x[i] = {m, n, k};
     }
+    max_problem_size_3x = {m0 * num_groups, n0 * num_groups, k0 * num_groups};
   }
   else if (args_exist.count() > 1) {
     std::cerr
@@ -220,9 +221,13 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
       auto m = problems[i][0];
       auto n = problems[i][1];
       auto k = problems[i][2];
+      max_m = std::max(max_m, m);
+      max_n = std::max(max_n, n);
+      max_k = std::max(max_k, k);
       problem_sizes[i] = {m, n, k};
       problem_sizes_3x[i] = {m, n, k};
     }
+    max_problem_size_3x = {max_m, max_n, max_k};
   }
   // m, n, k path
   else if (args_exist[1]) {
@@ -237,6 +242,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
       problem_sizes[i] = {m, n, k};
       problem_sizes_3x[i] = {m, n, k};
     }
+    max_problem_size_3x = {m, n, k};
   }
   // --problem-sizes-file path
   else if (args_exist[2]) {
@@ -247,7 +253,6 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
     // clear the problem sizes and 3x problem sizes from previous operation
     problem_sizes.clear();
     problem_sizes_3x.clear();
-
     for (std::string line; std::getline(file, line);) {
       std::istringstream iss(line);
 
@@ -258,14 +263,27 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
       if (iss >> m >> sep1 >> n >> sep2 >> k && sep1 == 'x' && sep2 == 'x' && !(iss >> remaining)) {
         problem_sizes.emplace_back(m, n, k);
         problem_sizes_3x.emplace_back(m, n, k);
+        max_m = std::max(max_m, m);
+        max_n = std::max(max_n, n);
+        max_k = std::max(max_k, k);
       }
       else {
         throw std::runtime_error(
           "Invalid format in line: " + line + ". Each line in file expected to be 'mxnxk'.");
       }
     }
+    max_problem_size_3x = {max_m, max_n, max_k};
   }
-
+  if (is_moe) {
+    for(size_t group_idx = 0; group_idx < problem_sizes.size(); group_idx++) { 
+      if (problem_sizes[group_idx].m() != max_problem_size_3x[0]   ||
+          problem_sizes[group_idx].k() != max_problem_size_3x[2]) {
+        std::cerr << "Problem size M:"<< problem_sizes[group_idx].m() << "K:" << problem_sizes[group_idx].k() << " for group " << group_idx << "should be equal to "
+                  << "Max problem size M:" << max_problem_size_3x[0] << "K:" << max_problem_size_3x[2] << " in MoE Grouped GEMM" << std::endl;
+      return Status::kErrorInvalidProblem;
+      }
+    }
+  }
   if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
     // default value
     this->cluster_m = std::string(operation_desc.gemm.name).find("_2sm") != std::string::npos ? 2 : 1;
@@ -382,6 +400,9 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
                              operation_desc.gemm.C.layout,
                              {int(this->m(group_idx)), int(this->n(group_idx))})
                              .front();
+    this->max_lda = std::max(this->max_lda, this->lda[group_idx]);
+    this->max_ldb = std::max(this->max_ldb, this->ldb[group_idx]);
+    this->max_ldc = std::max(this->max_ldc, this->ldc[group_idx]);
   }
 
   // instantiation for exploration profiling
@@ -609,7 +630,7 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
     is_block_scaled = false;
     gemm_workspace_.block_scales = std::nullopt;
   }
-
+  is_moe = operation_desc.is_moe;
   if (operation_desc.gemm.gemm_kind != library::GemmKind::kGrouped) {
     return Status::kErrorInvalidProblem;
   }
@@ -761,232 +782,561 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
     gemm_workspace_.reference_ptr_array_host.resize(num_groups);
 
     int seed_shift = 0;
-    for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
-      auto group_str = std::to_string(group_idx);
-      gemm_workspace_.A_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+    if (not operation_desc.is_moe) { 
+      for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
+        auto group_str = std::to_string(group_idx);
+        gemm_workspace_.A_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+          options,
+          "A_" + group_str,
+          operation_desc.gemm.A.element,
+          operation_desc.gemm.A.layout,
+          {int(problem_.m(group_idx)), int(problem_.k(group_idx))},
+          {int(problem_.lda[group_idx])},
+          gemm_workspace_.problem_count,
+          seed_shift++,
+          0);
+        gemm_workspace_.B_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+          options,
+          "B_" + group_str,
+          operation_desc.gemm.B.element,
+          operation_desc.gemm.B.layout,
+          {int(problem_.k(group_idx)), int(problem_.n(group_idx))},
+          {int(problem_.ldb[group_idx])},
+          gemm_workspace_.problem_count,
+          seed_shift++,
+          0);
+        gemm_workspace_.C_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+          options,
+          "C_" + group_str,
+          operation_desc.gemm.C.element,
+          operation_desc.gemm.C.layout,
+          {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
+          {int(problem_.ldc[group_idx])},
+          gemm_workspace_.problem_count,
+          seed_shift++,
+          0);
+        gemm_workspace_.D_ptr_array_host[group_idx] = device_context.allocate_tensor(
+          options,
+          "D_" + group_str,
+          operation_desc.gemm.D.element,
+          operation_desc.gemm.D.layout,
+          {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
+          {int(problem_.ldc[group_idx])},
+          gemm_workspace_.problem_count,
+          0);
+
+        gemm_workspace_.reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
+          options,
+          "Reference_" + group_str,
+          operation_desc.gemm.D.element,
+          operation_desc.gemm.D.layout,
+          {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
+          {int(problem_.ldc[group_idx])},
+          1,
+          0);
+
+        if (is_block_scaled) {
+          auto const block_scale_desc = operation_desc.block_scales.value();
+          auto& block_scale_ws = gemm_workspace_.block_scales.value();
+          int sfa_m = round_up(int(problem_.m(group_idx)), 128);
+          int sfb_n = round_up(int(problem_.n(group_idx)), 128);
+          int sfa_sfb_k =
+            round_up(ceil_div(int(problem_.k(group_idx)), block_scale_desc.SFKVecSize), 4);
+
+          int sfd_m =
+            block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
+              ? sfa_m
+              : round_up(ceil_div(int(problem_.m(group_idx)), block_scale_desc.EpilogueSFVecSize), 4);
+          int sfd_n =
+            block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
+              ? round_up(ceil_div(int(problem_.n(group_idx)), block_scale_desc.EpilogueSFVecSize), 4)
+              : sfb_n;
+
+          block_scale_ws.SFA_ptr_array_host[group_idx] =
+            device_context.allocate_and_initialize_tensor(
+              options,
+              "SFA",
+              block_scale_desc.SFA.element,
+              block_scale_desc.SFA.layout,
+              {sfa_m, sfa_sfb_k},
+              {sfa_sfb_k},
+              gemm_workspace_.problem_count,
+              seed_shift++,
+              0);
+
+          block_scale_ws.SFB_ptr_array_host[group_idx] =
+            device_context.allocate_and_initialize_tensor(
+              options,
+              "SFB",
+              block_scale_desc.SFB.element,
+              block_scale_desc.SFB.layout,
+              {sfb_n, sfa_sfb_k},
+              {sfa_sfb_k},
+              gemm_workspace_.problem_count,
+              seed_shift++,
+              0);
+
+          block_scale_ws.SFD_ptr_array_host[group_idx] = device_context.allocate_tensor(
+            options,
+            "SFD",
+            block_scale_desc.SFD.element,
+            block_scale_desc.SFD.layout,
+            {sfd_m, sfd_n},
+            {sfd_n},
+            gemm_workspace_.problem_count,
+            0);
+
+          block_scale_ws.SFD_reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
+            options,
+            "Reference_SFD",
+            block_scale_desc.SFD.element,
+            block_scale_desc.SFD.layout,
+            {sfd_m, sfd_n},
+            {sfd_n},
+            gemm_workspace_.problem_count,
+            0);
+
+          // ScaleFactor tensor results may have some holes and will not be touched by the kernel.
+          // If we randomly fill the two tensors, these holes may encounter refcheck errors.
+          if (block_scale_ws.SFD_ptr_array_host[group_idx]->type() != library::NumericTypeID::kVoid) {
+            block_scale_ws.SFD_reference_ptr_array_host[group_idx]->fill_device(0);
+            block_scale_ws.SFD_ptr_array_host[group_idx]->fill_device(0);
+          }
+        }
+        else if (is_blockwise) {
+          auto const block_scale_desc = operation_desc.block_scales.value();
+          auto& block_scale_ws = gemm_workspace_.block_scales.value();
+          int sfa_m     = ceil_div(int(problem_.m(group_idx)), block_scale_desc.SFMVecSize);
+          int sfb_n     = ceil_div(int(problem_.n(group_idx)), block_scale_desc.SFNVecSize);
+          int sfa_sfb_k = ceil_div(int(problem_.k(group_idx)), block_scale_desc.SFKVecSize);
+
+          block_scale_ws.SFA_ptr_array_host[group_idx] =
+            device_context.allocate_and_initialize_tensor(
+              options,
+              "SFA_" + std::to_string(group_idx),
+              block_scale_desc.SFA.element,
+              block_scale_desc.SFA.layout,
+              {sfa_m, sfa_sfb_k},
+              {sfa_m},
+              gemm_workspace_.problem_count,
+              seed_shift++,
+              0);
+
+          block_scale_ws.SFB_ptr_array_host[group_idx] =
+            device_context.allocate_and_initialize_tensor(
+              options,
+              "SFB_" + std::to_string(group_idx),
+              block_scale_desc.SFB.element,
+              block_scale_desc.SFB.layout,
+              {sfa_sfb_k, sfb_n},
+              {sfb_n},
+              gemm_workspace_.problem_count,
+              seed_shift++,
+              0);
+        }
+      }
+
+      // takes the allocated tensors and initializes an array of pointers per problem in the workspace
+      auto create_dev_ptr_array_all_workspace = [&](
+                                                  std::vector<DeviceAllocation*>& dev_ptr_arrays,
+                                                  std::vector<DeviceAllocation*> const& input,
+                                                  std::string const& id) {
+        auto num_workspaces = gemm_workspace_.problem_count;
+        dev_ptr_arrays.resize(num_workspaces);
+        // note "problem_count" here refers to input/output count for L2 cycling
+        for (int i = 0; i < gemm_workspace_.problem_count; i++) {
+          std::string name = id + "_ptr_array_workspace" + std::to_string(i);
+          dev_ptr_arrays[i] =
+            device_context.allocate_block(options, name, library::NumericTypeID::kU64, num_groups, 0);
+          std::vector<void*> group_ptrs(num_groups);
+          for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
+            group_ptrs[group_idx] = input[group_idx]->batch_data(i);
+          }
+          dev_ptr_arrays[i]->copy_from_host(group_ptrs.data());
+        }
+      };
+      create_dev_ptr_array_all_workspace(
+        gemm_workspace_.A_ptr_array_device,
+        gemm_workspace_.A_ptr_array_host,
+        "A");
+      create_dev_ptr_array_all_workspace(
+        gemm_workspace_.B_ptr_array_device,
+        gemm_workspace_.B_ptr_array_host,
+        "B");
+      create_dev_ptr_array_all_workspace(
+        gemm_workspace_.C_ptr_array_device,
+        gemm_workspace_.C_ptr_array_host,
+        "C");
+      create_dev_ptr_array_all_workspace(
+        gemm_workspace_.D_ptr_array_device,
+        gemm_workspace_.D_ptr_array_host,
+        "D");
+
+      if (is_block_scaled) {
+        auto& block_scale_ws = gemm_workspace_.block_scales.value();
+        create_dev_ptr_array_all_workspace(
+          block_scale_ws.SFA_ptr_array_device,
+          block_scale_ws.SFA_ptr_array_host,
+          "SFA");
+        create_dev_ptr_array_all_workspace(
+          block_scale_ws.SFB_ptr_array_device,
+          block_scale_ws.SFB_ptr_array_host,
+          "SFB");
+        create_dev_ptr_array_all_workspace(
+          block_scale_ws.SFD_ptr_array_device,
+          block_scale_ws.SFD_ptr_array_host,
+          "SFD");
+
+        block_scale_ws.norm_constant = device_context.allocate_and_initialize_tensor(
+          options,
+          "norm_constant",
+          operation_desc.gemm.element_epilogue,
+          operation_desc.gemm.A.layout, // copied, but should this be D layout?
+          {1, 1},
+          {1},
+          1,
+          seed_shift++,
+          0 // device_index
+        );
+      }
+      else if (is_blockwise) {
+        auto& block_scale_ws = gemm_workspace_.block_scales.value();
+        create_dev_ptr_array_all_workspace(
+          block_scale_ws.SFA_ptr_array_device,
+          block_scale_ws.SFA_ptr_array_host,
+          "SFA");
+        create_dev_ptr_array_all_workspace(
+          block_scale_ws.SFB_ptr_array_device,
+          block_scale_ws.SFB_ptr_array_host,
+          "SFB");
+      }
+    } else {
+      int max_m = problem_.max_problem_size_3x[0];
+      int max_n = problem_.max_problem_size_3x[1];
+      int max_k = problem_.max_problem_size_3x[2];
+      // allocate the block tensors
+      DeviceAllocation* block_A;
+      DeviceAllocation* block_B;
+      DeviceAllocation* block_C;
+      DeviceAllocation* block_D;
+      DeviceAllocation* block_ref_D;
+      DeviceAllocation* block_ref_SFD;
+      DeviceAllocation* block_SFA;
+      DeviceAllocation* block_SFB;
+      DeviceAllocation* block_SFD;
+
+      gemm_workspace_.tokens_per_expert_host.resize(num_groups);
+      gemm_workspace_.tokens_per_expert_device = device_context.allocate_block(
         options,
-        "A_" + group_str,
+        "tokens_per_expert",
+        library::NumericTypeID::kU32,
+        num_groups,
+        0);
+      block_A = device_context.allocate_and_initialize_tensor(
+        options,
+        "block_A",
         operation_desc.gemm.A.element,
         operation_desc.gemm.A.layout,
-        {int(problem_.m(group_idx)), int(problem_.k(group_idx))},
-        {int(problem_.lda[group_idx])},
-        gemm_workspace_.problem_count,
+        {max_m, max_k},
+        {int(problem_.max_lda)},
+        gemm_workspace_.problem_count * num_groups,
         seed_shift++,
         0);
-      gemm_workspace_.B_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+      block_B = device_context.allocate_and_initialize_tensor(
         options,
-        "B_" + group_str,
+        "block_B",
         operation_desc.gemm.B.element,
         operation_desc.gemm.B.layout,
-        {int(problem_.k(group_idx)), int(problem_.n(group_idx))},
-        {int(problem_.ldb[group_idx])},
-        gemm_workspace_.problem_count,
+        {max_k, max_n},
+        {int(problem_.max_ldb)},
+        gemm_workspace_.problem_count * num_groups,
         seed_shift++,
         0);
-      gemm_workspace_.C_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
+      block_C = device_context.allocate_and_initialize_tensor(
         options,
-        "C_" + group_str,
+        "block_C",
         operation_desc.gemm.C.element,
         operation_desc.gemm.C.layout,
-        {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
-        {int(problem_.ldc[group_idx])},
-        gemm_workspace_.problem_count,
+        {max_m, max_n},
+        {int(problem_.max_ldc)},
+        gemm_workspace_.problem_count * num_groups,
         seed_shift++,
         0);
-      gemm_workspace_.D_ptr_array_host[group_idx] = device_context.allocate_tensor(
+      block_D = device_context.allocate_tensor(
         options,
-        "D_" + group_str,
+        "block_D",
         operation_desc.gemm.D.element,
         operation_desc.gemm.D.layout,
-        {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
-        {int(problem_.ldc[group_idx])},
-        gemm_workspace_.problem_count,
+        {max_m, max_n},
+        {int(problem_.max_ldc)},
+        gemm_workspace_.problem_count * num_groups,
+        0);
+      block_ref_D = device_context.allocate_tensor(
+        options,
+        "Block_Reference",
+        operation_desc.gemm.D.element,
+        operation_desc.gemm.D.layout,
+        {max_m, max_n},
+        {int(problem_.max_ldc)},
+        num_groups,
         0);
 
-      gemm_workspace_.reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
-        options,
-        "Reference_" + group_str,
-        operation_desc.gemm.D.element,
-        operation_desc.gemm.D.layout,
-        {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
-        {int(problem_.ldc[group_idx])},
-        1,
-        0);
 
       if (is_block_scaled) {
         auto const block_scale_desc = operation_desc.block_scales.value();
         auto& block_scale_ws = gemm_workspace_.block_scales.value();
-        int sfa_m = round_up(int(problem_.m(group_idx)), 128);
-        int sfb_n = round_up(int(problem_.n(group_idx)), 128);
+        int sfa_m = round_up(problem_.max_problem_size_3x[0], 128);
+        int sfb_n = round_up(max_n, 128);
         int sfa_sfb_k =
-          round_up(ceil_div(int(problem_.k(group_idx)), block_scale_desc.SFKVecSize), 4);
+          round_up(ceil_div(max_k, block_scale_desc.SFKVecSize), 4);
 
         int sfd_m =
           block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
             ? sfa_m
-            : round_up(ceil_div(int(problem_.m(group_idx)), block_scale_desc.EpilogueSFVecSize), 4);
+            : round_up(ceil_div(max_m, block_scale_desc.EpilogueSFVecSize), 4);
         int sfd_n =
           block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
-            ? round_up(ceil_div(int(problem_.n(group_idx)), block_scale_desc.EpilogueSFVecSize), 4)
+            ? round_up(ceil_div(max_n, block_scale_desc.EpilogueSFVecSize), 4)
             : sfb_n;
-
-        block_scale_ws.SFA_ptr_array_host[group_idx] =
+        block_SFA =
           device_context.allocate_and_initialize_tensor(
             options,
-            "SFA",
+            "block_SFA",
             block_scale_desc.SFA.element,
             block_scale_desc.SFA.layout,
             {sfa_m, sfa_sfb_k},
             {sfa_sfb_k},
-            gemm_workspace_.problem_count,
+            gemm_workspace_.problem_count * num_groups,
             seed_shift++,
             0);
-
-        block_scale_ws.SFB_ptr_array_host[group_idx] =
+        block_SFB =
           device_context.allocate_and_initialize_tensor(
             options,
-            "SFB",
+            "block_SFB",
             block_scale_desc.SFB.element,
             block_scale_desc.SFB.layout,
             {sfb_n, sfa_sfb_k},
             {sfa_sfb_k},
-            gemm_workspace_.problem_count,
+            gemm_workspace_.problem_count * num_groups,
             seed_shift++,
             0);
 
-        block_scale_ws.SFD_ptr_array_host[group_idx] = device_context.allocate_tensor(
+        block_SFD = device_context.allocate_tensor(
           options,
-          "SFD",
+          "block_SFD",
           block_scale_desc.SFD.element,
           block_scale_desc.SFD.layout,
           {sfd_m, sfd_n},
           {sfd_n},
-          gemm_workspace_.problem_count,
+          gemm_workspace_.problem_count * num_groups,
           0);
-
-        block_scale_ws.SFD_reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
+        block_ref_SFD = device_context.allocate_tensor(
           options,
-          "Reference_SFD",
+          "block_Reference_SFD",
           block_scale_desc.SFD.element,
           block_scale_desc.SFD.layout,
           {sfd_m, sfd_n},
           {sfd_n},
-          gemm_workspace_.problem_count,
+          gemm_workspace_.problem_count * num_groups,
           0);
-
-        // ScaleFactor tensor results may have some holes and will not be touched by the kernel.
-        // If we randomly fill the two tensors, these holes may encounter refcheck errors.
-        if (block_scale_ws.SFD_ptr_array_host[group_idx]->type() != library::NumericTypeID::kVoid) {
-          block_scale_ws.SFD_reference_ptr_array_host[group_idx]->fill_device(0);
-          block_scale_ws.SFD_ptr_array_host[group_idx]->fill_device(0);
-        }
-      }
-      else if (is_blockwise) {
-        auto const block_scale_desc = operation_desc.block_scales.value();
-        auto& block_scale_ws = gemm_workspace_.block_scales.value();
-        int sfa_m     = ceil_div(int(problem_.m(group_idx)), block_scale_desc.SFMVecSize);
-        int sfb_n     = ceil_div(int(problem_.n(group_idx)), block_scale_desc.SFNVecSize);
-        int sfa_sfb_k = ceil_div(int(problem_.k(group_idx)), block_scale_desc.SFKVecSize);
-
-        block_scale_ws.SFA_ptr_array_host[group_idx] =
-          device_context.allocate_and_initialize_tensor(
-            options,
-            "SFA_" + std::to_string(group_idx),
-            block_scale_desc.SFA.element,
-            block_scale_desc.SFA.layout,
-            {sfa_m, sfa_sfb_k},
-            {sfa_m},
-            gemm_workspace_.problem_count,
-            seed_shift++,
-            0);
-
-        block_scale_ws.SFB_ptr_array_host[group_idx] =
-          device_context.allocate_and_initialize_tensor(
-            options,
-            "SFB_" + std::to_string(group_idx),
-            block_scale_desc.SFB.element,
-            block_scale_desc.SFB.layout,
-            {sfa_sfb_k, sfb_n},
-            {sfb_n},
-            gemm_workspace_.problem_count,
-            seed_shift++,
-            0);
-      }
-    }
-
-    // takes the allocated tensors and initializes an array of pointers per problem in the workspace
-    auto create_dev_ptr_array_all_workspace = [&](
-                                                std::vector<DeviceAllocation*>& dev_ptr_arrays,
-                                                std::vector<DeviceAllocation*> const& input,
-                                                std::string const& id) {
-      auto num_workspaces = gemm_workspace_.problem_count;
-      dev_ptr_arrays.resize(num_workspaces);
-      // note "problem_count" here refers to input/output count for L2 cycling
-      for (int i = 0; i < gemm_workspace_.problem_count; i++) {
-        std::string name = id + "_ptr_array_workspace" + std::to_string(i);
-        dev_ptr_arrays[i] =
-          device_context.allocate_block(options, name, library::NumericTypeID::kU64, num_groups, 0);
-        std::vector<void*> group_ptrs(num_groups);
+        block_scale_ws.norm_constant = device_context.allocate_and_initialize_tensor(
+                                                        options,
+                                                        "norm_constant",
+                                                        operation_desc.gemm.element_epilogue,
+                                                        operation_desc.gemm.A.layout, // copied, but should this be D layout?
+                                                        {1, 1},
+                                                        {1},
+                                                        1,
+                                                        seed_shift++,
+                                                        0 // device_index
+                                                      );
+        gemm_workspace_.block_scales.value().SFA_ptr_array_device.resize(gemm_workspace_.problem_count);
+        gemm_workspace_.block_scales.value().SFB_ptr_array_device.resize(gemm_workspace_.problem_count);
+        gemm_workspace_.block_scales.value().SFD_ptr_array_device.resize(gemm_workspace_.problem_count);
         for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
-          group_ptrs[group_idx] = input[group_idx]->batch_data(i);
+          auto group_str = std::to_string(group_idx);
+          block_scale_ws.SFA_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFA" + group_str,
+                                                          block_scale_desc.SFA.element,
+                                                          block_scale_desc.SFA.layout,
+                                                          {sfa_m, sfa_sfb_k},
+                                                          {sfa_sfb_k},
+                                                          block_SFA->batch_data(group_idx),
+                                                          1,
+                                                          0);
+          block_scale_ws.SFB_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFB" + group_str,
+                                                          block_scale_desc.SFB.element,
+                                                          block_scale_desc.SFB.layout,
+                                                          {sfb_n, sfa_sfb_k},
+                                                          {sfa_sfb_k},
+                                                          block_SFB->batch_data(group_idx),
+                                                          1,
+                                                          0);
+          block_scale_ws.SFD_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFD" + group_str,
+                                                          block_scale_desc.SFD.element,
+                                                          block_scale_desc.SFD.layout,
+                                                          {sfd_m, sfd_n},
+                                                          {sfd_n},
+                                                          block_SFD->batch_data(group_idx),
+                                                          1,
+                                                          0);
+          block_scale_ws.SFD_reference_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_Reference_SFD" + group_str,
+                                                          block_scale_desc.SFD.element,
+                                                          block_scale_desc.SFD.layout,
+                                                          {sfd_m, sfd_n},
+                                                          {sfd_n},
+                                                          block_ref_SFD->batch_data(group_idx),
+                                                          1,
+                                                          0);
         }
-        dev_ptr_arrays[i]->copy_from_host(group_ptrs.data());
+        for(int problem_idx = 0; problem_idx < gemm_workspace_.problem_count; problem_idx++) {
+          auto problem_str = std::to_string(problem_idx);
+          gemm_workspace_.block_scales.value().SFA_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFA" + problem_str,
+                                                          block_scale_desc.SFA.element,
+                                                          block_scale_desc.SFA.layout,
+                                                          {sfa_m, sfa_sfb_k},
+                                                          {sfa_sfb_k},
+                                                          block_SFA->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+          gemm_workspace_.block_scales.value().SFB_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFB" + problem_str,
+                                                          block_scale_desc.SFB.element,
+                                                          block_scale_desc.SFB.layout,
+                                                          {sfb_n, sfa_sfb_k},
+                                                          {sfa_sfb_k},
+                                                          block_SFB->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+          gemm_workspace_.block_scales.value().SFD_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_SFD" + problem_str,
+                                                          block_scale_desc.SFD.element,
+                                                          block_scale_desc.SFD.layout,
+                                                          {sfd_m, sfd_n},
+                                                          {sfd_n},
+                                                          block_SFD->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+        }
       }
-    };
-    create_dev_ptr_array_all_workspace(
-      gemm_workspace_.A_ptr_array_device,
-      gemm_workspace_.A_ptr_array_host,
-      "A");
-    create_dev_ptr_array_all_workspace(
-      gemm_workspace_.B_ptr_array_device,
-      gemm_workspace_.B_ptr_array_host,
-      "B");
-    create_dev_ptr_array_all_workspace(
-      gemm_workspace_.C_ptr_array_device,
-      gemm_workspace_.C_ptr_array_host,
-      "C");
-    create_dev_ptr_array_all_workspace(
-      gemm_workspace_.D_ptr_array_device,
-      gemm_workspace_.D_ptr_array_host,
-      "D");
 
-    if (is_block_scaled) {
-      auto& block_scale_ws = gemm_workspace_.block_scales.value();
-      create_dev_ptr_array_all_workspace(
-        block_scale_ws.SFA_ptr_array_device,
-        block_scale_ws.SFA_ptr_array_host,
-        "SFA");
-      create_dev_ptr_array_all_workspace(
-        block_scale_ws.SFB_ptr_array_device,
-        block_scale_ws.SFB_ptr_array_host,
-        "SFB");
-      create_dev_ptr_array_all_workspace(
-        block_scale_ws.SFD_ptr_array_device,
-        block_scale_ws.SFD_ptr_array_host,
-        "SFD");
+      for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
+        gemm_workspace_.tokens_per_expert_host[group_idx] = problem_.n(group_idx);
+        auto group_str = std::to_string(group_idx);
 
-      block_scale_ws.norm_constant = device_context.allocate_and_initialize_tensor(
-        options,
-        "norm_constant",
-        operation_desc.gemm.element_epilogue,
-        operation_desc.gemm.A.layout, // copied, but should this be D layout?
-        {1, 1},
-        {1},
-        1,
-        seed_shift++,
-        0 // device_index
-      );
-    }
-    else if (is_blockwise) {
-      auto& block_scale_ws = gemm_workspace_.block_scales.value();
-      create_dev_ptr_array_all_workspace(
-        block_scale_ws.SFA_ptr_array_device,
-        block_scale_ws.SFA_ptr_array_host,
-        "SFA");
-      create_dev_ptr_array_all_workspace(
-        block_scale_ws.SFB_ptr_array_device,
-        block_scale_ws.SFB_ptr_array_host,
-        "SFB");
+        gemm_workspace_.A_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+          options,
+          "block_A" + group_str,
+          operation_desc.gemm.A.element,
+          operation_desc.gemm.A.layout,
+          {max_m, max_k},
+          {int(problem_.max_lda)},
+          block_A->batch_data(group_idx),
+          1,
+          0);
+        gemm_workspace_.B_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+          options,
+          "block_B" + group_str,
+          operation_desc.gemm.B.element,
+          operation_desc.gemm.B.layout,
+          {max_k, max_n},
+          {int(problem_.max_ldb)},
+          block_B->batch_data(group_idx),
+          1,
+          0);
+        gemm_workspace_.C_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+          options,
+          "block_C" + group_str,
+          operation_desc.gemm.C.element,
+          operation_desc.gemm.C.layout,
+          {max_m, max_n},
+          {int(problem_.max_ldc)},
+          block_C->batch_data(group_idx),
+          1,
+          0);
+        gemm_workspace_.D_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+          options,
+          "block_D" + group_str,
+          operation_desc.gemm.D.element,
+          operation_desc.gemm.D.layout,
+          {max_m, max_n},
+          {int(problem_.max_ldc)},
+          block_D->batch_data(group_idx),
+          1,
+          0);
+        gemm_workspace_.reference_ptr_array_host[group_idx] = device_context.create_ref_tensor(
+          options,
+          "Reference_" + group_str,
+          operation_desc.gemm.D.element,
+          operation_desc.gemm.D.layout,
+          {max_m, max_n},
+          {int(problem_.max_ldc)},
+          block_ref_D->batch_data(group_idx),
+          1,
+          0);
+
+        gemm_workspace_.A_ptr_array_device.resize(gemm_workspace_.problem_count);
+        gemm_workspace_.B_ptr_array_device.resize(gemm_workspace_.problem_count);
+        gemm_workspace_.C_ptr_array_device.resize(gemm_workspace_.problem_count);
+        gemm_workspace_.D_ptr_array_device.resize(gemm_workspace_.problem_count);
+
+        for(int problem_idx = 0; problem_idx < gemm_workspace_.problem_count; problem_idx++) {
+          auto problem_str = std::to_string(problem_idx);
+          gemm_workspace_.A_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_A" + problem_str,
+                                                          operation_desc.gemm.A.element,
+                                                          operation_desc.gemm.A.layout,
+                                                          {max_m, max_k},
+                                                          {int(problem_.max_lda)},
+                                                          block_A->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+          gemm_workspace_.B_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_B" + problem_str,
+                                                          operation_desc.gemm.B.element,
+                                                          operation_desc.gemm.B.layout,
+                                                          {max_k, max_n},
+                                                          {int(problem_.max_ldb)},
+                                                          block_B->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+          gemm_workspace_.C_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_C" + problem_str,
+                                                          operation_desc.gemm.C.element,
+                                                          operation_desc.gemm.C.layout,
+                                                          {max_m, max_n},
+                                                          {int(problem_.max_ldc)},
+                                                          block_C->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+          gemm_workspace_.D_ptr_array_device[problem_idx] = device_context.create_ref_tensor(
+                                                          options,
+                                                          "block_D" + problem_str,
+                                                          operation_desc.gemm.D.element,
+                                                          operation_desc.gemm.D.layout,
+                                                          {max_m, max_n},
+                                                          {int(problem_.max_ldc)},
+                                                          block_D->batch_data(problem_idx*num_groups),
+                                                          num_groups,
+                                                          0);
+
+        }
+      }
+      gemm_workspace_.tokens_per_expert_device->copy_from_host(gemm_workspace_.tokens_per_expert_host.data());
     }
 
     init_arguments(options);

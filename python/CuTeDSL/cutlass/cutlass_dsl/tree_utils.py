@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -18,6 +18,8 @@ from ..base_dsl.typing import as_numeric, Numeric, Constexpr
 from ..base_dsl._mlir_helpers.arith import ArithValue
 from ..base_dsl.common import DSLBaseError
 from .._mlir import ir
+
+NoneType = type(None)
 
 # =============================================================================
 # Tree Utils
@@ -124,6 +126,7 @@ def is_constexpr_field(field: dataclasses.Field) -> bool:
 # PyTreeDef
 # =============================================================================
 
+
 class NodeType(NamedTuple):
     """
     Represents a node in a pytree structure.
@@ -133,6 +136,7 @@ class NodeType(NamedTuple):
         to_iterable: Function to convert node to iterable form
         from_iterable: Function to reconstruct node from iterable form
     """
+
     name: str
     to_iterable: Callable
     from_iterable: Callable
@@ -147,6 +151,7 @@ class PyTreeDef(NamedTuple):
         node_metadata: SimpleNamespace metadata associated with this node
         child_treedefs: Tuple of child tree definitions
     """
+
     node_type: NodeType
     node_metadata: SimpleNamespace
     child_treedefs: tuple["PyTreeDef", ...]
@@ -163,6 +168,7 @@ class Leaf:
         node_metadata: SimpleNamespace metadata associated with this leaf
         ir_type_str: String representation of the IR type
     """
+
     is_numeric: bool = False
     is_none: bool = False
     node_metadata: SimpleNamespace = None
@@ -266,6 +272,7 @@ def set_dataclass_attributes(
     for field in constexpr_fields:
         kwargs[field] = getattr(instance, field)
     return dataclasses.replace(instance, **kwargs)
+
 
 def default_dataclass_from_iterable(
     metadata: SimpleNamespace, children: Iterable[Any]
@@ -509,7 +516,7 @@ def tree_flatten(x: Any) -> tuple[list[Any], PyTreeDef]:
     return list(children_iter), treedef
 
 
-def get_registered_node_types_or_insert(x: Any) -> NodeType | None:
+def get_registered_node_types_or_insert(x: Any) -> Union[NodeType, None]:
     """
     Get the registered node type for an object, registering it if necessary.
 
@@ -569,7 +576,7 @@ def create_leaf_for_value(
     )
 
 
-def _tree_flatten(x: Any) -> tuple[Iterable[Any], PyTreeDef | Leaf]:
+def _tree_flatten(x: Any) -> tuple[Iterable[Any], Union[PyTreeDef, Leaf]]:
     """
     Internal function to flatten a tree structure.
 
@@ -587,50 +594,52 @@ def _tree_flatten(x: Any) -> tuple[Iterable[Any], PyTreeDef | Leaf]:
     Raises:
         DSLTreeFlattenError: If the object type is not supported
     """
-    match x:
-        case None:
-            return [], create_leaf_for_value(x, is_none=True)
+    if x is None:
+        return [], create_leaf_for_value(x, is_none=True)
 
-        case ArithValue() if is_dynamic_expression(x):
-            v = x.__extract_mlir_values__()
-            return v, create_leaf_for_value(
-                x,
-                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-                ir_type_str=str(v[0].type),
-            )
+    elif isinstance(x, ArithValue) and is_dynamic_expression(x):
+        v = x.__extract_mlir_values__()
+        return v, create_leaf_for_value(
+            x,
+            node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+            ir_type_str=str(v[0].type),
+        )
 
-        case ArithValue():
-            return [x], create_leaf_for_value(x, is_numeric=True)
+    elif isinstance(x, ArithValue):
+        return [x], create_leaf_for_value(x, is_numeric=True)
 
-        case ir.Value():
-            return [x], create_leaf_for_value(x)
+    elif isinstance(x, ir.Value):
+        return [x], create_leaf_for_value(x)
 
-        case Numeric():
-            v = x.__extract_mlir_values__()
-            return v, create_leaf_for_value(
-                x,
-                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-                ir_type_str=str(v[0].type),
-            )
+    elif isinstance(x, Numeric):
+        v = x.__extract_mlir_values__()
+        return v, create_leaf_for_value(
+            x,
+            node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+            ir_type_str=str(v[0].type),
+        )
 
-        case _:
-            node_type = get_registered_node_types_or_insert(x)
-            if node_type:
-                node_metadata, children = node_type.to_iterable(x)
-                children_flat, child_trees = unzip2(map(_tree_flatten, children))
-                flattened = it.chain.from_iterable(children_flat)
-                return flattened, PyTreeDef(
-                    node_type, node_metadata, tuple(child_trees)
-                )
-
-            # Try to convert to numeric
-            try:
-                nval = as_numeric(x).ir_value()
-                return [nval], create_leaf_for_value(nval, is_numeric=True)
-            except Exception:
+    else:
+        node_type = get_registered_node_types_or_insert(x)
+        if node_type:
+            node_metadata, children = node_type.to_iterable(x)
+            if children is None:
+                # Flatten should not return None, it should return an empty list for real empty cases
                 raise DSLTreeFlattenError(
-                    "Flatten Error", get_fully_qualified_class_name(x)
+                    "Flatten Error: children is None", get_fully_qualified_class_name(x)
                 )
+            children_flat, child_trees = unzip2(map(_tree_flatten, children))
+            flattened = it.chain.from_iterable(children_flat)
+            return flattened, PyTreeDef(node_type, node_metadata, tuple(child_trees))
+
+        # Try to convert to numeric
+        try:
+            nval = as_numeric(x).ir_value()
+            return [nval], create_leaf_for_value(nval, is_numeric=True)
+        except Exception:
+            raise DSLTreeFlattenError(
+                "Flatten Error", get_fully_qualified_class_name(x)
+            )
 
 
 def tree_unflatten(treedef: PyTreeDef, xs: list[Any]) -> Any:
@@ -656,7 +665,7 @@ def tree_unflatten(treedef: PyTreeDef, xs: list[Any]) -> Any:
     return _tree_unflatten(treedef, iter(xs))
 
 
-def _tree_unflatten(treedef: PyTreeDef | Leaf, xs: Iterator[Any]) -> Any:
+def _tree_unflatten(treedef: Union[PyTreeDef, Leaf], xs: Iterator[Any]) -> Any:
     """
     Internal function to reconstruct a tree structure.
 
@@ -670,24 +679,18 @@ def _tree_unflatten(treedef: PyTreeDef | Leaf, xs: Iterator[Any]) -> Any:
     Returns:
         The reconstructed object
     """
-    match treedef:
-        case Leaf(is_none=True):
+    if isinstance(treedef, Leaf):
+        if getattr(treedef, "is_none", False):
             return None
-
-        case Leaf(
-            node_metadata=metadata
-        ) if metadata and metadata.is_dynamic_expression:
+        metadata = getattr(treedef, "node_metadata", None)
+        if metadata and getattr(metadata, "is_dynamic_expression", False):
             return metadata.original_obj.__new_from_mlir_values__([next(xs)])
-
-        case Leaf(is_numeric=True):
+        if getattr(treedef, "is_numeric", False):
             return as_numeric(next(xs))
-
-        case Leaf():
-            return next(xs)
-
-        case PyTreeDef():
-            children = (_tree_unflatten(t, xs) for t in treedef.child_treedefs)
-            return treedef.node_type.from_iterable(treedef.node_metadata, children)
+        return next(xs)
+    elif isinstance(treedef, PyTreeDef):
+        children = (_tree_unflatten(t, xs) for t in treedef.child_treedefs)
+        return treedef.node_type.from_iterable(treedef.node_metadata, children)
 
 
 def _check_tree_equal(lhs: Union[PyTreeDef, Leaf], rhs: Union[PyTreeDef, Leaf]) -> bool:
@@ -704,29 +707,26 @@ def _check_tree_equal(lhs: Union[PyTreeDef, Leaf], rhs: Union[PyTreeDef, Leaf]) 
     Returns:
         bool: True if the trees are structurally equal, False otherwise
     """
-    match (lhs, rhs):
-        case (Leaf(), Leaf()):
-            return lhs.is_none == rhs.is_none and lhs.ir_type_str == rhs.ir_type_str
+    if isinstance(lhs, Leaf) and isinstance(rhs, Leaf):
+        return lhs.is_none == rhs.is_none and lhs.ir_type_str == rhs.ir_type_str
+    elif isinstance(lhs, PyTreeDef) and isinstance(rhs, PyTreeDef):
+        lhs_metadata = lhs.node_metadata
+        rhs_metadata = rhs.node_metadata
 
-        case (PyTreeDef(), PyTreeDef()):
-            lhs_metadata = lhs.node_metadata
-            rhs_metadata = rhs.node_metadata
+        lhs_fields = getattr(lhs_metadata, "fields", [])
+        rhs_fields = getattr(rhs_metadata, "fields", [])
+        lhs_constexpr_fields = getattr(lhs_metadata, "constexpr_fields", [])
+        rhs_constexpr_fields = getattr(rhs_metadata, "constexpr_fields", [])
 
-            lhs_fields = getattr(lhs_metadata, "fields", [])
-            rhs_fields = getattr(rhs_metadata, "fields", [])
-            lhs_constexpr_fields = getattr(lhs_metadata, "constexpr_fields", [])
-            rhs_constexpr_fields = getattr(rhs_metadata, "constexpr_fields", [])
-
-            return (
-                lhs.node_type == rhs.node_type
-                and lhs_fields == rhs_fields
-                and lhs_constexpr_fields == rhs_constexpr_fields
-                and len(lhs.child_treedefs) == len(rhs.child_treedefs)
-                and all(map(_check_tree_equal, lhs.child_treedefs, rhs.child_treedefs))
-            )
-
-        case _:
-            return False
+        return (
+            lhs.node_type == rhs.node_type
+            and lhs_fields == rhs_fields
+            and lhs_constexpr_fields == rhs_constexpr_fields
+            and len(lhs.child_treedefs) == len(rhs.child_treedefs)
+            and all(map(_check_tree_equal, lhs.child_treedefs, rhs.child_treedefs))
+        )
+    else:
+        return False
 
 
 def check_tree_equal(lhs: PyTreeDef, rhs: PyTreeDef) -> int:
@@ -752,7 +752,7 @@ def check_tree_equal(lhs: PyTreeDef, rhs: PyTreeDef) -> int:
     assert len(lhs.child_treedefs) == len(rhs.child_treedefs)
 
     def find_first_difference(
-        index_and_pair: tuple[int, tuple[PyTreeDef, PyTreeDef]]
+        index_and_pair: tuple[int, tuple[PyTreeDef, PyTreeDef]],
     ) -> int:
         index, (l, r) = index_and_pair
         return index if not _check_tree_equal(l, r) else -1

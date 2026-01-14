@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -108,7 +108,9 @@ __global__ void GemmComplex(
 
   tensor_a.add_pointer_offset(batch_idx * batch_stride_A);
   tensor_b.add_pointer_offset(batch_idx * batch_stride_B);
-  tensor_c.add_pointer_offset(batch_idx * batch_stride_C);
+  if(tensor_c.data()) {
+    tensor_c.add_pointer_offset(batch_idx * batch_stride_C);
+  }
   tensor_d.add_pointer_offset(batch_idx * batch_stride_D);
 
   for (; batch_idx < batch_count; batch_idx += gridDim.z) {
@@ -163,17 +165,20 @@ __global__ void GemmComplex(
         MatrixCoord coord = MatrixCoord(row, col);
 
         if (row < M && col < N) {
-
-          tensor_d.at(coord) = convert_op(
-            alpha * ScalarType(accum[i][j]) + 
-            beta * ScalarType(tensor_c.at(coord)));
+          ScalarType epilog = alpha * ScalarType(accum[i][j]);
+          if(tensor_c.data()) {
+            epilog += beta * ScalarType(tensor_c.at(coord));
+          }
+          tensor_d.at(coord) = convert_op(epilog);
         }
       }
     }
 
     tensor_a.add_pointer_offset(batch_stride_A * gridDim.z);
     tensor_b.add_pointer_offset(batch_stride_B * gridDim.z);
-    tensor_c.add_pointer_offset(batch_stride_C * gridDim.z);
+    if(tensor_c.data()) {
+      tensor_c.add_pointer_offset(batch_stride_C * gridDim.z);
+    }
     tensor_d.add_pointer_offset(batch_stride_D * gridDim.z);
 
   } // for (batch_idx)

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -142,6 +142,11 @@ struct CollectiveMma<
   // Define A and B block shapes for reduced size TMA_LOADs
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = SchedulerPipelineStageCount + Stages + 2;
 
   using ElementPairA = ElementPairA_;
   using ElementPairB = ElementPairB_;
@@ -571,13 +576,18 @@ struct CollectiveMma<
     };
   }
 
+  struct TensorMaps : cute::aligned_struct<256, _0> {
+    cute::TmaDescriptor tma_desc_a;
+    cute::TmaDescriptor tma_desc_b;
+    cute::TmaDescriptor tma_desc_sfa;
+    cute::TmaDescriptor tma_desc_sfb;
+  };
+
   template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
-    constexpr uint32_t NumInputTensors = 4;
-    constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
-    // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count);
+    // Allocate gmem space for input tensormaps per each SM.
+    return (sm_count * sizeof(TensorMaps) * NumTmaDescriptorsPerSm);
   }
 
   template <class ProblemShape>
@@ -674,7 +684,7 @@ struct CollectiveMma<
   /// mcast_mask_b - tma multicast mask for B
   /// mcast_mask_sfa - tma multicast mask for SFA
   /// mcast_mask_sfb - tma multicast mask for SFB
-  template <class ProblemShape_MNKL>
+  template <bool IsTensorMapUpdateAsync = false, class ProblemShape_MNKL>
   CUTLASS_DEVICE auto
   load_init(
       ProblemShape_MNKL const& problem_shape_MNKL,
@@ -682,6 +692,7 @@ struct CollectiveMma<
       TensorStorage& shared_tensors,
       TensorMapStorage& shared_tensormaps,
       int32_t const sm_count, int32_t const sm_idx,
+      [[maybe_unused]] int32_t num_groups,
       int32_t init_group) const {
     using X = Underscore;
 
@@ -788,15 +799,19 @@ struct CollectiveMma<
     uint16_t mcast_mask_sfa = create_tma_multicast_mask<2>(cta_layout_vmnk, cta_coord_vmnk);
     uint16_t mcast_mask_sfb = create_tma_multicast_mask<1>(cta_layout_sfb_vmnk, cta_coord_sfb_vmnk);
 
-    // Fetch a copy of tensormaps for the CTA from Params
-    auto input_tensormaps = tensormaps_init(params, shared_tensormaps, sm_count, sm_idx);
+    auto ret = cute::make_tuple(
+      gA_mkl, gB_nkl,                                               // for scheduler
+      tAgA_mkl, tBgB_nkl, tAsA, tBsB,                               // for input tensor values
+      tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB,                       // for input scale factor tensor values
+      mcast_mask_a, mcast_mask_b, mcast_mask_sfa, mcast_mask_sfb);  // multicast masks
 
-    return cute::make_tuple(
-      gA_mkl, gB_nkl,                         // for scheduler
-      tAgA_mkl, tBgB_nkl, tAsA, tBsB,         // for input tensor values
-      tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB, // for input scale factor tensor values
-      mcast_mask_a, mcast_mask_b, mcast_mask_sfa, mcast_mask_sfb, // multicast masks
-      input_tensormaps);                                          // for tma descriptor modification (per-CTA tensormap copy)
+    if constexpr (IsTensorMapUpdateAsync) {
+      return ret;
+    } else {
+      // Fetch a copy of tensormaps for the CTA from Params
+      auto input_tensormaps = tensormaps_init(params, shared_tensormaps, sm_count, sm_idx);
+      return cute::tuple_cat(ret, cute::make_tuple(input_tensormaps));
+    }
   }
 
   /// Set up the data needed by this collective for mma compute.
@@ -895,7 +910,8 @@ struct CollectiveMma<
                 cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB>> const& load_inputs,
     TileCoordMNKL const& cta_coord_mnkl,
     KTileIterator k_tile_iter, int k_tile_count,
-    bool did_batch_change) {
+    bool did_batch_change,
+    [[maybe_unused]] int curr_batch) {
 
     auto [unused_gA, unused_gB,
           tAgA_mkl, tBgB_nkl, tAsA, tBsB,
@@ -1066,8 +1082,10 @@ struct CollectiveMma<
       }
     }
     else {
-      // Wait for tmem accumulator buffer to become empty with a flipped phase
-      accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+      if (k_tile_count > 0) {
+        // Wait for tmem accumulator buffer to become empty with a flipped phase
+        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+      }
     }
 
     CUTLASS_PRAGMA_NO_UNROLL
@@ -1116,19 +1134,15 @@ struct CollectiveMma<
   // Methods to perform different parts of TMA/Tensormap modifications
   //
 
+  template <bool IsTensorMapUpdateAsync = false>
   CUTLASS_DEVICE auto
   tensormaps_init(
       Params const& mainloop_params,
       TensorMapStorage& shared_tensormaps,
       int32_t const sm_count,
       int32_t const sm_idx) const {
-    cute::TmaDescriptor* gmem_tensormap = mainloop_params.tensormaps;
 
-    cute::TmaDescriptor* tma_desc_a = &gmem_tensormap[sm_idx];
-    cute::TmaDescriptor* tma_desc_b = &gmem_tensormap[sm_idx + sm_count];
-
-    cute::TmaDescriptor* tma_desc_sfa = &gmem_tensormap[sm_idx + 2 * sm_count];
-    cute::TmaDescriptor* tma_desc_sfb = &gmem_tensormap[sm_idx + 3 * sm_count];
+    TensorMaps* gmem_tensormap = &(reinterpret_cast<TensorMaps*>(mainloop_params.tensormaps)[sm_idx * NumTmaDescriptorsPerSm]);
 
     if (cute::elect_one_sync()) {
       // Bringing tensormaps from params to smem for modification later
@@ -1148,9 +1162,30 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pSFA_tensormap), recast<uint128_t>(sSFA_tensormap));
       copy(recast<uint128_t>(pSFB_tensormap), recast<uint128_t>(sSFB_tensormap));
     }
+  
     __syncwarp();
 
-    return cute::make_tuple(tma_desc_a, tma_desc_b, tma_desc_sfa, tma_desc_sfb);
+    struct TensorMapArray {
+
+      TensorMaps *tensor_maps;
+
+      TensorMapArray() = default;
+  
+      CUTLASS_DEVICE
+      TensorMapArray(void* tensormaps) : tensor_maps(reinterpret_cast<TensorMaps*>(tensormaps)) {}
+  
+      CUTLASS_DEVICE
+      cute::tuple<cute::TmaDescriptor*, cute::TmaDescriptor*, cute::TmaDescriptor*, cute::TmaDescriptor*>
+      operator[](int32_t idx) {
+        idx = idx % NumTmaDescriptorsPerSm;
+        return cute::make_tuple(&tensor_maps[idx].tma_desc_a, &tensor_maps[idx].tma_desc_b, &tensor_maps[idx].tma_desc_sfa, &tensor_maps[idx].tma_desc_sfb);
+      }
+    };
+    if constexpr (IsTensorMapUpdateAsync) {
+      return TensorMapArray(gmem_tensormap);
+    } else {
+      return cute::make_tuple(&gmem_tensormap->tma_desc_a, &gmem_tensormap->tma_desc_b, &gmem_tensormap->tma_desc_sfa, &gmem_tensormap->tma_desc_sfb);
+    }
   }
 
   // Replace address for the global tensor (to be done by single thread)
@@ -1244,7 +1279,7 @@ struct CollectiveMma<
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)
-  template <class TensorMapA, class TensorMapB, class TensorMapSFA, class TensorMapSFB, class ProblemShape>
+  template <bool WaitForInflightTmaRequests = true, class TensorMapA, class TensorMapB, class TensorMapSFA, class TensorMapSFB, class ProblemShape>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
@@ -1252,10 +1287,9 @@ struct CollectiveMma<
       Params const& mainloop_params,
       cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB> const& input_tensormaps,
       ProblemShape problem_shape,
-      int32_t next_batch) {
+      int32_t next_batch
+  ) {
     if (cute::elect_one_sync()) {
-      // Replacing global_address for the next batch
-      tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
 
       if constexpr (IsGroupedGemmKernel) {
         auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(next_batch), 1);
@@ -1263,23 +1297,34 @@ struct CollectiveMma<
         tensormaps_replace_global_tensor_properties(shared_tensormaps,
           mainloop_params, next_batch, problem_shape_MNKL);
       }
+
+      // Replacing global_address for the next batch
+      tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
     }
     // Ensure warp is converged before issuing tensormap fence release
     __syncwarp();
     // Entire warp must do this (ie its aligned)
-    tensormaps_cp_fence_release(shared_tensormaps, input_tensormaps);
+    tensormaps_cp_fence_release<WaitForInflightTmaRequests>(
+      shared_tensormaps,
+      input_tensormaps
+    );
   }
 
-  template <class TensorMapA, class TensorMapB, class TensorMapSFA, class TensorMapSFB>
+  template <bool WaitForInflightTmaRequests = true, class TensorMapA, class TensorMapB, class TensorMapSFA, class TensorMapSFB>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release (
       TensorMapStorage& shared_tensormaps,
-      cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB> const& input_tensormaps) {
-    if (cute::elect_one_sync()) {
-      cute::tma_desc_commit_group();
-      cute::tma_desc_wait_group();
+      cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB> const& input_tensormaps
+  ) {
+
+    if constexpr (WaitForInflightTmaRequests) {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
     }
+
     // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
     tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);

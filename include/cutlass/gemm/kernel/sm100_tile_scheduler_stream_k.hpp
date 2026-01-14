@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,8 @@
 #include "cutlass/gemm/kernel/sm100_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
 #include "cutlass/gemm/kernel/tile_scheduler_params.h"
+#include "cutlass/conv/detail.hpp"
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel::detail {
@@ -175,6 +177,44 @@ public:
     );
 
     return params;
+  }
+
+  template <conv::Operator ConvOp, int NumSpatialDims, class TileShapeMNK, class AtomThrShape>
+  static Params
+  to_underlying_arguments(
+      cutlass::conv::ConvProblemShape<ConvOp, NumSpatialDims> problem_shape,
+      TileShapeMNK tile_shape_mnk,
+      AtomThrShape atom_thr_shape_mnk,
+      ClusterShape cluster_shape_mnk,
+      KernelHardwareInfo const& hw_info,
+      Arguments const& args,
+      void* workspace = nullptr
+      ) {
+
+    auto problem_shape_mnkl = [&] () {
+      // Infer im2col linearization from ConvOp and TileShape
+      constexpr bool is_linearized_M = (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad)
+                                        && cute::depth<0>(TileShapeMNK{}) == _0{};
+      constexpr bool is_linearized_K = ConvOp == conv::Operator::kWgrad && cute::depth<2>(TileShapeMNK{}) == _1{};
+      if constexpr (is_linearized_M || is_linearized_K) {
+        // transformation + im2col linearization
+        return cutlass::conv::detail::get_linearized_problem_shape_MNKL(problem_shape);
+      }
+      else {
+        // transformation
+        return cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape);
+      }
+    }();
+
+    return to_underlying_arguments(
+      problem_shape_mnkl,
+      tile_shape_mnk,
+      atom_thr_shape_mnk,
+      cluster_shape_mnk,
+      hw_info,
+      args,
+      workspace
+    );
   }
 
   static bool

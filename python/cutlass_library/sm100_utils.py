@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -659,3 +659,228 @@ def generate_cluster_shapes_sm100(level: int, change_priority_func : Union[Calla
         ]
 
         return shapes_1sm, shapes_2sm
+
+def generate_sparse_mxf4nvf4_math_instructions_sm100(level: int, enable_runtime_dtype = False, enable_compile_time_dtype = True):
+    """
+    Generate all BlockScaledSparseTensorOp math instructions for MXFP4 and MXFP4 MMA that are supported by SM100 at or above the given level.
+
+    Args:
+        level: The global level to generate math instructions for.
+        enable_runtime_dtype: Whether to generate runtime dtype math instructions.
+        enable_compile_time_dtype: Whether to generate compile time dtype math instructions.
+
+    Returns:
+        A tuple of two lists of MathInstruction objects. 
+        The first list contains the math instructions for 1SM, and the second list contains the math instructions for 2SM.
+    """
+    tcgen05_level = get_tcgen05_level_from_global_level(level)
+    math_instructions_1sm = []
+    math_instructions_2sm = []
+
+    shapes_1sm = [
+        shape for shape, min_level in SM100_MMA_SHAPES_MXF4NVF4_SPARSE_1SM.items() if tcgen05_level >= min_level
+    ]
+    shapes_2sm = [
+        shape for shape, min_level in SM100_MMA_SHAPES_MXF4NVF4_SPARSE_2SM.items() if tcgen05_level >= min_level
+    ]
+
+    for shape in shapes_1sm:
+        if enable_runtime_dtype:
+
+            runtime_types = [ DataType.f4 ]
+
+            for a_type, b_type in product(runtime_types, repeat=2):
+                # math_instructions_1sm.append(
+                #   MathInstruction(
+                #       shape,
+                #       a_type, b_type, DataType.f32,
+                #       OpcodeClass.BlockScaledSparseTensorOp,
+                #       MathOperation.multiply_add,
+                #       DataType.ue8m0)
+                # )
+                math_instructions_1sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue4m3)
+                )
+
+
+        if enable_compile_time_dtype:
+            compile_time_types = [ DataType.e2m1, 
+                                 ]
+
+            for a_type, b_type in product(compile_time_types, repeat=2):
+                # math_instructions_1sm.append(
+                #   MathInstruction(
+                #       shape,
+                #       a_type, b_type, DataType.f32,
+                #       OpcodeClass.BlockScaledSparseTensorOp,
+                #       MathOperation.multiply_add,
+                #       DataType.ue8m0)
+                # )
+                math_instructions_1sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue4m3)
+                )
+
+
+    for shape in shapes_2sm:
+        if enable_runtime_dtype:
+
+            runtime_types = [ DataType.f4 ]
+
+            for a_type, b_type in product(runtime_types, repeat=2):
+                # math_instructions_2sm.append(
+                #   MathInstruction(
+                #       shape,
+                #       a_type, b_type, DataType.f32,
+                #       OpcodeClass.BlockScaledSparseTensorOp,
+                #       MathOperation.multiply_add,
+                #       DataType.ue8m0)
+                # )
+                math_instructions_2sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue4m3)
+                )
+
+
+        if enable_compile_time_dtype:
+            compile_time_types = [ DataType.e2m1, 
+                                 ]
+
+            for a_type, b_type in product(compile_time_types, repeat=2):
+                # math_instructions_2sm.append(
+                #   MathInstruction(
+                #       shape,
+                #       a_type, b_type, DataType.f32,
+                #       OpcodeClass.BlockScaledSparseTensorOp,
+                #       MathOperation.multiply_add,
+                #       DataType.ue8m0)
+                # )
+                math_instructions_2sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue4m3)
+                )
+
+
+    return math_instructions_1sm, math_instructions_2sm
+
+
+def generate_sparse_mxf8f6f4_math_instructions_sm100(level: int, enable_runtime_dtype = False, enable_compile_time_dtype = True):
+    """
+    Generate all BlockScaledSparseTensorOp math instructions for MXFP8, MXFP6, and MXFP4 MMA that are supported by SM100 at or above the given level.
+
+    Args:
+        level: The global level to generate math instructions for.
+        enable_runtime_dtype: Whether to generate runtime dtype math instructions.
+        enable_compile_time_dtype: Whether to generate compile time dtype math instructions.
+
+    Returns:
+        A tuple of two lists of MathInstruction objects. 
+        The first list contains the math instructions for 1SM, and the second list contains the math instructions for 2SM.
+    """
+
+    tcgen05_level = get_tcgen05_level_from_global_level(level)
+    pruning_level = get_pruning_level_from_global_level(level)
+
+    math_instructions_1sm = []
+    math_instructions_2sm = []
+
+    shapes_1sm = [
+        shape for shape, min_level in SM100_MMA_SHAPES_MXF8F6F4_SPARSE_1SM.items() if tcgen05_level >= min_level
+    ]
+    shapes_2sm = [
+        shape for shape, min_level in SM100_MMA_SHAPES_MXF8F6F4_SPARSE_2SM.items() if tcgen05_level >= min_level
+    ]
+
+    for shape in shapes_1sm:
+        if enable_runtime_dtype:
+
+            runtime_types = [ DataType.f8, DataType.f6, DataType.f4 ]
+
+            for a_type, b_type in product(runtime_types, repeat=2):
+
+                if pruning_level < 2 and ((a_type == DataType.f8 or b_type == DataType.f8)):
+                    continue
+
+                math_instructions_1sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue8m0)
+                )
+
+        if enable_compile_time_dtype:
+            compile_time_types = [ DataType.e4m3,
+                                #    DataType.e5m2, 
+                                #    DataType.e3m2, 
+                                #    DataType.e2m3, 
+                                #    DataType.e2m1 
+                                   ]
+
+            for a_type, b_type in product(compile_time_types, repeat=2):
+                math_instructions_1sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue8m0)
+                )
+
+
+    for shape in shapes_2sm:
+        if enable_runtime_dtype:
+
+            runtime_types = [ DataType.f8, DataType.f6, DataType.f4 ]
+
+            for a_type, b_type in product(runtime_types, repeat=2):
+
+                if pruning_level < 2 and ((a_type == DataType.f8 or b_type == DataType.f8)):
+                    continue
+
+                math_instructions_2sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue8m0)
+                )
+
+        if enable_compile_time_dtype:
+            compile_time_types = [ DataType.e4m3,
+                                #    DataType.e5m2, 
+                                #    DataType.e3m2, 
+                                #    DataType.e2m3, 
+                                #    DataType.e2m1 
+                                   ]
+
+            for a_type, b_type in product(compile_time_types, repeat=2):
+                math_instructions_2sm.append(
+                  MathInstruction(
+                      shape,
+                      a_type, b_type, DataType.f32,
+                      OpcodeClass.BlockScaledSparseTensorOp,
+                      MathOperation.multiply_add,
+                      DataType.ue8m0)
+                )
+
+    return math_instructions_1sm, math_instructions_2sm

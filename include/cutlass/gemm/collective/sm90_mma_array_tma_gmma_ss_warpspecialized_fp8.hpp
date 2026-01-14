@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -531,8 +531,8 @@ struct CollectiveMma<
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
 
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-
-    GmmaFP8Accumulation accumulation(accum, mainloop_params.mma_promotion_interval, size<2>(tCrA));
+    auto accm_temp = cute::make_fragment_like(accum);
+    GmmaFP8Accumulation accumulation(accm_temp, mainloop_params.mma_promotion_interval, size<2>(tCrA));
     warpgroup_fence_operand(accumulation());
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
@@ -556,7 +556,7 @@ struct CollectiveMma<
       }
       warpgroup_commit_batch();
 
-      accumulation.promote_if_needed();
+      accumulation.promote_if_needed(accum);
 
       ++smem_pipe_read;
     }
@@ -597,7 +597,7 @@ struct CollectiveMma<
       warpgroup_wait<K_PIPE_MMAS>();
       warpgroup_fence_operand(accumulation());
 
-      accumulation.promote_if_needed();
+      accumulation.promote_if_needed(accum);
 
       pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
 
@@ -606,7 +606,7 @@ struct CollectiveMma<
       ++smem_pipe_release;
     }
 
-    accumulation.promote_residue_if_needed();
+    accumulation.promote_residue_if_needed(accum);
 
     warpgroup_fence_operand(accumulation());
   }

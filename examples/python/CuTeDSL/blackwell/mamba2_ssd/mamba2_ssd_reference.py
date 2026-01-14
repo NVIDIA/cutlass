@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -212,7 +212,7 @@ def analyze_relative_diffs(actual, expected):
     )
 
     # Print max relative difference info
-    print(f"Maximum relative difference:")
+    print("Maximum relative difference:")
     print(f"Position: {max_rel_diff_pos}")
     print(f"Value: {max_rel_diff:.6e}")
     print(f"Actual value: {actual.flatten()[max_rel_diff_pos]}")
@@ -236,7 +236,7 @@ def analyze_relative_diffs(actual, expected):
             print(f"Elements with rtol <= {rtol:.0e}: {count} ({percentage:.2f}%)")
         else:
             print(
-                f"Elements with {rtol_levels[i-1]:.0e} < rtol <= {rtol:.0e}: {count} ({percentage:.2f}%)"
+                f"Elements with {rtol_levels[i - 1]:.0e} < rtol <= {rtol:.0e}: {count} ({percentage:.2f}%)"
             )
 
     # Print elements exceeding the largest rtol

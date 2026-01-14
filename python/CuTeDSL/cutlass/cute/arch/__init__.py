@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -11,9 +11,11 @@
 
 from .elect import *
 from .mbar import *
+from .numeric_conversion import *
 from .nvvm_wrappers import *
 from .smem import *
 from .tmem import *
+from .numeric_conversion import *
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -44,6 +46,7 @@ __all__ = [
     "grid_dim",
     "cluster_idx",
     "cluster_dim",
+    "cluster_size",
     "block_in_cluster_idx",
     "block_in_cluster_dim",
     "block_idx_in_cluster",
@@ -66,9 +69,12 @@ __all__ = [
     "cluster_wait",
     "cluster_arrive",
     "cluster_arrive_relaxed",
-    "fence_proxy",
     "vote_ballot_sync",
+    "vote_any_sync",
+    "vote_all_sync",
+    "vote_uni_sync",
     "popc",
+    "fence_proxy",
     "fence_view_async_tmem_load",
     "fence_view_async_tmem_store",
     "warpgroup_reg_alloc",
@@ -98,4 +104,15 @@ __all__ = [
     "alloc_tmem",
     "relinquish_tmem_alloc_permit",
     "dealloc_tmem",
+    #
+    # numeric_conversion.py
+    #
+    "prmt",
+    "cvt_i8_bf16_intrinsic",
+    "cvt_i4_bf16_intrinsic",
+    "cvt_f4e2m1_f16_intrinsic",
+    "cvt_i8x4_to_f32x4",
+    "cvt_i8x2_to_f32x2",
+    "cvt_i8_bf16",
+    "cvt_f32x2_bf16x2",
 ]

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -15,8 +15,8 @@ from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
-from .. import core
-from ..typing import Shape, Layout, Tensor, Numeric, NumericMeta
+from .. import core, atom
+from ..typing import Shape, Layout, ComposedLayout, Tensor, Numeric, NumericMeta
 from ...impl_utils import check_type_in
 from .cpasync.copy import (
     CopyBulkTensorTileG2SOp,
@@ -37,15 +37,15 @@ from .cpasync.copy import (
 def make_tiled_tma_atom_A(
     op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
     gmem_tensor: Tensor,
-    smem_layout: Union[Layout, core.ComposedLayout],
+    smem_layout: Union[Layout, ComposedLayout],
     mma_tiler_mnk: Shape,
-    tiled_mma: core.TiledMma,
-    cluster_shape_vmnk: Shape,
+    tiled_mma: atom.TiledMma,
+    cluster_shape_vmnk: Union[Shape, None] = None,
     *,
     internal_type: Optional[Type[Numeric]] = None,
     loc=None,
     ip=None,
-) -> Tuple[core.CopyAtom, Tensor]:
+) -> Tuple[atom.CopyAtom, Tensor]:
     """
     Makes a TMA Copy atom mapping to ``.tile`` mode for ``cp.async.bulk.tensor`` PTX operation
     accounting for the MK projections of the TiledMMA for A tensor loads.
@@ -76,18 +76,18 @@ def make_tiled_tma_atom_A(
     :param gmem_tensor:        The GMEM tensor to be loaded by this copy atom
     :type gmem_tensor:         Tensor
     :param smem_layout:        Shared memory layout to load the tensor into (PDSL)
-    :type smem_layout:         Union[Layout, core.ComposedLayout]
+    :type smem_layout:         Union[Layout, ComposedLayout]
     :param mma_tiler_mnk:      The MMA Tiler shape (TILE_M, TILE_N, TILE_K) in MNK dimensions
     :type mma_tiler_mnk:       Shape
     :param tiled_mma:          The TiledMMA that will consume the load as operands
-    :type tiled_mma:           core.TiledMma
+    :type tiled_mma:           atom.TiledMma
     :param cluster_shape_vmnk: The Cluster-level shape in VMNK dimensions
     :type cluster_shape_vmnk:  Shape
     :param internal_type:      An optional parameter for the internal data type to when element
                                type does not match the copy type
     :type internal_type:       Type[Numeric]
     :return:                   A copy atom for this operation and the associated TMA coord tensor
-    :rtype:                    Tuple[core.CopyAtom, Tensor]
+    :rtype:                    Tuple[atom.CopyAtom, Tensor]
 
     """
 
@@ -114,7 +114,14 @@ def make_tiled_tma_atom_A(
     else:
         assert isinstance(op, CopyBulkTensorTileG2SMulticastOp)
         # multicast across the N-mode since those would share the same tile of A
+        if cluster_shape_vmnk is None:
+            raise ValueError(
+                "cluster_shape_vmnk must be provided for multicast A tensor loads"
+            )
         num_multicast = core.size(cluster_shape_vmnk, mode=[2])
+
+    if isinstance(smem_layout, core._ComposedLayout):
+        smem_layout = smem_layout.value
 
     # res[0] = the IR Value for the non-executable atom instance
     # res[1] = the IR Value for the associated TMA tensor
@@ -129,11 +136,11 @@ def make_tiled_tma_atom_A(
         ip=ip,
     )
     if isinstance(op, CopyBulkTensorTileG2SOp):
-        return core.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
+        return atom.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
     else:
         assert isinstance(op, CopyBulkTensorTileG2SMulticastOp)
         return (
-            core.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
+            atom.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
             res[1],
         )
 
@@ -142,15 +149,15 @@ def make_tiled_tma_atom_A(
 def make_tiled_tma_atom_B(
     op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
     gmem_tensor: Tensor,
-    smem_layout: Union[Layout, core.ComposedLayout],
+    smem_layout: Union[Layout, ComposedLayout],
     mma_tiler_mnk: Shape,
-    tiled_mma: core.TiledMma,
-    cluster_shape_vmnk: Shape,
+    tiled_mma: atom.TiledMma,
+    cluster_shape_vmnk: Union[Shape, None] = None,
     *,
     internal_type: Optional[Type[Numeric]] = None,
     loc=None,
     ip=None,
-) -> Tuple[core.CopyAtom, Tensor]:
+) -> Tuple[atom.CopyAtom, Tensor]:
     """
     Makes a TMA Copy atom mapping to ``.tile`` mode for ``cp.async.bulk.tensor`` PTX operation
     accounting for the NK projections of the TiledMMA for B tensor loads.
@@ -181,7 +188,7 @@ def make_tiled_tma_atom_B(
     :param gmem_tensor:        The GMEM tensor to be loaded by this copy atom
     :type gmem_tensor:         Tensor
     :param smem_layout:        Shared memory layout to load the tensor into (PDSL)
-    :type smem_layout:         Union[Layout, core.ComposedLayout]
+    :type smem_layout:         Union[Layout, ComposedLayout]
     :param mma_tiler_mnk:      The MMA Tiler shape (TILE_M, TILE_N, TILE_K) in MNK dimensions
     :type mma_tiler_mnk:       Shape
     :param tiled_mma:          The TiledMMA that will consume the load as operands
@@ -192,7 +199,7 @@ def make_tiled_tma_atom_B(
                                type does not match the copy type
     :type internal_type:       Type[Numeric]
     :return:                   A Copy Atom for this Operation and the associated TMA tensor
-    :rtype:                    Tuple[core.CopyAtom, Tensor]
+    :rtype:                    Tuple[atom.CopyAtom, Tensor]
 
     """
 
@@ -219,7 +226,14 @@ def make_tiled_tma_atom_B(
     else:
         assert isinstance(op, CopyBulkTensorTileG2SMulticastOp)
         # multicast across the M-mode since those would share the same tile of B
+        if cluster_shape_vmnk is None:
+            raise ValueError(
+                "cluster_shape_vmnk must be provided for multicast B tensor loads"
+            )
         num_multicast = core.size(cluster_shape_vmnk, mode=[1])
+
+    if isinstance(smem_layout, core._ComposedLayout):
+        smem_layout = smem_layout.value
 
     # res[0] = the IR Value for the non-executable atom instance
     # res[1] = the IR Value for the associated TMA tensor
@@ -234,11 +248,11 @@ def make_tiled_tma_atom_B(
         ip=ip,
     )
     if isinstance(op, CopyBulkTensorTileG2SOp):
-        return core.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
+        return atom.CopyAtom(op, CopyBulkTensorTileG2SNonExecTrait(res[0])), res[1]
     else:
         assert isinstance(op, CopyBulkTensorTileG2SMulticastOp)
         return (
-            core.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
+            atom.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
             res[1],
         )
 

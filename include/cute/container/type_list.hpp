@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -103,13 +103,7 @@ struct tuple_element<I, cute::type_list<T...>>
 namespace std
 {
 
-#if defined(__CUDACC_RTC__)
-template <class... _Tp>
-struct tuple_size;
-
-template <size_t _Ip, class... _Tp>
-struct tuple_element;
-#endif
+#include <cuda/std/__tuple_dir/structured_bindings.h>
 
 template <class... T>
 struct tuple_size<cute::type_list<T...>>

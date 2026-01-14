@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -15,9 +15,9 @@ This module provides MLIR Dialect helper functions
 
 from . import arith
 from .lru_cache_ir import lru_cache_ir
+from .op import dsl_user_op
 
-
-__all__ = ["arith", "lru_cache_ir"]
+__all__ = ["arith", "lru_cache_ir", "dsl_user_op"]
 
 try:
     from . import gpu

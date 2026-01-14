@@ -19,7 +19,7 @@ and SFB. This leads to a GEMM $D = \alpha \text{SFA} * A \text{ SFB} * B + \beta
 
 These can be represented in CuTe as:
 - *SFA Layout*: $((\text{scale granularity M}, M / \text{scale granularity M}), (\text{scale granularity K}, K / \text{scale granularity K})) : ((0, int), (0, int))$
-- *SFB Layout*: $((\text{scale granularity N}, M / \text{scale granularity M}), (\text{scale granularity K}, K / \text{scale granularity K})) : ((0, int), (0, int))$
+- *SFB Layout*: $((\text{scale granularity N}, N / \text{scale granularity N}), (\text{scale granularity K}, K / \text{scale granularity K})) : ((0, int), (0, int))$
 
 The 0 element stride ensures the same group of coordinates to map to the same element in the scale factors.
 
@@ -57,7 +57,7 @@ The simplest way to use the profiler is to pass `m`, `n`, and `k` as well as you
 per kernel to determine best rasterization orders, swizzles, and cluster sizes. Passing `blockwiseGemm`
 or `GroupedGemm` through the operation flag will determine which set of operations will be profiled.
 
-For examle, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
+For example, this command using the cutlass profiler will dump the performance of all compiled kernels which support scale
 granularity m = 1, scale granularity n = 128, and scale granularity k = 128 for the problem size 8192x8192x8192:
 ```
 cutlass_profiler --operation=blockwiseGemm \

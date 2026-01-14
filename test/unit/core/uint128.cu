@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -58,6 +58,11 @@ TEST(uint128_t, host_arithmetic) {
       T y = j;
 
       EXPECT_TRUE(static_cast<uint64_t>(x + y) == (i + j));
+      EXPECT_TRUE(static_cast<uint64_t>(x * static_cast<uint64_t>(y)) == (i * j));
+
+      if (j != 0) {
+        EXPECT_TRUE(static_cast<uint64_t>(x / static_cast<uint64_t>(y)) == (i / j));
+      }
     }
   }
 

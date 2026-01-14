@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -279,6 +279,9 @@ static int gemm_problem_alignment(
     int max_element_alignment = 0;
 
     for (NumericTypeID type_id : elements) {
+      if (library::sizeof_bits(type_id)==0) {
+        continue;
+      }
       int element_alignment = max_alignment_in_bytes * 8 / library::sizeof_bits(type_id);
       max_element_alignment = std::max(max_element_alignment, element_alignment);
     }

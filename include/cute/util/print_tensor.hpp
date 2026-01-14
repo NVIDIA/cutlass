@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,7 +50,6 @@ print_layout(Layout const& layout)  // (m,n) -> idx
   CUTE_STATIC_ASSERT_V(rank(layout) == Int<2>{});
 
   int idx_width = num_digits(cosize(layout)) + 2;
-  const char* delim = "+-----------------------";
 
   print(layout); print("\n");
 
@@ -63,7 +62,12 @@ print_layout(Layout const& layout)  // (m,n) -> idx
   for (int m = 0; m < size<0>(layout); ++m) {
     // Header
     print("    ");
-    for (int n = 0; n < size<1>(layout); ++n) { printf("%.*s", idx_width+1, delim); }
+    for (int n = 0; n < size<1>(layout); ++n) {
+      printf("+");
+      for (int i = 0; i < idx_width; ++i) {
+        printf("-");
+      }
+    }
     printf("+\n");
     // Values
     printf("%2d  ", m);  // Row indices
@@ -72,7 +76,12 @@ print_layout(Layout const& layout)  // (m,n) -> idx
   }
   // Footer
   print("    ");
-  for (int n = 0; n < size<1>(layout); ++n) { printf("%.*s", idx_width+1, delim); }
+  for (int n = 0; n < size<1>(layout); ++n) {
+    printf("+");
+    for (int i = 0; i < idx_width; ++i) {
+      printf("-");
+    }
+  }
   printf("+\n");
 }
 

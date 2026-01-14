@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,8 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from .core import TensorSSA
+from typing import Callable, Union
+
 from .typing import Numeric
+from .tensor import TensorSSA
+
 from cutlass._mlir.dialects import math, arith
 
 from typing import Callable, Union
@@ -62,7 +65,7 @@ def acos(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = acos(y)  # Compute arc cosine
     """
@@ -85,7 +88,7 @@ def asin(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = asin(y)  # Compute arc sine
     """
@@ -108,11 +111,10 @@ def atan(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = atan(y)  # Compute arc tangent
     """
-    raise NotImplementedError("atan is not implemented")
     return _math_op(math.atan, fastmath, a)
 
 
@@ -137,8 +139,8 @@ def atan2(
 
     .. code-block::
 
-        y = cute.make_fragment(ptr1, layout).load()  # y coordinates
-        x = cute.make_fragment(ptr2, layout).load()  # x coordinates
+        y = cute.make_rmem_tensor(ptr1, layout).load()  # y coordinates
+        x = cute.make_rmem_tensor(ptr2, layout).load()  # x coordinates
         theta = atan2(y, x)  # Compute angles
     """
     return _math_op(math.atan2, fastmath, a, b)
@@ -160,7 +162,7 @@ def cos(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = cos(y)  # Compute cosine
     """
@@ -186,7 +188,7 @@ def erf(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = erf(y)  # Compute error function
     """
@@ -209,7 +211,7 @@ def exp(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = exp(y)  # Compute exponential
     """
@@ -232,7 +234,7 @@ def exp2(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = exp2(y)  # Compute 2^x
     """
@@ -255,7 +257,7 @@ def log(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = log(y)  # Compute natural logarithm
     """
@@ -278,7 +280,7 @@ def log2(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = log2(y)  # Compute log base 2
     """
@@ -301,7 +303,7 @@ def log10(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = log10(y)  # Compute log base 10
     """
@@ -326,7 +328,7 @@ def rsqrt(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = rsqrt(y)  # Compute 1/√x
     """
@@ -349,7 +351,7 @@ def sin(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = sin(y)  # Compute sine
     """
@@ -372,7 +374,7 @@ def sqrt(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = sqrt(y)  # Compute square root
     """
@@ -395,7 +397,7 @@ def tan(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = tan(y)  # Compute tangent
     """
@@ -418,7 +420,7 @@ def tanh(
 
     .. code-block::
 
-        x = cute.make_fragment(layout)  # Create tensor
+        x = cute.make_rmem_tensor(layout)  # Create tensor
         y = x.load()  # Load values
         z = tanh(y)  # Compute hyperbolic tangent
     """

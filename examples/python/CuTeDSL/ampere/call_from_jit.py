@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -67,10 +67,11 @@ import cutlass.cute as cute
 from cutlass.torch import dtype as torch_dtype
 from cutlass.cute.runtime import make_ptr
 
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
 
-# Add the current directory to sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from tensorop_gemm import TensorOpGemm
+from ampere.tensorop_gemm import TensorOpGemm
 
 
 class BufferWithLayout:
@@ -169,7 +170,7 @@ def tensor_op_gemm_wrapper(
     acc_dtype: Type[cutlass.Numeric],
     atom_layout_mnk: cutlass.Constexpr[tuple[int, int, int]],
 ):
-    print(f"\n[DSL INFO] Input Parameters:")
+    print("\n[DSL INFO] Input Parameters:")
     print(f"[DSL INFO]   mnkl: {mnkl}")
     print(f"[DSL INFO]   buffer_a: {buffer_a}")
     print(f"[DSL INFO]   buffer_b: {buffer_b}")
@@ -181,7 +182,7 @@ def tensor_op_gemm_wrapper(
     mB = buffer_b.to_tensor(cute.select(mnkl, mode=[3, 1, 2]))
     mC = buffer_c.to_tensor(cute.select(mnkl, mode=[3, 0, 1]))
 
-    print(f"\n[DSL INFO] Created Tensors:")
+    print("\n[DSL INFO] Created Tensors:")
     print(f"[DSL INFO]   mA = {mA}")
     print(f"[DSL INFO]   mB = {mB}")
     print(f"[DSL INFO]   mC = {mC}")
@@ -192,7 +193,7 @@ def tensor_op_gemm_wrapper(
         acc_dtype,
         atom_layout_mnk,
     )
-    print(f"\n[DSL INFO] Created TensorOpGemm instance")
+    print("\n[DSL INFO] Created TensorOpGemm instance")
     print(f"[DSL INFO]   Input dtype: {buffer_a.ptr.value_type}")
     print(f"[DSL INFO]   Output dtype: {buffer_c.ptr.value_type}")
     print(f"[DSL INFO]   Accumulation dtype: {acc_dtype}")
@@ -200,11 +201,11 @@ def tensor_op_gemm_wrapper(
 
     # No need to compile inside jit function
     tensor_op_gemm(mA, mB, mC)
-    print(f"\n[DSL INFO] Executed TensorOpGemm")
+    print("\n[DSL INFO] Executed TensorOpGemm")
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
-    print(f"\nRunning TensorOpGemm test with:")
+    print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
 
     ab_dtype = cutlass.Float16
@@ -220,7 +221,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
         mnkl[3], mnkl[0], mnkl[1], dtype=torch_dtype(c_dtype), device="cuda"
     )
 
-    print(f"Input tensor shapes:")
+    print("Input tensor shapes:")
     print(f"a: {a.shape}, dtype: {a.dtype}")
     print(f"b: {b.shape}, dtype: {b.dtype}")
     print(f"c: {c.shape}, dtype: {c.dtype}\n")
@@ -251,7 +252,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
 
     ref = torch.einsum("lmk,lnk->lmn", a, b)
     torch.testing.assert_close(c, ref, atol=1e-05, rtol=1e-05)
-    print(f"\n[DSL INFO] Results verified successfully!")
+    print("\n[DSL INFO] Results verified successfully!")
     print(f"First few elements of result: \n{c[:3, :3, :3]}")
 
 

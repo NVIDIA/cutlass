@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,8 @@
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/tile_scheduler.hpp"
 #include "cutlass/trace.h"
+#include "cutlass/arch/grid_dependency_control.h"
+
 #include "cute/tensor.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,7 +206,7 @@ public:
 
 // Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.
 #if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -260,6 +262,9 @@ public:
 
     auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
     auto k_tile_count = size<2>(gA);
+
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
 
     // Perform the collective scoped MMA
     CollectiveMainloop collective_mma;

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,31 +9,25 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import List, Tuple
-from types import NoneType
+from typing import List
+
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import scf, arith
-from cutlass._mlir.extras import types as T
+from cutlass._mlir.dialects import scf
 from collections.abc import Sequence
 
 from ..base_dsl.dsl import is_dynamic_expression
 from ..base_dsl.ast_helpers import *
 from ..base_dsl.utils.logger import log
 from ..base_dsl import typing as t
-from ..base_dsl.typing import (
-    Int32,
-    Float32,
-    Boolean,
-    Numeric,
-    get_mlir_types,
-    as_numeric,
-)
+from ..base_dsl.typing import Boolean, Numeric, as_numeric
 from . import cutlass as cutlass_dsl
 from .tree_utils import PyTreeDef, check_tree_equal
 
 # =============================================================================
 # AST Helpers
 # =============================================================================
+
+NoneType = type(None)
 
 
 class LoopUnroll(ir.Attribute):
@@ -312,9 +306,12 @@ def _loop_execute_range_dynamic(
         start_ = t.as_numeric(start)
         stop_ = t.as_numeric(stop)
         step_ = t.as_numeric(step)
-        assert start_ is not t.Int32, "Start is required for scf.for"
-        assert stop_ is not t.Int32, "Stop is required for scf.for"
-        assert step_ is not t.Int32, "Step is required for scf.for"
+        if start_.dtype is not t.Int32:
+            raise DSLRuntimeError(f"expected Int32 for start, got {start_.dtype}")
+        if stop_.dtype is not t.Int32:
+            raise DSLRuntimeError(f"expected Int32 for stop, got {stop_.dtype}")
+        if step_.dtype is not t.Int32:
+            raise DSLRuntimeError(f"expected Int32 for step, got {step_.dtype}")
         start_ = start_.ir_value()
         stop_ = stop_.ir_value()
         step_ = step_.ir_value()

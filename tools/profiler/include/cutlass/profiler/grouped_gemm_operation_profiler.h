@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,6 +68,7 @@ public:
 
     std::vector<gemm::GemmCoord> problem_sizes;
     std::vector<cute::Shape<int, int, int>> problem_sizes_3x;
+    std::vector<int32_t> max_problem_size_3x;
 
     /// For exploration purposes
     std::vector<std::array<int64_t, 3>> preferred_clusters;
@@ -85,9 +86,12 @@ public:
     std::vector<int64_t> lda{0};
     std::vector<int64_t> ldb{0};
     std::vector<int64_t> ldc{0};
-
+    int64_t max_lda{0};
+    int64_t max_ldb{0};
+    int64_t max_ldc{0};
     std::vector<uint8_t> alpha;
     std::vector<uint8_t> beta;
+
 
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     int swizzle_size{1};
@@ -168,7 +172,8 @@ public:
     DeviceAllocation* ldb_array_device{nullptr};
     DeviceAllocation* ldc_array_device{nullptr};
     DeviceAllocation* ldd_array_device{nullptr};
-
+    std::vector<int32_t> tokens_per_expert_host;
+    DeviceAllocation* tokens_per_expert_device{nullptr};
     std::optional<BlockScalingWorkspace> block_scales;
 
     library::GemmGroupedConfiguration configuration;
@@ -188,6 +193,10 @@ private:
     arguments.ptr_B = gemm_workspace_.B_ptr_array_device[0]->data();
     arguments.ptr_C = gemm_workspace_.C_ptr_array_device[0]->data();
     arguments.ptr_D = gemm_workspace_.D_ptr_array_device[0]->data();
+    if (is_moe) {
+      arguments.tokens_per_expert_host = gemm_workspace_.tokens_per_expert_host.data();
+      arguments.tokens_per_expert = static_cast<int32_t*>(gemm_workspace_.tokens_per_expert_device->data());
+    }
 
     arguments.alpha = problem_.alpha.data();
     arguments.beta = problem_.beta.data();
@@ -200,10 +209,11 @@ private:
       static_cast<gemm::GemmCoord*>(gemm_workspace_.problem_sizes_array_device->data());
     arguments.problem_sizes_3x = static_cast<cute::Shape<int, int, int>*>(
       gemm_workspace_.problem_sizes_3x_array_device->data());
-    gemm_workspace_.arguments.problem_sizes_3x_host = problem_.problem_sizes_3x.data();
-    gemm_workspace_.arguments.problem_count = problem_.problem_sizes.size();
-    gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)};
-    gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
+    arguments.problem_sizes_3x_host = problem_.problem_sizes_3x.data();
+    arguments.max_problem_size_3x = problem_.max_problem_size_3x;
+    arguments.problem_count = problem_.problem_sizes.size();
+    arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)};
+    arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     arguments.sm_count = options.device.get_sm_count(0);
@@ -230,7 +240,7 @@ protected:
 
   bool is_block_scaled{false};
   bool is_blockwise{false};
-
+  bool is_moe{false};
 public:
   GroupedGemmOperationProfiler(Options const& options);
 

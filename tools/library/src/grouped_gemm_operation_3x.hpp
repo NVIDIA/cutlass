@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -869,5 +869,505 @@ public:
   }
 };
 
+template <typename Operator_>
+class MoeGroupedGemmOperation3xBase : public GemmOperation3xBase<Operator_> {
+public:
+  using Operator = Operator_;
+  using OperatorArguments = typename Operator::Arguments;
+  using ElementA = typename Operator::ElementA;
+  using LayoutA = typename Operator::LayoutA;
+  using ElementB = typename Operator::ElementB;
+  using LayoutB = typename Operator::LayoutB;
+  using ElementC = typename Operator::ElementC;
+  using LayoutC = typename Operator::LayoutC;
+  using ElementD = typename Operator::ElementD;
+  using LayoutD = typename Operator::LayoutD;
+  using ElementAccumulator = typename Operator::ElementAccumulator;
+  using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
+  using ArrayElementA = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementA;
+  using ArrayElementB = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementB;
+
+  using CollectiveMainloop = typename Operator::CollectiveMainloop;
+  using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
+  using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
+  using StrideC = typename Operator::GemmKernel::StrideC;
+  using StrideD = typename Operator::GemmKernel::StrideD;
+
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
+  static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
+  static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB),
+                "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
+  static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
+
+  MoeGroupedGemmOperation3xBase(char const* name = "unknown_gemm")
+      : GemmOperation3xBase<Operator_>(name, GemmKind::kGrouped) {
+    this->description_.is_moe = true;
+    this->description_.kind = OperationKind::kGroupedGemm;
+    this->description_.name = name;
+    this->description_.provider = Provider::kCUTLASS;
+
+    this->description_.gemm = GemmOperation3xBase<Operator_>::description_;
+    this->description_.tile_description = this->description_.gemm.tile_description;
+  };
+
+public:
+
+  // mutable CudaBuffer strideC_device;
+  // mutable CudaBuffer strideD_device;
+
+  /// Returns the description of the GEMM operation
+  virtual OperationDescription const& description() const override final { return description_; }
+  /// Gets the host-side workspace
+  uint64_t get_host_workspace_size(void const* configuration) const override final {
+    return sizeof(Operator);
+  }
+
+protected:
+  library::GroupedGemmDescription description_;
+
+  /// Constructs the arguments structure given the configuration and arguments
+  Status update_arguments_base(
+    OperatorArguments& operator_args,
+    GemmGroupedArguments const& arguments) const {
+    operator_args.mode = cutlass::gemm::GemmUniversalMode::kGrouped;
+    int M= arguments.max_problem_size_3x[0];
+    int N = arguments.max_problem_size_3x[1];
+    int K = arguments.max_problem_size_3x[2];
+    int L = arguments.problem_count;
+    operator_args.problem_shape = {
+      M,
+      N,
+      K,
+      L,
+      arguments.tokens_per_expert,
+      arguments.tokens_per_expert_host
+    };
+
+    if constexpr (IsRuntimeDataType) {
+      using RuntimeDataTypeA = typename Operator::GemmKernel::CollectiveMainloop::RuntimeDataTypeA;
+      using RuntimeDataTypeB = typename Operator::GemmKernel::CollectiveMainloop::RuntimeDataTypeB;
+
+      static_assert(cute::is_same_v<RuntimeDataTypeA, RuntimeDataTypeB>, 
+        "RuntimeDataTypeA/B should be identical, either MXF8F6F4Format or MXF4Format");
+      using RuntimeDatatypeArg = RuntimeDataTypeA;
+
+      auto mapping = [](RuntimeDatatype type) {
+        if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF8F6F4Format>) {
+          if (type == RuntimeDatatype::kE5M2) {
+            return cute::UMMA::MXF8F6F4Format::E5M2;
+          }
+          else if (type == RuntimeDatatype::kE4M3) {
+            return cute::UMMA::MXF8F6F4Format::E4M3;
+          }
+          else if (type == RuntimeDatatype::kE3M2) {
+            return cute::UMMA::MXF8F6F4Format::E3M2;
+          }
+          else if (type == RuntimeDatatype::kE2M3) {
+            return cute::UMMA::MXF8F6F4Format::E2M3;
+          }
+          else if (type == RuntimeDatatype::kE2M1) {
+            return cute::UMMA::MXF8F6F4Format::E2M1;
+          }
+          else {
+            #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && CUTLASS_DEBUG_TRACE_LEVEL >= 1
+            std::cerr << "Invalid input datatype specified. Running with e4m3." << std::endl;
+            #endif
+            return cute::UMMA::MXF8F6F4Format::E4M3;
+          }
+        }
+        else if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF4Format>) {
+          if (type == RuntimeDatatype::kE2M1) {
+            return cute::UMMA::MXF4Format::E2M1;
+          }
+          else {
+            #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && CUTLASS_DEBUG_TRACE_LEVEL >= 1
+            std::cerr << "Invalid input datatype specified. Running with e2m1." << std::endl;
+            #endif
+            return cute::UMMA::MXF4Format::E2M1;
+          }
+        }
+        // BlockScaled kernels receive either MXF4Format or MXF8F6F4Format runtime datatype
+        CUTE_GCC_UNREACHABLE;
+      };
+      operator_args.mainloop.runtime_data_type_a = mapping(arguments.runtime_input_datatype_a);
+      operator_args.mainloop.runtime_data_type_b = mapping(arguments.runtime_input_datatype_b);
+    }
+
+    operator_args.epilogue.ptr_C = static_cast<ElementC const*>(arguments.ptr_C);
+    operator_args.epilogue.ptr_D = static_cast<ElementD*>(arguments.ptr_D);
+
+    operator_args.epilogue.dC = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
+    operator_args.epilogue.dD = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
+
+    /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
+    operator_args.hw_info.sm_count = arguments.sm_count;
+    if constexpr (Operator::ArchTag::kMinComputeCapability >= 90) {
+      operator_args.hw_info.max_active_clusters = arguments.max_active_clusters;
+    }
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
+      operator_args.scheduler.max_swizzle_size = arguments.swizzle_size;
+    }
+
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
+      using Enum_t = decltype(operator_args.scheduler.raster_order);
+      switch (arguments.raster_order) {
+        case RasterOrder::kAlongN:
+          operator_args.scheduler.raster_order = Enum_t::AlongN;
+          break;
+        case RasterOrder::kAlongM:
+          operator_args.scheduler.raster_order = Enum_t::AlongM;
+          break;
+        default:
+          operator_args.scheduler.raster_order = Enum_t::Heuristic;
+      }
+    }
+
+    if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
+      operator_args.hw_info.cluster_shape =
+        dim3(arguments.cluster_shape.m(), arguments.cluster_shape.n(), arguments.cluster_shape.k());
+      operator_args.hw_info.cluster_shape_fallback = dim3(
+        arguments.cluster_shape_fallback.m(),
+        arguments.cluster_shape_fallback.n(),
+        arguments.cluster_shape_fallback.k());
+    }
+    return Status::kSuccess;
+  }
+
+  template <typename FusionArgs>
+  static Status update_fusion_args(FusionArgs& fusion_args, GemmGroupedArguments const& arguments) {
+    if (arguments.pointer_mode == ScalarPointerMode::kHost) {
+      fusion_args.alpha = *static_cast<ElementCompute const*>(arguments.alpha);
+      fusion_args.beta = *static_cast<ElementCompute const*>(arguments.beta);
+      fusion_args.alpha_ptr = nullptr;
+      fusion_args.beta_ptr = nullptr;
+      return Status::kSuccess;
+    }
+    else if (arguments.pointer_mode == ScalarPointerMode::kDevice) {
+      fusion_args.alpha = 0;
+      fusion_args.beta = 0;
+      fusion_args.alpha_ptr = static_cast<ElementCompute const*>(arguments.alpha);
+      fusion_args.beta_ptr = static_cast<ElementCompute const*>(arguments.beta);
+      return Status::kSuccess;
+    }
+    else {
+      return Status::kErrorInvalidProblem;
+    }
+  }
+};
+
+template<typename Operator_>
+class MoeGroupedGemmUniversal3xOperation : public MoeGroupedGemmOperation3xBase<Operator_> {
+public:
+  using Base = MoeGroupedGemmOperation3xBase<Operator_>;
+  using Operator = Operator_;
+  using OperatorArguments = typename Operator::Arguments;
+  
+  MoeGroupedGemmUniversal3xOperation(char const* name = "unknown_gemm")
+      : MoeGroupedGemmOperation3xBase<Operator_>(name) {
+ }
+  ~MoeGroupedGemmUniversal3xOperation() override = default;
+protected:
+  template <class FusionArgs, class = void> struct UpdateFusionArgs {
+    static Status update_(FusionArgs const& fusion_args, GemmGroupedArguments const& arguments) {
+      // If a custom EVT is instantiated then it is the users's responsibility
+      // to ensure alpha and beta are updated appropriately
+      return Status::kSuccess;
+    }
+  };
+
+  template <class FusionArgs>
+  struct UpdateFusionArgs<FusionArgs, cute::void_t<decltype(FusionArgs{}.alpha)>> {
+    static Status update_(FusionArgs& fusion_args, GemmGroupedArguments const& arguments) {
+      return MoeGroupedGemmOperation3xBase<Operator>::update_fusion_args(fusion_args, arguments);
+    }
+  };
+
+  /// Constructs the arguments structure given the configuration and arguments
+  Status
+  update_arguments_(OperatorArguments& operator_args, GemmGroupedArguments const* arguments) const {
+
+    Status status = UpdateFusionArgs<decltype(operator_args.epilogue.thread)>::update_(
+      operator_args.epilogue.thread,
+      *arguments);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
+    status = this->update_arguments_base(operator_args, *arguments);
+
+    operator_args.mainloop.ptr_A = static_cast<typename Base::ArrayElementA const*>(arguments->ptr_A);
+    operator_args.mainloop.ptr_B = static_cast<typename Base::ArrayElementB const*>(arguments->ptr_B);
+
+    return status;
+  }
+public:
+  /// Returns success if the operation can proceed
+  Status can_implement([[maybe_unused]] void const* configuration_ptr, void const* arguments_ptr)
+    const override {
+    GemmGroupedArguments const* arguments = static_cast<GemmGroupedArguments const*>(arguments_ptr);
+    OperatorArguments args;
+    auto status = update_arguments_(args, arguments);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
+    status = Operator::can_implement(args);
+    return status;
+  }
+  /// Gets the device-side workspace
+  uint64_t get_device_workspace_size(void const* configuration_ptr, void const* arguments_ptr)
+    const override {
+
+    OperatorArguments args;
+    auto status = update_arguments_(args, static_cast<GemmGroupedArguments const*>(arguments_ptr));
+    if (status != Status::kSuccess) {
+      return 0;
+    }
+
+    uint64_t size = Operator::get_workspace_size(args);
+    return size;
+  }
+  /// Initializes the workspace
+  /// **** CAUTION ****
+  /// Must be called when ldc, or ldd change.
+  /// The CUTLASS library stores the operations in a type-
+  /// erased manifest. Therefore, only this class knows
+  /// the type of strideC, and strideD.
+  /// Since grouped GEMM needs to allocate storage for
+  /// the strides on device, the concrete type of the stride
+  /// must be known in order to copy in the correct memory
+  /// layout on device.
+  Status initialize(
+    void const* configuration_ptr,
+    void* host_workspace,
+    void* device_workspace,
+    cudaStream_t stream = nullptr) const override {
+
+    Operator* op = new (host_workspace) Operator;
+
+    return Status::kSuccess;
+  }
+  /// **** CAUTION ****
+  /// initialize() must be called if lda, ldb, ldc, or ldd change.
+  Status run(
+    void const* arguments_ptr,
+    void* host_workspace,
+    void* device_workspace = nullptr,
+    cudaStream_t stream = nullptr) const override {
+
+    OperatorArguments operator_args;
+    auto const& args = *static_cast<GemmGroupedArguments const*>(arguments_ptr);
+
+    Status status = update_arguments_(operator_args, &args);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+    Operator* op = static_cast<Operator*>(host_workspace);
+    // We need to call initialize() since we have to rebuild TMA desc for every new set of args
+    status = op->run(operator_args, device_workspace, stream, nullptr, args.use_pdl);
+    return status;
+  }
+   // Set arguments that should only be set once before verifying or profiling the kernel.
+  // This should encompass any expensive operations that don't vary from run to run
+  // (e.g., max_active_clusters).
+  Status initialize_with_arguments(void* arguments_ptr) const override {
+    if constexpr (Operator::ArchTag::kMinComputeCapability < 90) {
+      return Status::kSuccess;
+    }
+
+    GemmGroupedArguments* args = static_cast<GemmGroupedArguments*>(arguments_ptr);
+
+    dim3 cluster_dims;
+    if constexpr (cute::is_static_v<typename Operator::GemmKernel::ClusterShape>) {
+      cluster_dims = dim3(
+        cute::size<0>(typename Operator::GemmKernel::ClusterShape{}),
+        cute::size<1>(typename Operator::GemmKernel::ClusterShape{}),
+        cute::size<2>(typename Operator::GemmKernel::ClusterShape{})
+      );
+    }
+    else {
+      cluster_dims = dim3(
+        args->cluster_shape.m(),
+        args->cluster_shape.n(),
+        args->cluster_shape.k()
+      );      
+    }
+
+    uint32_t threads_per_block = Operator::GemmKernel::MaxThreadsPerBlock;
+    void const* kernel_ptr = (void*)(device_kernel<typename Operator::GemmKernel>);
+    args->max_active_clusters = cutlass::KernelHardwareInfo::query_device_max_active_clusters(
+      cluster_dims,
+      threads_per_block,
+      kernel_ptr);
+
+    if (args->max_active_clusters == 0) {
+      std::cerr << "Max Active Clusters could not be queried. " 
+                << "Falling back to heuristics mode (static cluster shape) or preferred cluster mode.\n";
+    }
+
+    return Status::kSuccess;
+  }
+};
+
+template<typename Operator_>
+class BlockScaledMoeGroupedGemmUniversal3xOperation : public MoeGroupedGemmOperation3xBase<Operator_> {
+public:
+  using Base = MoeGroupedGemmOperation3xBase<Operator_>;
+  using Operator = Operator_;
+  using OperatorArguments = typename Operator::Arguments;
+  using ElementD = typename Operator::ElementD;
+  using LayoutD = typename Operator::LayoutD;
+  using ElementAccumulator = typename Operator::ElementAccumulator;
+  using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
+
+  using CollectiveMainloop = typename Operator::CollectiveMainloop;
+  using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
+  using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
+
+  using ElementSF = typename Operator::CollectiveMainloop::ElementSF;
+
+  using TiledMma = typename Operator::CollectiveMainloop::TiledMma;
+  constexpr static int SFVecSize = TiledMma::SFVecSize;
+  
+  static constexpr bool epilogue_scalefactor_generation = not cute::is_same_v<typename ThreadEpilogueOp::ElementBlockScaleFactor, void>;
+  static constexpr int32_t SFD_VectorSize = epilogue_scalefactor_generation ? ThreadEpilogueOp::SFVecSize : SFVecSize;
+  using ElementSFD = cute::conditional_t<epilogue_scalefactor_generation, typename ThreadEpilogueOp::ElementBlockScaleFactor, void>;
+  using LayoutSFD = cute::conditional_t<epilogue_scalefactor_generation, typename ThreadEpilogueOp::GmemLayoutTagScalefactor, LayoutD>; 
+
+  BlockScaledMoeGroupedGemmUniversal3xOperation(char const* name = "unknown_gemm")
+      : MoeGroupedGemmOperation3xBase<Operator_>(name) {
+    BlockScaleDescription block_scaled_desc{};
+    block_scaled_desc.kind = OperationKind::kBlockScaledGemm;
+    block_scaled_desc.SFA.element = NumericTypeMap<ElementSF>::kId;
+    block_scaled_desc.SFA.layout = LayoutTypeID::kRowMajor;
+    block_scaled_desc.SFA.alignment = 128;
+    block_scaled_desc.SFA.log_extent_range = 32;
+    block_scaled_desc.SFA.log_stride_range = 32;
+
+    block_scaled_desc.SFB.element = NumericTypeMap<ElementSF>::kId;
+    block_scaled_desc.SFB.layout = LayoutTypeID::kRowMajor;
+    block_scaled_desc.SFB.alignment = 128;
+    block_scaled_desc.SFB.log_extent_range = 32;
+    block_scaled_desc.SFB.log_stride_range = 32;
+
+    block_scaled_desc.SFMVecSize = 1;
+    block_scaled_desc.SFNVecSize = 1;
+    block_scaled_desc.SFKVecSize = SFVecSize;
+
+    block_scaled_desc.SFD = make_TensorDescription<ElementSFD, LayoutSFD>(128);
+    block_scaled_desc.EpilogueSFVecSize = SFD_VectorSize;
+
+    this->description_.block_scales = block_scaled_desc;    
+  }
+  ~BlockScaledMoeGroupedGemmUniversal3xOperation() override = default;
+protected:
+  template <class FusionArgs, class = void> struct UpdateFusionArgs {
+    static Status update_(FusionArgs const& fusion_args, GroupedGemmBlockScaledArguments const& arguments) {
+      // If a custom EVT is instantiated then it is the users's responsibility
+      // to ensure alpha and beta are updated appropriately
+      return Status::kSuccess;
+    }
+  };
+    template <class FusionArgs>
+  struct UpdateFusionArgs<FusionArgs, cute::void_t<decltype(FusionArgs{}.alpha)>> {
+    static Status
+    update_(FusionArgs& fusion_args, GroupedGemmBlockScaledArguments const& arguments) {
+
+      if constexpr (epilogue_scalefactor_generation) {
+        fusion_args.block_scale_factor_ptr = static_cast<ElementSFD*>(arguments.SFD);
+        fusion_args.norm_constant_ptr = static_cast<ElementCompute const*>(arguments.norm_constant);
+      }
+
+      return MoeGroupedGemmOperation3xBase<Operator>::update_fusion_args(fusion_args, arguments);
+    }
+  };
+
+public:
+  /// Returns success if the operation can proceed
+  Status can_implement([[maybe_unused]] void const* configuration_ptr, void const* arguments_ptr)
+    const override {
+    GroupedGemmBlockScaledArguments const* arguments =
+      static_cast<GroupedGemmBlockScaledArguments const*>(arguments_ptr);
+    OperatorArguments args;
+    auto status = update_arguments_(args, arguments);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
+    status = Operator::can_implement(args);
+    return status;
+  }
+
+  Status update_arguments_(
+    OperatorArguments& operator_args,
+    GroupedGemmBlockScaledArguments const* arguments) const {
+    Status status = UpdateFusionArgs<decltype(operator_args.epilogue.thread)>::update_(
+      operator_args.epilogue.thread,
+      *arguments);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+    operator_args.mainloop.ptr_A = static_cast<typename Base::ArrayElementA const*>(arguments->ptr_A);
+    operator_args.mainloop.ptr_B = static_cast<typename Base::ArrayElementB const*>(arguments->ptr_B);
+
+    operator_args.mainloop.ptr_SFA = static_cast<const ElementSF*>(arguments->SFA);
+    operator_args.mainloop.ptr_SFB = static_cast<const ElementSF*>(arguments->SFB);
+    return this->update_arguments_base(operator_args, *arguments);
+  }
+
+  uint64_t get_device_workspace_size(void const* configuration_ptr, void const* arguments_ptr)
+    const override {
+
+    OperatorArguments args;
+    auto status =
+      update_arguments_(args, static_cast<GroupedGemmBlockScaledArguments const*>(arguments_ptr));
+    if (status != Status::kSuccess) {
+      return 0;
+    }
+
+    uint64_t size = Operator::get_workspace_size(args);
+    return size;
+  }
+
+  /// Initializes the workspace
+  /// **** CAUTION ****
+  /// Must be called when ldc, or ldd change.
+  /// The CUTLASS library stores the operations in a type-
+  /// erased manifest. Therefore, only this class knows
+  /// the type of strideA, strideB, strideC, and strideD.
+  /// Since grouped GEMM needs to allocate storage for
+  /// the strides on device, the concrete type of the stride
+  /// must be known in order to copy in the correct memory
+  /// layout on device.
+  Status initialize(
+    void const* configuration_ptr,
+    void* host_workspace,
+    void* device_workspace,
+    cudaStream_t stream = nullptr) const override {
+    Operator* op = new (host_workspace) Operator;
+    return Status::kSuccess;
+  }
+  /// **** CAUTION ****
+  /// initialize() must be called if ldc, or ldd change.
+  Status run(
+    void const* arguments_ptr,
+    void* host_workspace,
+    void* device_workspace = nullptr,
+    cudaStream_t stream = nullptr) const override {
+
+    OperatorArguments operator_args;
+    auto const& args = *static_cast<GroupedGemmBlockScaledArguments const*>(arguments_ptr);
+
+    Status status = update_arguments_(operator_args, &args);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
+    Operator* op = static_cast<Operator*>(host_workspace);
+    status = op->run(operator_args, device_workspace, stream, nullptr);
+    return status;
+  }
+};
 
 } // namespace cutlass::library

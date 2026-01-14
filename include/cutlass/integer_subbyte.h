@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -84,6 +84,14 @@ struct integer_subbyte {
   integer_subbyte(float value)
       : integer_subbyte(static_cast<xint_t>(value)) {}
 
+  CUTLASS_HOST_DEVICE
+  integer_subbyte(double value)
+      : integer_subbyte(static_cast<xint_t>(value)) {}
+
+  CUTLASS_HOST_DEVICE
+  integer_subbyte(signed char value)
+      : integer_subbyte(static_cast<xint_t>(value)) {}
+
   // CUTLASS code commonly converts both signed and unsigned integers
   // into integer_subbyte, so the class provides both explicit
   // conversions.
@@ -114,10 +122,9 @@ struct integer_subbyte {
       : storage(reinterpret_cast<Storage const&>(value) & bits_mask_)
   {
     if constexpr (Signed) {
-      [[maybe_unused]] constexpr int lower_bound = -(1 << (Bits - 1));
+      // no need to check lower bound since input value is unsigned
       [[maybe_unused]] constexpr int upper_bound = (1 << (Bits - 1)) - 1;
-      assert(value >= lower_bound);
-      assert(value <= upper_bound);
+      assert(value <= static_cast<unsigned>(upper_bound));
     }
     else {
       [[maybe_unused]] constexpr unsigned upper_bound = 1u << Bits;
@@ -204,12 +211,6 @@ using int2b_t = integer_subbyte<2, true>;
 
 /// 2-bit Unsigned integer type
 using uint2b_t = integer_subbyte<2, false>;
-
-/// 3-bit Integer type
-using int3b_t = integer_subbyte<3, true>;
-
-/// 3-bit Unsigned integer type
-using uint3b_t = integer_subbyte<3, false>;
 
 /// 4-bit Integer type
 using int4b_t = integer_subbyte<4, true>;

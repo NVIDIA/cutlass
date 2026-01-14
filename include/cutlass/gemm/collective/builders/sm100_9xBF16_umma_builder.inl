@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -106,6 +106,7 @@ sm100_compute_stage_count_or_override_fast_fp32(StageCountAutoCarveout<carveout_
 
 // FastFP (9xBF16) MMA kernels builder
 template <
+  class ArchTag,
   class GmemLayoutATag,
   int AlignmentA,
   class GmemLayoutBTag,
@@ -117,7 +118,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     float,           // ElementA
     GmemLayoutATag,  // LayoutA 
@@ -131,6 +132,8 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       (not cute::is_tuple<GmemLayoutATag>::value && not cute::is_tuple<GmemLayoutBTag>::value) &&
       (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, BuilderScheduleTag>) &&
       ((sizeof(float) * AlignmentA) % detail::tma_alignment_bytes == 0) &&
@@ -226,9 +229,11 @@ struct CollectiveBuilder<
                                                                TensorMapStorage);
 
   // Reduce SMEM capacity available for buffers considering extra B smem and barrier smem allocations
-  static constexpr int Sm100ReducedSmemCapacityBytes = detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  
+  static constexpr int ReducedSmemCapacityBytes = 
+    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
   static constexpr auto stage_info = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_fast_fp32<
-    Sm100ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, BuilderScheduleTag, UmmaMajorA>(StageCountType{});
+    ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, BuilderScheduleTag, UmmaMajorA>(StageCountType{});
   
   static constexpr int Load2TransformPipelineStageCount = get<0>(stage_info);
   static constexpr int Transform2MmaPipelineStageCount = get<1>(stage_info);

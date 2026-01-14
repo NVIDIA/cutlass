@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -59,6 +59,64 @@
 #endif
 #endif
 #endif
+
+CUTLASS_HOST_DEVICE
+uint64_t umul128(
+   uint64_t multiplier,
+   uint64_t multiplicand,
+   uint64_t *high_product
+) {
+
+#if defined(CUTLASS_INT128_ARITHMETIC)
+  return _umul128(multiplier, multiplicand, high_product);
+#else
+  const uint64_t mask = 0xFFFFFFFF;
+
+  uint64_t a_lo = multiplier & mask;
+  uint64_t a_hi = multiplier >> 32;
+  uint64_t b_lo = multiplicand & mask;
+  uint64_t b_hi = multiplicand >> 32;
+
+  uint64_t p_ll = a_lo * b_lo;
+  uint64_t p_lh = a_lo * b_hi;
+  uint64_t p_hl = a_hi * b_lo;
+  uint64_t p_hh = a_hi * b_hi;
+
+  uint64_t p_mid = (p_ll >> 32) + (p_lh & mask) + (p_hl & mask);
+  uint64_t r_lo = (p_ll & mask) + (p_mid << 32);
+  uint64_t r_hi = (p_lh & mask) + (p_hl & mask) + p_hh;
+
+  *high_product = r_hi;
+  return r_lo;
+#endif
+}
+
+
+CUTLASS_HOST_DEVICE
+uint64_t udiv128(uint64_t high, uint64_t low, uint64_t divisor, uint64_t *remainder_ptr) {
+#if defined(CUTLASS_INT128_ARITHMETIC_DIV)
+  return _udiv128(high, low, divisor, remainder_ptr);
+#else
+  uint64_t quotient = 0, remainder = 0;
+  uint64_t const bit = 1;
+  for (int32_t i=127; i>=0; --i) {
+    uint64_t r = 0;
+    if (i >= 64) {
+      r = ((high >> (i - 64)) & bit);
+    }
+    else {
+      r = ((low >> i) & bit);
+    }
+    remainder = (remainder << 1) | r;
+    if (remainder >= divisor) {
+      remainder -= divisor;
+      quotient |= (bit << i);
+    }
+  }
+  *remainder_ptr = remainder;
+  return quotient;
+#endif
+}
 
 namespace cutlass {
 
@@ -157,16 +215,13 @@ struct alignas(16) uint128_t
     uint128_t y{};
 #if defined(CUTLASS_UINT128_NATIVE)
     y.native = native * rhs;
-#elif defined(CUTLASS_INT128_ARITHMETIC)
+#else
     // Multiply by the low part
-    y.hilo_.lo = _umul128(hilo_.lo, rhs, &y.hilo_.hi);
+    y.hilo_.lo = umul128(hilo_.lo, rhs, &y.hilo_.hi);
 
     // Add the high part and ignore the overflow
     uint64_t overflow{0};
-    y.hilo_.hi += _umul128(hilo_.hi, rhs, &overflow);
-#else
-    CUTLASS_UNUSED(rhs);
-    exception();
+    y.hilo_.hi += umul128(hilo_.hi, rhs, &overflow);
 #endif
     return y;
   }
@@ -178,13 +233,10 @@ struct alignas(16) uint128_t
     uint64_t quotient{0};
 #if defined(CUTLASS_UINT128_NATIVE)
     quotient = uint64_t(native / divisor);
-#elif defined(CUTLASS_INT128_ARITHMETIC_DIV)
+#else
     // implemented using MSVC's arithmetic intrinsics
     uint64_t remainder{0};
-    quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
-#else
-    CUTLASS_UNUSED(divisor);
-    exception();
+    quotient = udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #endif
     return quotient;
   }
@@ -196,12 +248,9 @@ struct alignas(16) uint128_t
     uint64_t remainder{0};
 #if defined(CUTLASS_UINT128_NATIVE)
     remainder = uint64_t(native % divisor);
-#elif defined(CUTLASS_INT128_ARITHMETIC_DIV)
-    // implemented using MSVC's arithmetic intrinsics
-    (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    CUTLASS_UNUSED(divisor);
-    exception();
+    // implemented using MSVC's arithmetic intrinsics
+    (void)udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #endif
     return remainder;
   }
@@ -214,13 +263,9 @@ struct alignas(16) uint128_t
 #if defined(CUTLASS_UINT128_NATIVE)
     quotient = uint64_t(native / divisor);
     remainder = uint64_t(native % divisor);
-#elif defined(CUTLASS_INT128_ARITHMETIC_DIV)
-    // implemented using MSVC's arithmetic intrinsics
-    quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    CUTLASS_UNUSED(remainder);
-    CUTLASS_UNUSED(divisor);
-    exception();
+    // implemented using MSVC's arithmetic intrinsics
+    quotient = udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #endif
     return quotient;
   }

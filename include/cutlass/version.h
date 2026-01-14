@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,8 @@
 #include <string>
 
 #define CUTLASS_MAJOR 4
-#define CUTLASS_MINOR 2
-#define CUTLASS_PATCH 1
+#define CUTLASS_MINOR 3
+#define CUTLASS_PATCH 5
 
 #ifdef CUTLASS_VERSIONS_GENERATED
 #include "cutlass/version_extended.h"

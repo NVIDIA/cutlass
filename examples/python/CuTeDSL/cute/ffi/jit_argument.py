@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -54,7 +54,6 @@ import cutlass.cute as cute
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
-import cutlass._mlir.extras.types as T
 
 
 class ExampleTensorValue(ir.Value):
@@ -244,19 +243,13 @@ import tempfile
 import torch
 
 
-def run_test(tmpdir=None):
-    # Skip cleanup if user provides tmpdir
-    cleanup = tmpdir is None
-    # Initialize temporary build directory
-    tmpdir = tmpdir or tempfile.mkdtemp()
-
+def run_test(tmpdir=None, cmake_args="", cleanup=True):
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        subprocess.run(["cmake", "-B", tmpdir, current_dir], check=True)
+        cmake_args = cmake_args.split()
+        subprocess.run(["cmake", "-B", tmpdir, current_dir] + cmake_args, check=True)
         subprocess.run(["cmake", "--build", tmpdir], check=True)
-
-        sys.path.append(tmpdir)
 
         from tensor import make_tensor, pycapsule_get_pointer
 
@@ -284,7 +277,10 @@ def run_test(tmpdir=None):
         # Execute compiled function
         compiled_func(tensor)
     except Exception as e:
-        print(e)
+        import traceback
+
+        traceback.print_exception(type(e), e, e.__traceback__)
+        raise e
     finally:
         if cleanup:
             # Clean up the temporary directory
@@ -298,8 +294,26 @@ if __name__ == "__main__":
         description="Set temporary directory for building C modules"
     )
     parser.add_argument(
-        "--tmp-dir", type=str, help="Temporary directory path for building C modules"
+        "--tmp-dir",
+        type=str,
+        default=None,
+        help="Temporary directory path for building C modules",
+    )
+    parser.add_argument(
+        "--cmake-args",
+        type=str,
+        default="",
+        help="Extra CMake arguments for building C modules",
     )
     args = parser.parse_args()
 
-    run_test(args.tmp_dir)
+    if args.tmp_dir:
+        tmp_dir = args.tmp_dir
+        cleanup = False
+    else:
+        tmp_dir = tempfile.mkdtemp()
+        cleanup = True
+
+    sys.path.append(tmp_dir)
+
+    run_test(tmp_dir, args.cmake_args, cleanup)

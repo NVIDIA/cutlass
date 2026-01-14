@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -107,39 +107,62 @@ using OperatorClass       = cutlass::arch::OpClassBlockScaledTensorOp;      // O
 // using ElementD = cutlass::float_e2m1_t; // Enable for SF Output          // Element type for D matrix operands
 
 // Kernel Perf config
-using MmaTileShape        = cute::Shape<cute::_128, cute::_128, Int<768>>;  // MMA's tile size
-using ClusterShape        = cute::Shape<cute::_2, cute::_4, cute::_1>;      // Shape of the threadblocks in a cluster
+using MmaTileShape1Sm        = cute::Shape<cute::_128, cute::_256, Int<768>>;// 1SM MMA's tile size
+using MmaTileShape2Sm        = cute::Shape<cute::_256, cute::_256, Int<768>>;// 2SM MMA's tile size
+using ClusterShape        = cute::Shape<int, int, cute::_1>;                 // Cluster shape
 
-// Epilogue fusion operator
-using EpilogueFusionOp = cutlass::epilogue::fusion::LinearCombination<ElementD, ElementAccumulator, ElementC, ElementAccumulator>;
-
-using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+using CollectiveEpilogue1Sm = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    MmaTileShape, ClusterShape,
+    MmaTileShape1Sm, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutCTag, AlignmentC,
     ElementD, LayoutDTag, AlignmentD,
-    cutlass::epilogue::NoSmemWarpSpecialized1Sm,
-    EpilogueFusionOp
+    cutlass::epilogue::NoSmemWarpSpecialized1Sm
   >::CollectiveOp;
 
-using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+using CollectiveEpilogue2Sm = typename cutlass::epilogue::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    MmaTileShape2Sm, ClusterShape,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator, ElementAccumulator,
+    ElementC, LayoutCTag, AlignmentC,
+    ElementD, LayoutDTag, AlignmentD,
+    cutlass::epilogue::NoSmemWarpSpecialized2Sm
+  >::CollectiveOp;
+
+using CollectiveMainloop1Sm = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
     cute::tuple<ElementA,ElementSFA>, LayoutATag, AlignmentA,
     cute::tuple<ElementB,ElementSFB>, LayoutBTag, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
-    cutlass::gemm::KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103      // Kernel schedule policy. Auto or using targeted scheduling policy
+    MmaTileShape1Sm, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue1Sm::SharedStorage))>,
+    cutlass::gemm::KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103     // Kernel schedule policy. Auto or using targeted scheduling policy
+  >::CollectiveOp;
+using CollectiveMainloop2Sm = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementA,ElementSFA>, LayoutATag, AlignmentA,
+    cute::tuple<ElementB,ElementSFB>, LayoutBTag, AlignmentB,
+    ElementAccumulator,
+    MmaTileShape2Sm, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue2Sm::SharedStorage))>,
+    cutlass::gemm::KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103     // Kernel schedule policy. Auto or using targeted scheduling policy
   >::CollectiveOp;
 
-using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+using GemmKernel1Sm = cutlass::gemm::kernel::GemmUniversal<
     Shape<int,int,int,int>,                                                   // Indicates ProblemShape
-    CollectiveMainloop,
-    CollectiveEpilogue>;
+    CollectiveMainloop1Sm,
+    CollectiveEpilogue1Sm>;
 
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+using Gemm1Sm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel1Sm>;
+using Gemm = Gemm1Sm;
+using GemmKernel2Sm = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>,                                                   // Indicates ProblemShape
+    CollectiveMainloop2Sm,
+    CollectiveEpilogue2Sm>;
+
+using Gemm2Sm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel2Sm>;
 
 // Reference device GEMM implementation type
 using StrideA   = typename Gemm::GemmKernel::StrideA;
@@ -202,6 +225,12 @@ struct Options {
   int m, n, k;
   int swizzle = 0;
 
+  dim3 cluster_shape = dim3(2,1,1);
+  dim3 cluster_shape_fallback = dim3(2,1,1);
+
+  bool verification = true;
+  int batch = 1;
+
   Options():
     help(false),
     m(1024), n(1024), k(1024),
@@ -226,6 +255,14 @@ struct Options {
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("swizzle", swizzle);
+    cmd.get_cmd_line_argument("cluster_m", cluster_shape.x);
+    cmd.get_cmd_line_argument("cluster_n", cluster_shape.y);
+    cmd.get_cmd_line_argument("cluster_fallback_m", cluster_shape_fallback.x);
+    cmd.get_cmd_line_argument("cluster_fallback_n", cluster_shape_fallback.y);
+    if (cmd.check_cmd_line_flag("no_verif")) {
+      verification = false;
+    }
+    cmd.get_cmd_line_argument("batch", batch);
   }
 
   /// Prints the usage statement.
@@ -240,11 +277,19 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n"
+      << "  --cluster_m=<int>           Preferred cluster X dimension (input only)\n"
+      << "  --cluster_n=<int>           Preferred cluster Y dimension (input only)\n"
+      << "  --cluster_fallback_m=<int>  Fallback cluster X dimension (input only)\n"
+      << "  --cluster_fallback_n=<int>  Fallback cluster Y dimension (input only)\n"
       << "  --swizzle=<int>             Cluster rasterization swizzle\n"
+      << "  --batch=<int>               Number of batches (L dimension)\n"
+      << "  --no_verif                   Do not run host-side verification\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out << "\n\nExamples:\n\n"
-      << "$ " << "./examples/89_sm103_fp4_ultra_gemm/89_sm103_fp4_ultra_gemm" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "./examples/89_sm103_fp4_ultra_gemm/89_sm103_fp4_ultra_gemm"
+      << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707"
+      << " --cluster_m=4 --cluster_n=4 --cluster_fallback_m=2 --cluster_fallback_n=1\n\n";
 
     return out;
   }
@@ -252,8 +297,8 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const
   {
-    // Two flops per multiply-add
-    uint64_t flop = uint64_t(2) * m * n * k;
+    // Two flops per multiply-add, times batch (L dimension)
+    uint64_t flop = uint64_t(2) * uint64_t(m) * uint64_t(n) * uint64_t(k) * uint64_t(batch);
     double gflop = double(flop) / double(1.0e9);
     return gflop / runtime_s;
   }
@@ -328,17 +373,17 @@ void initialize(const Options &options) {
   // For SFA and SFB tensors layouts
   using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 
-  stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, 1});
-  stride_B = cutlass::make_cute_packed_stride(StrideB{}, {options.n, options.k, 1});
-  stride_C = cutlass::make_cute_packed_stride(StrideC{}, {options.m, options.n, 1});
-  stride_D = cutlass::make_cute_packed_stride(StrideD{}, {options.m, options.n, 1});
+  stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, options.batch});
+  stride_B = cutlass::make_cute_packed_stride(StrideB{}, {options.n, options.k, options.batch});
+  stride_C = cutlass::make_cute_packed_stride(StrideC{}, {options.m, options.n, options.batch});
+  stride_D = cutlass::make_cute_packed_stride(StrideD{}, {options.m, options.n, options.batch});
 
-  layout_A = make_layout(make_shape(options.m, options.k, 1), stride_A);
-  layout_B = make_layout(make_shape(options.n, options.k, 1), stride_B);
-  layout_C = make_layout(make_shape(options.m, options.n, 1), stride_C);
-  layout_D = make_layout(make_shape(options.m, options.n, 1), stride_D);
-  layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(options.m, options.n, options.k, 1));
-  layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(options.m, options.n, options.k, 1));
+  layout_A = make_layout(make_shape(options.m, options.k, options.batch), stride_A);
+  layout_B = make_layout(make_shape(options.n, options.k, options.batch), stride_B);
+  layout_C = make_layout(make_shape(options.m, options.n, options.batch), stride_C);
+  layout_D = make_layout(make_shape(options.m, options.n, options.batch), stride_D);
+  layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(options.m, options.n, options.k, options.batch));
+  layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(options.m, options.n, options.k, options.batch));
 
   block_A.reset(cutlass::make_Coord(size(layout_A)));
   block_B.reset(cutlass::make_Coord(size(layout_B)));
@@ -362,11 +407,12 @@ void initialize(const Options &options) {
 }
 
 // Populates a Gemm::Arguments structure from the given commandline options
+template <typename Gemm>
 typename Gemm::Arguments args_from_options(const Options &options)
 {
   typename Gemm::Arguments arguments {
     cutlass::gemm::GemmUniversalMode::kGemm,
-    {options.m, options.n, options.k, 1},
+    {options.m, options.n, options.k, options.batch},
     { // Mainloop arguments
       block_A.device_data(), stride_A,
       block_B.device_data(), stride_B,
@@ -381,6 +427,8 @@ typename Gemm::Arguments args_from_options(const Options &options)
   };
 
   arguments.scheduler.max_swizzle_size = options.swizzle;
+  arguments.hw_info.cluster_shape = options.cluster_shape;
+  arguments.hw_info.cluster_shape_fallback = options.cluster_shape_fallback;
   return arguments;
 }
 
@@ -432,7 +480,7 @@ int run(Options &options)
   Gemm gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options(options);
+  auto arguments = args_from_options<Gemm>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -461,12 +509,15 @@ int run(Options &options)
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options);
-
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
-
-  if (!result.passed) {
-    exit(-1);
+  if (options.verification) {
+    result.passed = verify(options);
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    if (!result.passed) {
+      exit(-1);
+    }
+  } else {
+    std::cout << "  Disposition: Skipped verification" << std::endl;
+    result.passed = true;
   }
 
   // Run profiling loop
@@ -486,7 +537,7 @@ int run(Options &options)
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
 
-    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
+    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << " (batch: " << options.batch << ")" << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
@@ -536,7 +587,10 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 #if defined(CUTLASS_ARCH_MMA_SM103_SUPPORTED)
-  run<Gemm>(options);
+  std::cout << "Running kernel with 1SM MMA config:" << std::endl;
+  run<Gemm1Sm>(options);
+  std::cout << "Running kernel with 2SM MMA config:" << std::endl;
+  run<Gemm2Sm>(options);
 #endif // defined(CUTLASS_ARCH_MMA_SM103_SUPPORTED)
 
   return 0;

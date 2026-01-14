@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -74,9 +74,11 @@ with stride-1 which propagate alignment incorrectly.
 
 """
 
-# Add the current directory to sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from tensorop_gemm import TensorOpGemm
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, ".."))
+
+from ampere.tensorop_gemm import TensorOpGemm
 
 
 @cute.jit
@@ -89,7 +91,7 @@ def tensor_op_gemm_wrapper(
     k: cutlass.Int32,
     l: cutlass.Int32,
 ):
-    print(f"\n[DSL INFO] Input Parameters:")
+    print("\n[DSL INFO] Input Parameters:")
     print(f"[DSL INFO]   mnkl: {(m, n, k, l)}")
 
     # Assume alignment of shape to call tensorop_gemm example
@@ -111,7 +113,7 @@ def tensor_op_gemm_wrapper(
     tensor_op_gemm = TensorOpGemm(
         a_ptr.value_type, c_ptr.value_type, cutlass.Float32, (2, 2, 1)
     )
-    print(f"\n[DSL INFO] Created TensorOpGemm instance")
+    print("\n[DSL INFO] Created TensorOpGemm instance")
     print(f"[DSL INFO]   Input dtype: {a_ptr.value_type}")
     print(f"[DSL INFO]   Output dtype: {c_ptr.value_type}")
     print(f"[DSL INFO]   Accumulation dtype: {cutlass.Float32}")
@@ -119,11 +121,11 @@ def tensor_op_gemm_wrapper(
 
     # No need to compile inside jit function
     tensor_op_gemm(mA, mB, mC)
-    print(f"\n[DSL INFO] Executed TensorOpGemm")
+    print("\n[DSL INFO] Executed TensorOpGemm")
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
-    print(f"\nRunning TensorOpGemm test with:")
+    print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
 
     # (M,K,L)
@@ -139,7 +141,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
         mnkl[3], mnkl[0], mnkl[1], dtype=torch.float16, device="cuda"
     ).permute(1, 2, 0)
 
-    print(f"Input tensor shapes:")
+    print("Input tensor shapes:")
     print(f"a: {a.shape}, dtype: {a.dtype}")
     print(f"b: {b.shape}, dtype: {b.dtype}")
     print(f"c: {c.shape}, dtype: {c.dtype}\n")
@@ -158,7 +160,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
 
     ref = torch.einsum("mkl,nkl->mnl", a, b)
     torch.testing.assert_close(c, ref, atol=1e-05, rtol=1e-05)
-    print(f"\n[DSL INFO] Results verified successfully!")
+    print("\n[DSL INFO] Results verified successfully!")
     print(f"First few elements of result: \n{c[:3, :3, :3]}")
 
 

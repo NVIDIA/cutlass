@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -20,7 +20,9 @@ from .helpers import (
     PipelineUserType,
     PipelineState,
     make_pipeline_state,
+    pipeline_init_arrive,
     pipeline_init_wait,
+    agent_sync,
     arrive,
     arrive_unaligned,
     wait,
@@ -35,6 +37,7 @@ from .sm90 import (
     PipelineTmaAsync,
     PipelineTmaMultiConsumersAsync,
     PipelineTmaStore,
+    PipelineOrder,
     PipelineProducer,
     PipelineConsumer,
 )
@@ -52,6 +55,7 @@ __all__ = [
     "SyncObject",
     "MbarrierArray",
     "NamedBarrier",
+    "PipelineOrder",
     "TmaStoreFence",
     "PipelineUserType",
     "PipelineState",
@@ -65,4 +69,14 @@ __all__ = [
     "PipelineTmaStore",
     "PipelineProducer",
     "PipelineConsumer",
+    "make_pipeline_state",
+    "pipeline_init_arrive",
+    "pipeline_init_wait",
+    "agent_sync",
+    "arrive",
+    "arrive_unaligned",
+    "wait",
+    "wait_unaligned",
+    "arrive_and_wait",
+    "sync",
 ]

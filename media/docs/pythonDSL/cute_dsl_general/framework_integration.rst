@@ -63,7 +63,7 @@ The full signature of from_dlpack is as follows:
 
 .. code-block:: python
 
-    def from_dlpack(tensor, assumed_align=None):
+    def from_dlpack(tensor, assumed_align=None, use_32bit_stride=False):
 
 The ``assumed_align`` integer parameter specifies the alignment of the tensor in unit of bytes.
 The tensor's base address must be divisible by ``assumed_align``. When not provided explicitly,
@@ -71,6 +71,13 @@ the alignment is set to the natural alignment of the tensor's element type. Note
 information is part of the pointer type in the generated IR. Therefore, programs with different
 alignments have a different IR and identical IRs are required for hitting the kernel caching
 mechanism of |DSL|.
+
+The ``use_32bit_stride`` parameter determines whether to use 32-bit stride for the tensor's dynamic stride values.
+By default, it is set to False (64bit) to ensure that address calculations do not risk overflow. For smaller
+problem sizes (where ``cosize(layout_of_tensor) <= Int32_MAX``), users may set it to True (32bit) to improve performance
+by reducing register usage and the number of address calculation instructions. When ``use_32bit_stride`` is set
+to True, a runtime check is performed to ensure that the layout does not overflow. Please note that this parameter
+only has an effect when the tensor's layout is marked as dynamic.
 
 Code Example
 ~~~~~~~~~~~~
@@ -185,6 +192,11 @@ For example:
 - For a tensor with layout ``(2,2):(8,2)``, since no dimension has stride 1,
   all dimensions are marked as dynamic: ``(?,?):(?,?)``.
 
+The leading dimension accepts negative index which means the dimension is counted from the last dimension. For example,
+
+- For a tensor with layout ``(2,2,3,4):(2,1,4,12)``, if ``leading_dim`` is specified to be -1,
+  the layout will be marked as ``(?,?,?,?):(?,?,?,1)``.
+
 Code Example
 ~~~~~~~~~~~~
 
@@ -241,6 +253,10 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
 
     t7 = from_dlpack(b).mark_layout_dynamic(leading_dim=3)
     # Expected strides[leading_dim] == 1, but got 4
+
+    c = torch.empty(1000000000, 1000000000)
+    t8 = from_dlpack(c, use_32bit_stride=True).mark_layout_dynamic()
+    # Layout in DLTensorWrapper has int32 overflow risk. Please set use_32bit_stride to False.
 
 Mark the Tensor's Layout as Dynamic with ``mark_compact_shape_dynamic``
 -----------------------------------------------------------------------
@@ -398,24 +414,42 @@ The following example demonstrates how to use ``mark_compact_shape_dynamic`` to 
     )
     # The stride_order is not consistent with the layout
 
+    c = torch.empty(1000000000, 1000000000)
+    t13 = from_dlpack(c, use_32bit_stride=True).mark_compact_shape_dynamic(
+        mode=0, divisibility=1
+    )
+    # Layout in DLTensorWrapper has int32 overflow risk. Please set use_32bit_stride to False.
+
+Leveraging TVM FFI for Faster PyTorch Interop
+---------------------------------------------
+
+The latest version of |DSL| supports TVM FFI to improve interoperability with PyTorch
+and other machine learning frameworks. Using TVM FFI provides the following features:
+
+- Faster JIT function invocation.
+- Direct acceptance of ``torch.Tensor`` objects as function arguments.
+- Enhanced error handling and kernel validation.
+- Seamless integration with multiple programming languages.
+
+For more details, see :doc:`compile_with_tvm_ffi`.
 
 Bypass the DLPack Protocol
 --------------------------
 
-In certain scenarios, users may wish to bypass the DLPack protocol and invoke the JIT function directly.  
-This can be accomplished by creating a lightweight JIT wrapper around the existing JIT function, 
+In certain scenarios, users may wish to bypass the DLPack protocol and invoke the JIT function directly.
+This can be accomplished by creating a lightweight JIT wrapper around the existing JIT function,
 utilizing ``cute.ptr`` and ``cute.make_tensor`` to pass pointers and construct tensors directly.
 
 Typical use cases for bypassing DLPack include:
 1. Users want to call the JIT function directly to avoid the overhead introduced by the DLPack protocol.
-2. DLPack canonicalizes the stride of shape-1 dimensions to 1, which may result in incorrect alignment 
+2. DLPack canonicalizes the stride of shape-1 dimensions to 1, which may result in incorrect alignment
 propagation and affect memory access or performance.
 3. DLPack may lack support for some narrow data types.
 
 The following example illustrates how to bypass the DLPack protocol when invoking a JIT function.
-Assume we have a pre-defined ``TensorOpGemm`` kernel whose JIT interface expects three 
-arguments of type ``cute.Tensor``. To enable direct invocation without DLPack, we first define a JIT wrapper 
-function that accepts ``cute.Pointer`` types as parameters. Within this wrapper, we use ``cute.make_tensor`` 
+Assume we have a pre-defined ``TensorOpGemm`` kernel whose JIT interface expects three
+arguments of type ``cute.Tensor``. To enable direct invocation without DLPack, we first define a JIT wrapper
+function that accepts ``cute.Pointer`` types as parameters. Within this wrapper, we use ``cute.make_tensor``
 to construct tensors from the provided pointers, and then call the ``TensorOpGemm`` kernel as usual.
 
 .. code-block:: python
@@ -442,7 +476,7 @@ to construct tensors from the provided pointers, and then call the ``TensorOpGem
         mA = cute.make_tensor(a_ptr, layout=a_layout)
         mB = cute.make_tensor(b_ptr, layout=b_layout)
         mC = cute.make_tensor(c_ptr, layout=c_layout)
-        
+
         # TensorOpGemm is a pre-defined kernel from our example
         tensor_op_gemm = TensorOpGemm(
             a_ptr.value_type, c_ptr.value_type, cutlass.Float32, (2, 2, 1)
@@ -450,9 +484,9 @@ to construct tensors from the provided pointers, and then call the ``TensorOpGem
 
         tensor_op_gemm(mA, mB, mC)
 
-To pass a PyTorch tensor to this new JIT wrapper, we retrieve the raw pointer from the PyTorch tensor 
+To pass a PyTorch tensor to this new JIT wrapper, we retrieve the raw pointer from the PyTorch tensor
 and create a ``cute.Pointer`` instance using ``cute.make_ptr``.
-This approach allows us to bypass the DLPack protocol entirely, avoiding its overhead and potential 
+This approach allows us to bypass the DLPack protocol entirely, avoiding its overhead and potential
 issues with shape-1 dimension handling.
 
 .. code-block:: python
@@ -466,7 +500,7 @@ issues with shape-1 dimension handling.
     c = torch.randn(
         n, m, l, dtype=torch.float16, device="cuda"
     ).permute(1, 2, 0)
-    
+
     # from cutlass.cute.runtime import make_ptr
     a_ptr = make_ptr(
         cutlass.Float16, a.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
@@ -478,3 +512,5 @@ issues with shape-1 dimension handling.
         cutlass.Float16, c.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
     )
     tensor_op_gemm_wrapper(a_ptr, b_ptr, c_ptr, m, n, k, l)
+
+

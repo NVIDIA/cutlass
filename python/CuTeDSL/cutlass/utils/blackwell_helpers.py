@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,11 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from enum import Enum
 from math import log2, ceil
 from typing import List, Type, Union, Tuple
-from typing_extensions import deprecated
-import warnings
 
 from cutlass.cutlass_dsl import (
     Float16,
@@ -40,7 +37,7 @@ from cutlass.cute.nvgpu.tcgen05 import (
     MmaMXF8Op,
     MmaMXF4Op,
     MmaMXF4NVF4Op,
-    OperandSource,
+    OperandSource as Tcgen05OperandSource,
     OperandMajorMode,
     CtaGroup,
     Ld16x64bOp,
@@ -63,23 +60,8 @@ from cutlass.cute.nvgpu.cpasync import (
 )
 from cutlass.utils.layout import LayoutEnum
 
-
-@deprecated("Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead")
-class SmemCapacity(Enum):
-    SM100_SMEM_CAPACITY_BYTES = (228 - 1) * 1024
-    SM120_SMEM_CAPACITY_BYTES = (100 - 1) * 1024
-
-
-warnings.warn(
-    "SMEM_CAPACITY is deprecated: Use get_smem_capacity_in_bytes from cutlass.utils.smem_capacity instead",
-    DeprecationWarning,
-    stacklevel=2,
-)
-# Dictionary to map compute capability to SMEM capacity
-SMEM_CAPACITY = {
-    "sm100": SmemCapacity.SM100_SMEM_CAPACITY_BYTES.value,
-    "sm120": SmemCapacity.SM120_SMEM_CAPACITY_BYTES.value,
-}
+# Type alias for documentation clarity
+OperandSource = Tcgen05OperandSource
 
 
 @dsl_user_op
@@ -368,8 +350,8 @@ def get_tmem_load_op(
     :rtype: cute.CopyAtom
 
     :raises ValueError: If the function cannot handle the given combination of accumulation
-    and dimension types, or if it cannot determine the appropriate configuration based on
-    the input parameters.
+        and dimension types, or if it cannot determine the appropriate configuration based on
+        the input parameters.
     """
     is_m_major = layout_d.is_m_major_c()
 
@@ -557,9 +539,9 @@ def get_num_tmem_alloc_cols(
     # Sum up the num_tmem_alloc_cols_per_tensor
     num_tmem_alloc_cols = sum(num_tmem_alloc_cols_per_tensor)
 
-    # Round up num_tmem_cols_total to the nearest power of 2
+    # Round up num_tmem_cols_total to the nearest power of 2 and make sure it is at least 32
     if rounding:
-        num_tmem_alloc_cols = 1 << ceil(log2(num_tmem_alloc_cols))
+        num_tmem_alloc_cols = max(1 << ceil(log2(num_tmem_alloc_cols)), 32)
 
     # Validate the number of TMEM allocation columns
     SM100_TMEM_CAPACITY_COLUMNS = 512
@@ -628,16 +610,66 @@ def get_smem_layout_atom_ab(
 
 
 @dsl_user_op
-def make_smem_layout_a(
-    tiled_mma: cute.TiledMma,
-    mma_tiler_mnk: cute.Tile,
+def make_smem_layout(
+    leading_mode: OperandMajorMode,
+    smem_tile_shape: cute.Tile,
     a_dtype: Type[Numeric],
     num_stages: int,
     *,
     loc=None,
     ip=None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
+    """Construct a staged SMEM layout for an operand given its major mode and tile shape.
+
+    This helper:
+
+    1. Selects a SMEM layout atom using simple heuristics based on the operand's major mode,
+       element type, and the size of the major dimension in ``smem_tile_shape``.
+    2. Tiles the atom to ``smem_tile_shape`` and appends a staging dimension of length ``num_stages``.
+    3. Orders the ``(M, N, stage)`` axes so the major dimension is contiguous, then coalesces.
+
+    :param leading_mode: Operand major mode (``MN`` or ``K``) of the staged operand.
+    :type leading_mode: cute.nvgpu.tcgen05.OperandMajorMode
+    :param smem_tile_shape: 2D SMEM tile shape to stage (before the staging dimension is appended).
+    :type smem_tile_shape: cute.Tile
+    :param a_dtype: Element type of the staged operand.
+    :type a_dtype: Type[Numeric]
+    :param num_stages: Number of pipeline stages (depth of the staging dimension).
+    :type num_stages: int
+
+    :return: Staged SMEM layout for the operand.
+    :rtype: Union[cute.Layout, cute.ComposedLayout]
+    """
+
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        leading_mode, a_dtype, smem_tile_shape, loc=loc, ip=ip
+    )
+    smem_layout_atom = make_smem_layout_atom(
+        smem_layout_atom_kind, a_dtype, loc=loc, ip=ip
+    )
+
+    is_k_major = leading_mode == OperandMajorMode.K
+    smem_layout = cute.tile_to_shape(
+        smem_layout_atom,
+        cute.append(smem_tile_shape, num_stages),
+        order=(0, 1, 2) if is_k_major else (1, 0, 2),
+    )
+    return cute.coalesce(smem_layout, target_profile=(1, 1, 1), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_smem_layout_a(
+    tiled_mma: cute.TiledMma,
+    mma_tiler_mnk: cute.Tile,
+    a_dtype: Type[Numeric],
+    num_stages: int,
+    *,
+    is_k_major=None,
+    loc=None,
+    ip=None,
+) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps with:
+
     1. Get the partitioned shape of the A tensor based on the tiled_mma & MMA tiler.
     2. Select the heuristic SMEM layout atom based on the A tensor's majorness, the data type, and the major mode size.
     3. cute.Tile the SMEM layout atom to the MMA tile shape.
@@ -656,34 +688,27 @@ def make_smem_layout_a(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = tiled_mma.op.a_major_mode == OperandMajorMode.K
+    is_k_major = (tiled_mma.op.a_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    a_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     a_smem_shape = tiled_mma.partition_shape_A(
-        cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip)
+        cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
     a_smem_shape_mn_k = (
         cute.size(a_smem_shape[0][0], loc=loc, ip=ip) * a_smem_shape[1],
         cute.size(a_smem_shape[0][1], loc=loc, ip=ip) * a_smem_shape[2],
     )
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        a_major_mode, a_dtype, a_smem_shape_mn_k, loc=loc, ip=ip
+    )
     a_smem_layout_atom = make_smem_layout_atom(
-        get_smem_layout_atom_ab(
-            tiled_mma.op.a_major_mode,
-            a_dtype,
-            a_smem_shape_mn_k,
-            loc=loc,
-            ip=ip,
-        ),
-        a_dtype,
-        loc=loc,
-        ip=ip,
+        smem_layout_atom_kind, a_dtype, loc=loc, ip=ip
     )
-    a_smem_layout_staged = tile_to_mma_shape(
-        a_smem_layout_atom,
-        cute.append(a_smem_shape, num_stages, loc=loc, ip=ip),
-        order=((1, 0, 2) if not is_k_major else (0, 1, 2)),
-        loc=loc,
-        ip=ip,
+
+    a_smem_shape = cute.append(a_smem_shape, num_stages, loc=loc, ip=ip)
+    order = (2, 1, 3) if not is_k_major else (1, 2, 3)
+    return tile_to_mma_shape(
+        a_smem_layout_atom, a_smem_shape, order=order, loc=loc, ip=ip
     )
-    return a_smem_layout_staged
 
 
 @dsl_user_op
@@ -693,10 +718,12 @@ def make_smem_layout_b(
     b_dtype: Type[Numeric],
     num_stages: int,
     *,
+    is_k_major=None,
     loc=None,
     ip=None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps:
+
     1. Get the partitioned shape of the B tensor based on the tiled_mma & MMA tiler.
     2. Select the heuristic SMEM layout atom based on the B tensor's majorness, the data type, and the major mode size.
     3. cute.Tile the SMEM layout atom to the MMA tile shape.
@@ -715,35 +742,28 @@ def make_smem_layout_b(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = tiled_mma.op.b_major_mode == OperandMajorMode.K
+    is_k_major = (tiled_mma.op.b_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    b_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     b_smem_shape = tiled_mma.partition_shape_B(
-        cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip)
+        cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip), loc=loc, ip=ip
     )
     b_smem_shape_nk = (
         cute.size(b_smem_shape[0][0], loc=loc, ip=ip) * b_smem_shape[1],
         cute.size(b_smem_shape[0][1], loc=loc, ip=ip) * b_smem_shape[2],
     )
-    b_smem_layout_atom = make_smem_layout_atom(
-        get_smem_layout_atom_ab(
-            tiled_mma.op.b_major_mode,
-            b_dtype,
-            b_smem_shape_nk,
-            loc=loc,
-            ip=ip,
-        ),
-        b_dtype,
-        loc=loc,
-        ip=ip,
+
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        b_major_mode, b_dtype, b_smem_shape_nk, loc=loc, ip=ip
     )
-    b_smem_layout_staged = tile_to_mma_shape(
-        b_smem_layout_atom,
-        cute.append(b_smem_shape, num_stages, loc=loc, ip=ip),
-        order=((1, 0, 2) if not is_k_major else (0, 1, 2)),
-        loc=loc,
-        ip=ip,
+    b_smem_layout_atom = make_smem_layout_atom(
+        smem_layout_atom_kind, b_dtype, loc=loc, ip=ip
     )
 
-    return b_smem_layout_staged
+    b_smem_shape = cute.append(b_smem_shape, num_stages, loc=loc, ip=ip)
+    order = (2, 1, 3) if not is_k_major else (1, 2, 3)
+    return tile_to_mma_shape(
+        b_smem_layout_atom, b_smem_shape, order=order, loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -801,6 +821,7 @@ def make_smem_layout_epi(
     ip=None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps:
+
     1. Select the heuristic SMEM layout atom based on the epilog tile shape,
        the epilog tensor's majorness, and the element type.
     2. cute.Tile the SMEM layout atom to the epilog tile shape.
@@ -823,21 +844,17 @@ def make_smem_layout_epi(
         cute.shape(epi_tile, loc=loc, ip=ip), loc=loc, ip=ip
     )
 
-    c_smem_layout_atom = make_smem_layout_atom(
-        get_smem_layout_atom_epi(
-            epi_layout,
-            epi_dtype,
-            epi_tile,
-            loc=loc,
-            ip=ip,
-        ),
-        epi_dtype,
-        loc=loc,
-        ip=ip,
+    smem_atom_kind = get_smem_layout_atom_epi(
+        epi_layout, epi_dtype, epi_tile, loc=loc, ip=ip
     )
+    c_smem_layout_atom = make_smem_layout_atom(
+        smem_atom_kind, epi_dtype, loc=loc, ip=ip
+    )
+
+    epilog_shape = cute.append(epilog_shape, epi_stage, loc=loc, ip=ip)
     epi_smem_layout_staged = cute.tile_to_shape(
         c_smem_layout_atom,
-        cute.append(epilog_shape, epi_stage, loc=loc, ip=ip),
+        epilog_shape,
         order=((1, 0, 2) if not epi_layout.is_n_major_c() else (0, 1, 2)),
         loc=loc,
         ip=ip,
@@ -875,7 +892,7 @@ def make_trivial_tiled_mma(
     :param mma_tiler_mn: The shape (M, N, K) of the MMA tiler.
     :type mma_tiler_mn: Tuple[int, int]
     :param a_source: The source of operand A (SMEM by default or TMEM).
-    :type a_source: OperandSource
+    :type a_source: cutlass.cute.nvgpu.tcgen05.OperandSource
 
     :return: A tiled MMA atom.
     :rtype: cute.TiledMma
@@ -926,7 +943,9 @@ def make_trivial_tiled_mma(
     else:
         raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
 
-    return cute.make_tiled_mma(cute.make_mma_atom(mma_op))
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -961,7 +980,7 @@ def make_blockscaled_trivial_tiled_mma(
     :param mma_tiler_mn: The shape (M, N, K) of the MMA tiler.
     :type mma_tiler_mn: Tuple[int, int]
     :param a_source: The source of operand A (SMEM by default or TMEM).
-    :type a_source: OperandSource
+    :type a_source: cutlass.cute.nvgpu.tcgen05.OperandSource
 
     :return: A tiled MMA atom.
     :rtype: cute.TiledMma
@@ -996,7 +1015,9 @@ def make_blockscaled_trivial_tiled_mma(
     else:
         raise TypeError(f"unsupported ab_dtype, got {ab_dtype}")
 
-    return cute.make_tiled_mma(cute.make_mma_atom(mma_op))
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -1133,3 +1154,19 @@ def cluster_shape_to_tma_atom_SFB(
     raise ValueError(
         f"Unsupported Configuration for SM100 TMA: {cluster_shape_mnk} and {atom_thr_id}"
     )
+
+
+__all__ = [
+    "compute_epilogue_tile_shape",
+    "get_smem_store_op",
+    "get_tmem_load_op",
+    "get_num_tmem_alloc_cols",
+    "make_smem_layout_a",
+    "make_smem_layout_b",
+    "make_smem_layout_epi",
+    "make_trivial_tiled_mma",
+    "make_blockscaled_trivial_tiled_mma",
+    "cluster_shape_to_tma_atom_A",
+    "cluster_shape_to_tma_atom_B",
+    "cluster_shape_to_tma_atom_SFB",
+]

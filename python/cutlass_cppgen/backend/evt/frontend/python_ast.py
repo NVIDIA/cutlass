@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -140,7 +140,7 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
         self.add_edge(rhs, name, weight=1)
         return name
 
-    def visit_Assign(self, node: ast.BinOp):
+    def visit_Assign(self, node: ast.Assign):
         target = self.visit(node.targets[0])
         value = self.visit(node.value)
         # Create the assign node

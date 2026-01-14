@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -12,13 +12,14 @@
 from dataclasses import dataclass
 from typing import Type
 
-import cutlass._mlir.dialects.cute as _cute_ir
+from cutlass import cute
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError
-from ...core import CopyOp, Trait, _pack_shape
+from ...core import _pack_shape
 from ...typing import Numeric
+from ...atom import CopyOp, Trait
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class BaseOp(CopyOp):
             + f"\n  number of matrices = {self.num_matrices}"
         )
         if self.transpose:
-            res += f"\n  transposed"
+            res += "\n  transposed"
         return res
 
 
@@ -71,7 +72,7 @@ class LdMatrix8x8x16bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get() if self.transpose else None,
         )
-        return LdMatrix8x8x16bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return LdMatrix8x8x16bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class LdMatrix8x8x16bTrait(Trait):
@@ -110,7 +111,7 @@ class LdMatrix16x16x8bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get(),
         )
-        return LdMatrix16x16x8bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return LdMatrix16x16x8bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class LdMatrix16x16x8bTrait(Trait):
@@ -144,7 +145,7 @@ class StMatrix8x8x16bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get() if self.transpose else None,
         )
-        return StMatrix8x8x16bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return StMatrix8x8x16bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class StMatrix8x8x16bTrait(Trait):
@@ -182,7 +183,7 @@ class StMatrix16x8x8bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get(),
         )
-        return StMatrix16x8x8bTrait(_cute_ir.atom(ty, loc=loc, ip=ip))
+        return StMatrix16x8x8bTrait(cute.make_atom(ty, loc=loc, ip=ip))
 
 
 class StMatrix16x8x8bTrait(Trait):

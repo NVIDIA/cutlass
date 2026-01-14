@@ -510,7 +510,7 @@ To see how these `TiledMMA`s are used to partition data tensors, see the [`0x_ge
 
 ## Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -472,6 +472,8 @@ class IntegerMeta(NumericMeta):
         if width == 1:
             np_dtype = np.bool_
         elif width == 128:
+            np_dtype = None
+        elif width == 4:
             np_dtype = None
         elif signed:
             np_dtype = getattr(np, f"int{width}")
@@ -1127,7 +1129,10 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         if isinstance(value, bool):
             res_type = Boolean
         elif isinstance(value, int):
-            res_type = Int32
+            # Choose Int32 if it can represent the value, Int64 otherwise
+            res_type = (
+                Int32 if (value <= 2147483647) and (value >= -2147483648) else Int64
+            )
         elif isinstance(value, float):
             res_type = Float32
         elif isinstance(value, ArithValue):
@@ -1229,11 +1234,13 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             T.i32(): Int32,
             T.i16(): Int16,
             T.i8(): Int8,
+            T.IntegerType.get_signless(4): Int4,
             T.si(128): Int128,
             T.si64(): Int64,
             T.si32(): Int32,
             T.si16(): Int16,
             T.si8(): Int8,
+            T.IntegerType.get_signed(4): Int4,
             T.ui(128): Uint128,
             T.ui64(): Uint64,
             T.ui32(): Uint32,
@@ -1409,6 +1416,9 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     def __rxor__(self, other, *, loc=None, ip=None):
         return self.__xor__(other, loc=loc, ip=ip)
 
+    def __tvm_ffi_int__(self):
+        return self.value
+
 
 class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     """A class representing floating-point values.
@@ -1489,6 +1499,9 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         else:
             raise DSLRuntimeError(f"{x} to Float conversion is not supported")
 
+    def __tvm_ffi_float__(self):
+        return self.value
+
 
 class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.bool):
     """Boolean type representation in the DSL.
@@ -1568,6 +1581,15 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         :raises TypeError: Always raises this error as negation is not supported
         """
         raise TypeError("Negation, the operator `-` is not supported for boolean type")
+
+
+class Int4(
+    Integer,
+    metaclass=IntegerMeta,
+    width=4,
+    signed=True,
+    mlir_type=lambda: T.IntegerType.get_signless(4),
+): ...
 
 
 class Int8(Integer, metaclass=IntegerMeta, width=8, signed=True, mlir_type=T.i8): ...
@@ -1661,8 +1683,17 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
     def __c_pointers__(self):
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-
-        return Float.__c_pointers__(self)
+        # Convert float32 to bfloat16 representation
+        # First convert the value to float32 bit representation
+        f32_val = np.float32(self.value)
+        # Get the 32-bit integer representation
+        bits = f32_val.view(np.uint32)
+        # Truncate to 16 bits, keeping the high 16 bits
+        bf16_bits = np.uint16(bits >> 16)
+        # Create a short (16-bit int) with those bits
+        c_val = ctypes.c_short(bf16_bits)
+        c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        return [c_pointer]
 
 
 class Float8E5M2(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E5M2): ...
@@ -1703,6 +1734,7 @@ _unsupported_dst_float_types = [
 
 
 ALL_DTYPES = {
+    Int4,
     Int8,
     Int16,
     Int32,
@@ -1732,7 +1764,7 @@ __STR_TO_DTYPE__ = {dt.__name__: dt for dt in ALL_DTYPES}
 
 def dtype(dtype_) -> Type[Numeric]:
     t = None
-    if const_expr(isinstance(dtype_, str) and dtype_ in __STR_TO_DTYPE__):
+    if isinstance(dtype_, str) and dtype_ in __STR_TO_DTYPE__:
         t = __STR_TO_DTYPE__[dtype_]
     else:
         raise TypeError(f"can't interpret {dtype_} as data type")
@@ -1930,6 +1962,7 @@ __all__ = [
     "Int64",
     "Int128",
     "Int8",
+    "Int4",
     "Uint8",
     "Uint16",
     "Uint32",

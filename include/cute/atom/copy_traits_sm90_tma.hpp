@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1051,6 +1051,17 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
         smem_swizzle,
         tma_l2Promotion,
         tma_oobFill);
+   
+    int driver_version = 0;
+    cudaError_t driver_version_err = cudaDriverGetVersion(&driver_version);
+    assert(driver_version_err == cudaSuccess);
+    if (driver_version <= 13010) {      
+      if (cute::bits_to_bytes(
+            cute::cosize(gtensor.layout()) *
+            cute::sizeof_bits<typename GEngine::value_type>::value) < 131072) {
+        reinterpret_cast<uint64_t*>(&tma_desc)[1] &= ~(1llu << 21);
+      }
+    }
 
     if (result != CUDA_SUCCESS) {
       std::cerr << "TMA Desc Addr:   " << &tma_desc

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -78,6 +78,42 @@ void initialize_gemm_reference_operations_fp8in_fp32out(Manifest &manifest) {
     float_e5m2_t,                           // ElementA
     float_e5m2_t,                           // ElementB
     float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    void,                                   // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    void,                                   // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
     float                                   // ElementD

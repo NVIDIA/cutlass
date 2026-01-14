@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -233,7 +233,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -508,6 +507,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     auto problem_shape = params.problem_shape;
 
     // Account for more than one epilogue warp
@@ -551,7 +551,6 @@ public:
     typename MainloopABPipeline::Params mainloop_ab_pipeline_params;
     if (WarpCategory::MainloopABLoad == warp_category) {
       mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Producer;
-      // Initialize the barrier for TMA load prefetch
     }
     if (WarpCategory::MMA == warp_category) {
       mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Consumer;
@@ -735,11 +734,6 @@ public:
     mainloop_ab_pipeline.init_masks(cluster_shape);
     mainloop_sf_pipeline.init_masks(cluster_shape);
     accumulator_pipeline.init_masks(cluster_shape);
-    // TileID scheduler
-    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
-    auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
-
     //
     // TMEM "Allocation"
     //
@@ -749,6 +743,15 @@ public:
     auto acc_shape = partition_shape_C(tiled_mma, take<0,2>(TileShape{}));
     Tensor accumulators = cutlass::detail::make_sm100_accumulator<AccumulatorPipelineStageCount, IsOverlappingAccum>(
         tiled_mma, acc_shape, EpilogueTile{});
+
+    // TileID scheduler
+    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
+
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
+    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
+    auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
 
     pipeline_init_wait(cluster_size);
 

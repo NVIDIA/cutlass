@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,7 @@
 #include <initializer_list>
 #endif
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm {
@@ -56,6 +57,7 @@ struct GroupProblemShape {
   int32_t num_groups = 1;
   UnderlyingProblemShape* problem_shapes = nullptr;
   UnderlyingProblemShape const* host_problem_shapes = nullptr;
+
 
   CUTLASS_HOST_DEVICE
   int32_t groups() const { return num_groups; }
@@ -79,15 +81,54 @@ struct GroupProblemShape {
   }
 };
 
-template <class ProblemShape_, class MaxProblemShape_>
+template <class ProblemShape_>
 struct MoEProblemShape {
+
   using UnderlyingProblemShape = ProblemShape_;
-  using MaxProblemShape = MaxProblemShape_;
+  static_assert(rank(UnderlyingProblemShape{}) == 3, "ProblemShape{} should be <M,N,K>");
 
-  UnderlyingProblemShape problem_shape;
-  MaxProblemShape max_problem_shape;
+  int32_t max_m = 0;
+  int32_t max_n = 0;
+  int32_t max_k = 0;
+  int32_t num_groups = 0;
+  int32_t* tokens_per_expert = nullptr; 
+  int32_t* tokens_per_expert_host = nullptr; 
+  
+  CUTLASS_HOST_DEVICE
+  int32_t groups() const { return num_groups; }
+
+  CUTLASS_HOST_DEVICE
+  UnderlyingProblemShape const
+  get_problem_shape(int32_t group_idx=0) const {
+
+    UnderlyingProblemShape expert_problem_dims;
+    assert(tokens_per_expert != nullptr); //tokens_per_expert should not be null
+    if (group_idx < num_groups) { // add check on the can_implement
+      expert_problem_dims = {max_m, tokens_per_expert[group_idx], max_k};
+    }
+
+    return expert_problem_dims;
+  }
+
+  // Function returns max problem shape if tokens_per_expert host is unavailable.
+  // Returns host problem shape if tokens_per_expert host is available.
+  CUTLASS_HOST_DEVICE
+  UnderlyingProblemShape const
+  get_host_problem_shape(int32_t group_idx=0) const {
+    UnderlyingProblemShape expert_problem_dims = {max_m, max_n, max_k};
+    if (group_idx < num_groups && tokens_per_expert_host != nullptr) {
+      expert_problem_dims = {max_m, tokens_per_expert_host[group_idx], max_k};
+    }
+    return expert_problem_dims;
+  }
+
+  CUTLASS_HOST_DEVICE
+  bool
+  is_host_problem_shape_available() const {
+    return tokens_per_expert_host != nullptr;
+  }
+
 };
-
 
 template <class ProblemShape_>
 class ArrayProblemShape {
@@ -135,8 +176,9 @@ namespace detail {
   
 template<class T>
 struct is_moe_problem_shape : cute::false_type {};
-template<class T, class U>
-struct is_moe_problem_shape<cutlass::gemm::MoEProblemShape<T,U>> : cute::true_type {}; 
+
+template<class T>
+struct is_moe_problem_shape<cutlass::gemm::MoEProblemShape<T>> : cute::true_type {}; 
 
 }
 

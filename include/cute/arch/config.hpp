@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -156,17 +156,9 @@
 #  define CUTE_ARCH_TMA_SM120_ENABLED
 #endif
 
-#if (defined(CUTLASS_ARCH_MMA_SM120_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM120_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM121_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121A_ENABLED))
 #  if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
-#    define CUTE_ARCH_F8F6F4_MMA_ENABLED
-#    define CUTE_ARCH_MXF8F6F4_MMA_ENABLED
-#    define CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED
-#    define CUTE_ARCH_MXF4NVF4_4X_UE4M3_MMA_ENABLED
-#  endif
-#endif
-
-#if (defined(CUTLASS_ARCH_MMA_SM121_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121A_ENABLED))
-#  if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
 #    define CUTE_ARCH_F8F6F4_MMA_ENABLED
 #    define CUTE_ARCH_MXF8F6F4_MMA_ENABLED
 #    define CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED

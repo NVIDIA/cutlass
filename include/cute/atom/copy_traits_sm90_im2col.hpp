@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -470,6 +470,17 @@ make_im2col_tma_copy_desc(
       tma_swizzle,
       tma_l2Promotion,
       tma_oob_fill);
+
+  int driver_version = 0;
+  cudaError_t driver_version_err = cudaDriverGetVersion(&driver_version);
+  assert(driver_version_err == cudaSuccess);
+  if (driver_version <= 13010) {
+    if (cute::bits_to_bytes(
+          cute::cosize(tensor_cwhdn.layout()) *
+          cute::sizeof_bits<typename EngineA::value_type>::value) < 131072) {
+      reinterpret_cast<uint64_t*>(&tma_desc)[1] &= ~(1llu << 21);
+    }
+  }
 
   // The extra asserts help indicate the error's cause.
   assert(encode_result != CUDA_ERROR_DEINITIALIZED);

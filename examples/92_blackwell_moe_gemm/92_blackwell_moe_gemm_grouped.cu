@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,7 +39,7 @@
 
   Usage:
   $ ./examples/92_blackwell_moe_gemm/92_blackwell_moe_gemm_grouped
-  --m=28672 --n=4 --k=4096 --l=8 --benchmark=benchmark.txt
+  --m=7168 --n=128 --k=512 --groups=8 --benchmark=benchmark.txt
 
 */
 
@@ -82,7 +82,7 @@ struct Options {
   bool error;
   bool verification;
 
-  int m, n, k, l;
+  int m, n, k, groups;
 
   int iterations;
 
@@ -92,7 +92,7 @@ struct Options {
     help(false),
     error(false),
     verification(true),
-    m(2048), n(2048), k(2048), l(1),
+    m(2048), n(2048), k(2048), groups(1),
     iterations(10)
   { }
 
@@ -108,7 +108,7 @@ struct Options {
     cmd.get_cmd_line_argument("m", m, 2048);
     cmd.get_cmd_line_argument("n", n, 2048);
     cmd.get_cmd_line_argument("k", k, 2048);
-    cmd.get_cmd_line_argument("l", l, 1);
+    cmd.get_cmd_line_argument("groups", groups, 1);
     cmd.get_cmd_line_argument("iterations", iterations, 10);
     cmd.get_cmd_line_argument("benchmark", benchmark_path);
 
@@ -128,7 +128,7 @@ struct Options {
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
-      << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
+      << "  --groups=<int>              Sets the groups extent (batch count) of the GEMM\n"
       << "  --iterations=<int>          Set the number of profiling iterations to perform\n"
       << "  --benchmark=<file>          Executes a benchmark problem size\n"
       << "  --no_verif                  Do not run verification kernels\n";
@@ -219,9 +219,7 @@ struct ExampleRunner {
       MainloopScheduleType
     >::CollectiveOp;
 
-  using ProblemShapeGroup = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
-  using ProblemShapeMax = Shape<int,int,int,int>; // max <M,N,K,L>
-  using ProblemShape = cutlass::gemm::MoEProblemShape<ProblemShapeGroup, ProblemShapeMax>;
+  using ProblemShape = cutlass::gemm::MoEProblemShape<Shape<int,int,int>>; // <M,N,K> per group
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       ProblemShape,
@@ -231,8 +229,6 @@ struct ExampleRunner {
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-
-  // using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
   using StrideA = typename Gemm::GemmKernel::StrideA;
   using StrideB = typename Gemm::GemmKernel::StrideB;
@@ -249,8 +245,6 @@ struct ExampleRunner {
   //
 
   /// Initialization
-  StrideA stride_A;
-  StrideB stride_B;
   StrideC stride_C;
   StrideD stride_D;
   uint64_t seed = 0;
@@ -261,7 +255,10 @@ struct ExampleRunner {
   cutlass::DeviceAllocation<typename Gemm::ElementD> block_D;
   cutlass::DeviceAllocation<typename Gemm::ElementD> block_ref_D;
 
-  cutlass::DeviceAllocation<typename ProblemShapeGroup::UnderlyingProblemShape> problem_sizes;
+  cutlass::DeviceAllocation<int32_t> tokens_per_expert;
+
+  std::vector<ProblemShape::UnderlyingProblemShape> problem_sizes_host;
+  std::vector<int32_t> tokens_per_expert_host;
 
 
   //
@@ -269,10 +266,11 @@ struct ExampleRunner {
   //
 
   bool verify(ProblemShape const& problem_size, float alpha, float beta) {
-    auto [maxM, maxN, maxK, L] = problem_size.max_problem_shape;
-    for (int i = 0; i < problem_size.problem_shape.num_groups; i++) {
-      auto problem = problem_size.problem_shape.get_host_problem_shape(i);
+    auto [maxM, maxN, maxK] = problem_size.get_host_problem_shape(0); //gets max problem shape
+    for (int i = 0; i < problem_size.num_groups; i++) {
+      auto problem = problem_sizes_host.at(i);
       auto [M, N, K] = problem;
+      printf("group [%d] : M = %d, N = %d, K = %d\n", i, M, N, K);
 
       cutlass::TensorRef ref_A(block_A.get() + size_t(1) * i * maxM * maxK, Gemm::LayoutA(maxK));
       cutlass::TensorRef ref_B(block_B.get() + size_t(1) * i * maxN * maxK, Gemm::LayoutB(maxK));
@@ -320,11 +318,9 @@ struct ExampleRunner {
 
   /// Initialize operands to be used in the GEMM and reference GEMM
   void initialize(ProblemShape const& problem_size) {
-    auto problem_shape_MNKL = cute::append<4>(problem_size.max_problem_shape, 1);
+    auto problem_shape_MNKL = cute::append<4>(problem_size.get_host_problem_shape(0), problem_size.groups());
     auto [M, N, K, L] = problem_shape_MNKL;
 
-    stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
-    stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
@@ -340,12 +336,12 @@ struct ExampleRunner {
   }
 
   /// Load a benchmark
-  std::vector<ProblemShapeGroup::UnderlyingProblemShape> benchmark_problems(std::string const& benchmark_path) {
-    std::vector<ProblemShapeGroup::UnderlyingProblemShape> problem_sizes_host;
+  void benchmark_problems(std::string const& benchmark_path) {
 
     std::ifstream file(benchmark_path);
     if (!file.good()) {
-      return {};
+      std::cout << "Issues with benchmark file." << std::endl;
+      return;
     }
 
     while (file.good()) {
@@ -370,30 +366,64 @@ struct ExampleRunner {
       problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
 
-    return problem_sizes_host;
+    return;
+  }
+
+  void benchmark_tokens_per_expert(std::string const& benchmark_path) {
+
+    std::ifstream file(benchmark_path);
+    if (!file.good()) {
+      return;
+    }
+
+    while (file.good()) {
+
+      int idx = -1;
+      std::string extent_str;
+
+      file >> idx >> extent_str;
+
+      if (idx < 0 || extent_str.empty()) {
+        break;
+      }
+
+      cutlass::gemm::GemmCoord extent;
+      std::vector<std::string> tokens;
+
+      cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
+
+      for (int i = 0; i < int(tokens.size()); ++i) {
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
+      }
+      tokens_per_expert_host.push_back(extent.n());
+    }
+
+    return;
   }
 
   bool run(Options const& options, cutlass::KernelHardwareInfo const& hw_info) {
-    auto problem_sizes_host = benchmark_problems(options.benchmark_path);
+
+    benchmark_problems(options.benchmark_path);
     if (problem_sizes_host.empty()) {
       return false;
     }
 
-    problem_sizes.reset(problem_sizes_host.size());
-    problem_sizes.copy_from_host(problem_sizes_host.data());
+    benchmark_tokens_per_expert(options.benchmark_path);
+    if (tokens_per_expert_host.empty()) {
+      return false;
+    }
 
-    ProblemShape problem_size;
-    problem_size.max_problem_shape = ProblemShapeMax{options.m, options.n, options.k, options.l};
-    problem_size.problem_shape.num_groups = problem_sizes_host.size();
-    problem_size.problem_shape.problem_shapes = problem_sizes.get();
-    problem_size.problem_shape.host_problem_shapes = problem_sizes_host.data();
+    tokens_per_expert.reset(tokens_per_expert_host.size());
+    tokens_per_expert.copy_from_host(tokens_per_expert_host.data());
+
+    ProblemShape problem_size {options.m, options.n, options.k, options.groups, tokens_per_expert.get()};
 
     initialize(problem_size);
 
     typename Gemm::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGrouped,
       problem_size,
-      {block_A.get(), stride_A, block_B.get(), stride_B},
+      {block_A.get(), block_B.get()},
       {{}, // epilogue.thread
        block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info
@@ -464,7 +494,7 @@ struct ExampleRunner {
       // Compute average setup and runtime and FLOPs.
       float elapsed_ms       = timer.elapsed_millis();
       double avg_runtime_ms  = double(elapsed_ms) / double(options.iterations);
-      double flops           = double(int64_t(2) * options.m * options.n * options.k * options.l) / (avg_runtime_ms / 1000.0);
+      double flops           = double(int64_t(2) * options.m * options.n * options.k * options.groups) / (avg_runtime_ms / 1000.0);
 
       std::cout << "  Avg runtime : " << avg_runtime_ms << " ms" << std::endl;
       std::cout << "  TFLOPS      : " << flops / 1e12 << std::endl;

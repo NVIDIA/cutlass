@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+import os
+import sys
 import argparse
 from typing import List, Type, Tuple, Optional
 import cuda.bindings.driver as cuda
@@ -39,21 +41,22 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
+from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
-import sys
-from pathlib import Path
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, "../.."))
 
-sys.path.append(str(Path(__file__).resolve().parent))
-from mamba2_ssd_reference import (
+from blackwell.mamba2_ssd.mamba2_ssd_reference import (
     ssd_reference_fp32_all,
     ssd_reference_lowprecision_intermediates,
     analyze_relative_diffs,
 )
-from mamba2_ssd_tile_scheduler import (
+from blackwell.mamba2_ssd.mamba2_ssd_tile_scheduler import (
     Mamba2SSDTileSchedulerParams,
     Mamba2SSDTileScheduler,
 )
@@ -86,9 +89,9 @@ class SSDKernel:
             cutlass.BFloat16,
         }, "Do not support other I/O types."
         assert acc_dtype in {cutlass.Float32}, "Do not support other ACC types."
-        assert cumsum_delta_dtype in {
-            cutlass.Float32
-        }, "Do not support other cumsum types."
+        assert cumsum_delta_dtype in {cutlass.Float32}, (
+            "Do not support other cumsum types."
+        )
         assert not (not has_d and d_has_hdim), "D cannot have Hdim if has_d is False"
 
         # Hardcode default setting
@@ -129,10 +132,18 @@ class SSDKernel:
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
 
         # Named barriers
-        self.pre_inter_sync_bar_id = 1
-        self.epilog_sync_bar_id = 2
-        self.pre_intra_sync_bar_id = 3
-        self.tmem_dealloc_sync_bar_id = 4
+        self.pre_inter_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=1,
+            num_threads=len(self.pre_inter_warp_id) * 32,
+        )
+        self.epilog_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=2,
+            num_threads=len(self.epilog_warp_id) * 32,
+        )
+        self.tmem_dealloc_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=3,
+            num_threads=self.threads_per_cta,
+        )
 
         # Number of registers used by each warp
         self.num_regs_uniform_warps = 24
@@ -467,15 +478,12 @@ class SSDKernel:
             )
 
         # TMA store for y
-        y_cta_v_layout = cute.composition(
-            cute.make_identity_layout(y.shape), self.epi_tile
-        )
         y_smem_layout = cute.slice_(self.y_smem_layout, (None, None, 0))
         tma_atom_y, tma_tensor_y = cpasync.make_tiled_tma_atom(
             cpasync.CopyBulkTensorTileS2GOp(),
             y,
             y_smem_layout,
-            y_cta_v_layout,
+            self.epi_tile,
         )
 
         # TMA store for fstate(p)
@@ -512,7 +520,9 @@ class SSDKernel:
             d_empty: cute.struct.MemRange[cutlass.Int64, self.input_stages]  # type: ignore
             # Intra1 acc stage barriers
             intra1_acc_full: cute.struct.MemRange[cutlass.Int64, self.intra1_acc_stages]  # type: ignore
-            intra1_acc_empty: cute.struct.MemRange[cutlass.Int64, self.intra1_acc_stages]  # type: ignore
+            intra1_acc_empty: cute.struct.MemRange[
+                cutlass.Int64, self.intra1_acc_stages
+            ]  # type: ignore
             # Internal stage barriers
             intra2_q_full: cute.struct.MemRange[cutlass.Int64, self.internal_stages]  # type: ignore
             intra2_q_empty: cute.struct.MemRange[cutlass.Int64, self.internal_stages]  # type: ignore
@@ -804,30 +814,27 @@ class SSDKernel:
         )
 
         # Cluster arrive after barrier init
-        if cute.size(self.cluster_shape_mnk) > 1:
-            cute.arch.cluster_arrive_relaxed()
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mnk, is_relaxed=True)
 
         # Cluster wait before tmem alloc
-        if cute.size(self.cluster_shape_mnk) > 1:
-            cute.arch.cluster_wait()
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mnk)
 
-        # Alloc tmem buffer
-        if warp_idx == self.epilog_warp_id[0]:
-            cute.arch.alloc_tmem(
-                self.num_tmem_cols_total,
-                smem_storage.tmem_holding_buf,
-                is_two_cta=self.use_2cta_instrs,
-            )
+        tmem_alloc_barrier = pipeline.NamedBarrier(
+            barrier_id=0,
+            num_threads=self.threads_per_cta,
+        )
+        tmem = utils.TmemAllocator(
+            smem_storage.tmem_holding_buf,
+            barrier_for_retrieve=tmem_alloc_barrier,
+            allocator_warp_id=self.epilog_warp_id[0],
+        )
+        tmem.allocate(self.num_tmem_cols_total)
 
-        # Bar sync before retrieving tmem ptr from shared mem
-        cute.arch.barrier()
+        # Barrier before retrieve tensor memory ptr from shared memory
+        tmem.wait_for_alloc()
 
         # Retrieve tmem ptr
-        tmem_ptr_base = cute.arch.retrieve_tmem_ptr(
-            self.acc_dtype,
-            alignment=16,
-            ptr_to_buffer_holding_addr=smem_storage.tmem_holding_buf,
-        )
+        tmem_ptr_base = tmem.retrieve_ptr(self.acc_dtype)
 
         # Specialized TMA load Delta/CumsumDelta/X warp
         if warp_idx == self.tma_deltas_x_d_warp_id:
@@ -1579,7 +1586,7 @@ class SSDKernel:
             ) = self.pre_inter_tmem_load_and_partition_p(local_tidx, tInter1, smem_pt)
 
             # Make fragment for register to hold P after post-processing (in acc dtype)
-            tState = cute.make_fragment(tTR_rP.shape, self.acc_dtype)
+            tState = cute.make_rmem_tensor(tTR_rP.shape, self.acc_dtype)
 
             # Make tiledCopy and partition smem/register tensor for smem store INTER2_P
             # ((R2S_ATOM_V, R2S_REST_V), R2S_M, R2S_N)
@@ -1621,7 +1628,7 @@ class SSDKernel:
             tma_p_pipeline = pipeline.PipelineTmaStore.create(
                 num_stages=self.internal_stages,
                 producer_group=pipeline.CooperativeGroup(
-                    pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id), 128
+                    pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id)
                 ),
             )
 
@@ -1808,10 +1815,7 @@ class SSDKernel:
                     cute.arch.ProxyKind.async_shared,
                     space=cute.arch.SharedSpace.shared_cta,
                 )
-                cute.arch.barrier(
-                    barrier_id=self.pre_inter_sync_bar_id,
-                    number_of_threads=len(self.pre_inter_warp_id) * 32,
-                )
+                self.pre_inter_sync_barrier.arrive_and_wait()
 
                 if local_warp_idx == 0:
                     # TMA store P
@@ -1824,10 +1828,7 @@ class SSDKernel:
                     tma_p_pipeline.producer_commit()
                     tma_p_pipeline.producer_acquire()
 
-                cute.arch.barrier(
-                    barrier_id=self.pre_inter_sync_bar_id,
-                    number_of_threads=len(self.pre_inter_warp_id) * 32,
-                )
+                self.pre_inter_sync_barrier.arrive_and_wait()
                 tma_p_pipeline.producer_tail()
 
                 # Advance to next tile
@@ -2085,7 +2086,7 @@ class SSDKernel:
                 local_tidx, smem_y, tiled_t2r_inter2
             )
 
-            tRS_rCompute = cute.make_fragment(tRS_rY.shape, self.acc_dtype)
+            tRS_rCompute = cute.make_rmem_tensor(tRS_rY.shape, self.acc_dtype)
 
             tiled_s2r_x = None
             tSR_sX = None
@@ -2128,7 +2129,7 @@ class SSDKernel:
             tma_y_pipeline = pipeline.PipelineTmaStore.create(
                 num_stages=self.output_stages,
                 producer_group=pipeline.CooperativeGroup(
-                    pipeline.Agent.Thread, 32 * len(self.epilog_warp_id), 128
+                    pipeline.Agent.Thread, 32 * len(self.epilog_warp_id)
                 ),
             )
 
@@ -2328,10 +2329,7 @@ class SSDKernel:
                                 space=cute.arch.SharedSpace.shared_cta,
                             )
                             # Sync before TMA store
-                            cute.arch.barrier(
-                                barrier_id=self.epilog_sync_bar_id,
-                                number_of_threads=len(self.epilog_warp_id) * 32,
-                            )
+                            self.epilog_sync_barrier.arrive_and_wait()
 
                             # Async arrive Delta/INTRA2_ACC/INTER2_ACC buffer empty
                             if (
@@ -2366,10 +2364,7 @@ class SSDKernel:
                                 # Wait for TMA store
                                 tma_y_pipeline.producer_acquire()
                             # Sync before smem store
-                            cute.arch.barrier(
-                                barrier_id=self.epilog_sync_bar_id,
-                                number_of_threads=len(self.epilog_warp_id) * 32,
-                            )
+                            self.epilog_sync_barrier.arrive_and_wait()
 
                     # Advance deltas/intra2_acc/inter2_acc consumer states
                     deltas_consumer_state.advance()
@@ -2406,22 +2401,12 @@ class SSDKernel:
             # Producer tail for TMA store Y
             tma_y_pipeline.producer_tail()
 
+        # Release tensor memory allocation lock
+        tmem.relinquish_alloc_permit()
+        # Sync before deallocating tmem
+        self.tmem_dealloc_sync_barrier.arrive_and_wait()
         # Dealloc tmem buffer
-        if warp_idx == self.epilog_warp_id[0]:
-            cute.arch.barrier(
-                barrier_id=self.tmem_dealloc_sync_bar_id,
-                number_of_threads=self.threads_per_cta,
-            )
-            cute.arch.dealloc_tmem(
-                tmem_ptr_base,
-                self.num_tmem_cols_total,
-                is_two_cta=self.use_2cta_instrs,
-            )
-        else:
-            cute.arch.barrier_arrive(
-                barrier_id=self.tmem_dealloc_sync_bar_id,
-                number_of_threads=self.threads_per_cta,
-            )
+        tmem.free(tmem_ptr_base)
 
         return
 
@@ -2590,6 +2575,7 @@ class SSDKernel:
                 consumer_group=x_consumer_group,
                 tx_count=self.num_x_load_bytes,
                 barrier_storage=x_full_mbar_ptr,
+                defer_sync=True,
             )
         else:
             x_consumer_group_umma = pipeline.CooperativeGroup(
@@ -2597,7 +2583,7 @@ class SSDKernel:
                 len([self.mma_intra_warp_id, self.mma_inter_warp_id]),
             )
             x_consumer_group_async = pipeline.CooperativeGroup(
-                pipeline.Agent.Thread, 32 * len(self.epilog_warp_id), 128
+                pipeline.Agent.Thread, 32 * len(self.epilog_warp_id)
             )
             return pipeline.PipelineTmaMultiConsumersAsync.create(
                 num_stages=self.input_stages,
@@ -2606,6 +2592,7 @@ class SSDKernel:
                 consumer_group_async=x_consumer_group_async,
                 tx_count=self.num_x_load_bytes,
                 barrier_storage=x_full_mbar_ptr,
+                defer_sync=True,
             )
 
     def make_and_init_b_pipeline(self, b_full_mbar_ptr):
@@ -2616,7 +2603,7 @@ class SSDKernel:
             pipeline.Agent.Thread, len([self.mma_intra_warp_id])
         )
         b_consumer_group_async = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id)
         )
         return pipeline.PipelineTmaMultiConsumersAsync.create(
             num_stages=self.input_stages,
@@ -2625,6 +2612,7 @@ class SSDKernel:
             consumer_group_async=b_consumer_group_async,
             tx_count=self.num_b_load_bytes,
             barrier_storage=b_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_c_pipeline(self, c_full_mbar_ptr):
@@ -2640,6 +2628,7 @@ class SSDKernel:
             consumer_group=c_consumer_group,
             tx_count=self.num_c_load_bytes,
             barrier_storage=c_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_deltas_pipeline(self, deltas_full_mbar_ptr):
@@ -2651,9 +2640,6 @@ class SSDKernel:
             len(
                 [*self.pre_inter_warp_id, *self.pre_intra_warp_id, *self.epilog_warp_id]
             ),
-            len(
-                [*self.pre_inter_warp_id, *self.pre_intra_warp_id, *self.epilog_warp_id]
-            ),
         )
 
         return pipeline.PipelineTmaAsync.create(
@@ -2662,6 +2648,7 @@ class SSDKernel:
             consumer_group=deltas_consumer_group,
             tx_count=self.num_delta_load_bytes + self.num_cumsum_delta_load_bytes,
             barrier_storage=deltas_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_d_pipeline(self, d_full_mbar_ptr):
@@ -2672,9 +2659,7 @@ class SSDKernel:
                 pipeline.Agent.Thread, len([self.tma_deltas_x_d_warp_id])
             )
             d_consumer_group = pipeline.CooperativeGroup(
-                pipeline.Agent.Thread,
-                len(self.epilog_warp_id),
-                len(self.epilog_warp_id),
+                pipeline.Agent.Thread, len(self.epilog_warp_id)
             )
 
             return pipeline.PipelineTmaAsync.create(
@@ -2683,6 +2668,7 @@ class SSDKernel:
                 consumer_group=d_consumer_group,
                 tx_count=self.num_d_load_bytes,
                 barrier_storage=d_full_mbar_ptr,
+                defer_sync=True,
             )
 
     def make_and_init_intra1_acc_pipeline(self, intra1_acc_full_mbar_ptr):
@@ -2690,18 +2676,19 @@ class SSDKernel:
             pipeline.Agent.Thread, len([self.mma_intra_warp_id])
         )
         intra1_acc_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_intra_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_intra_warp_id)
         )
         return pipeline.PipelineUmmaAsync.create(
             num_stages=self.intra1_acc_stages,
             producer_group=intra1_acc_producer_group,
             consumer_group=intra1_acc_consumer_group,
             barrier_storage=intra1_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_intra2_q_pipeline(self, intra2_q_full_mbar_ptr):
         intra2_q_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_intra_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_intra_warp_id)
         )
         intra2_q_consumer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread, len([self.mma_intra_warp_id])
@@ -2711,6 +2698,7 @@ class SSDKernel:
             producer_group=intra2_q_producer_group,
             consumer_group=intra2_q_consumer_group,
             barrier_storage=intra2_q_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_intra2_acc_pipeline(self, intra2_acc_full_mbar_ptr):
@@ -2718,18 +2706,19 @@ class SSDKernel:
             pipeline.Agent.Thread, len([self.mma_intra_warp_id])
         )
         intra2_acc_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.epilog_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.epilog_warp_id)
         )
         return pipeline.PipelineUmmaAsync.create(
             num_stages=self.internal_stages,
             producer_group=intra2_acc_producer_group,
             consumer_group=intra2_acc_consumer_group,
             barrier_storage=intra2_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter1_b_pipeline(self, inter1_b_full_mbar_ptr):
         inter1_b_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id)
         )
         inter1_b_consumer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread, len([self.mma_inter_warp_id])
@@ -2739,6 +2728,7 @@ class SSDKernel:
             producer_group=inter1_b_producer_group,
             consumer_group=inter1_b_consumer_group,
             barrier_storage=inter1_b_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter1_acc_pipeline(self, inter1_acc_full_mbar_ptr):
@@ -2746,18 +2736,19 @@ class SSDKernel:
             pipeline.Agent.Thread, len([self.mma_inter_warp_id])
         )
         inter1_acc_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id)
         )
         return pipeline.PipelineUmmaAsync.create(
             num_stages=self.internal_stages,
             producer_group=inter1_acc_producer_group,
             consumer_group=inter1_acc_consumer_group,
             barrier_storage=inter1_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter2_p_pipeline(self, inter2_p_full_mbar_ptr):
         inter2_p_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.pre_inter_warp_id)
         )
         inter2_p_consumer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread, len([self.mma_inter_warp_id])
@@ -2767,6 +2758,7 @@ class SSDKernel:
             producer_group=inter2_p_producer_group,
             consumer_group=inter2_p_consumer_group,
             barrier_storage=inter2_p_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def make_and_init_inter2_acc_pipeline(self, inter2_acc_full_mbar_ptr):
@@ -2774,13 +2766,14 @@ class SSDKernel:
             pipeline.Agent.Thread, len([self.mma_inter_warp_id])
         )
         inter2_acc_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, 32 * len(self.epilog_warp_id), 128
+            pipeline.Agent.Thread, 32 * len(self.epilog_warp_id)
         )
         return pipeline.PipelineUmmaAsync.create(
             num_stages=self.internal_stages,
             producer_group=inter2_acc_producer_group,
             consumer_group=inter2_acc_consumer_group,
             barrier_storage=inter2_acc_full_mbar_ptr,
+            defer_sync=True,
         )
 
     def tma_partition_for_mma_b_operand(
@@ -3035,7 +3028,7 @@ class SSDKernel:
 
         # Partition tmem/register tensor for tensor memory store INTRA2_Q
         # ((T2R_ATOM_V, T2R_REST_V), T2R_M, T2R_N, ...)
-        tRT_rQ = cute.make_fragment(
+        tRT_rQ = cute.make_rmem_tensor(
             cute.slice_(thr_r2t_q.partition_S(tCrQ).shape, (None, None, None, None, 0)),
             dtype,
         )
@@ -3049,10 +3042,10 @@ class SSDKernel:
         self, tTR_rQ, tQrDeltaA_Row, tQrDeltaA_Col, tQrDelta, tCoord, tRT_rQ
     ):
         # Make tmp acc type fragments
-        tCrDeltaA_Row = cute.make_fragment(tQrDeltaA_Row.shape, self.acc_dtype)
-        tCrDeltaA_Col = cute.make_fragment(tQrDeltaA_Col.shape, self.acc_dtype)
-        tCrDelta = cute.make_fragment(tQrDelta.shape, self.acc_dtype)
-        tCompute = cute.make_fragment(tRT_rQ.shape, self.acc_dtype)
+        tCrDeltaA_Row = cute.make_rmem_tensor(tQrDeltaA_Row.shape, self.acc_dtype)
+        tCrDeltaA_Col = cute.make_rmem_tensor(tQrDeltaA_Col.shape, self.acc_dtype)
+        tCrDelta = cute.make_rmem_tensor(tQrDelta.shape, self.acc_dtype)
+        tCompute = cute.make_rmem_tensor(tRT_rQ.shape, self.acc_dtype)
 
         # Combine tTR_rQ/tCrDeltaA_Row/tCrDeltaA_Col/tCrDelta
         tCrDeltaA_Row.store(tQrDeltaA_Row.load().to(self.acc_dtype))
@@ -3127,7 +3120,7 @@ class SSDKernel:
         tBsB_s2r = thr_s2r_b.partition_S(smem_bt)
 
         # ((S2R_ATOM_V, S2R_REST_V), S2R_M, S2R_N)
-        tBrB_s2r = cute.make_fragment(
+        tBrB_s2r = cute.make_rmem_tensor(
             cute.slice_(tBsB_s2r.shape, (None, None, None, 0)),
             dtype,
         )
@@ -3167,7 +3160,7 @@ class SSDKernel:
 
         # Make register fragments for smem load/store of Delta/DeltaA
         # ((S2R_ATOM_V, S2R_REST_V), S2R_M, S2R_N)
-        tBrDelta_s2r = cute.make_fragment(tBsDelta_s2r[smem_tile_coord].shape, dtype)
+        tBrDelta_s2r = cute.make_rmem_tensor(tBsDelta_s2r[smem_tile_coord].shape, dtype)
         return s2r_atom_delta, tBsDelta_s2r, tBrDelta_s2r
 
     def pre_inter_tmem_load_and_partition_p(self, local_tidx, tInter1, smem_pt):
@@ -3195,7 +3188,7 @@ class SSDKernel:
         tTR_s = thr_t2r.partition_D(smem_tensor)
         # Make register fragments for tmem load INTER1_ACC
         # ((T2R_ATOM_V, T2R_REST_V), T2R_M, T2R_N)
-        tTR_r = cute.make_fragment(
+        tTR_r = cute.make_rmem_tensor(
             tTR_s.shape,
             dtype,
         )
@@ -3213,7 +3206,7 @@ class SSDKernel:
         # ((R2S_ATOM_V, R2S_REST_V), R2S_M, R2S_N, INTERNAL_STAGE)
         tRS_sP = thr_r2s_p.partition_D(smem_pt)
         # ((R2S_ATOM_V, R2S_REST_V), R2S_M, R2S_N)
-        tRS_rP = cute.make_fragment(
+        tRS_rP = cute.make_rmem_tensor(
             cute.slice_(tRS_sP.shape, (None, None, None, 0)), self.io_dtype
         )
         return tiled_r2s_p, tRS_rP, tRS_sP
@@ -3239,10 +3232,10 @@ class SSDKernel:
     def pre_inter_scale_bt_with_delta(
         self, tBrB_s2r, tBrDelta_s2r, tBrDeltaA_s2r, last_column
     ):
-        tCompute = cute.make_fragment(tBrB_s2r.shape, self.acc_dtype)
-        tBrB_Compute = cute.make_fragment(tBrB_s2r.shape, self.acc_dtype)
-        tBrDelta_Compute = cute.make_fragment(tBrDelta_s2r.shape, self.acc_dtype)
-        tBrDeltaA_Compute = cute.make_fragment(tBrDeltaA_s2r.shape, self.acc_dtype)
+        tCompute = cute.make_rmem_tensor(tBrB_s2r.shape, self.acc_dtype)
+        tBrB_Compute = cute.make_rmem_tensor(tBrB_s2r.shape, self.acc_dtype)
+        tBrDelta_Compute = cute.make_rmem_tensor(tBrDelta_s2r.shape, self.acc_dtype)
+        tBrDeltaA_Compute = cute.make_rmem_tensor(tBrDeltaA_s2r.shape, self.acc_dtype)
 
         tBrB_Compute.store(tBrB_s2r.load().to(self.acc_dtype))
         tBrDelta_Compute.store(tBrDelta_s2r.load().to(self.acc_dtype))
@@ -3323,7 +3316,7 @@ class SSDKernel:
         # (R2S_ATOM, R2S_M, R2S_N, EPI_M, EPI_N, INPUT_STAGES)
         tSR_sX = thr_s2r_x.partition_S(cute.flat_divide(smem_xt, epi_tile))
         # (R2S_ATOM, R2S_M, R2S_N)
-        tSR_rX = cute.make_fragment(
+        tSR_rX = cute.make_rmem_tensor(
             cute.slice_(tSR_sX.shape, (None, None, None, 0, 0, 0)), dtype
         )
         return tiled_s2r_x, tSR_sX, tSR_rX
@@ -3360,7 +3353,7 @@ def run(
     has_d = fuse_scale_d != "none"
     d_has_hdim = fuse_scale_d == "vector"
 
-    print(f"Running B100 Mamba2 SSD with:")
+    print("Running B100 Mamba2 SSD with:")
     print(f"GBEHCDLN: {gbehcdln}")
     print(
         f"Input/Output dtype: {io_dtype}, Intermediate delta dtype: {cumsum_delta_dtype}, Acc dtype: {acc_dtype}"
@@ -3405,7 +3398,7 @@ def run(
         # Build torch_dtype torch tensor
         torch_dtype = cutlass_torch.dtype(dtype)
 
-        dst_tensor = ref_tensor.to(torch_dtype).cuda()
+        dst_tensor = ref_tensor.to(dtype=torch_dtype).cuda()
         cute_tensor = from_dlpack(dst_tensor, assumed_align=16)
         for mode in dynamic_modes:
             cute_tensor = cute_tensor.mark_compact_shape_dynamic(

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -166,8 +166,8 @@ struct CollectiveMma<
   using ElementBMma = typename TiledMma::ValTypeB;
   using StrideB = remove_cvref_t<decltype(get<0>(StridePairB{}))>;
 
-  static constexpr bool IsRuntimeDataTypeA = cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float8_t>;
-  static constexpr bool IsRuntimeDataTypeB = cute::is_same_v<ElementB, cutlass::type_erased_dynamic_float8_t>;
+  static constexpr bool IsRuntimeDataTypeA = cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float8_t> or cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float4_t>;
+  static constexpr bool IsRuntimeDataTypeB = cute::is_same_v<ElementB, cutlass::type_erased_dynamic_float8_t> or cute::is_same_v<ElementB, cutlass::type_erased_dynamic_float4_t>;
 
   static_assert(IsRuntimeDataTypeA == IsRuntimeDataTypeB,
                 "ElementA and ElementB should be both runtime or both static.");
@@ -308,13 +308,9 @@ struct CollectiveMma<
   // Host side kernel arguments
   struct Arguments {
     ArrayElementA const* ptr_A{nullptr};
-    StrideA dA{};
     ArrayElementB const* ptr_B{nullptr};
-    StrideB dB{};
     ElementSF const* ptr_SFA{nullptr};
-    LayoutSFA layout_SFA{};
     ElementSF const* ptr_SFB{nullptr};
-    LayoutSFB layout_SFB{};
     RuntimeDataTypeA runtime_data_type_a{};
     RuntimeDataTypeB runtime_data_type_b{};
   };
@@ -356,7 +352,6 @@ struct CollectiveMma<
     TMA_SFB tma_load_sfb;
 
     ArrayElementB const* ptr_B{nullptr};
-    StrideB dB{};
 
     LayoutSFA layout_SFA;
     LayoutSFB layout_SFB;
@@ -392,9 +387,15 @@ struct CollectiveMma<
     auto ptr_A = recast_ptr<TmaInternalElementA>(args.ptr_A);
     auto ptr_B = recast_ptr<ElementBMma>(args.ptr_B);
 
-    Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
-    Tensor tensor_sfa = make_tensor(args.ptr_SFA, args.layout_SFA);
-    Tensor tensor_sfb = make_tensor(args.ptr_SFB, args.layout_SFB);
+    const auto layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
+    const auto layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
+
+    auto shape_a = make_shape(M, K, L);
+    auto stride_a = cutlass::make_internal_packed_stride(StrideA{}, shape_a);
+    
+    Tensor tensor_a = make_tensor(ptr_A, make_layout(shape_a, stride_a));
+    Tensor tensor_sfa = make_tensor(args.ptr_SFA, layout_SFA);
+    Tensor tensor_sfb = make_tensor(args.ptr_SFB, layout_SFB);
 
     auto cluster_layout_vmnk = tiled_divide(make_layout(ClusterShape{}), make_tile(typename TiledMma::AtomThrID{}));
     auto cluster_layout_sfb_vmnk = tiled_divide(make_layout(ClusterShape{}), make_tile(typename TiledMma_SF::AtomThrID{}));
@@ -426,9 +427,8 @@ struct CollectiveMma<
       tma_load_sfa,
       tma_load_sfb,
       args.ptr_B,
-      args.dB,
-      args.layout_SFA,
-      args.layout_SFB,
+      layout_SFA,
+      layout_SFB,
       args.runtime_data_type_a,
       args.runtime_data_type_b
     };
@@ -456,19 +456,6 @@ struct CollectiveMma<
     implementable = implementable && cutlass::detail::check_alignment<GmemTiledCopyB::NumValSrc>(cute::make_shape(N,K,L), StrideB{});
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for CpAsync.\n");
-    }
-
-    // Check for SFA SFB layout requirement
-    const auto layout_sfa_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
-    const auto layout_sfb_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
-    implementable = implementable && (layout_sfa_ref == args.layout_SFA);
-    if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFA mismatch, layout_SFA needs to be K-major\n");
-    }
-
-    implementable = implementable && (layout_sfb_ref == args.layout_SFB);
-    if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFB mismatch, layout_SFB needs to be K-major\n");
     }
 
     return implementable;
@@ -628,10 +615,14 @@ struct CollectiveMma<
     // Separate out problem shape for convenience
     auto [M,N,K,L] = problem_shape_MNKL;
 
+    // Setting the stride of B
+    auto shape_b = make_shape(N, K, L);
+    StrideB stride_b = cutlass::make_internal_packed_stride(StrideB{}, shape_b);
+
     // convert to subptr iterator if necessary
     auto ptr_B = recast_ptr<ElementBMma>(params.ptr_B);
     // Represent the full tensors
-    Tensor mB_nkl = make_tensor(make_gmem_ptr(ptr_B), make_shape(N,K,L), params.dB); //(n,k,l)
+    Tensor mB_nkl = make_tensor(make_gmem_ptr(ptr_B), shape_b, stride_b); //(n,k,l)
     // Partition for cpasync
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{}); // (BLK_N,BLK_K,n,k,l)
 
@@ -1032,8 +1023,6 @@ protected:
   RuntimeDataTypeA runtime_data_type_a_{};
   RuntimeDataTypeB runtime_data_type_b_{};
 
-  // ClusterShape cluster_shape_;
-  // uint32_t block_rank_in_cluster_;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

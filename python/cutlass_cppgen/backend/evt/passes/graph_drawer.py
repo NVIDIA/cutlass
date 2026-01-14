@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -99,11 +99,10 @@ class EVTGraphDrawer:
             stride = node.tensor.stride
             label += f"|shape={shape}|stride={stride}"
 
-        if hasattr(node, "store_tensor"):
-            if node.store_tensor is not None:
-                store_shape = node.store_tensor.shape
-                store_stride = node.store_tensor.stride
-                label += f"|store_shape={store_shape}|stride_stride={store_stride}"
+        if hasattr(node, "store_tensor") and node.store_tensor is not None:
+            store_shape = node.store_tensor.shape
+            store_stride = node.store_tensor.stride
+            label += f"|store_shape={store_shape}|store_stride={store_stride}"
 
         label += "}"
         return label
@@ -114,7 +113,7 @@ class EVTGraphDrawer:
         name: str
     ):
         import pydot
-        dot_graph = pydot.Dot(name, randir="TB")
+        dot_graph = pydot.Dot(name, rankdir="TB")
         for node in graph.nodes_meta:
             style = self._get_node_style(node)
             label = self._get_node_label(node)
@@ -133,11 +132,11 @@ class EVTGraphDrawer:
 
         return dot_graph
 
-    def get_dot_graph(self) -> pydot.Dot:
+    def get_dot_graph(self) -> "pydot.Dot":
         return [(key, self.get_dot_graph_by_name(key)) for key in self._dot_graphs.keys()]
 
-    def get_dot_graph_by_name(self, name) -> pydot.Dot:
+    def get_dot_graph_by_name(self, name) -> "pydot.Dot":
         return self._dot_graphs[name]
 
-    def get_main_dot_graph(self) -> pydot.Dot:
+    def get_main_dot_graph(self) -> "pydot.Dot":
         return self._dot_graphs[self._name]

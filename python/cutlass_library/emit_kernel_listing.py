@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -594,7 +594,6 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       # reduce L1 test runtime if reference kernel is not running on device.
       if mode == "functional_L1" and profiler_flags_for_verification == "host" :
         problem_waves = [0.5, 2.5]
-      
 
       if dynamic_cluster:
         if mode == "functional_L0":
