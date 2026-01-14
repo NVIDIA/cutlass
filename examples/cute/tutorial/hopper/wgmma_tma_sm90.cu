@@ -236,7 +236,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     ConsumerBarType::arrive(&consumer_mbar[read_pipe]);
     ++read_state;
 
-    if ((warp_idx == 0) && lane_predicate)
+    // Only issue new TMA copies if there are more tiles to fetch
+    if ((warp_idx == 0) && lane_predicate && (k_tile_count > 0))
     {
       int pipe = write_state.index();
       // Wait for Consumer to complete consumption
