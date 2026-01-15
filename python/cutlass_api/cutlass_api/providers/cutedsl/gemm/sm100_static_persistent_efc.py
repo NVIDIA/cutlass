@@ -34,6 +34,7 @@ import cutlass
 from cutlass_api.arguments import (
     EpilogueArguments,
     GemmArguments,
+    KernelOperand,
 )
 from cutlass_api.artifact import CompiledArtifact
 from cutlass_api.metadata import (
@@ -325,14 +326,12 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
         max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
 
         if args.epilogue is not None:
-            epilogue_params = args.epilogue.parameters
+            epilogue_params = [
+                e.compile_time_tensor if isinstance(e, TensorWrapper) else e
+                for e in args.epilogue.parameters
+            ]
         else:
-            epilogue_params = [args.out]
-
-        epilogue_params = [
-            e.compile_time_tensor if isinstance(e, TensorWrapper) else e
-            for e in epilogue_params
-        ]
+            epilogue_params = [args.out.tensor.compile_time_tensor]
 
         # EFC needs special handling for supplemental arguments
         self.impl.efc.compile(epilogue_params)
@@ -348,7 +347,9 @@ class PersistentDenseGemmEFCKernel(CuteDslKernel):
         # Wrap the compiled kernel to handle supplemental argument packing at launch time
         def wrapped_launch(a_tensor, b_tensor, stream, *supplemental_args):
             runtime_args = [
-                e.runtime_tensor if isinstance(e, TensorWrapper) else e
+                e.runtime_tensor
+                if isinstance(e, TensorWrapper)
+                else (e.tensor.runtime_tensor if isinstance(e, KernelOperand) else e)
                 for e in supplemental_args
             ]
             return compiled_gemm(

@@ -64,3 +64,33 @@ def test_elementwise_add(M: int, N: int, dtype: torch.dtype, fixture_toggle_tvm_
     reference = A + B
 
     assert torch.allclose(D, reference)
+
+
+def test_elementwise_add_fake_tensor(fixture_toggle_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N = 256, 512
+    dtype = torch.float16
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
+        B = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
+        D = torch.empty((M, N), device="cuda", dtype=dtype)
+
+    fake_args = cutlass_api.arguments.ElementwiseArguments(A=A, B=B, out=D)
+    kernels = cutlass_api.get_kernels(fake_args)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+    compiled_artifact = kernel.compile(fake_args)
+
+    A = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
+    B = torch.randint(-1, 2, (M, N), device="cuda", dtype=dtype)
+    D = torch.empty((M, N), device="cuda", dtype=dtype)
+    args = cutlass_api.arguments.ElementwiseArguments(A=A, B=B, out=D)
+    kernel.run(args, compiled_artifact=compiled_artifact)
+
+    reference = A + B
+    assert torch.allclose(D, reference)

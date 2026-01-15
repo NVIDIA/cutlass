@@ -180,6 +180,99 @@ def test_mxfp8_gemm_sm100(
         reference = reference_scaled_mm(A, B, SFA, SFB, c_dtype)
         torch.testing.assert_close(D, reference)
 
+
+@pytest.mark.skipif(
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_103a"]),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_103a",
+)
+def test_mxfp8_gemm_sm100_fake_tensor(fixture_enable_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K, L = 256, 512, 1024, 1
+    ab_dtype = torch.float8_e4m3fn
+    c_dtype = torch.float32
+    accumulator_type = torch.float32
+    scale_dtype = torch.float8_e8m0fnu
+    scale_size = 32
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (L, M, K), device="cuda").to(ab_dtype)
+        D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+        B = torch.randint(-1, 2, (L, N, K), device="cuda").to(ab_dtype).transpose(1, 2)
+        SFA = torch.rand(
+            (
+                L,
+                M,
+                prep_k(K, scale_size),
+            ),
+            device="cuda",
+        ).to(scale_dtype)
+        SFB = torch.rand((L, prep_k(K, scale_size), N), device="cuda").to(scale_dtype)
+
+    fake_args = cutlass_api.arguments.GemmArguments(
+        A=ScaledTensor(
+            A,
+            SFA,
+            ScaleMode.Blockwise1x32,
+            ScaleSwizzleMode.Swizzle32x4x4,
+        ),
+        B=ScaledTensor(
+            B,
+            SFB,
+            ScaleMode.Blockwise1x32,
+            ScaleSwizzleMode.Swizzle32x4x4,
+        ),
+        out=D,
+        accumulator_type=accumulator_type,
+    )
+    kernels = cutlass_api.get_kernels(fake_args, cc=100)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+    assert kernel.supports(fake_args)
+    compiled_artifact = kernel.compile(fake_args)
+
+    A_real = torch.randint(-1, 2, (L, M, K), device="cuda").to(ab_dtype)
+    B_real = torch.randint(-1, 2, (L, N, K), device="cuda").to(ab_dtype).transpose(1, 2)
+    D_real = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    SFA_real = torch.rand(
+        (
+            L,
+            M,
+            prep_k(K, scale_size),
+        ),
+        device="cuda",
+    ).to(scale_dtype)
+    SFB_real = torch.rand((L, prep_k(K, scale_size), N), device="cuda").to(scale_dtype)
+    args = cutlass_api.arguments.GemmArguments(
+        A=ScaledTensor(
+            A_real,
+            SFA_real,
+            ScaleMode.Blockwise1x32,
+            ScaleSwizzleMode.Swizzle32x4x4,
+        ),
+        B=ScaledTensor(
+            B_real,
+            SFB_real,
+            ScaleMode.Blockwise1x32,
+            ScaleSwizzleMode.Swizzle32x4x4,
+        ),
+        out=D_real,
+        accumulator_type=accumulator_type,
+    )
+    kernel.run(args, compiled_artifact=compiled_artifact, assume_supported_args=True)
+
+    # torch._scaled_mm does not support f8e5m2 * f8e5m2 currently.
+    # Simply skip reference check in that case (but test that a CUTLASS API kernel
+    # is found and runs)
+    if ab_dtype != torch.float8_e5m2:
+        reference = reference_scaled_mm(A_real, B_real, SFA_real, SFB_real, c_dtype)
+        torch.testing.assert_close(D_real, reference)
+
+
 @pytest.mark.parametrize(
     "M, N, K",
     [

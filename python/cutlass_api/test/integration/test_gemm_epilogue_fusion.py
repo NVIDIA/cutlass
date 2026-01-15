@@ -61,12 +61,6 @@ def base_data_types():
     ]
 
 
-def supports_sm100af():
-    return is_device_cc_supported({100}) and (
-        os.getenv("CUTE_DSL_ARCH", "") in ["", "sm_100a", "sm_100f"]
-    )
-
-
 # Unary operation strings and functions
 identity = ("", lambda x: x)
 relu = ("relu", torch.relu)
@@ -86,6 +80,36 @@ mul = (lambda a, b: f"{a} * {b}", lambda a, b: a * b)
 binary_ops = [add, sub, mul]
 
 
+@pytest.mark.skipif(
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_no_fusion(fixture_toggle_tvm_ffi):
+    """
+    Tests EFC GEMM with no fusion provided.
+
+    """
+    M, N, K, L = 256, 512, 128, 2
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((L, M, N), device="cuda", dtype=torch.float16)
+
+    def metadata_filter(metadata):
+        return (
+            metadata.kernel_class
+            == cutlass_api.providers.cutedsl.gemm.sm100_static_persistent_efc.PersistentDenseGemmEFCKernel
+        )
+
+    args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type=torch.float16)
+    kernels = cutlass_api.get_kernels(args, cc=100, metadata_filter=metadata_filter)
+    assert len(kernels) > 0
+    kernels[0].run(args)
+
+    reference = A @ B
+    torch.testing.assert_close(D, reference.to(D.dtype))
+
+
 @pytest.mark.parametrize("M, N, K, L", problem_sizes())
 # Restrict to D of float16 for now to avoid rounding error when converting torch f16 output to f32
 @pytest.mark.parametrize(
@@ -94,7 +118,8 @@ binary_ops = [add, sub, mul]
 )
 @pytest.mark.parametrize("unary_str, unary_op", unary_ops)
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_unary(
@@ -132,7 +157,8 @@ def test_gemm_fusion_unary(
 @pytest.mark.parametrize("unary_str, unary_op", [relu])
 @pytest.mark.parametrize("unary_str2, unary_op2", [sigmoid, tanh])
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_unary_composition(
@@ -180,7 +206,8 @@ def test_gemm_fusion_unary_composition(
 # Restrict unary to identity and relu to avoid rounding errors
 @pytest.mark.parametrize("unary_str, unary_op", [identity, relu])
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_unary_literal(
@@ -216,7 +243,8 @@ def test_gemm_fusion_unary_literal(
 @pytest.mark.parametrize("unary_str, unary_op", [identity, relu])
 @pytest.mark.parametrize("binary_str, binary_op", binary_ops)
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_unary_binary_composition(
@@ -270,7 +298,8 @@ def test_gemm_fusion_unary_binary_composition(
 @pytest.mark.parametrize("binary_str0, binary_op0", [add, sub])
 @pytest.mark.parametrize("binary_str1, binary_op1", [add, sub])
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_binary_binary_composition(
@@ -317,7 +346,8 @@ def test_gemm_fusion_binary_binary_composition(
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_division():
@@ -384,7 +414,8 @@ def test_gemm_fusion_division():
 )
 @pytest.mark.parametrize("unary_str, unary_op", [sigmoid, tanh])
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_unary_multi_output(
@@ -427,7 +458,8 @@ def test_gemm_fusion_unary_multi_output(
 @pytest.mark.parametrize("c_dtype", [torch.float16, torch.float32])
 @pytest.mark.parametrize("binary_str, binary_op", binary_ops)
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_binary_multi_output(
@@ -463,7 +495,8 @@ def test_gemm_fusion_binary_multi_output(
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_return_acc():
@@ -501,7 +534,8 @@ def test_gemm_fusion_return_acc():
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_acc_as_multiple_input():
@@ -562,7 +596,8 @@ def test_gemm_fusion_acc_as_multiple_input():
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_matmul_input_as_aux():
@@ -627,7 +662,8 @@ def test_gemm_fusion_matmul_input_as_aux():
     "ab_dtype, c_dtype, d_dtype, accumulator_type", base_data_types()
 )
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_alpha_beta(
@@ -669,7 +705,69 @@ def test_gemm_alpha_beta(
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_alpha_beta_fake_tensor(fixture_toggle_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K, L = 256, 512, 128, 2
+    ab_dtype = torch.float16
+    c_dtype = torch.float32
+    d_dtype = torch.bfloat16
+    accumulator_type = torch.float16
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+        B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+        C = torch.randint(-1, 2, (L, M, N), device="cuda", dtype=c_dtype)
+        D = torch.empty((L, M, N), device="cuda", dtype=d_dtype)
+
+    def epi(accum, C, alpha, beta):
+        D = alpha * accum + beta * C
+        return D
+
+    alpha = 0.5
+    beta = 0.5
+    epi_args = cutlass_api.arguments.EpilogueArguments(
+        epi, C=C, alpha=alpha, beta=beta, D=D
+    )
+
+    args = cutlass_api.arguments.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
+    )
+    kernels = cutlass_api.get_kernels(args, cc=100)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+
+    A_real = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+    B_real = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+    C_real = torch.randint(-1, 2, (L, M, N), device="cuda", dtype=c_dtype)
+    D_real = torch.empty((L, M, N), device="cuda", dtype=d_dtype)
+
+    for a, b in [(0.5, 0.5), (1.0, 0.0), (0.0, 1.0)]:
+        epi_args = cutlass_api.arguments.EpilogueArguments(
+            epi, C=C_real, alpha=a, beta=b, D=D_real
+        )
+        args = cutlass_api.arguments.GemmArguments(
+            A=A_real,
+            B=B_real,
+            out=D_real,
+            accumulator_type=accumulator_type,
+            epilogue=epi_args,
+        )
+        kernel.run(args)
+        reference = epi(A_real @ B_real, C_real, a, b)
+        torch.testing.assert_close(D_real, reference.to(D_real.dtype))
+
+
+@pytest.mark.skipif(
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_big_epi(fixture_toggle_tvm_ffi):
@@ -798,7 +896,8 @@ def test_gemm_big_epi(fixture_toggle_tvm_ffi):
 
 
 @pytest.mark.skipif(
-    not supports_sm100af(),
+    not is_device_cc_supported({100, 103})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_not_available(fixture_toggle_tvm_ffi):

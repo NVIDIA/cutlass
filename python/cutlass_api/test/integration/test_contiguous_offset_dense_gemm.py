@@ -33,6 +33,7 @@ import random
 import torch
 
 import cutlass_api
+from cutlass_api.utils import is_device_cc_supported
 
 
 torch.manual_seed(2025)
@@ -67,3 +68,54 @@ def test_incorrect_offset_length():
 
     kernels = cutlass_api.get_kernels(args, cc=100)
     assert len(kernels) == 0
+
+
+@pytest.mark.skipif(
+    not is_device_cc_supported({100})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_contiguous_offset_dense_gemm_2d3d_fake_tensor(fixture_toggle_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K, L = 256, 512, 128, 2
+    ab_dtype = torch.float16
+    c_dtype = torch.float16
+    accumulator_type = torch.float32
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (M, K), device="cuda", dtype=ab_dtype)
+        B = torch.randint(-1, 2, (L, N, K), device="cuda", dtype=ab_dtype).permute(
+            0, 2, 1
+        )
+        out = torch.empty((M, N), device="cuda", dtype=c_dtype)
+        offsets = torch.empty((L,), device="cuda", dtype=torch.int32)
+
+    fake_args = cutlass_api.arguments.GroupedGemmArguments(
+        A=A, B=B, out=out, accumulator_type=accumulator_type, offsets=offsets
+    )
+    kernels = cutlass_api.get_kernels(fake_args, cc=100)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+    compiled_artifact = kernel.compile(fake_args)
+
+    A_real = torch.randint(-1, 2, (M, K), device="cuda", dtype=ab_dtype)
+    B_real = torch.randint(-1, 2, (L, N, K), device="cuda", dtype=ab_dtype).permute(
+        0, 2, 1
+    )
+    out_real = torch.empty((M, N), device="cuda", dtype=c_dtype)
+    offsets_real = torch.Tensor([128, 256]).to("cuda").to(torch.int32)
+    args = cutlass_api.arguments.GroupedGemmArguments(
+        A=A_real,
+        B=B_real,
+        out=out_real,
+        accumulator_type=accumulator_type,
+        offsets=offsets_real,
+    )
+    kernel.run(args, compiled_artifact=compiled_artifact)
+
+    reference = torch._grouped_mm(A_real, B_real, offsets_real)
+    torch.testing.assert_close(out_real, reference.to(out_real.dtype))

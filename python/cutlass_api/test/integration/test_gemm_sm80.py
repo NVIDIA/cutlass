@@ -209,3 +209,35 @@ def test_gemm_sm80_layouts(
             pytest.fail(
                 f"Kernel {idx+1}/{len(kernels_to_test)} ({kernel.metadata.kernel_name}) failed for layout {layout_A}{layout_B}{layout_C}: {e}"
             )
+
+
+def test_gemm_sm80_fake_tensor(fixture_toggle_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K, L = 256, 512, 128, 2
+    ab_dtype = torch.float16
+    c_dtype = torch.float16
+    accumulator_type = torch.float32
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+        B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+        D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+
+    fake_args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type)
+    kernels = cutlass_api.get_kernels(fake_args, cc=80)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+    compiled_artifact = kernel.compile(fake_args)
+
+    A_real = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+    B_real = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+    D_real = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    args = cutlass_api.arguments.GemmArguments(A_real, B_real, D_real, accumulator_type)
+    kernel.run(args, compiled_artifact=compiled_artifact)
+
+    reference = A_real @ B_real
+    torch.testing.assert_close(D_real, reference.to(D_real.dtype))

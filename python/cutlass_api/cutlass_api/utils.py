@@ -91,7 +91,6 @@ def is_numpy_tensor(inp) -> bool:
     """Check if the input is a numpy tensor."""
     if is_numpy_available():
         import numpy as np
-
         return isinstance(inp, np.ndarray)
     return False
 
@@ -102,6 +101,15 @@ def is_torch_tensor(inp) -> bool:
         import torch
 
         return isinstance(inp, torch.Tensor)
+    return False
+
+
+def is_torch_fake_tensor(inp) -> bool:
+    """Check if the input is a torch fake tensor."""
+    if is_torch_available():
+        import torch
+
+        return isinstance(inp, torch._subclasses.fake_tensor.FakeTensor)
     return False
 
 
@@ -367,32 +375,31 @@ class TensorWrapper:
         if isinstance(tensor, cute.Tensor):
             # Regardless of whether TVM-FFI is enabled, if the tensor passed in is a cute.Tensor,
             # it can be used as the runtime tensor and compile time tensor.
-            self.runtime_tensor = tensor
+            self._runtime_tensor = tensor
             self.compile_time_tensor = tensor
             self._shape = tensor.shape
             self._stride = tensor.stride
             self._data_ptr = tensor.iterator._pointer
-        elif GlobalOptions().use_tvm_ffi:
-            # If TVM-FFI is enabled, runtime tensor is set simply as the tensor passed in, but
-            # we must make a fake tensor for compilation.
-            self.runtime_tensor = tensor
-            if is_torch_tensor(self.runtime_tensor):
-                dtype = cutlass_type_from_torch_type(self.runtime_tensor.dtype)
+        elif is_torch_fake_tensor(tensor) or (
+            is_torch_tensor(tensor) and GlobalOptions().use_tvm_ffi
+        ):
+            self._shape = tuple(tensor.shape)
+            self._stride = tensor.stride()
 
-                rank = self.runtime_tensor.dim()
-                self._stride = self.runtime_tensor.stride()
-                stride_order = get_stride_rank(self._stride)
-                leading_dim_idx = stride_order.index(0)
-                shape = [cute.SymInt() for _ in range(rank)]
-                shape[leading_dim_idx] = cute.SymInt(
-                    divisibility=alignment_bytes * 8 // dtype.width
-                )
-                self._shape = tuple(self.runtime_tensor.shape)
-                self._data_ptr = self.runtime_tensor.data_ptr()
+            if is_torch_fake_tensor(tensor):
+                self._data_ptr = 0
+                self._runtime_tensor = None
             else:
-                raise ValueError(
-                    f"Unsupported tensor type: {type(self.runtime_tensor)}"
-                )
+                self._runtime_tensor = tensor
+                self._data_ptr = tensor.data_ptr()
+
+            dtype = cutlass_type_from_torch_type(tensor.dtype)
+            stride_order = get_stride_rank(tensor.stride())
+            leading_dim_idx = stride_order.index(0)
+            shape = [cute.SymInt() for _ in range(tensor.dim())]
+            shape[leading_dim_idx] = cute.SymInt(
+                divisibility=alignment_bytes * 8 // dtype.width
+            )
 
             self.compile_time_tensor = cute.runtime.make_fake_compact_tensor(
                 dtype,
@@ -400,8 +407,11 @@ class TensorWrapper:
                 stride_order=stride_order,
                 assumed_align=alignment_bytes,
             )
+
+        elif GlobalOptions().use_tvm_ffi:
+            raise ValueError("TVM-FFI is currently only supported for torch tensors.")
         else:
-            # TVM-FFI is disabled and the tensor passed in is not a cute.Tensor,
+            # TVM-FFI is disabled and the tensor passed in is not a cute.Tensor or torch fake tensor,
             # We must convert it to a cute.Tensor
             if is_torch_tensor(tensor):
                 dtype = to_cutlass_type(tensor.dtype)
@@ -409,7 +419,7 @@ class TensorWrapper:
             else:
                 raise ValueError(f"Unsupported tensor type: {type(tensor)}")
             stride_order = get_stride_order(stride)
-            self.runtime_tensor = (
+            self._runtime_tensor = (
                 from_dlpack(
                     tensor,
                     assumed_align=alignment_bytes,
@@ -422,13 +432,21 @@ class TensorWrapper:
                 )
             )
 
-            self._shape = self.runtime_tensor.shape
-            self._stride = self.runtime_tensor.stride
-            self._data_ptr = self.runtime_tensor.iterator._pointer
+            self._shape = self._runtime_tensor.shape
+            self._stride = self._runtime_tensor.stride
+            self._data_ptr = self._runtime_tensor.iterator._pointer
 
             # Since the runtime tensor is now a cute.Tensor, we can use it at
             # compile time as well
-            self.compile_time_tensor = self.runtime_tensor
+            self.compile_time_tensor = self._runtime_tensor
+
+    @property
+    def runtime_tensor(self):
+        if self._runtime_tensor is None:
+            raise ValueError(
+                "Attempting to access runtime tensor from argument constructed with a fake tensor."
+            )
+        return self._runtime_tensor
 
     @property
     def element_type(self) -> type[cutlass.Numeric]:

@@ -273,3 +273,43 @@ def test_metadata_filter():
         assert kernel.metadata.operands.B.dtype == cutlass.Float16
         assert kernel.metadata.operands.out.dtype == cutlass.Float16
         assert kernel.metadata.operands.accumulator_type == cutlass.Float16
+
+
+@pytest.mark.skipif(
+    not is_device_cc_supported({100})
+    or (os.getenv("CUTE_DSL_ARCH", "") not in ["", "sm_100a", "sm_100f"]),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_sm100_fake_tensor(fixture_toggle_tvm_ffi):
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K, L = 256, 512, 128, 1
+    ab_dtype = torch.float16
+    c_dtype = torch.float16
+    accumulator_type = torch.float32
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+        B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+        D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+
+    fake_args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type)
+
+    kernels = cutlass_api.get_kernels(fake_args, cc=100)
+
+    assert len(kernels) > 0
+    kernel = kernels[0]
+
+    compiled_artifact = kernel.compile(fake_args)
+
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+    D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    args = cutlass_api.arguments.GemmArguments(A, B, D, accumulator_type)
+
+    kernel.run(args, compiled_artifact=compiled_artifact)
+
+    reference = A @ B
+    torch.testing.assert_close(D, reference.to(D.dtype))
