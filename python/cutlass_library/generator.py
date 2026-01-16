@@ -7496,8 +7496,6 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
   # (If CTA N <= divisor, the epilogue N tile equals CTA N and is always divisible.)
   _sm100_epilogue_tile_n_divisibility = {
     (DataType.void, DataType.f16):  64,
-    (DataType.f16,  DataType.f16):  64,
-    (DataType.bf16, DataType.bf16): 64,
     (DataType.void, DataType.bf16): 64,
   }
 
