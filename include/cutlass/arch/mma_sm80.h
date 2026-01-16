@@ -1092,6 +1092,72 @@ struct Mma<
   }
 };
 
+
+
+/// Matrix multiply-add operation: S32 = S4 * S4 + S32
+template <>
+struct Mma<
+  gemm::GemmShape<16, 8, 32>,
+  32,
+  cutlass::int4b_t,
+  layout::RowMajor,
+  cutlass::int4b_t,
+  layout::ColumnMajor,
+  int,
+  layout::RowMajor,
+  OpMultiplyAddSaturate> {
+
+  using Shape = gemm::GemmShape<16, 8, 32>;
+
+  using ElementA = cutlass::int4b_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<cutlass::int4b_t, 16>;
+
+  using ElementB = cutlass::int4b_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<cutlass::int4b_t, 8>;
+
+  using ElementC = int;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<int, 4>;
+
+  using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm80;
+
+  /// Computes multiply-add
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    FragmentC &d,
+    FragmentA const &a,
+    FragmentB const &b,
+    FragmentC const &c
+  ) const {
+
+#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+
+  uint32_t const * A = reinterpret_cast<uint32_t const *>(&a);
+  uint32_t const * B = reinterpret_cast<uint32_t const *>(&b);
+
+  int const *C = reinterpret_cast<int const *>(&c);
+  int *D = reinterpret_cast<int *>(&d);
+
+  asm volatile(
+      "mma.sync.aligned.m16n8k32.row.col.s32.s4.s4.s32.satfinite {%0,%1,%2,%3}, "
+      "{%4,%5}, {%6}, {%7,%8,%9,%10};\n"
+      : "=r"(D[0]), "=r"(D[1]), "=r"(D[2]), "=r"(D[3])
+      : "r"(A[0]), "r"(A[1]),
+        "r"(B[0]),
+        "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
+#else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
+    assert(0);
+#endif
+  }
+};
+
 /// Matrix multiply-add operation: S32 = U4 * S4 + S32
 template <>
 struct Mma<
