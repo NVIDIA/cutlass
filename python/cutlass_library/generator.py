@@ -7100,19 +7100,10 @@ def GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
-      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
-      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
-
-      # For SM100 nosmem epilogue with EpilogueTileAuto the epilogue N tile is min(64, cta_n).
-      # The underlying CUTE shape_div enforces a compile-time divisibility condition between cta_n and 64.
-      # This means we can only safely instantiate kernels where either cta_n <= 64 or cta_n is a multiple of 64.
-      if cta_n > 64 and (cta_n % 64 != 0):
-        continue
-
       tile_descriptions.append(
         TileDescription([
-          cta_m,
-          cta_n,
+          math_inst.instruction_shape[0]     * multiplier_1sm[0],
+          math_inst.instruction_shape[1]     * multiplier_1sm[1],
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
@@ -7464,7 +7455,6 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
       else:
         epi_schedule = EpilogueScheduleType.ScheduleAuto
       kernel_schedule = to_grouped_schedule(KernelScheduleType.TmaWarpSpecialized2SmSm100, grouped)
-
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
       [[kernel_schedule, epi_schedule]], tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
 
@@ -7497,6 +7487,19 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     TileSchedulerType.Default
   ]
 
+  # Some SM100 NoSmem epilogue instantiations rely on CUTE's shape_div, which enforces a compile-time
+  # divisibility condition between CTA N and the epilogue N tile. Keep this conservative and scoped:
+  # only apply the divisibility filter for selected common (c_type, d_type) pairs.
+  #
+  # Map (c_type, d_type) -> required divisor for CTA N when CTA N > divisor.
+  # (If CTA N <= divisor, the epilogue N tile equals CTA N and is always divisible.)
+  _sm100_epilogue_tile_n_divisibility = {
+    (DataType.void, DataType.f16):  64,
+    (DataType.f16,  DataType.f16):  64,
+    (DataType.bf16, DataType.bf16): 64,
+    (DataType.void, DataType.bf16): 64,
+  }
+
   # 1xSM MMA kernels
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
@@ -7504,13 +7507,6 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
       cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
-
-      # SM100 nosmem epilogue for fp8 alignx uses EpilogueTileAuto with N-tile = min(64, cta_n).
-      # CUTE's shape_div then requires a compile-time divisibility condition between cta_n and 64.
-      # Only instantiate kernels where cta_n <= 64 or cta_n is an exact multiple of 64 to avoid
-      # violating that "Divisibility Condition" static_assert.
-      if cta_n > 64 and (cta_n % 64 != 0):
-        continue
 
       tile_descriptions.append(
         TileDescription([
@@ -7626,7 +7622,24 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
 
       kernel_schedule = KernelScheduleType.WarpSpecialized1SmSm100 
       epi_schedule = EpilogueScheduleType.NoSmemWarpSpecialized1Sm
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+
+      # SM100 NoSmem epilogue uses EpilogueTileAuto with N-tile = min(64, cta_n).
+      # CUTE's shape_div then requires a compile-time divisibility condition between cta_n and 64.
+      # Only instantiate kernels where cta_n <= 64 or cta_n is an exact multiple of 64 to avoid
+      # violating that "Divisibility Condition" static_assert.
+      filtered_tile_descriptions = []
+      for tile_description in tile_descriptions:
+        div_n = _sm100_epilogue_tile_n_divisibility.get((data_type["c_type"], data_type["d_type"]))
+        if div_n is not None:
+          cta_n = tile_description.threadblock_shape[1]
+          if cta_n > div_n and (cta_n % div_n != 0):
+            continue
+        filtered_tile_descriptions.append(tile_description)
+
+      if not filtered_tile_descriptions:
+        continue
+
+      CreateGemmUniversal3xOperator(manifest, layouts, filtered_tile_descriptions, data_type,
         [[kernel_schedule, epi_schedule]],
         tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
 
