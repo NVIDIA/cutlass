@@ -7455,6 +7455,7 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
       else:
         epi_schedule = EpilogueScheduleType.ScheduleAuto
       kernel_schedule = to_grouped_schedule(KernelScheduleType.TmaWarpSpecialized2SmSm100, grouped)
+
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
       [[kernel_schedule, epi_schedule]], tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
 
@@ -7505,13 +7506,10 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
     tile_descriptions = []
     for cluster_shape in cluster_shapes_1sm:
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
-      cta_m = math_inst.instruction_shape[0] * multiplier_1sm[0]
-      cta_n = math_inst.instruction_shape[1] * multiplier_1sm[1]
-
       tile_descriptions.append(
         TileDescription([
-          cta_m,
-          cta_n,
+          math_inst.instruction_shape[0]     * multiplier_1sm[0],
+          math_inst.instruction_shape[1]     * multiplier_1sm[1],
           math_inst.instruction_shape[2] * 4 * multiplier_1sm[2]],
           0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
