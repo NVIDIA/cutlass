@@ -107,8 +107,6 @@ public:
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
 
-  using EpilogueTensors = typename CollectiveEpilogue::EpilogueTensors;
-
   // Kernel level shared memory storage
   struct SharedStorage {
     using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
@@ -254,8 +252,8 @@ public:
     int32_t curr_group = -1;
     using ProblemShapeMNKL = Shape<int, int, int, int>;
     ProblemShapeMNKL problem_shape_MNKL;
-    typename CollectiveMainloop::Base::Params base_params;
-    EpilogueTensors CD_tensors;
+    typename CollectiveMainloop::Base::Params base_mainloop_params;
+    typename CollectiveEpilogue::Base::Params base_epilogue_params;
 
     if (work_tile_info.is_valid()) {
       curr_group = work_tile_info.L_idx;
@@ -279,9 +277,13 @@ public:
 
       CollectiveMainloop collective_mma;
       if(did_group_change) {
-        base_params = CollectiveMainloop::Base::to_underlying_arguments(problem_shape_MNKL,
+        base_mainloop_params = CollectiveMainloop::Base::to_underlying_arguments(problem_shape_MNKL,
                                                          CollectiveMainloop::to_base_arguments(params.mainloop, curr_group),
                                                          params.workspace);
+        base_epilogue_params = CollectiveEpilogue::Base::to_underlying_arguments(problem_shape_MNKL,
+                                                         CollectiveEpilogue::to_base_arguments(params.epilogue, curr_group),
+                                                         params.workspace);
+        did_group_change = false;
       }
       auto tile_coord = make_coord(m_coord, n_coord, _, 0);
 
@@ -303,19 +305,14 @@ public:
         tile_coord,
         K,
         thread_idx,
-        base_params
+        base_mainloop_params
       );
 
       TileScheduler::fixup(
         params.scheduler, work_tile_info, accumulators, -1, -1);
 
       if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
-        CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
-
-        if(did_group_change) {
-          CD_tensors = epilogue.update_tensor_shape_stride(curr_group, problem_shape_MNKL);
-          did_group_change = false;
-        }
+        typename CollectiveEpilogue::Base epilogue{base_epilogue_params, shared_storage.epilogue};
 
         epilogue(
           problem_shape_MNKL,
@@ -323,8 +320,7 @@ public:
           tile_coord,
           accumulators,
           tiled_mma,
-          thread_idx,
-          CD_tensors
+          thread_idx
         );
       }
 
