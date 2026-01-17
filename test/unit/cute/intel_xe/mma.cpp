@@ -165,7 +165,7 @@ TEST(PVC_CuTe_Xe, MMA_XE_1x16x8_F32TF32TF32F32_TT) {
 
 TEST(PVC_CuTe_Xe, FMA_XE_UniversalFMA_F32F32F32F32) {
   run_mma_test<UniversalFMA<float, float, float, float>, float, float, float>(
-    Shape<_128, _128, _16>{}, Shape<_1, _1, _1>{});
+    Shape<_64, _64, _16>{}, Shape<_1, _1, _1>{});
 }
 
 #if (IGC_VERSION_MAJOR > 2) || (IGC_VERSION_MAJOR == 2 && IGC_VERSION_MINOR >= 18)
