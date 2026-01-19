@@ -39,16 +39,17 @@ message(STATUS "Configuring cuDNN ...")
 find_path(
     _CUDNN_INCLUDE_DIR cudnn.h
     PATHS
+    $ENV{CUDNN_PATH}
     ${CUDA_TOOLKIT_ROOT_DIR}/include
     $ENV{CUDNN_PATH}/include
     $ENV{CUDA_PATH}/include
     ${CUDNN_PATH}/include
-    /usr/include
-    $ENV{CUDNN_PATH})
+    /usr/include)
 
 find_library(
     _CUDNN_LIBRARY cudnn
     HINTS
+    $ENV{CUDNN_PATH}
     ${CUDA_TOOLKIT_ROOT_DIR}/lib64
     ${CUDA_TOOLKIT_ROOT_DIR}/lib/x64
     ${CUDA_TOOLKIT_ROOT_DIR}/lib
@@ -62,8 +63,7 @@ find_library(
     ${CUDNN_PATH}/lib/x64
     ${CUDNN_PATH}/lib
     /usr/lib/x86_64-linux-gnu
-    /usr/lib
-    $ENV{CUDNN_PATH})
+    /usr/lib)
 
 if(_CUDNN_INCLUDE_DIR AND _CUDNN_LIBRARY)
 
