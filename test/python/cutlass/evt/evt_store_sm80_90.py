@@ -46,10 +46,10 @@ from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 cutlass_cppgen.set_log_level(logging.WARNING)
 
 
-@unittest.skipIf(device_cc() not in [12, 20, 80, 86, 89, 90], "This unittest is only supported on CC [12, 20, 80, 86, 89, 90]")
+@unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
 class TestEVTStore(EVTTestCaseBase):
 
-    @unittest.skipIf(device_cc() not in [12, 20, 90], "This test is only supported on CC [12, 20, 90]")
+    @unittest.skipIf(device_cc() != 90, "This test is only for CC 90")
     def test_invalid_store(self):
         """
         Test invalid store
@@ -174,39 +174,6 @@ class TestEVTStore(EVTTestCaseBase):
             input_keys = ["C", "alpha"]
             result_keys = ["D", "F_max", "acc_max"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
-
-    def test_store_with_multiple_reductions(self):
-        """
-        Test storing main output with multiple types of reductions
-        """
-        def evt_store_multi_reduce(accum, alpha, beta, C):
-            F = alpha * accum + beta * C
-            
-            # Multiple reduction types
-            row_max = max(F, dim=[2,])      # [l, m, 1]
-            col_max = max(F, dim=[1,])      # [l, 1, n] 
-            scalar_max = max(F, dim=[1, 2]) # [l, 1, 1]
-            
-            D = F + C
-            return D, row_max, col_max, scalar_max
-
-        for m, n, k, l in self.get_problem_sizes(8):
-            example_inputs = {
-                "accum": self.fake_tensor(self.element, (l, m, n)),
-                "alpha": 2.0,
-                "beta": 0.5,
-                "C": self.fake_tensor(self.element, (l, m, n)),
-                "D": self.fake_tensor(self.element, (l, m, n)),
-                "row_max": self.fake_tensor(np.float32, (l, m, 1)),
-                "col_max": self.fake_tensor(np.float32, (l, 1, n)),
-                "scalar_max": self.fake_tensor(np.float32, (l, 1, 1)),
-            }
-
-            launcher = EVTTestBed(self.element, evt_store_multi_reduce, example_inputs)
-            input_keys = ["C", "alpha", "beta"]
-            result_keys = ["D", "row_max", "col_max", "scalar_max"]
-            launcher.verify((m, n, k), input_keys, result_keys, l)
-
 
 
 if __name__ == '__main__':

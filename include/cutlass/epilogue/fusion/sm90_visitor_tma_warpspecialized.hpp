@@ -748,15 +748,6 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Alias for Xe
-template<class ElementCompute, class EdgeTuple, class... Ops>
-using Xe20TopologicalVisitor = Sm90TopologicalVisitor<ElementCompute, EdgeTuple, Ops...>;
-
-template<class ElementCompute, class EdgeTuple, class... Ops>
-using Xe12TopologicalVisitor = Sm90TopologicalVisitor<ElementCompute, EdgeTuple, Ops...>;
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 // Base specializations so we can have standard layout params and simple aggregate initializers
 namespace detail {
 

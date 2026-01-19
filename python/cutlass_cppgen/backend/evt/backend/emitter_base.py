@@ -125,16 +125,16 @@ class FusionCallbacks:
         subgraph_nodes = subgraph.nodes_topological_order()
         # Emit the Edge Tuple
         edge_tuples = "cute::tuple<\n"
-        edge_tuple_list = []
         for n in subgraph_nodes[:-1]:
             in_edges = subgraph.in_edges(n)
             edge_weights = [subgraph.get_edge_weight(edge[0], edge[1]) for edge in in_edges]
             sorted_children = [edge[0] for _, edge in sorted(zip(edge_weights, in_edges))]
             edge_tuple = "        cute::seq<"
             edge_str = [str(subgraph_nodes.index(child)) for child in sorted_children]
-            edge_tuple += ", ".join(edge_str) + ">"
-            edge_tuple_list.append(edge_tuple)
-        edge_tuples += ",\n".join(edge_tuple_list) + "\n    >"
+            edge_tuple += ", ".join(edge_str) + ">,\n"
+
+            edge_tuples += edge_tuple
+        edge_tuples += "    >"
 
         # Emit the node list
         dag_nodes = ""
@@ -147,22 +147,13 @@ class FusionCallbacks:
                 dag_node_strs.append(f"    {n_meta.name_camel}")
         dag_nodes = ",\n".join(dag_node_strs)
 
-        if self.cc in [INTEL_XE12, INTEL_XE20]:  
-            return f"""
-            using {node.name_camel} = cutlass::epilogue::{self.namespace}::Xe{self.evt_cc}TopologicalVisitor<
-                {DataTypeTag[node.subgraph.element_compute]},
-                {edge_tuples},
-            {dag_nodes}
-            >;
-            """
-        else:
-            return f"""
-            using {node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}TopologicalVisitor<
-                {DataTypeTag[node.subgraph.element_compute]},
-                {edge_tuples},
-            {dag_nodes}
-            >;
-            """
+        return f"""
+using {node.name_camel} = cutlass::epilogue::{self.namespace}::Sm{self.evt_cc}TopologicalVisitor<
+    {DataTypeTag[node.subgraph.element_compute]},
+    {edge_tuples},
+{dag_nodes}
+>;
+"""
 
     def emit_node(self, node):
         if isinstance(node, TopoVisitorNode):
