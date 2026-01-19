@@ -31,7 +31,7 @@
 
 from pycute import product
 
-from cutlass_library import DataTypeSize, DataTypeTag
+from cutlass_library import DataType, DataTypeSize, DataTypeTag
 from cutlass_cppgen.backend.evt.ir import (
     # Load Node
     AccumulatorImpl,
@@ -57,6 +57,14 @@ from cutlass_cppgen.backend.library import (
     FunctionalOp,
     op_tag,
 )
+
+ATOMIC_GMEM_OPS = {FunctionalOp.AtomicAdd, FunctionalOp.AtomicMaximum}
+
+def _needs_atomic_float(element_dtype, gmem_reduce_fn):
+    return (
+        gmem_reduce_fn in ATOMIC_GMEM_OPS and
+        element_dtype in (DataType.f16, DataType.bf16)
+    )
 
 
 class xe12AccumulatorImpl(AccumulatorImpl):
@@ -266,6 +274,14 @@ using StrideD = {self.stride_mnl};
 
 class xe12ColumnReductionImpl(ColumnReductionImpl):
 
+    def __init__(self, node) -> None:
+      super().__init__(node)
+      if _needs_atomic_float(self.element, self.gmem_reduce_fn):
+            raise RuntimeError(
+                f"Xe12 column reduction '{self.name}' uses {DataTypeTag[self.element]} with {op_tag(self.gmem_reduce_fn)}, "
+                "which requires a float output because sycl::atomic_ref does not support half/bfloat16. Please declare the reduction tensor as float32."
+            )
+
     @property
     def type_decl(self):
         """
@@ -286,6 +302,14 @@ using {self.name_camel} = cutlass::epilogue::fusion::Sm90ColReduction<
 
 
 class xe12RowReductionImpl(RowReductionImpl):
+
+    def __init__(self, node) -> None:
+        super().__init__(node)
+        if _needs_atomic_float(self.element, self.gmem_reduce_fn):
+            raise RuntimeError(
+                f"Xe12 row reduction '{self.name}' uses {DataTypeTag[self.element]} with {op_tag(self.gmem_reduce_fn)}, "
+                "which requires a float output because sycl::atomic_ref does not support half/bfloat16. Please declare the reduction tensor as float32."
+            )
 
 
     @property
@@ -308,6 +332,14 @@ using {self.name_camel} = cutlass::epilogue::fusion::Sm90RowReduction<
 
 
 class xe12ScalarReductionImpl(ScalarReductionImpl):
+
+    def __init__(self, node) -> None:
+        super().__init__(node)
+        if _needs_atomic_float(self.element, self.gmem_reduce_fn):
+            raise RuntimeError(
+                f"Xe12 scalar reduction '{self.name}' uses {DataTypeTag[self.element]} with {op_tag(self.gmem_reduce_fn)}, "
+                "which requires a float output because sycl::atomic_ref does not support half/bfloat16. Please declare the reduction tensor as float32."
+            )
 
 
     @property
