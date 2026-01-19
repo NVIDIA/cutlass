@@ -232,7 +232,7 @@ class ArtifactManager:
                 q = dpctl.SyclQueue(cutlass_cppgen.sycl_device())
                 module = dpctl.program.create_program_from_spirv(
                     q, cubin_image)
-                kernel = module.get_sycl_kernel(operation_name)
+                kernel = module.get_sycl_kernel(f"__sycl_kernel_{operation_name}")
             else:
                 err, module = cuda.cuModuleLoadData(cubin_image)
                 if err != cuda.CUresult.CUDA_SUCCESS:
@@ -507,9 +507,7 @@ class ArtifactManager:
             # step 1: check if the operation is in cache
             compiled_kernel = self.compiled_cache_device.get(key)
 
-            # TODO(Lukas): Caching is currently deactivated for SYCL and needs
-            #              to be enabled.
-            if compiled_kernel is None and not bypass_cache and not self._is_sycl():
+            if compiled_kernel is None and not bypass_cache:
                 hit = self.load_operation(key, getattr( operation.rt_module, "extra_funcs", {}))
                 if hit:
                     compiled_kernel = self.compiled_cache_device.get(key)
