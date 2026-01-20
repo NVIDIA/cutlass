@@ -74,12 +74,13 @@ from .typing import (
     Int8,
     Int32,
     Float4E2M1FN,
+    Float8E4M3,
     Float16,
     Float32,
     BFloat16,
 )
 from .tuple import transform_leaf, product, product_like, flatten_to_tuple
-from .arch import cvt_i8_bf16_intrinsic, cvt_i4_bf16_intrinsic, cvt_f4e2m1_f16_intrinsic
+from .arch import cvt_i8_bf16_intrinsic, cvt_i4_bf16_intrinsic, cvt_f4e2m1_f16_intrinsic, cvt_f8e4m3_f16_intrinsic
 
 
 @ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
@@ -1757,6 +1758,14 @@ class TensorSSA(cutlass_arith.ArithValue):
         if src_dtype.is_float and dtype.is_float:
             if src_dtype == Float4E2M1FN and dtype in (Float16, Float32):
                 res_vect = cvt_f4e2m1_f16_intrinsic(
+                    src, size(self.shape), loc=loc, ip=ip
+                )
+                if dtype == Float32:
+                    res_vect = cutlass_arith.cvtf(
+                        res_vect, dtype.mlir_type, loc=loc, ip=ip
+                    )
+            elif src_dtype == Float8E4M3 and dtype in (Float16, Float32):
+                res_vect = cvt_f8e4m3_f16_intrinsic(
                     src, size(self.shape), loc=loc, ip=ip
                 )
                 if dtype == Float32:
