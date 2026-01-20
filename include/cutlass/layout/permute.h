@@ -314,7 +314,7 @@ public:
   LongIndex operator()(MatrixCoord coord) const {
 
     // The batch index for BMM
-    Index BMM_batch_idx = blockIdx.z;
+    auto BMM_batch_idx = Index(blockIdx.z);
     
     // [i,j,k,l] -> [i,k,j,l]
     Index l = coord.column();
@@ -377,7 +377,7 @@ public:
   LongIndex operator()(MatrixCoord coord) const {
 
     // The batch index for BMM
-    Index BMM_batch_idx = blockIdx.z;
+    auto BMM_batch_idx = Index(blockIdx.z);
     
     // The following assumes grouping [(D0)->batch, (D2)->row, (D1,D3)->col]
     Index l = coord.column() % D3_;
@@ -449,7 +449,7 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord coord) const {
 
-    Index BMM_batch_idx = blockIdx.z;
+    auto BMM_batch_idx = Index(blockIdx.z);
     
     // [i,j,k,l] -> [i,k,j,l]
     Index l = coord.column();
@@ -510,7 +510,7 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord coord) const {
 
-    Index BMM_batch_idx = blockIdx.z;
+    auto BMM_batch_idx = Index(blockIdx.z);
     
     // The following assumes grouping [(D0)->batch, (D1,D2)->row, (D3)->col]
     Index l = coord.column();
