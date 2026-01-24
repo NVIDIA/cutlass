@@ -247,7 +247,7 @@ public:
 
     Status update(Arguments const &args) {
       output_op = args.output_op;
-      ref_A = ref_A;
+      ref_A = args.ref_A;
       ptr_B = args.ptr_B;
       ptr_C = args.ptr_C;
       ptr_D = args.ptr_D;
@@ -480,7 +480,7 @@ public:
       problem_size = args.problem_size;
       batch_count = args.batch_count;
       output_op = args.output_op;
-      ref_A = ref_A;
+      ref_A = args.ref_A;
       ptr_B = args.ptr_B;
       ptr_C = args.ptr_C;
       ptr_D = args.ptr_D;

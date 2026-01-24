@@ -123,6 +123,19 @@ function(cutlass_add_cutlass_library)
     PRIVATE cutlass_library_internal_interface
     )
 
+  # Use medium code model to handle large libraries (>2GB) on Linux x86_64
+  # Conservative approach: only apply on Linux with GCC/Clang/Intel compilers
+  # This addresses the "relocation truncated to fit" linker error when libraries exceed 2GB
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND 
+     CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND
+     CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|IntelLLVM")
+    message(STATUS "CUTLASS: Applying -mcmodel=medium for large library support (Linux x86_64, ${CMAKE_CXX_COMPILER_ID})")
+    target_compile_options(${__NAME}_objs PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-mcmodel=medium>
+      $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-mcmodel=medium>
+    )
+  endif()
+
   if (CUTLASS_BUILD_MONO_LIBRARY AND __SUFFIX)
 
     # If we're only building a single monolithic library then we

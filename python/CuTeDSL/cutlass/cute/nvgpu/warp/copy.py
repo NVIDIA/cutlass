@@ -12,20 +12,20 @@
 from dataclasses import dataclass
 from typing import Type
 
-from cutlass import cute
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError
 from ...core import _pack_shape
-from ...typing import Numeric
-from ...atom import CopyOp, Trait
+from ...typing import Numeric, Optional
+from ...atom import CopyOp, Trait, make_atom
 
 
 @dataclass(frozen=True)
 class BaseOp(CopyOp):
     transpose: bool = False
     num_matrices: int = 1
+    unpack_bits: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.transpose, bool):
@@ -41,6 +41,8 @@ class BaseOp(CopyOp):
         )
         if self.transpose:
             res += "\n  transposed"
+        if self.unpack_bits is not None:
+            res += f"\n  unpack {self.unpack_bits}b to 8b"
         return res
 
 
@@ -60,6 +62,8 @@ class LdMatrix8x8x16bOp(BaseOp):
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
+        if self.unpack_bits is not None:
+            raise OpError(self, "Op doesn't support unpacking")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
@@ -72,46 +76,140 @@ class LdMatrix8x8x16bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get() if self.transpose else None,
         )
-        return LdMatrix8x8x16bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return LdMatrix8x8x16bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class LdMatrix8x8x16bTrait(Trait):
+    pass
+
+@dataclass(frozen=True)
+class LdMatrix8x16x8bOp(BaseOp):
+    """
+    8x16 ``ldmatrix`` Operation with unpacking to 8b container.
+    Packed source container is 16x4b elements with 64b padding
+    or 16x6b elements with 32b padding (total 128b per 16 elements)
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-load-instruction-ldmatrix>`__.
+    This operation corresponds to the ``.m8n16`` and the ``.b4x16_p64``, ``.b6x16_p32`` qualifiers.
+    """
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.transpose:
+            raise OpError(self, "Op doesn't support transpose")
+        if self.num_matrices not in [1, 2, 4]:
+            raise OpError(
+                self,
+                "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
+            )
+        if self.unpack_bits not in [4, 6]:
+            raise OpError(self, "Op unpack bits must be 4 or 6")
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "LdMatrix8x16x8bTrait":
+        mode = _pack_shape((8, 16), loc=loc, ip=ip)
+        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
+        if self.unpack_bits == 6:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u6x16p32to8
+        ty = _cute_nvgpu_ir.CopyAtomLdsmType.get(
+            copy_internal_type.mlir_type,
+            mode.type.attribute,
+            sz_pattern,
+            self.num_matrices,
+            None,
+        )
+        return LdMatrix8x16x8bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdMatrix8x16x8bTrait(Trait):
+    pass
+
+@dataclass(frozen=True)
+class LdMatrix16x8x8bOp(BaseOp):
+    """
+    16x8 8b ``ldmatrix`` Operation with transpose
+    
+    There is no direct PTX correspondance to this Op.
+    This actually lowers to ldmatrix with the ``.m16n16`` qualifier and
+    additional address and value permutations to match stmatrix.m16n8.trans.
+    Useful for vectorizing with Ampere-style 8x8 matrix thread-value layouts
+    """
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.transpose:
+            raise OpError(self, "Op only supports transpose")
+        if self.num_matrices not in [2, 4]:
+            raise OpError(
+                self,
+                "expects the 'num_matrices' Op parameter to be one of [2,4]",
+            )
+        if self.unpack_bits not in [None, 4, 6]:
+            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "LdMatrix16x8x8bTrait":
+        mode = _pack_shape((16, 8), loc=loc, ip=ip)
+        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u8
+        if self.unpack_bits == 4:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
+        elif self.unpack_bits == 6:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u6x16p32to8
+        ty = _cute_nvgpu_ir.CopyAtomLdsmType.get(
+            copy_internal_type.mlir_type,
+            mode.type.attribute,
+            sz_pattern,
+            self.num_matrices,
+            ir.UnitAttr.get(),
+        )
+        return LdMatrix16x8x8bTrait(make_atom(ty, loc=loc, ip=ip))
+
+class LdMatrix16x8x8bTrait(Trait):
     pass
 
 
 @dataclass(frozen=True)
 class LdMatrix16x16x8bOp(BaseOp):
     """
-    16x16 8-bit ``ldmatrix`` Operation.
-
+    16x16 ``ldmatrix`` Operation with transpose and optional unpacking to 8b container.
+    Packed source container is 16x4b elements with 64b padding
+    or 16x6b elements with 32b padding (total 128b per 16 elements)
+    
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-load-instruction-ldmatrix>`__.
-    This operation corresponds to the ``.m16n16`` and the ``.b16`` qualifiers.
+    This operation corresponds to the ``.m16n16`` and the ``.b4x16_p64``,``.b6x16_p32``,``.b8`` qualifiers.
     """
 
-    def __init__(self, num_matrices: int) -> None:
-        super().__init__(transpose=True, num_matrices=num_matrices)
-        self._verify()
-
-    def _verify(self):
-        assert self.transpose, "transpose must be True"
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.transpose:
+            raise OpError(self, "Op only supports transpose")
         if self.num_matrices not in [1, 2]:
             raise OpError(
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2]",
             )
+        if self.unpack_bits not in [None, 4, 6]:
+            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "LdMatrix16x16x8bTrait":
         mode = _pack_shape((16, 16), loc=loc, ip=ip)
+        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u8
+        if self.unpack_bits == 4:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
+        elif self.unpack_bits == 6:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u6x16p32to8
         ty = _cute_nvgpu_ir.CopyAtomLdsmType.get(
             copy_internal_type.mlir_type,
             mode.type.attribute,
-            _cute_nvgpu_ir.LdsmSzPattern.u8,
+            sz_pattern,
             self.num_matrices,
             ir.UnitAttr.get(),
         )
-        return LdMatrix16x16x8bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return LdMatrix16x16x8bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class LdMatrix16x16x8bTrait(Trait):
@@ -134,6 +232,8 @@ class StMatrix8x8x16bOp(BaseOp):
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
+        if self.unpack_bits is not None:
+            raise OpError(self, "Op doesn't support unpacking")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
@@ -145,7 +245,7 @@ class StMatrix8x8x16bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get() if self.transpose else None,
         )
-        return StMatrix8x8x16bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return StMatrix8x8x16bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class StMatrix8x8x16bTrait(Trait):
@@ -161,17 +261,17 @@ class StMatrix16x8x8bOp(BaseOp):
     This operation corresponds to the ``m16n8`` qualifier.
     """
 
-    def __init__(self, num_matrices: int) -> None:
-        super().__init__(transpose=True, num_matrices=num_matrices)
-        self._verify()
-
-    def _verify(self):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.transpose:
+            raise OpError(self, "Op only supports transpose")
         if self.num_matrices not in [1, 2, 4]:
-            assert self.transpose, "transpose must be True"
             raise OpError(
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
+        if self.unpack_bits is not None:
+            raise OpError(self, "Op doesn't support unpacking")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
@@ -183,7 +283,7 @@ class StMatrix16x8x8bOp(BaseOp):
             self.num_matrices,
             ir.UnitAttr.get(),
         )
-        return StMatrix16x8x8bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return StMatrix16x8x8bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class StMatrix16x8x8bTrait(Trait):

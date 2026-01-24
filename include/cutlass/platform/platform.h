@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include "cutlass/tfloat32.h"
+
 /**
  * \file
  * \brief C++ features that may be otherwise unimplemented for CUDA device functions.
@@ -580,7 +582,7 @@ template <typename value_t>
 struct alignment_of : std::alignment_of<value_t> {};
 
 #endif
-
+#if CUDA_VERSION >= 11080
 /* 16B specializations where 32-bit Win32 host compiler disagrees with device compiler */
 template <>
 struct alignment_of<int4> {
@@ -676,7 +678,7 @@ struct alignment_of<double4> {
 };
 
 #endif
-
+#endif // CUDA_VERSION >= 11080
 
 // Specializations for volatile/const qualified types
 template <typename value_t>
@@ -911,6 +913,18 @@ struct numeric_limits<float> {
   static constexpr float infinity() noexcept { return bit_cast<float, int32_t>(0x7f800000);}
   CUTLASS_HOST_DEVICE
   static constexpr float max() noexcept { return bit_cast<float, int32_t>(0x7f7fffff);}
+  static constexpr bool is_integer = false;
+  static constexpr bool has_infinity = true;
+};
+
+template <>
+struct numeric_limits<tfloat32_t> {
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t infinity() noexcept { return tfloat32_t::bitcast(0x7f800000);}
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t max() noexcept { return tfloat32_t::bitcast(0x7f7fffff);}
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t lowest() noexcept { return tfloat32_t::bitcast(0xff7fffff);}
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };

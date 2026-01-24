@@ -11,28 +11,39 @@
 
 from .c_header_generator import CuteCHeaderGenerator
 
-from ...base_dsl.export import (
-    get_export_module,
-    dump_to_object as _dump_to_object,
-    export_to_c as _export_to_c,
-)
-from ...cutlass_dsl import CuTeDSL
-from functools import partial as _partial
-from ...cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
+from .export import object_file_version as _object_file_version
+from .export import CuteArgsSpecProcessor as _CuteArgsSpecProcessor
 
-dump_to_object = _partial(
-    _dump_to_object,
-    dsl=CuTeDSL._get_dsl(),
+from ...base_dsl.jit_executor import ExportProvider as _ExportProvider
+from ...cutlass_dsl import CuTeDSL as _CuTeDSL
+from ...cutlass_dsl.cuda_jit_executor import (
+    CudaDialectJitCompiledFunction as _CudaDialectJitCompiledFunction,
 )
-export_to_c = _partial(
-    _export_to_c,
-    dsl=CuTeDSL._get_dsl(),
+from ..._mlir._mlir_libs._cutlass_ir import _mlirExecutionEngine
+
+_CudaDialectJitCompiledFunction.export_provider = _ExportProvider(
+    dsl=_CuTeDSL,
+    arg_spec_processor=_CuteArgsSpecProcessor(),
     c_header_generator=CuteCHeaderGenerator(),
-    use_gpu_dialect=False,
+    object_file_version=_object_file_version,
+    mlirExecutionEngine=_mlirExecutionEngine,
 )
+
+from ...base_dsl.export import ExternalBinaryModule as _ExternalBinaryModule
+from ...base_dsl.export import LoadProvider as _LoadProvider
+from .load import version_checker as _version_checker
+from ..._mlir._mlir_libs._cutlass_ir._execution_engine import (
+    BinaryExecutionEngine as _BinaryExecutionEngine,
+)
+
+_ExternalBinaryModule.load_provider = _LoadProvider(
+    dsl=_CuTeDSL,
+    args_spec_processor=_CuteArgsSpecProcessor(),
+    version_checker=_version_checker,
+    execution_engine_constructor=_BinaryExecutionEngine,
+    jit_function_constructor=_CudaDialectJitCompiledFunction,
+)
+
 __all__ = [
     "CuteCHeaderGenerator",
-    "get_export_module",
-    "dump_to_object",
-    "export_to_c",
 ]

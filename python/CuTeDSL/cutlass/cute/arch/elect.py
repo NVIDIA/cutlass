@@ -69,6 +69,8 @@ def elect_one(*, loc=None, ip=None) -> IfOpRegion:
             # Only one thread in the warp executes the code in this context
             pass
     """
+    from cutlass.base_dsl.arch import Arch
+
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
     is_thread_leader = nvvm.elect_sync(T.bool())
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)

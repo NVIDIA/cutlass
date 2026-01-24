@@ -69,6 +69,8 @@ For detailed information on how to invoke them, check out either the tests in `C
 
 * 4.3.0: For variable sequence length, the code requires a batch of valid (but never used) padding memory ahead of the first output batch. No padding is needed for the input tensor, but it requires that the input tensor contain no NaN or Inf values. Note that users should set `total_length` to the `problem_shape`.
 
+* 4.4.0: Added support for Blackwell Ultra (Sm103).
+
 # Copyright
 
 Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

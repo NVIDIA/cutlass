@@ -62,7 +62,6 @@ from .arch import Arch
 # =============================================================================
 
 from .._mlir import ir
-from .._mlir.extras import types as T
 from .._mlir.dialects import func
 
 # =============================================================================
@@ -70,78 +69,6 @@ from .._mlir.dialects import func
 # =============================================================================
 
 MLIR_DYNAMIC = -9223372036854775808
-
-# =============================================================================
-# Codegen Utils
-# =============================================================================
-
-
-def _numpy_type_to_mlir_type(dtype):
-    if dtype == np.float64:
-        return T.f64()
-    if dtype == np.float16:
-        return T.f16()
-    if dtype == np.float32:
-        return T.f32()
-    if dtype == np.int64:
-        return T.i64()
-    if dtype == np.int32:
-        return T.i32()
-    if dtype == np.int16:
-        return T.i16()
-    if dtype == np.int8:
-        return T.i8()
-    if dtype == np.uint64:
-        return T.ui64()
-    if dtype == np.uint32:
-        return T.ui32()
-    if dtype == np.uint16:
-        return T.ui16()
-    if dtype == np.uint8:
-        return T.ui8()
-    if dtype == np.bool_:
-        return T.bool()
-    if dtype == f8E5M2:
-        return T.f8E5M2()
-    if dtype == f8E4M3FN:
-        return T.f8E4M3FN()
-    if dtype == f8E8M0FNU:
-        return T.f8E8M0FNU()
-    if dtype == f6E3M2FN:
-        return T.f6E3M2FN()
-    if dtype == f6E2M3FN:
-        return T.f6E2M3FN()
-    if dtype == f4E2M1FN:
-        return T.f4E2M1FN()
-    assert False, f"Unknown type {type}"
-
-
-def _mlir_type_to_numpy_type(type):
-    if type == T.f64():
-        return np.float64
-    if type == T.f16():
-        return np.float16
-    if type == T.f32():
-        return np.float32
-    if type == T.i64():
-        return np.int64
-    if type == T.i32():
-        return np.int32
-    if type == T.i16():
-        return np.int16
-    if type == T.i8():
-        return np.int8
-    if type == T.ui64():
-        return np.uint64
-    if type == T.ui32():
-        return np.uint32
-    if type == T.ui16():
-        return np.uint16
-    if type == T.ui8():
-        return np.uint8
-    if type == T.bool():
-        return np.bool_
-    assert False, f"Unknown type {type}"
 
 
 # =============================================================================
@@ -188,6 +115,38 @@ def extract_mlir_values(obj):
         res = [obj]
     elif isinstance(obj, ir.BlockArgumentList):
         res = list(obj)  # type: ignore
+
+    return res
+
+
+def extract_mlir_attributes(obj):
+    """
+    Given the `obj`, recursively go through it to extract all contained IR attributes as list of MLIR attributes.
+    This is used for generating kernel function argument attributes.
+    """
+    res = []
+    if hasattr(obj, "__extract_mlir_attributes__"):
+        res = obj.__extract_mlir_attributes__()
+    elif isinstance(obj, (tuple, list)):
+        res = sum((extract_mlir_attributes(x) for x in obj), [])
+    elif isinstance(obj, SimpleNamespace):
+        res = []
+        for k, v in obj.__dict__.items():
+            res.extend(extract_mlir_attributes(v))
+    # Can't call is_dynamic_expression as _is_dynamic_expression depends on extract_mlir_values
+    elif isinstance(obj, set):
+        raise DSLRuntimeError(
+            "Sets are not supported in extract_mlir_values to ensure order preservation",
+            context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
+            suggestion="Consider using a list or tuple instead",
+        )
+    elif isinstance(obj, ir.Value):
+        res = [ir.DictAttr.get({})]
+    elif isinstance(obj, ir.BlockArgumentList):
+        res = [ir.DictAttr.get({})] * len(obj)
+    else:
+        # Unlike extract_mlir_values we expand in the default case that we do not have an __extract_mlir_attributes__
+        res = [ir.DictAttr.get({})] * len(get_mlir_types(obj))
 
     return res
 
@@ -351,7 +310,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.envar = self._env_class(self.name)
         self.enable_preprocessor = preprocess
         # This cache uses hash of original ir and env as key, allows dump/load to/from file. Enabled by default
-        self.jit_cache = dict()
+        self.jit_cache = JitCacheDict(max_elems=self.envar.jit_cache_max_elems)
 
         self.host_jit_decorator_name = f"@{BaseDSL.jit.__name__}"
         self.device_jit_decorator_name = f"@{BaseDSL.kernel.__name__}"
@@ -379,6 +338,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
+
+        if self.envar.jit_time_profiling:
+            self.profiler = timer(enable=True)
+            self.cache_hits = 0
+            self.cache_misses = 0
 
         # Hook excepthook
         if self.envar.filter_stacktrace:
@@ -727,7 +691,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
 
         jit_arg_type, jit_arg_attr, jit_exec_arg = [], [], []
-        default_attr = ir.DictAttr.get({})
 
         if is_argument_constexpr(arg, arg_spec, arg_name, arg_index, func):
             jit_exec_arg = jit_arg_type = jit_arg_attr = None
@@ -799,10 +762,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     else:
                         jit_exec_arg.extend(get_c_pointers(arg))
                     jit_arg_type.extend(get_mlir_types(arg))
+                    jit_arg_attr.extend([default_attr] * len(get_mlir_types(arg)))
                 else:
                     dyn_vals = extract_mlir_values(arg)
                     jit_exec_arg.extend(dyn_vals)
                     jit_arg_type.extend([v.type for v in dyn_vals])
+                    jit_arg_attr.extend(extract_mlir_attributes(arg))
 
                 if not jit_arg_type or not jit_exec_arg:
                     # when it is compile only, we don't have to prepare the executable arguments.
@@ -828,8 +793,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             f"protocol or register a custom JIT argument adapter for type `{type(arg)}` to "
                             "enable dynamic value conversion at runtime.",
                         )
-
-                jit_arg_attr.extend([default_attr] * len(jit_arg_type))
 
             if jit_arg_type is not None:
                 jit_exec_args.extend(jit_exec_arg)
@@ -871,16 +834,18 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     @dataclass
     class LaunchConfig:
         cluster: list = None
+        fallback_cluster: list = None
         grid: list = field(default_factory=lambda: [1, 1, 1])
         block: list = field(default_factory=lambda: [1, 1, 1])
         max_number_threads: list = field(default_factory=lambda: [0, 0, 0])
         smem: int = None
         async_deps: list = field(default_factory=list)
         has_cluster: bool = False
+        has_fallback_cluster: bool = False
         min_blocks_per_mp: int = 0
         use_pdl: bool = False
         auto_smem: bool = False
-
+        cooperative: bool = False
         @staticmethod
         def _check_and_canonicalize_dim(dim, name):
             if not isinstance(dim, (list, tuple)):
@@ -890,11 +855,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 raise DSLRuntimeError(
                     f"Expected {name} dimension to be less than or equal to 3, but got {len(dim)}"
                 )
-
-            if any(not isinstance(e, (Integer, int)) for e in dim):
-                raise DSLRuntimeError(
-                    f"Expected integer for {name} dimension, but got {type(e)}"
-                )
+            for idx, e in enumerate(dim):
+                if not isinstance(e, (Integer, int)):
+                    raise DSLRuntimeError(
+                        f"Expected integer for {name} dimension at index {idx}, but got {type(e)}"
+                    )
 
             # Pad with 1s to 3-dim vector for grid or block dimensions
             return list(dim) + [1] * (3 - len(dim))
@@ -912,6 +877,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 self.cluster = [None, None, None]
             elif len(self.cluster) != 3:
                 raise DSLRuntimeError(f"Expect 3d cluster!")
+
+            self.has_fallback_cluster = self.fallback_cluster is not None
+            if self.fallback_cluster is None:
+                self.fallback_cluster = [None, None, None]
+            elif len(self.fallback_cluster) != 3:
+                raise DSLRuntimeError(f"Expect 3d fallback_cluster!")
 
         def has_max_number_threads(self):
             """Check if max_number_threads is given by user"""
@@ -1027,13 +998,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             pass
 
     def preprocess_pipeline(self, pipeline, arch) -> str:
-        if self.envar.cuda_toolkit is None:
-            self.print_warning(
-                "CUDA_TOOLKIT_PATH environment variable is not set. Cannot set toolkitPath."
-            )
-
         options = {
-            "toolkitPath": self.envar.cuda_toolkit if self.envar.cuda_toolkit else None,
             self.pass_sm_arch_name: arch,
         }
 
@@ -1118,7 +1083,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         try:
             module.operation.verify()
         except Exception as e:
-            raise DSLRuntimeError(f"🧊🧊🧊 ICE IR Verification Failed 🧊🧊🧊", cause=e)
+            raise DSLRuntimeError("🧊🧊🧊 ICE IR Verification Failed 🧊🧊🧊", cause=e)
 
         return module
 
@@ -1158,9 +1123,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 self._build_gpu_module(gpu_module_attrs, loc=loc)
 
                 ret_types = self.get_return_types()
-                fop = func.FuncOp(
-                    function_name, (func_types, ret_types), loc=loc
-                )
+                fop = func.FuncOp(function_name, (func_types, ret_types), loc=loc)
                 fop.attributes["llvm.emit_c_interface"] = ir.UnitAttr.get()
                 log().debug("Generated Function OP [%s]", fop)
                 # Attach per-argument source locations if supported by the FuncOp binding.
@@ -1189,8 +1152,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             return module, result
 
         # Build IR module
-        profiler = timer(enable=self.envar.jit_time_profiling)
-        module, result = profiler(build_ir_module)()
+        if self.envar.jit_time_profiling:
+            module, result = self.profiler(build_ir_module)()
+        else:
+            module, result = build_ir_module()
         module_hash = self.get_module_hash(module, function_name)
 
         module = self.build_module(module, function_name)
@@ -1205,6 +1170,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         pipeline,
         args_spec,
         no_cache,
+        no_jit_engine,
         func_type=JitCompiledFunction,
         *,
         full_args=None,
@@ -1212,6 +1178,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         dynamic_args=None,
         dynamic_kwargs=None,
         original_function_name=None,
+        funcBody=None,
     ):
         # If `gpu-arch` is set by compile_options, use it. Otherwise, use the arch from the environment variable.
         compile_gpu_arch = (
@@ -1221,13 +1188,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
         # If no gpu kernels or compile_gpu_arch is same as the arch from the environment variable, generate a JIT engine. Otherwise, only do the compilation.
         gen_jit_engine = self.num_kernels == 0 or compile_gpu_arch == self.envar.arch
+        if no_jit_engine:
+            gen_jit_engine = False
         # Preprocess the pipeline.
         pipeline = self.preprocess_pipeline(
             self._get_pipeline(pipeline), compile_gpu_arch
         )
-        log().debug(f"Using pipeline = {pipeline}")
         shared_libs = self.get_shared_libs()
-        profiler = timer(enable=self.envar.jit_time_profiling)
         # try load the file cache
         load_from_file_cache = False
         if not no_cache:
@@ -1236,13 +1203,17 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             if fn is not None:
                 load_from_file_cache = True
-                self.jit_cache[module_hash] = fn
+                self.jit_cache.set(module_hash, fn, funcBody=funcBody)
 
-        if (
-            no_cache
-            or module_hash not in self.jit_cache
-            or self.jit_cache[module_hash].ir_module is None
-        ):
+        cached_jit_func = None if no_cache else self.jit_cache.get(module_hash)
+
+        if no_cache or cached_jit_func is None or cached_jit_func.ir_module is None:
+            if self.envar.jit_time_profiling:
+                self.cache_misses += 1
+                log().info(
+                    "Jit cache hit rate=[%f%%]",
+                    self.cache_hits / (self.cache_hits + self.cache_misses) * 100,
+                )
             log().info(
                 "JIT cache miss function=[%s] module_hash=[%s]",
                 function_name,
@@ -1250,11 +1221,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             # Compile and JIT MLIR module
             if gen_jit_engine:
-                engine = profiler(self.compile_and_jit)(
-                    module, pipeline, shared_libs, function_name=function_name
-                )
+                if self.envar.jit_time_profiling:
+                    engine = self.profiler(self.compile_and_jit)(
+                        module, pipeline, shared_libs, function_name=function_name
+                    )
+                else:
+                    engine = self.compile_and_jit(
+                        module, pipeline, shared_libs, function_name=function_name
+                    )
             else:
-                profiler(self.compiler_provider.compile)(module, pipeline)
+                if self.envar.jit_time_profiling:
+                    self.profiler(self.compiler_provider.compile)(
+                        module,
+                        pipeline,
+                    )
+                else:
+                    self.compiler_provider.compile(module, pipeline)
                 engine = None
         else:
             log().info(
@@ -1262,13 +1244,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 function_name,
                 module_hash,
             )
-            module = self.jit_cache[module_hash].ir_module
+            if self.envar.jit_time_profiling:
+                self.cache_hits += 1
+                log().info(
+                    "JIT cache hit rate=[%f%%]",
+                    self.cache_hits / (self.cache_hits + self.cache_misses) * 100,
+                )
+            module = cached_jit_func.ir_module
             engine = (
                 self.compiler_provider.jit(module, shared_libs=shared_libs)
                 if gen_jit_engine
                 else None
             )
-        capi_func = profiler(engine.lookup)(function_name) if engine else None
+        if self.envar.jit_time_profiling:
+            capi_func = self.profiler(engine.lookup)(function_name) if engine else None
+        else:
+            capi_func = engine.lookup(function_name) if engine else None
 
         fn = func_type(
             module,
@@ -1283,14 +1274,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 CUBIN=self.compile_options.full_cubin_path,
                 MLIR=(self.dump_mlir_path if self.envar.keep_ir else None),
             ),
+            # set dynamic arguments if the jit_function is a JitCompiledFunction for AOT generation.
+            dynamic_args=dynamic_args,
+            dynamic_kwargs=dynamic_kwargs,
         )
-
-        # set dynamic arguments if the jit_function is a JitCompiledFunction for AOT generation.
-        fn.set_dynamic_args(dynamic_args, dynamic_kwargs)
 
         if not no_cache:
             # module stored in cache is compiled.
-            self.jit_cache[module_hash] = fn
+            self.jit_cache.set(module_hash, fn, funcBody=funcBody)
             # write through the file cache if enabled.
             if not self.envar.disable_file_caching and not load_from_file_cache:
                 dump_cache_to_path(
@@ -1330,18 +1321,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 i,
                 funcBody,
             ):
-                try:
-                    dynamic_args.append(weakref.proxy(arg))
-                except TypeError:
-                    # If arg cannot be weakly referenced (e.g., int, float)
-                    dynamic_args.append(arg)
+                dynamic_args.append(arg)
         for i, (k, v) in enumerate(kwargs.items()):
             if not is_argument_constexpr(v, args_spec.kwonlyargs[i], k, i, funcBody):
-                try:
-                    dynamic_kwargs[k] = weakref.proxy(v)
-                except TypeError:
-                    # If v cannot be weakly referenced (e.g., int, float)
-                    dynamic_kwargs[k] = v
+                dynamic_kwargs[k] = v
         return dynamic_args, dynamic_kwargs
 
     def generate_mlir(
@@ -1354,6 +1337,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         args_spec,
         pipeline,
         no_cache,
+        no_jit_engine,
         compile_only,
         location=None,
     ):
@@ -1387,10 +1371,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 if self.envar.dryrun:
                     return result
 
+                # Get a single reference to the cache since garbage collection
+                cached_jit_func = None if no_cache else self.jit_cache.get(module_hash)
+
                 if (
                     no_cache
-                    or module_hash not in self.jit_cache
-                    or self.jit_cache[module_hash].capi_func is None
+                    or cached_jit_func is None
+                    or cached_jit_func.capi_func is None
                 ):
                     # no cache or cache miss, do ir generation/compilation/jit engine
                     jit_function = self.compile_and_cache(
@@ -1400,11 +1387,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         pipeline,
                         args_spec,
                         no_cache,
+                        no_jit_engine,
                         full_args=args,
                         full_kwargs=kwargs,
                         dynamic_args=dynamic_args,
                         dynamic_kwargs=dynamic_kwargs,
                         original_function_name=original_function_name,
+                        funcBody=funcBody,
                     )
                 else:
                     # cache hit
@@ -1413,7 +1402,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         function_name,
                         module_hash,
                     )
-                    jit_function = self.jit_cache[module_hash]
+                    jit_function = cached_jit_func
 
             finally:
                 self.post_compilation_cleanup()
@@ -1537,8 +1526,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Disable cache
         no_cache = kwargs.pop("no_cache", False)
 
+        # Disable JIT execution engine
+        no_jit_engine = kwargs.pop("no_jit_engine", False)
+
         # Always compile(disable cache) and return the result jit_executor
         compile_only = kwargs.pop("compile_only", False)
+
+        func_name_prefix = kwargs.pop("_name_prefix", None)
 
         if not no_cache and (
             self.envar.keep_ptx
@@ -1560,9 +1554,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         canonicalized_args, canonicalized_kwargs = self._canonicalize_args(
             sig, *args, **kwargs
         )
-
         # Simple name mangling
         function_name = self.mangle_name(function_name, canonicalized_args, args_spec)
+        if func_name_prefix:
+            function_name = f"{func_name_prefix}_{function_name}"
+
         self.compile_options.apply_envar_settings(self.envar, function_name)
         if not self.compile_options.generate_line_info:
             self.decorator_location = None
@@ -1578,6 +1574,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             args_spec,
             pipeline,
             no_cache,
+            no_jit_engine,
             compile_only,
             location=self.decorator_location,
         )
@@ -1778,6 +1775,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 # The mangled name of Python function is part of the name to
                 # improve readability.
                 kernel_name = f"kernel_{self.mangle_name(kernel_name, args, args_spec)}_{self.num_kernels}"
+                if hasattr(self, "_name_prefix") and self._name_prefix:
+                    kernel_name = f"{self._name_prefix}_{kernel_name}"
                 self.num_kernels += 1
 
                 # Step 0. Preprocess the arguments

@@ -13,7 +13,7 @@ import ctypes
 from math import prod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Type, Union
+from typing import Optional, Type, Union, Tuple, Literal
 
 from cutlass.cute.typing import (
     Numeric,
@@ -183,7 +183,7 @@ def convert_cute_tensor(
 ) -> Tensor:
     """
     Change the value of the cute tensor to make its value converted from a fp32 torch tensor.
-    Used for fp8 and int4 types tensor creatation now.
+    Used for fp8 and int4 types tensor creation now.
     """
     # if torch_tensor is on cpu, create a gpu copy
     if f32_torch_tensor.device.type == "cpu":
@@ -289,7 +289,9 @@ def cute_tensor_like(
     assumed_align: Optional[int] = None,
 ) -> tuple[Tensor, torch.Tensor]:
     """
-    Create a cute tensor use a torch tensor as the data source
+    Create a cute tensor use a torch tensor as the data source.
+
+    The cute tensor is a managed reference to the torch tensor.
 
     :param data_ref: torch tensor as the data source
     :param cutlass_dtype: cutlass dtype of the cute tensor
@@ -314,9 +316,11 @@ def cute_tensor_like(
         leading_dim = get_leading_dim(torch_tensor)
         cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
 
+    is_empty_tensor = torch_tensor.numel() == 0
     # initialize the cute tensor data
-    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
-        cutlass_dtype.is_integer and cutlass_dtype.width == 4
+    if not is_empty_tensor and (
+        (cutlass_dtype.is_float and cutlass_dtype.width <= 8)
+        or (cutlass_dtype.is_integer and cutlass_dtype.width == 4)
     ):
         cute_tensor = convert_cute_tensor(
             data_ref.to(dtype=torch.float32),
@@ -327,3 +331,32 @@ def cute_tensor_like(
     else:
         torch_tensor.copy_(data_ref.to(dtype=torch_dtype))
     return cute_tensor, torch_tensor
+
+
+def prepare_tensors_for_gemm(
+    mnkl: Tuple[int, int, int, int] | Tuple[int, int, int],
+    a_dtype: Type[Numeric],
+    b_dtype: Type[Numeric],
+    c_dtype: Type[Numeric],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Prepare tensors for GEMM
+    """
+    if len(mnkl) == 4:
+        m, n, k, l = mnkl
+        a = torch.empty(l, m, k, dtype=dtype(a_dtype), device="cuda").permute(1, 2, 0)
+        b = torch.empty(l, n, k, dtype=dtype(b_dtype), device="cuda").permute(1, 2, 0)
+        c = torch.empty(l, m, n, dtype=dtype(c_dtype), device="cuda").permute(1, 2, 0)
+    elif len(mnkl) == 3:
+        m, n, k = mnkl
+        a = torch.empty(m, k, dtype=dtype(a_dtype), device="cuda")
+        b = torch.empty(n, k, dtype=dtype(b_dtype), device="cuda")
+        c = torch.empty(m, n, dtype=dtype(c_dtype), device="cuda")
+    else:
+        raise ValueError(f"mnkl must be a tuple of length 3 or 4, but got {mnkl}")
+
+    a = a.random_(-2, 2)
+    b = b.random_(-2, 2)
+    c = c.random_(-2, 2)
+
+    return a, b, c

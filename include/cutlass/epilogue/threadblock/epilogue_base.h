@@ -42,7 +42,9 @@
 #include <type_traits>
 #include <utility>
 #endif
+#ifndef __QNX__
 #include CUDA_STD_HEADER(cassert)
+#endif
 
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"

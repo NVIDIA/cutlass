@@ -267,6 +267,10 @@ if (WIN32)
   # Disable warning on Unicode characters
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/wd4819)
 
+  # Disable warning on macro expansion producing 'defined' has undefined behavior
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/wd5105)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd5105")
+
   # Disable excess x86 floating point precision that can lead to results being labeled incorrectly
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/fp:strict)
 endif(WIN32)
@@ -620,8 +624,8 @@ if (MSVC)
   #
   # See https://developercommunity.visualstudio.com/t/msvc-incorrectly-defines-cplusplus/139261
 
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler  /Zc:__cplusplus")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /Zc:preprocessor")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /Zc:__cplusplus -Xcompiler /Zc:preprocessor")
 
 endif()
 
@@ -1134,6 +1138,8 @@ function(cutlass_generate_profiler_tests NAME)
     endif()
 
   endforeach()
+  message(STATUS "Finished processing ${CUTLASS_PROFILER_REGRESSION_LIST_FILE} to generate profiler-based tests.")
+
 
   cutlass_add_executable_tests(
     ${NAME} cutlass_profiler

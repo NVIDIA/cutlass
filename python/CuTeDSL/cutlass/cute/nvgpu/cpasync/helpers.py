@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 from typing import Optional, Tuple, Type, Union
+from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -39,15 +40,16 @@ from .copy import (
     CopyReduceBulkTensorTileS2GNonExecTrait,
 )
 
+TMAOp = Union[
+    CopyBulkTensorTileG2SOp,
+    CopyBulkTensorTileG2SMulticastOp,
+    CopyBulkTensorTileS2GOp,
+    CopyReduceBulkTensorTileS2GOp,
+]
 
 @dsl_user_op
 def make_tiled_tma_atom(
-    op: Union[
-        CopyBulkTensorTileG2SOp,
-        CopyBulkTensorTileG2SMulticastOp,
-        CopyBulkTensorTileS2GOp,
-        CopyReduceBulkTensorTileS2GOp,
-    ],
+    op: TMAOp,
     gmem_tensor: Tensor,
     smem_layout: Union[Layout, ComposedLayout],
     cta_tiler: Tiler,
@@ -69,37 +71,30 @@ def make_tiled_tma_atom(
 
     this function figures out the bulk tensor asynchronous copy instruction to use with the maximum
     "TMA vector length" to copy tiles of the GMEM tensor to/from an SMEM buffer with the provided
-    layout and consistent with the provided Tiler.
+    layout while maintaining consistency with the provided Tiler.
 
     This function returns two results:
 
     1. the Copy Atom
-    2. the so-called TMA tensor used to map logical coordinates of the GMEM tensor to coordinates \
-       that the TMA unit can consume. TMA tensors have so-called basis stride elements so that the \
-       associated layout can output coordinates. Otherwise, TMA tensors can be partitioned \
-       similarly to any other CuTe tensors using the algebra.
+    2. a TMA tensor that maps logical coordinates of the GMEM tensor to coordinates consumed by the \
+       TMA unit. TMA tensors contain basis stride elements that enable their associated layout to \
+       compute coordinates. Like other CuTe tensors, TMA tensors can be partitioned.
 
-    :param op:            The Copy Operation to construct an Atom for
-    :type op:             Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp, CopyBulkTensorTileS2GOp, CopyReduceBulkTensorTileS2GOp]
+    :param op:            The TMA Copy Operation to construct an Atom
+    :type op:             TMAOp
     :param gmem_tensor:   The GMEM tensor involved in the Copy
     :type gmem_tensor:    Tensor
-    :param smem_layout:   The SMEM layout to construct the Copy Atom for
+    :param smem_layout:   The SMEM layout to construct the Copy Atom
     :type smem_layout:    Union[Layout, ComposedLayout]
     :param cta_tiler:     The CTA Tiler to use
     :type cta_tiler:      Tiler
     :param num_multicast: The multicast factor
     :type num_multicast:  int
-    :param internal_type: An optional parameter for the internal data type to use when the actual data type is not supported by the TMA unit
+    :param internal_type: Optional internal data type to use when the tensor data type is not supported by the TMA unit
     :type internal_type:  Type[Numeric]
-    :return:              A Copy Atom for this Operation and the associated TMA tensor
+    :return:              A TMA Copy Atom associated with the TMA tensor
     :rtype:               Tuple[atom.CopyAtom, Tensor]
     """
-
-    if internal_type is not None:
-        if not isinstance(internal_type, NumericMeta):
-            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
-        internal_type = internal_type.mlir_type
-
     cta_v_map = core.composition(
         core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip),
         cta_tiler,
@@ -109,6 +104,26 @@ def make_tiled_tma_atom(
 
     if isinstance(smem_layout, core._ComposedLayout):
         smem_layout = smem_layout.value
+
+    # Set the smem_layout on the operation for later retrieval
+    op.smem_layout = (
+        smem_layout.value
+        if isinstance(smem_layout, core._ComposedLayout)
+        else smem_layout
+    )
+
+    tma_format = None
+    if internal_type is not None:
+        if not isinstance(internal_type, NumericMeta):
+            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
+
+        use_unpack = (internal_type.width == 8 and
+                      isinstance(gmem_tensor.element_type, NumericMeta) and
+                      gmem_tensor.element_type.width < 8)
+        internal_mlir_type = gmem_tensor.element_type.mlir_type if use_unpack else internal_type.mlir_type
+        tma_format = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
+        )
 
     if isinstance(op, CopyBulkTensorTileG2SOp):
         if num_multicast != 1:
@@ -122,7 +137,7 @@ def make_tiled_tma_atom(
             cta_v_map,
             op._to_ir(),
             num_multicast=num_multicast,
-            internal_type=internal_type,
+            tma_format=tma_format,
             loc=loc,
             ip=ip,
         )
@@ -139,7 +154,7 @@ def make_tiled_tma_atom(
             cta_v_map,
             op._to_ir(),
             num_multicast=num_multicast,
-            internal_type=internal_type,
+            tma_format=tma_format,
             loc=loc,
             ip=ip,
         )
@@ -152,7 +167,7 @@ def make_tiled_tma_atom(
             gmem_tensor.value,
             smem_layout,
             cta_v_map,
-            internal_type=internal_type,
+            tma_format=tma_format,
             loc=loc,
             ip=ip,
         )
@@ -163,7 +178,7 @@ def make_tiled_tma_atom(
             smem_layout,
             cta_v_map,
             op._to_ir(),
-            internal_type=internal_type,
+            tma_format=tma_format,
             loc=loc,
             ip=ip,
         )
@@ -314,6 +329,8 @@ def fence_tma_desc_acquire(
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -342,6 +359,8 @@ def cp_fence_tma_desc_release(
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -358,10 +377,13 @@ def fence_tma_desc_release(*, loc=None, ip=None) -> None:
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
     )
 
 
 @dsl_user_op
+@deprecated("`group_bulk_copy_modes` is deprecated, use `group_modes` instead")
 def group_bulk_copy_modes(src: Tensor, dst: Tensor, loc=None, ip=None) -> Tuple:
     """
     Copy async bulk need group mode 0, acquiring whole tensor for bulk copy

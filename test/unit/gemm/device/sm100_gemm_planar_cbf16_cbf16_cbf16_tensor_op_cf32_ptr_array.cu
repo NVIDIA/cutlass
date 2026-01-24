@@ -1,0 +1,282 @@
+/***************************************************************************************************
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ **************************************************************************************************/
+/*! \file
+    \brief Tests for device-wide Ptr-Array GEMM interface
+*/
+
+
+
+#include <iostream>
+
+#include "cutlass/cutlass.h"
+#include "cute/tensor.hpp"
+#include "cute/atom/mma_atom.hpp"
+
+#include "cutlass/numeric_types.h"
+
+#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler.hpp"
+#include "cutlass/gemm/collective/collective_builder.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
+#include "cutlass/epilogue/collective/sm70_epilogue_vectorized.hpp"
+#include "cutlass/epilogue/collective/default_epilogue.hpp"
+#include "cutlass/epilogue/thread/linear_combination.h"
+
+#include "../../common/cutlass_unit_test.h"
+
+#include "gemm_testbed_3x_ptr_array_planar_complex.hpp"
+
+using namespace cute;
+
+#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////// CTA_TILE_SIZE : 128x64x64, CLUSTER_SIZE : 1x1x1, CLUSTER_TILE_SIZE : 128x64x64, TCGEN05.1CTA //////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TT
+TEST(SM100_Device_Gemm_Planar_cbf16t_cbf16t_f32n_tensorop_ptr_array_1sm, 128x64x64_1x1x1) {
+  using ElementA = cutlass::bfloat16_t;
+  using TransformA = cute::identity;
+  using ElementPairA = cute::tuple<ElementA, TransformA>;
+  using LayoutA = cutlass::layout::RowMajor;
+
+  using ElementB = cutlass::bfloat16_t;
+  using TransformB = cute::identity;
+  using ElementPairB = cute::tuple<ElementB, TransformB>;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using ElementAccumulator = float;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using MmaTileShape = cute::Shape<_128,_64,_64>;
+  using ClusterShape = Shape<_1,_1,_1>;
+  
+  using MainloopSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmPlanarComplexSm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayPlanarComplexTmaWarpSpecialized1Sm;          // Epilogue to launch
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::bfloat16_t, LayoutC, 8,
+      cutlass::bfloat16_t, LayoutC, 8,
+      EpilogueSchedule
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      ElementPairA, LayoutA, 8,
+      ElementPairB, LayoutB, 8,
+      ElementAccumulator,
+      MmaTileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      MainloopSchedule
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestPlanarComplexSmall<Gemm>());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////// CTA_TILE_SIZE : 64x128x64, CLUSTER_SIZE : 4x4x1, CLUSTER_TILE_SIZE : 256x256x64, TCGEN05.1CTA /////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// NN
+TEST(SM100_Device_Gemm_Planar_cbf16n_cbf16n_f32n_tensorop_ptr_array_1sm, 256x512x64_4x4x1) {
+  using ElementA = cutlass::bfloat16_t;
+  using TransformA = cute::identity;
+  using ElementPairA = cute::tuple<ElementA, TransformA>;
+  using LayoutA = cutlass::layout::ColumnMajor;
+
+  using ElementB = cutlass::bfloat16_t;
+  using TransformB = cute::identity;
+  using ElementPairB = cute::tuple<ElementB, TransformB>;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using ElementAccumulator = float;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using MmaTileShape = cute::Shape<_64,_128,_64>;
+  using ClusterShape = Shape<_4,_4,_1>;
+  
+  using MainloopSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmPlanarComplexSm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayPlanarComplexTmaWarpSpecialized1Sm;          // Epilogue to launch
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::bfloat16_t, LayoutC, 8,
+      cutlass::bfloat16_t, LayoutC, 8,
+      EpilogueSchedule
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      ElementPairA, LayoutA, 8,
+      ElementPairB, LayoutB, 8,
+      ElementAccumulator,
+      MmaTileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      MainloopSchedule
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestPlanarComplexSmall<Gemm>());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////// CTA_TILE_SIZE : 64x128x64, CLUSTER_SIZE : 2x1x1, CLUSTER_TILE_SIZE : 128x128x64, TCGEN05.1CTA /////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TN
+TEST(SM100_Device_Gemm_Planar_cbf16t_cbf16n_f32n_tensorop_ptr_array_2sm, 128x128x64_2x1x1) {
+  using ElementA = cutlass::bfloat16_t;
+  using TransformA = cute::identity;
+  using ElementPairA = cute::tuple<ElementA, TransformA>;
+  using LayoutA = cutlass::layout::RowMajor;
+
+  using ElementB = cutlass::bfloat16_t;
+  using TransformB = cute::identity;
+  using ElementPairB = cute::tuple<ElementB, TransformB>;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using ElementAccumulator = float;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using MmaTileShape = cute::Shape<_128,_128,_64>;
+  using ClusterShape = Shape<_2,_1,_1>;
+  
+  using MainloopSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmPlanarComplexSm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayPlanarComplexTmaWarpSpecialized2Sm;          // Epilogue to launch
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::bfloat16_t, LayoutC, 8,
+      cutlass::bfloat16_t, LayoutC, 8,
+      EpilogueSchedule
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      ElementPairA, LayoutA, 8,
+      ElementPairB, LayoutB, 8,
+      ElementAccumulator,
+      MmaTileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      MainloopSchedule
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestPlanarComplexSmall<Gemm>());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////// CTA_TILE_SIZE : 128x64x64, CLUSTER_SIZE : 4x4x1, CLUSTER_TILE_SIZE : 512x256x64, TCGEN05.1CTA /////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// NT
+TEST(SM100_Device_Gemm_Planar_cbf16n_cbf16t_f32n_tensorop_ptr_array_2sm, 512x256x64_4x4x1) {
+  using ElementA = cutlass::bfloat16_t;
+  using TransformA = cute::identity;
+  using ElementPairA = cute::tuple<ElementA, TransformA>;
+  using LayoutA = cutlass::layout::ColumnMajor;
+
+  using ElementB = cutlass::bfloat16_t;
+  using TransformB = cute::identity;
+  using ElementPairB = cute::tuple<ElementB, TransformB>;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using ElementAccumulator = float;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using MmaTileShape = cute::Shape<_256,_64,_64>;
+  using ClusterShape = Shape<_4,_4,_1>;
+  
+  using MainloopSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmPlanarComplexSm100;   // Kernel to launch
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayPlanarComplexTmaWarpSpecialized2Sm;          // Epilogue to launch
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::bfloat16_t, LayoutC, 8,
+      cutlass::bfloat16_t, LayoutC, 8,
+      EpilogueSchedule
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      ElementPairA, LayoutA, 8,
+      ElementPairB, LayoutB, 8,
+      ElementAccumulator,
+      MmaTileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      MainloopSchedule
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestPlanarComplexSmall<Gemm>());
+}
+
+#endif // #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)

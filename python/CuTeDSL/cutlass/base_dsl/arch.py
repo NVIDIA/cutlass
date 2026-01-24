@@ -44,7 +44,6 @@ class Arch(Enum):
     sm_121 = (12, 1, "")
     sm_121a = (12, 1, "a")
     sm_121f = (12, 1, "f")
-
     def __init__(self, major, minor, suffix):
         self.major = major
         self.minor = minor
@@ -59,7 +58,6 @@ class Arch(Enum):
             return cls((major, minor, suffix))
         else:
             raise ValueError(f"invalid arguments for Arch: {value}")
-        
 
     # attributes to get arch list of specific families
     @classmethod

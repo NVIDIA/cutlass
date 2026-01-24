@@ -729,6 +729,9 @@ public:
     // Perform the MAC-iterations
     gemm_iters(gemm_k_iterations, accum, iterator_A, iterator_B);
   }
+
+  // Expose pipeline state via alias without changing its original access level
+  using PublicPipeState = PipeState;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

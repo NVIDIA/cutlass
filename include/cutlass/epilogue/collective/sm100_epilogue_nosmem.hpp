@@ -214,6 +214,8 @@ protected:
 public:
   template<
     bool ReuseTmem = false,
+    class LoadPipeline,
+    class LoadPipelineState,
     class AccumulatorPipeline,
     class AccumulatorPipelineState,
     class ProblemShapeMNKL,
@@ -223,6 +225,8 @@ public:
   >
   CUTLASS_DEVICE auto
   operator()(
+      [[maybe_unused]]LoadPipeline load_pipeline,
+      [[maybe_unused]]LoadPipelineState load_pipe_consumer_state,
       AccumulatorPipeline acc_pipeline,
       AccumulatorPipelineState acc_pipe_consumer_state,
       ProblemShapeMNKL problem_shape_mnkl,
@@ -352,7 +356,7 @@ public:
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
 
-    return cute::make_tuple(acc_pipe_consumer_state);
+    return cute::make_tuple(acc_pipe_consumer_state, load_pipe_consumer_state);
   }
 
 
@@ -571,6 +575,8 @@ public:
 
   template<
     bool ReuseTmem = false,
+    class LoadPipeline,
+    class LoadPipelineState,
     class AccumulatorPipeline,
     class AccumulatorPipelineState,
     class ProblemShapeMNKL,
@@ -580,6 +586,8 @@ public:
   >
   CUTLASS_DEVICE auto
   operator()(
+      [[maybe_unused]]LoadPipeline load_pipeline,
+      [[maybe_unused]]LoadPipelineState load_pipe_consumer_state,
       AccumulatorPipeline acc_pipeline,
       AccumulatorPipelineState acc_pipe_consumer_state,
       ProblemShapeMNKL problem_shape_mnkl,
@@ -788,7 +796,7 @@ public:
     //
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     epi_loop_fn(cst_callbacks);
-    return cute::make_tuple(acc_pipe_consumer_state);
+    return cute::make_tuple(acc_pipe_consumer_state, load_pipe_consumer_state);
   }
 
 };

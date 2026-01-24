@@ -57,6 +57,7 @@
 #include "cutlass/gemm/threadblock/default_mma_core.h"
 #include "cutlass/gemm/threadblock/default_multistage_mma_complex_core.h"
 #include "cutlass/gemm/threadblock/default_multistage_mma_complex_core_sm80.h"
+#include "cutlass/gemm/threadblock/mma_multistage_blockwise.h"
 
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"

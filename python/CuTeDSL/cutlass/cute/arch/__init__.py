@@ -16,6 +16,7 @@ from .nvvm_wrappers import *
 from .smem import *
 from .tmem import *
 from .numeric_conversion import *
+from .clc import *
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -73,12 +74,24 @@ __all__ = [
     "vote_any_sync",
     "vote_all_sync",
     "vote_uni_sync",
+    "atomic_add",
+    "atomic_and",
+    "atomic_or",
+    "atomic_xor",
+    "atomic_max",
+    "atomic_min",
+    "atomic_exch",
+    "atomic_cas",
+    "store",
+    "load",
     "popc",
     "fence_proxy",
     "fence_view_async_tmem_load",
     "fence_view_async_tmem_store",
     "warpgroup_reg_alloc",
     "warpgroup_reg_dealloc",
+    "setmaxregister_increase",
+    "setmaxregister_decrease",
     "fma_packed_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
@@ -100,6 +113,8 @@ __all__ = [
     #
     # tmem.py
     #
+    "get_max_tmem_alloc_cols",
+    "get_min_tmem_alloc_cols",
     "retrieve_tmem_ptr",
     "alloc_tmem",
     "relinquish_tmem_alloc_permit",
@@ -115,4 +130,9 @@ __all__ = [
     "cvt_i8x2_to_f32x2",
     "cvt_i8_bf16",
     "cvt_f32x2_bf16x2",
+    #
+    # clc.py
+    #
+    "issue_clc_query",
+    "clc_response",
 ]

@@ -371,7 +371,11 @@ class DSLPreprocessor(ast.NodeTransformer):
                         package_name = module.__package__.rsplit(
                             ".", child_node.level - 1
                         )[0]
-                        module_name = f"{package_name}.{module_name}"
+                        # For `from . import x`, module name is None, just use package name
+                        if module_name:
+                            module_name = f"{package_name}.{module_name}"
+                        else:
+                            module_name = package_name
                     else:
                         # Handle typically some local import like:
                         # from .common_dense_gemm import DenseGemmKernel
@@ -423,12 +427,15 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Get the module containing the decorated function
         if module := inspect.getmodule(decorated_func):
+            if module in self.module_cache:
+                return self.module_cache[module]
             try:
                 # Get the module source code
                 source = inspect.getsource(module)
                 module_ast = ast.parse(source)
 
                 imports = self._get_imports_from_ast(module_ast, module)
+                self.module_cache[module] = imports
             except (IOError, TypeError):
                 pass
 
@@ -768,7 +775,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         return unified_tree
 
     def analyze_region_variables(
-        self, node: Union[ast.For, ast.If], active_symbols: List[Set[str]]
+        self, node: Union[ast.For, ast.If, ast.While], active_symbols: List[Set[str]]
     ):
         """
         Analyze variables in different code regions to identify read-only, write-only,
@@ -857,7 +864,14 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.generic_visit(node)
 
         analyzer = RegionAnalyzer()
-        analyzer.visit(ast.Module(body=node))
+        analyzer.visit(ast.Module(body=node.body))
+        if node.orelse:
+            analyzer.visit(ast.Module(body=node.orelse))
+
+        # While's loop condition is executed n times, as loop body
+        # So collect the variables used in the loop condition
+        if isinstance(node, ast.While):
+            analyzer.visit(ast.Module(body=node.test))
 
         # If arg is both write and invoke, remove from invoked_args
         invoked_args = invoked_args - write_args
@@ -917,6 +931,10 @@ class DSLPreprocessor(ast.NodeTransformer):
             return keywords.get("pipelining", ast.Constant(value=None))
         return keywords.get("prefetch_stages", ast.Constant(value=None))
 
+    def extract_vectorize_args(self, iter_node):
+        keywords = {kw.arg: kw.value for kw in iter_node.keywords}
+        return keywords.get("vectorize", ast.Constant(value=None))
+
     def create_loop_function(
         self,
         func_name,
@@ -927,6 +945,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         unroll,
         unroll_full,
         prefetch_stages,
+        vectorize,
         write_args,
         full_write_args_count,
     ):
@@ -972,6 +991,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     ast.keyword(arg="unroll", value=unroll),
                     ast.keyword(arg="unroll_full", value=unroll_full),
                     ast.keyword(arg="prefetch_stages", value=prefetch_stages),
+                    ast.keyword(arg="vectorize", value=vectorize),
                     ast.keyword(
                         arg="write_args",
                         value=self.generate_get_locals_or_none_call(write_args),
@@ -1387,6 +1407,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         start_expr, stop_expr, step_expr, has_step = self.extract_range_args(node.iter)
         unroll, unroll_full = self.extract_unroll_args(node.iter)
         prefetch_stages = self.extract_prefetch_stages_args(node.iter)
+        vectorize = self.extract_vectorize_args(node.iter)
         write_args, full_write_args_count, called_closures = (
             self.analyze_region_variables(node, active_symbols)
         )
@@ -1416,6 +1437,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             unroll,
             unroll_full,
             prefetch_stages,
+            vectorize,
             write_args,
             full_write_args_count,
         )
@@ -1461,6 +1483,67 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Propagate line number from original node to new node
         ast.copy_location(new_node, node)
         return new_node
+
+    def processFormattedValue(self, node):
+        """
+        Converts an ast.FormattedValue node into a runtime representation of an ast.FormattedValue.
+
+        This function takes an ast.FormattedValue node and converts it into a runtime representation of ast.FormattedValue.
+        """
+        keywords = []
+        if node.conversion != -1:
+            keywords.append(
+                ast.keyword(arg="conversion", value=ast.Constant(value=node.conversion))
+            )
+        if node.format_spec:
+            keywords.append(
+                ast.keyword(
+                    arg="format_spec",
+                    value=ast.List(elts=node.format_spec.values, ctx=ast.Load()),
+                )
+            )
+        call = ast.Call(
+            func=_create_module_attribute(
+                "FormattedValue",
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            ),
+            args=[node.value],
+            keywords=keywords,
+        )
+        return ast.copy_location(call, node)
+
+    def processFString(self, node):
+        """
+        Converts an f-string node into a runtime representation of an f-string.
+
+        This function takes an ast.JoinedStr node and converts it into a list of elements,
+        where each element is either a literal string or a FormattedValue.
+        The FormattedValue is converted into a runtime representation of ast.FormattedValue.
+        """
+        elements = []
+        joinedStr = node.args[0]
+        for component in joinedStr.values:
+            if isinstance(component, ast.Constant):
+                elements.append(component)
+            elif isinstance(component, ast.FormattedValue):
+                elements.append(self.processFormattedValue(component))
+            else:
+                raise DSLAstPreprocessorError(
+                    f"Unsupported component type in f-string: {type(component)}",
+                    filename=self.session_data.file_name,
+                    snippet=ast.unparse(component),
+                )
+        call = ast.Call(
+            func=_create_module_attribute(
+                "fstring_decompose",
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            ),
+            args=[ast.copy_location(ast.List(elts=elements, ctx=ast.Load()), node)],
+            keywords=[],
+        )
+        return ast.copy_location(call, node)
 
     def visit_Call(self, node):
         func = node.func
@@ -1533,45 +1616,62 @@ class DSLPreprocessor(ast.NodeTransformer):
                     ),
                     node,
                 )
-        elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-
-            def create_downcast_call(arg):
-                return ast.copy_location(
-                    ast.Call(
-                        func=_create_module_attribute(
-                            self.IMPLICIT_DOWNCAST_NUMERIC_TYPE,
-                            submodule_name="typing",
-                            lineno=node.lineno,
-                            col_offset=node.col_offset,
-                        ),
-                        args=[arg],
-                        keywords=[],
-                    ),
-                    arg,
-                )
-
-            module = self.session_data.function_globals.get(func.value.id)
-            if isinstance(module, ModuleType) and module.__package__.endswith(
-                "._mlir.dialects"
+            elif (
+                func.id == "printf"
+                and len(node.args) > 0
+                and isinstance(node.args[0], ast.JoinedStr)
             ):
-                # Check if argument is Numeric, if so, call ir_value()
-                args = []
-                for arg in node.args:
-                    args.append(create_downcast_call(arg))
-                kwargs = []
-                for kwarg in node.keywords:
-                    kwargs.append(
-                        ast.copy_location(
-                            ast.keyword(
-                                arg=kwarg.arg,
-                                value=create_downcast_call(kwarg.value),
+                node.args = [
+                    ast.Starred(value=self.processFString(node), ctx=ast.Load())
+                ]
+        elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            if (
+                func.attr == "printf"
+                and len(node.args) > 0
+                and isinstance(node.args[0], ast.JoinedStr)
+            ):
+                node.args = [
+                    ast.Starred(value=self.processFString(node), ctx=ast.Load())
+                ]
+            else:
+
+                def create_downcast_call(arg):
+                    return ast.copy_location(
+                        ast.Call(
+                            func=_create_module_attribute(
+                                self.IMPLICIT_DOWNCAST_NUMERIC_TYPE,
+                                submodule_name="typing",
+                                lineno=node.lineno,
+                                col_offset=node.col_offset,
                             ),
-                            kwarg,
-                        )
+                            args=[arg],
+                            keywords=[],
+                        ),
+                        arg,
                     )
-                return ast.copy_location(
-                    ast.Call(func=func, args=args, keywords=kwargs), node
-                )
+
+                module = self.session_data.function_globals.get(func.value.id)
+                if isinstance(module, ModuleType) and module.__package__.endswith(
+                    "._mlir.dialects"
+                ):
+                    # Check if argument is Numeric, if so, call ir_value()
+                    args = []
+                    for arg in node.args:
+                        args.append(create_downcast_call(arg))
+                    kwargs = []
+                    for kwarg in node.keywords:
+                        kwargs.append(
+                            ast.copy_location(
+                                ast.keyword(
+                                    arg=kwarg.arg,
+                                    value=create_downcast_call(kwarg.value),
+                                ),
+                                kwarg,
+                            )
+                        )
+                    return ast.copy_location(
+                        ast.Call(func=func, args=args, keywords=kwargs), node
+                    )
         else:
             node.func = self.visit(node.func)
 
@@ -1602,6 +1702,11 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    def visit_AnnAssign(self, node):
+        self._visit_target(node.target)
+        self.generic_visit(node)
+        return node
+
     def visit_Name(self, node):
         isLoad = isinstance(node.ctx, ast.Load)
         if node.id in ["max", "min", "any", "all"] and isLoad:
@@ -1623,22 +1728,13 @@ class DSLPreprocessor(ast.NodeTransformer):
             self.generic_visit(node)
         return node
 
-    def check_decorator(self, node: ast.AST) -> bool:
-        """
-        Check if the function has the correct decorator for preprocessing.
-        """
-        if not isinstance(node, ast.FunctionDef):
-            return False
-        decorator_list = node.decorator_list
-        if len(decorator_list) == 0:
-            return False
-
-        for d in decorator_list:
+    def get_dsl_decorator_index(self, decorator_list):
+        for i, d in enumerate(decorator_list):
             if isinstance(d, ast.Call):
                 if isinstance(d.func, ast.Attribute):
                     if d.func.attr in ["jit", "kernel"]:
                         if d.keywords == []:
-                            return True
+                            return i
                         for keyword in d.keywords:
                             if keyword.arg == "preprocess":
                                 try:
@@ -1651,9 +1747,32 @@ class DSLPreprocessor(ast.NodeTransformer):
 
             elif isinstance(d, ast.Attribute):
                 if d.attr in ["jit", "kernel"]:
-                    return True
+                    return i
+        return None
 
-        return False
+    def check_decorator(self, node: ast.AST) -> bool:
+        """
+        Check if the function has the correct decorator for preprocessing.
+        """
+        if not isinstance(node, ast.FunctionDef):
+            return False
+        decorator_list = node.decorator_list
+        if len(decorator_list) == 0:
+            return False
+
+        dsl_decorator_index = self.get_dsl_decorator_index(decorator_list)
+
+        if (
+            dsl_decorator_index is not None
+            and dsl_decorator_index < len(decorator_list) - 1
+        ):
+            decorator = ast.unparse(decorator_list[dsl_decorator_index])
+            raise DSLAstPreprocessorError(
+                f"`{decorator}` decorator must be the inner most decorator",
+                suggestion=f"Please move the `{decorator}` decorator to the inner most position",
+            )
+
+        return dsl_decorator_index is not None
 
     def remove_dsl_decorator(self, decorator_list):
         """
@@ -1707,6 +1826,9 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Remove .jit and .kernel decorators
         node.decorator_list = self.remove_dsl_decorator(node.decorator_list)
+
+        # Remove return annotation from processed AST to avoid symbol requirement
+        node.returns = None
         return node
 
     def visit_With(self, node):
@@ -2181,11 +2303,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         return write_args
         """
         test_expr = self.visit(node.test)
-        pred_name = self.make_func_param_name("pred", write_args)
 
         # Section: decorator construction
         decorator_keywords = [
-            ast.keyword(arg="pred", value=test_expr),
             ast.keyword(
                 arg="write_args",
                 value=self.generate_get_locals_or_none_call(write_args),
@@ -2260,7 +2380,6 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Section: Execute via executor
         execute_keywords = [
-            ast.keyword(arg="pred", value=ast.Name(id=pred_name, ctx=ast.Load())),
             ast.keyword(
                 arg="write_args",
                 value=ast.List(
@@ -2298,8 +2417,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
 
         # Putting everything together, FunctionDef for while_region
-        func_args_args = [ast.arg(arg=pred_name, annotation=None)]
-        func_args_args += [ast.arg(arg=var, annotation=None) for var in write_args]
+        func_args_args = [ast.arg(arg=var, annotation=None) for var in write_args]
         func_args = ast.arguments(
             posonlyargs=[],
             args=func_args_args,

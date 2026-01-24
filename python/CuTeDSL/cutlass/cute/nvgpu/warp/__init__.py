@@ -16,9 +16,13 @@ from .mma import *
 # __all__ is required here for documentation generation
 __all__ = [
     # mma.py
+    "Field",
     "MmaF16BF16Op",
+    "MmaMXF4Op",
+    "MmaMXF4NVF4Op",
     # copy.py
     "LdMatrix8x8x16bOp",
+    "LdMatrix16x8x8bOp",
     "LdMatrix16x16x8bOp",
     "StMatrix8x8x16bOp",
     "StMatrix16x8x8bOp",

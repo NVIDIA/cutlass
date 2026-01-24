@@ -39,7 +39,9 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
+#ifndef __QNX__
 #include CUDA_STD_HEADER(cassert)
+#endif
 
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"

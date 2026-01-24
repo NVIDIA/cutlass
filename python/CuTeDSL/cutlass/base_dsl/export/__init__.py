@@ -9,12 +9,23 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from .c_header_generator import CHeaderGenerator
-from .export import get_export_module, dump_to_object, export_to_c
+from .c_header_generator import CHeaderGenerator, CHeaderArguments
+from .export import (
+    get_export_module,
+    encode_metadata_into_ir_module,
+    decode_metadata_from_execution_engine,
+)
+
+from .export import ArgsSpecProcessor
+from .external_binary_module import ExternalBinaryModule, LoadProvider
 
 __all__ = [
     "CHeaderGenerator",
+    "CHeaderArguments",
     "get_export_module",
-    "dump_to_object",
-    "export_to_c",
+    "encode_metadata_into_ir_module",
+    "decode_metadata_from_execution_engine",
+    "ArgsSpecProcessor",
+    "ExternalBinaryModule",
+    "LoadProvider",
 ]

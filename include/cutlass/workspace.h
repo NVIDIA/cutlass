@@ -121,6 +121,8 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
 #else
     CUdeviceptr d_workspace = reinterpret_cast<CUdeviceptr>(workspace);
     CUresult result = CUDA_SUCCESS;
+
+#ifndef __QNX__
     if (sizeof(T) == 4) {
       result = cuMemsetD32Async(d_workspace, reinterpret_cast<uint32_t&>(fill_value), fill_count, stream);
     }
@@ -130,6 +132,7 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
     else if (sizeof(T) == 1) {
       result = cuMemsetD8Async(d_workspace, reinterpret_cast<uint8_t&>(fill_value), fill_count, stream);
     }
+#endif
 
     if (CUDA_SUCCESS != result) {
       const char** error_string_ptr = nullptr;

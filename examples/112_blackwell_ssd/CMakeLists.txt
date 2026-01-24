@@ -1,20 +1,20 @@
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-
+#
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-
+#
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -26,34 +26,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 
-def _get_device_compute_capability():
-    try:
-        import cuda.bindings.driver as drv
-        from cuda.bindings.driver import CUdevice_attribute as dev_attr
+set_property(
+  SOURCE 112_blackwell_ssd.cu
+  PROPERTY COMPILE_FLAGS "--use_fast_math"
+  )
 
-        def drv_api(api_name, *args):
-            ret_code, *result = getattr(drv, api_name)(*args)
-            if ret_code:
-                raise ValueError(f"CUDA error: {ret_code}")
-            return result[0] if len(result) == 1 else result
+cutlass_example_add_executable(
+  112_blackwell_ssd
+  112_blackwell_ssd.cu
+  )
 
-        drv_api("cuInit", 0)
-        device = drv_api("cuDeviceGet", 0)
-        major = drv_api(
-            "cuDeviceGetAttribute",
-            dev_attr.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-            device,
-        )
-        minor = drv_api(
-            "cuDeviceGetAttribute",
-            dev_attr.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
-            device,
-        )
-        return f"{major}{minor}"
-    except Exception as e:
-        print(f"Failed to get CUDA compute capability: {e}")
-        return None
+if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
 
+endif()
 
-compute_capability = _get_device_compute_capability()
+endif()

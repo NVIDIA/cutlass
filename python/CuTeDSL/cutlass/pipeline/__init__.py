@@ -35,7 +35,6 @@ from .sm90 import (
     PipelineAsync,
     PipelineCpAsync,
     PipelineTmaAsync,
-    PipelineTmaMultiConsumersAsync,
     PipelineTmaStore,
     PipelineOrder,
     PipelineProducer,
@@ -46,6 +45,8 @@ from .sm100 import (
     PipelineTmaUmma,
     PipelineAsyncUmma,
     PipelineUmmaAsync,
+    PipelineClcFetchAsync,
+    PipelineTmaMultiConsumersAsync,
 )
 
 __all__ = [
@@ -63,9 +64,10 @@ __all__ = [
     "PipelineCpAsync",
     "PipelineTmaAsync",
     "PipelineTmaUmma",
-    "PipelineTmaMultiConsumersAsync",
     "PipelineAsyncUmma",
     "PipelineUmmaAsync",
+    "PipelineClcFetchAsync",
+    "PipelineTmaMultiConsumersAsync",
     "PipelineTmaStore",
     "PipelineProducer",
     "PipelineConsumer",

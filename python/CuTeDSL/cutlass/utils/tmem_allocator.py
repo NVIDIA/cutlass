@@ -9,7 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Optional, Type
+from typing import Optional, Type, Union, List
+from math import ceil, log2
 import inspect
 
 from cutlass import const_expr
@@ -23,10 +24,12 @@ from cutlass.cutlass_dsl import (
 import cutlass.pipeline as pipeline
 import cutlass.cute as cute
 from cutlass._mlir import ir
+from cutlass.cute.nvgpu.tcgen05 import find_tmem_tensor_col_offset
+from cutlass.cute.arch import get_max_tmem_alloc_cols, get_min_tmem_alloc_cols
 
 
 class TmemAllocator:
-    """A class for managing tensor memory allocation on Blackwell GPU.
+    """A class for managing tensor memory allocation.
 
     This class manages allocation/deallocation of tensor memory, including the mbarrier
     synchronization for two cta use case.
@@ -43,6 +46,8 @@ class TmemAllocator:
     :type _num_allocated_columns: int
     :ivar _two_cta_tmem_dealloc_mbar_ptr: The mbarrier pointer required when deallocating tensor memory for two cta.
     :type _two_cta_tmem_dealloc_mbar_ptr: cute.Pointer
+    :ivar _arch: The architecture of the GPU.
+    :type _arch: str
     """
 
     @dsl_user_op
@@ -75,6 +80,7 @@ class TmemAllocator:
         num_allocated_columns: int = 0,
         two_cta_tmem_dealloc_mbar_ptr: Optional[cute.Pointer] = None,
         *,
+        arch: str = "sm_100",
         loc=None,
         ip=None,
     ):
@@ -116,6 +122,8 @@ class TmemAllocator:
         self._num_allocated_columns = num_allocated_columns
         self._two_cta_tmem_dealloc_mbar_ptr = two_cta_tmem_dealloc_mbar_ptr
         self._barrier_for_retrieve = barrier_for_retrieve
+        self._arch = arch
+        self._max_tmem_columns = get_max_tmem_alloc_cols(arch)
 
         # Init tmem dealloc mbarrier if two cta
         if const_expr(self._is_two_cta):
@@ -150,6 +158,7 @@ class TmemAllocator:
             self._is_two_cta,
             self._num_allocated_columns,
             new_two_cta_tmem_dealloc_mbar_ptr,
+            arch=self._arch,
         )
 
     @cute.jit
@@ -157,13 +166,13 @@ class TmemAllocator:
         """Check if the number of columns is valid.
 
         This method checks if the number of columns is valid.
-        It checks if the number of columns is larger than 0, smaller than 512, a multiple of 32, and a power of two.
+        It checks if the number of columns is larger than 0, smaller than max capacity, a multiple of 32, and a power of two.
         """
         # larger than 0
         if const_expr(num_columns < 0):
             return False
-        # smaller than 512
-        if const_expr(num_columns > 512):
+        # smaller than max capacity
+        if const_expr(num_columns > self._max_tmem_columns):
             return False
         # multiple of 32
         if const_expr(num_columns % 32 != 0):
@@ -183,10 +192,10 @@ class TmemAllocator:
         """
 
         assert self.check_valid_num_columns(num_columns), (
-            "num_columns must be multiple of 32 and power of two, and between 0 and 512"
+            f"num_columns must be multiple of 32 and power of two, and between 0 and {self._max_tmem_columns}"
         )
-        assert self._num_allocated_columns + num_columns <= 512, (
-            "total allocated columns must be less than or equal to 512"
+        assert self._num_allocated_columns + num_columns <= self._max_tmem_columns, (
+            f"total allocated columns must be less than or equal to {self._max_tmem_columns}"
         )
 
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
@@ -197,6 +206,7 @@ class TmemAllocator:
                 num_columns,
                 self._alloc_result_dst_smem_ptr,
                 is_two_cta=self._is_two_cta,
+                arch=self._arch,
                 loc=loc,
                 ip=ip,
             )
@@ -290,6 +300,7 @@ class TmemAllocator:
                 tmem_ptr,
                 num_deallocate_columns,
                 is_two_cta=self._is_two_cta,
+                arch=self._arch,
                 loc=loc,
                 ip=ip,
             )
@@ -335,3 +346,56 @@ TmemAllocator.__init__.__signature__ = inspect.Signature(
         ),
     ]
 )
+
+
+def get_num_tmem_alloc_cols(
+    tmem_tensors: Union[cute.Tensor, List[cute.Tensor]],
+    rounding=True,
+    *,
+    arch: str = "sm_100",
+    loc=None,
+    ip=None,
+) -> int:
+    """Get the total number of TMEM allocation columns for the given TMEM tensors.
+
+    :param tmem_tensors: The TMEM tensors to get the number of allocation columns for.
+    :type tmem_tensors: Union[cute.Tensor, List[cute.Tensor]]
+    :param rounding: Whether to round up the number of allocation columns to the nearest power of 2.
+    :type rounding: bool
+    :param arch: The architecture of the GPU.
+    :type arch: str
+    :return: The total number of TMEM allocation columns.
+    :rtype: int
+
+    :raises ValueError: If the number of TMEM allocation columns exceeds the maximum capacity or is less than 32.
+    """
+    # Turn tmem_tensors into a list
+    if isinstance(tmem_tensors, cute.Tensor):
+        tmem_tensors = [tmem_tensors]
+
+    tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
+    tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
+
+    # For each tensor in tmem_tensors, find the tmem_tensor_col_offset
+    num_tmem_alloc_cols_per_tensor = [
+        find_tmem_tensor_col_offset(t) for t in tmem_tensors
+    ]
+
+    # Sum up the num_tmem_alloc_cols_per_tensor
+    num_tmem_alloc_cols = sum(num_tmem_alloc_cols_per_tensor)
+
+    # Round up num_tmem_cols_total to the nearest power of 2 and make sure it is at least 32
+    if rounding:
+        num_tmem_alloc_cols = max(
+            1 << ceil(log2(num_tmem_alloc_cols)), tmem_min_alloc_cols
+        )
+
+    # Validate the number of TMEM allocation columns
+    if (
+        num_tmem_alloc_cols > tmem_max_alloc_cols
+        or num_tmem_alloc_cols < tmem_min_alloc_cols
+    ):
+        raise ValueError(
+            f"TMEM allocation columns {num_tmem_alloc_cols} exceeds the maximum capacity of {tmem_max_alloc_cols} or less than {tmem_min_alloc_cols}"
+        )
+    return num_tmem_alloc_cols

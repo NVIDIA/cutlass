@@ -136,10 +136,15 @@ class Atom(ABC):
         self._trait = trait
 
     def __extract_mlir_values__(self):
-        return extract_mlir_values(self._trait)
+        return extract_mlir_values(self._trait) + extract_mlir_values(self._op)
 
     def __new_from_mlir_values__(self, values):
-        return self.__class__(self.op, new_from_mlir_values(self._trait, values))
+        traits_value = values[: len(extract_mlir_values(self._trait))]
+        op_value = values[len(extract_mlir_values(self._trait)) :]
+
+        new_trait = new_from_mlir_values(self._trait, traits_value)
+        new_op = new_from_mlir_values(self._op, op_value)
+        return self.__class__(new_op, new_trait)
 
     @property
     def op(self) -> Op:
@@ -318,24 +323,29 @@ class TiledMma(MmaAtom):
     #
 
     @property
-    def tv_layout_A_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_a_tv_tiled)
+    @dsl_user_op
+    def tv_layout_A_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_a_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_B_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_b_tv_tiled)
+    @dsl_user_op
+    def tv_layout_B_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_b_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_C_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_c_tv_tiled)
+    @dsl_user_op
+    def tv_layout_C_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_c_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def permutation_mnk(self) -> Tile:
-        return _unpack_x_tuple(self._trait.value.type.permutation_mnk)
+    @dsl_user_op
+    def permutation_mnk(self, *, loc=None, ip=None) -> Tile:
+        return _unpack_x_tuple(self._trait.value.type.permutation_mnk, loc=loc, ip=ip)
 
     @property
-    def thr_layout_vmnk(self) -> Layout:
-        return static(self._trait.value.type.thr_layout_vmnk)
+    @dsl_user_op
+    def thr_layout_vmnk(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.thr_layout_vmnk, loc=loc, ip=ip)
 
     @property
     def size(self) -> int:
@@ -597,6 +607,33 @@ class CopyAtom(Atom):
     @property
     def layout_dst_tv(self) -> Layout:
         return static(self._trait.value.type.layout_dst_tv)
+
+    @property
+    def smem_layout(self):
+        """
+        Convenience property to access the SMEM layout for TMA copy atoms.
+
+        This is a shortcut for ``atom.op.smem_layout`` that checks if the operation
+        is a TMA operation and provides a clearer error message if not.
+
+        :return: The SMEM layout
+        :rtype: Layout or ComposedLayout
+        :raises TypeError: If the operation is not a TMA operation
+        :raises ValueError: If the SMEM layout is not set
+
+        Example:
+            >>> layout = tma_atom.smem_layout  # Instead of tma_atom.op.smem_layout
+        """
+        # Import here to avoid circular dependency
+        from .nvgpu.cpasync.copy import TmaCopyOp
+
+        if not isinstance(self.op, TmaCopyOp):
+            raise TypeError(
+                f"smem_layout is only available for TMA copy operations, "
+                f"but this atom uses {type(self.op).__name__}"
+            )
+
+        return self.op.smem_layout
 
 
 class TiledCopy(CopyAtom):

@@ -20,8 +20,18 @@ from cutlass._mlir import ir
 
 from .. import atom
 from ..typing import Float16, Float32, Float64, Numeric
-from cutlass import cute
 
+
+__all__ = [
+    "OpError",
+    "MmaUniversalOp",
+    "MmaUniversalTrait",
+    "CopyUniversalOp",
+    "CopyUniversalTrait",
+    "MemoryOrder",
+    "MemoryScope",
+    "CacheEvictionPriority",
+]
 
 class OpError(DSLBaseError):
     """
@@ -83,7 +93,7 @@ class MmaUniversalOp(atom.MmaOp):
             self.abacc_dtype.mlir_type,
             self.abacc_dtype.mlir_type,
         )
-        return MmaUniversalTrait(cute.make_atom(atom_ty, loc=loc, ip=ip))
+        return MmaUniversalTrait(atom.make_atom(atom_ty, loc=loc, ip=ip))
 
     def _verify_fragment_A(self, input, *, loc=None, ip=None):
         pass
@@ -140,6 +150,23 @@ class MemoryScope(enum.Enum):
         return self.value
 
 
+class CacheEvictionPriority(enum.Enum):
+    EVICT_NORMAL = _cute_ir.CacheEvictionPriority.EVICT_NORMAL
+    EVICT_FIRST = _cute_ir.CacheEvictionPriority.EVICT_FIRST
+    EVICT_LAST = _cute_ir.CacheEvictionPriority.EVICT_LAST
+    EVICT_UNCHANGED = _cute_ir.CacheEvictionPriority.EVICT_UNCHANGED
+    NO_ALLOCATE = _cute_ir.CacheEvictionPriority.NO_ALLOCATE
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+    def _to_ir(self) -> _cute_ir.CacheEvictionPriority:
+        return self.value
+
+
 @dataclass(frozen=True)
 class CopyUniversalOp(atom.CopyOp):
     """
@@ -150,7 +177,12 @@ class CopyUniversalOp(atom.CopyOp):
     .. code-block:: python
 
         op = cute.nvgpu.CopyUniversalOp()
-        atom = cute.make_copy_atom(op, tensor_dtype, num_bits_per_copy=64)
+        atom = cute.make_copy_atom(
+            op,
+            tensor_dtype,
+            num_bits_per_copy=64,
+            l1c_evict_priority=cute.nvgpu.CacheEvictionPriority.EVICT_NORMAL
+        )
 
     - ``tensor_dtype`` is the data type used to build the reference TV Layout (either the source \
         or the destination TV Layout) in unit of tensor elements and is used for partitioning by \
@@ -158,6 +190,12 @@ class CopyUniversalOp(atom.CopyOp):
     - ``num_bits_per_copy`` is a kw argument specifying the number of bits to copy per Atom \
         execution. This can be larger than the width of the above data type. When not provided, \
         the compiler will do a best effort at auto-vectorizing.
+    - ``l1c_evict_priority`` is a kw argument specifying the L1 cache eviction priority hint for \
+        the copy operation. Defaults to ``EVICT_NORMAL`` if not provided.
+    - ``invariant`` is a kw argument specifying whether the load is invariant (read-only data \
+        that never changes). This enables compiler optimizations like instruction reordering. \
+        Defaults to ``False`` if not provided.
+
     """
 
     def __str__(self) -> str:
@@ -167,25 +205,27 @@ class CopyUniversalOp(atom.CopyOp):
         self,
         copy_internal_type: Type[Numeric],
         *,
+        num_bits_per_copy: int = 0,
+        memory_order: MemoryOrder = MemoryOrder.WEAK,
+        memory_scope: MemoryScope = MemoryScope.CTA,
+        l1c_evict_priority: CacheEvictionPriority = CacheEvictionPriority.EVICT_NORMAL,
+        invariant: bool = False,
         loc=None,
         ip=None,
-        **kwargs,
     ) -> "CopyUniversalTrait":
-        num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
-        memory_order = kwargs.get("memory_order", MemoryOrder.WEAK)
-        memory_scope = kwargs.get("memory_scope", MemoryScope.CTA)
-        if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
+        if not isinstance(num_bits_per_copy, int) or num_bits_per_copy < 0:
             raise ValueError(
-                "expects a 'num_bits_per_copy' kw argument of type int that is non-negative "
-                f"when creating a copy Atom for {self.__class__.__name__}"
+                f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
             )
-        ty = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
+        atom_type = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
             copy_internal_type.mlir_type,
             num_bits_per_copy,
             memory_order._to_ir(),
             memory_scope._to_ir(),
+            l1c_evict_priority._to_ir(),
+            invariant,
         )
-        return CopyUniversalTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return CopyUniversalTrait(atom.make_atom(atom_type, loc=loc, ip=ip))
 
 
 class CopyUniversalTrait(atom.Trait):

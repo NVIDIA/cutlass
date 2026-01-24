@@ -13,6 +13,8 @@ from ._mlir._mlir_libs import _cutlass_ir
 
 _cutlass_ir.populate(_cutlass_ir)
 
+__version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
+
 from .cutlass_dsl import (
     Constexpr,
     dsl_user_op,
@@ -44,6 +46,7 @@ from .cutlass_dsl import (
     # Construction utilities for user-defined classes
     extract_mlir_values,
     new_from_mlir_values,
+    DSLCudaVersion,
 )
 
 from .cute.typing import *
@@ -51,6 +54,7 @@ from .cute.typing import *
 # Utilities not belonging to CuTe
 from . import utils as utils
 from . import pipeline as pipeline
+from .utils.version_info import CUDA_VERSION
 
 # Used as internal symbol
 from . import cutlass_dsl as _dsl
@@ -60,5 +64,8 @@ LaunchConfig = _dsl.BaseDSL.LaunchConfig
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
+
+# Jax Framework support
+from . import jax as jax
 
 CACHE_FILE = "compiled_cache.db"

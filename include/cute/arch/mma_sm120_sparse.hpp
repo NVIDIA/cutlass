@@ -3324,6 +3324,28 @@ struct SM120_SPARSE_16x8x128_TN_VS<float_e2m1_t, float_e2m1_t, float, float_ue8m
     static constexpr uint16_t bidB = 0;
 
     CUTE_STATIC_ASSERT(VS == 64 || VS == 32, "Scaling factor vector size has to be 64 or 32 for MXF4NVF4.");
+    if constexpr ( VS == 32 ) {
+#if defined(CUTE_ARCH_MXF4NVF4_4X_UE8M0_MMA_ENABLED)
+      asm volatile(
+      "mma.sp::ordered_metadata.sync.aligned.m16n8k128.row.col.kind::mxf4nvf4.block_scale.scale_vec::4X.f32.e2m1.e2m1.f32.ue8m0 "
+      "{%0,  %1,  %2,  %3},"
+      "{%4,  %5,  %6,  %7},"
+      "{%8,  %9,  %10, %11},"
+      "{%12, %13, %14, %15},"
+      "{%16}, 0x0,"
+      "{%17}, {%18, %19},"
+      "{%20}, {%21, %22};\n"
+      :  "=f"(d0),  "=f"(d1),  "=f"(d2),  "=f"(d3)
+      :   "r"(a0),   "r"(a1),   "r"(a2),   "r"(a3),
+          "r"(b0),   "r"(b1),   "r"(b2),   "r"(b3),
+          "f"(c0),   "f"(c1),   "f"(c2),   "f"(c3),
+          "r"(e),
+          "r"(uint32_t(sfa)), "h"(bidA), "h"(tidA),
+          "r"(uint32_t(sfb)), "h"(bidB), "h"(tidB));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM120::SPARSE::SM120_SPARSE_16x8x128_TN_VS without CUTE_ARCH_MXF4NVF4_4X_UE8M0_MMA_ENABLED");
+#endif
+    } else if constexpr ( VS == 64 ) {
 #if defined(CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED)
       asm volatile(
       "mma.sync.aligned.kind::mxf4nvf4.sp::ordered_metadata.block_scale.scale_vec::2X.m16n8k128.row.col.f32.e2m1.e2m1.f32.ue8m0 "
@@ -3344,6 +3366,7 @@ struct SM120_SPARSE_16x8x128_TN_VS<float_e2m1_t, float_e2m1_t, float, float_ue8m
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM120::SPARSE::SM120_SPARSE_16x8x128_TN_VS without CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED");
 #endif
+    }
   }
 };
 

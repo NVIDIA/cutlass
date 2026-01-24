@@ -40,7 +40,9 @@
 #include <cstdint>
 #endif
 
+#ifndef __QNX__
 #include CUDA_STD_HEADER(cassert)
+#endif
 
 #include "cutlass/platform/platform.h"
 

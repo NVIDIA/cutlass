@@ -27,8 +27,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #!/bin/bash
-CUDA_DIALECT_PATH="build/lib/"
-export LD_LIBRARY_PATH=${CUDA_DIALECT_PATH}:`tvm-ffi-config --libdir`
+# Set up library paths for runtime
+export LD_LIBRARY_PATH=$(python3 -m cutlass.cute.export.aot_config --libdir):$(tvm-ffi-config --libdir)
 
 CUDA_HOME=/usr/local/cuda
 SOURCE_FILE="$(dirname "$0")/aot_use_in_cpp_bundle.cpp"
@@ -38,11 +38,11 @@ g++ -o build/aot_use_in_cpp_bundle \
   -I${CUDA_HOME}/include \
   `tvm-ffi-config --cxxflags`  \
   ${SOURCE_FILE} build/add_one.o \
-  -L${CUDA_DIALECT_PATH} \
+  $(python3 -m cutlass.cute.export.aot_config --ldflags) \
   -L${CUDA_HOME}/lib64 \
-  -lcuda_dialect_runtime -lcuda -lcudart \
-  `tvm-ffi-config --ldflags` \
-  `tvm-ffi-config --libs`
+  $(python3 -m cutlass.cute.export.aot_config --libs) -lcuda -lcudart \
+  $(tvm-ffi-config --ldflags) \
+  $(tvm-ffi-config --libs)
 
 echo "Running the executable..."
 ./build/aot_use_in_cpp_bundle

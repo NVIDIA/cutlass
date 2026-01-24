@@ -17,7 +17,17 @@ from cutlass.cutlass_dsl import is_dynamic_expression, dsl_user_op
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 
-from .typing import XTuple, IntTuple, Shape, Coord, Boolean, is_integer
+from .typing import (
+    ComposedLayout,
+    Layout,
+    Stride,
+    XTuple,
+    IntTuple,
+    Shape,
+    Coord,
+    Boolean,
+    is_integer,
+)
 
 
 def wrap(x) -> Tuple[Any, ...]:
@@ -184,7 +194,7 @@ def product_each(a: IntTuple, *, loc=None, ip=None) -> IntTuple:
 
 def find_if(
     t: Union[tuple, ir.Value, int],
-    pred_fn: Callable[[int, Tuple[int, ...]], bool],
+    pred_fn: Callable[[Union[tuple, ir.Value, int], int], bool],
     *,
     loc=None,
     ip=None,
@@ -197,7 +207,8 @@ def find_if(
     :type t: Union[tuple, ir.Value, int]
     :param pred_fn: A callable object (lambda, function, etc.) that predicates the value and position in t.
                     It takes the current leaf value and position, returns True if the value or position is satisfied.
-    :type pred_fn: Callable[[int, Tuple[int, ...]], bool]
+                    The type must be compatible with rank(t).
+    :type pred_fn: Callable[[Union[tuple, ir.Value, int], int], bool]
     :return: Index if found at top level, tuple of indices showing nested position, or None if not found
     :rtype: Union[int, Tuple[int, ...], None]
 
@@ -329,3 +340,154 @@ def elem_less(
     lhs_val = _pack_coord(lhs, loc=loc, ip=ip)
     rhs_val = _pack_coord(rhs, loc=loc, ip=ip)
     return Boolean(_cute_ir.elem_less(lhs_val, rhs_val, loc=loc, ip=ip))
+
+
+def tuple_cat(*tuples):
+    """Concatenate multiple tuples into a single tuple.
+
+    This function takes any number of tuples and concatenates them into a single tuple.
+    Non-tuple arguments are treated as single-element tuples.
+
+    :param tuples: Variable number of tuples to concatenate
+    :type tuples: tuple or any
+    :return: A single concatenated tuple
+    :rtype: tuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> tuple_cat((1, 2), (3, 4))
+        (1, 2, 3, 4)
+        >>> tuple_cat((1,), (2, 3), (4,))
+        (1, 2, 3, 4)
+        >>> tuple_cat(1, (2, 3))
+        (1, 2, 3)
+    """
+    result = ()
+    for t in tuples:
+        if isinstance(t, tuple):
+            result += t
+        else:
+            result += (t,)
+    return result
+
+
+def transform_apply(*args, f: Callable, g: Callable):
+    """Transform elements of tuple(s) with f, then apply g to all results.
+
+    This function applies f to corresponding elements across input tuple(s),
+    then applies g to all transformed results. It mimics the C++ CuTe implementation.
+
+    Supports multiple signatures:
+    - transform_apply(t, f, g): For single tuple, computes g(f(t[0]), f(t[1]), ...)
+    - transform_apply(t0, t1, f, g): For two tuples, computes g(f(t0[0], t1[0]), f(t0[1], t1[1]), ...)
+    - transform_apply(t0, t1, t2, ..., f, g): For multiple tuples of same length
+
+    For non-tuple inputs, f is applied to the input(s) and g is applied to that single result.
+
+    :param args: One or more tuples (or non-tuples) to transform
+    :param f: The function to apply to each element (or corresponding elements across tuples)
+    :type f: Callable
+    :param g: The function to apply to all transformed elements
+    :type g: Callable
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: The result of applying g to all transformed elements
+    :rtype: any
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> transform_apply((1, 2, 3), f=lambda x: x * 2, g=lambda *args: sum(args))
+        12  # (1*2 + 2*2 + 3*2) = 12
+        >>> transform_apply((1, 2), f=lambda x: (x, x+1), g=tuple_cat)
+        (1, 2, 2, 3)
+        >>> transform_apply((1, 2), (3, 4), f=lambda x, y: x + y, g=lambda *args: args)
+        (4, 6)
+    """
+    if not isinstance(f, Callable):
+        raise TypeError(f"f must be callable, but got {type(f)}")
+    if not isinstance(g, Callable):
+        raise TypeError(f"g must be callable, but got {type(g)}")
+
+    if not args:
+        raise ValueError("transform_apply requires at least one argument")
+
+    # Check if first argument is a tuple to determine behavior
+    if isinstance(args[0], tuple):
+        # Verify all args are tuples of the same length
+        if not all(isinstance(arg, tuple) for arg in args):
+            raise TypeError("All arguments must be tuples or all must be non-tuples")
+
+        tuple_length = len(args[0])
+        for i, arg in enumerate(args[1:], 1):
+            if len(arg) != tuple_length:
+                raise ValueError(
+                    f"All tuple arguments must have the same length. "
+                    f"arg[0] has length {tuple_length}, but arg[{i}] has length {len(arg)}"
+                )
+
+        # Apply f to corresponding elements across all tuples: g(f(args[0][i], args[1][i], ...), ...)
+        transformed_results = tuple(
+            f(*(arg[i] for arg in args)) for i in range(tuple_length)
+        )
+        return g(*transformed_results)
+    else:
+        # Non-tuple case: apply f to all args, then g to that single result
+        result = f(*args)
+        return g(result)
+
+
+def filter_tuple(*args, f: Callable):
+    """Filter and flatten tuple elements by applying a function.
+
+    The function f should return tuples, which are then concatenated together
+    to produce the final result. This is useful for filtering and transforming
+    tuple structures in a single pass.
+
+    :param t: The tuple to filter
+    :type t: Union[tuple, ir.Value, int]
+    :param f: The function to apply to each element of t
+    :type f: Callable
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: A concatenated tuple of all results
+    :rtype: tuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> # Keep only even numbers, wrapped in tuples
+        >>> filter_tuple((1, 2, 3, 4), lambda x: (x,) if x % 2 == 0 else ())
+        (2, 4)
+        >>> # Duplicate each element
+        >>> filter_tuple((1, 2, 3), lambda x: (x, x))
+        (1, 1, 2, 2, 3, 3)
+    """
+    if not isinstance(f, Callable):
+        raise TypeError(f"f must be callable, but got {type(f)}")
+
+    return transform_apply(*args, f=f, g=lambda *args: tuple_cat(*args))
+
+
+__all__ = [
+    "transform_leaf",
+    "find_if",
+    "find",
+    "flatten_to_tuple",
+    "unflatten",
+    "product",
+    "product_like",
+    "product_each",
+    "elem_less",
+    "tuple_cat",
+    "transform_apply",
+    "filter_tuple",
+]

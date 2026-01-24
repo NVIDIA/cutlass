@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from cutlass.cute.typing import NumericMeta, Integer
-from cutlass.base_dsl.export import CHeaderGenerator
+from cutlass.base_dsl.export import CHeaderGenerator, CHeaderArguments
 from cutlass.base_dsl.dsl import is_dynamic_expression
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.jit_executor import ExecutionArgs
@@ -28,6 +28,22 @@ import cuda.bindings.driver as cuda
 
 class CuteCHeaderGenerator(CHeaderGenerator):
     """This class provides a Export C Header Generator for cute c/cpp AOT support."""
+
+    includes = """
+#pragma once
+
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <stdio.h>
+#include <stdint.h>
+
+"""
+    cuda_error_check = r"""_CUDA_ERROR_CHECK(err) { \
+    if ((err) != cudaSuccess) { \
+        printf("Got Cuda Error %s: %s\n", cudaGetErrorName(err), cudaGetErrorString(err)); \
+    } \
+}
+"""
 
     def _get_cute_algebra_type(self, arg_type: Any, arg: Any) -> str:
         """Judge if the dynamic elements of the cute algebra type are same(Int32 or Int64).
@@ -65,55 +81,50 @@ class CuteCHeaderGenerator(CHeaderGenerator):
         """
         return ""
 
-    def _generate_kernel_metadata(
+    def _generate_kernel_module(
         self, symbol_prefix: str, kernel_info: Dict[str, List], dsl_name: str
     ):
         """
-        Generate the kernel metadata for the compiled function.
+        Generate the kernel module for the compiled function.
         """
-        kernel_metadata_struct = f"""
+        kernel_module_struct = f"""
 typedef struct {{
-    CUlibrary module;
-}} {symbol_prefix}_Kernel_Metadata_t;
+    cudaLibrary_t module;
+}} {symbol_prefix}_Kernel_Module_t;
 """
-        kernel_metadata_load = f"""
+        kernel_module_load = f"""
 #ifdef __cplusplus
 extern "C" {{
 #endif
 void _mlir_{symbol_prefix}_cuda_init(void **);
-void _mlir_{symbol_prefix}_cuda_load(void **);
-static inline void {symbol_prefix}_Kernel_Metadata_Load({symbol_prefix}_Kernel_Metadata_t *metadata) {{
-    CUlibrary *libraryPtr = &(metadata->module);
-    int32_t ret;
+void _mlir_{symbol_prefix}_cuda_load_to_device(void **);
+static inline void {symbol_prefix}_Kernel_Module_Load({symbol_prefix}_Kernel_Module_t *module) {{
+    cudaLibrary_t *libraryPtr = &(module->module);
+    cudaError_t ret;
     struct {{
-        CUlibrary **libraryPtr;
-        int32_t *ret;
+        cudaLibrary_t **libraryPtr;
+        cudaError_t *ret;
     }} initArgs = {{&libraryPtr, &ret}};
     _mlir_{symbol_prefix}_cuda_init((void **)(&initArgs));
-    {dsl_name}_CUDA_ERROR_CHECK((CUresult)(ret));
+    {dsl_name}_CUDA_ERROR_CHECK(ret);
+    int32_t device_id = 0;
     struct {{
-        CUlibrary *library;
-        int32_t *ret;
-    }} loadArgs = {{libraryPtr, &ret}};
-    _mlir_{symbol_prefix}_cuda_load((void **)(&loadArgs));
-    {dsl_name}_CUDA_ERROR_CHECK((CUresult)(ret));
-    CUdevice device;
-    {dsl_name}_CUDA_ERROR_CHECK(cuCtxGetDevice(&device));
-    int max_shared_memory_per_block_optin;
-    {dsl_name}_CUDA_ERROR_CHECK(cuDeviceGetAttribute(&max_shared_memory_per_block_optin, CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN, device));
-    unsigned int num_kernels;
-    {dsl_name}_CUDA_ERROR_CHECK(cuLibraryGetKernelCount(&num_kernels, metadata->module));
-    CUkernel *kernels = (CUkernel *)malloc(num_kernels * sizeof(CUkernel));
-    {dsl_name}_CUDA_ERROR_CHECK(cuLibraryEnumerateKernels(kernels, num_kernels, metadata->module));
-    for (unsigned int i = 0; i < num_kernels; i++) {{
-        {dsl_name}_CUDA_ERROR_CHECK(cuKernelSetAttribute(CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, max_shared_memory_per_block_optin, kernels[i], device));
+        cudaLibrary_t **library;
+        int32_t *device_id;
+        cudaError_t *ret;
+    }} loadArgs = {{&libraryPtr, &device_id, &ret}};
+    int32_t device_count;
+    {dsl_name}_CUDA_ERROR_CHECK(cudaGetDeviceCount(&device_count));
+    for (int32_t i = 0; i < device_count; i++) {{
+        device_id = i;
+        _mlir_{symbol_prefix}_cuda_load_to_device((void **)(&loadArgs));
+        {dsl_name}_CUDA_ERROR_CHECK(ret);
     }}
-    free(kernels);
 }}
 """
-        kernel_metadata_unload = f"""
-static inline void {symbol_prefix}_Kernel_Metadata_Unload({symbol_prefix}_Kernel_Metadata_t *metadata) {{
-    {dsl_name}_CUDA_ERROR_CHECK(cuLibraryUnload(metadata->module));
+        kernel_module_unload = f"""
+static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_Module_t *module) {{
+    {dsl_name}_CUDA_ERROR_CHECK(cudaLibraryUnload(module->module));
 }}
 
 #ifdef __cplusplus
@@ -121,7 +132,7 @@ static inline void {symbol_prefix}_Kernel_Metadata_Unload({symbol_prefix}_Kernel
 #endif
 """
 
-        return kernel_metadata_struct + kernel_metadata_load + kernel_metadata_unload
+        return kernel_module_struct + kernel_module_load + kernel_module_unload
 
     def _generate_arguments(
         self,
@@ -174,13 +185,13 @@ typedef struct {{
             elif isinstance(arg_type, NumericMeta):
                 arguments.append(self._generate_numeric_argument(arg_name, arg_type))
                 packed_args.append("&" + arg_name)
-            elif is_cute_algebra_type(arg_type):
+            elif is_cute_algebra_type(arg_type) or isinstance(arg, (tuple, list)):
                 c_type = self._get_cute_algebra_type(arg_type, arg)
                 arguments.append(f"{c_type}*{arg_name}")
                 for i in range(self._count_dynamic_expression(arg)):
                     packed_args.append("&" + arg_name + "[" + str(i) + "]")
             elif isclass(arg_type) and issubclass(arg_type, cuda.CUstream):
-                arguments.append("CUstream " + arg_name)
+                arguments.append("cudaStream_t " + arg_name)
                 packed_args.append("&" + arg_name)
             else:
                 raise DSLRuntimeError(
@@ -191,24 +202,38 @@ typedef struct {{
 
     def _generate_wrapper_function(
         self,
+        dsl_name: str,
         symbol_prefix: str,
         args_spec: ExecutionArgs,
         function_name: str,
         kernel_info: Dict[str, List],
-        dynamic_args: list,
-        dynamic_kwargs: dict,
+        c_header_arguments: CHeaderArguments,
     ):
         """
         Generate the wrapper function for the compiled function which is provided to users as the entry point.
         It uses the `symbol_prefix` as the function name for identification. The host/device symbols are hidden under the bytecode.
         """
         # 1. Get the name of the function wrapper
-        wrapper_function_name = f"{symbol_prefix}_wrapper"
+        wrapper_function_name = f"{dsl_name.lower()}_{symbol_prefix}_wrapper"
         capi_function_name = f"_mlir_{symbol_prefix}__mlir_ciface_{function_name}"
         # 2. Generate the signature of the wrapper function
-        arguments, packed_args, declarations = self._generate_arguments(
-            symbol_prefix, args_spec, dynamic_args, dynamic_kwargs
-        )
+        if c_header_arguments.error_msg is not None:
+            raise DSLRuntimeError(
+                f"Error generating c header arguments: {c_header_arguments.error_msg}"
+            )
+        arguments = [
+            arg.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for arg in c_header_arguments.arguments
+        ]
+        packed_args = [
+            arg.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for arg in c_header_arguments.packed_args
+        ]
+        declarations = [
+            declaration.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for declaration in c_header_arguments.declarations
+        ]
+
         # 3. Get the return type of the wrapper function.
         # Note that this requires the return type to be properly annotated in python.
         return_type = args_spec.args_spec.annotations.get("return", None)
@@ -227,7 +252,7 @@ extern "C"
 #endif
 void {capi_function_name}(void **args, int32_t num_args);
 
-static inline {return_type} {wrapper_function_name}({symbol_prefix}_Kernel_Metadata_t *metadata, {", ".join(arguments)}) {{
+static inline {return_type} {wrapper_function_name}({symbol_prefix}_Kernel_Module_t *module, {", ".join(arguments)}) {{
     {return_type} ret;
     void *args[{len(packed_args) + 1}] = {{
         {", ".join(packed_args)},

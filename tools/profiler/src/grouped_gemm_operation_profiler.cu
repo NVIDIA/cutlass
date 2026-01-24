@@ -109,9 +109,9 @@ GroupedGemmOperationProfiler::GroupedGemmOperationProfiler(Options const& option
           {"beta", "epilogue::beta"},
           "Epilogue scalar beta (applied to all GEMMs in group)."},
          {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_a", "runtime-input-datatype::a"},
-          "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
+          "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"},
          {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_b", "runtime-input-datatype::b"},
-          "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
+          "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"},
          {ArgumentTypeID::kEnumerated, {"raster_order", "raster-order"},
           "Raster order (heuristic, along_n, along_m)"},
          {ArgumentTypeID::kInteger, {"swizzle_size", "swizzle-size"}, "Size to swizzle"},
@@ -198,9 +198,9 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
     int n0 = 32;
     int k0 = 64;
     for (int i = 0; i < num_groups; i++) {
-      auto m = m0 * (i + 1);
+      auto m = is_moe ? m0 * num_groups : m0 * (i + 1);
       auto n = n0 * (i + 1);
-      auto k = k0 * (i + 1);
+      auto k = is_moe ? k0 * num_groups : k0 * (i + 1);
       problem_sizes[i] = {m, n, k};
       problem_sizes_3x[i] = {m, n, k};
     }
@@ -275,7 +275,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
     max_problem_size_3x = {max_m, max_n, max_k};
   }
   if (is_moe) {
-    for(size_t group_idx = 0; group_idx < problem_sizes.size(); group_idx++) { 
+    for(size_t group_idx = 0; group_idx < problem_sizes.size(); group_idx++) {
       if (problem_sizes[group_idx].m() != max_problem_size_3x[0]   ||
           problem_sizes[group_idx].k() != max_problem_size_3x[2]) {
         std::cerr << "Problem size M:"<< problem_sizes[group_idx].m() << "K:" << problem_sizes[group_idx].k() << " for group " << group_idx << "should be equal to "
@@ -336,7 +336,7 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
     // default value
     this->use_pdl = false;
   }
-  
+
   if (!arg_as_RuntimeDatatype(this->runtime_input_datatype_a, "runtime_input_datatype_a", problem_space, problem)) {
     // default value
     this->runtime_input_datatype_a = cutlass::library::RuntimeDatatype::kStatic;
@@ -547,7 +547,7 @@ void GroupedGemmOperationProfiler::GroupedGemmProblem::initialize_result(
   set_argument(result, "raster_order", problem_space, library::to_string(raster_order));
   set_argument(result, "swizzle_size", problem_space, swizzle_size);
   set_argument(result, "use_pdl", problem_space, library::to_string(use_pdl));
-  
+
   set_argument(result, "runtime_input_datatype_a", problem_space, library::to_string(runtime_input_datatype_a));
   set_argument(result, "runtime_input_datatype_b", problem_space, library::to_string(runtime_input_datatype_b));
 
@@ -614,8 +614,8 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
 
   std::string sf_tuple = "\\d+x\\d+";
   std::string datatypes_regex = "\\w?f\\d+|e\\dm\\d"; // bf16 | f16 | f32 | e4m3 | ...
-  std::string blockwise_regex_string = sf_tuple + "(" +  datatypes_regex + ")x(" + 
-                                       datatypes_regex + ")_" + sf_tuple + "(" + 
+  std::string blockwise_regex_string = sf_tuple + "(" +  datatypes_regex + ")x(" +
+                                       datatypes_regex + ")_" + sf_tuple + "(" +
                                        datatypes_regex + ")x(" + datatypes_regex + ")";
 
   if (std::string(operation_desc.gemm.name).find("bstensor") != std::string::npos) {
@@ -650,7 +650,7 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
 
   gemm_workspace_.arguments.swizzle_size = problem_.swizzle_size;
   gemm_workspace_.arguments.raster_order = problem_.raster_order;
-  
+
   gemm_workspace_.arguments.runtime_input_datatype_a = problem_.runtime_input_datatype_a;
   gemm_workspace_.arguments.runtime_input_datatype_b = problem_.runtime_input_datatype_b;
 
@@ -782,7 +782,7 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
     gemm_workspace_.reference_ptr_array_host.resize(num_groups);
 
     int seed_shift = 0;
-    if (not operation_desc.is_moe) { 
+    if (not operation_desc.is_moe) {
       for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
         auto group_str = std::to_string(group_idx);
         gemm_workspace_.A_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
@@ -1410,29 +1410,30 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
   init_arguments(options);
 
   library::Operation const* underlying_operation = operation;
-  results_.back().status = underlying_operation->initialize_with_arguments(&gemm_workspace_.arguments);
-  if (results_.back().status != Status::kSuccess) {
+  auto& result = results_.back();
+
+  result.status = underlying_operation->initialize_with_arguments(&gemm_workspace_.arguments);
+  if (result.status != Status::kSuccess) {
     return false;
   }
 
-  results_.back().status = underlying_operation->run(
+  result.status = underlying_operation->run(
     &gemm_workspace_.arguments,
     gemm_workspace_.host_workspace.data(),
     gemm_workspace_.device_workspace.data());
 
-  if (results_.back().status != Status::kSuccess) {
-    results_.back().disposition = Disposition::kFailed;
+  if (result.status != Status::kSuccess) {
+    result.disposition = Disposition::kFailed;
     return false;
   }
 
-  cudaError_t result = cudaDeviceSynchronize();
-  if (result != cudaSuccess) {
-    results_.back().disposition = Disposition::kFailed;
+  if (cudaDeviceSynchronize() != cudaSuccess) {
+    result.disposition = Disposition::kFailed;
     return false;
   }
 
   // CUTLASS op ran the but not yet verified against any verification provider
-  results_.back().disposition = Disposition::kNotVerified;
+  result.disposition = Disposition::kNotVerified;
 
   //
   // Run verification providers
@@ -1443,7 +1444,7 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
 #if CUTLASS_ENABLE_CUBLAS
     if (options.verification.provider_enabled(library::Provider::kCUBLAS)) {
       // set verification map for cublas to not supported
-      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kNotSupported;
+      result.verification_map[library::Provider::kCUBLAS] = Disposition::kNotSupported;
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
@@ -1457,10 +1458,10 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
     bool is_runtime_datatype_b = runtime_datatype_b != cutlass::library::RuntimeDatatype::kStatic;
 
     assert(is_runtime_datatype_a == is_runtime_datatype_b && "runtime datatype should be both dynamic or static.");
-    
+
     cutlass::library::NumericTypeID element_A = desc.gemm.A.element;
     cutlass::library::NumericTypeID element_B = desc.gemm.B.element;
-    
+
     if (is_runtime_datatype_a) {
       element_A = cutlass::library::dynamic_datatype_to_id(runtime_datatype_a);
     }
@@ -1469,44 +1470,85 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
       element_B = cutlass::library::dynamic_datatype_to_id(runtime_datatype_b);
     }
 
-    bool verification_status = verify_with_reference_(
-      options,
-      report,
-      device_context,
-      operation,
-      problem_space,
-      problem,
-      element_A,
-      element_B);
-
-    // Update disposition to worst case verification outcome among all
-    // verification providers which are supported
-    bool is_any_verification_run_passed = false;
-    for (auto& m : results_.back().verification_map) {
-      if (m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
-        results_.back().disposition = m.second;
-        return true;
+    // Block-scaled and blockwise GEMMs only support host verification - always terminates early
+    if (is_block_scaled || is_blockwise) {
+      if (!verify_block_with_host_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B)) {
+        return false;
       }
-      if (!is_any_verification_run_passed && m.second == Disposition::kPassed) {
-        is_any_verification_run_passed = true;
+
+      switch (result.verification_map[library::Provider::kReferenceHost]) {
+        case Disposition::kFailed:
+          result.disposition = Disposition::kFailed;
+          return true;
+        case Disposition::kIncorrect:
+          result.disposition = Disposition::kIncorrect;
+          return true;
+        case Disposition::kPassed:
+          result.disposition = Disposition::kPassed;
+          return true;
+        case Disposition::kNotSupported:
+          result.disposition = Disposition::kNotSupported;
+          return true;
+        default:
+          // verification.required check for block-scaled/blockwise (for kNotRun, kNotVerified, etc.)
+          if (options.verification.required) {
+            result.status = Status::kErrorNotSupported;
+            return false;
+          }
+          return true;
       }
     }
 
-    if (is_any_verification_run_passed) {
-      results_.back().disposition = Disposition::kPassed;
+    // Regular grouped GEMM verification flow
+
+    // Step 1: Try device reference if enabled (also run if cuBLAS requested since it's not supported, or as fallback if host not enabled)
+    if (options.verification.provider_enabled(library::Provider::kReferenceDevice) ||
+        options.verification.provider_enabled(library::Provider::kCUBLAS) ||
+        !options.verification.provider_enabled(library::Provider::kReferenceHost)) {
+      verify_with_device_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B);
+
+      auto device_it = result.verification_map.find(library::Provider::kReferenceDevice);
+      if (device_it != result.verification_map.end()) {
+        if (device_it->second == Disposition::kFailed || device_it->second == Disposition::kIncorrect) {
+          result.disposition = device_it->second;
+        return true;
+      }
+        if (device_it->second == Disposition::kPassed) {
+          result.disposition = Disposition::kPassed;
+          return true;
+      }
     }
   }
 
-  // if verification.required is set, then return success iff at least one ref-check was run
-  if (options.verification.required) {
-    bool did_any_verification_run = false;
-    for (auto provider : options.verification.providers) {
-      did_any_verification_run |=
-        (Disposition::kNotRun != results_.back().verification_map[provider]);
-    }
+    // Step 2: Try host reference if enabled
+    if (options.verification.provider_enabled(library::Provider::kReferenceHost)) {
+      verify_regular_with_host_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B);
 
-    if (not did_any_verification_run) {
-      results_.back().status = Status::kErrorNotSupported;
+      auto host_it = result.verification_map.find(library::Provider::kReferenceHost);
+      if (host_it != result.verification_map.end()) {
+        if (host_it->second == Disposition::kFailed || host_it->second == Disposition::kIncorrect) {
+          result.disposition = host_it->second;
+          return true;
+        }
+        if (host_it->second == Disposition::kPassed) {
+          result.disposition = Disposition::kPassed;
+          return true;
+      }
+    }
+    }
+  }
+
+  // Step 3: Check verification.required for regular grouped GEMM
+  if (options.verification.required) {
+    auto device_it = result.verification_map.find(library::Provider::kReferenceDevice);
+    auto host_it = result.verification_map.find(library::Provider::kReferenceHost);
+
+    bool did_any_verification_run =
+      (device_it != result.verification_map.end() && device_it->second != Disposition::kNotRun) ||
+      (host_it != result.verification_map.end() && host_it->second != Disposition::kNotRun);
+
+      if (!did_any_verification_run) {
+      result.status = Status::kErrorNotSupported;
       return false;
     }
   }
@@ -1515,8 +1557,8 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
   return true;
 }
 
-/// Verifies CUTLASS against host and device references
-bool GroupedGemmOperationProfiler::verify_with_reference_(
+/// Verifies CUTLASS against device reference (for regular grouped GEMM)
+bool GroupedGemmOperationProfiler::verify_with_device_reference_(
   Options const& options,
   PerformanceReport& report,
   DeviceContext& device_context,
@@ -1528,98 +1570,20 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
   library::GroupedGemmDescription const& desc =
     static_cast<library::GroupedGemmDescription const&>(operation->description());
 
-  for (auto provider : options.verification.providers) {
-
-    // Skip providers that are not enabled
-    if (!options.verification.provider_enabled(provider)) {
-      continue;
-    }
-
-    // we only have a block scaled reference kernel implemented on the host
-    if ((is_block_scaled || is_blockwise) && provider != library::Provider::kReferenceHost) {
-      continue;
-    }
-
     auto status = Status::kSuccess;
     auto disposition = Disposition::kFailed;
-    // we don't have grouped GEMM reference kernels so we loop over the groups and perform
-    // a regular GEMM for each group
+
+  // Loop over groups and perform a regular GEMM for each group using device reference
     for (size_t group_idx = 0, num_groups = problem_.problem_sizes.size(); group_idx < num_groups;
          group_idx++) {
+    // Use device pointers directly
       void* ptr_A = gemm_workspace_.A_ptr_array_host[group_idx]->data();
       void* ptr_B = gemm_workspace_.B_ptr_array_host[group_idx]->data();
       void* ptr_C = gemm_workspace_.C_ptr_array_host[group_idx]->data();
       void* ptr_D = gemm_workspace_.reference_ptr_array_host[group_idx]->data();
 
-      // To support the host-side reference, conditionally allocate and
-      // copy tensors to host memory.
-      std::vector<uint8_t> host_data_A;
-      std::vector<uint8_t> host_data_B;
-      std::vector<uint8_t> host_data_C;
-      std::vector<uint8_t> host_data_D;
-      std::vector<uint8_t> host_data_SFA;
-      std::vector<uint8_t> host_data_SFB;
-      std::vector<uint8_t> host_data_SFC;
-      std::vector<uint8_t> host_data_SFD;
-      std::vector<uint8_t> host_data_norm_constant;
-
-      void* ptr_SFA{nullptr};
-      void* ptr_SFB{nullptr};
-      void* ptr_SFD{nullptr};
-      void* ptr_norm_constant{nullptr};
-
-      if (provider == library::Provider::kReferenceHost) {
-        host_data_A.resize(gemm_workspace_.A_ptr_array_host[group_idx]->bytes());
-        ptr_A = host_data_A.data();
-        gemm_workspace_.A_ptr_array_host[group_idx]->copy_to_host(
-          ptr_A); // this is copying all the data for L2 busting as well
-
-        host_data_B.resize(gemm_workspace_.B_ptr_array_host[group_idx]->bytes());
-        ptr_B = host_data_B.data();
-        gemm_workspace_.B_ptr_array_host[group_idx]->copy_to_host(ptr_B);
-
-        host_data_C.resize(gemm_workspace_.C_ptr_array_host[group_idx]->bytes());
-        ptr_C = host_data_C.data();
-        gemm_workspace_.C_ptr_array_host[group_idx]->copy_to_host(ptr_C);
-
-        host_data_D.resize(gemm_workspace_.reference_ptr_array_host[group_idx]->bytes());
-        ptr_D = host_data_D.data();
-
-        if (is_block_scaled) {
-          auto const& ws = gemm_workspace_.block_scales.value();
-
-          host_data_SFA.resize(ws.SFA_ptr_array_host[group_idx]->bytes());
-          ptr_SFA = host_data_SFA.data();
-          ws.SFA_ptr_array_host[group_idx]->copy_to_host(ptr_SFA);
-          host_data_SFB.resize(ws.SFB_ptr_array_host[group_idx]->bytes());
-          ptr_SFB = host_data_SFB.data();
-          ws.SFB_ptr_array_host[group_idx]->copy_to_host(ptr_SFB);
-
-          host_data_SFD.resize(ws.SFD_reference_ptr_array_host[group_idx]->bytes());
-          ptr_SFD = host_data_SFD.data();
-
-          host_data_norm_constant.resize(ws.norm_constant->bytes());
-          ptr_norm_constant = host_data_norm_constant.data();
-          ws.norm_constant->copy_to_host(ptr_norm_constant);
-        }
-        else if (is_blockwise) {
-          auto const& ws = gemm_workspace_.block_scales.value();
-
-          host_data_SFA.resize(ws.SFA_ptr_array_host[group_idx]->bytes());
-          ptr_SFA = host_data_SFA.data();
-          ws.SFA_ptr_array_host[group_idx]->copy_to_host(ptr_SFA);
-          host_data_SFB.resize(ws.SFB_ptr_array_host[group_idx]->bytes());
-          ptr_SFB = host_data_SFB.data();
-          ws.SFB_ptr_array_host[group_idx]->copy_to_host(ptr_SFB);
-        }
-      }
-
-      const auto &desc = static_cast<library::GroupedGemmDescription const &>(operation->description());
-      const auto& gemm_desc = desc.gemm;
-
-      if (!is_block_scaled and !is_blockwise) {
         library::Handle handle;
-        handle.set_provider(provider);
+    handle.set_provider(library::Provider::kReferenceDevice);
 
         status = handle.gemm_universal(
           library::GemmUniversalMode::kGemm,
@@ -1659,241 +1623,462 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
           gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
           gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
           gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride());
-      }
-      else if (is_block_scaled) {
-        auto const& block_scale_desc = desc.block_scales.value();
-        auto& block_scale_ws = gemm_workspace_.block_scales.value();
 
-        library::BlockScaledGemmFunctionalKey blockScaledGemm_key(
-          library::Provider::kReferenceHost,
-          library::GemmKind::kUniversal,
-          library::OperationKind::kBlockScaledGemm,
-          gemm_desc.tile_description.math_instruction.element_accumulator,
-          gemm_desc.element_epilogue,
-          element_A,
-          gemm_desc.A.layout,
-          block_scale_desc.SFA.element,
-          element_B,
-          gemm_desc.B.layout,
-          block_scale_desc.SFB.element,
-          gemm_desc.C.element,
-          gemm_desc.C.layout,
-          gemm_desc.D.element,
-          gemm_desc.D.layout,
-          block_scale_desc.SFD.element,
-          block_scale_desc.SFD.layout,
-          block_scale_desc.SFKVecSize,
-          block_scale_desc.EpilogueSFVecSize);
-
-        auto operators_it =
-          library::Singleton::get().operation_table.block_scaled_gemm_operations.find(
-            blockScaledGemm_key);
-        if (
-          operators_it ==
-          library::Singleton::get().operation_table.block_scaled_gemm_operations.end()) {
-          disposition = Disposition::kNotSupported;
+    if (status != Status::kSuccess) {
           break;
         }
 
-        if (operators_it->second.empty()) {
-          disposition = Disposition::kNotSupported;
+    disposition = compare_tensors(
+      options,
+      *gemm_workspace_.D_ptr_array_host[group_idx],
+      *gemm_workspace_.reference_ptr_array_host[group_idx],
+      gemm_workspace_.D_ptr_array_host[group_idx]->batch_stride());
+
+    if (disposition != Disposition::kPassed) {
           break;
         }
+  }
 
-        auto cc_it = operators_it->second.begin();
-        if (cc_it == operators_it->second.end()) {
-          disposition = Disposition::kNotSupported;
-          break;
-        }
-
-        // host reference has only one instances in BlockScaledOperationVectorMap
-        library::Operation const* reference_op = cc_it->second[0];
-        library::BlockScaledGemmArguments arguments{
-          {int(problem_.m(group_idx)), int(problem_.n(group_idx)), int(problem_.k(group_idx))},
-          {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)},
-          {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)},
-          1, // batch count
-          ptr_A,
-          ptr_B,
-          ptr_SFA,
-          ptr_SFB,
-          ptr_C,
-          ptr_D,
-          ptr_SFD,
-          problem_.alpha.data(),
-          problem_.beta.data(),
-          library::ScalarPointerMode::kHost,
-          problem_.lda[group_idx],
-          problem_.ldb[group_idx],
-          problem_.ldc[group_idx],
-          problem_.ldc[group_idx],
-          gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
-          gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
-          gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
-          gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride(),
-          ptr_norm_constant};
-
-        library::GemmUniversalConfiguration configuration{
-          library::GemmUniversalMode::kGemm,
-          problem_.problem_sizes[group_idx],
-          {problem_.cluster_m, problem_.cluster_n, problem_.cluster_k},
-          {problem_.cluster_m_fallback, problem_.cluster_n_fallback, problem_.cluster_k_fallback},
-          1,
-          problem_.lda[group_idx],
-          problem_.ldb[group_idx],
-          problem_.ldc[group_idx],
-          problem_.ldc[group_idx],
-          1,
-        };
-        uint64_t host_workspace_size_needed = reference_op->get_host_workspace_size(&gemm_workspace_.configuration);
-        std::vector<char> host_workspace(host_workspace_size_needed);
-        status = reference_op->initialize(&configuration, host_workspace.data());
         if (status != Status::kSuccess) {
-          break;
-        }
-
-        status = reference_op->run(&arguments, host_workspace.data());
-
-        block_scale_ws.SFD_reference_ptr_array_host[group_idx]->copy_from_host(ptr_SFD);
+    results_.back().verification_map[library::Provider::kReferenceDevice] = Disposition::kNotVerified;
       }
       else {
-        // Blockwise
-        auto const& block_scale_desc = desc.block_scales.value();
-        auto& block_scale_ws = gemm_workspace_.block_scales.value();
+    results_.back().status = status;
+    results_.back().verification_map[library::Provider::kReferenceDevice] = disposition;
+  }
 
-        library::BlockwiseGemmFunctionalKey blockwiseGemm_key(
-          library::Provider::kReferenceHost,
-          library::GemmKind::kUniversal,
-          library::OperationKind::kBlockwiseGemm,
-          gemm_desc.tile_description.math_instruction.element_accumulator,
-          gemm_desc.element_epilogue,
-          element_A,
-          gemm_desc.A.layout,
-          block_scale_desc.SFA.element,
-          element_B,
-          gemm_desc.B.layout,
-          block_scale_desc.SFB.element,
-          gemm_desc.C.element,
-          gemm_desc.C.layout,
-          gemm_desc.D.element,
-          gemm_desc.D.layout,
-          block_scale_desc.SFMVecSize,
-          block_scale_desc.SFNVecSize,
-          block_scale_desc.SFKVecSize
-        );
+  if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
+      results_.back().verification_map[library::Provider::kReferenceDevice] == Disposition::kIncorrect) {
+    save_workspace(device_context, options, desc, library::Provider::kCUTLASS, library::Provider::kReferenceDevice);
+  }
 
-        auto operators_it = library::Singleton::get().operation_table.blockwise_gemm_operations.find(blockwiseGemm_key);
-        if (
-          operators_it ==
-          library::Singleton::get().operation_table.blockwise_gemm_operations.end()) {
-          disposition = Disposition::kNotSupported;
-          break;
-        }
+  return true; // continue profiling
+}
 
-        if (operators_it->second.empty()) {
-          disposition = Disposition::kNotSupported;
-          break;
-        }
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-        auto cc_it = operators_it->second.begin();
-        if (cc_it == operators_it->second.end()) {
-          disposition = Disposition::kNotSupported;
-          break;
-        }
+/// Verifies CUTLASS against host reference (for regular grouped GEMM)
+bool GroupedGemmOperationProfiler::verify_regular_with_host_reference_(
+  Options const& options,
+  PerformanceReport& report,
+  DeviceContext& device_context,
+  library::Operation const* operation,
+  ProblemSpace const& problem_space,
+  ProblemSpace::Problem const& problem,
+  cutlass::library::NumericTypeID element_A,
+  cutlass::library::NumericTypeID element_B) {
+  library::GroupedGemmDescription const& desc =
+    static_cast<library::GroupedGemmDescription const&>(operation->description());
 
-        // host reference has only one instances in BlockScaledOperationVectorMap
-        library::Operation const* reference_op = cc_it->second[0];
+  auto status = Status::kSuccess;
+  auto disposition = Disposition::kFailed;
 
-        library::BlockwiseGemmArguments arguments {
-          {int(problem_.m(group_idx)), int(problem_.n(group_idx)), int(problem_.k(group_idx))},
-          {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)},
-          {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)},
-          1, // batch_count
+  // Loop over groups and perform a regular GEMM for each group using host reference
+  for (size_t group_idx = 0, num_groups = problem_.problem_sizes.size(); group_idx < num_groups;
+       group_idx++) {
+    // Copy data to host memory
+    std::vector<uint8_t> host_data_A(gemm_workspace_.A_ptr_array_host[group_idx]->bytes());
+    std::vector<uint8_t> host_data_B(gemm_workspace_.B_ptr_array_host[group_idx]->bytes());
+    std::vector<uint8_t> host_data_C(gemm_workspace_.C_ptr_array_host[group_idx]->bytes());
+    std::vector<uint8_t> host_data_D(gemm_workspace_.reference_ptr_array_host[group_idx]->bytes());
+
+    void* ptr_A = host_data_A.data();
+    void* ptr_B = host_data_B.data();
+    void* ptr_C = host_data_C.data();
+    void* ptr_D = host_data_D.data();
+
+    gemm_workspace_.A_ptr_array_host[group_idx]->copy_to_host(ptr_A);
+    gemm_workspace_.B_ptr_array_host[group_idx]->copy_to_host(ptr_B);
+    gemm_workspace_.C_ptr_array_host[group_idx]->copy_to_host(ptr_C);
+
+    library::Handle handle;
+    handle.set_provider(library::Provider::kReferenceHost);
+
+    status = handle.gemm_universal(
+      library::GemmUniversalMode::kGemm,
+      problem_.m(group_idx),
+      problem_.n(group_idx),
+      problem_.k(group_idx),
+      problem_.cluster_m,
+      problem_.cluster_n,
+      problem_.cluster_k,
+      problem_.cluster_m_fallback,
+      problem_.cluster_n_fallback,
+      problem_.cluster_k_fallback,
+      desc.gemm.tile_description.math_instruction.element_accumulator,
+      desc.gemm.element_epilogue,
+      problem_.alpha.data(),
+      element_A,
+      desc.gemm.A.layout,
+      desc.gemm.transform_A,
           ptr_A,
+      int(problem_.lda[group_idx]),
+      element_B,
+      desc.gemm.B.layout,
+      desc.gemm.transform_B,
           ptr_B,
-          ptr_SFA,
-          ptr_SFB,
+      int(problem_.ldb[group_idx]),
+      problem_.beta.data(),
+      desc.gemm.C.element,
+      desc.gemm.C.layout,
           ptr_C,
+      int(problem_.ldc[group_idx]),
+      desc.gemm.D.element,
+      desc.gemm.D.layout,
           ptr_D,
-          problem_.alpha.data(),
-          problem_.beta.data(),
-          library::ScalarPointerMode::kHost,
-          problem_.lda[group_idx],
-          problem_.ldb[group_idx],
-          problem_.ldc[group_idx],
-          problem_.ldc[group_idx],
+      int(problem_.ldc[group_idx]),
+      1,
           gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
           gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
           gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
-          gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride(),
-        };
+      gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride());
 
-        library::GemmUniversalConfiguration configuration{
-          library::GemmUniversalMode::kGemm,
-          problem_.problem_sizes[group_idx],
-          {problem_.cluster_m, problem_.cluster_n, problem_.cluster_k},
-          {problem_.cluster_m_fallback, problem_.cluster_n_fallback, problem_.cluster_k_fallback},
-          1,
-          problem_.lda[group_idx],
-          problem_.ldb[group_idx],
-          problem_.ldc[group_idx],
-          problem_.ldc[group_idx],
-          1,
-        };
-        uint64_t host_workspace_size_needed = reference_op->get_host_workspace_size(&gemm_workspace_.configuration);
-        std::vector<char> host_workspace(host_workspace_size_needed);
-        status = reference_op->initialize(&configuration, host_workspace.data());
         if (status != Status::kSuccess) {
           break;
         }
 
-        status = reference_op->run(&arguments, host_workspace.data());
-      }
-
-      if (status != Status::kSuccess) {
-        break;
-      }
-
-      if (provider == library::Provider::kReferenceHost) {
+    // Copy result back to device
         gemm_workspace_.reference_ptr_array_host[group_idx]->copy_from_host(ptr_D);
-      }
 
       disposition = compare_tensors(
         options,
         *gemm_workspace_.D_ptr_array_host[group_idx],
         *gemm_workspace_.reference_ptr_array_host[group_idx],
         gemm_workspace_.D_ptr_array_host[group_idx]->batch_stride());
-      if (disposition != Disposition::kPassed) {
-        break;
-      }
 
-      if (is_block_scaled) {
-        auto& ws = gemm_workspace_.block_scales.value();
-        auto const& block_scale_desc = desc.block_scales.value();
-        if (block_scale_desc.SFD.element != library::NumericTypeID::kVoid) {
-          disposition = compare_tensors(
-            options,
-            *ws.SFD_ptr_array_host[group_idx],
-            *ws.SFD_reference_ptr_array_host[group_idx],
-            ws.SFD_ptr_array_host[group_idx]->batch_stride());
           if (disposition != Disposition::kPassed) {
             break;
           }
         }
+
+    if (status != Status::kSuccess) {
+    results_.back().verification_map[library::Provider::kReferenceHost] = Disposition::kNotVerified;
+    }
+  else {
+    results_.back().status = status;
+    results_.back().verification_map[library::Provider::kReferenceHost] = disposition;
+  }
+
+  if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
+      results_.back().verification_map[library::Provider::kReferenceHost] == Disposition::kIncorrect) {
+    save_workspace(device_context, options, desc, library::Provider::kCUTLASS, library::Provider::kReferenceHost);
+  }
+
+  return true; // continue profiling
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Verifies CUTLASS against host reference (for block-scaled/blockwise grouped GEMM)
+bool GroupedGemmOperationProfiler::verify_block_with_host_reference_(
+  Options const& options,
+  PerformanceReport& report,
+  DeviceContext& device_context,
+  library::Operation const* operation,
+  ProblemSpace const& problem_space,
+  ProblemSpace::Problem const& problem,
+  cutlass::library::NumericTypeID element_A,
+  cutlass::library::NumericTypeID element_B) {
+  library::GroupedGemmDescription const& desc =
+    static_cast<library::GroupedGemmDescription const&>(operation->description());
+
+  auto status = Status::kSuccess;
+  auto disposition = Disposition::kFailed;
+
+  // we don't have grouped GEMM reference kernels so we loop over the groups and perform
+  // a regular GEMM for each group
+  for (size_t group_idx = 0, num_groups = problem_.problem_sizes.size(); group_idx < num_groups;
+       group_idx++) {
+    // To support the host-side reference, allocate and copy tensors to host memory.
+    std::vector<uint8_t> host_data_A;
+    std::vector<uint8_t> host_data_B;
+    std::vector<uint8_t> host_data_C;
+    std::vector<uint8_t> host_data_D;
+    std::vector<uint8_t> host_data_SFA;
+    std::vector<uint8_t> host_data_SFB;
+    std::vector<uint8_t> host_data_SFD;
+    std::vector<uint8_t> host_data_norm_constant;
+
+    host_data_A.resize(gemm_workspace_.A_ptr_array_host[group_idx]->bytes());
+    void* ptr_A = host_data_A.data();
+    gemm_workspace_.A_ptr_array_host[group_idx]->copy_to_host(ptr_A);
+
+    host_data_B.resize(gemm_workspace_.B_ptr_array_host[group_idx]->bytes());
+    void* ptr_B = host_data_B.data();
+    gemm_workspace_.B_ptr_array_host[group_idx]->copy_to_host(ptr_B);
+
+    host_data_C.resize(gemm_workspace_.C_ptr_array_host[group_idx]->bytes());
+    void* ptr_C = host_data_C.data();
+    gemm_workspace_.C_ptr_array_host[group_idx]->copy_to_host(ptr_C);
+
+    host_data_D.resize(gemm_workspace_.reference_ptr_array_host[group_idx]->bytes());
+    void* ptr_D = host_data_D.data();
+
+    void* ptr_SFA{nullptr};
+    void* ptr_SFB{nullptr};
+    void* ptr_SFD{nullptr};
+    void* ptr_norm_constant{nullptr};
+
+    if (is_block_scaled) {
+      auto const& ws = gemm_workspace_.block_scales.value();
+
+      host_data_SFA.resize(ws.SFA_ptr_array_host[group_idx]->bytes());
+      ptr_SFA = host_data_SFA.data();
+      ws.SFA_ptr_array_host[group_idx]->copy_to_host(ptr_SFA);
+      host_data_SFB.resize(ws.SFB_ptr_array_host[group_idx]->bytes());
+      ptr_SFB = host_data_SFB.data();
+      ws.SFB_ptr_array_host[group_idx]->copy_to_host(ptr_SFB);
+
+      host_data_SFD.resize(ws.SFD_reference_ptr_array_host[group_idx]->bytes());
+      ptr_SFD = host_data_SFD.data();
+
+      host_data_norm_constant.resize(ws.norm_constant->bytes());
+      ptr_norm_constant = host_data_norm_constant.data();
+      ws.norm_constant->copy_to_host(ptr_norm_constant);
+    }
+    else if (is_blockwise) {
+      auto const& ws = gemm_workspace_.block_scales.value();
+
+      host_data_SFA.resize(ws.SFA_ptr_array_host[group_idx]->bytes());
+      ptr_SFA = host_data_SFA.data();
+      ws.SFA_ptr_array_host[group_idx]->copy_to_host(ptr_SFA);
+      host_data_SFB.resize(ws.SFB_ptr_array_host[group_idx]->bytes());
+      ptr_SFB = host_data_SFB.data();
+      ws.SFB_ptr_array_host[group_idx]->copy_to_host(ptr_SFB);
+    }
+
+    const auto& gemm_desc = desc.gemm;
+
+    if (is_block_scaled) {
+      auto const& block_scale_desc = desc.block_scales.value();
+      auto& block_scale_ws = gemm_workspace_.block_scales.value();
+
+      library::BlockScaledGemmFunctionalKey blockScaledGemm_key(
+        library::Provider::kReferenceHost,
+        library::GemmKind::kUniversal,
+        library::OperationKind::kBlockScaledGemm,
+        gemm_desc.tile_description.math_instruction.element_accumulator,
+        gemm_desc.element_epilogue,
+        element_A,
+        gemm_desc.A.layout,
+        block_scale_desc.SFA.element,
+        element_B,
+        gemm_desc.B.layout,
+        block_scale_desc.SFB.element,
+        gemm_desc.C.element,
+        gemm_desc.C.layout,
+        gemm_desc.D.element,
+        gemm_desc.D.layout,
+        block_scale_desc.SFD.element,
+        block_scale_desc.SFD.layout,
+        block_scale_desc.SFKVecSize,
+        block_scale_desc.EpilogueSFVecSize);
+
+      auto operators_it =
+        library::Singleton::get().operation_table.block_scaled_gemm_operations.find(
+          blockScaledGemm_key);
+      if (operators_it ==
+        library::Singleton::get().operation_table.block_scaled_gemm_operations.end()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      if (operators_it->second.empty()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      auto cc_it = operators_it->second.begin();
+      if (cc_it == operators_it->second.end()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      // host reference has only one instances in BlockScaledOperationVectorMap
+      library::Operation const* reference_op = cc_it->second[0];
+      library::BlockScaledGemmArguments arguments{
+        {int(problem_.m(group_idx)), int(problem_.n(group_idx)), int(problem_.k(group_idx))},
+        {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)},
+        {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)},
+        1, // batch count
+        ptr_A,
+        ptr_B,
+        ptr_SFA,
+        ptr_SFB,
+        ptr_C,
+        ptr_D,
+        ptr_SFD,
+        problem_.alpha.data(),
+        problem_.beta.data(),
+        library::ScalarPointerMode::kHost,
+        problem_.lda[group_idx],
+        problem_.ldb[group_idx],
+        problem_.ldc[group_idx],
+        problem_.ldc[group_idx],
+        gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride(),
+        ptr_norm_constant};
+
+      library::GemmUniversalConfiguration configuration{
+        library::GemmUniversalMode::kGemm,
+        problem_.problem_sizes[group_idx],
+        {problem_.cluster_m, problem_.cluster_n, problem_.cluster_k},
+        {problem_.cluster_m_fallback, problem_.cluster_n_fallback, problem_.cluster_k_fallback},
+        1,
+        problem_.lda[group_idx],
+        problem_.ldb[group_idx],
+        problem_.ldc[group_idx],
+        problem_.ldc[group_idx],
+        1,
+      };
+      uint64_t host_workspace_size_needed = reference_op->get_host_workspace_size(&gemm_workspace_.configuration);
+      std::vector<char> host_workspace(host_workspace_size_needed);
+      status = reference_op->initialize(&configuration, host_workspace.data());
+      if (status != Status::kSuccess) {
+        break;
+      }
+
+      status = reference_op->run(&arguments, host_workspace.data());
+
+      block_scale_ws.SFD_reference_ptr_array_host[group_idx]->copy_from_host(ptr_SFD);
+    }
+    else {
+      // Blockwise
+      auto const& block_scale_desc = desc.block_scales.value();
+
+      library::BlockwiseGemmFunctionalKey blockwiseGemm_key(
+        library::Provider::kReferenceHost,
+        library::GemmKind::kUniversal,
+        library::OperationKind::kBlockwiseGemm,
+        gemm_desc.tile_description.math_instruction.element_accumulator,
+        gemm_desc.element_epilogue,
+        element_A,
+        gemm_desc.A.layout,
+        block_scale_desc.SFA.element,
+        element_B,
+        gemm_desc.B.layout,
+        block_scale_desc.SFB.element,
+        gemm_desc.C.element,
+        gemm_desc.C.layout,
+        gemm_desc.D.element,
+        gemm_desc.D.layout,
+        block_scale_desc.SFMVecSize,
+        block_scale_desc.SFNVecSize,
+        block_scale_desc.SFKVecSize
+      );
+
+      auto operators_it = library::Singleton::get().operation_table.blockwise_gemm_operations.find(blockwiseGemm_key);
+      if (operators_it ==
+        library::Singleton::get().operation_table.blockwise_gemm_operations.end()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      if (operators_it->second.empty()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      auto cc_it = operators_it->second.begin();
+      if (cc_it == operators_it->second.end()) {
+        disposition = Disposition::kNotSupported;
+        break;
+      }
+
+      // host reference has only one instances in BlockScaledOperationVectorMap
+      library::Operation const* reference_op = cc_it->second[0];
+
+      library::BlockwiseGemmArguments arguments {
+        {int(problem_.m(group_idx)), int(problem_.n(group_idx)), int(problem_.k(group_idx))},
+        {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)},
+        {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)},
+        1, // batch_count
+        ptr_A,
+        ptr_B,
+        ptr_SFA,
+        ptr_SFB,
+        ptr_C,
+        ptr_D,
+        problem_.alpha.data(),
+        problem_.beta.data(),
+        library::ScalarPointerMode::kHost,
+        problem_.lda[group_idx],
+        problem_.ldb[group_idx],
+        problem_.ldc[group_idx],
+        problem_.ldc[group_idx],
+        gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
+        gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride(),
+      };
+
+      library::GemmUniversalConfiguration configuration{
+        library::GemmUniversalMode::kGemm,
+        problem_.problem_sizes[group_idx],
+        {problem_.cluster_m, problem_.cluster_n, problem_.cluster_k},
+        {problem_.cluster_m_fallback, problem_.cluster_n_fallback, problem_.cluster_k_fallback},
+        1,
+        problem_.lda[group_idx],
+        problem_.ldb[group_idx],
+        problem_.ldc[group_idx],
+        problem_.ldc[group_idx],
+        1,
+      };
+      uint64_t host_workspace_size_needed = reference_op->get_host_workspace_size(&gemm_workspace_.configuration);
+      std::vector<char> host_workspace(host_workspace_size_needed);
+      status = reference_op->initialize(&configuration, host_workspace.data());
+      if (status != Status::kSuccess) {
+        break;
+      }
+
+      status = reference_op->run(&arguments, host_workspace.data());
+    }
+
+    if (status != Status::kSuccess) {
+      break;
+    }
+
+    gemm_workspace_.reference_ptr_array_host[group_idx]->copy_from_host(ptr_D);
+
+    disposition = compare_tensors(
+      options,
+      *gemm_workspace_.D_ptr_array_host[group_idx],
+      *gemm_workspace_.reference_ptr_array_host[group_idx],
+      gemm_workspace_.D_ptr_array_host[group_idx]->batch_stride());
+    if (disposition != Disposition::kPassed) {
+      break;
+    }
+
+    if (is_block_scaled) {
+      auto& ws = gemm_workspace_.block_scales.value();
+      auto const& block_scale_desc = desc.block_scales.value();
+      if (block_scale_desc.SFD.element != library::NumericTypeID::kVoid) {
+        disposition = compare_tensors(
+          options,
+          *ws.SFD_ptr_array_host[group_idx],
+          *ws.SFD_reference_ptr_array_host[group_idx],
+          ws.SFD_ptr_array_host[group_idx]->batch_stride());
+        if (disposition != Disposition::kPassed) {
+          break;
+        }
       }
     }
-    if (status != Status::kSuccess) {
-      results_.back().verification_map[provider] = Disposition::kNotVerified;
-      continue;
-    }
-    results_.back().status = status;
-    results_.back().verification_map[provider] = disposition;
+  }
 
-    if (
-      options.verification.save_workspace == SaveWorkspace::kIncorrect &&
-      results_.back().verification_map[provider] == Disposition::kIncorrect) {
-      save_workspace(device_context, options, desc, library::Provider::kCUTLASS, provider);
-    }
+  if (status != Status::kSuccess) {
+    results_.back().verification_map[library::Provider::kReferenceHost] = Disposition::kNotVerified;
+    return true; // continue profiling
+  }
+
+  results_.back().status = status;
+  results_.back().verification_map[library::Provider::kReferenceHost] = disposition;
+
+  if (
+    options.verification.save_workspace == SaveWorkspace::kIncorrect &&
+    disposition == Disposition::kIncorrect) {
+    save_workspace(device_context, options, desc, library::Provider::kCUTLASS, library::Provider::kReferenceHost);
   }
 
   return true; // continue profiling
@@ -1912,7 +2097,7 @@ bool GroupedGemmOperationProfiler::profile(
 
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
     if (options.profiling.enable_kernel_performance_search) {
-      std::cerr << "Exhaustive performance search is not available for Grouped GEMMs. " 
+      std::cerr << "Exhaustive performance search is not available for Grouped GEMMs. "
                 << "Please use --enable-best-kernel-for-fixed-shape to profile a specific problem size "
                 << "with --problem-sizes or --problem-sizes-file.\n";
     }
@@ -1944,6 +2129,14 @@ Status GroupedGemmOperationProfiler::profile_cutlass_(
   void* device_workspace) {
   library::Operation const* underlying_operation = operation;
   result.status = underlying_operation->initialize_with_arguments(&gemm_workspace_.arguments);
+  if (result.status != Status::kSuccess) {
+    return result.status;
+  }
+
+  //For dynamic clusters, we update arguments, hence need to rerun can_implement()
+  result.status = underlying_operation->can_implement(
+    &gemm_workspace_.configuration,
+    &gemm_workspace_.arguments);
   if (result.status != Status::kSuccess) {
     return result.status;
   }

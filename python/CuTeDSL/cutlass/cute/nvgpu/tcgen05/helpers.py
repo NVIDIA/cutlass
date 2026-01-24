@@ -102,26 +102,16 @@ def make_smem_layout_atom(
         SmemLayoutAtomKind.MN_SW128_32B,
     ):
         # M/N-major layout
-        return core.make_composed_layout(
-            sw,
-            0,
-            core.make_layout(
-                (num_contiguous_elems, 8), stride=(1, num_contiguous_elems)
-            ),
-            loc=loc,
-            ip=ip,
+        outer = core.make_layout(
+            (num_contiguous_elems, 8), stride=(1, num_contiguous_elems), loc=loc, ip=ip
         )
     else:
         # K-major layout
-        return core.make_composed_layout(
-            sw,
-            0,
-            core.make_layout(
-                (8, num_contiguous_elems), stride=(num_contiguous_elems, 1)
-            ),
-            loc=loc,
-            ip=ip,
+        outer = core.make_layout(
+            (8, num_contiguous_elems), stride=(num_contiguous_elems, 1), loc=loc, ip=ip
         )
+
+    return core.make_composed_layout(sw, 0, outer, loc=loc, ip=ip)
 
 
 @overload

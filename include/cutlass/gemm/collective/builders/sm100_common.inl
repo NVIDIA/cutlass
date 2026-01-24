@@ -220,7 +220,7 @@ sm100_cluster_shape_to_tma_atom_A(ClusterShapeMNK cluster_shape_mnk, AtomThrId a
     }
     else {
       // In the case of dynamic cluster, multicast decision is not known at compile time.
-      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper. 
+      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper.
       return detail::sm90_cluster_shape_to_tma_atom(cute::Int<2>{});
     }
   }
@@ -255,7 +255,7 @@ sm100_cluster_shape_to_tma_atom_B(ClusterShapeMNK cluster_shape_mnk, AtomThrId a
     }
     else {
       // In the case of dynamic cluster, multicast decision is not known at compile time.
-      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper. 
+      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper.
       return detail::sm90_cluster_shape_to_tma_atom(cute::Int<2>{});
     }
   }
@@ -281,7 +281,7 @@ sm100_cluster_shape_to_tma_atom_SFB(ClusterShapeMNK cluster_shape_mnk, AtomThrId
     }
     else {
       // In the case of dynamic cluster, multicast decision is not known at compile time.
-      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper. 
+      // A multicast instruction is forced by passing a cute::Int<2>{} to this helper.
       return detail::sm90_cluster_shape_to_tma_atom(cute::Int<2>{});
     }
   }
@@ -328,24 +328,24 @@ sm100_make_1sm_trivial_tiled_mma() {
     return make_tiled_mma(cute::SM100_MMA_S8_SS<ElementAMma, ElementBMma, ElementAMmaccumulator,
                                               M, N, UmmaMajorA, UmmaMajorB>{});
   }
-  else if constexpr (cute::is_same_v<ElementAMma, cutlass::type_erased_dynamic_float8_t> 
-                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t> 
-                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t> 
+  else if constexpr (cute::is_same_v<ElementAMma, cutlass::type_erased_dynamic_float8_t>
+                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t>
+                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t>
                     || cute::is_same_v<ElementAMma, cutlass::float_e4m3_t>
                     || cute::is_same_v<ElementAMma, cutlass::float_e5m2_t>
                     || cute::is_same_v<ElementAMma, cutlass::detail::float_e2m3_unpacksmem_t>
                     || cute::is_same_v<ElementAMma, cutlass::detail::float_e3m2_unpacksmem_t>
                     || cute::is_same_v<ElementAMma, cutlass::detail::float_e2m1_unpacksmem_t>
                     ) {
-  
+
       return make_tiled_mma(
         cute::MMA_Traits<
           cute::SM100_MMA_F8F6F4_SS,
           ElementAMma,
-          ElementBMma, 
-          ElementAMmaccumulator, 
-          cute::C<M>, 
-          cute::C<N>, 
+          ElementBMma,
+          ElementAMmaccumulator,
+          cute::C<M>,
+          cute::C<N>,
           cute::integral_constant<UMMA::Major, UmmaMajorA>,
           cute::integral_constant<UMMA::Major, UmmaMajorB>,
           cute::integral_constant<UMMA::ScaleIn, ANeg>,
@@ -396,9 +396,9 @@ sm100_make_2sm_trivial_tiled_mma() {
     return make_tiled_mma(cute::SM100_MMA_S8_2x1SM_SS<ElementAMma, ElementBMma, ElementAMmaccumulator,
                                                     M, N, UmmaMajorA, UmmaMajorB>{});
   }
-  else if constexpr (cute::is_same_v<ElementAMma, cutlass::type_erased_dynamic_float8_t> 
-                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t> 
-                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t> 
+  else if constexpr (cute::is_same_v<ElementAMma, cutlass::type_erased_dynamic_float8_t>
+                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t>
+                    || cute::is_same_v<ElementAMma, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t>
                     || cute::is_same_v<ElementAMma, cutlass::float_e4m3_t>
                     || cute::is_same_v<ElementAMma, cutlass::float_e5m2_t>
                     || cute::is_same_v<ElementAMma, cutlass::detail::float_e2m3_unpacksmem_t>
@@ -408,12 +408,12 @@ sm100_make_2sm_trivial_tiled_mma() {
 
     return make_tiled_mma(
       cute::MMA_Traits<
-        cute::SM100_MMA_F8F6F4_2x1SM_SS, 
+        cute::SM100_MMA_F8F6F4_2x1SM_SS,
         ElementAMma,
         ElementBMma,
-        ElementAMmaccumulator, 
-        cute::C<M>, 
-        cute::C<N>, 
+        ElementAMmaccumulator,
+        cute::C<M>,
+        cute::C<N>,
         cute::integral_constant<UMMA::Major, UmmaMajorA>,
         cute::integral_constant<UMMA::Major, UmmaMajorB>,
         cute::integral_constant<UMMA::ScaleIn, ANeg>,
@@ -471,12 +471,98 @@ sm100_make_trivial_tiled_mma() {
         return sm100_make_1sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
                                         TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
       }
-    // Dynamic cluster shape means we cannot assume we can use 2SM MMA 
+    // Dynamic cluster shape means we cannot assume we can use 2SM MMA
     }
     else {
         return sm100_make_1sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
                                         TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
     }
+  }
+}
+
+template<
+  class ElementAMma,
+  class ElementBMma,
+  class ElementAccumulator,
+  class ClusterTileShape_MNK,
+  class ClusterShape_MNK,
+  UMMA::Major UmmaMajorA,
+  UMMA::Major UmmaMajorB,
+  UMMA::ScaleIn ANeg = UMMA::ScaleIn::One,
+  UMMA::ScaleIn BNeg = UMMA::ScaleIn::One
+>
+constexpr auto
+sm100_make_1sm_ts_trivial_tiled_mma() {
+
+  constexpr int M = cute::size<0>(ClusterTileShape_MNK{});
+  static_assert(M == 64 || M == 128, "Invalid TileShape_M.");
+
+  // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
+  constexpr int N = cute::size<1>(ClusterTileShape_MNK{});
+  static_assert(N % 8 == 0 && N <= 256, "Invalid TileShape_N.");
+
+  if constexpr     (cute::is_same_v<ElementAMma, cutlass::tfloat32_t>) {
+    static_assert(cute::is_same_v<ElementAMma, ElementBMma>, "ElementA and ElementB must match.");
+    return make_tiled_mma(cute::SM100_MMA_TF32_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                               M, N, UmmaMajorA, UmmaMajorB, ANeg, BNeg>{});
+  }
+  else if constexpr (cute::is_same_v<ElementAMma,     cutlass::half_t> ||
+                     cute::is_same_v<ElementAMma, cutlass::bfloat16_t>) {
+    static_assert(cute::is_same_v<ElementAMma, ElementBMma>, "ElementA and ElementB must match.");
+    return make_tiled_mma(cute::SM100_MMA_F16BF16_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                              M, N, UmmaMajorA, UmmaMajorB, ANeg, BNeg>{});
+  }
+  else if constexpr (cute::is_same_v<ElementAMma,  int8_t> ||
+                     cute::is_same_v<ElementAMma, uint8_t>) {
+    return make_tiled_mma(cute::SM100_MMA_S8_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                              M, N, UmmaMajorA, UmmaMajorB>{});
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<ElementAMma>,
+        "Unsupported configuration for SM100 collective builder.");
+  }
+}
+
+template<
+  class ElementAMma,
+  class ElementBMma,
+  class ElementAccumulator,
+  class ClusterTileShape_MNK,
+  class ClusterShape_MNK,
+  UMMA::Major UmmaMajorA,
+  UMMA::Major UmmaMajorB,
+  UMMA::ScaleIn ANeg = UMMA::ScaleIn::One,
+  UMMA::ScaleIn BNeg = UMMA::ScaleIn::One
+>
+constexpr auto
+sm100_make_2sm_ts_trivial_tiled_mma() {
+
+  constexpr int M = cute::size<0>(ClusterTileShape_MNK{});
+  static_assert(M == 128 || M == 256, "Invalid TileShape_M.");
+
+  // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
+  constexpr int N = cute::size<1>(ClusterTileShape_MNK{});
+  static_assert(N % 8 == 0 && N <= 256, "Invalid TileShape_N.");
+
+  if constexpr     (cute::is_same_v<ElementAMma, cutlass::tfloat32_t>) {
+    static_assert(cute::is_same_v<ElementAMma, ElementBMma>, "For SM100 TF32 MMA, ElementA and ElementB must match.");
+    return make_tiled_mma(cute::SM100_MMA_TF32_2x1SM_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                    M, N, UmmaMajorA, UmmaMajorB, ANeg, BNeg>{});
+  }
+  else if constexpr (cute::is_same_v<ElementAMma,     cutlass::half_t> ||
+                     cute::is_same_v<ElementAMma, cutlass::bfloat16_t>) {
+    static_assert(cute::is_same_v<ElementAMma, ElementBMma>, "For SM100 F16F32 MMA, ElementA and ElementB must match.");
+    return make_tiled_mma(cute::SM100_MMA_F16BF16_2x1SM_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                    M, N, UmmaMajorA, UmmaMajorB, ANeg, BNeg>{});
+  }
+  else if constexpr (cute::is_same_v<ElementAMma, int8_t> ||
+                     cute::is_same_v<ElementAMma, uint8_t>) {
+    return make_tiled_mma(cute::SM100_MMA_S8_2x1SM_TS<ElementAMma, ElementBMma, ElementAccumulator,
+                                                    M, N, UmmaMajorA, UmmaMajorB>{});
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<ElementAMma>,
+        "Unsupported configuration for SM100 collective builder.");
   }
 }
 
@@ -493,12 +579,16 @@ template<
 >
 constexpr auto
 sm100_make_trivial_fastFP32_tiled_mma() {
+  constexpr bool TagHasUmmaSs = (
+      cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>
+    );
+
   // MMA_2SM requested
   if constexpr (cute::is_base_of_v<KernelSchedule2Sm, BuilderScheduleTag> ) {
     using AtomLayout_MNK = decltype(make_layout(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{})));
     constexpr int M = cute::size<0>(TileShape_MNK{});
     constexpr int N = cute::size<1>(TileShape_MNK{});
-    if constexpr (UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>) {
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K && !TagHasUmmaSs) {
       return make_tiled_mma(cute::SM100_MMA_F16BF16_2x1SM_TS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
                                                      M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
     }
@@ -512,7 +602,7 @@ sm100_make_trivial_fastFP32_tiled_mma() {
     // using AtomLayout_MNK = Layout<ClusterShape_MNK>;
     constexpr int M = cute::size<0>(TileShape_MNK{});
     constexpr int N = cute::size<1>(TileShape_MNK{});
-    if constexpr (UmmaMajorA == cute::UMMA::Major::K  && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>) {
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K  && !TagHasUmmaSs) {
       return make_tiled_mma(cute::SM100_MMA_F16BF16_TS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
                                                       M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
     }
@@ -531,7 +621,7 @@ sm100_make_trivial_fastFP32_tiled_mma() {
       // and only M=128 and M=256 are supported, otherwise, fall back to MMA_1SM
       if constexpr (cute::get<0>(ClusterShape_MNK{}) % 2 == 0 &&
                   (cute::get<0>(TileShape_MNK{}) / cute::get<0>(ClusterShape_MNK{})) % 64 == 0) {
-        if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>) {
+        if constexpr (!TagHasUmmaSs) {
           return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
                                             ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized2SmFastFP32Sm100>();
         }
@@ -541,7 +631,7 @@ sm100_make_trivial_fastFP32_tiled_mma() {
         }
       }
       else {
-        if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>) {
+        if constexpr (!TagHasUmmaSs) {
           return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
                                               ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32Sm100>();
         }
@@ -551,9 +641,9 @@ sm100_make_trivial_fastFP32_tiled_mma() {
         }
       }
     }
-    // Dynamic cluster shape means we cannot assume we can use 2SM MMA 
+    // Dynamic cluster shape means we cannot assume we can use 2SM MMA
     else {
-      if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>) {
+      if constexpr (!TagHasUmmaSs) {
         return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
                                             ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32Sm100>();
       }
@@ -566,6 +656,52 @@ sm100_make_trivial_fastFP32_tiled_mma() {
   else {
     static_assert(cutlass::detail::dependent_false<TileShape_MNK> == 0,
         "Unsupported policy for SM100 collective builder.");
+  }
+}
+
+template<
+  class TileShape_MNK,
+  class ClusterShape_MNK,
+  class BuilderScheduleTag
+>
+constexpr auto
+sm100_make_trivial_interleaved_complex_tf32_tiled_mma() {
+  // MMA_2SM requested
+  if constexpr (cute::is_base_of_v<KernelSchedule2Sm, BuilderScheduleTag> ) {
+    constexpr int M = cute::size<0>(TileShape_MNK{});
+    static_assert(M == 128 || M == 256, "Invalid TileShape_M.");
+
+    // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
+    constexpr int N = cute::size<1>(TileShape_MNK{});
+    static_assert(N % 8 == 0 && N <= 256, "Invalid TileShape_N.");
+    return make_tiled_mma(cute::SM100_MMA_TF32_2x1SM_TS_INTERLEAVED_CF32CTF32CTF32CF32_TN<M, N, cute::UMMA::Major::K, cute::UMMA::Major::K>{});
+  }
+  // MMA_1SM requested
+  else if constexpr (cute::is_base_of_v<KernelSchedule1Sm, BuilderScheduleTag> ) {
+    constexpr int M = cute::size<0>(TileShape_MNK{});
+    static_assert(M == 64 || M == 128, "Invalid TileShape_M.");
+    // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
+    constexpr int N = cute::size<1>(TileShape_MNK{});
+    static_assert(N % 8 == 0 && N <= 256, "Invalid TileShape_N.");
+    return make_tiled_mma(cute::SM100_MMA_TF32_TS_INTERLEAVED_CF32CTF32CTF32CF32_TN<M, N, cute::UMMA::Major::K, cute::UMMA::Major::K>{});
+  }
+  else if constexpr (cute::is_same_v<BuilderScheduleTag, KernelScheduleAuto>) {
+    // Static cluster
+    if constexpr (cute::is_static_v<ClusterShape_MNK>) {
+      // For MMA_2SM we need a cluster shape that is multiple of 2x1
+      // and only M=128 and M=256 are supported, otherwise, fall back to MMA_1SM
+      if constexpr (cute::get<0>(ClusterShape_MNK{}) % 2 == 0 &&
+                    cute::size<0>(TileShape_MNK{}) % 128 == 0) {
+        return sm100_make_trivial_interleaved_complex_tf32_tiled_mma<TileShape_MNK,ClusterShape_MNK,KernelTmaWarpSpecialized2SmInterleavedComplexTF32Sm100>();
+      }
+      else {
+        return sm100_make_trivial_interleaved_complex_tf32_tiled_mma<TileShape_MNK,ClusterShape_MNK,KernelTmaWarpSpecialized1SmInterleavedComplexTF32Sm100>();
+      }
+    }
+    // Dynamic cluster shape means we cannot assume we can use 2SM MMA
+    else {
+      return sm100_make_trivial_interleaved_complex_tf32_tiled_mma<TileShape_MNK,ClusterShape_MNK,KernelTmaWarpSpecialized1SmInterleavedComplexTF32Sm100>();
+    }
   }
 }
 
@@ -606,10 +742,10 @@ sm100_make_trivial_mixed_input_tiled_mma() {
           cute::MMA_Traits<
             cute::SM100_MMA_F8F6F4_SS,
             ElementAMma,
-            ElementBMma, 
-            ElementAccumulator, 
-            cute::C<M>, 
-            cute::C<N>, 
+            ElementBMma,
+            ElementAccumulator,
+            cute::C<M>,
+            cute::C<N>,
             cute::integral_constant<UMMA::Major, UmmaMajorA>,
             cute::integral_constant<UMMA::Major, UmmaMajorB>,
             cute::integral_constant<UMMA::ScaleIn, cute::UMMA::ScaleIn::One>,

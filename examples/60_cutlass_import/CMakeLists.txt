@@ -54,7 +54,7 @@ target_sources(example PRIVATE main.cpp)
 
 target_include_directories(
   example
-  PRIVATE
+  SYSTEM PRIVATE
   ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
   )
 

@@ -260,11 +260,11 @@ set(header_files_to_check
 )
 
 # for each header in _header_files:
-#   create a .cu file with the same name as the header's path, except with / replaced with %
+#   create a .cu file with the same name as the header's path, except with / replaced with #
 #   have the .cu file include that header
 set(_gen_source_files "")
 foreach(header_file ${header_files_to_check})
-  string(REPLACE "/" "%" header_file_esc ${header_file})
+  string(REPLACE "/" "#" header_file_esc ${header_file})
 
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${header_file_esc}.cu"
        "#include <${header_file}>")

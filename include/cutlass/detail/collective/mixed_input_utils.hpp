@@ -862,7 +862,8 @@ public:
     }
     else if constexpr (UseScaleLookupTable) {
       constexpr int num_elements = decltype(size(src))::value;
-      static_assert(is_same_v<RealSwappedElementA, cutlass::int4b_t>, "Lookup table only supports int4 being the quant type now.");
+      static_assert(is_same_v<RealSwappedElementA, cutlass::int4b_t> || is_same_v<RealSwappedElementA, cutlass::float_e2m1_t>, 
+                    "Lookup table supports int4b_t (Two's Complement) and float_e2m1_t (E2M1/FP4) quant types.");
       static_assert(sizeof_bits_v<ElementScale> == 64, "Lookup table only supports 8 8bit scale values now.");
       static_assert(num_elements % 4 == 0 && num_elements >= 4, "Lookup table requires a vector size of 4x when converting.");
 
@@ -885,15 +886,31 @@ public:
         {
           auto&& scale_neg_ = reinterpret_cast<cutlass::Array<uint32_t, 2> const&>(scales_neg_vm_(i));
           auto&& scale_pos_ = reinterpret_cast<cutlass::Array<uint32_t, 2>      &>(scales_pos_vm_(i));
-          constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
-          asm volatile(
-              "{\n"
-              "  lop3 .b32 %0, %2, %4, %5, %6;\n" \
-              "  xor  .b32 %1, %3, %5;        \n" \
-              "}\n"
-              : "=r"(scale_pos_[0]), "=r"(scale_pos_[1])
-              : "r"(scale_neg_[0]), "r"(scale_neg_[1]), "n"(0xFFFFFF00), "n"(0x80808080), "n"(immLut)
-            );
+          
+          // Accept CUTLASS pseudo-FP as well
+          if constexpr (cutlass::platform::is_floating_point<RealSwappedElementA>::value ||
+                        cute::is_same_v<RealSwappedElementA, cutlass::float_e2m1_t>) {
+            // E2M1 (FP4): Sign-magnitude encoding - simple sign flip with two XORs
+            asm volatile(
+                "{\n"
+                "  xor .b32 %0, %2, %4;\n" \
+                "  xor .b32 %1, %3, %4;\n" \
+                "}\n"
+                : "=r"(scale_pos_[0]), "=r"(scale_pos_[1])
+                : "r"(scale_neg_[0]), "r"(scale_neg_[1]), "n"(0x80808080)
+              );
+          } else {
+            // INT4: Two's complement encoding - reorder and sign flip with lop3
+            constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
+            asm volatile(
+                "{\n"
+                "  lop3 .b32 %0, %2, %4, %5, %6;\n" \
+                "  xor  .b32 %1, %3, %5;        \n" \
+                "}\n"
+                : "=r"(scale_pos_[0]), "=r"(scale_pos_[1])
+                : "r"(scale_neg_[0]), "r"(scale_neg_[1]), "n"(0xFFFFFF00), "n"(0x80808080), "n"(immLut)
+              );
+          }
         }
       }
       CUTLASS_PRAGMA_UNROLL
