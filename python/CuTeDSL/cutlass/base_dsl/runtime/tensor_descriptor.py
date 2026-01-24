@@ -95,6 +95,14 @@ class TensorDescriptor:
         return -1
 
     @property
+    def pointer(self):
+        """
+        Returns the pointer to the tensor data. This is either the device pointer or the data pointer if the data is not
+        in a device.
+        """
+        return self.device_pointer if self.device_pointer is not None else self.data_ptr
+
+    @property
     def element_type(self):
         """Return the corresponding Python type based on DLPack dtype metadata."""
         str_element_type = get_tensor_desc_element_type(self._capsule)

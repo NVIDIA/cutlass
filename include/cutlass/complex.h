@@ -813,6 +813,37 @@ struct atomic_add<complex<T>> {
   }
 };
 
+// Maximal exponent reduction for zero-mantissa scaling factors: complex number uses its largest cartesian norm not abs
+template <typename TC, bool PropagateNaN = false>
+struct maximum_cartesian_norm_zero_mantissa_reduction {
+  using T = typename TC::value_type;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, cutlass::complex<T> const &rhs) const {
+    maximum_absolute_value_zero_mantissa_reduction<T, PropagateNaN> red_op;
+
+    return red_op(red_op(lhs, rhs.real()), rhs.imag());
+  }
+};
+
+template <typename TC, int N, bool PropagateNaN>
+struct maximum_cartesian_norm_zero_mantissa_reduction<cutlass::Array<TC, N>, PropagateNaN> {
+  using T = typename TC::value_type;
+
+  CUTLASS_HOST_DEVICE
+  T operator() (T const& scalar, cutlass::Array<TC, N> const& rhs) const {
+
+    T result = scalar;
+    maximum_cartesian_norm_zero_mantissa_reduction<TC, PropagateNaN> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result = scalar_op(result, rhs[i]);
+    }
+
+    return result;
+  }
+};
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 

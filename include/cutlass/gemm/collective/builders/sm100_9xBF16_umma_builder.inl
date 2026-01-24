@@ -61,15 +61,19 @@ sm100_compute_stage_count_or_override_fast_fp32(StageCountAutoCarveout<carveout_
   constexpr int CtaK = get<2>(CtaTileShape_MNK{});
   using AtomThrID = typename TiledMma::AtomThrID;
   constexpr int TmemColumns = 512;
+  constexpr bool BuilderTagIsSmem = (
+      cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>
+    );
 
   // Detect 2x2 TMEM layout
   constexpr int TmemAccWordsPerDP = (CtaM == 64 && size(AtomThrID{}) == 2) ? CtaN/2 : CtaN;
   constexpr int TmemAWordsPerDP = ComplexComponent * NumComputeMtxs * CtaK / 2;
-  constexpr bool IsAComputeinTmem = UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>;
+  constexpr bool IsAComputeinTmem = UmmaMajorA == cute::UMMA::Major::K && !BuilderTagIsSmem;
   constexpr bool IsAComputeinSmem = !IsAComputeinTmem;
   constexpr int AccumulatorStageCount = (IsAComputeinTmem) ? (((TmemAccWordsPerDP * ComplexComponent == 128) ? 2 : 3) * ComplexComponent) : (TmemColumns / TmemAccWordsPerDP);
-  
-  constexpr int SmemCapacityAfterMma2AccumCarveout = CapacityBytes - (carveout_bytes + AccumulatorStageCount * 32);
+
+  constexpr int SmemCapacityAfterMma2AccumCarveout = CapacityBytes - (carveout_bytes + AccumulatorStageCount * (32
+  ));
 
   constexpr int TmemInAStageCount_Potential = (IsAComputeinTmem) ? (TmemColumns - AccumulatorStageCount * TmemAccWordsPerDP) / TmemAWordsPerDP : 10000;
   
@@ -87,7 +91,8 @@ sm100_compute_stage_count_or_override_fast_fp32(StageCountAutoCarveout<carveout_
   constexpr int ab_compute_stage_bytes =
     cutlass::bits_to_bytes(NumComputeMtxs * a_compute_bits * int(IsAComputeinSmem) * size<0>(CtaTileShape_MNK{})  * size<2>(CtaTileShape_MNK{})) + // If ACompute is in TMEM, Acompute buffer has 0 bytes.
     cutlass::bits_to_bytes(NumComputeMtxs * b_compute_bits * size<1>(CtaTileShape_MNK{}) / size(AtomThrID{}) * size<2>(CtaTileShape_MNK{})) +
-    static_cast<int>(transform2mma_pipeline_bytes);
+    static_cast<int>(transform2mma_pipeline_bytes)
+    ;
 
   constexpr int ABComputeStageCount_Potential = SmemCapacityAfterMma2AccumCarveout / (ab_stage_bytes + ab_compute_stage_bytes);
   // The number of SMEM buffers for A, B. ACompute (if in SMEM), BCompute should be at least Transform2MmaStageCount
@@ -135,20 +140,33 @@ struct CollectiveBuilder<
       (cute::is_same_v<ArchTag, arch::Sm100> 
       ) &&
       (not cute::is_tuple<GmemLayoutATag>::value && not cute::is_tuple<GmemLayoutBTag>::value) &&
-      (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, BuilderScheduleTag>) &&
+      (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, BuilderScheduleTag>
+      ) &&
       ((sizeof(float) * AlignmentA) % detail::tma_alignment_bytes == 0) &&
       ((sizeof(float) * AlignmentB) % detail::tma_alignment_bytes == 0)>>
 {
   static constexpr cute::UMMA::Major UmmaMajorA = cutlass::gemm::collective::detail::tag_to_umma_major_A<GmemLayoutATag>();
   static constexpr cute::UMMA::Major UmmaMajorB = cutlass::gemm::collective::detail::tag_to_umma_major_B<GmemLayoutBTag>();
+  static constexpr cute::UMMA::Major UmmaMajorACompute =
+      UmmaMajorA;
+  static constexpr cute::UMMA::Major UmmaMajorBCompute =
+      UmmaMajorB;
+  static constexpr bool BuilderTagIsSmem = (
+      cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>
+    );
 
   using ElementA = float;
   using ElementB = float;
-  using ElementAMma = cutlass::bfloat16_t;
-  using ElementBMma = cutlass::bfloat16_t;
-  static constexpr int ScalingFactor = 8;
+  using ElementAMma =
+      cutlass::bfloat16_t
+      ;
+  using ElementBMma =
+      cutlass::bfloat16_t
+      ;
+  static constexpr int ScalingFactor =
+      8;
 
-  using TiledMma = decltype(detail::sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ScalingFactor, BuilderScheduleTag>());
+  using TiledMma = decltype(detail::sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, ClusterShape_MNK, UmmaMajorACompute, UmmaMajorBCompute, ScalingFactor, BuilderScheduleTag>());
   using AtomThrID = typename TiledMma::AtomThrID;
   using AtomThrShapeMNK = Shape<decltype(shape<0>(typename TiledMma::ThrLayoutVMNK{})), _1, _1>;
   using CtaTileShape_MNK = decltype(shape_div(TileShape_MNK{}, AtomThrShapeMNK{}));
@@ -166,7 +184,7 @@ struct CollectiveBuilder<
   using SmemLayoutAtomA = decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorA, ElementA,
     BlockTileA_M, BlockTileA_K>());
   // Take 3 compute buffers into account for swizzle selection
-  using SmemLayoutAtomACompute =  decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorA, ElementAMma,
+  using SmemLayoutAtomACompute =  decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorACompute, ElementAMma,
     BlockTileA_M, BlockTileA_K>());
 
   // Input transform kernel can not use TMA 2SM instructions.
@@ -177,7 +195,7 @@ struct CollectiveBuilder<
   static constexpr int MMA_M = cute::size<0,0>(MmaShapeA_MK{});
   using CopyAtomPairA = cutlass::gemm::collective::detail::CollectiveMmaEmulatedCopyType<
     Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementA>,
-    cute::conditional_t<(UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>),
+    cute::conditional_t<(UmmaMajorACompute == cute::UMMA::Major::K && !BuilderTagIsSmem),
                         cute::conditional_t<(MMA_M == 64 && size(AtomThrID{}) == 1), SM100_TMEM_STORE_16dp256b1x, SM100_TMEM_STORE_32dp32b8x>, // TS Implementation
                         Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementA>>                                         // SS Implementation
   >;
@@ -191,7 +209,7 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorB, ElementB,
     BlockTileB_N, BlockTileB_K>());
   // Take 3 compute buffers into account for swizzle selection
-  using SmemLayoutAtomBCompute = decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorB, ElementBMma,
+  using SmemLayoutAtomBCompute = decltype(cutlass::gemm::collective::detail::sm100_smem_selector<UmmaMajorBCompute, ElementBMma,
     BlockTileB_N, BlockTileB_K>());
   
   using SmemLayoutAtomPairB = cutlass::gemm::collective::detail::CollectiveMmaEmulatedLayoutAtomType<
@@ -202,11 +220,16 @@ struct CollectiveBuilder<
   >;
 
   // SmemCarveout
-  static constexpr int NumBandsToCompute = 5;
-  static constexpr int AccPromotionInterval = 1;
+  static constexpr int NumComputeMtxs =
+      3;
+  static constexpr int NumBandsToCompute =
+      5;
+  static constexpr int AccPromotionInterval =
+      1;
   static constexpr int SchedulerPipelineStageCount = 3;
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayFastFP32Gemm, BuilderScheduleTag>);
-
+  static constexpr bool IsArrayOfPointersGemm =
+      (cute::is_base_of_v<KernelScheduleSm100PtrArrayFastFP32Gemm, BuilderScheduleTag>
+      );
   // CLCPipeline = PipelineCLCFetchAsync
   static constexpr auto CLCPipelineStorage = sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape_MNK>::SharedStorage);
   // CLC (scheduler) response
@@ -233,7 +256,9 @@ struct CollectiveBuilder<
   static constexpr int ReducedSmemCapacityBytes = 
     cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
   static constexpr auto stage_info = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_fast_fp32<
-    ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, BuilderScheduleTag, UmmaMajorA>(StageCountType{});
+    ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, BuilderScheduleTag, UmmaMajorACompute,
+    /*Cmplx=*/ 1, /*Mtxs=*/ NumComputeMtxs
+    >(StageCountType{});
   
   static constexpr int Load2TransformPipelineStageCount = get<0>(stage_info);
   static constexpr int Transform2MmaPipelineStageCount = get<1>(stage_info);

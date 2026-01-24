@@ -41,6 +41,36 @@ import cuda.bindings.driver as cuda
 cubin_suffix = "cubin"
 
 
+class CHeaderArguments:
+    """This class is used to store the arguments generation of the wrapper function.
+    The arguments are generated when the JitCompiledFunction is created and used to avoid
+    the long-term reference of the arguments by the JitCompiledFunction.
+    """
+
+    def __init__(
+        self,
+        dummy_prefix_name: str,
+        arguments: List[str],
+        packed_args: List[str],
+        declarations: str,
+        error_msg: str = None,
+    ):
+        self.dummy_prefix_name = dummy_prefix_name
+        self.arguments = arguments
+        self.packed_args = packed_args
+        self.declarations = declarations
+        self.error_msg = error_msg
+
+    def __bool__(self):
+        return self.error_msg is None
+
+    def __str__(self):
+        return self.error_msg
+
+    def __repr__(self):
+        return self.error_msg
+
+
 class CHeaderGenerator:
     """This class provides a Export C Header Generator for c/cpp AOT support."""
 
@@ -120,11 +150,11 @@ class CHeaderGenerator:
 
         return check_cuda
 
-    def _generate_kernel_metadata(
+    def _generate_kernel_module(
         self, symbol_prefix: str, kernel_info: Dict[str, List], dsl_name: str
     ):
         """
-        Generate the kernel metadata for the compiled function.
+        Generate the kernel module for the compiled function.
         """
         function_declarations = []
         function_loads = []
@@ -132,31 +162,31 @@ class CHeaderGenerator:
         function_non_portable_cluster_size_allowed = []
         for sym, attrs in kernel_info.items():
             function_declaration = f"CUfunction {sym};"
-            function_load = f'{dsl_name}_CUDA_ERROR_CHECK(cuModuleGetFunction(&metadata->{sym}, metadata->module, "{sym}"));'
+            function_load = f'{dsl_name}_CUDA_ERROR_CHECK(cuModuleGetFunction(&module->{sym}, module->module, "{sym}"));'
             function_declarations.append(function_declaration)
             function_loads.append(function_load)
             for attr in attrs:
                 function_set_attributes.append(
-                    f"{dsl_name}_CUDA_ERROR_CHECK(cuFuncSetAttribute(metadata->{sym}, {attr.name}, {attr.value}));"
+                    f"{dsl_name}_CUDA_ERROR_CHECK(cuFuncSetAttribute(module->{sym}, {attr.name}, {attr.value}));"
                 )
             function_non_portable_cluster_size_allowed.append(
-                f"{dsl_name}_CUDA_ERROR_CHECK(cuFuncSetAttribute(metadata->{sym}, CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED, 1));"
+                f"{dsl_name}_CUDA_ERROR_CHECK(cuFuncSetAttribute(module->{sym}, CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED, 1));"
             )
         function_declarations_str = "\n    ".join(function_declarations)
-        kernel_metadata_struct = f"""
+        kernel_module_struct = f"""
 typedef struct {{
     CUmodule module;
     {function_declarations_str}
-}} {symbol_prefix}_Kernel_Metadata_t;
+}} {symbol_prefix}_Kernel_Module_t;
 """
         function_loads_str = "\n    ".join(function_loads)
         function_set_attributes_str = "\n    ".join(function_set_attributes)
         function_non_portable_cluster_size_allowed_str = "\n        ".join(
             function_non_portable_cluster_size_allowed
         )
-        kernel_metadata_load = f"""
-static inline void {symbol_prefix}_Kernel_Metadata_Load({symbol_prefix}_Kernel_Metadata_t *metadata) {{
-    {dsl_name}_CUDA_ERROR_CHECK(cuModuleLoadData(&metadata->module, {symbol_prefix}_{cubin_suffix}));
+        kernel_module_load = f"""
+static inline void {symbol_prefix}_Kernel_Module_Load({symbol_prefix}_Kernel_Module_t *module) {{
+    {dsl_name}_CUDA_ERROR_CHECK(cuModuleLoadData(&module->module, {symbol_prefix}_{cubin_suffix}));
     {function_loads_str}
     {function_set_attributes_str}
     int driver_version;
@@ -166,13 +196,13 @@ static inline void {symbol_prefix}_Kernel_Metadata_Load({symbol_prefix}_Kernel_M
     }}
 }}
 """
-        kernel_metadata_unload = f"""
-static inline void {symbol_prefix}_Kernel_Metadata_Unload({symbol_prefix}_Kernel_Metadata_t *metadata) {{
-    {dsl_name}_CUDA_ERROR_CHECK(cuModuleUnload(metadata->module));
+        kernel_module_unload = f"""
+static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_Module_t *module) {{
+    {dsl_name}_CUDA_ERROR_CHECK(cuModuleUnload(module->module));
 }}
 """
 
-        return kernel_metadata_struct + kernel_metadata_load + kernel_metadata_unload
+        return kernel_module_struct + kernel_module_load + kernel_module_unload
 
     def _generate_arguments(
         self,
@@ -213,29 +243,42 @@ static inline void {symbol_prefix}_Kernel_Metadata_Unload({symbol_prefix}_Kernel
 
     def _generate_wrapper_function(
         self,
+        dsl_name: str,
         symbol_prefix: str,
         args_spec: ExecutionArgs,
         function_name: str,
         kernel_info: Dict[str, List],
-        dynamic_args: list,
-        dynamic_kwargs: dict,
+        c_header_arguments: CHeaderArguments,
     ):
         """
         Generate the wrapper function for the compiled function which is provided to users as the entry point.
         It uses the `symbol_prefix` as the function name for identification. The host/device symbols are hidden under the bytecode.
         """
         # 1. Get the name of the function wrapper
-        wrapper_function_name = f"{symbol_prefix}_wrapper"
+        wrapper_function_name = f"{dsl_name.lower()}_{symbol_prefix}_wrapper"
         capi_function_name = f"_mlir_{symbol_prefix}__mlir_ciface_{function_name}"
         # 2. Generate the signature of the wrapper function
-        arguments, packed_args, declarations = self._generate_arguments(
-            symbol_prefix, args_spec, dynamic_args, dynamic_kwargs
-        )
+        if c_header_arguments.error_msg is not None:
+            raise DSLRuntimeError(
+                f"Error generating c header arguments: {c_header_arguments.error_msg}"
+            )
+        arguments = [
+            arg.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for arg in c_header_arguments.arguments
+        ]
+        packed_args = [
+            arg.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for arg in c_header_arguments.packed_args
+        ]
+        declarations = [
+            declaration.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
+            for declaration in c_header_arguments.declarations
+        ]
         declarations = "\n".join(declarations)
 
         # 3. Generate the wrapper function
         kernel_symbols = tuple(kernel_info.keys())
-        kernel_symbols_str = ", ".join([f"&metadata->{sym}" for sym in kernel_symbols])
+        kernel_symbols_str = ", ".join([f"&module->{sym}" for sym in kernel_symbols])
         function = (
             declarations
             + f"""
@@ -244,7 +287,7 @@ extern "C"
 #endif
 void {capi_function_name}(void **args, int32_t num_args);
 
-static inline void {wrapper_function_name}({symbol_prefix}_Kernel_Metadata_t *metadata, {", ".join(arguments)}) {{
+static inline void {wrapper_function_name}({symbol_prefix}_Kernel_Module_t *module, {", ".join(arguments)}) {{
     void *args[{len(packed_args) + len(kernel_symbols)}] = {{
         {", ".join(packed_args)}, {kernel_symbols_str}
     }};
@@ -258,7 +301,6 @@ static inline void {wrapper_function_name}({symbol_prefix}_Kernel_Metadata_t *me
         """
         Generate the binary of the compiled function.
         """
-
         varname = symbol_prefix + "_" + cubin_suffix
         binary = f"""
 extern const unsigned char {varname}[];
@@ -272,29 +314,28 @@ extern const unsigned char {varname}[];
         args_spec: ExecutionArgs,
         function_name: str,
         kernel_info: Dict[str, List],
-        dynamic_args: list,
-        dynamic_kwargs: dict,
+        c_header_arguments: CHeaderArguments,
         dsl_name: str,
     ) -> str:
         if len(kernel_info) > 0:
             check_cuda = self._generate_check_cuda(dsl_name)
-            kernel_metadata = self._generate_kernel_metadata(
+            kernel_module = self._generate_kernel_module(
                 symbol_prefix, kernel_info, dsl_name
             )
             binary = self._generate_binary_declaration(symbol_prefix)
         else:
             check_cuda = ""
-            kernel_metadata = ""
+            kernel_module = ""
             binary = ""
         function = self._generate_wrapper_function(
+            dsl_name,
             symbol_prefix,
             args_spec,
             function_name,
             kernel_info,
-            dynamic_args,
-            dynamic_kwargs,
+            c_header_arguments,
         )
-        header = self.includes + check_cuda + binary + kernel_metadata + function
+        header = self.includes + check_cuda + binary + kernel_module + function
         return header
 
 
@@ -333,21 +374,21 @@ extern const unsigned char {varname}[];
 # typedef struct {
 #     CUmodule module;
 #     CUfunction kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0;
-# } gemm_Kernel_Metadata_t;
+# } gemm_Kernel_Module_t;
 
-# static inline void gemm_Kernel_Metadata_Load(gemm_Kernel_Metadata_t *metadata) {
-#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleLoadData(&metadata->module, gemm_cubin));
-#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleGetFunction(&metadata->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0, metadata->module, "kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0"));
+# static inline void gemm_Kernel_Module_Load(gemm_Kernel_Module_t *module) {
+#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleLoadData(&module->module, gemm_cubin));
+#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleGetFunction(&module->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0, module->module, "kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0"));
 
 #     int driver_version;
 #     CUTE_DSL_CUDA_ERROR_CHECK(cuDriverGetVersion(&driver_version));
 #     if (driver_version >= 11080) {
-#         CUTE_DSL_CUDA_ERROR_CHECK(cuFuncSetAttribute(metadata->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0, CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED, 1));
+#         CUTE_DSL_CUDA_ERROR_CHECK(cuFuncSetAttribute(module->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0, CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED, 1));
 #     }
 # }
 
-# static inline void gemm_Kernel_Metadata_Unload(gemm_Kernel_Metadata_t *metadata) {
-#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleUnload(metadata->module));
+# static inline void gemm_Kernel_Module_Unload(gemm_Kernel_Module_t *module) {
+#     CUTE_DSL_CUDA_ERROR_CHECK(cuModuleUnload(module->module));
 # }
 
 # typedef struct {
@@ -375,9 +416,9 @@ extern const unsigned char {varname}[];
 # #endif
 # void _mlir_gemm__mlir_ciface_cutlass_host_func_Tensorgenericoi641_Tensorgenericoi641_Tensorgenericoi641(void **args, int32_t num_args);
 
-# static inline void gemm_wrapper(gemm_Kernel_Metadata_t *metadata, gemm_Tensor_a_t *a, gemm_Tensor_b_t *b, gemm_Tensor_c_t *c) {
+# static inline void cute_dsl_gemm_wrapper(gemm_Kernel_Module_t *module, gemm_Tensor_a_t *a, gemm_Tensor_b_t *b, gemm_Tensor_c_t *c) {
 #     void *args[4] = {
-#         a, b, c, &metadata->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0
+#         a, b, c, &module->kernel_cutlass_dummy_gemm_tensorptrf32generico1_tensorptrf32generico1_tensorptrf32generico1_0
 #     };
 #     _mlir_gemm__mlir_ciface_cutlass_host_func_Tensorgenericoi641_Tensorgenericoi641_Tensorgenericoi641(args, 4);
 # }

@@ -36,9 +36,9 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/cute/tvm_ffi/jit_and_use_in_torch.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/jit_and_use_in_torch.py
 """
-import torch
+
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
 
@@ -56,6 +56,8 @@ def add_one(a: cute.Tensor, b: cute.Tensor):
 
 
 def main():
+    import torch
+
     # compile the kernel with "--enable-tvm-ffi" option
     a_torch = torch.arange(10, dtype=torch.float32, device="cuda")
     b_torch = torch.zeros(10, dtype=torch.float32, device="cuda")

@@ -13,7 +13,6 @@ import enum
 from dataclasses import dataclass
 from typing import Type, Any
 
-from cutlass import cute
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL, T
 
@@ -23,9 +22,9 @@ from cutlass._mlir import ir
 
 from ..common import OpError
 from ...core import _pack_shape, rank, depth
-from ...tensor import _Tensor
 from ...typing import (
     Shape,
+    Tensor,
     Float16,
     BFloat16,
     Float32,
@@ -38,7 +37,7 @@ from ...typing import (
     Numeric,
     AddressSpace,
 )
-from ...atom import MmaOp, Trait
+from ...atom import MmaOp, Trait, make_atom
 
 
 ####################################################################################################
@@ -181,7 +180,7 @@ class MmaOp(WarpGroupMmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: _Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -193,7 +192,7 @@ class MmaOp(WarpGroupMmaOp):
             )
         return True
 
-    def _verify_fragment_B(self, input: _Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -305,12 +304,7 @@ class MmaF16BF16Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF16BF16Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 
@@ -391,12 +385,7 @@ class MmaF8Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF8Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 
@@ -486,12 +475,7 @@ class MmaI8Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaI8Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 

@@ -29,6 +29,7 @@ from typing import (
 )
 import functools
 import pkgutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import is_dataclass, fields
 from math import ceil
 from itertools import chain
@@ -36,6 +37,8 @@ from pathlib import Path
 from collections.abc import Sequence
 import builtins
 import ctypes
+import hashlib
+import os
 
 from ..base_dsl import *
 from ..base_dsl import compiler
@@ -93,16 +96,7 @@ from .cutlass_ast_decorators import (
     _while_execute_dynamic,
 )
 
-from .tree_utils import (
-    is_constexpr_field,
-    tree_flatten,
-    tree_unflatten,
-    PyTreeDef,
-    is_frozen_dataclass,
-    DSLTreeFlattenError,
-)
 from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
-
 
 # =============================================================================
 # Cutlass DSL Base Abstract Class
@@ -283,6 +277,18 @@ class CutlassBaseDSL(BaseDSL):
         log().info(f"GPU module: {self.gpu_module}")
         return ir.InsertionPoint(self.gpu_module.bodyRegion.blocks[0])
 
+    @staticmethod
+    def generate_func_ret_op(loc=None, ip=None):
+        raise NotImplementedError(
+            "generate_func_ret_op() must be implemented by subclasses."
+        )
+
+    @staticmethod
+    def generate_func_op(arg_types, arg_attrs, kernel_name, loc=None):
+        raise NotImplementedError(
+            "generate_func_op() must be implemented by subclasses."
+        )
+
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
         assert isinstance(config, BaseDSL.LaunchConfig), (
             f"Expect LaunchConfig for @kernel, but got {type(config)}"
@@ -326,43 +332,105 @@ class CutlassBaseDSL(BaseDSL):
         Get the version of cutlass dsl, used for computing the hash key of the cache.
         Including source python files and the shared library.
         """
+
+        def _hash_chunk(
+            key: str, path: str, idx: int, start: int, size: int
+        ) -> tuple[str, int, bytes]:
+            """Hash one chunk of a file with SHA-256."""
+            h = hashlib.sha256()
+            if size > 0:
+                try:
+                    with open(path, "rb") as f:
+                        f.seek(start)
+                        h.update(f.read(size))
+                except Exception as e:
+                    raise DSLRuntimeError(
+                        f"Failed to read module file {key}."
+                        "The file may not exist or may not be readable."
+                        "Please re-install the package."
+                    ) from e
+            return key, idx, h.digest()
+
+        def _iter_jobs():
+            """Chunk jobs generator to hash files in parallel"""
+            for key, path, size in files:
+                # empty files still get a deterministic hash from SHA-256 of zero bytes
+                for i in range(max(1, -(-size // chunk_size))):  # ceil division
+                    start = i * chunk_size
+                    computed_size = min(chunk_size, max(size - start, 0))
+                    yield (key, path, i, start, computed_size)
+
         dsl_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        # get the version hash of the cutlass shared library
-        version_hash = hashlib.sha256()
-        # update the version hash of the source python files
-        for lib in pkgutil.walk_packages([dsl_path], prefix="cutlass."):
-            try:
-                with open(lib.module_finder.find_spec(lib.name).origin, "rb") as f:
-                    version_hash.update(f.read())
-            except Exception:
-                raise DSLRuntimeError(
-                    f"Failed to read module file {lib.name}. The file may not exist or may not be readable."
-                    "Please re-install the package."
-                )
+        files = []
+
+        # Keep large dso file first in the list to reduce tail effect
+        giant_dso_name = str(
+            next(
+                (Path(dsl_path) / "_mlir" / "_mlir_libs").glob("_cutlass_ir.cpython*")
+            ).name
+        )
+        so_path = os.path.join(dsl_path, "_mlir", "_mlir_libs", giant_dso_name)
         try:
             # update the version hash of the cutlass shared library
-            giant_dso_name = str(
-                next(
-                    (Path(dsl_path) / "_mlir" / "_mlir_libs").glob(
-                        "_cutlass_ir.cpython*"
-                    )
-                ).name
-            )
-            with open(
-                os.path.join(dsl_path, f"_mlir/_mlir_libs/{giant_dso_name}"),
-                "rb",
-            ) as f:
-                while True:
-                    chunk = f.read(1024**2)
-                    if not chunk:
-                        break
-                    version_hash.update(chunk)
-        except Exception:
+            so_size = os.path.getsize(so_path)
+        except Exception as e:
             raise DSLRuntimeError(
                 f"Failed to read the shared library file {giant_dso_name}."
                 "The file may not exist or may not be readable."
                 "Please re-install the package."
+            ) from e
+        files.append((giant_dso_name, so_path, so_size))
+
+        def handle_import_error(exc):
+            """Handle errors during package walking, ignoring ImportError and NotImplementedError."""
+            if isinstance(exc, (ImportError, NotImplementedError)):
+                log().info(f"Skipping module due to {type(exc).__name__}: {exc}")
+            else:
+                log().warning(f"Unexpected error during package walk: {exc}")
+
+        for lib in pkgutil.walk_packages(
+            [dsl_path], prefix="cutlass.", onerror=handle_import_error
+        ):
+            spec = lib.module_finder.find_spec(lib.name)
+            if not spec or not spec.origin:
+                continue
+            path = spec.origin
+            try:
+                size = os.path.getsize(path)
+            except Exception as e:
+                raise DSLRuntimeError(
+                    f"Failed to read module file {lib.name}. The file may not exist or may not be readable."
+                    "Please re-install the package."
+                ) from e
+            files.append((lib.name, path, size))
+
+        # Submit chunks to a job queue
+        chunk_size = 1 << 24  # 16 MB (tuned)
+        per_file_chunks = {}
+        # 16 threads max to avoid context switching overhead
+        # To avoid oversubscription, we use half of cpu_count()
+        max_workers = min(16, (os.cpu_count() or 8) // 2)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [ex.submit(_hash_chunk, *job) for job in _iter_jobs()]
+            for fut in as_completed(futures):
+                key, idx, digest = fut.result()
+                per_file_chunks.setdefault(key, []).append((idx, digest))
+
+        # update the version hash of the cutlass shared library using tree-hash
+        version_hash = hashlib.sha256()
+        # Since files list is in arbitrary order, we sort by key to get deterministic order
+        for key, path, size in sorted(files, key=lambda t: t[0]):
+            chunks = per_file_chunks.get(key)
+            file_hash = hashlib.sha256(
+                b"".join(
+                    digest
+                    for _, digest in sorted(
+                        chunks
+                    )  # Similarily, sort chunks by index to get deterministic order
+                )
             )
+            file_hash.update(key.encode("utf-8"))
+            version_hash.update(file_hash.digest())
 
         return version_hash
 
@@ -399,12 +467,14 @@ class CutlassBaseDSL(BaseDSL):
         pipeline,
         args_spec,
         no_cache,
+        no_jit_engine,
         *,
         full_args=None,
         full_kwargs=None,
         dynamic_args=None,
         dynamic_kwargs=None,
         original_function_name=None,
+        funcBody=None,
     ):
         """
         Compile the module and cache the result.
@@ -415,6 +485,7 @@ class CutlassBaseDSL(BaseDSL):
         :param pipeline: The pipeline to use for compilation.
         :param args_spec: The args spec to use for compilation.
         :param no_cache: Whether to cache the result.
+        :param no_jit_engine: Whether to create JIT execution engine.
         :param full_args: The full arguments to use for compilation.
         :param full_kwargs: The full keyword arguments to use for compilation.
         :param dynamic_args: The dynamic arguments to use for compilation.
@@ -433,8 +504,10 @@ class CutlassBaseDSL(BaseDSL):
             from cutlass.base_dsl.tvm_ffi_builder import attach_ffi_func
 
             assert self._tvm_ffi_args_spec_converter is not None
-            tvm_ffi_spec_params, kwargs_wrapper_spec = self._tvm_ffi_args_spec_converter(
-                function_name, args_spec, full_args, full_kwargs
+            tvm_ffi_spec_params, kwargs_wrapper_spec = (
+                self._tvm_ffi_args_spec_converter(
+                    function_name, args_spec, full_args, full_kwargs
+                )
             )
             tvm_ffi_provider = TVMFFICuteCallProvider(function_name)
 
@@ -454,8 +527,7 @@ class CutlassBaseDSL(BaseDSL):
             def _make_compiled_func(*args, **kwargs):
                 if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
                     return TVMFFIJitCompiledFunctionWithKwargs(
-                        *args, **kwargs,
-                        kwargs_wrapper_spec=kwargs_wrapper_spec
+                        *args, **kwargs, kwargs_wrapper_spec=kwargs_wrapper_spec
                     )
                 else:
                     return TVMFFIJitCompiledFunction(*args, **kwargs)
@@ -472,11 +544,13 @@ class CutlassBaseDSL(BaseDSL):
                     pipeline,
                     args_spec,
                     no_cache,
+                    no_jit_engine,
                     _make_compiled_func,
                     full_args=full_args,
                     full_kwargs=full_kwargs,
                     dynamic_args=dynamic_args,
                     dynamic_kwargs=dynamic_kwargs,
+                    funcBody=funcBody,
                 )
 
         return super().compile_and_cache(
@@ -486,12 +560,14 @@ class CutlassBaseDSL(BaseDSL):
             pipeline,
             args_spec,
             no_cache,
+            no_jit_engine,
             CudaDialectJitCompiledFunction,
             full_args=full_args,
             full_kwargs=full_kwargs,
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
             original_function_name=original_function_name,
+            funcBody=funcBody,
         )
 
     @staticmethod
@@ -539,14 +615,21 @@ class CutlassBaseDSL(BaseDSL):
         cluster_size_x=None,
         cluster_size_y=None,
         cluster_size_z=None,
+        preferred_cluster_size_x=None,
+        preferred_cluster_size_y=None,
+        preferred_cluster_size_z=None,
         dynamic_shared_memory_size=None,
         use_pdl=False,
+        cooperative=False,
         loc=None,
         ip=None,
     ):
+        # set to 3 for PDL, cluster size, and cooperative
+        max_num_attributes = 3
 
-        # Max number of attributes in the launch config is set to 2 for PDL and cluster size
-        max_num_attributes = 2
+        if preferred_cluster_size_x is not None:
+            max_num_attributes += 1
+
         launch_config_type = cuda_dialect.LaunchConfigType.get(max_num_attributes)
 
         if len(stream) == 0:
@@ -571,7 +654,7 @@ class CutlassBaseDSL(BaseDSL):
             # Launch config type
             launch_config_type,
             # Max num of attributes the launch config can hold
-            # set to 2 for PDL and cluster size
+            # set to 3 for PDL, cluster size, and cooperative
             ir.IntegerAttr.get(ir.IntegerType.get_signless(32), max_num_attributes),
             block_size_x,
             block_size_y,
@@ -585,10 +668,9 @@ class CutlassBaseDSL(BaseDSL):
             ip=ip,
         )
 
-        if use_pdl:
-            cuda_dialect.launch_cfg_programmatic_stream_serialization_allowed(
-                cfg, Int32(use_pdl).ir_value(), loc=loc, ip=ip
-            )
+        cuda_dialect.launch_cfg_programmatic_stream_serialization_allowed(
+            cfg, Int32(use_pdl).ir_value(), loc=loc, ip=ip
+        )
 
         if cluster_size_x is not None:
             if cluster_size_y is None:
@@ -602,11 +684,27 @@ class CutlassBaseDSL(BaseDSL):
                 cfg, cluster_size_x, cluster_size_y, cluster_size_z, loc=loc, ip=ip
             )
 
+        if preferred_cluster_size_x is not None:
+            preferred_cluster_size_y = preferred_cluster_size_y or 1
+            preferred_cluster_size_z = preferred_cluster_size_z or 1
+            preferred_x = Int32(preferred_cluster_size_x).ir_value(loc=loc, ip=ip)
+            preferred_y = Int32(preferred_cluster_size_y).ir_value(loc=loc, ip=ip)
+            preferred_z = Int32(preferred_cluster_size_z).ir_value(loc=loc, ip=ip)
+            cuda_dialect.launch_cfg_preferred_cluster_dim(
+                cfg, preferred_x, preferred_y, preferred_z, loc=loc, ip=ip
+            )
+
+        cuda_dialect.launch_cfg_cooperative(
+            cfg, Int32(cooperative).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+        )
+
         op = cuda_dialect.launch_ex(
             cuda_dialect.ResultType.get(),
             kernel,
             cfg,
             kernel_operands,
+            # This is true for any DSL generated kernel
+            assume_kernel_attr=ir.Attribute.parse("#cuda.assume_kernel_attr<true>"),
             loc=loc,
             ip=ip,
         )
@@ -662,7 +760,7 @@ class CutlassBaseDSL(BaseDSL):
             loc=loc,
             ip=ip,
         )
-        op.attributes["use_pdl"] = ir.BoolAttr.get(use_pdl)
+        op.attributes["use_pdl"] = use_pdl.ir_value()
         return _get_op_result_or_op_results(op)
 
     def _kernel_helper(self, funcBody, *args, **kwargs):
@@ -674,27 +772,14 @@ class CutlassBaseDSL(BaseDSL):
 
             def generate_func_op(self, arg_types, arg_attrs, kernel_name, loc=None):
                 super().generate_func_op(arg_types, arg_attrs, kernel_name)
-                self.func_op = cuda_dialect.KernelOp(
-                    kernel_name, ir.FunctionType.get(arg_types, []), loc=loc
+                self.func_op = self.dsl.generate_func_op(
+                    arg_types, arg_attrs, kernel_name, loc
                 )
                 self.arg_types = arg_types
-                self.func_op.attributes["cu_attrs"] = ir.DictAttr.get(
-                    {
-                        str(
-                            cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
-                        ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
-                        str(
-                            cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
-                        ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
-                    }
-                )
-                if arg_attrs is not None:
-                    log().debug(arg_attrs)
-                    self.func_op.arg_attrs = arg_attrs
                 return self.func_op
 
             def generate_func_ret_op(self, loc=None, ip=None):
-                return cuda_dialect.ReturnOp([], loc=loc, ip=ip)
+                self.dsl.generate_func_ret_op(loc, ip)
 
             def get_func_body_start(self):
                 assert self.func_op is not None, "Invalid func_op is not expected!"
@@ -736,31 +821,72 @@ class CutlassBaseDSL(BaseDSL):
                 async_deps = cfg.async_deps
                 if not isinstance(cfg.async_deps, (list, tuple)):
                     async_deps = [cfg.async_deps]
+
+                launch_kwargs = {}
+
+                if cfg.has_fallback_cluster:
+                    launch_kwargs.update(
+                        dict(
+                            zip(
+                                ("cluster_size_x", "cluster_size_y", "cluster_size_z"),
+                                tuple(cfg.fallback_cluster),
+                            )
+                        )
+                    )
+                    launch_kwargs.update(
+                        dict(
+                            zip(
+                                (
+                                    "preferred_cluster_size_x",
+                                    "preferred_cluster_size_y",
+                                    "preferred_cluster_size_z",
+                                ),
+                                tuple(cfg.cluster),
+                            )
+                        )
+                    )
+                elif cfg.has_cluster:
+                    launch_kwargs.update(
+                        dict(
+                            zip(
+                                ("cluster_size_x", "cluster_size_y", "cluster_size_z"),
+                                tuple(cfg.cluster),
+                            )
+                        )
+                    )
+
                 CutlassBaseDSL.cuda_launch_func(
                     async_deps,
                     kernelSym,
                     *cfg.grid,
                     *cfg.block,
                     kernelOperands,
-                    **dict(
-                        zip(
-                            ("cluster_size_x", "cluster_size_y", "cluster_size_z"),
-                            tuple(cfg.cluster),
-                        )
-                    ),
+                    **launch_kwargs,
                     dynamic_shared_memory_size=cfg.smem,
                     use_pdl=cfg.use_pdl,
+                    cooperative=cfg.cooperative,
                     loc=loc,
                 )
                 return None
 
-        return KernelLauncher(
-            self,
-            lambda: _CutlassIrKernelGenHelper(self),
-            funcBody,
-            *args,
-            **kwargs,
-        )
+        custom_name = kwargs.pop("_name_prefix", None)
+        if custom_name:
+            return KernelLauncher(
+                self,
+                lambda: _CutlassIrKernelGenHelper(self),
+                funcBody,
+                *args,
+                **kwargs,
+                _name_prefix=custom_name,
+            )
+        else:
+            return KernelLauncher(
+                self,
+                lambda: _CutlassIrKernelGenHelper(self),
+                funcBody,
+                *args,
+                **kwargs,
+            )
 
     def _preprocess_launch_config_args(self, args, kwargs):
         """Helper to preprocess args and kwargs for LaunchConfig"""
@@ -809,7 +935,10 @@ class CutlassBaseDSL(BaseDSL):
                 # skip generic types such as List[int], Tuple[int, int], etc. for performance consideration?
                 pass
 
-            elif getattr(arg_annotation, "__name__", None) == "CUstream" and arg.__class__.__name__ == "_FakeStream":
+            elif (
+                getattr(arg_annotation, "__name__", None) == "CUstream"
+                and arg.__class__.__name__ == "_FakeStream"
+            ):
                 # allow FakeStream to be passed as CUDA stream
                 pass
 
@@ -875,14 +1004,14 @@ class CutlassBaseDSL(BaseDSL):
             ):
                 # Try tree_flatten
                 try:
-                    dyn_vals, _ = tree_flatten(arg)
+                    dyn_vals, attr_vals, _ = tree_flatten(arg)
                 except DSLTreeFlattenError:
                     # If fails, just return the original arg
                     return jit_exec_arg, jit_arg_type, jit_arg_attr
 
                 if dyn_vals:
                     jit_arg_type.extend([v.type for v in dyn_vals])
-                    jit_arg_attr.extend([default_attr] * len(dyn_vals))
+                    jit_arg_attr.extend(attr_vals)
                     jit_exec_arg.extend(
                         _get_c_pointers_cutlass(arg) if is_host else dyn_vals
                     )
@@ -910,7 +1039,7 @@ class CutlassBaseDSL(BaseDSL):
             ):
                 # Try tree_unflatten
                 try:
-                    dyn_vals, tree_def = tree_flatten(arg)
+                    dyn_vals, _, tree_def = tree_flatten(arg)
                     block_args = fop_args[iv_block_args : iv_block_args + len(dyn_vals)]
                     ir_arg.append(tree_unflatten(tree_def, block_args))
                     iv_block_args += len(dyn_vals)
@@ -936,6 +1065,30 @@ class CuTeDSL(CutlassBaseDSL):
         pass_sm_arch_name = "cubin-chip"
 
         super().__init__(name, compiler_provider, pass_sm_arch_name, preprocess=True)
+
+    @staticmethod
+    def generate_func_op(arg_types, arg_attrs, kernel_name, loc=None):
+        func_op = cuda_dialect.KernelOp(
+            kernel_name, ir.FunctionType.get(arg_types, []), loc=loc
+        )
+        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
+            {
+                str(
+                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
+                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
+                str(
+                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
+                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
+            }
+        )
+        if arg_attrs is not None:
+            log().debug(arg_attrs)
+            func_op.arg_attrs = arg_attrs
+        return func_op
+
+    @staticmethod
+    def generate_func_ret_op(loc=None, ip=None):
+        return cuda_dialect.ReturnOp([], loc=loc, ip=ip)
 
 
 # =============================================================================
@@ -974,6 +1127,8 @@ class KernelLauncher:
         self.func_args = func_args
         self.func_kwargs = func_kwargs
 
+        self._name_prefix = func_kwargs.pop("_name_prefix", None)
+
         self._check_func_args(funcBody, *func_args, **func_kwargs)
 
     def _check_func_args(self, funcBody, *func_args, **func_kwargs):
@@ -1001,6 +1156,9 @@ class KernelLauncher:
         self.dsl._preprocess_launch_config_args(args, kwargs)
         config = self.dsl.LaunchConfig(*args, **kwargs)
         kernel_attrs = _build_kernel_attrs(config)
+
+        if hasattr(self, "_name_prefix") and self._name_prefix:
+            self.dsl._name_prefix = self._name_prefix
 
         kernel_generator = self.dsl.kernel_launcher(
             requiredArgs=["config"],
@@ -1119,7 +1277,7 @@ def unpack_to_irvalue(
         log().debug("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
 
     try:
-        unpacked_values, treedef = tree_flatten(
+        unpacked_values, _, treedef = tree_flatten(
             remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
         )
     except DSLTreeFlattenError as e:
@@ -1181,6 +1339,7 @@ def to_index(value):
         res = const(int(value), ty=T.index())
 
     return res
+
 
 def _validate_iter_args_structure(iter_args, ir_values):
     """
@@ -2087,3 +2246,15 @@ executor.set_functions(
     all_executor=all_,
     builtin_redirector=_builtin_redirector,
 )
+
+
+class DSLCudaVerNotImplemented(DSLNotImplemented):
+    """
+    Exception raised when a feature is not supported for DSL with CUDA version less than the required version.
+    """
+
+    def __init__(self, feature: str, required_version: str):
+        super().__init__(
+            message=f"{feature} is not supported for DSL with CUDA version less than {required_version}",
+            suggestion=f"Consider upgrading to CUDA version {required_version}+ based DSL",
+        )

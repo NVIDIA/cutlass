@@ -27,14 +27,16 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import cutlass.cute as cute
-import torch
+
 
 # now load it back
 def main():
+    import torch
+
     a_torch = torch.arange(10, dtype=torch.float32, device="cuda")
     b_torch = torch.zeros(10, dtype=torch.float32, device="cuda")
     lib_path = "./build/add_one.so"
-    aot_mod = cute.runtime.load_module(lib_path)
+    aot_mod = cute.runtime.load_module(lib_path, enable_tvm_ffi=True)
     aot_mod.add_one(a_torch, b_torch)
     print("result of b after aot_mod.add_one(a, b)")
     print(b_torch)

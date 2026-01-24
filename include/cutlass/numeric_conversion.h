@@ -3680,28 +3680,535 @@ struct NumericArrayConverter<cutlass::detail::float_e3m2_unpack8bits_t, cutlass:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
+// Helpers for PTX conversion with inline assembly (used in the following partial specializations)
+// Specifically, we use lookup tables for converting e2m1 to bf16, half and float_e4m3 and float_e5m2
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+#if defined(CUDA_PTX_FP4FP6_CVT_ENABLED) && __CUDA_ARCH__ >= 1100
+  #define USE_PTX_CONVERT 1
+#endif
+
+
+
+namespace detail {
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// E2M1 Conversion Helper Functions to BF16
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+  /****************************************************************************
+    E2M1 to BF16 Conversion Table:
+    +-----------------+-------------------------------+---------------+
+    |   E2M1 Pattern  |         BF16 Pattern          | Numeric Value |
+    |    (s E E M)    |  (s EEEEEEEE MMMMMMM)         |               |
+    +-----------------+-------------------------------+---------------+
+    |    0 00 0       |  0 00000000 0000000          |      0.0      |
+    |    0 00 1       |  0 01111110 0000000          |      0.5      |
+    |    0 01 0       |  0 01111111 0000000          |      1.0      |
+    |    0 01 1       |  0 01111111 1000000          |      1.5      |
+    |    0 10 0       |  0 10000000 0000000          |      2.0      |
+    |    0 10 1       |  0 10000000 1000000          |      3.0      |
+    |    0 11 0       |  0 10000001 0000000          |      4.0      |
+    |    0 11 1       |  0 10000001 1000000          |      6.0      |
+    +-----------------+-------------------------------+---------------+
+  
+    bits 2-9 go into a LUT, the top 2 bits are inserted from E2M1 value (s E E M)
+  
+    +-----------------+-------------------+-----------+
+    |  E2M1 Pattern   | LUT Value (8 bits)| Hex Value |
+    |   (s E E M)     |                   |           |
+    +-----------------+-------------------+-----------+
+    |    0 00 0       |    00000000       |   0x00    |
+    |    0 00 1       |    11111100       |   0xFC    |
+    |    0 01 0       |    11111110       |   0xFE    |
+    |    0 01 1       |    11111111       |   0xFF    |
+    |    0 10 0       |    00000000       |   0x00    |
+    |    0 10 1       |    00000001       |   0x01    |
+    |    0 11 0       |    00000010       |   0x02    |
+    |    0 11 1       |    00000011       |   0x03    |
+    +-----------------+-------------------+-----------+
+  
+    constexpr unsigned long long E2M1_to_BF16_LUT = 0x03020100FFFEFC00ULL;
+    constexpr unsigned int E2M1_to_BF16_UPPER_LUT = 0xc0804000U;
+  
+  ****************************************************************************/
+  
+  // LUT _e2m1_to_bf16_x2: Direct E2M1->BF16 (converts 2 E2M1 to 2 BF16)
+  CUTLASS_DEVICE
+  void _e2m1_to_bf16_x2(unsigned int src, unsigned int& out0) {
+    constexpr unsigned long long lut = 0x03020100FFFEFC00ULL;
+    constexpr unsigned int upper_lut = 0xc0804000U;
+    constexpr unsigned int lut_lo = (unsigned int)lut;
+    constexpr unsigned int lut_hi = (unsigned int)(lut >> 32);
+
+    asm(
+      "{\n\t"
+      ".reg .u32 prmt_ctrl01, target01, upper01;\n\t"
+      ".reg .u32 target0_1_, upper_0_1;\n\t"
+      ".reg .u32 upper_prmt_ctrl_01;\n\t"
+      "and.b32 prmt_ctrl01, %1, 0x0077;\n\t"
+      "shr.b32 upper_prmt_ctrl_01, %1, 2;\n\t"
+      "and.b32 upper_prmt_ctrl_01, upper_prmt_ctrl_01, 0x0033;\n\t"
+      "prmt.b32 target01, %2, %3, prmt_ctrl01;\n\t"
+      "prmt.b32 target0_1_, target01, target01, 0x3120;\n\t" // both 2 and 3 are known to be zero
+      "prmt.b32 upper01, %4, %4, upper_prmt_ctrl_01;\n\t"
+      "prmt.b32 upper_0_1, upper01, upper01, 0x1302;\n\t" // both 2 and 3 are known to be zero
+      "shl.b32 target0_1_, target0_1_, 6;\n\t"
+      "or.b32 %0, target0_1_, upper_0_1;\n\t"
+      "}"
+      : "=r"(out0)
+      : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %1, %2, %3, %4
+    ); 
+  }
+ 
+  // LUT x4 _e2m1_to_bf16_x4: Direct E2M1->BF16 (converts 4 E2M1 to 4 BF16 in one call)
+  CUTLASS_DEVICE
+  void _e2m1_to_bf16_x4(unsigned int src, unsigned int& out0, unsigned int& out1, unsigned int shift_count=0) {
+    constexpr unsigned long long lut = 0x03020100FFFEFC00ULL; // bit2 - 9 for e2m1 -> bf16 conversion
+    constexpr unsigned int upper_lut = 0xc0804000U;           // bit0, bot1 for e2m1 -> bf16 conversion
+    constexpr unsigned int lut_lo = (unsigned int)lut;
+    constexpr unsigned int lut_hi = (unsigned int)(lut >> 32);
+
+
+    if (shift_count == 0) {
+      asm(
+        "{\n\t"
+        ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+        ".reg .u32 target0_1_, target2_3_, upper_0_1, upper_2_3;\n\t"
+        ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+        ""
+        "and.b32 prmt_ctrl0123, %2, 0x7777;\n\t"
+        "shr.b32 upper_prmt_ctrl_0123, %2, 2;\n\t"
+        "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+        "prmt.b32 target0123, %3, %4, prmt_ctrl0123;\n\t"
+        "prmt.b32 target0_1_, target0123, %4, 0x4140;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 target2_3_, target0123, %4, 0x4342;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper0123, %5, %5, upper_prmt_ctrl_0123;\n\t"
+        "prmt.b32 upper_0_1, upper0123, %4, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper_2_3, upper0123, %4, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "shl.b32 target0_1_, target0_1_, 6;\n\t"
+        "shl.b32 target2_3_, target2_3_, 6;\n\t"
+        "or.b32 %0, target0_1_, upper_0_1;\n\t"
+        "or.b32 %1, target2_3_, upper_2_3;\n\t"
+        "}"
+        : "=r"(out0), "=r"(out1)
+        : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %2, %3, %4, %5
+      );
+    } else if (shift_count == 16) {
+        // protect against future changes to the shift_count
+        assert(shift_count==16 && "shift_count should be 0 or 16");
+      asm(
+        "{\n\t"
+        ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+        ".reg .u32 target0_1_, target2_3_, upper_0_1, upper_2_3;\n\t"
+        ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+        ""
+        "shr.b32 prmt_ctrl0123, %2, 16;\n\t"
+        "shr.b32 upper_prmt_ctrl_0123, %2, 18;\n\t"
+        "and.b32 prmt_ctrl0123, prmt_ctrl0123, 0x7777;\n\t"
+        "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+        "prmt.b32 target0123, %3, %4, prmt_ctrl0123;\n\t"
+        "prmt.b32 target0_1_, target0123, %4, 0x4140;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 target2_3_, target0123, %4, 0x4342;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper0123, %5, %5, upper_prmt_ctrl_0123;\n\t"
+        "prmt.b32 upper_0_1, upper0123, %4, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper_2_3, upper0123, %4, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "shl.b32 target0_1_, target0_1_, 6;\n\t"
+        "shl.b32 target2_3_, target2_3_, 6;\n\t"
+        "or.b32 %0, target0_1_, upper_0_1;\n\t"
+        "or.b32 %1, target2_3_, upper_2_3;\n\t"
+        "}"
+        : "=r"(out0), "=r"(out1)
+        : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %2, %3, %4, %5
+      );      
+    } else {
+      assert((shift_count==0 || shift_count==16) && "shift_count should be 0 or 16");
+    }
+  }
+
+  // LUT x8 _e2m1_to_bf16_x8: Direct E2M1->BF16 (converts 8 E2M1 to 8 BF16 in one call)
+  CUTLASS_DEVICE
+  void _e2m1_to_bf16_x8(unsigned int src, unsigned int& out0, unsigned int& out1, unsigned int& out2, unsigned int& out3) {
+    _e2m1_to_bf16_x4(src, out0, out1, 0);
+    _e2m1_to_bf16_x4(src, out2, out3, 16);
+  }
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// E2M1 Conversion Helper Functions to FP16
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+  /****************************************************************************
+    E2M1 to FP16 Conversion Table:
+    +-----------------+-----------------------------------+---------------+---------------+
+    |  E2M1 Pattern   |           FP16 Pattern            | MS Byte (Hex) | Numeric Value |
+    |   (s E E M)     |     (s EEEEE MMMMMMMMMM)          |  (s EEEEE MM) |               |
+    +-----------------+-----------------------------------+---------------+---------------+
+    |    0 00 0       |  0 00000 0000000000               |     0x00      |      0.0      |
+    |    0 00 1       |  0 01110 0000000000               |     0x38      |      0.5      |
+    |    0 01 0       |  0 01111 0000000000               |     0x3C      |      1.0      |
+    |    0 01 1       |  0 01111 1000000000               |     0x3E      |      1.5      |
+    |    0 10 0       |  0 10000 0000000000               |     0x40      |      2.0      |
+    |    0 10 1       |  0 10000 1000000000               |     0x42      |      3.0      |
+    |    0 11 0       |  0 10001 0000000000               |     0x44      |      4.0      |
+    |    0 11 1       |  0 10001 1000000000               |     0x46      |      6.0      |
+    +-----------------+-----------------------------------+---------------+---------------+
+  
+    constexpr unsigned long long E2M1_to_FP16_LUT = 0x464442403E3C3800ULL;
+    constexpr unsigned int E2M1_to_FP16_UPPER_LUT = 0xc0804000U;
+  
+  ****************************************************************************/
+  
+  // LUT _e2m1_to_half_x2: Direct E2M1->FP16 (converts 2 E2M1 to 2 FP16)
+  CUTLASS_DEVICE
+  void _e2m1_to_half_x2(unsigned int src, unsigned int& out0) {
+    constexpr unsigned long long lut = 0x464442403E3C3800ULL;
+    constexpr unsigned int upper_lut = 0xc0804000U;
+    constexpr unsigned int lut_lo = (unsigned int)lut;
+    constexpr unsigned int lut_hi = (unsigned int)(lut >> 32);
+
+    asm(
+      "{\n\t"
+      ".reg .u32 prmt_ctrl01, target01, upper01;\n\t"
+      ".reg .u32 target0_1_, upper_0_1;\n\t"
+      ".reg .u32 upper_prmt_ctrl_01;\n\t"
+      "and.b32 prmt_ctrl01, %1, 0x0077;\n\t"
+      "shr.b32 upper_prmt_ctrl_01, %1, 2;\n\t"
+      "and.b32 upper_prmt_ctrl_01, upper_prmt_ctrl_01, 0x0033;\n\t"
+      "prmt.b32 target01, %2, %3, prmt_ctrl01;\n\t"
+      "prmt.b32 target0_1_, target01, target01, 0x1302;\n\t" // both 2 and 3 are known to be zero
+      "prmt.b32 upper01, %4, %4, upper_prmt_ctrl_01;\n\t"
+      "prmt.b32 upper_0_1, upper01, upper01, 0x1302;\n\t" // both 2 and 3 are known to be zero
+      "or.b32 %0, target0_1_, upper_0_1;\n\t"
+      "}"
+      : "=r"(out0)
+      : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %2, %3, %4, %5
+    );
+  }
+  
+  // LUT x4 _e2m1_to_half_x4: Direct E2M1->FP16 (converts 4 E2M1 to 4 FP16 in one call)
+  CUTLASS_DEVICE
+  void _e2m1_to_half_x4(unsigned int src, unsigned int& out0, unsigned int& out1, unsigned int shift_count=0) {
+    constexpr unsigned long long lut = 0x464442403E3C3800ULL; // bit0 - 7 for e2m1 -> half conversion
+    constexpr unsigned int upper_lut = 0xc0804000U;           // bit0, bit1 for e2m1 -> FP16 conversion
+    constexpr unsigned int lut_lo = (unsigned int)lut;
+    constexpr unsigned int lut_hi = (unsigned int)(lut >> 32);
+
+    assert((shift_count==0 || shift_count==16) && "shift_count should be 0 or 16");
+
+    if (shift_count == 0) {
+      asm(
+        "{\n\t"
+        ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+        ".reg .u32 target0_1_, target2_3_, upper_0_1, upper_2_3;\n\t"
+        ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+        ""
+        "and.b32 prmt_ctrl0123, %2, 0x7777;\n\t"
+        "shr.b32 upper_prmt_ctrl_0123, %2, 2;\n\t"
+        "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+        "prmt.b32 target0123, %3, %4, prmt_ctrl0123;\n\t"
+        "prmt.b32 target0_1_, target0123, %5, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 target2_3_, target0123, %5, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper0123, %5, %5, upper_prmt_ctrl_0123;\n\t"
+        "prmt.b32 upper_0_1, upper0123, %5, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper_2_3, upper0123, %5, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "or.b32 %0, target0_1_, upper_0_1;\n\t"
+        "or.b32 %1, target2_3_, upper_2_3;\n\t"
+        "}"
+        : "=r"(out0), "=r"(out1)
+        : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %2, %3, %4, %5
+      );
+    } else /* shift_count == 16 */ {
+      // protect against future changes to the shift_count
+      assert(shift_count==16 && "shift_count should be 0 or 16");
+      asm(
+        "{\n\t"
+        ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+        ".reg .u32 target0_1_, target2_3_, upper_0_1, upper_2_3;\n\t"
+        ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+        ""
+        "shr.b32 prmt_ctrl0123, %2, 16;\n\t"
+        "shr.b32 upper_prmt_ctrl_0123, %2, 18;\n\t"
+        "and.b32 prmt_ctrl0123, prmt_ctrl0123, 0x7777;\n\t"
+        "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+        "prmt.b32 target0123, %3, %4, prmt_ctrl0123;\n\t"
+        "prmt.b32 target0_1_, target0123, %5, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 target2_3_, target0123, %5, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper0123, %5, %5, upper_prmt_ctrl_0123;\n\t"
+        "prmt.b32 upper_0_1, upper0123, %5, 0x1404;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "prmt.b32 upper_2_3, upper0123, %5, 0x3424;\n\t" // 4 is the low order byte of upper_lut which is 0x00
+        "or.b32 %0, target0_1_, upper_0_1;\n\t"
+        "or.b32 %1, target2_3_, upper_2_3;\n\t"
+        "}"
+        : "=r"(out0), "=r"(out1)
+        : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut) // %2, %3, %4, %5
+      );
+    }
+  }
+
+  // LUT x8 _e2m1_to_half_x8: Direct E2M1->FP16 (converts 8 E2M1 to 8 FP16 in one call)
+  CUTLASS_DEVICE
+  void _e2m1_to_half_x8(unsigned int src, unsigned int& out0, unsigned int& out1, unsigned int& out2, unsigned int& out3) {    
+    _e2m1_to_half_x4(src, out0, out1, 0);
+    _e2m1_to_half_x4(src, out2, out3, 16);
+  }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// E2M1 -> FP8 (E4M3/E5M2) Shared Helper Functions
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+  /****************************************************************************
+    E2M1 to E4M3 (FP8) Conversion Table
+    constexpr unsigned long long E2M1_to_E4M3_LUT_0_7 = 0x4C4844403C383000ULL;
+  
+    +-----------------+--------------------------+---------------+-------------+
+    |  E2M1 Pattern   |       E4M3 Pattern       | Numeric Value | E4M3 Hex    |
+    |   (s E E M)     |    (s EEEE MMM)          |               |             |
+    +-----------------+--------------------------+---------------+-------------+
+    |    0 00 0       |     0 0000 000           |      0.0      |    0x00     |
+    |    0 00 1       |     0 0110 000           |      0.5      |    0x30     |
+    |    0 01 0       |     0 0111 000           |      1.0      |    0x38     |
+    |    0 01 1       |     0 0111 100           |      1.5      |    0x3C     |
+    |    0 10 0       |     0 1000 000           |      2.0      |    0x40     |
+    |    0 10 1       |     0 1000 100           |      3.0      |    0x44     |
+    |    0 11 0       |     0 1001 000           |      4.0      |    0x48     |
+    |    0 11 1       |     0 1001 100           |      6.0      |    0x4C     |
+    +-----------------+--------------------------+---------------+-------------+
+  
+    E2M1 to E5M2 (FP8) Conversion Table
+    constexpr unsigned long long E2M1_to_E5M2_LUT_0_7 = 0x464442403E3C3800ULL;
+  
+    +-----------------+--------------------------+---------------+-------------+
+    |  E2M1 Pattern   |       E5M2 Pattern       | Numeric Value | E5M2 Hex    |
+    |   (s E E M)     |    (s EEEEE MM)          |               |             |
+    +-----------------+--------------------------+---------------+-------------+
+    |    0 00 0       |     0 00000 00           |      0.0      |    0x00     |
+    |    0 00 1       |     0 01110 00           |      0.5      |    0x38     |
+    |    0 01 0       |     0 01111 00           |      1.0      |    0x3C     |
+    |    0 01 1       |     0 01111 10           |      1.5      |    0x3E     |
+    |    0 10 0       |     0 10000 00           |      2.0      |    0x40     |
+    |    0 10 1       |     0 10000 10           |      3.0      |    0x42     |
+    |    0 11 0       |     0 10001 00           |      4.0      |    0x44     |
+    |    0 11 1       |     0 10001 10           |      6.0      |    0x46     |
+    +-----------------+--------------------------+---------------+-------------+
+  ****************************************************************************/
+  
+  // LUT _e2m1_to_fp8_x4: Direct E2M1->FP8 (converts 4 E2M1 to 4 FP8)
+  template <unsigned long long fp8_lut>
+  CUTLASS_DEVICE
+  static void _e2m1_to_fp8_x4(unsigned int src, unsigned int& out0) {
+    constexpr unsigned int upper_lut = 0xc0804000U;
+    constexpr unsigned int lut_lo = (unsigned int)fp8_lut;
+    constexpr unsigned int lut_hi = (unsigned int)(fp8_lut >> 32);
+    asm(
+      "{\n\t"
+      ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+      ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+      "and.b32 prmt_ctrl0123, %1, 0x7777;\n\t"
+      "shr.b32 upper_prmt_ctrl_0123, %1, 2;\n\t"
+      "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+      "prmt.b32 target0123, %2, %3, prmt_ctrl0123;\n\t" 
+      "prmt.b32 upper0123, %4, %4, upper_prmt_ctrl_0123;\n\t"
+      "or.b32 %0, target0123, upper0123;\n\t"
+      "}"
+      : "=r"(out0)
+      : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut)
+    );
+  }
+  
+   // LUT _e2m1_to_fp8_x2: Direct E2M1->FP8 (converts 2 E2M1 to 2 FP8)
+   template <unsigned long long fp8_lut>
+   CUTLASS_DEVICE
+   static void _e2m1_to_fp8_x2(unsigned int src, unsigned int& out0) {
+     constexpr unsigned int upper_lut = 0xc0804000U;
+     constexpr unsigned int lut_lo = (unsigned int)fp8_lut;
+     constexpr unsigned int lut_hi = (unsigned int)(fp8_lut >> 32);
+     asm(
+       "{\n\t"
+       ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+       ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+       "and.b32 prmt_ctrl0123, %1, 0x0077;\n\t"
+       "shr.b32 upper_prmt_ctrl_0123, %1, 2;\n\t"
+       "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x0033;\n\t"
+       "prmt.b32 target0123, %2, %3, prmt_ctrl0123;\n\t" 
+       "prmt.b32 upper0123, %4, %4, upper_prmt_ctrl_0123;\n\t"
+       "or.b32 %0, target0123, upper0123;\n\t" // we wiped out the upper half when computing controls
+       "}"
+       : "=r"(out0)
+       : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut)
+     );
+   }
+  
+  // LUT _e2m1_to_fp8_x8: Direct E2M1->FP8 (converts 8 E2M1 to 8 FP8)
+  template <unsigned long long fp8_lut>
+  CUTLASS_DEVICE
+  static void _e2m1_to_fp8_x8(unsigned int src, unsigned int& out0, unsigned int& out1) {
+    constexpr unsigned int upper_lut = 0xc0804000U;
+    constexpr unsigned int lut_lo = (unsigned int)fp8_lut;
+    constexpr unsigned int lut_hi = (unsigned int)(fp8_lut >> 32);
+    asm(
+      "{\n\t"
+      ".reg .u32 prmt_ctrl0123, target0123, upper0123;\n\t"
+      ".reg .u32 upper_prmt_ctrl_0123;\n\t"
+      ".reg .u32 prmt_ctrl4567, target4567, upper4567;\n\t"
+      ".reg .u32 upper_prmt_ctrl_4567;\n\t"
+      "and.b32 prmt_ctrl0123, %2, 0x7777;\n\t"
+      "shr.b32 upper_prmt_ctrl_0123, %2, 2;\n\t"
+      "shr.b32 prmt_ctrl4567, %2, 16;\n\t"      
+      "shr.b32 upper_prmt_ctrl_4567, %2, 18;\n\t"
+      "and.b32 prmt_ctrl4567, prmt_ctrl4567, 0x7777;\n\t"
+      "and.b32 upper_prmt_ctrl_0123, upper_prmt_ctrl_0123, 0x3333;\n\t"
+      "and.b32 upper_prmt_ctrl_4567, upper_prmt_ctrl_4567, 0x3333;\n\t"
+      "prmt.b32 target0123, %3, %4, prmt_ctrl0123;\n\t" 
+      "prmt.b32 target4567, %3, %4, prmt_ctrl4567;\n\t"
+      "prmt.b32 upper0123, %5, %5, upper_prmt_ctrl_0123;\n\t"
+      "prmt.b32 upper4567, %5, %5, upper_prmt_ctrl_4567;\n\t"
+      "or.b32 %0, target0123, upper0123;\n\t"
+      "or.b32 %1, target4567, upper4567;\n\t"
+      "}"
+      : "=r"(out0), "=r"(out1)
+      : "r"(src), "r"(lut_lo), "r"(lut_hi), "r"(upper_lut)
+    );
+  }
+  
+} // namespace detail
+  
+namespace detail {
+
+  /*
+      A helper class that can vectorize a numeric converter with implementation for several vector widths.
+
+      The vector widths must be giving in decreasing order or width, and must be a power of 2.
+
+      The vector converters must produce identical results to the scalar converters for consistency.
+    */
+  class VectorizedConverter {
+  private:
+    // Base case to handle remainder elements as scalars.
+    template <int Offset, size_t ParentWidth, typename ArrayConverter>
+    CUTLASS_DEVICE
+    static void convert_helper(
+      typename ArrayConverter::result_type& result,
+      typename ArrayConverter::source_type const& source) {
+
+      using ElementRes = typename ArrayConverter::result_type::Element;
+      using ElementSrc = typename ArrayConverter::source_type::Element;
+      // If no more converters, handle the remaining elements as scalars.
+      constexpr int total_elements = ArrayConverter::result_type::kElements;
+      constexpr int remainder = total_elements - Offset;
+      static_assert(remainder == (total_elements % ParentWidth), "Unexpected remainder.");
+
+      typename ArrayConverter::ScalarConverter scalar_converter;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = Offset; i < ArrayConverter::result_type::kElements; ++i) {
+        result[i] = scalar_converter(ElementSrc(source[i]));
+      }
+    }
+
+    template <int Offset, size_t ParentWidth, typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
+    CUTLASS_DEVICE
+    static void convert_helper(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
+      static_assert(sizeof...(OtherVectorArrays) % 2 == 0, "Vector converters must come in {dst, src} pairs");
+      static_assert(ResultVectorArray::kElements == SourceVectorArray::kElements, "Vector converters must have the same vector width");
+      static_assert(cutlass::platform::is_same<typename ArrayConverter::result_type::Element, typename ResultVectorArray::Element>::value,
+        "ResultVectorArray must have the same type ArrayConverter::result_type");
+      static_assert(cutlass::platform::is_same<typename ArrayConverter::source_type::Element, typename SourceVectorArray::Element>::value,
+        "SourceVectorArray must have the same type ArrayConverter::result_type");
+      static_assert(Offset >= 0 && Offset <= ArrayConverter::result_type::kElements, "Offset must be between 0 and N");
+
+      static_assert(ParentWidth == 0 || ParentWidth > ResultVectorArray::kElements, "Vector arrays must be given in decreasing order of width");
+
+      constexpr int vector_width = ResultVectorArray::kElements;
+      static_assert(ispow2(vector_width), "Vector width must be a power of 2");
+
+      using ElementRes = typename ArrayConverter::result_type::Element;
+      using ElementSrc = typename ArrayConverter::source_type::Element;
+
+      constexpr int vector_bits_res = vector_width * cutlass::sizeof_bits<ElementRes>::value;
+      constexpr int vector_bits_src = vector_width * cutlass::sizeof_bits<ElementSrc>::value;
+
+      static_assert(vector_bits_res % 8 == 0, "Result vector type must be byte addressed.");
+      static_assert(vector_bits_src % 8 == 0, "Source vector type must be byte addressed.");
+
+      constexpr int vector_offset = Offset / vector_width;
+      ResultVectorArray* packed_result_vec = reinterpret_cast<ResultVectorArray*>(&result) + vector_offset;
+      SourceVectorArray const* packed_source_vec = reinterpret_cast<SourceVectorArray const*>(&source) + vector_offset;
+
+      // Convert the remaining elements as vectors.
+      constexpr int total_elements = ArrayConverter::result_type::kElements;
+      constexpr int groups_of_vec = (total_elements - Offset) / vector_width;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < groups_of_vec; ++i) {
+        packed_result_vec[i] = ArrayConverter::template packed_convert<ResultVectorArray, SourceVectorArray>(packed_source_vec[i]);
+      }
+
+      constexpr int new_offset = Offset + vector_width * groups_of_vec;
+      // Recurse to handle other vector converters, or the scalar base case.
+      convert_helper<new_offset, ResultVectorArray::kElements, ArrayConverter, OtherVectorArrays...>(result, source);
+    }
+
+  public:
+    /*
+        A method to convert vectors of elements using the packed_convert method of the converter.
+
+        Converters using this class must implement packed convert and support 1 or more vector conversions.
+      */
+    template <typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
+    CUTLASS_DEVICE
+    static void convert(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
+      convert_helper<0, 0, ArrayConverter, ResultVectorArray, SourceVectorArray, OtherVectorArrays...>(result, source);
+    }
+  };
+}
+  
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
 // Partial specializations for Array<float, N> <=> Array<float_e2m1_t, N>
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for Array<float, 8> <= Array<float_e2m1_t, 8>
+/// Partial specialization for Array<float, N> <= Array<float_e2m1_t, N>
 template <
+  int N,
   FloatRoundStyle Round
 >
-struct NumericArrayConverter<float, cutlass::float_e2m1_t, 8, Round> {
+struct NumericArrayConverter<float, cutlass::float_e2m1_t, N, Round> {
   using result_element = float;
   using source_element = cutlass::float_e2m1_t;
-
-  using result_type = Array<result_element, 8>;
-  using source_type = Array<source_element, 8>;
+  using result_type = Array<result_element, N>;
+  using source_type = Array<source_element, N>;
   static FloatRoundStyle const round_style = Round;
 
-  CUTLASS_DEVICE
-  static result_type convert(source_type const & source) {
+private:
+  using result_type_packed_8 = Array<float, 8>;
+  using result_type_packed_4 = Array<float, 4>;
+  using result_type_packed_2 = Array<float, 2>;
+  using source_type_packed_8 = Array<float_e2m1_t, 8>;
+  using source_type_packed_4 = Array<float_e2m1_t, 4>;
+  using source_type_packed_2 = Array<float_e2m1_t, 2>;
 
-  #if defined(CUDA_PTX_FP4FP6_CVT_ENABLED)
-    uint32_t out_fp16[4];
-    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+  using ScalarConverter = NumericConverter<float, float_e2m1_t, Round>;
+
+  // Convert 8 elements: E2M1 -> BF16 -> FP32
+  CUTLASS_DEVICE
+  static result_type_packed_8 lut_convert(source_type_packed_8 const &source) {
+    result_type_packed_8 result;
+    uint32_t src_packed = *reinterpret_cast<uint32_t const*>(source.data());
+
+  #if defined(USE_PTX_CONVERT)
+
+    float* out_float = reinterpret_cast<float*>(result.data());
+    uint32_t halfx2_01, halfx2_23, halfx2_45, halfx2_67;
 
     asm volatile( \
         "{\n" \
@@ -3711,29 +4218,157 @@ struct NumericArrayConverter<float, cutlass::float_e2m1_t, 8, Round> {
         "cvt.rn.f16x2.e2m1x2 %1, byte1;\n" \
         "cvt.rn.f16x2.e2m1x2 %2, byte2;\n" \
         "cvt.rn.f16x2.e2m1x2 %3, byte3;\n" \
-        "}\n" : "=r"(out_fp16[0]), "=r"(out_fp16[1]) , "=r"(out_fp16[2]), "=r"(out_fp16[3]): "r"(src_packed));
+      "}\n" 
+      : "=r"(halfx2_01), "=r"(halfx2_23) , "=r"(halfx2_45), "=r"(halfx2_67): "r"(src_packed)
+    );
 
-    float2 res0 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[0]));
-    float2 res1 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[1]));
-    float2 res2 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[2]));
-    float2 res3 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[3]));
+    float2 floatx2_01 = __half22float2(reinterpret_cast<__half2 &>(halfx2_01));
+    float2 floatx2_23 = __half22float2(reinterpret_cast<__half2 &>(halfx2_23));
+    float2 floatx2_45 = __half22float2(reinterpret_cast<__half2 &>(halfx2_45));
+    float2 floatx2_67 = __half22float2(reinterpret_cast<__half2 &>(halfx2_67));
 
-    result_type out;
-    out[0] = res0.x;
-    out[1] = res0.y;
-    out[2] = res1.x;
-    out[3] = res1.y;
-    out[4] = res2.x;
-    out[5] = res2.y;
-    out[6] = res3.x;
-    out[7] = res3.y;
-    return out;
+    out_float[0] = floatx2_01.x;
+    out_float[1] = floatx2_01.y;
+    out_float[2] = floatx2_23.x;
+    out_float[3] = floatx2_23.y;
+    out_float[4] = floatx2_45.x;
+    out_float[5] = floatx2_45.y;
+    out_float[6] = floatx2_67.x;
+    out_float[7] = floatx2_67.y;
+
+  #else
+
+    // Convert all 8 E2M1 values to BF16, then extend to FP32
+    uint4* out_floatx4 = reinterpret_cast<uint4*>(result.data());
+    unsigned int bfloatx2_01, bfloatx2_23, bfloatx2_45, bfloatx2_67;
+    detail::_e2m1_to_bf16_x8(src_packed, bfloatx2_01, bfloatx2_23, bfloatx2_45, bfloatx2_67);
+
+    out_floatx4[0] = make_uint4(bfloatx2_01 << 16, bfloatx2_01 & 0xFFFF0000u,
+                                bfloatx2_23 << 16, bfloatx2_23 & 0xFFFF0000u);
+    out_floatx4[1] = make_uint4(bfloatx2_45 << 16, bfloatx2_45 & 0xFFFF0000u,
+                                bfloatx2_67 << 16, bfloatx2_67 & 0xFFFF0000u);
+
+  #endif
+
+    return result;
+  }
+
+  // Convert 4 elements: E2M1 -> BF16 -> FP32
+  CUTLASS_DEVICE
+  static result_type_packed_4 lut_convert(source_type_packed_4 const &source) {
+    result_type_packed_4 result;
+    uint16_t src_packed = *reinterpret_cast<uint16_t const*>(source.data());
+
+  #if defined(USE_PTX_CONVERT)
+
+    float* out_float = reinterpret_cast<float*>(result.data());
+    uint32_t halfx2_01, halfx2_23;
+
+    asm volatile( \
+      "{\n" \
+      ".reg .b8 byte0, byte1;\n" \
+      "mov.b16 {byte0, byte1}, %2;\n" \
+      "cvt.rn.f16x2.e2m1x2 %0, byte0;\n" \
+      "cvt.rn.f16x2.e2m1x2 %1, byte1;\n" \
+      "}\n" : "=r"(halfx2_01), "=r"(halfx2_23): "h"(src_packed)
+    );
+
+    float2 floatx2_01 = __half22float2(reinterpret_cast<__half2 &>(halfx2_01));
+    float2 floatx2_23 = __half22float2(reinterpret_cast<__half2 &>(halfx2_23));
+
+    out_float[0] = floatx2_01.x;
+    out_float[1] = floatx2_01.y;
+    out_float[2] = floatx2_23.x;
+    out_float[3] = floatx2_23.y;
+
+  #else
+
+    uint4* out_floatx4 = reinterpret_cast<uint4*>(result.data());
+    unsigned int bfloatx2_01, bfloatx2_23;
+    detail::_e2m1_to_bf16_x4(src_packed, bfloatx2_01, bfloatx2_23);
+
+    out_floatx4[0] = make_uint4(bfloatx2_01 << 16, bfloatx2_01 & 0xFFFF0000u,
+                                bfloatx2_23 << 16, bfloatx2_23 & 0xFFFF0000u);
+
+  #endif
+
+    return result;
+  }
+
+  // Convert 2 elements: E2M1 -> BF16 -> FP32
+  CUTLASS_DEVICE
+  static result_type_packed_2 lut_convert(source_type_packed_2 const &source) {
+    result_type_packed_2 result;
+    uint8_t src_packed = *reinterpret_cast<uint8_t const*>(source.data());
+
+  #if defined(USE_PTX_CONVERT)
+
+    float* out_float = reinterpret_cast<float*>(result.data());
+    uint32_t halfx2_01;
+
+    // extend input to 16 bit since there is no 8 bit register asm constraint available for ptx inline assembly
+    uint16_t src_packed_16 = src_packed;
+
+    asm volatile( \
+      "{\n" \
+      ".reg .b8 byte0, byte1;\n" \
+      "mov.b16 {byte0, byte1}, %1;\n" \
+      "cvt.rn.f16x2.e2m1x2 %0, byte0;\n" \
+      "}\n" : "=r"(halfx2_01): "h"(src_packed_16)
+    );
+
+    float2 floatx2_01 = __half22float2(reinterpret_cast<__half2 &>(halfx2_01));
+
+    out_float[0] = floatx2_01.x;
+    out_float[1] = floatx2_01.y;
+
+  #else
+
+    uint2* out_floatx2 = reinterpret_cast<uint2*>(result.data());
+    unsigned int bfloatx2_01;
+    detail::_e2m1_to_bf16_x2(src_packed, bfloatx2_01);
+
+    out_floatx2[0] = make_uint2(bfloatx2_01 << 16, bfloatx2_01 & 0xFFFF0000u);
+
+  #endif
+
+    return result;
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2, 4 or 8.");
+
+    return lut_convert(source);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType,
+                                         result_type_packed_8, source_type_packed_8,
+                                         result_type_packed_4, source_type_packed_4,
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
   #else
     result_type result;
-    NumericConverter<result_element, source_element, Round> converter;
+    ScalarConverter converter;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < N; ++i) {
       result[i] = converter(source[i]);
     }
 
@@ -3747,34 +4382,28 @@ struct NumericArrayConverter<float, cutlass::float_e2m1_t, 8, Round> {
   }
 };
 
-/// Partial specialization for Array<float> <= Array<float_e2m1_t>
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for Array<tfloat32_t, N> <=> Array<float_e2m1_t, N>
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<tfloat32_t, N> <= Array<float_e2m1_t, N>
 template <
   int N,
   FloatRoundStyle Round
 >
-struct NumericArrayConverter<float, cutlass::float_e2m1_t, N, Round> {
-  static_assert(!(N % 8), "N must be multiple of 8.");
-
-  using result_type = Array<float, N>;
-  using source_type = Array<float_e2m1_t, N>;
+struct NumericArrayConverter<cutlass::tfloat32_t, cutlass::float_e2m1_t, N, Round> {
+  using result_type = Array<cutlass::tfloat32_t, N>;
+  using source_type = Array<cutlass::float_e2m1_t, N>;
   static FloatRoundStyle const round_style = Round;
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & source) {
-
-    NumericArrayConverter<float, cutlass::float_e2m1_t, 8, Round> convert_vector_;
-
-    result_type result;
-
-    Array<float, 8> *result_ptr = reinterpret_cast<Array<float, 8> *>(&result);
-    Array<float_e2m1_t, 8> const *source_ptr = reinterpret_cast<Array<float_e2m1_t, 8> const *>(&source);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N / 8; ++i) {
-      result_ptr[i] = convert_vector_(source_ptr[i]);
-    }
-
-    return result;
+    // Delegate to float converter, then reinterpret bits
+    NumericArrayConverter<float, cutlass::float_e2m1_t, N, Round> e2m1_to_fp32;
+    Array<float, N> fp32_result = e2m1_to_fp32(source);
+    return reinterpret_cast<result_type const &>(fp32_result);
   }
 
   CUTLASS_HOST_DEVICE
@@ -4287,93 +4916,7 @@ struct NumericArrayConverter<uint4b_t, int, N, Round> {
 
 #endif  // Conditional guards to enable partial specialization for packed integers
 
-namespace detail {
 
-  /*
-      A helper class that can vectorize a numeric converter with implementation for several vector widths.
-
-      The vector widths must be giving in decreasing order or width, and must be a power of 2.
-
-      The vector converters must produce identical results to the scalar converters for consistency.
-    */
-  class VectorizedConverter {
-  private:
-    // Base case to handle remainder elements as scalars.
-    template <int Offset, size_t ParentWidth, typename ArrayConverter>
-    CUTLASS_DEVICE
-    static void convert_helper(
-      typename ArrayConverter::result_type& result,
-      typename ArrayConverter::source_type const& source) {
-
-      using ElementRes = typename ArrayConverter::result_type::Element;
-      using ElementSrc = typename ArrayConverter::source_type::Element;
-      // If no more converters, handle the remaining elements as scalars.
-      constexpr int total_elements = ArrayConverter::result_type::kElements;
-      constexpr int remainder = total_elements - Offset;
-      static_assert(remainder == (total_elements % ParentWidth), "Unexpected remainder.");
-
-      typename ArrayConverter::ScalarConverter scalar_converter;
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = Offset; i < ArrayConverter::result_type::kElements; ++i) {
-        result[i] = scalar_converter(ElementSrc(source[i]));
-      }
-    }
-
-    template <int Offset, size_t ParentWidth, typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
-    CUTLASS_DEVICE
-    static void convert_helper(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
-      static_assert(sizeof...(OtherVectorArrays) % 2 == 0, "Vector converters must come in {dst, src} pairs");
-      static_assert(ResultVectorArray::kElements == SourceVectorArray::kElements, "Vector converters must have the same vector width");
-      static_assert(cutlass::platform::is_same<typename ArrayConverter::result_type::Element, typename ResultVectorArray::Element>::value,
-        "ResultVectorArray must have the same type ArrayConverter::result_type");
-      static_assert(cutlass::platform::is_same<typename ArrayConverter::source_type::Element, typename SourceVectorArray::Element>::value,
-        "SourceVectorArray must have the same type ArrayConverter::result_type");
-      static_assert(Offset >= 0 && Offset <= ArrayConverter::result_type::kElements, "Offset must be between 0 and N");
-
-      static_assert(ParentWidth == 0 || ParentWidth > ResultVectorArray::kElements, "Vector arrays must be given in decreasing order of width");
-
-      constexpr int vector_width = ResultVectorArray::kElements;
-      static_assert(ispow2(vector_width), "Vector width must be a power of 2");
-
-      using ElementRes = typename ArrayConverter::result_type::Element;
-      using ElementSrc = typename ArrayConverter::source_type::Element;
-
-      constexpr int vector_bits_res = vector_width * cutlass::sizeof_bits<ElementRes>::value;
-      constexpr int vector_bits_src = vector_width * cutlass::sizeof_bits<ElementSrc>::value;
-
-      static_assert(vector_bits_res % 8 == 0, "Result vector type must be byte addressed.");
-      static_assert(vector_bits_src % 8 == 0, "Source vector type must be byte addressed.");
-
-      constexpr int vector_offset = Offset / vector_width;
-      ResultVectorArray* packed_result_vec = reinterpret_cast<ResultVectorArray*>(&result) + vector_offset;
-      SourceVectorArray const* packed_source_vec = reinterpret_cast<SourceVectorArray const*>(&source) + vector_offset;
-
-      // Convert the remaining elements as vectors.
-      constexpr int total_elements = ArrayConverter::result_type::kElements;
-      constexpr int groups_of_vec = (total_elements - Offset) / vector_width;
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < groups_of_vec; ++i) {
-        packed_result_vec[i] = ArrayConverter::template packed_convert<ResultVectorArray, SourceVectorArray>(packed_source_vec[i]);
-      }
-
-      constexpr int new_offset = Offset + vector_width * groups_of_vec;
-      // Recurse to handle other vector converters, or the scalar base case.
-      convert_helper<new_offset, ResultVectorArray::kElements, ArrayConverter, OtherVectorArrays...>(result, source);
-    }
-
-  public:
-    /*
-        A method to convert vectors of elements using the packed_convert method of the converter.
-
-        Converters using this class must implement packed convert and support 1 or more vector conversions.
-      */
-    template <typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
-    CUTLASS_DEVICE
-    static void convert(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
-      convert_helper<0, 0, ArrayConverter, ResultVectorArray, SourceVectorArray, OtherVectorArrays...>(result, source);
-    }
-  };
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Partial specialization for Array<half_t, N> <= Array<float_e2m1_t, N>
@@ -4398,12 +4941,14 @@ private:
 
   using ScalarConverter = NumericConverter<cutlass::half_t, cutlass::float_e2m1_t, Round>;
 
-  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+
+  #if defined(USE_PTX_CONVERT) // defined(CUDA_PTX_FP4FP6_CVT_ENABLED)
   CUTLASS_DEVICE
   static result_type_packed_8 ptx_convert(source_type_packed_8 const &source) {
     result_type_packed_8 out;
-    uint32_t* out_fp16 = reinterpret_cast<uint32_t*>(&out);
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
     uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+
     asm volatile( \
         "{\n" \
         ".reg .b8 byte0, byte1, byte2, byte3;\n" \
@@ -4412,39 +4957,87 @@ private:
         "cvt.rn.f16x2.e2m1x2 %1, byte1;\n" \
         "cvt.rn.f16x2.e2m1x2 %2, byte2;\n" \
         "cvt.rn.f16x2.e2m1x2 %3, byte3;\n" \
-        "}\n" : "=r"(out_fp16[0]), "=r"(out_fp16[1]) , "=r"(out_fp16[2]), "=r"(out_fp16[3]): "r"(src_packed));
+        "}\n" : "=r"(out_halfx2[0]), "=r"(out_halfx2[1]) , "=r"(out_halfx2[2]), "=r"(out_halfx2[3]): "r"(src_packed));
+
     return out;
   }
 
   CUTLASS_DEVICE
   static result_type_packed_4 ptx_convert(source_type_packed_4 const &source) {
     result_type_packed_4 out;
-    uint32_t* out_fp16 = reinterpret_cast<uint32_t*>(&out);
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
     uint16_t const& src_packed = reinterpret_cast<uint16_t const&>(source);
+
     asm volatile( \
         "{\n" \
         ".reg .b8 byte0, byte1;\n" \
         "mov.b16 {byte0, byte1}, %2;\n" \
         "cvt.rn.f16x2.e2m1x2 %0, byte0;\n" \
         "cvt.rn.f16x2.e2m1x2 %1, byte1;\n" \
-        "}\n" : "=r"(out_fp16[0]), "=r"(out_fp16[1]) : "h"(src_packed));
+        "}\n" : "=r"(out_halfx2[0]), "=r"(out_halfx2[1]) : "h"(src_packed));
+
     return out;
   }
 
   CUTLASS_DEVICE
   static result_type_packed_2 ptx_convert(source_type_packed_2 const &source) {
     result_type_packed_2 out;
-    uint32_t* out_fp16 = reinterpret_cast<uint32_t*>(&out);
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
     uint16_t const& src_packed = static_cast<uint16_t const&>(reinterpret_cast<uint8_t const&>(source));
+
     asm volatile( \
         "{\n" \
         ".reg .b8 byte0, byte1;\n" \
         "mov.b16 {byte0, byte1}, %1;\n" \
         "cvt.rn.f16x2.e2m1x2 %0, byte0;\n" \
-        "}\n" : "=r"(out_fp16[0]) : "h"(src_packed));
+        "}\n" : "=r"(out_halfx2[0]) : "h"(src_packed));
+
+      return out;
+  }
+
+#endif
+
+  CUTLASS_DEVICE
+  static result_type_packed_8 lut_convert(source_type_packed_8 const &source) {
+    result_type_packed_8 out;
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+
+    // LUT x4 e2m1 to fp16 (SM90)
+    // CUTLASS_PRAGMA_UNROLL
+    // for (int i = 0; i < 2; i++) {
+    //  unsigned int lane0123 = src_packed >> (16 * i);
+    //  detail::_e2m1_to_half_x4(lane0123, out_halfx2[2*i], out_halfx2[2*i+1]);
+    //}
+
+    // LUT x8 e2m1 to fp16 (SM90)
+    detail::_e2m1_to_half_x8(src_packed, out_halfx2[0], out_halfx2[1], out_halfx2[2], out_halfx2[3]);
+
     return out;
   }
-  #endif
+
+  CUTLASS_DEVICE
+  static result_type_packed_4 lut_convert(source_type_packed_4 const &source) {
+    result_type_packed_4 out;
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
+    uint16_t const& src_packed = reinterpret_cast<uint16_t const&>(source);
+
+    // LUT x4 e2m1 to half
+    detail::_e2m1_to_half_x4(src_packed, out_halfx2[0], out_halfx2[1]);
+    return out;
+  }
+
+  CUTLASS_DEVICE
+  static result_type_packed_2 lut_convert(source_type_packed_2 const &source) {
+    result_type_packed_2 out;
+    uint32_t* out_halfx2 = reinterpret_cast<uint32_t*>(&out);
+    uint16_t const& src_packed = static_cast<uint16_t const&>(reinterpret_cast<uint8_t const&>(source));
+
+    // LUT x2 e2m1 to half
+    detail::_e2m1_to_half_x2(src_packed, out_halfx2[0]);
+    return out;
+  }
+
 
   template <typename PackedResultType, typename PackedSrcType>
   CUTLASS_DEVICE
@@ -4457,27 +5050,20 @@ private:
                    platform::is_same<PackedResultType, result_type_packed_8>::value),
                   "Invalid PackedSrcType/PackedResultType must be 2, 4 or 8 to use private convert dispatch.");
 
-  #if defined(CUDA_PTX_FP4FP6_CVT_ENABLED)
+  // either call lookup table or PTX instruction implementation
+  #if defined(USE_PTX_CONVERT) // defined(CUDA_PTX_FP4FP6_CVT_ENABLED)
     return ptx_convert(source);
   #else
-    PackedResultType result;
-    NumericConverter<result_element, source_element, Round> converter;
-
-    const int k_packed = PackedResultType::kElements;
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < k_packed; ++i) {
-      result[i] = converter(source[i]);
-    }
-
-    return result;
+    return lut_convert(source);
   #endif
   }
 
   friend class detail::VectorizedConverter;
 
 public:
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
     result_type result;
     using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
     detail::VectorizedConverter::convert<ConverterType,
@@ -4486,6 +5072,131 @@ public:
                                          result_type_packed_2, source_type_packed_2>(result, source);
 
     return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for Array<bfloat16_t, N> <= Array<float_e2m1_t, N>
+template <
+  FloatRoundStyle Round,
+  int N
+>
+struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::float_e2m1_t, N, Round> {
+  using result_element = cutlass::bfloat16_t;
+  using source_element = cutlass::float_e2m1_t;
+  using result_type = Array<result_element, N>;
+  using source_type = Array<source_element, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::bfloat16_t, 8>;
+  using result_type_packed_4 = Array<cutlass::bfloat16_t, 4>;
+  using result_type_packed_2 = Array<cutlass::bfloat16_t, 2>;
+  using source_type_packed_8 = Array<cutlass::float_e2m1_t, 8>;
+  using source_type_packed_4 = Array<cutlass::float_e2m1_t, 4>;
+  using source_type_packed_2 = Array<cutlass::float_e2m1_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::bfloat16_t, cutlass::float_e2m1_t, Round>;
+
+  CUTLASS_DEVICE
+  static result_type_packed_8 lut_convert(source_type_packed_8 const &source) {
+
+    result_type_packed_8 out;
+    uint32_t* out_bfloatx2 = reinterpret_cast<uint32_t*>(&out);
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+      
+    // LUT x4 e2m1 to bf16 (SM90)
+    // CUTLASS_PRAGMA_UNROLL
+    // for (int i = 0; i < 2; i++) {
+    //   unsigned int lane0123 = src_packed >> (16 * i);
+    //   detail::_e2m1_to_bf16_x4(lane0123, out_bfloatx2[2*i], out_bfloatx2[2*i+1]);
+    // }
+
+    // LUT x8 e2m1 to bf16 (SM90)
+    detail::_e2m1_to_bf16_x8(src_packed, out_bfloatx2[0], out_bfloatx2[1], out_bfloatx2[2], out_bfloatx2[3]);
+
+    return out;
+  }
+
+  CUTLASS_DEVICE
+  static result_type_packed_4 lut_convert(source_type_packed_4 const &source) {
+    result_type_packed_4 out;
+    uint32_t* out_bfloatx2 = reinterpret_cast<uint32_t*>(&out);
+    uint16_t const& src_packed = reinterpret_cast<uint16_t const&>(source);
+
+    // LUT x4 e2m1 to bf16
+    detail::_e2m1_to_bf16_x4(src_packed, out_bfloatx2[0], out_bfloatx2[1]);
+    return out;
+  }
+
+  CUTLASS_DEVICE
+  static result_type_packed_2 lut_convert(source_type_packed_2 const &source) {
+    result_type_packed_2 out;
+    uint32_t* out_bfloatx2 = reinterpret_cast<uint32_t*>(&out);
+    uint16_t const& src_packed = static_cast<uint16_t const&>(reinterpret_cast<uint8_t const&>(source));
+
+    // LUT x2 e2m1 to bf16 (SM90)
+    detail::_e2m1_to_bf16_x2(src_packed, out_bfloatx2[0]);
+    return out;
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2, 4 or 8 to use private convert dispatch.");
+
+  // Option to add an optimized PTX path
+    return lut_convert(source);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType,
+                                         result_type_packed_8, source_type_packed_8,
+                                         result_type_packed_4, source_type_packed_4,
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
   }
 
   CUTLASS_HOST_DEVICE
@@ -4545,7 +5256,7 @@ private:
     // [0, 1, -2, -1] encoded as FP8
     static constexpr uint32_t E4M3_LUT = 0xB8C03800;
 
-    const int iters = PackedSrcType::kElements / 4;
+    constexpr int iters = PackedSrcType::kElements / 4;
     #pragma unroll
     for (int ii = 0; ii < iters; ii += 2, src_reg >>= 16, src_reg_shifted >>= 16) {
       // This uses a look up table to convert packed int2s to packed fp8s, using the int4 value
@@ -4949,6 +5660,202 @@ struct NumericArrayConverter<int8_t, int4b_t, N, Round> {
   }
 };
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<cutlass::float_e4m3_t, N> <= Array<cutlass::float_e2m1_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::float_e4m3_t, cutlass::float_e2m1_t, N, Round> {
+  using result_type = Array<cutlass::float_e4m3_t, N>;
+  using source_type = Array<cutlass::float_e2m1_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::float_e4m3_t, 8>;
+  using result_type_packed_4 = Array<cutlass::float_e4m3_t, 4>;
+  using source_type_packed_8 = Array<cutlass::float_e2m1_t, 8>;
+  using source_type_packed_4 = Array<cutlass::float_e2m1_t, 4>;
+
+  using ScalarConverter = NumericConverter<cutlass::float_e4m3_t, cutlass::float_e2m1_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses a lookup table to converts e2m1 -> e4m3.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 4 or 8 to use private convert dispatch.");
+
+    // Hold FP8 outputs in reg. We need 1 reg for every 4 outputs.
+    cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 4, sizeof(PackedResultType)> out_fp8;
+
+    // View the input as reg
+    uint32_t reg = to_reg(source);
+
+    constexpr int iters_x8 = PackedSrcType::kElements / 8;
+    constexpr int iters_x4 = (PackedSrcType::kElements / 4) & 1;
+    constexpr unsigned long long E2M1_to_E4M3_LUT_0_7 = 0x4C4844403C383000ULL;
+
+    // we really only get called with 4 or 8 elements, but allow for more arguments for future use
+    // practically it's one of either x8 or x4, since we unroll everything else will be optimized away
+    #pragma unroll
+    for (int ii = 0; ii < iters_x8; ++ii) {
+      detail::_e2m1_to_fp8_x8<E2M1_to_E4M3_LUT_0_7>(reg, out_fp8[ii*2], out_fp8[ii*2+1]);
+    }
+
+    if (iters_x4) {
+      detail::_e2m1_to_fp8_x4<E2M1_to_E4M3_LUT_0_7>(reg, out_fp8[iters_x8*2]);
+    }
+  
+    return reinterpret_cast<PackedResultType&>(out_fp8);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType,
+                                         result_type_packed_8, source_type_packed_8,
+                                         result_type_packed_4, source_type_packed_4>(result, source);
+
+    return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+
+/// Partial specialization for Array<cutlass::float_e5m2_t, N> <= Array<cutlass::float_e2m1_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::float_e5m2_t, cutlass::float_e2m1_t, N, Round> {
+  using result_type = Array<cutlass::float_e5m2_t, N>;
+  using source_type = Array<cutlass::float_e2m1_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::float_e5m2_t, 8>;
+  using result_type_packed_4 = Array<cutlass::float_e5m2_t, 4>;
+  using source_type_packed_8 = Array<cutlass::float_e2m1_t, 8>;
+  using source_type_packed_4 = Array<cutlass::float_e2m1_t, 4>;
+
+  using ScalarConverter = NumericConverter<cutlass::float_e5m2_t, cutlass::float_e2m1_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses a lookup table to convert e2m1 -> e5m2.
+  // Uses the existing templated _e2m1_to_fp8_x* helper functions defined above.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 4 or 8 to use private convert dispatch.");
+
+    // Hold FP8 outputs in reg. We need 1 reg for every 4 outputs.
+    cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 4, sizeof(PackedResultType)> out_fp8;
+
+    // View the input as reg
+    uint32_t reg = to_reg(source);
+
+    constexpr int iters_x8 = PackedSrcType::kElements / 8;
+    constexpr int iters_x4 = (PackedSrcType::kElements / 4) & 1;
+    // E2M1→E5M2 LUT from table at lines 6109-6124
+    constexpr unsigned long long E2M1_to_E5M2_LUT_0_7 = 0x464442403E3C3800ULL;
+
+    // we really only get called with 4 or 8 elements, but allow for more arguments for future use
+    #pragma unroll
+    for (int ii = 0; ii < iters_x8; ++ii) {
+      detail::_e2m1_to_fp8_x8<E2M1_to_E5M2_LUT_0_7>(reg, out_fp8[ii*2], out_fp8[ii*2+1]);
+    }
+
+    if (iters_x4) {
+      detail::_e2m1_to_fp8_x4<E2M1_to_E5M2_LUT_0_7>(reg, out_fp8[iters_x8*2]);
+    }
+  
+    return reinterpret_cast<PackedResultType&>(out_fp8);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType,
+                                         result_type_packed_8, source_type_packed_8,
+                                         result_type_packed_4, source_type_packed_4>(result, source);
+
+    return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+
 /// Partial specialization for Array<cutlass::float_e4m3_t, N> <= Array<cutlass::int4b_t, N>
 template <FloatRoundStyle Round, int N>
 struct NumericArrayConverter<cutlass::float_e4m3_t, cutlass::int4b_t, N, Round> {
@@ -5012,7 +5919,7 @@ private:
     static constexpr uint32_t NEG_E4M3s_REG2 = 0xB8C0C4C8;
 
 
-    const int iters = PackedSrcType::kElements / 4;
+    constexpr int iters = PackedSrcType::kElements / 4;
     #pragma unroll
     for (int ii = 0; ii < iters; ++ii, lut_idx >>=16, sign >>=16) {
       uint32_t final_prmt_idx = final_prmt_base | sign;
@@ -5038,8 +5945,9 @@ private:
   friend class detail::VectorizedConverter;
 
 public:
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
     result_type result;
     using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
     detail::VectorizedConverter::convert<ConverterType,
@@ -5047,10 +5955,21 @@ public:
                                          result_type_packed_4, source_type_packed_4>(result, source);
 
     return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
   }
 
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
@@ -5119,7 +6038,7 @@ private:
     static constexpr uint32_t NEG_E5M2s_REG2 = 0xBCC0C2C4;
 
 
-    const int iters = PackedSrcType::kElements / 4;
+    constexpr int iters = PackedSrcType::kElements / 4;
     #pragma unroll
     for (int ii = 0; ii < iters; ++ii, lut_idx >>=16, sign >>=16) {
       uint32_t final_prmt_idx = final_prmt_base | sign;
@@ -5145,8 +6064,9 @@ private:
   friend class detail::VectorizedConverter;
 
 public:
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const &source) {
+  #if defined(__CUDA_ARCH__)
     result_type result;
     using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
     detail::VectorizedConverter::convert<ConverterType,
@@ -5154,10 +6074,21 @@ public:
                                          result_type_packed_4, source_type_packed_4>(result, source);
 
     return result;
+  #else
+    result_type result;
+    ScalarConverter converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
   }
 
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
@@ -5226,7 +6157,7 @@ private:
     static constexpr uint32_t E4M3s_REG4 = 0x57565554;
 
 
-    const int iters = PackedSrcType::kElements / 4;
+    constexpr int iters = PackedSrcType::kElements / 4;
     #pragma unroll
     for (int ii = 0; ii < iters; ++ii, lut_idx >>=16, sign >>=16) {
       uint32_t final_prmt_idx = final_prmt_base | sign;

@@ -36,8 +36,9 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/cute/tvm_ffi/error_reporting.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/error_reporting.py
 """
+
 import torch
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack

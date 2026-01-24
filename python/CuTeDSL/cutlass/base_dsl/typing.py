@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import ctypes
+from itertools import chain
 import numpy as np
 import operator
 from typing_extensions import deprecated
@@ -229,7 +230,7 @@ def get_c_pointers(obj):
     if hasattr(obj, "__c_pointers__"):
         return obj.__c_pointers__()
     elif isinstance(obj, (tuple, list)):
-        return sum((get_c_pointers(x) for x in obj), [])
+        return list(chain.from_iterable(get_c_pointers(x) for x in obj))
     elif isinstance(obj, set):
         raise DSLRuntimeError(
             "Sets are not supported in get_c_pointers to ensure order preservation",

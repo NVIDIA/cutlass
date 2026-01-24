@@ -233,7 +233,9 @@ class MLIRBuilder(MLIRTypeBuilder):
             remainder = llvm.urem(value, align_val)
             return self.equal(remainder, self.i64(0))
 
-    def br(self, target_block: ir.Block, *, args: Optional[list[ir.Value]] = None) -> None:
+    def br(
+        self, target_block: ir.Block, *, args: Optional[list[ir.Value]] = None
+    ) -> None:
         """Create an unconditional branch.
 
         Parameters
@@ -338,7 +340,7 @@ class MLIRBuilder(MLIRTypeBuilder):
                 false_dest_operands=false_dest_operands,
                 true_dest=true_block,
                 false_dest=false_block,
-                branch_weights=ir.DenseI32ArrayAttr.get(list(branch_weights))
+                branch_weights=ir.DenseI32ArrayAttr.get(list(branch_weights)),
             )
         else:
             llvm.cond_br(
@@ -436,8 +438,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         internal: bool = False,
         llvm_func_attrs: Sequence[str] = (),
     ) -> tuple[list[ir.Value], ir.Block]:
-        """Create a function with the given signature.
-        """
+        """Create a function with the given signature."""
         func_op = llvm.func(
             name,
             function_type=self.as_attr(
@@ -476,7 +477,9 @@ class MLIRBuilder(MLIRTypeBuilder):
         )
         func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
 
-    def create_alloca(self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int) -> ir.Value:
+    def create_alloca(
+        self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int
+    ) -> ir.Value:
         """Create an alloca operation."""
         with ir.InsertionPoint(entry_block.operations[0]):
             # declare the struct type

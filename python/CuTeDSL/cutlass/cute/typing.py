@@ -52,6 +52,15 @@ class SymInt:
             [self._width == other._width, self._divisibility == other._divisibility]
         )
 
+    def __mod__(self, other: int) -> Union["SymInt", int]:
+        if self._divisibility % other != 0:
+            from math import gcd
+
+            div = gcd(self._divisibility, other)
+            return SymInt(self._width, divisibility=div)
+        else:
+            return 0
+
     def __c_pointers__(self):
         return [ctypes.c_void_p(0).value]
 
@@ -381,10 +390,14 @@ __all__ = [
     "Float6E2M3FN",
     "Float6E3M2FN",
     "IntTuple",
-    "Layout",
+    "ScaledBasis",
     "Coord",
     "Shape",
     "Stride",
+    "Layout",
+    "ComposedLayout",
+    "Pointer",
+    "Tensor",
     "Tile",
     "Tiler",
     "XTuple",

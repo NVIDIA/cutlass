@@ -30,6 +30,7 @@ from .nvvm_wrappers import (
     cvt_f4e2m1x4_to_f16x4,
     cvt_f4e2m1x2_to_f16x2,
     cvt_f4e2m1_f16,
+    sext_unpacked_i4x4_to_i8x4,
 )
 
 from ..typing import (
@@ -270,6 +271,38 @@ def cvt_f4e2m1_f16_intrinsic(vec_f4e2m1, length, *, loc=None, ip=None):
             ip=ip,
         )
     return vec_dst
+
+
+@dsl_user_op
+def sext_unpacked_i4_i8_intrinsic(vec_unpacked_i4, length, *, loc=None, ip=None):
+    """
+    Sign extend vector of int4 unpacked in 8b containers to packed int8
+
+    :param vec_unpacked_i4: The input vector of unpacked int4.
+    :type vec_unpacked_i4: 1D vector of unpacked int4
+    :param length: The length of the input vector.
+    :type length: int
+    :return: The output 1D vector of int8 with the same length as the input vector.
+    :rtype: 1D vector of int8
+    """
+    assert length % 4 == 0, "unsupported length"
+
+    vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    vec_i8_type = ir.VectorType.get([length], Int8.mlir_type, loc=loc)
+    vec_i8 = llvm.mlir_zero(vec_i8_type, loc=loc, ip=ip)
+
+    for pos in range(0, length, 4):
+        vec_unpacked_i4x4 = vector.extract_strided_slice(
+            vec_i8x4_type, vec_unpacked_i4, [pos], [4], [1], loc=loc, ip=ip
+        )
+        vec_i8x4 = sext_unpacked_i4x4_to_i8x4(
+            vec_unpacked_i4x4, loc=loc, ip=ip
+        )
+        vec_i8 = vector.insert_strided_slice(
+            vec_i8x4, vec_i8, [pos], [1], loc=loc, ip=ip
+        )
+
+    return vec_i8
 
 
 # Expose supported architectures via the intrinsic symbol

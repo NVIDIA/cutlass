@@ -15,3 +15,13 @@ from .runtime import *
 from ._mlir_helpers import lru_cache_ir, dsl_user_op
 from .env_manager import get_str_env_var, detect_gpu_arch
 
+from .utils.tree_utils import (
+    is_constexpr_field,
+    tree_flatten,
+    tree_unflatten,
+    PyTreeDef,
+    is_frozen_dataclass,
+    DSLTreeFlattenError,
+)
+
+from .common import DSLCudaVersion

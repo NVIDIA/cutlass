@@ -328,7 +328,7 @@ public:
 
   CUTLASS_DEVICE
   bool is_last_tile(WorkTileInfo work_tile_info, uint32_t advance_count = 1) const {
-     // Never pass this by reference; it needs a copy,
+    // Never pass this by reference; it needs a copy,
     // because continue_current_work will modify it.
     if (continue_current_work(work_tile_info)) {
       return false;

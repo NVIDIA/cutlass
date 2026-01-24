@@ -13,7 +13,6 @@ import enum
 from dataclasses import dataclass
 from typing import Type
 
-from cutlass import cute
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
 
@@ -21,7 +20,7 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError
-from ...atom import CopyOp, Trait
+from ...atom import CopyOp, Trait, make_atom
 from ...typing import Numeric
 
 from .mma import CtaGroup
@@ -188,7 +187,7 @@ class Ld16x64bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x64bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Ld16x64bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x64bTrait(Trait):
@@ -246,7 +245,7 @@ class Ld16x128bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Ld16x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x128bTrait(Trait):
@@ -304,7 +303,7 @@ class Ld16x256bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Ld16x256bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x256bTrait(Trait):
@@ -344,7 +343,7 @@ class Ld16x32bx2Op(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld16x32bx2Trait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Ld16x32bx2Trait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld16x32bx2Trait(Trait):
@@ -384,7 +383,7 @@ class Ld32x32bOp(_LdBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.pack == Pack.PACK_16b_IN_32b else None,
         )
-        return Ld32x32bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Ld32x32bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Ld32x32bTrait(Trait):
@@ -478,7 +477,7 @@ class St16x64bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x64bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return St16x64bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x64bTrait(Trait):
@@ -513,7 +512,7 @@ class St16x128bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return St16x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x128bTrait(Trait):
@@ -548,7 +547,7 @@ class St16x256bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return St16x256bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x256bTrait(Trait):
@@ -574,7 +573,7 @@ class St16x32bx2Op(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St16x32bx2Trait(cute.make_atom(ty, loc=loc, ip=ip))
+        return St16x32bx2Trait(make_atom(ty, loc=loc, ip=ip))
 
 
 class St16x32bx2Trait(Trait):
@@ -600,7 +599,7 @@ class St32x32bOp(_StBase):
             self.repeat.value,
             ir.UnitAttr.get() if self.unpack == Unpack.UNPACK_32b_IN_16b else None,
         )
-        return St32x32bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return St32x32bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class St32x32bTrait(Trait):
@@ -681,7 +680,7 @@ class Cp128x256bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp128x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp128x256bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp128x256bTrait(Trait):
@@ -707,7 +706,7 @@ class Cp128x128bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp128x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp128x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp128x128bTrait(Trait):
@@ -733,7 +732,7 @@ class Cp4x256bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.none,
         )
-        return Cp4x256bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp4x256bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp4x256bTrait(Trait):
@@ -759,7 +758,7 @@ class Cp4x32x128bOp(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.x4,
         )
-        return Cp4x32x128bTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp4x32x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp4x32x128bTrait(Trait):
@@ -785,7 +784,7 @@ class Cp2x64x128b0213Op(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0213,
         )
-        return Cp2x64x128b0213Trait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp2x64x128b0213Trait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp2x64x128b0213Trait(Trait):
@@ -811,7 +810,7 @@ class Cp2x64x128b0123Op(_S2TCopyBase):
             self.cta_group.value,
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0123,
         )
-        return Cp2x64x128b0123Trait(cute.make_atom(ty, loc=loc, ip=ip))
+        return Cp2x64x128b0123Trait(make_atom(ty, loc=loc, ip=ip))
 
 
 class Cp2x64x128b0123Trait(Trait):

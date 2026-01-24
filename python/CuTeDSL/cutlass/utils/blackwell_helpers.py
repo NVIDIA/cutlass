@@ -9,8 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from math import log2, ceil
 from typing import List, Type, Union, Tuple
+from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import (
     Float16,
@@ -47,7 +47,6 @@ from cutlass.cute.nvgpu.tcgen05 import (
     Ld32x32bOp,
     Repetition,
     Pack,
-    find_tmem_tensor_col_offset,
     SmemLayoutAtomKind,
     make_smem_layout_atom,
     tile_to_mma_shape,
@@ -62,6 +61,21 @@ from cutlass.utils.layout import LayoutEnum
 
 # Type alias for documentation clarity
 OperandSource = Tcgen05OperandSource
+
+
+@dsl_user_op
+@deprecated("API is deprecated, use cutlass.utils.get_num_tmem_alloc_cols instead")
+def get_num_tmem_alloc_cols(
+    tmem_tensors: Union[cute.Tensor, List[cute.Tensor]],
+    rounding=True,
+    *,
+    loc=None,
+    ip=None,
+) -> int:
+    import cutlass.utils as utils
+    return utils.get_num_tmem_alloc_cols(
+        tmem_tensors, rounding, arch="sm_100", loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -305,13 +319,13 @@ def get_smem_store_op(
         op = StMatrix8x8x16bOp(is_m_major, 2)
         return cute.make_copy_atom(op, elem_ty_d, loc=loc, ip=ip)
     elif use_stmatrix_m16n8_4x:
-        op = StMatrix16x8x8bOp(4)
+        op = StMatrix16x8x8bOp(transpose=True, num_matrices=4)
         return cute.make_copy_atom(op, elem_ty_d, loc=loc, ip=ip)
     elif use_stmatrix_m16n8_2x:
-        op = StMatrix16x8x8bOp(2)
+        op = StMatrix16x8x8bOp(transpose=True, num_matrices=2)
         return cute.make_copy_atom(op, elem_ty_d, loc=loc, ip=ip)
     elif use_stmatrix_m16n8_1x:
-        op = StMatrix16x8x8bOp(1)
+        op = StMatrix16x8x8bOp(transpose=True, num_matrices=1)
         return cute.make_copy_atom(op, elem_ty_d, loc=loc, ip=ip)
     else:
         op = CopyUniversalOp()
@@ -510,50 +524,6 @@ def get_tmem_load_op(
         return cute.make_copy_atom(op, elem_ty_acc, loc=loc, ip=ip)
     else:
         raise ValueError()
-
-
-def get_num_tmem_alloc_cols(
-    tmem_tensors: Union[cute.Tensor, List[cute.Tensor]], rounding=True
-) -> int:
-    """Get the total number of TMEM allocation columns for the given TMEM tensors.
-
-    :param tmem_tensors: The TMEM tensors to get the number of allocation columns for.
-    :type tmem_tensors: Union[cute.Tensor, List[cute.Tensor]]
-    :param rounding: Whether to round up the number of allocation columns to the nearest power of 2.
-    :type rounding: bool
-
-    :return: The total number of TMEM allocation columns.
-    :rtype: int
-
-    :raises ValueError: If the number of TMEM allocation columns exceeds the maximum capacity of 512 or is less than 32.
-    """
-    # Turn tmem_tensors into a list
-    if isinstance(tmem_tensors, cute.Tensor):
-        tmem_tensors = [tmem_tensors]
-
-    # For each tensor in tmem_tensors, find the tmem_tensor_col_offset
-    num_tmem_alloc_cols_per_tensor = [
-        find_tmem_tensor_col_offset(t) for t in tmem_tensors
-    ]
-
-    # Sum up the num_tmem_alloc_cols_per_tensor
-    num_tmem_alloc_cols = sum(num_tmem_alloc_cols_per_tensor)
-
-    # Round up num_tmem_cols_total to the nearest power of 2 and make sure it is at least 32
-    if rounding:
-        num_tmem_alloc_cols = max(1 << ceil(log2(num_tmem_alloc_cols)), 32)
-
-    # Validate the number of TMEM allocation columns
-    SM100_TMEM_CAPACITY_COLUMNS = 512
-    SM100_TMEM_MIN_ALLOC_COLUMNS = 32
-    if (
-        num_tmem_alloc_cols > SM100_TMEM_CAPACITY_COLUMNS
-        or num_tmem_alloc_cols < SM100_TMEM_MIN_ALLOC_COLUMNS
-    ):
-        raise ValueError(
-            f"TMEM allocation columns {num_tmem_alloc_cols} exceeds the maximum capacity of {SM100_TMEM_CAPACITY_COLUMNS} or less than {SM100_TMEM_MIN_ALLOC_COLUMNS}"
-        )
-    return num_tmem_alloc_cols
 
 
 def get_smem_layout_atom_ab(
@@ -1156,11 +1126,54 @@ def cluster_shape_to_tma_atom_SFB(
     )
 
 
+@dsl_user_op
+def get_permutation_mnk(
+    tile_shape_mnk: cute.Shape,
+    sf_vec_size: int,
+    use_mxf8f6f4: bool,
+    *,
+    loc=None,
+    ip=None,
+) -> Tuple[int, int, int]:
+    """
+    Get the permutation of M, N, K for the tiled MMA.
+
+    :param tile_shape_mnk: The shape of the tile
+    :type tile_shape_mnk: cute.Shape
+    :param sf_vec_size: The vector size of the Scale Factor.
+    :type sf_vec_size: int
+    :param use_mxf8f6f4: Whether to use MXF8F6F4 or MXF4NVF4.
+    :type use_mxf8f6f4: bool
+
+    :return: The permutation of M, N, K
+    :rtype: Tuple[int, int, int]
+
+    :raise ValueError: If the tile shape is not divisible by the sf_vec_size
+    """
+    perm_m = min(tile_shape_mnk[0], 128)
+    # refer to C++ code:
+    # /include/cutlass/gemm/collective/builders/sm120_common.inl?ref_type=heads#L158
+    if sf_vec_size == 32 or sf_vec_size == 16:
+        perm_n_shape = (8, 2, 2)
+        perm_n_stride = (1, 16, 8)
+    else:
+        raise ValueError(f"Unsupported sf_vec_size, got {sf_vec_size}")
+
+    perm_n_layout = cute.make_layout(perm_n_shape, stride=perm_n_stride)
+    perm_k = 32 if use_mxf8f6f4 else 64
+    permutation_mnk = (
+        perm_m,
+        perm_n_layout,
+        perm_k,
+    )
+
+    return permutation_mnk
+
+
 __all__ = [
     "compute_epilogue_tile_shape",
     "get_smem_store_op",
     "get_tmem_load_op",
-    "get_num_tmem_alloc_cols",
     "make_smem_layout_a",
     "make_smem_layout_b",
     "make_smem_layout_epi",
@@ -1169,4 +1182,6 @@ __all__ = [
     "cluster_shape_to_tma_atom_A",
     "cluster_shape_to_tma_atom_B",
     "cluster_shape_to_tma_atom_SFB",
+    "get_permutation_mnk",
+    "get_num_tmem_alloc_cols",  # deprecated; use cutlass.utils.get_num_tmem_alloc_cols instead
 ]

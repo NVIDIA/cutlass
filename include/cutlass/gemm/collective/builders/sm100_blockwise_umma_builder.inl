@@ -102,8 +102,10 @@ sm100_compute_stage_count_or_override_blockwise(StageCountAutoCarveout<carveout_
 
   constexpr int stage_bytes =
     cutlass::round_nearest(
-      cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
-      cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+      cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})
+      ) +
+      cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})
+      ) +
       cutlass::bits_to_bytes(scale_bits * size<0>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
       cutlass::bits_to_bytes(scale_bits * size<1>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})),
       128) +
@@ -440,7 +442,6 @@ struct CollectiveBuilder<
       cute::identity
     >;
 };
-
 
 } // namespace cutlass::gemm::collective
 

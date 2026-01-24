@@ -306,14 +306,14 @@ public:
 
     compressor_utility.structure_sparse_zero_mask_fill(datas.tensor_A.host_data(), seed + 6);
 
-    // Check for failed devide
+    // Check for failed device
     CUDA_CHECK_FALSE(cudaGetLastError());
 
     datas.tensor_A.sync_device();
     datas.tensor_A_Comp.sync_device();
     datas.tensor_E.sync_device();
 
-    // Check for failed devide
+    // Check for failed device
     CUDA_CHECK_FALSE(cudaGetLastError());
 
     return true;
@@ -375,18 +375,6 @@ public:
 
     datas.tensor_A_Comp.sync_host();
     datas.tensor_E.sync_host();
-
-    #if 0
-    {
-      printf("\n--> DEVICE OUTPUT\n");
-      printf("datas.tensor_A\n");
-      std::cout << datas.tensor_A.host_view() << std::endl << std::endl;
-      printf("datas.tensor_A_Comp\n");
-      std::cout << datas.tensor_A_Comp.host_view() << std::endl << std::endl;
-      printf("datas.tensor_E\n");
-      std::cout << datas.tensor_E.host_view() << std::endl << std::endl;
-    }
-    #endif
 
     return true;
   }
@@ -816,9 +804,11 @@ public:
       printf("compare_reference() DEVICE <-> LEGACY HOST fail\n");
       return false;
     }
-    // else {
-    //   printf("DEVICE <-> HOST PASS\n");
-    // }
+    #if 0
+    else {
+      printf("DEVICE <-> HOST PASS\n");
+    }
+    #endif
 
     return true;
   }

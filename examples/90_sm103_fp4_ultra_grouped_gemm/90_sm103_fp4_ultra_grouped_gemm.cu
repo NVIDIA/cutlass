@@ -441,7 +441,7 @@ struct Options {
   std::ostream & print_usage(std::ostream &out) const {
 
     out << "90_sm103_fp4_ultra_grouped_gemm\n\n"
-      << "  Sm103 3xFP4 Grouped GEMM using a Warp Specialized kernel.\n\n"
+      << "  Sm103 ultra FP4 Grouped GEMM using a Warp Specialized kernel.\n\n"
       << "Options:\n\n"
       << "  --help                                                       If specified, displays this usage statement\n\n"
       << "  --m=<int>                                                    Sets the M extent of the GEMM for all groups\n"
@@ -963,7 +963,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
 int main(int argc, char const **args) {
 
   std::cout << "\n====================================================" << std::endl;
-  std::cout << "CUTLASS 3.0 Grouped GEMM Example - 3xfp4 Block Scaled" << std::endl;
+  std::cout << "CUTLASS 3.0 Grouped GEMM Example - ultra fp4 Block Scaled" << std::endl;
   std::cout << "====================================================" << std::endl;
 
   // CUTLASS must be compiled with CUDA 12.9 Toolkit to run this example

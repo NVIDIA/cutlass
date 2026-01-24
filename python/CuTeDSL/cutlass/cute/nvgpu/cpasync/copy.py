@@ -13,15 +13,14 @@ import enum
 from dataclasses import dataclass
 from typing import Optional, Type
 
-from cutlass import cute
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass._mlir.dialects.cute import ReductionOp as ReductionOp
 from cutlass._mlir import ir
 
-from ...atom import CopyOp, Trait
-from ...tensor import ReductionOp
+from ...atom import CopyOp, Trait, make_atom
 from ...typing import Int16, Int64, Pointer, Integer, Numeric
 from ..common import OpError
 from ..tcgen05.mma import CtaGroup
@@ -29,7 +28,7 @@ from ..tcgen05.mma import CtaGroup
 
 ####################################################################################################
 #
-# Aynchronous copies
+# Asynchronous copies
 #
 ####################################################################################################
 
@@ -96,7 +95,7 @@ class CopyG2SOp(CopyOp):
         ty = _cute_nvgpu_ir.CopyAtomSIMTAsyncCopyType.get(
             copy_internal_type.mlir_type, self.cache_mode._to_ir(), num_bits_per_copy
         )
-        return CopyG2STrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return CopyG2STrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class CopyG2STrait(Trait):
@@ -121,7 +120,16 @@ class TmaCopyOp(CopyOp):
     Base class for all TMA copy operations.
     """
 
-    pass
+    def __init__(self, smem_layout: Optional[ir.Value] = None) -> None:
+        self.smem_layout = smem_layout
+
+    def __extract_mlir_values__(self):
+        return [self.smem_layout]
+
+    def __new_from_mlir_values__(self, values):
+        res = self.__class__()
+        res.smem_layout = values[0]
+        return res
 
 
 #
@@ -129,7 +137,7 @@ class TmaCopyOp(CopyOp):
 #
 
 
-@dataclass(frozen=True)
+@dataclass
 class CopyBulkTensorTileG2SOp(TmaCopyOp):
     """
     Bulk tensor asynchrnous GMEM to SMEM Copy Operation using the TMA unit.
@@ -246,7 +254,7 @@ class CopyBulkTensorTileG2STrait(Trait):
 #
 
 
-@dataclass(frozen=True)
+@dataclass
 class CopyBulkTensorTileG2SMulticastOp(TmaCopyOp):
     """
     Bulk tensor asynchrnous multicast GMEM to SMEM Copy Operation using the TMA unit.
@@ -375,7 +383,7 @@ class CopyBulkTensorTileG2SMulticastTrait(Trait):
 #
 
 
-@dataclass(frozen=True)
+@dataclass
 class CopyBulkTensorTileS2GOp(TmaCopyOp):
     """
     Bulk tensor asynchronous SMEM to GMEM Copy Operation using the TMA unit.
@@ -449,7 +457,11 @@ class CopyBulkTensorTileS2GTrait(Trait):
     pass
 
 
-@dataclass(frozen=True)
+class CopyBulkTensorTileS2GTrait(Trait):
+    pass
+
+
+@dataclass
 class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
     """
     Bulk tensor asynchronous SMEM to GMEM Reduction Operation using the TMA unit.
@@ -585,7 +597,7 @@ class CopyBulkG2SOp(CopyOp):
         ty = _cute_nvgpu_ir.CopyAtomBulkCopyG2SType.get(
             copy_internal_type.mlir_type, num_bits_per_copy, False
         )
-        return CopyBulkG2STrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return CopyBulkG2STrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class CopyBulkG2STrait(Trait):
@@ -670,7 +682,7 @@ class CopyBulkG2SMulticastOp(CopyOp):
         ty = _cute_nvgpu_ir.CopyAtomBulkCopyG2SType.get(
             copy_internal_type.mlir_type, num_bits_per_copy, True
         )
-        return CopyBulkG2SMulticastTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return CopyBulkG2SMulticastTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class CopyBulkG2SMulticastTrait(Trait):
@@ -764,8 +776,248 @@ class CopyBulkS2GOp(CopyOp):
         ty = _cute_nvgpu_ir.CopyAtomBulkCopyS2GType.get(
             copy_internal_type.mlir_type, num_bits_per_copy, False
         )
-        return CopyBulkS2GTrait(cute.make_atom(ty, loc=loc, ip=ip))
+        return CopyBulkS2GTrait(make_atom(ty, loc=loc, ip=ip))
 
 
 class CopyBulkS2GTrait(Trait):
     pass
+
+
+#
+# Bulk SMEM -> GMEM mask copies
+#
+
+
+@dataclass(frozen=True)
+class CopyBulkS2GByteMaskOp(CopyOp):
+    """
+    Bulk copy asynchrnous SMEM to GMEM Copy Operation with mask.
+    The i-th bit in the 16-bit wide byteMask operand specifies whether
+    the i-th byte of each 16-byte wide chunk of source data is copied to the destination.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
+    """
+
+    def __post_init__(self) -> None:
+        # Arch verification
+        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        if not arch >= Arch.sm_100:
+            raise OpError(
+                self,
+                f"expects arch to be at least {Arch.sm_100.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        res = "cp.async SMEM -> GMEM bulk copy Operation"
+        return res
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "CopyBulkS2GByteMaskTrait":
+        num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
+        if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
+            raise ValueError(
+                "expects a 'num_bits_per_copy' kw argument of type int that is positive "
+                f"when creating a copy Atom for {self.__class__.__name__}"
+            )
+        ty = _cute_nvgpu_ir.CopyAtomBulkCopyS2GType.get(
+            copy_internal_type.mlir_type, num_bits_per_copy, True
+        )
+        return CopyBulkS2GByteMaskTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class CopyBulkS2GByteMaskTrait(Trait):
+    def unpack(
+        self,
+        *,
+        loc=None,
+        ip=None,
+        byte_mask=None,
+        **kwargs,
+    ):
+        """
+        Custom implementation of unpack for bulk copy store with mask.
+
+        The bulk store with mask requires `byte_mask` keyword argument to be provided when
+        using `copy`. Any other kw arguments will be ignored instead of triggering an error.
+        """
+        if not isinstance(byte_mask, Integer):
+            raise ValueError(
+                "expects a byte mask to be provided via the byte_mask kw argument"
+            )
+        # Support for .cp_mask qualifier requires sm_100 or higher.
+        attr_str = f"#cute_nvgpu.atom_copy_field_bulks2g<{TMA_BYTE_MASK_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        val = _cute_nvgpu_ir.atom_set_value(
+            self.value,
+            attr,
+            Int16(byte_mask).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+        return val
+
+
+#
+# Bulk SMEM CTA to Cluster copies
+#
+
+
+@dataclass(frozen=True)
+class CopyBulkS2SOp(CopyOp):
+    """
+    Bulk copy asynchrnous SMEM CTA to Cluster Copy Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
+    """
+
+    def __post_init__(self) -> None:
+        # Arch verification
+        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        if not arch >= Arch.sm_90:
+            raise OpError(
+                self,
+                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        res = "cp.async CTA -> Cluster bulk copy Operation"
+        return res
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "CopyBulkS2STrait":
+        num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
+        if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
+            raise ValueError(
+                "expects a 'num_bits_per_copy' kw argument of type int that is positive "
+                f"when creating a copy Atom for {self.__class__.__name__}"
+            )
+        ty = _cute_nvgpu_ir.CopyAtomBulkCopyS2SType.get(
+            copy_internal_type.mlir_type, num_bits_per_copy
+        )
+        return CopyBulkS2STrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class CopyBulkS2STrait(Trait):
+    def unpack(
+        self,
+        *,
+        loc=None,
+        ip=None,
+        mbar_ptr: Optional[Pointer] = None,
+        cta_rank: Optional[Integer] = None,
+        **kwargs,
+    ):
+        """
+        Custom implementation of unpack for bulk copy cta to cluster.
+
+        The bulk cta to cluster copy requires a `mbar_ptr` and `cta_rank` keyword argument to be provided
+        when using `cute.copy`. Any other kw arguments will be ignored instead of triggering an error.
+        """
+
+        if not isinstance(mbar_ptr, Pointer):
+            raise ValueError(
+                "expects a pointer to an mbarrier to be provided via the mbar_ptr kw argument"
+            )
+        if not isinstance(cta_rank, Integer):
+            raise ValueError(
+                "expects a cta rank of int32 to be provided via the cta_rank kw argument"
+            )
+        attr_str = f"#cute_nvgpu.atom_copy_field_bulks2s<{TMA_MBAR_PTR_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        val = _cute_nvgpu_ir.atom_set_value(
+            self.value, attr, mbar_ptr.value, loc=loc, ip=ip
+        )
+        attr_str = f"#cute_nvgpu.atom_copy_field_bulks2s<{TMA_CTA_RANK_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        val = _cute_nvgpu_ir.atom_set_value(
+            val, attr, Int32(cta_rank).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+        )
+        return val
+
+
+####################################################################################################
+#
+# Aynchronous distributed shared memory stores
+#
+####################################################################################################
+
+MBAR_PTR_FIELD_NAME = "mbar_ptr"
+
+
+@dataclass(frozen=True)
+class CopyDsmemStoreOp(CopyOp):
+    """
+    Asynchronous Store operation to DSMEM with explicit synchronization.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-st-async>`__.
+    """
+
+    def __post_init__(self) -> None:
+        # Arch verification
+        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        if not arch >= Arch.sm_90:
+            raise OpError(
+                self,
+                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        res = "st.async RMEM -> DSMEM copy Operation"
+        return res
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc=None,
+        ip=None,
+        **kwargs,
+    ) -> "CopyDsmemStoreTrait":
+        num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
+        if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
+            raise ValueError(
+                "expects a 'num_bits_per_copy' kw argument of type int that is non-negative "
+                f"when creating a copy Atom for {self.__class__.__name__}"
+            )
+        ty = _cute_nvgpu_ir.CopyAtomDsmemStoreType.get(
+            copy_internal_type.mlir_type, num_bits_per_copy
+        )
+        return CopyDsmemStoreTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class CopyDsmemStoreTrait(Trait):
+    def unpack(
+        self,
+        *,
+        loc=None,
+        ip=None,
+        mbar_ptr: Optional[Pointer] = None,
+        **kwargs,
+    ):
+        """
+        Custom implementation of unpack for dsmem async copy.
+
+        The dsmem async copy requires `mbar_ptr` keyword argument to be provided when using `cute.copy`.
+        Any other kw arguments will be ignored instead of triggering an error.
+        """
+        if not isinstance(mbar_ptr, Pointer):
+            raise ValueError(
+                "expects a pointer to an mbarrier to be provided via the mbar_ptr kw argument",
+            )
+        attr_str = f"#cute_nvgpu.atom_copy_field_dsmem_store<{MBAR_PTR_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        val = _cute_nvgpu_ir.atom_set_value(
+            self.value,
+            attr,
+            mbar_ptr.value,
+            loc=loc,
+            ip=ip,
+        )
+        return val
+
+

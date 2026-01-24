@@ -604,14 +604,15 @@ struct CollectiveMma<
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
 
     // Check for SFA SFB layout requirement
-    const auto layout_sfa_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
-    const auto layout_sfb_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
-    implementable = implementable && (layout_sfa_ref == args.layout_SFA);
+    const auto layout_sfa_ref = take<0,2>(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
+    const auto layout_sfb_ref = take<0,2>(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
+
+    implementable = implementable && (layout_sfa_ref == take<0,2>(args.layout_SFA));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFA mismatch, layout_SFA needs to be K-major\n");
     }
 
-    implementable = implementable && (layout_sfb_ref == args.layout_SFB);
+    implementable = implementable && (layout_sfb_ref == take<0,2>(args.layout_SFB));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFB mismatch, layout_SFB needs to be K-major\n");
     }

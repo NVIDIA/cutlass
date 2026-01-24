@@ -57,7 +57,6 @@ from .core import (
     make_composed_layout,
     make_layout_tv,
     make_swizzle,
-    make_sparse_elem,
     recast_ptr,
     get,
     select,
@@ -99,6 +98,8 @@ from .core import (
     local_partition,
     local_tile,
     printf,
+    get_nonswizzle_portion,
+    get_swizzle_portion,
     # Wrapper classes
     Swizzle,
     E,
@@ -118,6 +119,8 @@ from .core import (
     # FastDivmod operations
     FastDivmodDivisor,
     fast_divmod_create_divisor,
+    basis_value,
+    basis_get,
 )
 
 from .tuple import (
@@ -130,6 +133,9 @@ from .tuple import (
     product_like,
     product_each,
     elem_less,
+    tuple_cat,
+    transform_apply,
+    filter_tuple,
 )
 from .tensor import (
     TensorSSA,
@@ -178,6 +184,8 @@ from .atom import (
 )
 from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, prefetch
 
+from . import typing as typing_module
+from . import core
 from . import arch
 
 from . import export
@@ -215,6 +223,7 @@ _tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
 # Explicitly export all symbols for documentation generation
 __all__ = [
     # Core types
+    *core.__all__,
     "AddressSpace",
     "CacheEvictionPriority",
     "Tensor",
@@ -252,6 +261,8 @@ __all__ = [
     "make_composed_layout",
     "make_layout_tv",
     "make_layout_image_mask",
+    "get_nonswizzle_portion",
+    "get_swizzle_portion",
     # Tensor functions
     "make_ptr",
     "make_tensor",
@@ -271,6 +282,8 @@ __all__ = [
     "find",
     "find_if",
     "transform_leaf",
+    "basis_value",
+    "basis_get",
     "coalesce",
     "group_modes",
     "cosize",
@@ -287,6 +300,9 @@ __all__ = [
     "prepend_ones",
     "append_ones",
     "elem_less",
+    "tuple_cat",
+    "transform_apply",
+    "filter_tuple",
     # Math operations
     "ceil_div",
     "round_up",

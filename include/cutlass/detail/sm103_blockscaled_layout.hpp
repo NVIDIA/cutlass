@@ -87,9 +87,14 @@ struct Sm103BlockScaledConfig {
   CUTE_HOST_DEVICE
   static constexpr auto
   tile_atom_to_shape_SFA(ProblemShape problem_shape, LayoutSFA layout_sfa = LayoutSFA{}) {
-    auto problem_shape_MNKL = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
-    return tile_to_shape(SfAtom{}, make_shape(M,K,L), Step<_2,_1,_3>{});
+    if constexpr (rank(ProblemShape{}) == 3) {
+      auto [M, N, K] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(M,K), Step<_2,_1>{});
+    }
+    else {
+      auto [M, N, K, L] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(M,K,L), Step<_2,_1,_3>{});
+    }
   }
 
   // The following function is provided for user fill dynamic problem size to the layout_SFB.
@@ -97,9 +102,14 @@ struct Sm103BlockScaledConfig {
   CUTE_HOST_DEVICE
   static constexpr auto
   tile_atom_to_shape_SFB(ProblemShape problem_shape, LayoutSFB layout_sfb = LayoutSFB{}) {
-    auto problem_shape_MNKL = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
-    return tile_to_shape(SfAtom{}, make_shape(N,K,L), Step<_2,_1,_3>{});
+    if constexpr (rank(ProblemShape{}) == 3) {
+      auto [M, N, K] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(N,K), Step<_2,_1>{});
+    }
+    else {
+      auto [M, N, K, L] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(N,K,L), Step<_2,_1,_3>{});
+    }
   }
 };
 /////////////////////////////////////////////////////////////////////////////////////////////////

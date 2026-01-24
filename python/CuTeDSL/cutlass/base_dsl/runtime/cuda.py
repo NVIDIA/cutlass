@@ -347,6 +347,16 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0):
     # Initialize CUDA Driver API
     _log().info(f"cuInit {flags}")
     checkCudaErrors(cuda.cuInit(flags))
+    
+    driver_version = get_driver_version()
+
+    # Check the CUDA driver version works for the installed cuda-python package
+    if driver_version < 13000 and cuda.CUDA_VERSION >= 13000:
+        raise DSLRuntimeError(
+            f"CUDA driver version {driver_version} is below the minimum required version for the installed cuda-python package {cuda.CUDA_VERSION}.",
+            suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-python package with version 12.9 or below.",
+        )
+
     # Retrieve handle for device
     cuDevice = get_device(device_id)
     # Create context

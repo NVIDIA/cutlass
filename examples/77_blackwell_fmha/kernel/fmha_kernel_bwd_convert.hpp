@@ -69,7 +69,7 @@ struct FmhaKernelBwdConvert {
 
   static const int MinBlocksPerMultiprocessor = 1;
   static const int MaxThreadsPerBlock = 128;
-  using ArchTag = cutlass::arch::Sm90;
+  using ArchTag = cutlass::arch::Sm100;
 
   static const int kBlockSeq = 8;
 

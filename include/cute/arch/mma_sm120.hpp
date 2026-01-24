@@ -3131,6 +3131,29 @@ struct SM120_16x8x64_TN_VS<float_e2m1_t, float_e2m1_t, float, float_ue8m0_t, VS>
     static constexpr uint16_t bidB = 0;
     CUTE_STATIC_ASSERT(VS == 16 || VS == 32, "Scaling factor vector size has to be 16 or 32 for MXF4NVF4 MMA.");
     
+    if constexpr ( VS == 16 ) {
+#if defined(CUTE_ARCH_MXF4NVF4_4X_UE8M0_MMA_ENABLED)
+    asm volatile(
+    "mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.block_scale.scale_vec::4X.f32.e2m1.e2m1.f32.ue8m0 "
+    "{%0,  %1,  %2,  %3},"
+    "{%4,  %5,  %6,  %7},"
+    "{%8,  %9},"
+    "{%10, %11, %12, %13},"
+    "{%14},"
+    "{%15, %16},"
+    "{%17},"
+    "{%18, %19};\n"
+    :  "=f"(d0),  "=f"(d1),  "=f"(d2),  "=f"(d3)
+    :   "r"(a0),   "r"(a1),   "r"(a2),   "r"(a3),
+        "r"(b0),   "r"(b1),
+        "f"(c0),   "f"(c1),   "f"(c2),   "f"(c3),
+        "r"(uint32_t(sfa0)) , "h"(bidA), "h"(tidA),
+        "r"(uint32_t(sfb0)) , "h"(bidB), "h"(tidB));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM120::BLOCKSCALED::SM120_16x8x64_TN_VS without CUTE_ARCH_MXF4NVF4_4X_UE8M0_MMA_ENABLED");
+#endif
+    } else if constexpr ( VS == 32 ) {
+
 #if defined(CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED)
       asm volatile(
       "mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::2X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue8m0 "
@@ -3151,6 +3174,7 @@ struct SM120_16x8x64_TN_VS<float_e2m1_t, float_e2m1_t, float, float_ue8m0_t, VS>
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM120::BLOCKSCALED::SM120_16x8x64_TN_VS without CUTE_ARCH_MXF4NVF4_2X_UE8M0_MMA_ENABLED");
 #endif
+    }
   }
 };
 

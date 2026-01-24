@@ -1532,6 +1532,7 @@ public:
       ProblemShape problem_shape,
       int32_t next_batch
   ) {
+    __syncwarp();
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
       tensormaps_replace_global_address<IsLoad>(shared_tensormap, params, next_batch);

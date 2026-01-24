@@ -226,7 +226,7 @@ public:
   PipelineState<Stages> 
   advance_to_next_work(Pipeline& clc_pipeline, PipelineState<Stages> clc_pipe_producer_state) const {
     return sm100_scheduler_.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
- }
+  }
 
   // Given the inputs, computes the total number of output blocks this problem will compute over
   template<class ProblemShape>

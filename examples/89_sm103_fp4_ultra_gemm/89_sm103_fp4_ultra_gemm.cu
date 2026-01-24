@@ -32,7 +32,7 @@
 /*! \file
     \brief A GEMM example using CUTLASS for the NVIDIA Blackwell SM103 architecture.
 
-    This example demonstrates a simple way to instantiate and run a blockscaled 3xFP4 GEMM on the NVIDIA Blackwell SM103 architecture.
+    This example demonstrates a simple way to instantiate and run a blockscaled ultra FP4 GEMM on the NVIDIA Blackwell SM103 architecture.
 
     Usage:
 
@@ -269,7 +269,7 @@ struct Options {
   std::ostream & print_usage(std::ostream &out) const {
 
     out << "89_sm103_fp4_ultra_gemm\n\n"
-      << "  Sm103 3xFP4 GEMM using a Warp Specialized kernel.\n\n"
+      << "  Sm103 ultra FP4 GEMM using a Warp Specialized kernel.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"

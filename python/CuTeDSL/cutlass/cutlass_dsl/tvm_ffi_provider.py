@@ -255,8 +255,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         current_device: Optional[ir.Value],
         target_device: Optional[ir.Value],
     ) -> ir.Block:
-        """Set the CUDA device index if it differs from the target device.
-        """
+        """Set the CUDA device index if it differs from the target device."""
         # If either device is None, no switching needed
         if current_device is None:
             assert target_device is None
@@ -274,7 +273,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             self.cond_br(
                 cond=devices_differ,
                 true_block=switch_device_block,
-                false_block=continuation_block
+                false_block=continuation_block,
             )
 
         # Switch device block: call cudaSetDevice
@@ -288,7 +287,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
 
         # Check for errors and branch to continuation
-        switch_device_block = self.check_cuda_error(result, switch_device_block, context)
+        switch_device_block = self.check_cuda_error(
+            result, switch_device_block, context
+        )
         with ir.InsertionPoint(switch_device_block):
             self.br(continuation_block)
 
@@ -319,7 +320,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-            current_block = self.check_cuda_error(get_device_result, current_block, context)
+            current_block = self.check_cuda_error(
+                get_device_result, current_block, context
+            )
 
             # Load the current device index from the alloca
             with ir.InsertionPoint(current_block):
@@ -351,7 +354,6 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
         return current_block
 
-
     def find_cuda_device_index_from_params(self, context: CallContext):
         """Find the CUDA device index from tensor parameters."""
         for param in context.params:
@@ -363,12 +365,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         return None
 
     def create_shared_cuda_error_block(
-        self,
-        current_block: ir.Block,
-        context: CallContext
+        self, current_block: ir.Block, context: CallContext
     ) -> ir.Block:
-        """Create a shared error handling block for all CUDA errors.
-        """
+        """Create a shared error handling block for all CUDA errors."""
         # Create the shared error block after the current block (setup phase)
         # This block will be branched to from multiple error checking sites
         # It accepts the error code as a block argument
@@ -398,7 +397,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         current_block = self.append_unload_to_global_dtors(current_block, context)
         # Create shared CUDA error handling block after the setup blocks
         # This reduces code duplication - all CUDA errors branch to this single block
-        self.cuda_error_handle_block = self.create_shared_cuda_error_block(current_block, context)
+        self.cuda_error_handle_block = self.create_shared_cuda_error_block(
+            current_block, context
+        )
         # setup device index, will be set around the call to the target function
         self.cuda_device_index = self.find_cuda_device_index_from_params(context)
         current_block = super().__call__(current_block, context)
@@ -416,6 +417,7 @@ def _inplace_hide_symbols(ir_module: ir.Module, hide_check: Callable[[str], bool
     @return: The ir module with the symbols hidden.
     """
     defined_symbols = set()
+
     def walk_llvm_func_op(op):
         # not a declaration
         if (
@@ -452,6 +454,7 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
 
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -464,10 +467,12 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         return self.__call__(*exe_args)
 
     def export_to_c(
-        self, object_file_path: str, function_name: str = None,
+        self,
+        object_file_path: str,
+        function_name: str = None,
         *,
         enable_pic: bool = True,
-        export_only_tvm_ffi_symbols: bool = False
+        export_only_tvm_ffi_symbols: bool = False,
     ):
         """Export the TVM FFI function to an object file.
 
@@ -481,8 +486,9 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         internal_symbol_prefix = "__cute_internal_" + function_name
         mod = self.ir_module
         mod = get_export_module(
-            self.ir_module, internal_symbol_prefix,
-            preserve_symbols=[f"__tvm_ffi_{self.function_name}"]
+            self.ir_module,
+            internal_symbol_prefix,
+            preserve_symbols=[f"__tvm_ffi_{self.function_name}"],
         )
 
         rename_tvm_ffi_function(mod, self.function_name, function_name)
@@ -498,8 +504,7 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
             f.write(out_bytes)
 
     def _create_tvm_ffi_function(self):
-        """Create the tvm_ffi.Function from the current execution engine.
-        """
+        """Create the tvm_ffi.Function from the current execution engine."""
         if self.engine is not None:
             # trigger eager compile of init callbacks
             cuda_init = self.engine.raw_lookup("cuda_init")
@@ -512,14 +517,14 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
                 "__tvm_ffi_" + self.function_name
             )
             tvm_ffi_function = tvm_ffi.Function.__from_mlir_packed_safe_call__(
-                tvm_ffi_function_ptr, keep_alive_object=self.engine)
+                tvm_ffi_function_ptr, keep_alive_object=self.engine
+            )
             return tvm_ffi_function
         return None
 
 
 class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase):
-    """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments.
-    """
+    """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -537,8 +542,7 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
 
 
 class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
-    """TVM FFI Function with kwargs wrapper support
-    """
+    """TVM FFI Function with kwargs wrapper support"""
 
     def __init__(self, *args, **kwargs):
         assert "kwargs_wrapper_spec" in kwargs, "kwargs_wrapper_spec is required"
@@ -549,6 +553,7 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
         if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
             try:
                 from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+
                 self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
                     self._tvm_ffi_function,
                     arg_names=kwargs_wrapper_spec.arg_names,
@@ -557,14 +562,15 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
                     kwonly_defaults=kwargs_wrapper_spec.kwonly_defaults,
                 )
             except ImportError:
-                raise DSLRuntimeError("install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults")
+                raise DSLRuntimeError(
+                    "install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults"
+                )
         else:
             # positional only is probably fine
             self._kwargs_wrapper = self._tvm_ffi_function
 
     def __call__(self, *args, **kwargs):
-        """Call the TVM FFI function with kwargs wrapper.
-        """
+        """Call the TVM FFI function with kwargs wrapper."""
         return self._kwargs_wrapper(*args, **kwargs)
 
     def __tvm_ffi_object__(self):
@@ -574,7 +580,8 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
 def supports_kwargs_wrapper() -> bool:
     """Check if the kwargs wrapper is supported."""
     try:
-        from tvm_ffi.utils import kwargs_wrapper # type: ignore
+        from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+
         return True
     except ImportError:
         return False

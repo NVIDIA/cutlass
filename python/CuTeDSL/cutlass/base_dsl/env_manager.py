@@ -74,6 +74,27 @@ def get_int_env_var(var_name, default_value=0):
 
 
 @lru_cache(maxsize=None)
+def get_int_or_none_env_var(var_name, default_value=None):
+    """
+    Get the value of an integer or None union environment variable.
+    If the value is not a valid integer, the default value 0 is returned.
+    Note that the value is cached after the first call.
+    """
+    raw = get_str_env_var(var_name)
+    if raw is None:
+        return default_value
+
+    value = raw.strip().lower()
+    if value == "none":
+        return None
+
+    try:
+        return int(value)
+    except ValueError:
+        return default_value
+
+
+@lru_cache(maxsize=None)
 def has_env_var(var_name):
     """
     Check if an environment variable is set.
@@ -235,17 +256,19 @@ def get_prefix_dsl_libs(prefix: str):
             return prefix_libs_existing
 
         def get_libs_cand(start):
-            target_cuda_dialect_libs = {
-                "cuda_dialect_runtime",
+            target_dsl_runtime_libs = {
+                "cute_dsl_runtime",
             }
             lib_folder_guesses = [
                 "lib",
             ]
 
             for target_libs in [
-                target_cuda_dialect_libs,
+                target_dsl_runtime_libs,
             ]:
-                libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
+                libs_cand = find_libs_in_ancestors(
+                    start, target_libs, lib_folder_guesses
+                )
                 if libs_cand:
                     dsl_libs = ":".join(libs_cand)
                     return dsl_libs
@@ -310,6 +333,8 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_WARNINGS_IGNORE: Ignore warnings (default: False)
     - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
     - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
+    - [DSL_NAME]_JIT_CACHE_MAX_ELEMS: Maximum number of JIT compiled functions to cache in memory (default: None). If None, the cache is unbounded.
+    - [DSL_NAME]_NO_CACHE: Disable JIT cache (default: False)
     - [DSL_NAME]_DISABLE_FILE_CACHING: Disable file caching (default: False)
     - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
     - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
@@ -325,12 +350,17 @@ class EnvironmentVarManager(LogEnvironmentManager):
         self.print_ir = get_bool_env_var(f"{prefix}_PRINT_IR", False)
         self.filter_stacktrace = get_bool_env_var(f"{prefix}_FILTER_STACKTRACE", True)
         self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", False)
+        self.no_cache = get_bool_env_var(f"{prefix}_NO_CACHE", False)
+        self.jit_cache_max_elems = get_int_or_none_env_var(
+            f"{prefix}_JIT_CACHE_MAX_ELEMS", None
+        )
+        if self.no_cache:
+            self.jit_cache_max_elems = 0
         self.dump_dir = get_str_env_var(
             f"{prefix}_DUMP_DIR", get_default_file_dump_root()
         )
         self.keep_ptx = get_bool_env_var(f"{prefix}_KEEP_PTX", False)
         self.keep_cubin = get_bool_env_var(f"{prefix}_KEEP_CUBIN", False)
-
         # File options
         self.keep_ir = get_bool_env_var(f"{prefix}_KEEP_IR", False)
         self.cache_dir = get_str_env_var(f"{prefix}_CACHE_DIR", None)

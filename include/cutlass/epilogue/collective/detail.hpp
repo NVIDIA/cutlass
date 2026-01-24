@@ -736,7 +736,9 @@ public:
     // Wait for mma warp to fill tmem buffer with accumulator results
     acc_pipeline.consumer_wait(acc_pipe_consumer_state);
 
-    auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
+    auto [acc_state_next, load_state_next] = (*this).template operator()<ReuseTmem>(
+        load_pipeline,
+        load_pipe_consumer_state,
         acc_pipeline,
         acc_pipe_consumer_state,
         problem_shape_mnkl,
@@ -746,10 +748,9 @@ public:
         shared_tensors);
 
     // Let mma warp know tmem buffer is consumed and empty
-    ++load_pipe_consumer_state;
     ++store_pipe_producer_state;
 
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
+    return cute::make_tuple(load_state_next, store_pipe_producer_state, acc_state_next);
   }
 
   // FastF32 API
@@ -857,7 +858,9 @@ public:
       TensorMap tensormap
       )
   { 
-    auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
+    auto [acc_state_next, load_state_next] = (*this).template operator()<ReuseTmem>(
+        load_pipeline,
+        load_pipe_consumer_state,
         acc_pipeline,
         acc_pipe_consumer_state,
         problem_shape_mnkl,
@@ -867,10 +870,9 @@ public:
         shared_tensors);
 
     // Let mma warp know tmem buffer is consumed and empty
-    ++load_pipe_consumer_state;
     ++store_pipe_producer_state;
 
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
+    return cute::make_tuple(load_state_next, store_pipe_producer_state, acc_state_next);
   }
 
   template <class CtaTileMNK>

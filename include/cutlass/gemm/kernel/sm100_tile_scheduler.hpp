@@ -621,7 +621,7 @@ public:
                     , "r"(clc_response.data[1])
                     , "r"(clc_response.data[2])
                     , "r"(clc_response.data[3]));
-    cutlass::arch::fence_view_async_shared();
+    cutlass::arch::fence_view_shared();
     #endif
   }
 

@@ -28,6 +28,30 @@ from cutlass._mlir.dialects.cute import ReductionOp as ReductionOp
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import vector, arith
 
+from .typing import (
+    Numeric,
+    Integer,
+    Boolean,
+    Int4,
+    Uint8,
+    Int8,
+    Int32,
+    Int64,
+    BFloat16,
+    IntTuple,
+    Coord,
+    Shape,
+    Stride,
+    Pointer,
+    Layout,
+    ComposedLayout,
+    Tensor,
+    AddressSpace,
+    is_integer,
+    is_int_tuple,
+    as_numeric,
+)
+
 from .core import (
     _unpack_x_tuple,
     _pack_int_tuple,
@@ -82,6 +106,29 @@ from .tuple import transform_leaf, product, product_like, flatten_to_tuple
 from .arch import cvt_i8_bf16_intrinsic, cvt_i4_bf16_intrinsic, cvt_f4e2m1_f16_intrinsic
 
 
+__all__ = [
+    "TensorSSA",
+    "ReductionOp",
+    "make_tensor",
+    "make_identity_tensor",
+    "make_fragment",
+    "make_fragment_like",
+    "make_rmem_tensor_like",
+    "make_rmem_tensor",
+    "recast_tensor",
+    "domain_offset",
+    "print_tensor",
+    "full",
+    "full_like",
+    "empty_like",
+    "ones_like",
+    "zeros_like",
+    "where",
+    "any_",
+    "all_",
+]
+
+
 @ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
 @ir.register_value_caster(_cute_ir.CoordTensorType.get_static_typeid(), replace=True)
 @ir.register_value_caster(
@@ -132,8 +179,9 @@ class _Tensor(Tensor):
         iter_val = _cute_ir.get_iter(self.value, loc=loc, ip=ip)
         if isinstance(iter_val, Pointer):
             self._iterator = iter_val
-        elif isinstance(iter_val.type, _cute_ir.IntTupleType):
-            self._iterator = _unpack_x_tuple(iter_val)
+        elif isinstance(iter_val.type, _cute_ir.ArithTupleIteratorType):
+            itup_val = _cute_ir.deref_arith_tuple_iter(iter_val)
+            self._iterator = _unpack_x_tuple(itup_val)
         elif isinstance(iter_val, ir.Value):
             # Example: SMEM descriptor iterator, not well supported today
             self._iterator = iter_val
@@ -151,6 +199,9 @@ class _Tensor(Tensor):
                 self._dtype = None
             else:
                 raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
+
+    def __repr__(self):
+        return self.__str__()
 
     def __str__(self):
         from .core import pretty_str
@@ -257,7 +308,8 @@ class _Tensor(Tensor):
             res = _cute_ir.get_iter(
                 slice_(self, crd, loc=loc, ip=ip).value, loc=loc, ip=ip
             )
-            return _unpack_x_tuple(res, loc=loc, ip=ip)
+            itup_val = _cute_ir.deref_arith_tuple_iter(res)
+            return _unpack_x_tuple(itup_val)
         else:
             self._check_can_load_store()
             self._check_can_dereference()
@@ -387,9 +439,10 @@ class _Tensor(Tensor):
         return _cute_ir.get_layout(self.value, loc=loc, ip=ip)
 
     @property
+    @dsl_user_op
     @lru_cache_ir()
-    def shape(self) -> Shape:
-        return self.layout.shape
+    def shape(self, *, loc=None, ip=None) -> Shape:
+        return self.layout.shape_method(loc=loc, ip=ip)
 
     @property
     @lru_cache_ir()
@@ -633,7 +686,7 @@ def make_tensor(
     """
     if isinstance(layout, _ComposedLayoutWithInnerFunc):
         raise ValueError(
-            "CuTe DSL tensor does not support composed layouts with inner functions: {layout}"
+            f"CuTe DSL tensor does not support composed layouts with inner functions: {layout}"
         )
 
     if not isinstance(layout, (Layout, ComposedLayout)):
@@ -644,8 +697,12 @@ def make_tensor(
 
     res_ty = None
     if is_integer(iterator) or isinstance(iterator, tuple):
-        iterator = _pack_int_tuple(iterator, loc=loc, ip=ip)
-        res_ty = _cute_ir.CoordTensorType.get(iterator.type, layout.type)
+        itup_val = _pack_int_tuple(iterator, loc=loc, ip=ip)
+        iter_ty = _cute_ir.ArithTupleIteratorType.get(itup_val.type)
+        iterator = _cute_ir.make_arith_tuple_iter(
+            iter=iter_ty, value=itup_val, loc=loc, ip=ip
+        )
+        res_ty = _cute_ir.CoordTensorType.get(itup_val.type, layout.type)
     elif isinstance(iterator, Pointer):
         iterator = iterator.value
         res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)
@@ -773,7 +830,7 @@ def make_fragment(
 
 @dsl_user_op
 def make_rmem_tensor_like(
-    src: Union[Layout, ComposedLayout, Tensor],
+    src: Union[Layout, ComposedLayout, Tensor, "TensorSSA"],
     dtype: Optional[Type[Numeric]] = None,
     *,
     loc=None,
@@ -826,7 +883,7 @@ def make_rmem_tensor_like(
       create register storage for intermediate results.
 
     """
-    if not isinstance(src, (Layout, ComposedLayout, Tensor)):
+    if not isinstance(src, (Layout, ComposedLayout, Tensor, TensorSSA)):
         raise TypeError(
             f"src must be a Layout or ComposedLayout or Tensor, got {type(src)}"
         )
@@ -844,6 +901,9 @@ def make_rmem_tensor_like(
         else:
             res_dtype = dtype or src.element_type
             src_layout = src.layout
+    elif isinstance(src, TensorSSA):
+        res_dtype = dtype or src.element_type
+        src_layout = make_layout(src.shape, loc=loc, ip=ip)
     else:
         if dtype is None:
             raise ValueError("dtype must be provided when src is a layout")
@@ -918,7 +978,7 @@ def domain_offset(coord: Coord, tensor: Tensor, *, loc=None, ip=None) -> Tensor:
             ip=ip,
         )
     elif is_integer(tensor.iterator) or isinstance(tensor.iterator, tuple):
-        new_iter = _cute_ir.add_offset(
+        new_iter = _cute_ir.tuple_add(
             _pack_int_tuple(tensor.iterator, loc=loc, ip=ip),
             _pack_int_tuple(offset, loc=loc, ip=ip),
             loc=loc,
@@ -1136,10 +1196,12 @@ class TensorSSA(cutlass_arith.ArithValue):
     def _apply_op(
         self, op, other: "TensorSSA", flip=False, *, loc, ip
     ) -> "TensorSSA": ...
+
     @overload
     def _apply_op(
         self, op, other: cutlass_arith.ArithValue, flip=False, *, loc, ip
     ) -> "TensorSSA": ...
+
     @overload
     def _apply_op(
         self, op, other: Union[int, float, bool], flip=False, *, loc, ip

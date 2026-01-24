@@ -166,6 +166,7 @@ protected:
       }
     }
 
+#ifndef __QNX__
     // Update SM occupancy member
     cudart_result = cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
       &sm_occupancy_,
@@ -177,6 +178,7 @@ protected:
       CUTLASS_TRACE_HOST("  cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags() returned error " << cudaGetErrorString(cudart_result));
       return Status::kErrorInternal;
     }
+#endif
 
     // Update device ordinal member on success
     device_ordinal_ = current_ordinal;

@@ -25,9 +25,19 @@ import cutlass._mlir.dialects.cuda as _cuda_dialect
 
 from cutlass.cutlass_dsl import JitArgAdapterRegistry, CuTeDSL as _CuTeDSL
 from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.base_dsl.export import ExternalBinaryModule
 
 # Local modules imports
-from .typing import AddressSpace, Layout, Tensor, Pointer, Numeric, SymInt
+from .typing import (
+    AddressSpace,
+    Layout,
+    Tensor,
+    Pointer,
+    Numeric,
+    SymInt,
+    Float32,
+    TFloat32,
+)
 from . import core
 from .tensor import _Tensor as CoreTensor
 
@@ -69,7 +79,10 @@ class _Pointer(Pointer):
         else:
             self._assumed_align = assumed_align
 
-        self._c_pointer = None
+        self._desc = ctypes.c_void_p(int(self._pointer))
+        self._c_pointer = ctypes.addressof(self._desc)
+        self._c_pointers_cache = [self._c_pointer]
+
         assert int(self._pointer) % self._assumed_align == 0, (
             f"pointer must be {self._assumed_align} bytes aligned"
         )
@@ -85,10 +98,7 @@ class _Pointer(Pointer):
         return self._pointer
 
     def __c_pointers__(self):
-        if self._c_pointer is None:
-            self._desc = ctypes.c_void_p(int(self._pointer))
-            self._c_pointer = ctypes.addressof(self._desc)
-        return [self._c_pointer]
+        return self._c_pointers_cache
 
     def __new_from_mlir_values__(self, values):
         assert len(values) == 1
@@ -151,29 +161,24 @@ class _Tensor(Tensor):
         self._memref_desc = None
         self._dtype = None
         self._use_32bit_stride = use_32bit_stride
+        self._c_pointers_cache = None
 
     @property
     def __class__(self) -> Type[Tensor]:
         # Cheat to let `type(_Tensor())` to return cute.Tensor
         return Tensor
 
-    def lazily_load_dltensor(func):
-        """Decorator to lazily load the DLTensorWrapper.
+    def load_dltensor(self):
+        """Lazily load the DLTensorWrapper.
 
-        This decorator loads the DLTensorWrapper when needed,
+        This function loads the DLTensorWrapper when needed,
         avoiding overhead in the critical path of calling JIT functions.
         """
+        if self._dltensor_wrapper is None:
+            self._dltensor_wrapper = _cute_ir.DLTensorWrapper(
+                self._dlpack_data, self._use_32bit_stride
+            )
 
-        def wrapper(self, *args, **kwargs):
-            if self._dltensor_wrapper is None:
-                self._dltensor_wrapper = _cute_ir.DLTensorWrapper(
-                    self._dlpack_data, self._use_32bit_stride
-                )
-            return func(self, *args, **kwargs)
-
-        return wrapper
-
-    @lazily_load_dltensor
     def mark_layout_dynamic(self, leading_dim: Optional[int] = None):
         """Marks the tensor layout as dynamic based on the leading dimension.
 
@@ -193,10 +198,10 @@ class _Tensor(Tensor):
         :return: The tensor with dynamic layout
         :rtype: _Tensor
         """
+        self.load_dltensor()
         self._dltensor_wrapper.mark_layout_dynamic(leading_dim)
         return self
 
-    @lazily_load_dltensor
     def mark_compact_shape_dynamic(
         self,
         mode: int,
@@ -208,6 +213,7 @@ class _Tensor(Tensor):
         :param mode: The mode of the compact shape, defaults to 0
         :type mode: int
         :param stride_order: Consistent with `torch.Tensor.dim_order`. Defaults to None.
+
         Indicates the order of the modes (dimensions) if the current layout were converted to row-major order.
         It starts from the outermost to the innermost dimension.
         :type stride_order: tuple[int, ...], optional
@@ -228,17 +234,18 @@ class _Tensor(Tensor):
 
         Using `torch.Tensor.dim_order()` to get the stride order of the torch tensor.
         .. code-block:: python
-            a = torch.empty(3, 4)
-            t = cute.runtime.from_dlpack(a)
-            t = t.mark_compact_shape_dynamic(mode=0, stride_order=a.dim_order())
+        a = torch.empty(3, 4)
+        t = cute.runtime.from_dlpack(a)
+        t = t.mark_compact_shape_dynamic(mode=0, stride_order=a.dim_order())
         """
+        self.load_dltensor()
         self._dltensor_wrapper.mark_compact_shape_dynamic(
             mode, stride_order, divisibility
         )
         return self
     @property
-    @lazily_load_dltensor
     def element_type(self) -> Type[Numeric]:
+        self.load_dltensor()
         if self._dtype is None:
             self._dtype = self._dltensor_wrapper.dtype
         return self._dtype
@@ -274,24 +281,24 @@ class _Tensor(Tensor):
         self._dtype = new_type
 
     @property
-    @lazily_load_dltensor
     def memspace(self):
+        self.load_dltensor()
         return self._dltensor_wrapper.address_space
 
     @property
-    @lazily_load_dltensor
     def size_in_bytes(self) -> int:
+        self.load_dltensor()
         return self._dltensor_wrapper.size_in_bytes()
 
     @property
-    @lazily_load_dltensor
     def mlir_type(self) -> ir.Type:
+        self.load_dltensor()
         return self._dltensor_wrapper.get_type(
             self.element_type.mlir_type, self._assumed_align
         )
 
-    @lazily_load_dltensor
     def __str__(self) -> str:
+        self.load_dltensor()
         return f"Tensor<0x{self._dltensor_wrapper.str}>"
 
     def __repr__(self):
@@ -304,8 +311,8 @@ class _Tensor(Tensor):
         raise TypeError("runtime._Tensor is not indexable")
 
     @property
-    @lazily_load_dltensor
     def iterator(self):
+        self.load_dltensor()
         return _Pointer(
             self._dltensor_wrapper.data_ptr,
             self.element_type,
@@ -320,13 +327,13 @@ class _Tensor(Tensor):
         )
 
     @property
-    @lazily_load_dltensor
     def shape(self):
+        self.load_dltensor()
         return self._dltensor_wrapper.shape
 
     @property
-    @lazily_load_dltensor
     def stride(self):
+        self.load_dltensor()
         strides = self._dltensor_wrapper.stride
         if strides is None:
             strides = itertools.accumulate(
@@ -356,28 +363,30 @@ class _Tensor(Tensor):
         raise TypeError("fill function is not supported in runtime")
 
     @property
-    @lazily_load_dltensor
     def data_ptr(self):
+        self.load_dltensor()
         return self._dltensor_wrapper.data_ptr
 
     @property
-    @lazily_load_dltensor
     def dynamic_shapes_mask(self):
         """Get the mask of dynamic shapes in the tensor."""
+        self.load_dltensor()
         return self._dltensor_wrapper.get_dynamic_shapes_mask()
 
     @property
-    @lazily_load_dltensor
     def dynamic_strides_mask(self):
         """Get the mask of dynamic strides in the tensor."""
+        self.load_dltensor()
         return self._dltensor_wrapper.get_dynamic_strides_mask()
 
-    @lazily_load_dltensor
     def __c_pointers__(self):
-        self._memref_desc = self._dltensor_wrapper.build_memref_desc(
-            self._assumed_align
-        )
-        return [_cute_ir.pycapsule_get_pointer(self._memref_desc)]
+        if self._c_pointers_cache is None:
+            self.load_dltensor()
+            self._memref_desc = self._dltensor_wrapper.build_memref_desc(
+                self._assumed_align
+            )
+            self._c_pointers_cache = [_cute_ir.pycapsule_get_pointer(self._memref_desc)]
+        return self._c_pointers_cache
 
     def __get_mlir_types__(self):
         return [self.mlir_type]
@@ -479,6 +488,12 @@ class _FakeCompactTensor(Tensor):
     @property
     def stride(self):
         return self._stride
+
+    @property
+    def leading_dim(self):
+        for dim, order in enumerate(self._stride_order):
+            if order == 0:
+                return dim
 
     @property
     def dynamic_shapes_mask(self):
@@ -618,7 +633,8 @@ def make_fake_compact_tensor(
     :param shape: Shape of the tensor.
     :type shape: tuple[int, ...]
     :param stride_order: Order in which strides (memory layout) are assigned to the tensor dimensions.
-        If None, the default layout is col-major. Otherwise, it should be a permutation of the dimension indices.
+        If None, the default layout is left-to-right order (known as column-major order for flatten layout).
+        Otherwise, it should be a permutation order of the dimension indices.
     :type stride_order: tuple[int, ...], optional
     :param memspace: Memory space where the fake tensor resides. Optional.
     :type memspace: str, optional
@@ -646,6 +662,9 @@ def make_fake_compact_tensor(
         # Compiled function will take a tensor with the type:
         #   tensor<ptr<f32, generic> o (100,?{div=8}):(?{i32 div=8},1)>
         compiled_foo = cute.compile(foo, x)
+
+        # Default stride order is left-to-right order: (1, 8)
+        y = make_fake_compact_tensor(cutlass.Float32, (8, 3))
     """
 
     return _FakeCompactTensor(
@@ -730,6 +749,7 @@ def from_dlpack(
     use_32bit_stride=False,
     *,
     enable_tvm_ffi=False,
+    force_tf32=False,
 ) -> Tensor:
     """Convert from tensor object supporting __dlpack__() to a CuTe Tensor.
 
@@ -745,6 +765,8 @@ def from_dlpack(
     :param enable_tvm_ffi: Whether to enable TVM-FFI, defaults to False. When True, the tensor will be converted to
       a TVM-FFI function compatible tensor.
     :type enable_tvm_ffi: bool, optional
+    :param force_tf32: Whether to force the element type to TFloat32 if the element type is Float32.
+    :type force_tf32: bool, optional
     :return: A CuTe Tensor object
     :rtype: Tensor
 
@@ -764,12 +786,15 @@ def from_dlpack(
     # If the environment variable `CUTE_DSL_ENABLE_TVM_FFI` is set to True, the tensor will be converted to
     # a TVM-FFI function compatible tensor.
     enable_tvm_ffi = enable_tvm_ffi or _CuTeDSL._get_dsl().envar.enable_tvm_ffi
-    return _Tensor(
+    res = _Tensor(
         tensor_dlpack,
         assumed_align=assumed_align,
         use_32bit_stride=use_32bit_stride,
         enable_tvm_ffi=enable_tvm_ffi,
     )
+    if force_tf32 and res.element_type == Float32:
+        res.element_type = TFloat32
+    return res
 
 
 def make_ptr(
@@ -851,15 +876,21 @@ class TensorAdapter:
 
     def __init__(self, arg):
         self._arg = from_dlpack(arg).mark_layout_dynamic()
+        self._c_pointers_cache = None
+        self._mlir_types_cache = None
 
     def __new_from_mlir_values__(self, values):
         return self._arg.__new_from_mlir_values__(values)
 
     def __c_pointers__(self):
-        return self._arg.__c_pointers__()
+        if self._c_pointers_cache is None:
+            self._c_pointers_cache = self._arg.__c_pointers__()
+        return self._c_pointers_cache
 
     def __get_mlir_types__(self):
-        return self._arg.__get_mlir_types__()
+        if self._mlir_types_cache is None:
+            self._mlir_types_cache = self._arg.__get_mlir_types__()
+        return self._mlir_types_cache
 
 
 def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
@@ -872,7 +903,7 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
     :rtype: list
     """
 
-    def _get_cuda_dialect_runtime_path():
+    def _get_cute_dsl_runtime_path():
         libs = get_prefix_dsl_libs("CUTE_DSL")
         if libs is None:
             return None
@@ -884,15 +915,15 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
             libs = libs.split(":")
 
         for path in libs:
-            if path.endswith("libcuda_dialect_runtime.so"):
+            if path.endswith("libcute_dsl_runtime.so"):
                 return path
 
         return None
 
     libs = []
-    cuda_dialect_runtime_path = _get_cuda_dialect_runtime_path()
-    if cuda_dialect_runtime_path:
-        libs.append(cuda_dialect_runtime_path)
+    cute_dsl_runtime_path = _get_cute_dsl_runtime_path()
+    if cute_dsl_runtime_path:
+        libs.append(cute_dsl_runtime_path)
 
     if enable_tvm_ffi:
         import tvm_ffi
@@ -905,8 +936,8 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
 _LOAD_MODULE_LIBS_CACHE = []
 
 
-def load_module(file_path: str, *, enable_tvm_ffi: bool = True):
-    """Load a module from a file path. Today only support TVM-FFI module.
+def load_module(file_path: str, *, enable_tvm_ffi: bool = False):
+    """Load a module from a file path.
 
     :param file_path: The path to the module file
     :type file_path: str
@@ -937,9 +968,7 @@ def load_module(file_path: str, *, enable_tvm_ffi: bool = True):
             # compatible with tvm-ffi < 0.1.6
             return tvm_ffi.load_module(file_path)
     else:
-        raise DSLRuntimeError(
-            "Unimplemented, please load the module with enable_tvm_ffi=True."
-        )
+        return ExternalBinaryModule(file_path)
 
 # -------------------------------------------------------------------------
 # Try to register_jit_arg_adapter for TensorAdapter

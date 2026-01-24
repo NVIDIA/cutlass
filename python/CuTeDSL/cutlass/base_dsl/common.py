@@ -201,8 +201,10 @@ def _get_friendly_cuda_error_message(error_code, error_name):
         ),
     }
 
-    message = f"{error_name} (error code: {error_code}) \n" \
-              f"{additional_info.get(error_name, '')} \n\n{Colors.RESET}"
+    message = (
+        f"{error_name} (error code: {error_code}) \n"
+        f"{additional_info.get(error_name, '')} \n\n{Colors.RESET}"
+    )
 
     # Add debug information
     debug_info = f"\n- {Colors.BOLD}Error name: {error_name}\n"
@@ -321,3 +323,31 @@ This error typically occurs when:
                 "  • CUTLASS DSL requirements: nvidia-cutlass-dsl documentation",
             ],
         )
+
+
+class DSLCudaVersion:
+    """
+    Class to represent the CUDA version used to build the DSL.
+    """
+
+    def __init__(self, version: str):
+        self.version_tuple = tuple(int(part) for part in version.split("."))
+
+    def __str__(self):
+        return f"{self.major}.{self.minor}"
+
+    def __eq__(self, other):
+        if isinstance(other, DSLCudaVersion):
+            return self.version_tuple == other.version_tuple
+        elif isinstance(other, str):
+            return self == DSLCudaVersion(other)
+        else:
+            return False
+
+    @property
+    def major(self):
+        return self.version_tuple[0]
+
+    @property
+    def minor(self):
+        return self.version_tuple[1]

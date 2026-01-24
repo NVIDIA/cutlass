@@ -75,7 +75,11 @@ struct Options {
   int split_kv = -1; // number of split along k dim.
   bool is_var_split_kv = false;
   int max_split_kv = 16;
+#ifdef CPASYNC
+  int page = 1;
+#else
   int page = -1;
+#endif
   float spread = 0.2f;
   int iterations = 3;
   bool verify = false;
@@ -260,7 +264,7 @@ struct ExampleResult {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
+#if (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM103_SUPPORTED))
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -751,7 +755,7 @@ void run_mla(Options const & options, cutlass::KernelHardwareInfo const& hw_info
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
+#endif // defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM103_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -796,7 +800,7 @@ int main_single(int argc, char const **args) {
     return -1;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
+#if (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM103_SUPPORTED))
 
   //
   // Run examples

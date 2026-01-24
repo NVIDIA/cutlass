@@ -10,18 +10,15 @@
 # is strictly prohibited.
 
 from functools import partial
-from typing import Optional, Tuple, Union, Callable, TYPE_CHECKING
+from typing import Optional, Tuple, Union, Callable, Literal
 from typing_extensions import deprecated
 
-from cutlass.cutlass_dsl import T, dsl_user_op, cutlass_arith
+from cutlass.cutlass_dsl import T, dsl_user_op
 
 import cutlass.cutlass_dsl as cutlass_dsl
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, llvm, nvvm, vector
-
-if TYPE_CHECKING:
-    from cutlass.tensor import TensorSSA
 
 # Forward nvvm enums
 from cutlass._mlir.dialects.nvvm import (
@@ -52,6 +49,81 @@ from ..typing import (
 
 WARP_SIZE = 32
 FULL_MASK = 0xFFFFFFFF
+
+
+# ============================================================================
+# Enum String Mapping Helper
+# ============================================================================
+# This section provides a helper to convert string literals to NVVM enum types
+# by introspecting the enum's __str__() method. Each function imports and
+# enhances only the enums it needs, avoiding namespace pollution.
+#
+# Usage within functions:
+#   MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
+#   sem = MemOrderKind.from_str("relaxed")
+## ============================================================================
+
+
+def _enhance_enum_with_str_mapping(enum_class):
+    """
+    Enhance an IntEnum class with automatic string-to-enum conversion.
+
+    Builds a reverse mapping from __str__() output to enum members and adds
+    a from_str() class method for conversion. Safe to call multiple times
+    (idempotent - won't re-enhance if already enhanced).
+
+    :param enum_class: The enum class to enhance
+    :return: The enhanced enum class (for chaining)
+    """
+    # Skip if already enhanced
+    if hasattr(enum_class, "from_str"):
+        return enum_class
+
+    # Build reverse mapping from string representation to enum member
+    str_to_enum_map = {}
+    for member in enum_class:
+        str_repr = str(member)
+        if str_repr in str_to_enum_map:
+            raise ValueError(
+                f"Duplicate string representation '{str_repr}' in {enum_class.__name__}"
+            )
+        str_to_enum_map[str_repr] = member
+
+    # Add from_str class method
+    @classmethod
+    def from_str(cls, s):
+        """
+        Convert a string literal to the corresponding enum member.
+
+        :param s: String representation of the enum member, or an enum member itself (deprecated)
+        :return: The enum member (or None if s is None)
+        :raises ValueError: If the string is not a valid enum member
+        """
+        import warnings
+
+        if s is None:
+            return None
+
+        # Check if s is already an enum member of the correct type
+        if isinstance(s, cls):
+            warnings.warn(
+                f"Passing enum member directly to {cls.__name__}.from_str() is deprecated. "
+                f"Please use string literals instead (e.g., '{str(s)}' instead of {cls.__name__}.{s.name}).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return s
+
+        if s not in str_to_enum_map:
+            valid_options = sorted(str_to_enum_map.keys())
+            raise ValueError(
+                f"Invalid {cls.__name__} string: '{s}'. "
+                f"Valid options are: {valid_options}"
+            )
+        return str_to_enum_map[s]
+
+    enum_class.from_str = from_str
+    return enum_class
 
 
 @dsl_user_op
@@ -374,7 +446,6 @@ def warp_reduction(
         offset = offset // 2
     return val
 
-
 warp_reduction_max = partial(
     warp_reduction,
     op=lambda x, y: fmax(x, y) if isinstance(x, Float32) else cutlass_dsl.max(x, y),
@@ -389,13 +460,34 @@ def barrier(*, barrier_id=None, number_of_threads=None, loc=None, ip=None) -> No
     """
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
+    else:
+        barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
 
     if number_of_threads is not None:
         number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
-
-    nvvm.barrier(
-        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
-    )
+        llvm.inline_asm(
+            None,
+            [barrier_id, number_of_threads],
+            "bar.sync $0, $1;",
+            "r,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        llvm.inline_asm(
+            None,
+            [barrier_id],
+            "bar.sync $0;",
+            "r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
 
 
 @dsl_user_op
@@ -404,6 +496,8 @@ def barrier_arrive(
 ) -> None:
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
+    else:
+        barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
 
     if number_of_threads is None:
         raise ValueError(
@@ -411,8 +505,14 @@ def barrier_arrive(
         )
     number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    nvvm.barrier_arrive(
-        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
+    llvm.inline_asm(
+        None,
+        [barrier_id, number_of_threads],
+        "bar.arrive $0, $1;",
+        "r,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
     )
 
 
@@ -682,7 +782,7 @@ def popc(value: Numeric, *, loc=None, ip=None) -> Numeric:
 
 @dsl_user_op
 def fence_view_async_tmem_op(
-    kind: Tcgen05WaitKind,
+    kind: Literal["load", "store"],
     *,
     loc=None,
     ip=None,
@@ -715,18 +815,20 @@ def fence_view_async_tmem_op(
         ```
 
 
-    :param kind: The kind of fence operation to perform including LOAD and STORE.
-    :type kind: Tcgen05WaitKind
+    :param kind: The kind of fence operation to perform ("load", "store").
+    :type kind: Literal["load", "store"]
     """
-    nvvm.tcgen05_wait(kind, loc=loc, ip=ip)
+    from cutlass._mlir.dialects.nvvm import Tcgen05WaitKind
+
+    # Enhance enum and convert string literal to enum type
+    Tcgen05WaitKind_enhanced = _enhance_enum_with_str_mapping(Tcgen05WaitKind)
+    kind = Tcgen05WaitKind_enhanced.from_str(kind)
+
+    nvvm.tcgen05_wait(kind=kind, loc=loc, ip=ip)
 
 
-fence_view_async_tmem_load = partial(
-    fence_view_async_tmem_op, kind=Tcgen05WaitKind.LOAD
-)
-fence_view_async_tmem_store = partial(
-    fence_view_async_tmem_op, kind=Tcgen05WaitKind.STORE
-)
+fence_view_async_tmem_load = partial(fence_view_async_tmem_op, kind="load")
+fence_view_async_tmem_store = partial(fence_view_async_tmem_op, kind="store")
 
 
 @dsl_user_op
@@ -751,23 +853,45 @@ def fence_view_async_shared(
 
 
 @dsl_user_op
-def warpgroup_reg_realloc_op(
+def setmaxregister_increase(
     reg_count: int,
-    kind: SetMaxRegisterAction,
+    *,
+    loc=None,
+    ip=None,
+):
+    return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.increase, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def setmaxregister_decrease(
+    reg_count: int,
+    *,
+    loc=None,
+    ip=None,
+):
+    return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
+
+
+@dsl_user_op
+@deprecated("API is deprecated, use setmaxregister_increase instead")
+def warpgroup_reg_alloc(
+    reg_count: int,
     *,
     loc=None,
     ip=None,
 ) -> None:
-    nvvm.setmaxregister(reg_count, kind, loc=loc, ip=ip)
+    nvvm.setmaxregister(reg_count, SetMaxRegisterAction.increase, loc=loc, ip=ip)
 
 
-warpgroup_reg_alloc = partial(
-    warpgroup_reg_realloc_op, kind=SetMaxRegisterAction.increase
-)
-warpgroup_reg_dealloc = partial(
-    warpgroup_reg_realloc_op, kind=SetMaxRegisterAction.decrease
-)
-
+@dsl_user_op
+@deprecated("API is deprecated, use setmaxregister_decrease instead")
+def warpgroup_reg_dealloc(
+    reg_count: int,
+    *,
+    loc=None,
+    ip=None,
+) -> None:
+    nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
 
 @dsl_user_op
 def calc_packed_f32x2_op(
@@ -776,11 +900,17 @@ def calc_packed_f32x2_op(
     src_c: Optional[Tuple[Float32, Float32]],
     calc_func: Callable,
     *,
-    rnd=RoundingModeKind.RZ,
-    ftz=True,
+    rnd: Optional[Literal["rn", "rz", "rm", "rp", "none"]] = "rn",
+    ftz=None,
     loc=None,
     ip=None,
 ) -> Tuple[Float32, Float32]:
+    from cutlass._mlir.dialects.nvvm import RoundingModeKind
+
+    # Enhance enum and convert string literal to enum type
+    RoundingModeKind_enhanced = _enhance_enum_with_str_mapping(RoundingModeKind)
+    rnd = RoundingModeKind_enhanced.from_str(rnd)
+
     vec_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
     vec_src_a = vector.from_elements(
         vec_type,
@@ -1259,6 +1389,15 @@ def cvt_i4x8_to_bf16x8(src_vec8, *, loc=None, ip=None):
     vec_bf16x8 = llvm.bitcast(vec_bf16x8_type, rst_i32, loc=loc, ip=ip)
     return vec_bf16x8
 
+# Sign extend 4 int4 unpacked in 8b containers
+@dsl_user_op
+def sext_unpacked_i4x4_to_i8x4(src_vec4, *, loc=None, ip=None):
+    imm_u32 = arith.constant(Uint32.mlir_type, 0x78787878, loc=loc, ip=ip)
+    src_u32 = llvm.bitcast(Uint32.mlir_type, src_vec4, loc=loc, ip=ip)
+    dst_u32 = arith.addi(src_u32, imm_u32, loc=loc, ip=ip)
+    dst_u32 = arith.xori(dst_u32, imm_u32, loc=loc, ip=ip)
+    return llvm.bitcast(src_vec4.type, dst_u32, loc=loc, ip=ip)
+
 
 @dsl_user_op
 def log2_of_pow2_int(a: Int32, *, loc=None, ip=None) -> Int32:
@@ -1344,6 +1483,621 @@ def griddepcontrol_launch_dependents(*, loc=None, ip=None) -> None:
         ip=ip,
     )
 
+
+
+def _normalize_ptr(addr, *, loc=None, ip=None) -> ir.Value:
+    """
+    Helper function to normalize pointer types to MLIR ir.Value.
+
+    Supports:
+    - ir.Value (LLVM pointer): returned as-is
+    - cute.ptr (_Pointer instance): converted via to_llvm_ptr()
+
+    :param addr: Address in various pointer formats
+    :return: Normalized MLIR pointer value
+    :rtype: ir.Value
+    """
+    # If it's already an MLIR ir.Value, return as-is
+    if isinstance(addr, ir.Value):
+        return addr
+
+    # If it has to_llvm_ptr method (cute._Pointer instances)
+    if hasattr(addr, "to_llvm_ptr") and callable(addr.to_llvm_ptr):
+        return addr.to_llvm_ptr(loc=loc, ip=ip)
+
+    # If none of the above, return as-is and let NVVM handle it
+    # This allows for future pointer types without breaking existing code
+    return addr
+
+
+def _atomic(
+    ptr,
+    val: Union[Numeric, ir.Value],
+    *,
+    op: Literal[
+        "add",
+        "fadd",
+        "max",
+        "min",
+        "and",
+        "or",
+        "xor",
+        "exch",
+    ],
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Union[Numeric, ir.Value]:
+    """
+    General atomic operation function.
+
+    Atomically adds `val` to the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location. Supports:
+        - ir.Value (LLVM pointer)
+        - cute.ptr (_Pointer instance)
+    :param val: Value to add (scalar Numeric or vector ir.Value)
+    :type val: Union[Numeric, ir.Value]
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :param op: Atomic operation ("add", "fadd", "max", "min", "and", "or", "xor", "exch")
+    :type op: Literal["add", "fadd", "max", "min", "and", "or", "xor", "exch"]
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Union[Numeric, ir.Value]
+    """
+    from cutlass._mlir.dialects.nvvm import AtomicOpKind, MemOrderKind, MemScopeKind
+    from cutlass.utils.version_info import CUDA_VERSION
+
+    # Enhance enums and convert string literals to enum types
+    AtomicOpKind = _enhance_enum_with_str_mapping(AtomicOpKind)
+    MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
+    MemScopeKind = _enhance_enum_with_str_mapping(MemScopeKind)
+
+    op = AtomicOpKind.from_str(op)
+    sem = MemOrderKind.from_str(sem)
+    scope = MemScopeKind.from_str(scope)
+
+    # Normalize pointer type to MLIR ir.Value
+    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+
+    # * Handle `val` Type - scalar Numeric or vector ir.Value
+    is_vector = isinstance(val, ir.Value) and isinstance(val.type, ir.VectorType)
+
+    if is_vector:
+        # Vector type atomic - val is already an ir.Value
+        val_ir = val
+        val_type = val.type
+        # Check if it's a floating-point vector type
+        elem_type = val.type.element_type
+        is_float_vector = (
+            elem_type == Float16.mlir_type
+            or elem_type == BFloat16.mlir_type
+            or elem_type == Float32.mlir_type
+        )
+
+        # Vector atomics for f16/bf16/f32 only support ADD (FADD)
+        if is_float_vector and op == AtomicOpKind.ADD:
+            op = AtomicOpKind.FADD
+    else:
+        # Scalar type atomic - convert to Numeric
+        if not isinstance(val, Numeric):
+            val = as_numeric(val)
+        val_type = type(val)
+        val_ir = val.ir_value(loc=loc, ip=ip)
+
+        # * Float
+        # For .f32, .f64, .f16, .bf16, .f16x2, .bf16x2, only .add (FADD) is supported
+        # For .u32 .u64, .s32, .s64, .add .and .or .xor .cas .exch .min .max are supported
+        if val_type.is_float:
+            # For floating-point types, only ADD is supported
+            if op == AtomicOpKind.ADD:
+                # Convert ADD to FADD for floating-point types
+                op = AtomicOpKind.FADD
+
+    # * NVVM call based on nvvm version
+    if CUDA_VERSION.major == 12 and CUDA_VERSION.minor == 9:
+        # Old API: requires explicit result type as first positional argument
+        # For vectors: pass val_type (ir.VectorType), for scalars: pass val_type.mlir_type
+        result_type = val_type if is_vector else val_type.mlir_type
+        result = nvvm.atomicrmw(
+            result_type,
+            op=op,
+            ptr=ptr,
+            a=val_ir,
+            mem_order=sem,
+            syncscope=scope,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        # New API: infers result type automatically
+        result = nvvm.atomicrmw(
+            op=op,
+            ptr=ptr,
+            a=val_ir,
+            mem_order=sem,
+            syncscope=scope,
+            loc=loc,
+            ip=ip,
+        )
+    # Return raw result for vectors, wrapped for scalars
+    return result if is_vector else val_type(result)
+
+
+def atomic_add(
+    ptr,
+    val: Union[Numeric, ir.Value],
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Union[Numeric, ir.Value]:
+    """
+    Performs an atomic addition operation.
+
+    Atomically adds `val` to the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value to add (scalar Numeric or vector ir.Value)
+    :type val: Union[Numeric, ir.Value]
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Union[Numeric, ir.Value]
+    """
+    return _atomic(ptr, val, op="add", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_and(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic bitwise AND operation.
+
+    Atomically computes bitwise AND of `val` with the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value for AND operation
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="and", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_or(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic bitwise OR operation.
+
+    Atomically computes bitwise OR of `val` with the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value for OR operation
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="or", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_xor(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic bitwise XOR operation.
+
+    Atomically computes bitwise XOR of `val` with the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value for XOR operation
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="xor", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_max(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic maximum operation.
+
+    Atomically computes maximum of `val` and the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value for MAX operation
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="max", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_min(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic minimum operation.
+
+    Atomically computes minimum of `val` and the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value for MIN operation
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="min", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+def atomic_exch(
+    ptr,
+    val: Numeric,
+    *,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic exchange operation.
+
+    Atomically exchanges `val` with the value at memory location `ptr` and returns the old value.
+
+    :param ptr: Pointer to memory location
+    :param val: Value to exchange
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    return _atomic(ptr, val, op="exch", sem=sem, scope=scope, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def atomic_cas(
+    ptr,
+    *,
+    cmp: Numeric,
+    val: Numeric,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Performs an atomic compare-and-swap (CAS) operation.
+
+    Atomically compares the value at the memory location with `cmp`. If they are equal,
+    stores `val` at the memory location and returns the old value.
+
+    :param ptr: Pointer to memory location. Supports:
+        - ir.Value (LLVM pointer)
+        - cute.ptr (_Pointer instance)
+    :param cmp: Value to compare against current memory value
+    :type cmp: Numeric
+    :param val: Value to store if comparison succeeds
+    :type val: Numeric
+    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
+    :return: Old value at memory location
+    :rtype: Numeric
+    """
+    from cutlass._mlir.dialects.nvvm import AtomicOpKind, MemOrderKind, MemScopeKind
+    from cutlass.utils.version_info import CUDA_VERSION
+
+    # Enhance enums and convert string literals to enum types
+    MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
+    MemScopeKind = _enhance_enum_with_str_mapping(MemScopeKind)
+
+    sem = MemOrderKind.from_str(sem)
+    scope = MemScopeKind.from_str(scope)
+
+    # Normalize pointer type to MLIR ir.Value
+    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+
+    # * Hanldle `val`, `cmp` Numeric Type
+    if not isinstance(cmp, Numeric):
+        cmp = as_numeric(cmp)
+    if not isinstance(val, Numeric):
+        val = as_numeric(val)
+    cmp_type = type(cmp)
+    cmp_ir = cmp.ir_value(loc=loc, ip=ip)
+    val_ir = val.ir_value(loc=loc, ip=ip)
+
+    # * NVVM call based on nvvm version
+    if CUDA_VERSION.major == 12 and CUDA_VERSION.minor == 9:
+        result = nvvm.atomicrmw(
+            cmp_type.mlir_type,
+            op=AtomicOpKind.CAS,
+            ptr=ptr,
+            a=val_ir,
+            b=cmp_ir,
+            mem_order=sem,
+            syncscope=scope,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        result = nvvm.atomicrmw(
+            op=AtomicOpKind.CAS,
+            ptr=ptr,
+            a=cmp_ir,
+            b=val_ir,
+            mem_order=sem,
+            syncscope=scope,
+            loc=loc,
+            ip=ip,
+        )
+    return cmp_type(result)
+
+
+@dsl_user_op
+def store(
+    ptr,
+    val: Union[Numeric, ir.Value],
+    *,
+    level1_eviction_priority: Optional[
+        Literal[
+            "evict_normal",
+            "evict_first",
+            "evict_last",
+            "evict_no_allocate",
+            "evict_unchanged",
+        ]
+    ] = None,
+    cop: Optional[Literal["wb", "cg", "cs", "wt"]] = None,
+    ss: Optional[Literal["cta", "cluster"]] = None,
+    sem: Optional[Literal["relaxed", "release"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc=None,
+    ip=None,
+) -> None:
+    """
+    Store a value to a memory location.
+
+    :param ptr: Pointer to store to. Supports:
+        - ir.Value (LLVM pointer)
+        - cute.ptr (_Pointer instance)
+    :param val: Value to store (scalar Numeric or vector ir.Value)
+    :type val: Union[Numeric, ir.Value]
+    :param level1_eviction_priority: L1 cache eviction policy string literal:
+        "evict_normal" : .level1::eviction_priority = .L1::evict_normal
+        "evict_first" : .level1::eviction_priority = .L1::evict_first
+        "evict_last" : .level1::eviction_priority = .L1::evict_last
+        "evict_no_allocate" : .level1::eviction_priority = .L1::no_allocate
+        "evict_unchanged" : .level1::eviction_priority = .L1::evict_unchanged
+    :param cop: Store cache modifier string literal:
+    :param ss: Shared memory space string literal:
+        "cta" : .ss = .shared::cta
+        "cluster" : .ss = .shared::cluster
+        None : .ss = .global
+    :param sem: Memory semantic string literal:
+    :param scope: Memory scope string literal:
+
+    """
+    from cutlass._mlir.dialects.nvvm import (
+        MemOrderKind,
+        MemScopeKind,
+        StoreCacheModifierKind,
+        EvictKind,
+        SharedSpace,
+    )
+
+    # Enhance enums and convert string literals to enum types
+    MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
+    MemScopeKind = _enhance_enum_with_str_mapping(MemScopeKind)
+    StoreCacheModifierKind = _enhance_enum_with_str_mapping(StoreCacheModifierKind)
+    EvictKind = _enhance_enum_with_str_mapping(EvictKind)
+    SharedSpace = _enhance_enum_with_str_mapping(SharedSpace)
+
+    sem = MemOrderKind.from_str(sem)
+    scope = MemScopeKind.from_str(scope)
+    cop = StoreCacheModifierKind.from_str(cop)
+    level1_eviction_priority = EvictKind.from_str(level1_eviction_priority)
+    ss = SharedSpace.from_str(ss)
+
+    # Normalize pointer type to MLIR ir.Value
+    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+
+    # Handle both scalar Numeric and vector ir.Value
+    is_vector = isinstance(val, ir.Value) and isinstance(val.type, ir.VectorType)
+
+    if is_vector:
+        # Vector type store - val is already an ir.Value
+        val_ir = val
+    else:
+        # Scalar type store - ensure val is a Numeric and convert to MLIR Value
+        if not isinstance(val, Numeric):
+            val = as_numeric(val)
+        val_ir = val.ir_value(loc=loc, ip=ip)
+
+    nvvm.store_ext(
+        val_ir,
+        ptr,
+        order=sem,
+        scope=scope,
+        evict=level1_eviction_priority,
+        cache_modifier=cop,
+        shared_space=ss,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def load(
+    ptr,
+    dtype: Union[type[Numeric], ir.VectorType],
+    *,
+    sem: Optional[Literal["relaxed", "acquire"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    level1_eviction_priority: Optional[
+        Literal[
+            "evict_normal",
+            "evict_first",
+            "evict_last",
+            "evict_no_allocate",
+            "evict_unchanged",
+        ]
+    ] = None,
+    cop: Optional[Literal["ca", "cg", "cs", "lu", "cv"]] = None,
+    ss: Optional[Literal["cta", "cluster"]] = None,
+    level_prefetch_size: Optional[Literal["size_64b", "size_128b", "size_256b"]] = None,
+    loc=None,
+    ip=None,
+) -> Union[Numeric, ir.Value]:
+    """
+    Load a value from a memory location.
+
+    :param ptr: Pointer to load from. Supports:
+        - ir.Value (LLVM pointer)
+        - cute.ptr (_Pointer instance)
+    :param dtype: Data type to load. Can be:
+        - Scalar: Numeric type class (Int8, Uint8, Int32, Float32, etc.)
+        - Vector: ir.VectorType for vectorized load (e.g., ir.VectorType.get([4], Int64.mlir_type))
+    :type dtype: Union[type[Numeric], ir.VectorType]
+    :param sem: Memory semantic string literal:
+    :param scope: Memory scope string literal:
+    :param level1_eviction_priority: L1 cache eviction policy string literal:
+        "evict_normal" : .level1::eviction_priority = .L1::evict_normal
+        "evict_first" : .level1::eviction_priority = .L1::evict_first
+        "evict_last" : .level1::eviction_priority = .L1::evict_last
+        "evict_no_allocate" : .level1::eviction_priority = .L1::no_allocate
+        "evict_unchanged" : .level1::eviction_priority = .L1::evict_unchanged
+    :param cop: Load cache modifier string literal:
+    :param ss: Shared memory space string literal:
+        "cta" : .ss = .shared::cta
+        "cluster" : .ss = .shared::cluster
+        None : .ss = .global
+    :param level_prefetch_size: L2 cache prefetch size hint string literal:
+        "size_64b" : .level::prefetch_size = .L2::64B
+        "size_128b" : .level::prefetch_size = .L2::128B
+        "size_256b" : .level::prefetch_size = .L2::256B
+    :return: Loaded value (scalar Numeric or vector ir.Value)
+    :rtype: Union[Numeric, ir.Value]
+    """
+    from cutlass._mlir.dialects.nvvm import (
+        MemOrderKind,
+        MemScopeKind,
+        LoadCacheModifierKind,
+        EvictKind,
+        SharedSpace,
+        L2PrefetchSize,
+    )
+
+    # Enhance enums and convert string literals to enum types
+    MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
+    MemScopeKind = _enhance_enum_with_str_mapping(MemScopeKind)
+    LoadCacheModifierKind = _enhance_enum_with_str_mapping(LoadCacheModifierKind)
+    EvictKind = _enhance_enum_with_str_mapping(EvictKind)
+    SharedSpace = _enhance_enum_with_str_mapping(SharedSpace)
+    L2PrefetchSize = _enhance_enum_with_str_mapping(L2PrefetchSize)
+
+    sem = MemOrderKind.from_str(sem)
+    scope = MemScopeKind.from_str(scope)
+    cop = LoadCacheModifierKind.from_str(cop)
+    level1_eviction_priority = EvictKind.from_str(level1_eviction_priority)
+    ss = SharedSpace.from_str(ss)
+    level_prefetch_size = L2PrefetchSize.from_str(level_prefetch_size)
+
+    # Normalize pointer type to MLIR ir.Value
+    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+
+    # Determine if dtype is a vector type or scalar type
+    is_vector = isinstance(dtype, ir.VectorType) and isinstance(dtype, ir.VectorType)
+
+    if is_vector:
+        # Vector load: dtype is already an ir.VectorType
+        mlir_type = dtype
+        scalar_dtype = None  # We don't need to wrap the result
+    else:
+        # Scalar load: dtype is a Numeric type class
+        mlir_type = dtype.mlir_type
+        scalar_dtype = dtype
+
+    result = nvvm.load_ext(
+        res=mlir_type,
+        addr=ptr,
+        order=sem,
+        scope=scope,
+        evict=level1_eviction_priority,
+        cache_modifier=cop,
+        shared_space=ss,
+        prefetch=level_prefetch_size,
+        loc=loc,
+        ip=ip,
+    )
+
+    # Return raw ir.Value for vectors, wrapped Numeric for scalars
+    if is_vector:
+        return result
+    else:
+        return scalar_dtype(result)
 
 
 @dsl_user_op

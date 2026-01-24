@@ -253,7 +253,7 @@ struct CollectiveMma<
     struct TensorStorage : cute::aligned_struct<128, _0> {
       alignas(1024) cute::ArrayEngine<SmemAllocTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       alignas(1024) cute::ArrayEngine<SmemAllocTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
-      cute::ArrayEngine<ElementEMma, Int<SmemSizeE>{}> smem_E;
+      alignas(16)   cute::ArrayEngine<ElementEMma, Int<SmemSizeE>{}> smem_E;
     } tensors;
 
     using PipelineStorageMK = typename MainloopPipelineMK::SharedStorage;

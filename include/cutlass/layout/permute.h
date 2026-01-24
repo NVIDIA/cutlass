@@ -39,7 +39,9 @@
 */
 #pragma once
 #include "cutlass/cutlass.h"
+#ifndef __QNX__
 #include CUDA_STD_HEADER(cassert)
+#endif
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"

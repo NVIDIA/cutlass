@@ -18,10 +18,10 @@ from collections.abc import Sequence
 from ..base_dsl.dsl import is_dynamic_expression
 from ..base_dsl.ast_helpers import *
 from ..base_dsl.utils.logger import log
-from ..base_dsl import typing as t
+from ..base_dsl import typing as t, Arch
 from ..base_dsl.typing import Boolean, Numeric, as_numeric
+from ..base_dsl.utils.tree_utils import PyTreeDef, check_tree_equal
 from . import cutlass as cutlass_dsl
-from .tree_utils import PyTreeDef, check_tree_equal
 
 # =============================================================================
 # AST Helpers
@@ -289,6 +289,7 @@ def _loop_execute_range_dynamic(
     unroll: int = -1,
     unroll_full: bool = False,
     prefetch_stages: int = None,
+    vectorize: bool = None,
 ):
     """
     Example: build an scf.for with optional unroll, using our universal helper.
@@ -341,6 +342,17 @@ def _loop_execute_range_dynamic(
                 )
         log().debug("prefetch_stages attribute: %s", prefetch_stages_attr)
 
+        vectorize_attr = None
+        if vectorize:
+            arch = cutlass_dsl.CuTeDSL._get_dsl().get_arch_enum()
+            if arch < Arch.sm_100:
+                raise DSLRuntimeError(
+                    f"vectorize is supported for sm_100 and above, got {arch}."
+                )
+            _attr_const_check(vectorize, bool, "vectorize")
+            vectorize_attr = ir.BoolAttr.get(True)
+        log().debug("vectorize attribute: %s", vectorize_attr)
+
         log().debug(
             "Creating scf.ForOp \n\t\tstart=%s: type : %s\n\t\tstop=%s: type : %s\n\t\tstep=%s: type : %s",
             start_,
@@ -372,6 +384,9 @@ def _loop_execute_range_dynamic(
 
         if prefetch_stages_attr is not None:
             for_op.attributes["cutlass.pipelining"] = prefetch_stages_attr
+
+        if vectorize_attr is not None:
+            for_op.attributes["cutlass.vectorize"] = vectorize_attr
 
         return for_op
 

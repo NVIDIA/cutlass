@@ -39,7 +39,7 @@ To run this example:
     pip install jax-tvm-ffi
     pip install jax[cuda13]
 
-    python examples/cute/tvm_ffi/jit_and_use_in_jax.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/jit_and_use_in_jax.py
 """
 
 import jax

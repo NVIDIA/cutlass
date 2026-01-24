@@ -353,6 +353,8 @@ def _convert_single_arg(
             elem_param = _convert_single_arg(elem, elem_name, None, ctx)
             tuple_params.append(elem_param)
         return spec.TupleParam(arg_name, tuple_params)
+    elif isinstance(arg, bool):
+        return spec.Var(arg_name, NumericToTVMFFIDtype[Boolean])
     elif isinstance(arg, int):
         # in cute.compile, unannotated const int is converted to int32
         return spec.Var(arg_name, NumericToTVMFFIDtype[Int32])

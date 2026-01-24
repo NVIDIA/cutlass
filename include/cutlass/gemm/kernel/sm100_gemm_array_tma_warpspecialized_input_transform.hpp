@@ -1146,7 +1146,9 @@ public:
           // support fixup operations needed by split-/stream-K. These operations are pushed
           // to the collective layer so that they can reuse the TMEM -> RF copy performed
           // at the collective layer.
-          auto [mma2accum_pipeline_state_next] = collective_epilogue(
+          auto [mma2accum_pipeline_state_next, epi_load_pipe_consumer_state_next] = collective_epilogue(
+            epi_load_pipeline,
+            epi_load_pipe_consumer_state,
             mma2accum_pipeline,
             mma2accum_pipeline_consumer_state,
             problem_shape_MNKL,
@@ -1157,6 +1159,7 @@ public:
           );
           // Advance the mm2accum pipe
           mma2accum_pipeline_consumer_state = mma2accum_pipeline_state_next;
+          epi_load_pipe_consumer_state = epi_load_pipe_consumer_state_next;
         }
 
         work_tile_info = next_work_tile_info;
