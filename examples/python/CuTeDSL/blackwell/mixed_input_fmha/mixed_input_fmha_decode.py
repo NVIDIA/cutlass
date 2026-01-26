@@ -1163,7 +1163,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 tSrM = cute.make_rmem_tensor_like(tSsM)
                 tSrM_lane = Float32(0) # Avoid dynamic register indexing
                 for i in cutlass.range_constexpr(cute.size(tSrS)):
-                    tSrM[i] = warp_fmax(tSrS[i])
+                    tSrM[i] = self.warp_fmax(tSrS[i])
                     if i == lane_idx:
                         tSrM_lane = tSrM[i]
 
