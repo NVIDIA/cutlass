@@ -1453,6 +1453,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         )
         return Float32(ret)
 
+    @staticmethod
     @cute.jit
     def smem_fmax(ptr : Pointer, val : Float32):
         # https://stackoverflow.com/a/72461459
