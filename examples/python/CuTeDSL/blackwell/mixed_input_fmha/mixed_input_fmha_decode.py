@@ -717,7 +717,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.tma_kv_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Apply block tiler and slice
             gK = cute.local_tile(mK, tiler=(blk_tile_s, blk_tile_d), coord=(None, 0, coord_hb)) # (TILE_S, TILE_D, #TILE_S)
@@ -782,7 +782,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.tma_qo_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Apply block tiler and slice
             gQ = cute.local_tile(mQ, tiler=(blk_tile_h, blk_tile_d), coord=(coord_hr, 0, coord_hb)) # (TILE_H, TILE_D)
@@ -852,7 +852,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warpgroup_idx in self.cvt_warpgroup_ids:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.cvt_regs)
+                cute.arch.setmaxregister_decrease(self.cvt_regs)
 
             # Initialize for dual convert if necessary
             convert_warpgroups = 1
@@ -986,7 +986,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.mma_kq_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Setup mma descriptors
             tBsQ_desc = thrblk_mma_kq.make_fragment_B(tBsQ)
@@ -1037,7 +1037,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.mma_vp_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Setup mma descriptors
             tiled_mma_vp.set(tcgen05.Field.ACCUMULATE, True)
@@ -1095,7 +1095,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warpgroup_idx == self.softmax_warpgroup_id:
             # Alloc registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_alloc(self.softmax_regs)
+                cute.arch.setmaxregister_increase(self.softmax_regs)
 
             # Construct tiled copies
             tmem_op_width = 32

@@ -1175,7 +1175,7 @@ class GroupedMixedInputGemmKernel:
 
         # Schedule warp
         if warp_idx == self.schedule_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_schedule_warp)
+            cute.arch.setmaxregister_decrease(self.num_regs_schedule_warp)
             # Persistent tile scheduling loop
             tile_sched = utils.StaticPersistentRuntimeTileScheduler.create(
                 tile_sched_params,
@@ -1222,10 +1222,7 @@ class GroupedMixedInputGemmKernel:
                         - (cta_tile_offset_n * self.cta_tile_shape_mnk[1])
                     )
                 # Fence and barrier to ensure tile info store has finished
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 self.sched_sync_barrier.arrive_and_wait()
                 # Commit tile info pipeline
                 tile_info_pipeline.producer_commit(tile_info_producer_state)
@@ -1237,7 +1234,7 @@ class GroupedMixedInputGemmKernel:
 
         # Specialized TMA load warp for A/B tensor
         if warp_idx == self.tma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_tma_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_tma_warps)
             # Persistent tile scheduling loop
             tile_info_consumer_state = pipeline.make_pipeline_state(
                 pipeline.PipelineUserType.Consumer, self.num_tile_info_stage
@@ -1246,10 +1243,7 @@ class GroupedMixedInputGemmKernel:
             work_tile = self.make_work_tile_info(
                 sTile_info[(None, tile_info_consumer_state.index)]
             )
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             tile_info_pipeline.consumer_release(tile_info_consumer_state)
             tile_info_consumer_state.advance()
             a_load2trans_producer_state = pipeline.make_pipeline_state(
@@ -1333,10 +1327,7 @@ class GroupedMixedInputGemmKernel:
                 work_tile = self.make_work_tile_info(
                     sTile_info[(None, tile_info_consumer_state.index)]
                 )
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
             # Wait A/B buffer empty
@@ -1345,7 +1336,7 @@ class GroupedMixedInputGemmKernel:
 
         # Specialized TMA load for scale tensor
         if warp_idx == self.scale_tma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_tma_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_tma_warps)
             if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
                 # Persistent tile scheduling loop
                 tile_info_consumer_state = pipeline.make_pipeline_state(
@@ -1355,10 +1346,7 @@ class GroupedMixedInputGemmKernel:
                 work_tile = self.make_work_tile_info(
                     sTile_info[(None, tile_info_consumer_state.index)]
                 )
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
                 scale_load2trans_producer_state = pipeline.make_pipeline_state(
@@ -1425,10 +1413,7 @@ class GroupedMixedInputGemmKernel:
                     work_tile = self.make_work_tile_info(
                         sTile_info[(None, tile_info_consumer_state.index)]
                     )
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     tile_info_pipeline.consumer_release(tile_info_consumer_state)
                     tile_info_consumer_state.advance()
                 # Wait scale buffer empty
@@ -1436,7 +1421,7 @@ class GroupedMixedInputGemmKernel:
 
         # Specialized transform warps
         if warp_idx >= self.transform_warp_id[0]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_transform_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_transform_warps)
             transform_local_tidx = tidx - 32 * self.transform_warp_id[0]
             # Partition tensors for transform input and output and set up the copy atom
             # used for loading and storing transformed A tensor
@@ -1508,10 +1493,7 @@ class GroupedMixedInputGemmKernel:
             work_tile = self.make_work_tile_info(
                 sTile_info[(None, tile_info_consumer_state.index)]
             )
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             tile_info_pipeline.consumer_release(tile_info_consumer_state)
             tile_info_consumer_state.advance()
             a_load2trans_consumer_state = pipeline.make_pipeline_state(
@@ -1669,10 +1651,7 @@ class GroupedMixedInputGemmKernel:
                     ):
                         cute.arch.fence_view_async_tmem_store()
                     else:
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                     if cutlass.const_expr(
                         self.scale_mode == TransformMode.ConvertScale
                     ):
@@ -1697,10 +1676,7 @@ class GroupedMixedInputGemmKernel:
                 work_tile = self.make_work_tile_info(
                     sTile_info[(None, tile_info_consumer_state.index)]
                 )
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
             # Wait a_transform buffer empty
@@ -1708,7 +1684,7 @@ class GroupedMixedInputGemmKernel:
 
         # Specialized MMA warp
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_mma_warp)
+            cute.arch.setmaxregister_decrease(self.num_regs_mma_warp)
             tCtAcc_base = accumulators
             # Persistent tile scheduling loop
             tile_info_consumer_state = pipeline.make_pipeline_state(
@@ -1718,10 +1694,7 @@ class GroupedMixedInputGemmKernel:
             work_tile = self.make_work_tile_info(
                 sTile_info[(None, tile_info_consumer_state.index)]
             )
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             tile_info_pipeline.consumer_release(tile_info_consumer_state)
             tile_info_consumer_state.advance()
             trans2mma_consumer_state = pipeline.make_pipeline_state(
@@ -1799,10 +1772,7 @@ class GroupedMixedInputGemmKernel:
                 work_tile = self.make_work_tile_info(
                     sTile_info[(None, tile_info_consumer_state.index)]
                 )
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
             # Wait for accumulator buffer empty
@@ -1810,7 +1780,7 @@ class GroupedMixedInputGemmKernel:
 
         # Specialized epilogue warps
         if warp_idx < self.mma_warp_id:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_epilogue_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_epilogue_warps)
             epi_tidx = tidx
             tCtAcc_base = accumulators
             # Partition for epilogue
@@ -1860,10 +1830,7 @@ class GroupedMixedInputGemmKernel:
             work_tile = self.make_work_tile_info(
                 sTile_info[(None, tile_info_consumer_state.index)]
             )
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             tile_info_pipeline.consumer_release(tile_info_consumer_state)
             tile_info_consumer_state.advance()
             num_prev_subtiles = cutlass.Int32(0)
@@ -1938,10 +1905,7 @@ class GroupedMixedInputGemmKernel:
                             tRS_sC[(None, None, None, c_buffer)],
                         )
                         # Fence and barrier to make sure shared memory store is visible to TMA store
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                         self.epilog_sync_barrier.arrive_and_wait()
                         # TMA store C to global memory
                         if warp_idx == self.epilog_warp_id[0]:
@@ -1986,10 +1950,7 @@ class GroupedMixedInputGemmKernel:
                 work_tile = self.make_work_tile_info(
                     sTile_info[(None, tile_info_consumer_state.index)]
                 )
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 

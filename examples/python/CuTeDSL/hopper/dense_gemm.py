@@ -1006,10 +1006,7 @@ class HopperWgmmaGemmKernel:
                 tiled_copy_r2s, tRS_rD_out, tRS_sD[(None, None, None, epi_buffer)]
             )
 
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             # barrier for sync
             pipeline.sync(barrier_id=1)
 

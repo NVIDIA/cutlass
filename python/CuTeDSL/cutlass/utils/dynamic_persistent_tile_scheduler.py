@@ -243,10 +243,7 @@ class ClcDynamicPersistentTileScheduler:
         result_addr: 16-byte response data (simulating shared memory access)
         """
         m_idx, n_idx, l_idx, vld = cute.arch.clc_response(result_addr, loc=loc, ip=ip)
-        cute.arch.fence_proxy(
-            cute.arch.ProxyKind.async_shared,
-            space=cute.arch.SharedSpace.shared_cta,
-        )
+        cute.arch.fence_proxy("async.shared", space="cta")
         cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster
         cur_tile_coord = (m_idx + cta_idx_in_cluster, n_idx + cta_idy_in_cluster, l_idx)
         return WorkTileInfo(cur_tile_coord, vld)
