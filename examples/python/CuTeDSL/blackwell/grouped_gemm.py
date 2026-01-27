@@ -2079,6 +2079,11 @@ def run(
     # Initialize Stream
     current_stream = cutlass_torch.default_stream()
 
+    opt_level = (
+        3
+        if CUDA_VERSION.major < 13 or (CUDA_VERSION == 13 and CUDA_VERSION.minor < 1)
+        else 2
+    )
     # Compile grouped GEMM kernel
     compiled_grouped_gemm = cute.compile(
         grouped_gemm,
@@ -2093,6 +2098,7 @@ def run(
         tensor_of_tensormap,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     if not skip_ref_check:
