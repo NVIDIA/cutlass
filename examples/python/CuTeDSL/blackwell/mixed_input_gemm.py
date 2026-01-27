@@ -45,6 +45,7 @@ from cutlass.utils.mixed_input_helpers import TransformMode
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
+from cutlass import CUDA_VERSION
 
 """
 A mixed-input GEMM example for the NVIDIA Blackwell SM100 architecture using CUTE DSL.
@@ -2484,7 +2485,8 @@ def run(
     )
     opt_level = (
         3
-        if CUDA_VERSION.major < 13 or (CUDA_VERSION == 13 and CUDA_VERSION.minor < 1)
+        if CUDA_VERSION.major < 13
+        or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
         else 2
     )
     compiled_kernel = cute.compile(

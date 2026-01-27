@@ -43,6 +43,7 @@ from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.torch as cutlass_torch
+from cutlass import CUDA_VERSION
 
 """
 A grouped GEMM example for the NVIDIA Blackwell SM100 architecture using CUTE DSL
@@ -2081,7 +2082,8 @@ def run(
 
     opt_level = (
         3
-        if CUDA_VERSION.major < 13 or (CUDA_VERSION == 13 and CUDA_VERSION.minor < 1)
+        if CUDA_VERSION.major < 13
+        or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
         else 2
     )
     # Compile grouped GEMM kernel
