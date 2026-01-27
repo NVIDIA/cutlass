@@ -49,7 +49,6 @@ from cutlass.utils.mixed_input_helpers import TransformMode
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
-from cutlass import CUDA_VERSION
 
 """
 A mixed-input grouped GEMM example for the NVIDIA Blackwell SM100 architecture using CUTE DSL.
@@ -394,9 +393,6 @@ class GroupedMixedInputGemmKernel:
 
         self.smem_buffer_align_bytes = 1024
 
-        self.is_env_lt_ctk131 = CUDA_VERSION.major < 13 or (
-            CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1
-        )
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -1162,22 +1158,21 @@ class GroupedMixedInputGemmKernel:
         # TMEM allocation
         tmem.allocate(self.num_tmem_alloc_cols)
         tmem.wait_for_alloc()
-        if cutlass.const_expr(self.is_env_lt_ctk131):
-            # Get the pointer to the TMEM buffer
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
+        # Get the pointer to the TMEM buffer
+        tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
+        accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
 
-            tCrA = None
-            if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
-                tmem_ptr_transform = cute.recast_ptr(
-                    accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
-                )
-                tCrA = cute.make_tensor(
-                    tmem_ptr_transform,
-                    tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
-                )
-            else:
-                tCrA = tiled_mma.make_fragment_A(sA_transform)
+        tCrA = None
+        if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
+            tmem_ptr_transform = cute.recast_ptr(
+                accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
+            )
+            tCrA = cute.make_tensor(
+                tmem_ptr_transform,
+                tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
+            )
+        else:
+            tCrA = tiled_mma.make_fragment_A(sA_transform)
 
         # Schedule warp
         if warp_idx == self.schedule_warp_id:
@@ -1444,21 +1439,6 @@ class GroupedMixedInputGemmKernel:
         if warp_idx >= self.transform_warp_id[0]:
             cute.arch.warpgroup_reg_alloc(self.num_regs_transform_warps)
             transform_local_tidx = tidx - 32 * self.transform_warp_id[0]
-            if cutlass.const_expr(not self.is_env_lt_ctk131):
-                # Get the pointer to the TMEM buffer
-                tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-                accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-                tCrA = None
-                if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
-                    tmem_ptr_transform = cute.recast_ptr(
-                       accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
-                   )
-                    tCrA = cute.make_tensor(
-                       tmem_ptr_transform,
-                       tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
-                   )
-                else:
-                    tCrA = tiled_mma.make_fragment_A(sA_transform)
             # Partition tensors for transform input and output and set up the copy atom
             # used for loading and storing transformed A tensor
             src_copy_a, dst_copy_a, tAsA_input, tAsA_transform = (
@@ -1730,21 +1710,6 @@ class GroupedMixedInputGemmKernel:
         # Specialized MMA warp
         if warp_idx == self.mma_warp_id:
             cute.arch.warpgroup_reg_dealloc(self.num_regs_mma_warp)
-            if cutlass.const_expr(not self.is_env_lt_ctk131):
-                # Get the pointer to the TMEM buffer
-                tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-                accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-                tCrA = None
-                if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
-                    tmem_ptr_transform = cute.recast_ptr(
-                       accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
-                   )
-                    tCrA = cute.make_tensor(
-                       tmem_ptr_transform,
-                       tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
-                   )
-                else:
-                    tCrA = tiled_mma.make_fragment_A(sA_transform)
             tCtAcc_base = accumulators
             # Persistent tile scheduling loop
             tile_info_consumer_state = pipeline.make_pipeline_state(
@@ -1848,10 +1813,6 @@ class GroupedMixedInputGemmKernel:
         if warp_idx < self.mma_warp_id:
             cute.arch.warpgroup_reg_alloc(self.num_regs_epilogue_warps)
             epi_tidx = tidx
-            if cutlass.const_expr(not self.is_env_lt_ctk131):
-                # Get the pointer to the TMEM buffer
-                tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-                accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
             tCtAcc_base = accumulators
             # Partition for epilogue
             tiled_copy_t2r, tTR_tAcc_base, tTR_rAcc = (
@@ -2938,6 +2899,33 @@ def compare(
     torch.testing.assert_close(kernel_result, ref_result, atol=tolerance, rtol=1e-05)
 
 
+def get_advanced_compiler_config_path():
+    """
+    Return the path to the advanced compiler configuration file of this example. If not found, return None.
+    """
+    import os
+
+    need_advanced_compiler_config = False
+    try:
+        from cutlass import CUDA_VERSION
+
+        if CUDA_VERSION.major == 13 and CUDA_VERSION.minor == 1:
+            need_advanced_compiler_config = True
+    except ImportError:
+        pass
+
+    if not need_advanced_compiler_config:
+        return None
+    # Get the path to the advanced compiler configuration file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_path = os.path.join(current_dir, "../advanced_compiler_configs/gemm0.bin")
+    if os.path.exists(target_path):
+        print(f"Found advanced compiler configuration file at {target_path}")
+        return target_path
+    else:
+        return None
+
+
 def run(
     mnkl: tuple[int, int, int, int],
     scale_granularity_m: int,
@@ -3034,6 +3022,12 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
+    advanced_compiler_options = None
+    advanced_compiler_config_path = get_advanced_compiler_config_path()
+    if advanced_compiler_config_path:
+        advanced_compiler_options = (
+            f"--ptxas-options '--apply-controls={advanced_compiler_config_path}'"
+        )
     compiled_kernel = cute.compile(
         mixed_input_gemm,
         a_tensor,
@@ -3043,6 +3037,7 @@ def run(
         c_tensor,
         max_active_clusters,
         current_stream,
+        options=advanced_compiler_options,
     )
 
     if not skip_ref_check:
