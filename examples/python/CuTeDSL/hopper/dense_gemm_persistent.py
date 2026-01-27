@@ -723,7 +723,7 @@ class HopperWgmmaGemmPersistentKernel:
 
         is_dma_warp_group = warp_group_idx < self.num_dma_warp_groups
         if is_dma_warp_group:
-            cute.arch.warpgroup_reg_dealloc(self.load_register_requirement)
+            cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
         if warp_idx == self.load_warp_id:
             tile_sched = utils.StaticPersistentTileScheduler.create(
@@ -783,7 +783,7 @@ class HopperWgmmaGemmPersistentKernel:
 
         # MMA warp group
         if not is_dma_warp_group:
-            cute.arch.warpgroup_reg_alloc(self.mma_register_requirement)
+            cute.arch.setmaxregister_increase(self.mma_register_requirement)
             tile_sched = utils.StaticPersistentTileScheduler.create(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -952,10 +952,7 @@ class HopperWgmmaGemmPersistentKernel:
                         tRS_sD[(None, None, None, epi_buffer)],
                     )
 
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     gmem_coord = epi_tile_layout.get_hier_coord(epi_idx)

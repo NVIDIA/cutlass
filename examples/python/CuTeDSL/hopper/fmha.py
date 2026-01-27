@@ -661,7 +661,7 @@ class HopperFusedMultiHeadAttentionForward:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_o)
 
         if warp_group_idx == self.load_warp_group_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_load)
+            cute.arch.setmaxregister_decrease(self.num_regs_load)
 
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -784,7 +784,7 @@ class HopperFusedMultiHeadAttentionForward:
             warp_group_idx == self.compute_epilogue_0_warp_group_id
             or warp_group_idx == self.compute_epilogue_1_warp_group_id
         ):
-            cute.arch.warpgroup_reg_alloc(self.num_regs_mma)
+            cute.arch.setmaxregister_increase(self.num_regs_mma)
 
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -1164,10 +1164,7 @@ class HopperFusedMultiHeadAttentionForward:
                         tRS_sD[(None, None, None, epi_buffer, warp_group_idx - 1)],
                     )
 
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     pipeline.arrive_and_wait(
                         barrier_id=warp_group_idx,
                         num_threads=self.num_threads_per_warp_group,

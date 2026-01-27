@@ -983,10 +983,7 @@ class DenseGemmKernel:
             c_buffer = subtile_idx % self.num_c_stage
             cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
             # Fence and barrier to make sure shared memory store is visible to TMA store
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             pipeline.sync(barrier_id=1)
 
             # TMA store C to global memory

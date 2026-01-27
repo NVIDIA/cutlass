@@ -1326,10 +1326,7 @@ class MixedInputGemmKernel:
                     ):
                         cute.arch.fence_view_async_tmem_store()
                     else:
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                     # Signal the completion of transformation
                     trans2mma_pipeline.producer_commit(trans2mma_producer_state)
                     # Signal the completion of using A and scale tensors
@@ -1557,10 +1554,7 @@ class MixedInputGemmKernel:
                             tRS_sC[(None, None, None, c_buffer)],
                         )
                         # Fence and barrier to make sure shared memory store is visible to TMA store
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                         self.epilog_sync_barrier.arrive_and_wait()
                         # TMA store C to global memory
                         if warp_idx == self.epilog_warp_id[0]:
