@@ -2482,7 +2482,7 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
-    # try to import CUDA_VERSION. It might fail and we need to use the default opt_level 3
+    # try to check CUDA version to decide the opt level
     try:
         from cutlass import CUDA_VERSION
         opt_level = (

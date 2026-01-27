@@ -2079,7 +2079,7 @@ def run(
     # Initialize Stream
     current_stream = cutlass_torch.default_stream()
 
-    # try to import CUDA_VERSION. It might fail and we need to use the default opt_level 3
+    # try to check CUDA version to decide the opt level 3
     try:
         from cutlass import CUDA_VERSION
         opt_level = (
