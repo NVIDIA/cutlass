@@ -141,6 +141,11 @@ class _Tensor(Tensor):
         # If tensor is already a DLPack object, use it directly
         if hasattr(tensor, "__dlpack_device__") and not hasattr(tensor, "__dlpack__"):
             self._dlpack_data = tensor.__dlpack_device__()
+        elif enable_tvm_ffi:
+            import tvm_ffi
+
+            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor)
+            self._dlpack_data = self._tvm_ffi_tensor.__dlpack__()
         else:
             try:
                 # we expect no stream sync. Because torch has different default behavior
@@ -149,11 +154,6 @@ class _Tensor(Tensor):
                 self._dlpack_data = tensor.__dlpack__(stream=-1)
             except Exception:
                 self._dlpack_data = tensor.__dlpack__()
-        if enable_tvm_ffi:
-            import tvm_ffi
-
-            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor)
-            self._dlpack_data = self._tvm_ffi_tensor.__dlpack__()
 
         self._dltensor_wrapper = None
         self._assumed_align = assumed_align
