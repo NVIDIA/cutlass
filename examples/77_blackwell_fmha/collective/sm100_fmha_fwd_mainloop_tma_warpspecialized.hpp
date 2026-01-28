@@ -598,6 +598,8 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     tTMEM_STOREVrS(kIdxNewRowMax) = row_max_safe;
     copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
 
+    cutlass::arch::fence_view_async_tmem_store();
+
     pipeline_c.producer_commit(pipeline_c_producer_state);
     ++pipeline_c_producer_state;
 
@@ -707,6 +709,8 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       tTMEM_STOREVrS(kIdxFinalRowMax) = row_max;
       tTMEM_STOREVrS(kIdxFinalRowSum) = row_sum;
       copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
+
+      cutlass::arch::fence_view_async_tmem_store();
     }
   }
 
