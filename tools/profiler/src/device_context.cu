@@ -133,7 +133,6 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
         case library::NumericTypeID::kFE5M2:
           data_distribution.set_uniform(-1, 1, 0);
           break;
-        
         case library::NumericTypeID::kFE2M3:
           data_distribution.set_uniform(-2, 2, 0);
           break;
@@ -141,6 +140,9 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
           data_distribution.set_uniform(-2, 2, 0);
           break;
         case library::NumericTypeID::kFE2M1:
+          data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kF4:
           data_distribution.set_uniform(-2, 2, 0);
           break;
         case library::NumericTypeID::kFUE8M0:

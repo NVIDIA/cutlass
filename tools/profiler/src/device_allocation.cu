@@ -656,6 +656,14 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kF4:
+    cutlass::reference::device::BlockFillRandom<cutlass::type_erased_dynamic_float4_t>(
+      reinterpret_cast<cutlass::type_erased_dynamic_float4_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF64:
     cutlass::reference::device::BlockFillRandom<double>(
       reinterpret_cast<double *>(pointer_),
@@ -840,6 +848,14 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   case library::NumericTypeID::kFE2M1:
     cutlass::reference::host::BlockFillRandom<cutlass::float_e2m1_t>(
       reinterpret_cast<cutlass::float_e2m1_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kF4:
+    cutlass::reference::host::BlockFillRandom<cutlass::type_erased_dynamic_float4_t>(
+      reinterpret_cast<cutlass::type_erased_dynamic_float4_t *>(host_data.data()),
       capacity_,
       seed,
       dist

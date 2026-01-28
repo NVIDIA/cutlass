@@ -77,7 +77,7 @@ struct float_e3m2_t;
 //   Exponent bias (exp_bias): 1
 
 struct float_e2m1_t : public float_exmy_base<cutlass::detail::FpEncoding::E2M1, float_e2m1_t> {
-  
+
   using Base = float_exmy_base<cutlass::detail::FpEncoding::E2M1, float_e2m1_t>;
 
   float_e2m1_t() = default;
@@ -420,7 +420,7 @@ float_e3m2_t::float_e3m2_t(float_e2m3_t x)
 /// Umbrella floating-point 6-bit data type : type_erased_dynamic_float6_t
 /// This umbrella datatype can be enabled when a user provides a specific
 /// datatype in runtime argument list.
-/// 
+///
 /// Currently supported runtime datatypes compatible with type_erased_dynamic_float6_t:
 ///   MXF8F6F4Format::E2M3
 ///   MXF8F6F4Format::E3M2
@@ -432,12 +432,12 @@ union type_erased_dynamic_float6_t {
   cutlass::float_e3m2_t e3m2;
 
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::float_e2m3_t() const { 
+  explicit operator cutlass::float_e2m3_t() const {
     return e2m3;
   }
 
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::float_e3m2_t() const { 
+  explicit operator cutlass::float_e3m2_t() const {
     return e3m2;
   }
 };
@@ -452,7 +452,7 @@ struct sizeof_bits<type_erased_dynamic_float6_t> {
 /// Umbrella floating-point 4-bit data type : type_erased_dynamic_float4_t
 /// This umbrella datatype can be enabled when a user provides a specific
 /// datatype in runtime argument list.
-/// 
+///
 /// Currently supported runtime datatypes compatible with type_erased_dynamic_float4_t:
 ///   MXF8F6F4Format::E2M1
 ///
@@ -460,9 +460,36 @@ struct sizeof_bits<type_erased_dynamic_float6_t> {
 
 union type_erased_dynamic_float4_t {
   cutlass::float_e2m1_t e2m1;
+
+  type_erased_dynamic_float4_t() = default;
+
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::float_e2m1_t() const { 
+  explicit type_erased_dynamic_float4_t(double x) : e2m1(static_cast<float>(x)) {}
+
+  CUTLASS_HOST_DEVICE
+  explicit type_erased_dynamic_float4_t(float x) : e2m1(x) {}
+
+  CUTLASS_HOST_DEVICE
+  explicit type_erased_dynamic_float4_t(int x) : e2m1(x) {}
+
+  CUTLASS_HOST_DEVICE
+  explicit operator float() const {
+    return static_cast<float>(e2m1);
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit operator cutlass::float_e2m1_t() const {
     return e2m1;
+  }
+
+  CUTLASS_HOST_DEVICE
+  bool operator==(type_erased_dynamic_float4_t const& rhs) const {
+    return static_cast<float>(*this) == static_cast<float>(rhs);
+  }
+
+  CUTLASS_HOST_DEVICE
+  bool operator!=(type_erased_dynamic_float4_t const& rhs) const {
+    return !(*this == rhs);
   }
 };
 
@@ -522,12 +549,12 @@ union type_erased_dynamic_float6_unpacksmem_t {
   cutlass::detail::float_e3m2_unpacksmem_t e3m2_unpacksmem;
 
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::detail::float_e2m3_unpacksmem_t() const { 
+  explicit operator cutlass::detail::float_e2m3_unpacksmem_t() const {
     return e2m3_unpacksmem;
   }
-  
+
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::detail::float_e3m2_unpacksmem_t() const { 
+  explicit operator cutlass::detail::float_e3m2_unpacksmem_t() const {
     return e3m2_unpacksmem;
   }
 };
@@ -536,7 +563,7 @@ union type_erased_dynamic_float4_unpacksmem_t {
   cutlass::detail::float_e2m1_unpacksmem_t e2m1_unpacksmem;
 
   CUTLASS_HOST_DEVICE
-  explicit operator cutlass::detail::float_e2m1_unpacksmem_t() const { 
+  explicit operator cutlass::detail::float_e2m1_unpacksmem_t() const {
     return e2m1_unpacksmem;
   }
 };
@@ -626,7 +653,7 @@ struct numeric_limits<cutlass::float_e2m3_t> : public float_subbyte_base_numeric
   static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x2f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
-  static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }   
+  static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }
 };
 
 /// Numeric limits for float_e3m2_t
@@ -713,7 +740,7 @@ struct numeric_limits<cutlass::float_e2m3_t> : public float_subbyte_base_numeric
   static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x2f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
-  static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }   
+  static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }
 };
 
 /// Numeric limits for float_e3m2_t
@@ -736,7 +763,7 @@ struct numeric_limits<cutlass::detail::float_e2m3_unpack8bits_t> : public float_
   static cutlass::detail::float_e2m3_unpack8bits_t lowest() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x2f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
-  static cutlass::detail::float_e2m3_unpack8bits_t epsilon() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x1); }   
+  static cutlass::detail::float_e2m3_unpack8bits_t epsilon() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x1); }
 };
 
 /// Numeric limits for float_e3m2_unpack8bits_t
