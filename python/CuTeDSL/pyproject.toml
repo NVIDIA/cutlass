@@ -10,7 +10,7 @@
 
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools_scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,8 +25,9 @@ authors = [
 packages = ["cutlass"]
 include-package-data = true
 
-[tool.setuptools.dynamic]
-version = {file = "VERSION.EDITABLE"}
+[tool.setuptools_scm]
+root = "../.."
 
 [tool.setuptools.package-data]
 nvidia_cutlass_dsl = ["lib/**/*"]
+
