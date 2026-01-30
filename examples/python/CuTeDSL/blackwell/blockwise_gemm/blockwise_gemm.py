@@ -218,8 +218,8 @@ class BlockwiseGemmKernel:
         )
         self.num_regs_uniform_warps = 64
         self.num_regs_sched_warps = 64
-        self.num_regs_epilogue_warps = 216
-        self.num_regs_acc_update_warps = 216
+        self.num_regs_epilogue_warps = 168
+        self.num_regs_acc_update_warps = 256
 
         # Set barrier for epilogue sync and tmem ptr sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
@@ -2685,6 +2685,17 @@ def run(
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
+    # try to check CUDA version to decide the opt level
+    try:
+        from cutlass import CUDA_VERSION
+        opt_level = (
+            3
+            if CUDA_VERSION.major < 13
+            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
+            else 2
+        )
+    except ImportError:
+        opt_level = 3
     # Compile gemm kernel
     compiled_gemm = cute.compile(
         gemm,
@@ -2695,6 +2706,7 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     # Execution
