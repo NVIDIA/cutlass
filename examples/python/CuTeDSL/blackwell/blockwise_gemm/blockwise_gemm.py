@@ -2685,7 +2685,7 @@ def run(
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
-    # try to check CUDA version to decide the opt level 3
+    # try to check CUDA version to decide the opt level
     try:
         from cutlass import CUDA_VERSION
         opt_level = (
