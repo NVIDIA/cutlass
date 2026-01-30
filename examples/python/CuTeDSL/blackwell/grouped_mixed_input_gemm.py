@@ -2916,7 +2916,7 @@ def get_advanced_compiler_control_path():
 
     if not need_advanced_compiler_control:
         return None
-    # Get the path to the advanced compiler configuration file
+    # Get the path to the advanced compiler control file
     current_dir = os.path.dirname(os.path.abspath(__file__))
     target_path = os.path.join(current_dir, "../advanced_compiler_control/gemm0.bin")
     if os.path.exists(target_path):
