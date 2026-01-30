@@ -2476,6 +2476,17 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
+    # try to check CUDA version to decide the opt level
+    try:
+        from cutlass import CUDA_VERSION
+        opt_level = (
+            3
+            if CUDA_VERSION.major < 13
+            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
+            else 2
+        )
+    except ImportError:
+        opt_level = 3
     compiled_kernel = cute.compile(
         mixed_input_gemm,
         a_tensor,
@@ -2484,6 +2495,7 @@ def run(
         c_tensor,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     if not skip_ref_check:

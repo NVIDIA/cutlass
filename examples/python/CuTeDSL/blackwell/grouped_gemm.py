@@ -2076,6 +2076,17 @@ def run(
     # Initialize Stream
     current_stream = cutlass_torch.default_stream()
 
+    # try to check CUDA version to decide the opt level
+    try:
+        from cutlass import CUDA_VERSION
+        opt_level = (
+            3
+            if CUDA_VERSION.major < 13
+            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
+            else 2
+        )
+    except ImportError:
+        opt_level = 3
     # Compile grouped GEMM kernel
     compiled_grouped_gemm = cute.compile(
         grouped_gemm,
@@ -2090,6 +2101,7 @@ def run(
         tensor_of_tensormap,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     if not skip_ref_check:

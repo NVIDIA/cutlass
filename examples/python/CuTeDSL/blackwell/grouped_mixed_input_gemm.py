@@ -393,6 +393,7 @@ class GroupedMixedInputGemmKernel:
 
         self.smem_buffer_align_bytes = 1024
 
+
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
 
@@ -2859,6 +2860,33 @@ def compare(
     torch.testing.assert_close(kernel_result, ref_result, atol=tolerance, rtol=1e-05)
 
 
+def get_advanced_compiler_control_path():
+    """
+    Return the path to the advanced compiler control file of this example. If not found, return None.
+    """
+    import os
+
+    need_advanced_compiler_control = False
+    try:
+        from cutlass import CUDA_VERSION
+
+        if CUDA_VERSION.major == 13 and CUDA_VERSION.minor == 1:
+            need_advanced_compiler_control = True
+    except ImportError:
+        pass
+
+    if not need_advanced_compiler_control:
+        return None
+    # Get the path to the advanced compiler control file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_path = os.path.join(current_dir, "../advanced_compiler_control/gemm0.bin")
+    if os.path.exists(target_path):
+        print(f"Found advanced compiler control file at {target_path}")
+        return target_path
+    else:
+        return None
+
+
 def run(
     mnkl: tuple[int, int, int, int],
     scale_granularity_m: int,
@@ -2955,6 +2983,12 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
+    advanced_compiler_options = None
+    advanced_compiler_control_path = get_advanced_compiler_control_path()
+    if advanced_compiler_control_path:
+        advanced_compiler_options = (
+            f"--ptxas-options '--apply-controls={advanced_compiler_control_path}'"
+        )
     compiled_kernel = cute.compile(
         mixed_input_gemm,
         a_tensor,
@@ -2964,6 +2998,7 @@ def run(
         c_tensor,
         max_active_clusters,
         current_stream,
+        options=advanced_compiler_options,
     )
 
     if not skip_ref_check:
