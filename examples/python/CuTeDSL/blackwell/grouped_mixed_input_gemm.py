@@ -2899,22 +2899,22 @@ def compare(
     torch.testing.assert_close(kernel_result, ref_result, atol=tolerance, rtol=1e-05)
 
 
-def get_advanced_compiler_config_path():
+def get_advanced_compiler_control_path():
     """
-    Return the path to the advanced compiler configuration file of this example. If not found, return None.
+    Return the path to the advanced compiler control file of this example. If not found, return None.
     """
     import os
 
-    need_advanced_compiler_config = False
+    need_advanced_compiler_control = False
     try:
         from cutlass import CUDA_VERSION
 
         if CUDA_VERSION.major == 13 and CUDA_VERSION.minor == 1:
-            need_advanced_compiler_config = True
+            need_advanced_compiler_control = True
     except ImportError:
         pass
 
-    if not need_advanced_compiler_config:
+    if not need_advanced_compiler_control:
         return None
     # Get the path to the advanced compiler configuration file
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3023,10 +3023,10 @@ def run(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
     advanced_compiler_options = None
-    advanced_compiler_config_path = get_advanced_compiler_config_path()
-    if advanced_compiler_config_path:
+    advanced_compiler_control_path = get_advanced_compiler_control_path()
+    if advanced_compiler_control_path:
         advanced_compiler_options = (
-            f"--ptxas-options '--apply-controls={advanced_compiler_config_path}'"
+            f"--ptxas-options '--apply-controls={advanced_compiler_control_path}'"
         )
     compiled_kernel = cute.compile(
         mixed_input_gemm,
