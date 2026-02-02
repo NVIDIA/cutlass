@@ -10,8 +10,11 @@
 # is strictly prohibited.
 
 from typing import Tuple
+
 from cutlass.cutlass_dsl import T, dsl_user_op
-from cutlass._mlir.dialects import nvvm, vector
+
+from cutlass._mlir import ir
+from cutlass._mlir.dialects import nvvm, llvm, vector, arith
 
 from ..typing import Int32, Pointer, Int128
 
@@ -78,7 +81,6 @@ def clc_response(
     )
     # Query if the cluster was canceled
     pred = nvvm.clusterlaunchcontrol_query_cancel_is_canceled(
-        T.bool(),
         clc_result_i128,
         loc=loc,
         ip=ip,
@@ -87,7 +89,6 @@ def clc_response(
 
     # Get first CTA ID x component
     m_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_x(
-        T.i32(),
         clc_result_i128,
         loc=loc,
         ip=ip,
@@ -95,7 +96,6 @@ def clc_response(
 
     # Get first CTA ID y component
     n_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_y(
-        T.i32(),
         clc_result_i128,
         loc=loc,
         ip=ip,
@@ -103,7 +103,6 @@ def clc_response(
 
     # Get first CTA ID z component
     l_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_z(
-        T.i32(),
         clc_result_i128,
         loc=loc,
         ip=ip,

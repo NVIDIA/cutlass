@@ -10,7 +10,6 @@
 # is strictly prohibited.
 
 from typing import Optional, Tuple, Type, Union
-from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -47,11 +46,12 @@ TMAOp = Union[
     CopyReduceBulkTensorTileS2GOp,
 ]
 
+
 @dsl_user_op
 def make_tiled_tma_atom(
     op: TMAOp,
     gmem_tensor: Tensor,
-    smem_layout: Union[Layout, ComposedLayout],
+    smem_layout_: Union[Layout, ComposedLayout],
     cta_tiler: Tiler,
     num_multicast: int = 1,
     *,
@@ -84,7 +84,7 @@ def make_tiled_tma_atom(
     :type op:             TMAOp
     :param gmem_tensor:   The GMEM tensor involved in the Copy
     :type gmem_tensor:    Tensor
-    :param smem_layout:   The SMEM layout to construct the Copy Atom
+    :param smem_layout:   The SMEM layout to construct the Copy Atom, either w/ or w/o the stage mode
     :type smem_layout:    Union[Layout, ComposedLayout]
     :param cta_tiler:     The CTA Tiler to use
     :type cta_tiler:      Tiler
@@ -95,6 +95,26 @@ def make_tiled_tma_atom(
     :return:              A TMA Copy Atom associated with the TMA tensor
     :rtype:               Tuple[atom.CopyAtom, Tensor]
     """
+    smem_rank = core.rank(smem_layout_)
+    tiler_rank = core.rank(cta_tiler)
+    assert smem_rank == tiler_rank or smem_rank == tiler_rank + 1, (
+        f"smem_layout must be non-staged (rank(smem_layout) == rank(cta_tiler)) "
+        f"or staged (rank(smem_layout) == rank(cta_tiler) + 1)"
+    )
+
+    # Set the smem_layout on the operation for later retrieval
+    op.smem_layout = (
+        smem_layout_.value
+        if isinstance(smem_layout_, core._ComposedLayout)
+        else smem_layout_
+    )
+
+    # Slice the smem_layout if it is staged
+    if smem_rank == tiler_rank + 1:
+        smem_layout = core.select(smem_layout_, mode=list(range(tiler_rank)))
+    else:
+        smem_layout = smem_layout_
+
     cta_v_map = core.composition(
         core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip),
         cta_tiler,
@@ -105,22 +125,21 @@ def make_tiled_tma_atom(
     if isinstance(smem_layout, core._ComposedLayout):
         smem_layout = smem_layout.value
 
-    # Set the smem_layout on the operation for later retrieval
-    op.smem_layout = (
-        smem_layout.value
-        if isinstance(smem_layout, core._ComposedLayout)
-        else smem_layout
-    )
-
     tma_format = None
     if internal_type is not None:
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
-        use_unpack = (internal_type.width == 8 and
-                      isinstance(gmem_tensor.element_type, NumericMeta) and
-                      gmem_tensor.element_type.width < 8)
-        internal_mlir_type = gmem_tensor.element_type.mlir_type if use_unpack else internal_type.mlir_type
+        use_unpack = (
+            internal_type.width == 8
+            and isinstance(gmem_tensor.element_type, NumericMeta)
+            and gmem_tensor.element_type.width < 8
+        )
+        internal_mlir_type = (
+            gmem_tensor.element_type.mlir_type
+            if use_unpack
+            else internal_type.mlir_type
+        )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
         )
@@ -380,14 +399,3 @@ def fence_tma_desc_release(*, loc=None, ip=None) -> None:
         loc=loc,
         ip=ip,
     )
-
-
-@dsl_user_op
-@deprecated("`group_bulk_copy_modes` is deprecated, use `group_modes` instead")
-def group_bulk_copy_modes(src: Tensor, dst: Tensor, loc=None, ip=None) -> Tuple:
-    """
-    Copy async bulk need group mode 0, acquiring whole tensor for bulk copy
-    """
-    mSrc = core.group_modes(src, 0, core.rank(src))
-    mDst = core.group_modes(dst, 0, core.rank(dst))
-    return (mSrc, mDst)

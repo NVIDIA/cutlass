@@ -82,6 +82,7 @@ class LdMatrix8x8x16bOp(BaseOp):
 class LdMatrix8x8x16bTrait(Trait):
     pass
 
+
 @dataclass(frozen=True)
 class LdMatrix8x16x8bOp(BaseOp):
     """
@@ -125,11 +126,12 @@ class LdMatrix8x16x8bOp(BaseOp):
 class LdMatrix8x16x8bTrait(Trait):
     pass
 
+
 @dataclass(frozen=True)
 class LdMatrix16x8x8bOp(BaseOp):
     """
     16x8 8b ``ldmatrix`` Operation with transpose
-    
+
     There is no direct PTX correspondance to this Op.
     This actually lowers to ldmatrix with the ``.m16n16`` qualifier and
     additional address and value permutations to match stmatrix.m16n8.trans.
@@ -166,6 +168,7 @@ class LdMatrix16x8x8bOp(BaseOp):
         )
         return LdMatrix16x8x8bTrait(make_atom(ty, loc=loc, ip=ip))
 
+
 class LdMatrix16x8x8bTrait(Trait):
     pass
 
@@ -176,7 +179,7 @@ class LdMatrix16x16x8bOp(BaseOp):
     16x16 ``ldmatrix`` Operation with transpose and optional unpacking to 8b container.
     Packed source container is 16x4b elements with 64b padding
     or 16x6b elements with 32b padding (total 128b per 16 elements)
-    
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-load-instruction-ldmatrix>`__.
     This operation corresponds to the ``.m16n16`` and the ``.b4x16_p64``,``.b6x16_p32``,``.b8`` qualifiers.
     """

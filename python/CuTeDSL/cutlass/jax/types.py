@@ -285,6 +285,7 @@ class JaxArrayValue(JaxArray):
                 llvm.PointerType.get(),
                 shape_array,
                 [],
+                no_wrap_flags=0,
                 raw_constant_indices=ir.DenseI32ArrayAttr.get([i]),
                 elem_type=i64,
                 loc=loc,

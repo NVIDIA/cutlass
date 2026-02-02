@@ -55,7 +55,6 @@ def get_max_tmem_alloc_cols(compute_capability: str) -> int:
     return TMEM_MAX_ALLOC_COLUMNS_MAP[compute_capability]
 
 
-
 def get_min_tmem_alloc_cols(compute_capability: str) -> int:
     """Get the minimum TMEM allocation columns for a given compute capability.
 
@@ -179,11 +178,9 @@ def dealloc_tmem(
     :param num_columns: The number of columns in the TMEM allocation
     :type num_columns:  Int
     :param is_two_cta:  Optional boolean parameter for 2-CTA MMAs
-    :param arch:        The architecture of the GPU.
-    :type arch:         str
     """
-    tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
+    tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     if isinstance(num_columns, int):
         if (
             num_columns < tmem_min_alloc_cols

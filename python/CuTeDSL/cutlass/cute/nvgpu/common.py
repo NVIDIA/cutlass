@@ -24,6 +24,7 @@ from ..typing import Float16, Float32, Float64, Numeric
 
 __all__ = [
     "OpError",
+    "normalize_field_to_ir_name",
     "MmaUniversalOp",
     "MmaUniversalTrait",
     "CopyUniversalOp",
@@ -32,6 +33,33 @@ __all__ = [
     "MemoryScope",
     "CacheEvictionPriority",
 ]
+
+
+def normalize_field_to_ir_name(field, admissible_fields) -> str:
+    """
+    Normalize a field specifier to its IR logical field name.
+
+    Accepted inputs:
+
+    - Enum value present in admissible_fields (must expose _to_ir_field_name()).
+    - Exact string IR name (e.g., "accum_c", "neg_a", "sf_a").
+
+    Any other form is rejected.
+    """
+    # Enum path
+    if any(field is f for f in admissible_fields):
+        return field._to_ir_field_name()
+    # String path (must match exactly one of the IR names exposed by admissible_fields)
+    if isinstance(field, str):
+        allowed = {f._to_ir_field_name() for f in admissible_fields}
+        if field in allowed:
+            return field
+    # Otherwise, reject
+    allowed_pretty = [f._to_ir_field_name() for f in admissible_fields]
+    raise ValueError(
+        f"invalid field, must be one of {allowed_pretty} or their enum counterparts, but got {field}"
+    )
+
 
 class OpError(DSLBaseError):
     """
@@ -178,8 +206,8 @@ class CopyUniversalOp(atom.CopyOp):
 
         op = cute.nvgpu.CopyUniversalOp()
         atom = cute.make_copy_atom(
-            op,
-            tensor_dtype,
+            op, 
+            tensor_dtype, 
             num_bits_per_copy=64,
             l1c_evict_priority=cute.nvgpu.CacheEvictionPriority.EVICT_NORMAL
         )
@@ -195,7 +223,6 @@ class CopyUniversalOp(atom.CopyOp):
     - ``invariant`` is a kw argument specifying whether the load is invariant (read-only data \
         that never changes). This enables compiler optimizations like instruction reordering. \
         Defaults to ``False`` if not provided.
-
     """
 
     def __str__(self) -> str:

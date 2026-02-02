@@ -11,7 +11,6 @@
 
 from .elect import *
 from .mbar import *
-from .numeric_conversion import *
 from .nvvm_wrappers import *
 from .smem import *
 from .tmem import *
@@ -74,6 +73,8 @@ __all__ = [
     "vote_any_sync",
     "vote_all_sync",
     "vote_uni_sync",
+    "warp_redux_sync",
+    "atomic_max_float32",
     "atomic_add",
     "atomic_and",
     "atomic_or",
@@ -98,12 +99,15 @@ __all__ = [
     "fmax",
     "rcp_approx",
     "exp2",
+    "cvt_i8x4_to_f32x4",
+    "cvt_i8x2_to_f32x2",
+    "cvt_i8_bf16",
+    "cvt_i8x2_to_bf16x2",
+    "cvt_i8x4_to_bf16x4",
+    "cvt_f32x2_bf16x2",
+    "warp_redux_sync",
     # Constants
     "WARP_SIZE",
-    # Forward from auto-generated nvvm python
-    "ProxyKind",
-    "SharedSpace",
-    "RoundingModeKind",
     #
     # smem.py
     #

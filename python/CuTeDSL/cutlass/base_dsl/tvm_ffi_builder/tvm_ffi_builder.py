@@ -1277,7 +1277,10 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             return cond
 
         return self.check_condition(
-            current_block, check_value_mismatch, error_kind, error_msg_mismatch
+            current_block,
+            check_value_mismatch,
+            error_kind,
+            error_msg_mismatch,
         )
 
     def set_or_check_matched_var_binding_from_shape(

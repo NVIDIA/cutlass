@@ -463,16 +463,6 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    auto scheduler = [&] () {
-      // Group scheduler requires a different constructor that takes a response ptr
-      if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
-        return TileScheduler{params.scheduler, shared_storage.scheduler_response};
-      }
-      else {
-        return TileScheduler{params.scheduler};
-      }
-    } ();
-
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
@@ -599,6 +589,16 @@ public:
 
     // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
     cutlass::arch::wait_on_dependent_grids();
+
+    auto scheduler = [&] () {
+      // Group scheduler requires a different constructor that takes a response ptr
+      if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+        return TileScheduler{params.scheduler, shared_storage.scheduler_response};
+      }
+      else {
+        return TileScheduler{params.scheduler};
+      }
+    } ();
 
     auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 

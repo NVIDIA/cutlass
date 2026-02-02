@@ -70,7 +70,6 @@ from .tmem_allocator import TmemAllocator, get_num_tmem_alloc_cols
 
 from .layout import LayoutEnum
 
-from . import gemm
 from . import distributed
 
 from .mixed_input_helpers import (
@@ -99,10 +98,16 @@ from .mixed_input_helpers import (
     store_transformed_a,
 )
 
+from . import gemm
+
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
-
 from .print_latex import print_latex, print_latex_tv
+
+from .tensor_helpers import (
+    is_fp8_dtype,
+    create_cute_tensor_for_fp8,
+)
 
 __all__ = [
     "get_smem_capacity_in_bytes",
@@ -135,6 +140,7 @@ __all__ = [
     "get_divisibility",
     "epilogue_tma_store",
     "epilogue",
+    "create_tensor_a",
     "compute_epilogue_tile_shape",
     "get_smem_store_op",
     "get_tmem_load_op",
@@ -145,10 +151,12 @@ __all__ = [
     "make_blockscaled_trivial_tiled_mma",
     "sm90",
     "sm100",
-    "print_latex",
-    "print_latex_tv",
     "gemm",
-    "distributed",
     "ClcDynamicPersistentTileSchedulerParams",
     "ClcDynamicPersistentTileScheduler",
+    "print_latex",
+    "print_latex_tv",
+    "is_fp8_dtype",
+    "create_cute_tensor_for_fp8",
+    "distributed",
 ]

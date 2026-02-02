@@ -238,7 +238,10 @@ class PipelineTmaUmma(PipelineAsync):
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1:
+            if (
+                cta_layout_vmnk is None
+                or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1
+            ):
                 agent_sync(Agent.ThreadBlock)
             else:
                 agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
@@ -449,7 +452,10 @@ class PipelineAsyncUmma(PipelineAsync):
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1:
+            if (
+                cta_layout_vmnk is None
+                or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1
+            ):
                 agent_sync(Agent.ThreadBlock)
             else:
                 agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
@@ -587,7 +593,10 @@ class PipelineUmmaAsync(PipelineAsync):
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1:
+            if (
+                cta_layout_vmnk is None
+                or cute.size(cta_layout_vmnk, loc=loc, ip=ip) == 1
+            ):
                 agent_sync(Agent.ThreadBlock)
             else:
                 agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
