@@ -117,6 +117,10 @@ Constraints:
 """
 
 
+def ceil_div(a, b):
+    return (a + b - 1) // b
+
+
 class Sm100BlockScaledPersistentDenseGemmKernel:
     """This class implements batched matrix multiplication (C = A x SFA x B x SFB) with support for various data types
     and architectural features specific to Blackwell GPUs with persistent tile scheduling and warp specialization.
@@ -376,7 +380,9 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
         self.num_accumulator_tmem_cols = self.cta_tile_shape_mnk[1] * self.num_acc_stage if not self.overlapping_accum else self.cta_tile_shape_mnk[1] * 2 - self.num_sf_tmem_cols
 
         # Only when overlapping_accum is enabled, we need to release accumulator buffer early in epilogue
-        self.iter_acc_early_release_in_epilogue = self.num_sf_tmem_cols // self.epi_tile_n
+        # Use -1 since at that iteration the pipeline is updated after the tmem -> reg copy
+        num_subtiles_in_overlap_region = ceil_div(self.num_sf_tmem_cols, self.epi_tile_n)
+        self.iter_acc_early_release_in_epilogue = num_subtiles_in_overlap_region - 1
 
     @cute.jit
     def __call__(
@@ -1446,7 +1452,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                     #
                     # Store C to shared memory
                     #
-                    c_buffer = (num_prev_subtiles + real_subtile_idx) % self.num_c_stage
+                    c_buffer = (num_prev_subtiles + subtile_idx) % self.num_c_stage
                     cute.copy(
                         tiled_copy_r2s,
                         tRS_rC,
@@ -2232,9 +2238,6 @@ def run(
 
     # Create scale factor tensor SFA/SFB
     def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype):
-        def ceil_div(a, b):
-            return (a + b - 1) // b
-
         sf_k = ceil_div(k, sf_vec_size)
         ref_shape = (l, mn, sf_k)
 
