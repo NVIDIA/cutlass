@@ -254,17 +254,18 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
         )
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.threads_per_cta = 32 * len(
+        self.threads_per_warp = 32
+        self.threads_per_cta = self.threads_per_warp * len(
             (self.mma_warp_id, self.tma_warp_id, *self.epilog_warp_id)
         )
         # Set barrier id for epilogue sync and tmem ptr sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
             barrier_id=1,
-            num_threads=32 * len(self.epilog_warp_id),
+            num_threads=self.threads_per_warp * len(self.epilog_warp_id),
         )
         self.tmem_alloc_barrier = pipeline.NamedBarrier(
             barrier_id=2,
-            num_threads=32 * len((self.mma_warp_id, *self.epilog_warp_id)),
+            num_threads=self.threads_per_warp * len((self.mma_warp_id, *self.epilog_warp_id)),
         )
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
         SM100_TMEM_CAPACITY_COLUMNS = 512
@@ -808,7 +809,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
 
         # Initialize acc_pipeline (barrier) and states
         acc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_acc_consumer_threads = len(self.epilog_warp_id) * (
+        num_acc_consumer_threads = self.threads_per_warp * len(self.epilog_warp_id) * (
             2 if use_2cta_instrs else 1
         )
         acc_pipeline_consumer_group = pipeline.CooperativeGroup(
@@ -1464,7 +1465,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
             # Threads/warps participating in tma store pipeline
             c_producer_group = pipeline.CooperativeGroup(
                 pipeline.Agent.Thread,
-                32 * len(self.epilog_warp_id),
+                self.threads_per_warp * len(self.epilog_warp_id),
             )
             c_pipeline = pipeline.PipelineTmaStore.create(
                 num_stages=self.num_c_stage,
@@ -1537,8 +1538,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                         if subtile_idx == self.iter_acc_early_release_in_epilogue:
                             # Fence for TMEM load
                             cute.arch.fence_view_async_tmem_load()
-                            with cute.arch.elect_one():
-                                acc_pipeline.consumer_release(acc_consumer_state)
+                            acc_pipeline.consumer_release(acc_consumer_state)
                             acc_consumer_state.advance()
 
                     #
@@ -1579,8 +1579,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                 # Async arrive accumulator buffer empty
                 #
                 if cutlass.const_expr(not self.overlapping_accum):
-                    with cute.arch.elect_one():
-                        acc_pipeline.consumer_release(acc_consumer_state)
+                    acc_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()
 
                 #
