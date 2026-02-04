@@ -1021,18 +1021,18 @@ struct float_exmy_base
 
   /// Floating point conversion
   CUTLASS_HOST_DEVICE
-  explicit float_exmy_base<T, Derived>(float x) {
+  explicit float_exmy_base(float x) {
     storage = static_cast<Derived*>(this)->convert_from_float(x).storage;
   }
 
   // Integer conversion
   CUTLASS_HOST_DEVICE
-  explicit float_exmy_base<T, Derived>(int x) {
+  explicit float_exmy_base(int x) {
     storage = static_cast<Derived*>(this)->convert_from_float(float(x)).storage;
   }
 
   CUTLASS_HOST_DEVICE
-  explicit float_exmy_base<T, Derived>(unsigned x) {
+  explicit float_exmy_base(unsigned x) {
     storage = static_cast<Derived*>(this)->convert_from_float(float(x)).storage;
   }
 
