@@ -940,6 +940,9 @@ mul_packed_f32x2 = partial(
 add_packed_f32x2 = partial(
     calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
 )
+sub_packed_f32x2 = partial(
+    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.sub_packed_f32x2
+)
 
 
 @dsl_user_op
