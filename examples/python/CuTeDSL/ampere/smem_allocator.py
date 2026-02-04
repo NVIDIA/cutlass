@@ -52,7 +52,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/smem_allocator.py
+    python examples/python/CuTeDSL/ampere/smem_allocator.py
 
 The example will allocate shared memory, perform tensor operations, and verify the results.
 """
