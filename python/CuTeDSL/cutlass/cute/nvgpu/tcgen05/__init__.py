@@ -60,4 +60,5 @@ __all__ = [
     "make_tmem_copy",
     "make_s2t_copy",
     "get_s2t_smem_desc_tensor",
+    "make_umma_smem_desc",
 ]

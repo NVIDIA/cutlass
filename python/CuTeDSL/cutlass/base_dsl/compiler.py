@@ -340,21 +340,6 @@ class LinkLibraries(StringCompileOption):
 class GPUArch(StringCompileOption):
     option_name = "cubin-chip"
 
-    def __init__(self, val):
-        if isinstance(val, str) and val.startswith("sm_110"):
-            val = val.replace("sm_110", "sm_101")
-        super().__init__(val)
-
-    @property
-    def value(self) -> bool:
-        return self._value
-
-    @value.setter
-    def value(self, value: bool):
-        if isinstance(value, str) and value.startswith("sm_110"):
-            value = value.replace("sm_110", "sm_101")
-        self._value = value
-
 
 class EnableTVMFFI(EmptyCompileOption):
     pass

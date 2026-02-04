@@ -16,8 +16,6 @@ from .tensor import TensorSSA
 
 from cutlass._mlir.dialects import math, arith
 
-from typing import Callable, Union
-
 
 def _math_op(func: Callable, fastmath: bool, *args, **kwargs):
     """Dispatch the function to either a TensorSSA or a Numeric(Float).

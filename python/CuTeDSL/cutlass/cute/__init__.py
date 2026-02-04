@@ -181,18 +181,20 @@ from .atom import (
     make_tiled_copy_C_atom,
     make_cotiled_copy,
     copy_atom_call,
+    mma_atom_call,
 )
 from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, prefetch
 
 from . import typing as typing_module
 from . import core
 from . import arch
-
 from . import export
+
 from . import nvgpu
 from . import testing
 from . import runtime
 from . import math
+
 
 # Export all math ops without "math."
 from .math import *
@@ -212,7 +214,6 @@ GenerateLineInfo = _dsl.GenerateLineInfo
 KeepCUBIN = _dsl.KeepCUBIN
 KeepPTX = _dsl.KeepPTX
 GPUArch = _dsl.GPUArch
-LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
 
 # attach the TVM FFI ABI interface postprocessor to the DSL
@@ -222,16 +223,52 @@ _tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
-    # Core types
-    *core.__all__,
+    # ==================== cutlass._mlir.dialects.cute ====================
     "AddressSpace",
     "CacheEvictionPriority",
+    # ==================== .typing ====================
     "Tensor",
     "Layout",
     "ComposedLayout",
-    "Swizzle",
-    "E",
-    "ScaledBasis",
+    "SymInt",
+    "is_integer",
+    "is_int_tuple",
+    # ==================== .core ====================
+    *core.__all__,
+    # ==================== .tuple ====================
+    "transform_leaf",
+    "find_if",
+    "find",
+    "flatten_to_tuple",
+    "unflatten",
+    "product",
+    "product_like",
+    "product_each",
+    "elem_less",
+    "tuple_cat",
+    "transform_apply",
+    "filter_tuple",
+    # ==================== .tensor ====================
+    "TensorSSA",
+    "ReductionOp",
+    "make_tensor",
+    "make_identity_tensor",
+    "make_fragment",
+    "make_fragment_like",
+    "make_rmem_tensor_like",
+    "make_rmem_tensor",
+    "recast_tensor",
+    "domain_offset",
+    "print_tensor",
+    "full",
+    "full_like",
+    "empty_like",
+    "ones_like",
+    "zeros_like",
+    "where",
+    "any_",
+    "all_",
+    # ==================== .atom ====================
     "Atom",
     "MmaAtom",
     "CopyAtom",
@@ -239,106 +276,6 @@ __all__ = [
     "TiledMma",
     "ThrMma",
     "ThrCopy",
-    "TensorSSA",
-    "ReductionOp",
-    "SymInt",
-    # Basic utility functions
-    "assume",
-    "is_integer",
-    "is_int_tuple",
-    "is_static",
-    "has_underscore",
-    "shape",
-    "printf",
-    "print_tensor",
-    "pretty_str",
-    # Layout functions
-    "make_layout",
-    "recast_layout",
-    "make_identity_layout",
-    "make_ordered_layout",
-    "make_layout_like",
-    "make_composed_layout",
-    "make_layout_tv",
-    "make_layout_image_mask",
-    "get_nonswizzle_portion",
-    "get_swizzle_portion",
-    # Tensor functions
-    "make_ptr",
-    "make_tensor",
-    "make_identity_tensor",
-    "make_fragment",
-    "make_fragment_like",
-    "make_rmem_tensor",
-    "make_rmem_tensor_like",
-    "recast_ptr",
-    "recast_tensor",
-    # Tensor manipulation
-    "get",
-    "select",
-    "front",
-    "is_major",
-    "leading_dim",
-    "find",
-    "find_if",
-    "transform_leaf",
-    "basis_value",
-    "basis_get",
-    "coalesce",
-    "group_modes",
-    "cosize",
-    "size_in_bytes",
-    # Tuple operations
-    "flatten_to_tuple",
-    "flatten",
-    "unflatten",
-    "product",
-    "product_like",
-    "product_each",
-    "prepend",
-    "append",
-    "prepend_ones",
-    "append_ones",
-    "elem_less",
-    "tuple_cat",
-    "transform_apply",
-    "filter_tuple",
-    # Math operations
-    "ceil_div",
-    "round_up",
-    # Layout operations
-    "slice_and_offset",
-    "crd2idx",
-    "domain_offset",
-    "filter_zeros",
-    "filter",
-    "tile_to_shape",
-    "shape_div",
-    "dice",
-    # Layout algebra
-    "composition",
-    "complement",
-    "right_inverse",
-    "left_inverse",
-    "max_common_layout",
-    "max_common_vector",
-    "is_congruent",
-    "is_weakly_congruent",
-    # Product operations
-    "logical_product",
-    "zipped_product",
-    "tiled_product",
-    "flat_product",
-    "raked_product",
-    "blocked_product",
-    # Division operations
-    "flat_divide",
-    "logical_divide",
-    "zipped_divide",
-    "tiled_divide",
-    "local_partition",
-    "local_tile",
-    # MMA and Copy atom operations
     "make_atom",
     "make_mma_atom",
     "make_tiled_mma",
@@ -353,39 +290,24 @@ __all__ = [
     "make_tiled_copy_C_atom",
     "make_cotiled_copy",
     "copy_atom_call",
-    # Algorithm operations
+    "mma_atom_call",
+    # ==================== .algorithm ====================
+    "gemm",
+    "copy",
     "basic_copy",
     "basic_copy_if",
     "autovec_copy",
-    "copy",
     "prefetch",
-    "gemm",
-    # Tensor creation
-    "full",
-    "full_like",
-    "empty_like",
-    "ones_like",
-    "zeros_like",
-    "where",
-    "any_",
-    "all_",
-    "repeat_as_tuple",
-    "repeat",
-    "repeat_like",
-    # User defined struct
-    "struct",
-    # FastDivmod operations
-    "FastDivmodDivisor",
-    "fast_divmod_create_divisor",
-    # Modules
+    # ==================== .extension ====================
+    # ==================== .math ====================
+    *math.__all__,
+    # ==================== submodules ====================
     "arch",
     "export",
     "nvgpu",
     "testing",
     "runtime",
-    # Math utils
-    *math.__all__,
-    # Decorators and code generation
+    # ==================== DSL (cutlass_dsl) ====================
     "jit",
     "kernel",
     "register_jit_arg_adapter",

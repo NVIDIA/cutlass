@@ -125,8 +125,6 @@ def detect_gpu_arch(prefix):
     suffix = ""
     if major >= 9:
         suffix = "a"
-    if major == 11 and minor == 0:
-        major, minor = 10, 1
 
     return f"sm_{major}{minor}{suffix}"
 
@@ -367,8 +365,6 @@ class EnvironmentVarManager(LogEnvironmentManager):
         # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
         self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))
-        if self.arch.startswith("sm_110"):
-            self.arch = self.arch.replace("sm_110", "sm_101")
         self.warnings_as_errors = get_bool_env_var(
             f"{prefix}_WARNINGS_AS_ERRORS", False
         )

@@ -15,12 +15,13 @@ from typing import Type, Any
 
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL, T
+from typing_extensions import deprecated
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from ..common import OpError
+from ..common import OpError, normalize_field_to_ir_name
 from ...core import _pack_shape, rank, depth
 from ...typing import (
     Shape,
@@ -208,27 +209,44 @@ class MmaOp(WarpGroupMmaOp):
 class MmaTraits(Trait):
     admissible_fields = [Field.ACCUMULATE]
 
+    def _normalize_field_name(self, field: Any) -> str:
+        """
+        Normalize a field specifier (enum or string) into the IR logical field name.
+        Accepted inputs:
+          - Field.ACCUMULATE
+          - "accum_c"
+        """
+        return normalize_field_to_ir_name(field, self.admissible_fields)
+
     def set(self, field, value, *, loc=None, ip=None) -> None:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"invalid field, must be {Field.ACCUMULATE}, but got {field}"
+        field_ir_name = self._normalize_field_name(field)
+        # Prefer the newer builder that accepts a logical field name, but keep
+        # a fallback for legacy attribute-based construction to avoid breaking changes.
+        bool_val = Boolean(value).ir_value(loc=loc, ip=ip)
+        try:
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, field_ir_name, bool_val, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm90<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, Boolean(value).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            # Legacy path: construct the per-arch field attribute explicitly
+            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
+            attr = ir.Attribute.parse(attr_asm)
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, attr, bool_val, loc=loc, ip=ip
+            )
 
     def get(self, field, *, loc=None, ip=None) -> Any:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"invalid field, must be {Field.ACCUMULATE}, but got {field}"
+        field_ir_name = self._normalize_field_name(field)
+        try:
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, field_ir_name, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm90<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
+            attr = ir.Attribute.parse(attr_asm)
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
 
 
 @dataclass(frozen=True)

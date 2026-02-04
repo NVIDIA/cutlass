@@ -13,7 +13,7 @@ from typing import Optional
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL, T, if_generate, dsl_user_op
 
-from cutlass._mlir.dialects import nvvm
+from cutlass._mlir.dialects import nvvm, llvm
 
 from ..typing import Pointer, Int, Boolean, Int32, AddressSpace
 
@@ -35,10 +35,7 @@ def mbarrier_init(mbar_ptr: Pointer, cnt: Int, *, loc=None, ip=None) -> None:
     :type cnt:       Int
     """
     nvvm.mbarrier_init_shared(
-        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
-        Int32(cnt).ir_value(loc=loc, ip=ip),
-        loc=loc,
-        ip=ip,
+        mbar_ptr.llvm_ptr, Int32(cnt).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
     )
 
 
@@ -68,15 +65,18 @@ def mbarrier_arrive_and_expect_tx(
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
-        mbar_llvm_ptr = nvvm.mapa_shared_cluster(
-            mbar_llvm_ptr.type,
+        mbar_cluster_type = llvm.PointerType.get(AddressSpace.dsmem)
+        mbar_llvm_ptr = nvvm.mapa(
+            mbar_cluster_type,
             mbar_llvm_ptr,
             Int32(peer_cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
             loc=loc,
             ip=ip,
         )
+        mbar_shared_type = llvm.PointerType.get(AddressSpace.smem)
+        mbar_llvm_ptr = llvm.addrspacecast(mbar_shared_type, mbar_llvm_ptr)
         space = nvvm.MBarrierSpaceKind.CLUSTER
     else:
         space = nvvm.MBarrierSpaceKind.CTA
@@ -108,15 +108,18 @@ def mbarrier_expect_tx(
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
+        mbar_cluster_type = llvm.PointerType.get(AddressSpace.dsmem)
         mbar_llvm_ptr = nvvm.mapa(
-            mbar_llvm_ptr.type,
+            mbar_cluster_type,
             mbar_llvm_ptr,
             Int32(peer_cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
             loc=loc,
             ip=ip,
         )
+        mbar_shared_type = llvm.PointerType.get(AddressSpace.smem)
+        mbar_llvm_ptr = llvm.addrspacecast(mbar_shared_type, mbar_llvm_ptr)
         space = nvvm.MBarrierSpaceKind.CLUSTER
     else:
         space = nvvm.MBarrierSpaceKind.CTA
@@ -147,7 +150,7 @@ def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
     # This NVVM Op is a spin-loop wrapping the mbarrier.try_wait.parity.shared.b64 PTX
     # The timeout in ns only applies to the latter and this call is truly blocking
     nvvm.mbarrier_try_wait_parity_shared(
-        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        mbar_ptr.llvm_ptr,
         Int32(phase).ir_value(loc=loc, ip=ip),
         Int32(timeout_ns).ir_value(loc=loc, ip=ip),
         loc=loc,
@@ -171,8 +174,7 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
 
     return Boolean(
         nvvm.mbarrier_wait_parity(
-            T.bool(),
-            mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+            mbar_ptr.llvm_ptr,
             Int32(phase).ir_value(loc=loc, ip=ip),
             nvvm.MBarrierWaitKind.TRY,
             loc=loc,
@@ -226,17 +228,20 @@ def mbarrier_arrive(
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
     """
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
     if peer_cta_rank_in_cluster is not None:
         BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-        mbar_llvm_ptr = nvvm.mapa_shared_cluster(
-            mbar_llvm_ptr.type,
+        mbar_cluster_type = llvm.PointerType.get(AddressSpace.dsmem)
+        mbar_llvm_ptr = nvvm.mapa(
+            mbar_cluster_type,
             mbar_llvm_ptr,
             Int32(peer_cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
             loc=loc,
             ip=ip,
         )
+        mbar_shared_type = llvm.PointerType.get(AddressSpace.smem)
+        mbar_llvm_ptr = llvm.addrspacecast(mbar_shared_type, mbar_llvm_ptr)
         space = nvvm.MBarrierSpaceKind.CLUSTER
     else:
         space = nvvm.MBarrierSpaceKind.CTA
@@ -264,5 +269,10 @@ def cp_async_mbarrier_arrive_noinc(mbar_ptr: Pointer, *, loc=None, ip=None) -> N
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
-    nvvm.cp_async_mbarrier_arrive_shared(mbar_llvm_ptr, noinc=True, loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.llvm_ptr
+    nvvm.cp_async_mbarrier_arrive_shared(
+        mbar_llvm_ptr,
+        noinc=True,
+        loc=loc,
+        ip=ip,
+    )

@@ -178,13 +178,17 @@ class HardwareInfo:
         # Create a temporary directory for dumping artifacts
         with tempfile.TemporaryDirectory() as temp_dir:
             # keep-cubin will keep the cubin in the artifacts
-            compiled_func = cute.compile(self._host_function, options=f"--dump-dir={temp_dir} --keep-cubin")
+            compiled_func = cute.compile(
+                self._host_function, options=f"--dump-dir={temp_dir} --keep-cubin"
+            )
             # Get the CUBIN from artifacts
             cubin_data = compiled_func.artifacts.CUBIN
             cuda_library = self._checkCudaErrors(
                 driver.cuLibraryLoadData(cubin_data, None, None, 0, None, None, 0)
             )
             # Enumerate kernels from the library
-            kernels = self._checkCudaErrors(driver.cuLibraryEnumerateKernels(1, cuda_library))
+            kernels = self._checkCudaErrors(
+                driver.cuLibraryEnumerateKernels(1, cuda_library)
+            )
             # Get the function from the kernel
             return self._checkCudaErrors(driver.cuKernelGetFunction(kernels[0]))

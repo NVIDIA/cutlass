@@ -477,9 +477,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         )
         func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
 
-    def create_alloca(
-        self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int
-    ) -> ir.Value:
+    def create_alloca(self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int) -> ir.Value:
         """Create an alloca operation."""
         with ir.InsertionPoint(entry_block.operations[0]):
             # declare the struct type

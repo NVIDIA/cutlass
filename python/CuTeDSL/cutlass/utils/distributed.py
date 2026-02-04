@@ -71,6 +71,7 @@ def ld_bypass(input_tensor: cute.Tensor):
 @dsl_user_op
 def multimem_red_release_gpu_add1(
     lock_ptr: Pointer,
+    *,
     loc=None,
     ip=None,
 ) -> None:
@@ -89,6 +90,7 @@ def multimem_red_release_gpu_add1(
 @dsl_user_op
 def multimem_red_release_sys_add1(
     lock_ptr: Pointer,
+    *,
     loc=None,
     ip=None,
 ) -> None:
@@ -284,7 +286,6 @@ def spin_lock_atom_cas_relaxed_wait(
             loc=loc,
             ip=ip,
         )
-
 
 ########################################################
 # Multimem Load & Store

@@ -8,6 +8,14 @@ The CUTLASS DSL 4.4 release currently supports **Linux** and **Python 3.10 - 3.1
 Installation
 -----------------------
 
+Before installing the latest version, you need to uninstall any previous CUTLASS DSL Installation.
+
+.. code-block:: bash
+
+   pip uninstall nvidia-cutlass-dsl nvidia-cutlass-dsl-libs-base nvidia-cutlass-dsl-libs-cu13 -y
+
+
+
 To ensure compatibility with the examples and code on `GitHub <https://github.com/NVIDIA/cutlass/tree/main>`_,
 use the `setup.sh <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/setup.sh>`_ file from the corresponding commit in the repository.
 

@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from functools import partial
-from typing import Optional, Tuple, Union, Callable, Literal
+from typing import Any, Optional, Tuple, Union, Callable, Literal
 from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import T, dsl_user_op
@@ -19,15 +19,6 @@ import cutlass.cutlass_dsl as cutlass_dsl
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, llvm, nvvm, vector
-
-# Forward nvvm enums
-from cutlass._mlir.dialects.nvvm import (
-    ProxyKind,
-    SharedSpace,
-    Tcgen05WaitKind,
-    SetMaxRegisterAction,
-    RoundingModeKind,
-)
 
 from ..core import size
 
@@ -95,25 +86,23 @@ def _enhance_enum_with_str_mapping(enum_class):
         """
         Convert a string literal to the corresponding enum member.
 
-        :param s: String representation of the enum member, or an enum member itself (deprecated)
+        :param s: String representation of the enum member
         :return: The enum member (or None if s is None)
         :raises ValueError: If the string is not a valid enum member
+        :raises TypeError: If an enum is passed instead of a string
         """
-        import warnings
-
         if s is None:
             return None
+        # Check if user passed an enum (should be a string literal instead)
+        # This catches cases where user passes e.g., RoundingModeKind.RN instead of "rn"
+        from enum import Enum
 
-        # Check if s is already an enum member of the correct type
-        if isinstance(s, cls):
-            warnings.warn(
-                f"Passing enum member directly to {cls.__name__}.from_str() is deprecated. "
-                f"Please use string literals instead (e.g., '{str(s)}' instead of {cls.__name__}.{s.name}).",
-                DeprecationWarning,
-                stacklevel=2,
+        if isinstance(s, Enum):
+            raise TypeError(
+                f"Expected a string literal for {cls.__name__}, but got enum '{type(s).__name__}.{s.name}'. "
+                f"Please pass a string instead (e.g., '{str(s)}' instead of {type(s).__name__}.{s.name}). "
+                f"Valid string options are: {sorted(str_to_enum_map.keys())}"
             )
-            return s
-
         if s not in str_to_enum_map:
             valid_options = sorted(str_to_enum_map.keys())
             raise ValueError(
@@ -446,6 +435,7 @@ def warp_reduction(
         offset = offset // 2
     return val
 
+
 warp_reduction_max = partial(
     warp_reduction,
     op=lambda x, y: fmax(x, y) if isinstance(x, Float32) else cutlass_dsl.max(x, y),
@@ -460,34 +450,13 @@ def barrier(*, barrier_id=None, number_of_threads=None, loc=None, ip=None) -> No
     """
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
-    else:
-        barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
 
     if number_of_threads is not None:
         number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
-        llvm.inline_asm(
-            None,
-            [barrier_id, number_of_threads],
-            "bar.sync $0, $1;",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        llvm.inline_asm(
-            None,
-            [barrier_id],
-            "bar.sync $0;",
-            "r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
+
+    nvvm.barrier(
+        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -496,8 +465,6 @@ def barrier_arrive(
 ) -> None:
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
-    else:
-        barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
 
     if number_of_threads is None:
         raise ValueError(
@@ -505,14 +472,8 @@ def barrier_arrive(
         )
     number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    llvm.inline_asm(
-        None,
-        [barrier_id, number_of_threads],
-        "bar.arrive $0, $1;",
-        "r,r",
-        has_side_effects=True,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
+    nvvm.barrier_arrive(
+        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
     )
 
 
@@ -638,19 +599,73 @@ def cluster_arrive_relaxed(*, aligned=None, loc=None, ip=None) -> None:
 
 @dsl_user_op
 def fence_proxy(
-    kind: ProxyKind,
+    kind: Literal[
+        "alias", "async", "async.global", "async.shared", "tensormap", "generic"
+    ],
     *,
-    space: Optional[SharedSpace] = None,
+    space: Optional[Literal["cta", "cluster"]] = None,
     use_intrinsic=None,
     loc=None,
     ip=None,
 ) -> None:
+    """
+    Fence operation to ensure memory consistency between proxies.
+
+    :param kind: Proxy kind string literal:
+        - "alias" : Alias proxy
+        - "async" : Async proxy
+        - "async.global" : Async global proxy
+        - "async.shared" : Async shared proxy
+        - "tensormap" : Tensormap proxy
+        - "generic" : Generic proxy
+    :type kind: Literal["alias", "async", "async.global", "async.shared", "tensormap", "generic"]
+    :param space: Shared memory space scope string literal (optional):
+        - "cta" : CTA (Cooperative Thread Array) scope
+        - "cluster" : Cluster scope
+    :type space: Optional[Literal["cta", "cluster"]]
+    :param use_intrinsic: Whether to use intrinsic version
+    """
+    from cutlass._mlir.dialects.nvvm import (
+        SharedSpace,
+        ProxyKind,
+    )
+
+    # Enhance enum with str mapping
+    SharedSpace = _enhance_enum_with_str_mapping(SharedSpace)
+    ProxyKind = _enhance_enum_with_str_mapping(ProxyKind)
+
+    kind = ProxyKind.from_str(kind)
+    space = SharedSpace.from_str(space)
+
     nvvm.fence_proxy(
-        kind=kind, space=space, use_intrinsic=use_intrinsic, loc=loc, ip=ip
+        kind=kind,
+        space=space,
+        use_intrinsic=use_intrinsic,
+        loc=loc,
+        ip=ip,
     )
 
 
 @dsl_user_op
+def vote_sync_op(
+    pred: Boolean, kind: nvvm.VoteSyncKind, mask: Int = FULL_MASK, *, loc=None, ip=None
+) -> Union[Int32, Boolean]:
+    """
+    Performs a vote operation across the warp.
+    """
+    return_type = Int32 if kind == nvvm.VoteSyncKind.ballot else Boolean
+    return return_type(
+        nvvm.vote_sync(
+            T.i32() if kind == nvvm.VoteSyncKind.ballot else T.bool(),
+            Int32(mask).ir_value(loc=loc, ip=ip),
+            Boolean(pred).ir_value(loc=loc, ip=ip),
+            kind,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
 def vote_ballot_sync(
     pred: Boolean, mask: Int = FULL_MASK, *, loc=None, ip=None
 ) -> Int32:
@@ -668,45 +683,7 @@ def vote_ballot_sync(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-vote-sync>`__.
     """
-    return Int32(
-        nvvm.vote_ballot_sync(
-            T.i32(),
-            Int32(mask).ir_value(loc=loc, ip=ip),
-            Boolean(pred).ir_value(loc=loc, ip=ip),
-            loc=loc,
-            ip=ip,
-        )
-    )
-
-
-@dsl_user_op
-def vote_sync_op(
-    pred: Boolean, kind: str, mask: Int = FULL_MASK, *, loc=None, ip=None
-) -> Union[Int32, Boolean]:
-    return_type = Boolean
-    return_type_str = "pred"
-    return return_type(
-        llvm.inline_asm(
-            T.bool(),
-            [
-                Boolean(pred).ir_value(loc=loc, ip=ip),
-                Int32(mask).ir_value(loc=loc, ip=ip),
-            ],
-            f"""{{\n\t
-            .reg .pred ps;\n\t
-            .reg .pred pd;\n\t
-            setp.ne.b32 ps, $1, 0;\n\t
-            vote.sync.{kind}.{return_type_str} pd, ps, $2;\n\t
-            selp.b32 $0, 1, 0, pd;\n\t
-            }}""",
-            "=r,r,i",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    )
+    return vote_sync_op(pred, nvvm.VoteSyncKind.ballot, mask, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -714,7 +691,7 @@ def vote_any_sync(
     pred: Boolean, mask: Int = FULL_MASK, *, loc=None, ip=None
 ) -> Boolean:
     """True if source predicate is True for any non-exited threads in mask. Negate the source
-    predicate to compute .not_all.
+    predicate to compute .none.
 
     :param pred: The predicate value for the current thread
     :type pred: Boolean
@@ -727,7 +704,7 @@ def vote_any_sync(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-vote-sync>`__.
     """
-    return vote_sync_op(pred, "any", mask, loc=loc, ip=ip)
+    return vote_sync_op(pred, nvvm.VoteSyncKind.any, mask, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -748,7 +725,7 @@ def vote_all_sync(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-vote-sync>`__.
     """
-    return vote_sync_op(pred, "all", mask, loc=loc, ip=ip)
+    return vote_sync_op(pred, nvvm.VoteSyncKind.all, mask, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -767,7 +744,7 @@ def vote_uni_sync(
             threads in mask
     :rtype: Boolean
     """
-    return vote_sync_op(pred, "uni", mask, loc=loc, ip=ip)
+    return vote_sync_op(pred, nvvm.VoteSyncKind.uni, mask, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -821,8 +798,8 @@ def fence_view_async_tmem_op(
     from cutlass._mlir.dialects.nvvm import Tcgen05WaitKind
 
     # Enhance enum and convert string literal to enum type
-    Tcgen05WaitKind_enhanced = _enhance_enum_with_str_mapping(Tcgen05WaitKind)
-    kind = Tcgen05WaitKind_enhanced.from_str(kind)
+    Tcgen05WaitKind = _enhance_enum_with_str_mapping(Tcgen05WaitKind)
+    kind = Tcgen05WaitKind.from_str(kind)
 
     nvvm.tcgen05_wait(kind=kind, loc=loc, ip=ip)
 
@@ -847,9 +824,8 @@ def fence_view_async_shared(
 
         This function is usually used for async execution unit (like TMA, UMMA) after the load/store operations.
     """
-    nvvm.fence_proxy(
-        nvvm.ProxyKind.async_shared, space=nvvm.SharedSpace.shared_cta, loc=loc, ip=ip
-    )
+    # Use the fence_proxy wrapper function with string literals
+    fence_proxy(kind="async.shared", space="cta", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -859,6 +835,7 @@ def setmaxregister_increase(
     loc=None,
     ip=None,
 ):
+    from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
     return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.increase, loc=loc, ip=ip)
 
 
@@ -869,6 +846,7 @@ def setmaxregister_decrease(
     loc=None,
     ip=None,
 ):
+    from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
     return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
 
 
@@ -880,6 +858,7 @@ def warpgroup_reg_alloc(
     loc=None,
     ip=None,
 ) -> None:
+    from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
     nvvm.setmaxregister(reg_count, SetMaxRegisterAction.increase, loc=loc, ip=ip)
 
 
@@ -891,7 +870,9 @@ def warpgroup_reg_dealloc(
     loc=None,
     ip=None,
 ) -> None:
+    from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
     nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
+
 
 @dsl_user_op
 def calc_packed_f32x2_op(
@@ -908,8 +889,8 @@ def calc_packed_f32x2_op(
     from cutlass._mlir.dialects.nvvm import RoundingModeKind
 
     # Enhance enum and convert string literal to enum type
-    RoundingModeKind_enhanced = _enhance_enum_with_str_mapping(RoundingModeKind)
-    rnd = RoundingModeKind_enhanced.from_str(rnd)
+    RoundingModeKind = _enhance_enum_with_str_mapping(RoundingModeKind)
+    rnd = RoundingModeKind.from_str(rnd)
 
     vec_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
     vec_src_a = vector.from_elements(
@@ -960,14 +941,13 @@ add_packed_f32x2 = partial(
     calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
 )
 
+
 @dsl_user_op
 def fmax(
     a: Union[float, Float32], b: Union[float, Float32], *, loc=None, ip=None
 ) -> Float32:
-
     return Float32(
         nvvm.fmax(
-            T.f32(),
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
             loc=loc,
@@ -975,12 +955,11 @@ def fmax(
         )
     )
 
+
 @dsl_user_op
 def rcp_approx(a: Union[float, Float32], *, loc=None, ip=None):
     return Float32(
-        nvvm.rcp_approx_ftz_f(
-            T.f32(), Float32(a).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
-        )
+        nvvm.rcp_approx_ftz_f(Float32(a).ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
     )
 
 
@@ -1022,6 +1001,68 @@ def cvt_i8_bf16(src_i8, *, loc=None, ip=None):
     )
     val_bf16 = llvm.bitcast(BFloat16.mlir_type, val_i16, loc=loc, ip=ip)
     return val_bf16
+
+
+@dsl_user_op
+def cvt_i8x2_to_bf16x2(src_vec2, *, loc=None, ip=None):
+    # pack 2 int8 into 1 int16 value
+    src_i16 = llvm.bitcast(Int16.mlir_type, src_vec2, loc=loc, ip=ip)
+    val_i32 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_i16,
+        ],
+        """{\n\t
+            .reg .b16 scale;\n\t
+            mov.b16 scale, 0x8585;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, $1, scale;\n\t
+        }""",
+        "=r,h",
+    )
+
+    vec_bf16x2_type = ir.VectorType.get([2], BFloat16.mlir_type, loc=loc)
+    vec_bf16x2 = llvm.bitcast(vec_bf16x2_type, val_i32, loc=loc, ip=ip)
+    return vec_bf16x2
+
+
+@dsl_user_op
+def cvt_i8x4_to_bf16x4(src_vec4, *, loc=None, ip=None):
+    # pack 4 int8 into 1 int32 value
+    src_i32 = llvm.bitcast(Int32.mlir_type, src_vec4, loc=loc, ip=ip)
+    rst01 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_i32,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            mov.b16 scale, 0x8585;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair0, scale;\n\t
+        }""",
+        "=r,r",
+    )
+
+    rst23 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_i32,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            mov.b16 scale, 0x8585;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair1, scale;\n\t
+        }""",
+        "=r,r",
+    )
+    vec_type = ir.VectorType.get([2], Int32.mlir_type, loc=loc)
+    rst_i32 = vector.from_elements(vec_type, [rst01, rst23], loc=loc, ip=ip)
+    vec_bf16x4_type = ir.VectorType.get([4], BFloat16.mlir_type, loc=loc)
+    vec_bf16x4 = llvm.bitcast(vec_bf16x4_type, rst_i32, loc=loc, ip=ip)
+    return vec_bf16x4
 
 
 # Convert vector of 2 float values to vector of 2 bfloat16 values with satfinite rounding
@@ -1263,10 +1304,114 @@ def prmt(src, src_reg_shifted, prmt_indices, *, loc=None, ip=None):
 @dsl_user_op
 def cvt_i4_bf16(src_i4, *, loc=None, ip=None):
     # i4 -> i32 -> f32 -> bf
-    src_i32 = llvm.zext(Int32.mlir_type, src_i4, loc=loc, ip=ip)
+    src_i32 = llvm.sext(Int32.mlir_type, src_i4, loc=loc, ip=ip)
     src_f32 = llvm.sitofp(Float32.mlir_type, src_i32, loc=loc, ip=ip)
     bf16_val = cvt_f32_bf16(src_f32, loc=loc, ip=ip)
     return bf16_val
+
+
+# Convert multiple shuffled int4 values to bfloat16 values.
+# The input elements are assumed to be already shuffled following a specific shuffle pattern.
+# Specifically, for consecutive 8 int4 values with indices of (0, 1, 2, 3, 4, 5, 6, 7),
+# they are shuffled to (0, 2, 1, 3, 4, 6, 5, 7).  For tailing elements less than 8, the
+# shuffle pattern is (0, 2, 1, 3) for 4 elements. No shuffle is needed for less than 4 elements.
+# Shuffle could help to produce converted bf16 values in the natural order of (0, 1, 2 ,3 ,4 ,5 ,6 ,7)
+# without extra prmt instructions and thus better performance.
+# The number of elements to be converted must be be even as specified by num_elts.
+# Int4 values are packed into int32 values with upper bits filled with 0 if there are less than 4 int4 values.
+# Results bfloat16 values are also packed into int32 values.
+@dsl_user_op
+def cvt_i4_to_bf16_with_shuffle_impl(src_i32, num_elts, *, loc=None, ip=None):
+    from cutlass import CUDA_VERSION
+    if CUDA_VERSION.major < 13:
+        raise cutlass_dsl.DSLCudaVerNotImplemented(
+            feature="cvt_i4_to_bf16_with_shuffle_impl", required_version="13.1"
+        )
+
+    num_i32_elts = num_elts // 2
+    mask_odd = arith.constant(Int32.mlir_type, 0xF0F0F0F0, loc=loc, ip=ip)
+    mask_even = arith.constant(Int32.mlir_type, 0x0F0F0F0F, loc=loc, ip=ip)
+    src_odd = arith.andi(src_i32, mask_odd, loc=loc, ip=ip)
+    src_even = arith.andi(src_i32, mask_even, loc=loc, ip=ip)
+    c4 = arith.constant(Int32.mlir_type, 4, loc=loc, ip=ip)
+    src_even = arith.shli(src_even, c4, loc=loc, ip=ip)
+    rst13 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_odd,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            mov.b16 scale, 0x8181;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair0, scale;\n\t
+        }""",
+        "=r,r",
+    )
+    rst57 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_odd,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            mov.b16 scale, 0x8181;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair1, scale;\n\t
+        }""",
+        "=r,r",
+    )
+    rst02 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_even,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b16 scale, 0x8181;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair0, scale;\n\t
+        }""",
+        "=r,r",
+    )
+    rst46 = llvm.inline_asm(
+        Int32.mlir_type,
+        [
+            src_even,
+        ],
+        """{\n\t
+            .reg .b16 pair<2>;\n\t
+            .reg .b16 scale;\n\t
+            mov.b16 scale, 0x8181;\n\t
+            mov.b32 {pair0, pair1}, $1;\n\t
+            cvt.rn.satfinite.scaled::n2::ue8m0.bf16x2.s2f6x2 $0, pair1, scale;\n\t
+        }""",
+        "=r,r",
+    )
+    vec_type = ir.VectorType.get([num_i32_elts], Int32.mlir_type, loc=loc)
+    if num_elts == 2:
+        prmt_index = arith.constant(Int32.mlir_type, 0x00005410, loc=loc, ip=ip)
+        rst = llvm.inline_asm(
+            Int32.mlir_type,
+            [
+                rst02,
+                rst13,
+                prmt_index,
+            ],
+            "prmt.b32 $0, $1, $2, $3;",
+            "=r,r,r,r",
+        )
+        vec_rsts = vector.from_elements(vec_type, [rst], loc=loc, ip=ip)
+    elif num_elts == 4:
+        vec_rsts = vector.from_elements(vec_type, [rst02, rst13], loc=loc, ip=ip)
+    else:
+        vec_rsts = vector.from_elements(
+            vec_type, [rst02, rst13, rst46, rst57], loc=loc, ip=ip
+        )
+    return vec_rsts
 
 
 # Convert multiple int4 values to bfloat16 values.
@@ -1357,11 +1502,12 @@ def cvt_i4_to_bf16_impl(src_i32, num_elts, *, loc=None, ip=None):
 
 # Convert 2 int4 values to 2 bfloat16 values
 @dsl_user_op
-def cvt_i4x2_to_bf16x2(src_vec2, *, loc=None, ip=None):
+def cvt_i4x2_to_bf16x2(src_vec2, *, with_shuffle=False, loc=None, ip=None):
+    cvt_func = cvt_i4_to_bf16_with_shuffle_impl if with_shuffle else cvt_i4_to_bf16_impl
     # pack 2 int4 into 1 int32 value and fill upper bits with 0
     src_i8 = llvm.bitcast(Int8.mlir_type, src_vec2, loc=loc, ip=ip)
     src_i32 = llvm.zext(Int32.mlir_type, src_i8, loc=loc, ip=ip)
-    rst_i32 = cvt_i4_to_bf16_impl(src_i32, 2, loc=loc, ip=ip)
+    rst_i32 = cvt_func(src_i32, 2, loc=loc, ip=ip)
     vec_bf16x2_type = ir.VectorType.get([2], BFloat16.mlir_type, loc=loc)
     vec_bf16x2 = llvm.bitcast(vec_bf16x2_type, rst_i32, loc=loc, ip=ip)
     return vec_bf16x2
@@ -1369,11 +1515,12 @@ def cvt_i4x2_to_bf16x2(src_vec2, *, loc=None, ip=None):
 
 # Convert 4 int4 values to 4 bfloat16 values
 @dsl_user_op
-def cvt_i4x4_to_bf16x4(src_vec4, *, loc=None, ip=None):
+def cvt_i4x4_to_bf16x4(src_vec4, *, with_shuffle=False, loc=None, ip=None):
+    cvt_func = cvt_i4_to_bf16_with_shuffle_impl if with_shuffle else cvt_i4_to_bf16_impl
     # pack 4 int4 into 1 int32 value and fill upper bits with 0
     src_i16 = llvm.bitcast(Int16.mlir_type, src_vec4, loc=loc, ip=ip)
     src_i32 = llvm.zext(Int32.mlir_type, src_i16, loc=loc, ip=ip)
-    rst_i32 = cvt_i4_to_bf16_impl(src_i32, 4, loc=loc, ip=ip)
+    rst_i32 = cvt_func(src_i32, 4, loc=loc, ip=ip)
     vec_bf16x4_type = ir.VectorType.get([4], BFloat16.mlir_type, loc=loc)
     vec_bf16x4 = llvm.bitcast(vec_bf16x4_type, rst_i32, loc=loc, ip=ip)
     return vec_bf16x4
@@ -1381,13 +1528,15 @@ def cvt_i4x4_to_bf16x4(src_vec4, *, loc=None, ip=None):
 
 # Convert 8 int4 values to 8 bfloat16 values
 @dsl_user_op
-def cvt_i4x8_to_bf16x8(src_vec8, *, loc=None, ip=None):
+def cvt_i4x8_to_bf16x8(src_vec8, *, with_shuffle=False, loc=None, ip=None):
+    cvt_func = cvt_i4_to_bf16_with_shuffle_impl if with_shuffle else cvt_i4_to_bf16_impl
     # pack 8 int4 into 1 int32 value and fill upper bits with 0
     src_i32 = llvm.bitcast(Int32.mlir_type, src_vec8, loc=loc, ip=ip)
-    rst_i32 = cvt_i4_to_bf16_impl(src_i32, 8, loc=loc, ip=ip)
+    rst_i32 = cvt_func(src_i32, 8, loc=loc, ip=ip)
     vec_bf16x8_type = ir.VectorType.get([8], BFloat16.mlir_type, loc=loc)
     vec_bf16x8 = llvm.bitcast(vec_bf16x8_type, rst_i32, loc=loc, ip=ip)
     return vec_bf16x8
+
 
 # Sign extend 4 int4 unpacked in 8b containers
 @dsl_user_op
@@ -1485,6 +1634,196 @@ def griddepcontrol_launch_dependents(*, loc=None, ip=None) -> None:
 
 
 
+@dsl_user_op
+def _warp_redux_sync_nvvm(
+    value: Numeric,
+    kind: Literal[
+        "fmax",
+        "fmin",
+        "max",
+        "min",
+        "add",
+        "xor",
+        "or",
+        "and",
+    ],
+    mask_and_clamp: Int = FULL_MASK,
+    abs: bool = False,
+    nan: bool = None,
+    *,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    from cutlass._mlir.dialects.nvvm import ReduxKind
+
+    # Enhance enum and convert string literal to enum type
+    ReduxKind = _enhance_enum_with_str_mapping(ReduxKind)
+    kind = ReduxKind.from_str(kind)
+
+    value_type = type(value)
+    value_ir = value.ir_value(loc=loc, ip=ip)
+
+    return value_type(
+        nvvm.redux_sync(
+            res=value_ir.type,
+            val=value_ir,
+            kind=kind,
+            mask_and_clamp=Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+            abs=abs,
+            nan=nan,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def _warp_redux_sync_ptx(
+    value: Numeric,
+    kind: Literal[
+        "fmax",
+        "fmin",
+        "max",
+        "min",
+    ],
+    mask_and_clamp: Int = FULL_MASK,
+    abs: bool = None,
+    nan: bool = None,
+    *,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    value_type = type(value)
+    value_ir = value.ir_value(loc=loc, ip=ip)
+    mlir_type = value_type.mlir_type
+    mask_ir = Int32(mask_and_clamp).ir_value(loc=loc, ip=ip)
+
+    kind_ptx_str = kind
+    if kind == "fmax":
+        kind_ptx_str = "max"
+    elif kind == "fmin":
+        kind_ptx_str = "min"
+
+    modifiers = []
+    if nan is True:
+        modifiers.append("NaN")
+    if abs is True:
+        modifiers.append("abs")
+
+    modifier_str = "." + ".".join(modifiers) if modifiers else ""
+    ptx_instr = f"redux.sync.{kind_ptx_str}{modifier_str}.f32 $0, $1, $2;"
+
+    return value_type(
+        llvm.inline_asm(
+            mlir_type,
+            [value_ir, mask_ir],
+            f"{ptx_instr}",
+            f"=f,f,i",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+        )
+    )
+
+
+@dsl_user_op
+def warp_redux_sync(
+    value: Numeric,
+    kind: Literal[
+        "fmax",
+        "fmin",
+        "max",
+        "min",
+        "add",
+        "xor",
+        "or",
+        "and",
+    ],
+    mask_and_clamp: Int = FULL_MASK,
+    *,
+    abs: bool = None,
+    nan: bool = None,
+    loc=None,
+    ip=None,
+) -> Numeric:
+    """
+    Perform warp-level reduction operation across threads.
+
+    Reduces values from participating threads in a warp according to the specified operation.
+    All threads in the mask receive the same result.
+
+    :param value: Input value to reduce
+    :type value: Numeric
+    :param kind: Reduction operation. Supported operations:
+        - Integer types (Int32/Uint32): "add", "and", "max", "min", "or", "xor"
+        - Float types (Float32): "fmax", "fmin" (or "max"/"min" which auto-convert to "fmax"/"fmin")
+    :type kind: Literal["add", "and", "max", "min", "or", "xor", "fmin", "fmax"]
+    :param mask_and_clamp: Warp participation mask (default: FULL_MASK = 0xFFFFFFFF)
+    :type mask_and_clamp: Int
+    :param abs: Apply absolute value before reduction (float types only)
+    :type abs: bool
+    :param nan: Enable NaN propagation for fmax/fmin operations (float types only)
+    :type nan: Optional[bool]
+    :return: Reduced value (same for all participating threads)
+    :rtype: Numeric
+    """
+    # Convert value to Numeric type if needed
+    if not isinstance(value, Numeric):
+        value = as_numeric(value)
+
+    # Determine value type and choose appropriate implementation
+    value_type = type(value)
+    mlir_type = value_type.mlir_type
+
+    # Use inline PTX for float types, NVVM for integer types
+    if mlir_type == T.f32():
+        return _warp_redux_sync_ptx(
+            value, kind, mask_and_clamp, abs, nan, loc=loc, ip=ip
+        )
+    else:
+        return _warp_redux_sync_nvvm(
+            value, kind, mask_and_clamp, abs, nan, loc=loc, ip=ip
+        )
+
+
+@dsl_user_op
+def atomic_max_float32(
+    ptr,
+    value: Float32,
+    *,
+    positive_only: bool = True,
+    loc=None,
+    ip=None,
+) -> Float32:
+    """
+    Performs an atomic max operation on a float32 value in global memory.
+
+    This implementation works correctly for non-negative values (>= 0) using direct bitcast.
+
+    :param ptr: Pointer to the memory location
+    :param value: The float32 value to compare and potentially store (should be >= 0 for correct results)
+    :type value: Float32
+    :param positive_only: If True (default), assumes input values are non-negative.
+                         This parameter is provided for API compatibility and future extensions.
+    :type positive_only: bool
+    :return: The old value at the memory location
+    :rtype: Float32
+    """
+    from cutlass._mlir.dialects.nvvm import AtomicOpKind
+
+    value_int = llvm.bitcast(T.i32(), value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+
+    old_value_int = nvvm.atomicrmw(
+        AtomicOpKind.MAX,
+        ptr,
+        value_int,
+        loc=loc,
+        ip=ip,
+    )
+
+    return Float32(llvm.bitcast(T.f32(), old_value_int, loc=loc, ip=ip))
+
+
 def _normalize_ptr(addr, *, loc=None, ip=None) -> ir.Value:
     """
     Helper function to normalize pointer types to MLIR ir.Value.
@@ -1549,7 +1888,7 @@ def _atomic(
     :rtype: Union[Numeric, ir.Value]
     """
     from cutlass._mlir.dialects.nvvm import AtomicOpKind, MemOrderKind, MemScopeKind
-    from cutlass.utils.version_info import CUDA_VERSION
+    from cutlass import CUDA_VERSION
 
     # Enhance enums and convert string literals to enum types
     AtomicOpKind = _enhance_enum_with_str_mapping(AtomicOpKind)
@@ -1848,7 +2187,7 @@ def atomic_cas(
     :rtype: Numeric
     """
     from cutlass._mlir.dialects.nvvm import AtomicOpKind, MemOrderKind, MemScopeKind
-    from cutlass.utils.version_info import CUDA_VERSION
+    from cutlass import CUDA_VERSION
 
     # Enhance enums and convert string literals to enum types
     MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
@@ -1873,6 +2212,17 @@ def atomic_cas(
     if CUDA_VERSION.major == 12 and CUDA_VERSION.minor == 9:
         result = nvvm.atomicrmw(
             cmp_type.mlir_type,
+            op=AtomicOpKind.CAS,
+            ptr=ptr,
+            a=val_ir,
+            b=cmp_ir,
+            mem_order=sem,
+            syncscope=scope,
+            loc=loc,
+            ip=ip,
+        )
+    elif CUDA_VERSION.major == 13 and CUDA_VERSION.minor == 1:
+        result = nvvm.atomicrmw(
             op=AtomicOpKind.CAS,
             ptr=ptr,
             a=val_ir,

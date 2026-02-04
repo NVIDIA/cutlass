@@ -80,7 +80,7 @@ class SmemAllocator:
         GPU compute capability.
 
         :param compute_capability: The compute capability string (e.g. "70", "75", "80")
-        :type compute_capability: str
+        :type compute_capability: Optional[str]
         :return: The shared memory capacity in bytes
         :rtype: int
         :raises ValueError: If the compute capability is not supported

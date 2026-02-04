@@ -285,6 +285,8 @@ class MmaAtom(Atom):
             if self.op is not None:
                 self.op._verify_fragment_B(input, loc=loc, ip=ip)
             input = input.value
+        if isinstance(input, tuple):
+            input = _pack_shape(input, loc=loc, ip=ip)
         return _cute_ir.mma_make_fragment(
             _cute_ir.MmaOperand.B, self._trait.value, input, loc=loc, ip=ip
         )
@@ -1189,4 +1191,53 @@ def copy_atom_call(
         pred = pred.value
     return _cute_ir.copy_atom_call(
         value, src.value, dst.value, pred=pred, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def mma_atom_call(
+    atom: MmaAtom,
+    d: Tensor,
+    a: Tensor,
+    b: Tensor,
+    c: Tensor,
+    *,
+    loc=None,
+    ip=None,
+    **kwargs,
+) -> None:
+    """
+    Execute a single MMA atom operation.
+
+    The mma_atom_call operation executes an MMA atom with the given operands.
+    This performs a matrix multiplication and accumulation operation:
+    D = A * B + C
+
+    Note: The tensors 'd', 'a', 'b', and 'c' must only have a single fragment.
+
+    :param atom: The MMA atom to execute
+    :type atom: MmaAtom
+    :param d: Destination tensor (output accumulator)
+    :type d: Tensor
+    :param a: First source tensor (matrix A)
+    :type a: Tensor
+    :param b: Second source tensor (matrix B)
+    :type b: Tensor
+    :param c: Third source tensor (input accumulator C)
+    :type c: Tensor
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    Examples:
+
+    .. code-block:: python
+
+        # Call an MMA atom operation
+        cute.mma_atom_call(mma_atom, d_tensor, a_tensor, b_tensor, c_tensor)
+    """
+    value = atom._unpack(loc=loc, ip=ip, **kwargs)
+    return _cute_ir.mma_atom_call(
+        value, d.value, a.value, b.value, c.value, loc=loc, ip=ip
     )

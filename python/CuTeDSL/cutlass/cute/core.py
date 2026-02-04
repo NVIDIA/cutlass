@@ -10,14 +10,14 @@
 # is strictly prohibited.
 
 from functools import partial, reduce
-import inspect
 from inspect import isclass
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, overload
 
+from cutlass import const_expr
 from typing_extensions import deprecated
 
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import builtin, llvm, vector
+from cutlass._mlir.dialects import builtin, llvm, vector, arith, nvvm
 from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass._mlir.dialects.cute import (
     Ratio as _Ratio,
@@ -125,6 +125,7 @@ __all__ = [
     "shape",
     "recast_ptr",
     "make_ptr",
+    "get_remote_smem_ptr_in_cluster",
     "composition",
     "complement",
     "right_inverse",
@@ -247,7 +248,7 @@ def _unpack_x_tuple(t: Union[ir.Type, ir.Value], *, loc=None, ip=None) -> XTuple
             vals = []
         else:
             vals = get_leaves(t, loc=loc, ip=ip)
-            if not isinstance(vals, list):
+            if not isinstance(vals, ir.OpResultList):
                 vals = [vals]
     else:
         raise TypeError(f"expects static type or value, but got {t}")
@@ -383,9 +384,9 @@ class IntValue(cutlass_arith.ArithValue):
 
     @property
     def divisibility(self):
-        assert isinstance(
-            self.get_typed_value().type, _cute_ir.IntTupleType
-        ), f"expected self.get_typed_value() to be int_tuple type, but got {self.get_typed_value().type}"
+        assert isinstance(self.get_typed_value().type, _cute_ir.IntTupleType), (
+            f"expected self.get_typed_value() to be int_tuple type, but got {self.get_typed_value().type}"
+        )
         return self.get_typed_value().type.get_divisibility([0])
 
     def __str__(self):
@@ -429,7 +430,9 @@ class IntValue(cutlass_arith.ArithValue):
     @dsl_user_op
     @_binary_op
     def __add__(self, other, *, loc=None, ip=None):
-        return _cute_ir.tuple_add(self.get_typed_value(), other, loc=loc, ip=ip)
+        return _cute_ir.tuple_add(
+            self.get_typed_value(loc=loc, ip=ip), other, loc=loc, ip=ip
+        )
 
     @dsl_user_op
     @_binary_op
@@ -461,8 +464,10 @@ class IntValue(cutlass_arith.ArithValue):
 
     @dsl_user_op
     @_binary_op
-    def __radd__(self, other, *, loc=None, ip=None):
-        return _cute_ir.tuple_add(other, self.get_typed_value(), loc=loc, ip=ip)
+    def __radd__(self, other, *, loc=None, ip=None) -> "IntValue":
+        return _cute_ir.tuple_add(
+            other, self.get_typed_value(loc=loc, ip=ip), loc=loc, ip=ip
+        )
 
     @dsl_user_op
     @_binary_op
@@ -1207,10 +1212,6 @@ class _ComposedLayout(ComposedLayout):
     @property
     @dsl_user_op
     def shape(self, *, loc=None, ip=None) -> Shape:
-        return self.shape_method(loc=loc, ip=ip)
-
-    @dsl_user_op
-    def shape_method(self, *, loc=None, ip=None) -> Shape:
         return _unpack_x_tuple(
             _cute_ir.get_shape(self.value, loc=loc, ip=ip), loc=loc, ip=ip
         )
@@ -1262,9 +1263,9 @@ class _ComposedLayout(ComposedLayout):
         # In this context, a _ComposedLayout instance is an encapsulated ir.Value which is automatically created
         # by value caster for ComposedLayout typed values
         assert len(values) == 1, f"Expected 1 value, but got {len(values)}"
-        assert isinstance(
-            values[0], (_ComposedLayout, ir.Value)
-        ), f"Expected _ComposedLayout or ir.Value, but got {type(values[0])}"
+        assert isinstance(values[0], (_ComposedLayout, ir.Value)), (
+            f"Expected _ComposedLayout or ir.Value, but got {type(values[0])}"
+        )
         return _ComposedLayout(
             values[0] if isinstance(values[0], ir.Value) else values[0].value,
         )
@@ -1313,9 +1314,9 @@ class _Pointer(Pointer):
         # In this context, a _Pointer instance is an encapsulated ir.Value which is automatically created
         # by value caster for cute.ptr typed values
         assert len(values) == 1, f"Expected 1 value, but got {len(values)}"
-        assert isinstance(
-            values[0], (_Pointer, ir.Value)
-        ), f"Expected _Pointer or ir.Value, but got {type(values[0])}"
+        assert isinstance(values[0], (_Pointer, ir.Value)), (
+            f"Expected _Pointer or ir.Value, but got {type(values[0])}"
+        )
         return _Pointer(
             values[0] if isinstance(values[0], ir.Value) else values[0].value
         )
@@ -1359,29 +1360,12 @@ class _Pointer(Pointer):
         """
         Get the LLVM pointer representation of this pointer.
 
-        :param loc: Source location for MLIR, defaults to None
-        :type loc: Optional[Location]
-        :param ip: Insertion point for MLIR, defaults to None
-        :type ip: Optional[InsertionPoint]
         :return: The LLVM pointer representation
         :rtype: ir.Value
         """
-        return self.to_llvm_ptr(loc=loc, ip=ip)
-
-    @dsl_user_op
-    @lru_cache_ir()
-    def to_llvm_ptr(self, *, loc=None, ip=None) -> ir.Value:
-        """
-        Get the LLVM pointer representation of this pointer. (Used by internal API to propagate loc and ip)
-
-        :param loc: Source location for MLIR, defaults to None
-        :type loc: Optional[Location]
-        :param ip: Insertion point for MLIR, defaults to None
-        :type ip: Optional[InsertionPoint]
-        :return: The LLVM pointer representation
-        :rtype: ir.Value
-        """
-        llvm_ptr_ty = llvm.PointerType.get(self.memspace.value)
+        llvm_ptr_ty = llvm.PointerType.get(
+            self.memspace.value if self.memspace != AddressSpace.rmem else 0
+        )
         return builtin.unrealized_conversion_cast(
             [llvm_ptr_ty], [self.value], loc=loc, ip=ip
         )
@@ -1679,7 +1663,16 @@ def printf(*args, loc=None, ip=None) -> None:
         elif isinstance(arg0, tuple):
             # Assume it's a tile
             return _pack_tile(arg0)
-        elif isinstance(arg0, (_Tensor, _Pointer, _ComposedLayout)):
+        elif isinstance(arg0, _Tensor):
+            arg0._check_can_load_store()
+            if isinstance(arg0.layout, ComposedLayout) and isinstance(
+                arg0.layout.inner, Swizzle
+            ):
+                raise NotImplementedError(
+                    "tensor with swizzled layout (PISL) is not supported in printf, please use swizzled pointer (PDSL) instead"
+                )
+            return arg0.value
+        elif isinstance(arg0, (_Pointer, _ComposedLayout)):
             return arg0.value
         else:
             raise TypeError(f"unsupported argument type in printf, got {type(arg)}")
@@ -1749,6 +1742,7 @@ def make_swizzle(b, m, s, *, loc=None, ip=None):
         m, s = 4, 3
     ty = ir.Type.parse(f'!cute.swizzle<"S<{b},{m},{s}>">')
     return Swizzle(static(ty, loc=loc, ip=ip))
+
 
 
 @dsl_user_op
@@ -3409,37 +3403,88 @@ def make_ptr(
     loc=None,
     ip=None,
 ) -> Pointer:
+    # Perform checks
     if dtype is None or not isinstance(dtype, NumericMeta):
         raise TypeError(f"expects dtype to be a type of Numeric, but got {dtype}")
-
     if not isinstance(mem_space, AddressSpace):
         raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
-
     if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
         value = llvm.ptrtoint(T.i64(), value)
-
     if not is_integer(value):
         raise TypeError(f"expects integer value, but got {type(value)}")
-    value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
+
+    # TMEM addresses are 32b wide
+    is_tmem = mem_space == AddressSpace.tmem
     value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
 
+    # Set the alignment of the pointer
     bytes_per_elt = max(1, dtype.width // 8)
     if assumed_align is None:
         assumed_align = bytes_per_elt
-
     if bytes_per_elt % assumed_align != 0 and assumed_align % bytes_per_elt != 0:
         raise ValueError(
             f"{bytes_per_elt=} is not a multiple of {assumed_align=} and vice versa."
         )
-
     aligned_ty = _cute_ir.ConstrainedIntType.get(assumed_align, type(value).width)
     aligned_intptr = _cute_ir.assume(
         aligned_ty, value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
     )
 
+    # Construct the pointer Type
     data_ty = T.i8() if dtype is None else dtype.mlir_type
     ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align)
     return _cute_ir.inttoptr(ptr_ty, aligned_intptr, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def get_remote_smem_ptr_in_cluster(
+    smem_ptr: Pointer,
+    cta_rank_in_cluster: Int,
+    *,
+    loc=None,
+    ip=None,
+) -> Pointer:
+    """
+    Get the remote shared memory CuTe pointer in a cluster.
+
+    :param smem_ptr: The current shared memory pointer
+    :type smem_ptr: Pointer
+    :param cta_rank_in_cluster: The peer CTA rank in cluster to get the remote pointer for
+    :type cta_rank_in_cluster: Int
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint]
+
+    :return: The remote shared memory CuTe pointer
+    :rtype: Pointer
+
+    """
+    cur_llvm_ptr = smem_ptr.llvm_ptr
+    remote_llvm_ptr = nvvm.mapa(
+        llvm.PointerType.get(7),  # LLVM dsmem address space
+        cur_llvm_ptr,
+        Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+    remote_llvm_ptr_cast = llvm.addrspacecast(
+        llvm.PointerType.get(AddressSpace.smem), remote_llvm_ptr, loc=loc, ip=ip
+    )
+    remote_ptr = make_ptr(
+        smem_ptr.dtype,
+        remote_llvm_ptr_cast,
+        AddressSpace.smem,
+        assumed_align=smem_ptr.alignment,
+        loc=loc,
+        ip=ip,
+    )
+    if const_expr(smem_ptr.value.type.is_swizzled):
+        sw = Swizzle(static(smem_ptr.value.type.swizzle_type))
+        remote_ptr = recast_ptr(
+            remote_ptr, swizzle_=sw, dtype=smem_ptr.dtype, loc=loc, ip=ip
+        )
+    return remote_ptr
 
 
 #
@@ -3868,9 +3913,7 @@ def local_tile(
     return _cute_ir.local_tile(
         input=input.value,
         tile=tiler_val,
-        static_tile=None,
         coord=coord_val,
-        static_coord=None,
         proj=proj,
         loc=loc,
         ip=ip,
@@ -3907,9 +3950,9 @@ def make_layout_image_mask(
     sliced_lay, offset = slice_and_offset(slicer, lay, loc=loc, ip=ip)
     # Given that we replace only one mode with _, the rank of the slice should be 1
     assert rank(sliced_lay) == 1
-    assert is_static(
-        sliced_lay
-    ), "make_layout_image_mask requires the layout to be static"
+    assert is_static(sliced_lay), (
+        "make_layout_image_mask requires the layout to be static"
+    )
 
     # Create the mask of the image
     mcast_mask = Int16(0)
@@ -3951,6 +3994,7 @@ def leading_dim(shape: Shape, stride: Stride) -> Union[int, Tuple[int, ...], Non
         return False
 
     return find_if(stride, pred_fn=pred_fn)
+
 
 @dsl_user_op
 def make_layout_tv(
@@ -4468,9 +4512,9 @@ class struct:
         """
         Return the round-up offset up to the next multiple of align.
         """
-        assert align > 0 and not (
-            align & (align - 1)
-        ), "align should be a strictly positive power of 2."
+        assert align > 0 and not (align & (align - 1)), (
+            "align should be a strictly positive power of 2."
+        )
         return (offset + (align - 1)) & ~(align - 1)
 
 
@@ -4607,27 +4651,9 @@ class FastDivmodDivisor:
         new_obj = object.__new__(FastDivmodDivisor)
         new_obj._divisor = values[0]
         return new_obj
+
     def __repr__(self):
         return f"FastDivmodDivisor({self._divisor.type})"
-
-
-# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
-FastDivmodDivisor.__init__.__signature__ = inspect.Signature(
-    [
-        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-        inspect.Parameter(
-            "divisor",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=Integer,
-        ),
-        inspect.Parameter(
-            "is_power_of_2",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=None,
-            annotation=bool,
-        ),
-    ]
-)
 
 
 @dsl_user_op

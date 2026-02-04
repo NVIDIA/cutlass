@@ -290,7 +290,7 @@ def set_dataclass_attributes(
         for field, value in zip(fields, values):
             setattr(instance, field, value)
 
-        return instance
+    return instance
 
 
 def default_dataclass_from_iterable(

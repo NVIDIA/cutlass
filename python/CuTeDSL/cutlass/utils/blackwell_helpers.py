@@ -658,7 +658,11 @@ def make_smem_layout_a(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = (tiled_mma.op.a_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    is_k_major = (
+        (tiled_mma.op.a_major_mode == OperandMajorMode.K)
+        if is_k_major is None
+        else is_k_major
+    )
     a_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     a_smem_shape = tiled_mma.partition_shape_A(
         cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
@@ -712,7 +716,11 @@ def make_smem_layout_b(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
-    is_k_major = (tiled_mma.op.b_major_mode == OperandMajorMode.K) if is_k_major is None else is_k_major
+    is_k_major = (
+        (tiled_mma.op.b_major_mode == OperandMajorMode.K)
+        if is_k_major is None
+        else is_k_major
+    )
     b_major_mode = OperandMajorMode.K if is_k_major else OperandMajorMode.MN
     b_smem_shape = tiled_mma.partition_shape_B(
         cute.dice(mma_tiler_mnk, (None, 1, 1), loc=loc, ip=ip), loc=loc, ip=ip

@@ -9,7 +9,6 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL, T, dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
@@ -72,6 +71,6 @@ def elect_one(*, loc=None, ip=None) -> IfOpRegion:
     from cutlass.base_dsl.arch import Arch
 
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
-    is_thread_leader = nvvm.elect_sync(T.bool())
+    is_thread_leader = nvvm.elect_sync()
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)

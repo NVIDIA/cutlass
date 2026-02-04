@@ -6,6 +6,18 @@
 
 ### CuTe DSL
 * New features
+  - CuTe DSL now supports CUDA toolkit 13.1!
+    + Set up with cutlass/python/CuTeDSL/setup.sh --cu13
+    + Refer to https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html for more details
+  - GB300 is now supported in CuTe DSL with CTK 13.1
+    + Refer to [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py) for example kernel
+  - cute.experimental: introduce a higher-level, composable layer on top of existing CuTe DSL APIs (not a separate abstraction), which can be mixed with existing Cute DSL building blocks.
+    + Fragment-free programming model: copy/dot APIs take memrefs directly instead of descriptors/fragments.
+    + Automatic TMA descriptor generation and update insertion.
+    + Automatic vectorization and predication for SIMT copies.
+    + New pipeline abstraction with convenience wrappers
+    + New Partition ops to simplify partitioning logic.
+    + Device-side TMA descriptor allocation, initialization, and management
   - Ahead of Time (AoT) compilation is now available!
     + Refer to files under https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/export for example usage
   - JAX support - you can now use CuTeDSL along with JAX
@@ -15,7 +27,11 @@
     + cutlass.CUDA_VERSION for a version class to tell the CUDA version used for DSL
   - Added CopyDsmemStoreOp to store data to distributed shared memory with explicit synchronization.
 
+* More examples of authorizing peak-performance kernels
+  - [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
+
 * Bug fixing and improvements
+  - Fixed an issue that both branches of if are executed
   - Fixed `cute.printf` with f-string
   - Fixed an issue that cutlass.cuda.initialize_cuda_context() silently kills python
 
@@ -26,6 +42,21 @@
   - LdMatrix16x16x8bOp copy traits updated to be faithful to PTX without permutations. Permuted variant is renamed to LdMatrix16x8x8bOp.
   - group_bulk_copy_modes in async bulk copy example is now deprecated, use group_modes directly instead.
   - cute.arch.calc_packed_f32x2_op default enable ftz to default disable ftz
+  - In CuTe DSL with CTK 13.1, following APIs in cutlass.cute.arch now require string literal instead of enum as argument:
+    + fence_proxy
+    + fence_view_async_tmem_op
+    + calc_packed_f32x2_op
+    + warp_redux_sync
+    + atomic_add
+    + atomic_and
+    + atomic_or
+    + atomic_xor
+    + atomic_max
+    + atomic_min
+    + atomic_exch
+    + atomic_cas
+    + store
+    + load
 
 ### CUTLASS C++
 * Add Hopper e2m1 to fp32 optimized conversion and e2m1 * TF32 tensor core GEMM.
@@ -54,6 +85,7 @@
     - Fix a TMA descriptor bug where the CUDA driver is not properly setting the OOB address gen mode correctly.
     - Fix memory fence for clc scheduler in Blackwell SM120 pingpong kernel.
     - Fix missing SMEM alignment in Blackwell SM120 scale factors.
+    - Fix a PDL issue for grouped gemm.
 * Fix some profiler issues:
     - Refactor L1 functional test generation logic to reduce the L1 test cases to avoid timeout.
     - Fix a core dump issue for nvfp4 grouped GEMM kernel.

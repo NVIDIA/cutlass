@@ -17,7 +17,6 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from .. import core, atom
 from ..typing import Shape, Layout, ComposedLayout, Tensor, Numeric, NumericMeta
-from ...impl_utils import check_type_in
 from .cpasync.copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SNonExecTrait,
@@ -96,13 +95,6 @@ def make_tiled_tma_atom_A(
 
     """
 
-    check_type_in(
-        op,
-        [CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
-        "op",
-        "make_tiled_tma_atom_A",
-    )
-
     # Set the smem_layout on the operation for later retrieval
     op.smem_layout = (
         smem_layout.value
@@ -136,10 +128,16 @@ def make_tiled_tma_atom_A(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
-        use_unpack = (internal_type.width == 8 and
-                      isinstance(gmem_tensor.element_type, NumericMeta) and
-                      gmem_tensor.element_type.width < 8)
-        internal_mlir_type = gmem_tensor.element_type.mlir_type if use_unpack else internal_type.mlir_type
+        use_unpack = (
+            internal_type.width == 8
+            and isinstance(gmem_tensor.element_type, NumericMeta)
+            and gmem_tensor.element_type.width < 8
+        )
+        internal_mlir_type = (
+            gmem_tensor.element_type.mlir_type
+            if use_unpack
+            else internal_type.mlir_type
+        )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
         )
@@ -224,13 +222,6 @@ def make_tiled_tma_atom_B(
 
     """
 
-    check_type_in(
-        op,
-        [CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
-        "op",
-        "make_tiled_tma_atom_B",
-    )
-
     # Set the smem_layout on the operation for later retrieval
     op.smem_layout = (
         smem_layout.value
@@ -264,10 +255,16 @@ def make_tiled_tma_atom_B(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
-        use_unpack = (internal_type.width == 8 and
-                      isinstance(gmem_tensor.element_type, NumericMeta) and
-                      gmem_tensor.element_type.width < 8)
-        internal_mlir_type = gmem_tensor.element_type.mlir_type if use_unpack else internal_type.mlir_type
+        use_unpack = (
+            internal_type.width == 8
+            and isinstance(gmem_tensor.element_type, NumericMeta)
+            and gmem_tensor.element_type.width < 8
+        )
+        internal_mlir_type = (
+            gmem_tensor.element_type.mlir_type
+            if use_unpack
+            else internal_type.mlir_type
+        )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
         )

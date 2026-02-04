@@ -17,7 +17,7 @@ import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from ..typing import Pointer, Numeric, NumericMeta
+from ..typing import Pointer, Numeric, NumericMeta, Layout
 
 
 @dsl_user_op

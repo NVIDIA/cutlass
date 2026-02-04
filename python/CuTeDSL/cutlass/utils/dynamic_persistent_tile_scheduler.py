@@ -27,6 +27,7 @@ from cutlass.utils.static_persistent_tile_scheduler import (
 )
 import cutlass.cute as cute
 
+
 class ClcDynamicPersistentTileSchedulerParams:
     """A class to represent parameters for a dynamic persistent tile scheduler.
 
@@ -97,6 +98,7 @@ class ClcDynamicPersistentTileSchedulerParams:
             self.problem_shape_ntile_mnl, self._cluster_shape_mnk
         )
         return problem_ceiling_cta_mnl
+
 
 class ClcDynamicPersistentTileScheduler:
     """A scheduler for dynamic persistent tile execution in CUTLASS/CuTe kernels.
@@ -243,7 +245,10 @@ class ClcDynamicPersistentTileScheduler:
         result_addr: 16-byte response data (simulating shared memory access)
         """
         m_idx, n_idx, l_idx, vld = cute.arch.clc_response(result_addr, loc=loc, ip=ip)
-        cute.arch.fence_proxy("async.shared", space="cta")
+        cute.arch.fence_proxy(
+            "async.shared",
+            space="cta",
+        )
         cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster
         cur_tile_coord = (m_idx + cta_idx_in_cluster, n_idx + cta_idy_in_cluster, l_idx)
         return WorkTileInfo(cur_tile_coord, vld)

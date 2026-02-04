@@ -846,6 +846,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         use_pdl: bool = False
         auto_smem: bool = False
         cooperative: bool = False
+
         @staticmethod
         def _check_and_canonicalize_dim(dim, name):
             if not isinstance(dim, (list, tuple)):
@@ -967,18 +968,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             sys.stderr = redirect_stderr = io.StringIO()
             sys.stdout = redirect_stdout = io.StringIO()
 
-            compile_gpu_arch = (
-                self.envar.arch
-                if not self.compile_options.gpu_arch
-                else self.compile_options.gpu_arch
-            )
             try:
                 kernel = self.compiler_provider.compile_and_jit(
                     module,
                     pipeline,
                     shared_libs=shared_libs,
                     cuda_toolkit=self.envar.cuda_toolkit,
-                    arch=compile_gpu_arch,
+                    arch=self.envar.arch,
                 )
 
             finally:

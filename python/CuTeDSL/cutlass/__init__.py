@@ -14,6 +14,16 @@ from ._mlir._mlir_libs import _cutlass_ir
 _cutlass_ir.populate(_cutlass_ir)
 
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
+# Monkey patch CUDA version query function
+from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
+    get_cuda_version as _get_cuda_version,
+)
+from .base_dsl import common as _common
+
+_common._get_cuda_version = _get_cuda_version
+
+# Import CUDA version from base_dsl
+from .base_dsl.version_info import CUDA_VERSION
 
 from .cutlass_dsl import (
     Constexpr,
@@ -47,6 +57,7 @@ from .cutlass_dsl import (
     extract_mlir_values,
     new_from_mlir_values,
     DSLCudaVersion,
+    target_version,
 )
 
 from .cute.typing import *
@@ -54,7 +65,6 @@ from .cute.typing import *
 # Utilities not belonging to CuTe
 from . import utils as utils
 from . import pipeline as pipeline
-from .utils.version_info import CUDA_VERSION
 
 # Used as internal symbol
 from . import cutlass_dsl as _dsl
@@ -67,5 +77,3 @@ cuda = _dsl.cuda_helpers
 
 # Jax Framework support
 from . import jax as jax
-
-CACHE_FILE = "compiled_cache.db"
