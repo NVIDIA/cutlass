@@ -67,6 +67,15 @@ cutlass_test_unit_gemm_device_add_executable(
   s8_s8_void_s32.cu
   s8_s8_s32_s32_fusion.cu
 )
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm100_bf16xbf16_epilogue
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  bf16_bf16_f32_e4m3_ue8m0_epilogue.cu
+)
 endif()
 
 add_subdirectory(narrow_precision) 
