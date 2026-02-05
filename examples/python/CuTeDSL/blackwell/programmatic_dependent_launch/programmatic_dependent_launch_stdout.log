@@ -1,0 +1,116 @@
+[INFO] Run tag: programmatic_dependent_launch
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+
+Running Elementwise Add test with:
+Tensor dimensions: [256, 256]
+Use PDL: False
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_0_.mlir (724 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_001_CuteRemoveStaticArgs.mlir (726 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_002_MaterializeTmaMulticast.mlir (726 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_003_SoftwarePipelinePass.mlir (726 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_004_CuteDesugar.mlir (1030 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_005_CuteExpandOps.mlir (2636 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_006_CuteFoldStatic.mlir (2019 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_007_InsertRangeInformation.mlir (2019 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_008_Canonicalizer.mlir (953 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_009_CSE.mlir (927 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_010_LoopInvariantCodeMotion.mlir (927 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_011_LoopStrengthReductionPass.mlir (927 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_012_ConvertVectorToSCF.mlir (927 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_013_ConvertCuteTypesInScfOps.mlir (927 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_014_SCFToControlFlow.mlir (1059 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_015_ArithExpandOpsPass.mlir (1203 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_016_ConvertMathToFuncs.mlir (1203 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_017_GpuLaunchSinkIndexComputations.mlir (1203 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_018_ConvertToLLVMPass.mlir (1632 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_019_ReconcileUnrealizedCasts.mlir (1346 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_020_GpuKernelOutlining.mlir (1346 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_021_SCFToControlFlow.mlir (1346 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_022_ReconcileUnrealizedCasts.mlir (1346 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_023_ConvertToLLVMPass.mlir (1346 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_024_Canonicalizer.mlir (954 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_025_CSE.mlir (914 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_026_ConvertVectorToLLVMPass.mlir (914 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_027_ConvertNVVMToLLVMPass.mlir (914 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_028_CudaComputeTargetPass.mlir (704 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_029_FinalizeMemRefToLLVMConversionPass.mlir (914 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_030_ExpandStridedMetadata.mlir (914 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_031_ArithToLLVMConversionPass.mlir (914 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_032_ConvertFastmathOps.mlir (704 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_033_ConvertGpuOpsToNVVMOps.mlir (704 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_034_StoreGpuLaunchAttribute.mlir (914 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_035_GpuToLLVMConversionPass.mlir (914 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_036_StoreGpuLaunchAttribute.mlir (914 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_037_ConvertMathToLLVMPass.mlir (914 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_038_Canonicalizer.mlir (914 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_039_CSE.mlir (914 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_040_ReconcileUnrealizedCasts.mlir (914 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_041_DIScopeForLLVMFuncOpPass.mlir (914 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_042_CudaToBinaryPass.mlir (220 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_043_ConvertToLLVMPass.mlir (390 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_044_ReconcileUnrealizedCasts.mlir (388 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_045_CudaErrorHandlingPass.mlir (395 lines)
+[DUMP] per-pass IR split -> 45 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_0_.mlir (724 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_001_CuteRemoveStaticArgs.mlir (726 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_002_MaterializeTmaMulticast.mlir (726 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_003_SoftwarePipelinePass.mlir (726 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_004_CuteDesugar.mlir (1030 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_005_CuteExpandOps.mlir (2636 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_006_CuteFoldStatic.mlir (2019 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_007_InsertRangeInformation.mlir (2019 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_008_Canonicalizer.mlir (955 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_009_CSE.mlir (930 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_010_LoopInvariantCodeMotion.mlir (930 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_011_LoopStrengthReductionPass.mlir (930 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_012_ConvertVectorToSCF.mlir (930 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_013_ConvertCuteTypesInScfOps.mlir (930 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_014_SCFToControlFlow.mlir (1068 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_015_ArithExpandOpsPass.mlir (1212 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_016_ConvertMathToFuncs.mlir (1212 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_017_GpuLaunchSinkIndexComputations.mlir (1212 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_018_ConvertToLLVMPass.mlir (1641 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_019_ReconcileUnrealizedCasts.mlir (1355 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_020_GpuKernelOutlining.mlir (1355 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_021_SCFToControlFlow.mlir (1355 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_022_ReconcileUnrealizedCasts.mlir (1355 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_023_ConvertToLLVMPass.mlir (1355 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_024_Canonicalizer.mlir (962 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_025_CSE.mlir (922 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_026_ConvertVectorToLLVMPass.mlir (922 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_027_ConvertNVVMToLLVMPass.mlir (922 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_028_CudaComputeTargetPass.mlir (712 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_029_FinalizeMemRefToLLVMConversionPass.mlir (922 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_030_ExpandStridedMetadata.mlir (922 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_031_ArithToLLVMConversionPass.mlir (922 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_032_ConvertFastmathOps.mlir (712 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_033_ConvertGpuOpsToNVVMOps.mlir (712 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_034_StoreGpuLaunchAttribute.mlir (922 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_035_GpuToLLVMConversionPass.mlir (922 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_036_StoreGpuLaunchAttribute.mlir (922 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_037_ConvertMathToLLVMPass.mlir (922 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_038_Canonicalizer.mlir (922 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_039_CSE.mlir (922 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_040_ReconcileUnrealizedCasts.mlir (922 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_041_DIScopeForLLVMFuncOpPass.mlir (922 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_042_CudaToBinaryPass.mlir (220 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_043_ConvertToLLVMPass.mlir (390 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_044_ReconcileUnrealizedCasts.mlir (388 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch/programmatic_dependent_launch_045_CudaErrorHandlingPass.mlir (395 lines)
+[DUMP] per-pass IR split -> 45 files
+[INFO] COMPILE-ON

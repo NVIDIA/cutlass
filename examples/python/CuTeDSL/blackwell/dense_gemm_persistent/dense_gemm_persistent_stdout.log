@@ -22,14 +22,14 @@ Use cold L2: False
 
 
 [PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_0_.mlir (3091 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_001_CuteRemoveStaticArgs.mlir (3094 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_002_MaterializeTmaMulticast.mlir (3094 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_003_SoftwarePipelinePass.mlir (3094 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_004_CuteDesugar.mlir (3447 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_005_CuteExpandOps.mlir (6978 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_006_CuteFoldStatic.mlir (4685 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_007_InsertRangeInformation.mlir (4685 lines)
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_0_.mlir (2614 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_001_CuteRemoveStaticArgs.mlir (2617 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_002_MaterializeTmaMulticast.mlir (2617 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_003_SoftwarePipelinePass.mlir (2617 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_004_CuteDesugar.mlir (2970 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_005_CuteExpandOps.mlir (6501 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_006_CuteFoldStatic.mlir (4594 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_007_InsertRangeInformation.mlir (4594 lines)
 [DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_008_Canonicalizer.mlir (2382 lines)
 [DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_009_CSE.mlir (2155 lines)
 [DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent/dense_gemm_persistent_010_LoopInvariantCodeMotion.mlir (2155 lines)

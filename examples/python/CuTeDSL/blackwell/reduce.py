@@ -127,7 +127,14 @@ References
 The cluster synchronization primitives (set_block_rank, store_shared_remote)
 are inspired by Quack: https://github.com/Dao-AILab/quack
 """
+import sys
+import os
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dump_dir = os.path.join(base_dir, "..","dump")
+sys.path.append(dump_dir)
 
+import cute_ir_dump_patch as cid
+cid.install()
 import operator
 from collections.abc import Callable
 

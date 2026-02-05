@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/dense_gemm_persistent_dynamic.py", line 45, in <module>
+    from cutlass.utils import is_fp8_dtype, create_cute_tensor_for_fp8
+ImportError: cannot import name 'is_fp8_dtype' from 'cutlass.utils' (/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/utils/__init__.py)
