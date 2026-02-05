@@ -769,11 +769,10 @@ int main(int argc, char const** argv) {
   }
 
   bool satisfied;
-  if (props.major < 10) {
-  }
-  else {
-    satisfied = (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8);
-  }
+  bool architecture_supported = (props.major > 8) || (props.major == 8 && props.minor >= 9);
+  bool toolkit_supported = (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8);
+
+  satisfied = architecture_supported && toolkit_supported;
 
   if (!satisfied) {
     //
