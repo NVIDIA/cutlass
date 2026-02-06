@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -120,7 +120,15 @@ using namespace cute;
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
 using MmaType = cutlass::float_e4m3_t;
-using QuantType = cutlass::int4b_t;
+
+// Select quantization type via compile flag for this example
+// templatized throughout code to enable instantiating both int4 and e2m1 versions in the same program
+#if defined(CUTLASS_MIXED_DTYPE_E2M1)
+  using QuantType = cutlass::float_e2m1_t;  // E2M1 (FP4)
+#else
+  using QuantType = cutlass::int4b_t;       // INT4 Two's Complement (default)
+#endif
+
 constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
 
 // A matrix configuration
@@ -315,6 +323,7 @@ struct Options : MixedDtypeOptions {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Initialize operands to be used in the GEMM and reference GEMM
+template <typename QuantType>
 void initialize(Options const& options) {
 
   auto shape_B = cute::make_shape(options.n, options.k, options.l);
@@ -330,7 +339,7 @@ void initialize(Options const& options) {
 
   auto layout_B = make_layout(shape_B, stride_B);
 
-  auto a_coord = cutlass::make_Coord(options.m * options.l, options.k);
+  auto a_coord = cutlass::make_Coord(options.m * options.l, options.k); 
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
 
@@ -346,14 +355,15 @@ void initialize(Options const& options) {
   block_scale_packed.reset(scale_k * options.l * options.n);
   block_zero.reset(scale_k * options.l * options.n);
 
+  // Initialize all base tensors
   initialize_tensor(block_A, seed + 2022);
   initialize_tensor(block_B, seed + 2021);
-  cutlass::unified_encode_int4b(block_B.get(), block_B_modified.get(), block_B.size());
   initialize_tensor(block_C, seed + 2020);
   initialize_scale(block_scale, options);
-  cutlass::pack_scale_fp8(block_scale.get(), block_scale_packed.get(), block_scale.size());
+  cutlass::pack_scale_fp8<ElementScale, QuantType>(block_scale.get(), block_scale_packed.get(), block_scale.size());
   initialize_zero(block_zero, options);
 
+  // Compute dequantized reference for validation BEFORE formatting block_B
   auto shape_scale_zero = cute::make_shape(options.n, scale_k, options.l);
   stride_S = cutlass::make_cute_packed_stride(StrideS{}, cute::make_shape(options.n, scale_k, options.l));
   stride_S_ref = cutlass::make_cute_packed_stride(StrideS_ref{}, cute::make_shape(options.n, scale_k, options.l));
@@ -361,6 +371,28 @@ void initialize(Options const& options) {
 
   cudaStream_t stream = cudaStreamDefault;
   cutlass::dequantize(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g, stream);
+
+  // Format B to separate buffer, preserving original block_B in case
+  // it's needed by the application.
+
+  #ifdef CUTLASS_MIXED_DTYPE_E2M1
+    // E2M1: Copy to formatting buffer
+    cutlass::device_memory::copy_device_to_device(block_B_modified.get(), block_B.get(), block_B.size());
+  #else
+    // INT4: Encode to formatting buffer
+    cutlass::unified_encode_int4b(block_B.get(), block_B_modified.get(), block_B.size());
+  #endif
+
+  
+  // original code
+  // if constexpr (cutlass::platform::is_floating_point<QuantType>::value ||
+  //              cute::is_same_v<QuantType, cutlass::float_e2m1_t>) {
+  //  // E2M1: Copy to formatting buffer
+  //  cutlass::device_memory::copy_device_to_device(block_B_modified.get(), block_B.get(), block_B.size());
+  // } else {
+  //  // INT4: Encode to formatting buffer
+  //  cutlass::unified_encode_int4b(block_B.get(), block_B_modified.get(), block_B.size());
+  // }
 
   if (options.shuffle) {
     // Repeat the reorder layout atom to tile the whole tensor shape 
@@ -464,7 +496,7 @@ bool verify(Options const& options) {
 template <typename Gemm>
 int run(Options &options)
 {
-  initialize(options);
+  initialize<QuantType>(options);
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm;

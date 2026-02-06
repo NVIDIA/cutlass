@@ -2,6 +2,124 @@
 
 # CUTLASS 4.x
 
+## [4.4.0](https://github.com/NVIDIA/cutlass/tree/main) (2026-01-23)
+
+### CuTe DSL
+* New features
+  - CuTe DSL now supports CUDA toolkit 13.1!
+    + Set up with cutlass/python/CuTeDSL/setup.sh --cu13
+    + Refer to https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html for more details
+  - GB300 is now supported in CuTe DSL with CTK 13.1
+    + Refer to [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py) for example kernel
+  - cute.experimental: introduce a higher-level, composable layer on top of existing CuTe DSL APIs (not a separate abstraction), which can be mixed with existing Cute DSL building blocks.
+    + Fragment-free programming model: copy/dot APIs take memrefs directly instead of descriptors/fragments.
+    + Automatic TMA descriptor generation and update insertion.
+    + Automatic vectorization and predication for SIMT copies.
+    + New pipeline abstraction with convenience wrappers
+    + New Partition ops to simplify partitioning logic.
+    + Device-side TMA descriptor allocation, initialization, and management
+  - Ahead of Time (AoT) compilation is now available!
+    + Refer to files under https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/export for example usage
+  - JAX support - you can now use CuTeDSL along with JAX
+    + Refer to files under https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/jax for example usage
+  - Introduced versioning support in DSL:
+    + cutlass.__version__ for a string representation of DSL version
+    + cutlass.CUDA_VERSION for a version class to tell the CUDA version used for DSL
+  - Added CopyDsmemStoreOp to store data to distributed shared memory with explicit synchronization.
+
+* More examples of authorizing peak-performance kernels
+  - [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
+
+* Bug fixing and improvements
+  - Fixed an issue that both branches of if are executed
+  - Fixed `cute.printf` with f-string
+  - Fixed an issue that cutlass.cuda.initialize_cuda_context() silently kills python
+
+* API changes
+  - Deprecate get_num_tmem_alloc_cols from blackwell_helpers.py. Use the one from tmem_allocator.py instead.
+  - Deprecate SM100_TMEM_CAPACITY_COLUMNS and SM100_TMEM_MIN_ALLOC_COLUMNS.
+  - LdMatrix16x16x8bOp and StMatrix16x8x8bOp now require explicit transpose=True when calling __init__, to avoid ambiguity in data transposition.
+  - LdMatrix16x16x8bOp copy traits updated to be faithful to PTX without permutations. Permuted variant is renamed to LdMatrix16x8x8bOp.
+  - group_bulk_copy_modes in async bulk copy example is now deprecated, use group_modes directly instead.
+  - cute.arch.calc_packed_f32x2_op default enable ftz to default disable ftz
+  - In CuTe DSL with CTK 13.1, following APIs in cutlass.cute.arch now require string literal instead of enum as argument:
+    + fence_proxy
+    + fence_view_async_tmem_op
+    + calc_packed_f32x2_op
+    + warp_redux_sync
+    + atomic_add
+    + atomic_and
+    + atomic_or
+    + atomic_xor
+    + atomic_max
+    + atomic_min
+    + atomic_exch
+    + atomic_cas
+    + store
+    + load
+
+### CUTLASS C++
+* Add Hopper e2m1 to fp32 optimized conversion and e2m1 * TF32 tensor core GEMM.
+    - Set MmaType to tfloat32_t for FP32 mode.
+    - TF32 provides FP32 inputs with reduced precision (19-bit vs 32-bit)
+    - Set TileShapeK=64 for TF32 (K must be multiple of 8)
+    - Shuffle optimization enabled via `compute_memory_reordering_atom<tfloat32_t>()`
+    - E2M1 -> FP32 -> TF32 TC path for mixed-precision GEMM
+    - Enable [example 55](https://github.com/NVIDIA/cutlass/tree/main/examples/55_hopper_mixed_dtype_gemm) with TF32 support
+* Add [example 93](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa/) for Blackwell low latency generation phase GQA kernel.
+    - Kernel design details please check [Readme](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa/readme.md).
+* Add [example 94](https://github.com/NVIDIA/cutlass/tree/main/examples/94_ada_fp8_blockwise/) for Ada FP8xFP8 -> BF16 GEMM with blockwise dequantization of input matrices in the MMA loop with FP32 accumulation.
+    - Generate additional device/kernel/threadblock files in CUTLASS include directory that add functionality to carry the scaling tensors + use them in MMA loop.
+    - Add gemm_blockwise to include files in [default_mma_core_sm80](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/threadblock/default_mma_core_sm80.h)
+* Add Hopper SM90 State Space Decomposition (SSD) kernel in [example 111](https://github.com/NVIDIA/cutlass/tree/main/examples/111_hopper_ssd).
+* Add Blackwell SM100 State Space Decomposition (SSD) kernel in [example 112](https://github.com/NVIDIA/cutlass/tree/main/examples/112_blackwell_ssd).
+* Add support for arbitrary application-provided strides for block-scale tensors.
+    - Users and applications now must pass valid block-scale strides in all cases, even when the tensor is packed.
+* Support 4x blockscaled public ptx for CUDA 13.1.
+* Allow non-static `TmaGbasis` in `AuxTmaParams`.
+    - Some cases in attention kernel may require non-static `tma_gbasis`.
+    - Relax the restriction on `TmaGbasis` parameter of `AuxTmaParams` and users are allowed to manually construct a dynamic gbasis.
+* Fix some kernel issues:
+    - Fix MSVC pre process issue.
+    - Fix a self assign issue in GEMV kernel.
+    - Fix a TMA descriptor bug where the CUDA driver is not properly setting the OOB address gen mode correctly.
+    - Fix memory fence for clc scheduler in Blackwell SM120 pingpong kernel.
+    - Fix missing SMEM alignment in Blackwell SM120 scale factors.
+    - Fix a PDL issue for grouped gemm.
+* Fix some profiler issues:
+    - Refactor L1 functional test generation logic to reduce the L1 test cases to avoid timeout.
+    - Fix a core dump issue for nvfp4 grouped GEMM kernel.
+    - Fix inconsistent GEMM verification logic.
+    - Rework grouped gemm verification logic for different types.
+* Fix some broken links under `media/docs`.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.1.
+
+## [4.3.5](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.5) (2026-01-09)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed the unexpected CPU overhead issue introduced by 4.3.4
+* Update copyright to 2026.
+
+### CUTLASS C++
+* Update copyright to 2026.
+* Use CUDA Driver Get Version Runtime APIs Rather than Driver APIs.
+
+## [4.3.4](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.4) (2025-12-22)
+
+### CuTe DSL
+* New features
+  - Added PDL support along with example [Kernel launch with Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py)
+
+* Bug fixing and improvements
+  - Fixed a frame refcnt issue with cuda graph
+  - Enhancement for tvm-ffi AoT case for earlier module unload
+  - Fixed order issue in `make_smem_layout_a` in utils/hopper_helpers.py
+
+### CUTLASS C++
+* Work around a driver bug which will cause occasionally errors when executing kernels.
+
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
 
 ### CuTe DSL
@@ -380,7 +498,7 @@
   - Sorting performance results by GFLOPs/second: Users can now sort the final performance report based on GFLOPs/second, making it easier to identify the most efficient kernels.
   - Exhaustive search for best kernel performance in GFLOPs/second: The profiler now searches for the best-performing kernel across a range of problem sizes, swizzle sizes, rasterization orders, and dynamic cluster configurations to maximize performance.
   - Performance search under a fixed GEMM shape: Enables exhaustive tuning within a fixed GEMM shape, exploring various kernel parameters to find the best configuration.
-  - More detailed introductions and examples to leverage this feature can be found in [profiler.md](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/profiler.html#exhaustive-search-mode-and-top-k-output-ranking-according-to-performance-in-gflopss).
+  - More detailed introductions and examples to leverage this feature can be found in [profiler.md](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/profiler.html#exhaustive-search-mode-and-top-k-output-ranking-according-to-performance-in-gflops-s).
 * Support `void` as the D element in sm100 kernel epilogues.
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 12.8U1.
@@ -469,7 +587,7 @@
 - [An improved mixed input GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/55_hopper_mixed_dtype_gemm/README.md) and a [lookup table implementation](https://github.com/NVIDIA/cutlass/tree/main/examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_fp8_gemm.cu) for `INT4`x`FP8` scale-only mode.
 - [EVT nodes for Top-K selection and softmax](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/fusion/sm90_visitor_topk_softmax.hpp) and [GEMM example using those](https://github.com/NVIDIA/cutlass/tree/main/examples/61_hopper_gemm_with_topk_and_softmax/61_hopper_gemm_with_topk_and_softmax.cu).
 - [Programmatic Dependent Launch](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/arch/grid_dependency_control.h) (PDL) that leverages a new Hopper feature to speedup two back-to-back kernels, and its corresponding [documentations](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/dependent_kernel_launch.html).
-- [A new debugging tool, synclog](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/arch/synclog.hpp), for dumping out all synchronization events from within a kernel to a file. Please see [synclog documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/utilities.html#debugging-asynchronous-kernels-with-cutlasss-built-in-synclog-tool) for details.
+- [A new debugging tool, synclog](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/arch/synclog.hpp), for dumping out all synchronization events from within a kernel to a file. Please see [synclog documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/utilities.html#debugging-asynchronous-kernels-with-cutlass-s-built-in-synclog-tool) for details.
 - A new TMA-enabled [epilogue](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/collective/sm90_epilogue_array_tma_warpspecialized.hpp) for grouped GEMM that brings significant performance improvement, as well as its EVT support.
 - A SIMT-enabled pointer-array [epilogue](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/collective/sm70_epilogue_vectorized_array.hpp).
 - A new [Ping-Pong kernel schedule for Grouped GEMM](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm90_gemm_array_tma_warpspecialized_pingpong.hpp) and some other optimizations.
@@ -592,7 +710,7 @@
 * [Batched B2B GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/13_two_tensor_op_fusion) now can run multiple Back-to-Back GEMM with the same problem size in parallel.
 * [Batched Strided GEMV](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/gemv.cu) support both row major and column major input matrix.
 * [Permute + GEMM fusion](https://github.com/NVIDIA/cutlass/tree/main/examples/39_gemm_permute) can fuse Permute with following GEMM now.  Before, we only support fusing GEMM with Permute in the epilogue.
-* [Row Broadcast](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/threadblock/predicated_tile_iterator_row_broadcast.h) can be fused in the epilogue.
+* [Row Broadcast](https://github.com/NVIDIA/cutlass/blob/8236f30675bbe98f81d11c05764b77bfcb25b8cc/include/cutlass/epilogue/threadblock/predicated_tile_iterator_row_broadcast.h) can be fused in the epilogue.
 * The GitHub branch is renamed from `master` to `main` in this release.
 * Optimal performance using [**CUDA 12.1**](https://developer.nvidia.com/cuda-downloads)
 * Updates and bugfixes from the community (thanks!)
@@ -607,7 +725,7 @@
 * Extensions to CUTLASS profiler to support threadblock cluster shapes in library and profiler tile configurations.
 * [CUTLASS library integration](https://github.com/NVIDIA/cutlass/tree/main/tools/library/src/gemm_operation_3x.hpp) for 3.x API kernels built through the new `CollectiveBuilder` API, enabling CUTLASS profiler.
 * Support for [Hopper GEMMs](https://github.com/NVIDIA/cutlass/tree/main/examples/48_hopper_warp_specialized_gemm) through the new 3.0 API with CuTe-based exposure of the Hopper [Tensor Memory Accelerator](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cp-async-bulk-tensor) and [WGMMA Tensor Core](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-instructions) features.
-* Set of examples that demonstrate the usage of the new 3.0 API to easily build GEMM kernels targeting Hopper: examples [48](https://github.com/NVIDIA/cutlass/tree/main/examples/48_hopper_warp_specialized_gemm), [49](https://github.com/NVIDIA/cutlass/tree/main/examples/49_hopper_gemm_schedules_with_collective_builder), and [50](https://github.com/NVIDIA/cutlass/tree/main/examples/50_hopper_gemm_with_epilogue_swizzle).
+* Set of examples that demonstrate the usage of the new 3.0 API to easily build GEMM kernels targeting Hopper: examples [48](https://github.com/NVIDIA/cutlass/tree/main/examples/48_hopper_warp_specialized_gemm), [49](https://github.com/NVIDIA/cutlass/tree/main/examples/49_hopper_gemm_with_collective_builder), and [50](https://github.com/NVIDIA/cutlass/tree/main/examples/50_hopper_gemm_with_epilogue_swizzle).
 
 # CUTLASS 2.x
 
@@ -637,7 +755,7 @@
 * [CUTLASS Python](https://github.com/NVIDIA/cutlass/tree/main/examples/40_cutlass_py) now supports GEMM, CONV, Group GEMM for different data types as well as different epilogue flavours.
 * Optimizations for CUTLASS's [Grouped GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/24_gemm_grouped/gemm_grouped.cu) kernel.  Threadblock scheduling part is improved.  Some computation can be moved to the host side if applicable.  [Grouped Syr2k](https://github.com/NVIDIA/cutlass/tree/main/examples/38_syr2k_grouped/syr2k_grouped.cu) kernels are added, too.
 * Optimizations for [GEMM+Softmax](https://github.com/NVIDIA/cutlass/tree/main/examples/35_gemm_softmax).  All the reduction computation is fused into the previous GEMM.  More template arguments are provided to fine tune the performance.
-* [Grouped GEMM for Multihead Attention](https://github.com/NVIDIA/cutlass/tree/main/examples/41_multi_head_attention).  This general group gemm based MHA does not require the sequence length of all GEMMs to be the same which makes it most useful for natural language processing.
+* [Grouped GEMM for Multihead Attention](https://github.com/NVIDIA/cutlass/tree/main/examples/41_fused_multi_head_attention).  This general group gemm based MHA does not require the sequence length of all GEMMs to be the same which makes it most useful for natural language processing.
 * [GEMM + Layer norm fusion for Ampere](https://github.com/NVIDIA/cutlass/tree/main/examples/37_gemm_layernorm_gemm_fusion/) splits the layernorm into two parts and both of them can be fused into the GEMMs before and after separately.  In addition to use square sum to compute variance of layernorm, [Shift-K](https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Computing_shifted_data) is provided if square sum raise numerical issues.
 * [GEMM Epilogue Permutation Fusion](https://github.com/NVIDIA/cutlass/tree/main/examples/39_gemm_permute) can apply user provided permutation layout mapping in the GEMM epilogue.
 * [Grouped convolution targeting implicit GEMM](https://github.com/NVIDIA/cutlass/tree/main/test/unit/conv/device/group_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) introduces the first group convolution implementation to CUTLASS.  It is an Analytical implementation, not an Optimized.  The restrictions are: 1) input and output channel number should be multiple of group number. 2) split-K is not supported.  The implementation has 2 modes:
@@ -664,7 +782,7 @@
   * [TRMM](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/trmm_f32n_f32t_f32t_tensor_op_fast_f32_ls_sm80.cu) with [emitter](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/trmm_operation.py)
   * [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/testbed_rank_k_universal.h)
 * [CUTLASS Python](https://github.com/NVIDIA/cutlass/tree/main/examples/40_cutlass_py) demonstrating JIT compilation of CUTLASS kernels and a Python-based runtime using [CUDA Python](https://developer.nvidia.com/cuda-python)
-  * [Python-based runtime](https://github.com/NVIDIA/cutlass/tree/main/tools/library/scripts/rt.py) interoperable with existing emitters
+  * [Python-based runtime](https://github.com/NVIDIA/cutlass/blob/d572cc1aabfcbd45944219fb8690f0e49e22b5a3/tools/library/scripts/rt.py) interoperable with existing emitters
 * [GEMM + Softmax example](https://github.com/NVIDIA/cutlass/tree/main/examples/35_gemm_softmax)
 * [Gather and Scatter Fusion with GEMM](https://github.com/NVIDIA/cutlass/tree/main/examples/36_gather_scatter_fusion) can gather inputs and scatters outputs based on indices vectors in the same GEMM kernel.
   * It can select random rows in a row major matrix.
@@ -786,7 +904,7 @@
 ## [2.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.3.0) (2020-09-23)
  * [NVIDIA Ampere Architecture features](https://devblogs.nvidia.com/nvidia-ampere-architecture-in-depth/)
    * [Sparse Tensor Core GEMM kernels](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu):
-     * Direct access to Sparse Tensor Cores and maximum performance via [`mma.sp.sync`](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma-and-friends)
+     * Direct access to Sparse Tensor Cores and maximum performance via [`mma.sp.sync`](https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions)
    * Fast SGEMM targeting GeForce RTX 30-series CUDA Cores
  * Minor Features:
    * [Activation functions](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/thread/activation.h) such as [GeLU](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/thread/linear_combination_gelu.h) and [Sigmoid](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/epilogue/thread/linear_combination_sigmoid.h)
@@ -800,7 +918,7 @@
 ## [2.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.2.0) (2020-06-08)
  * [NVIDIA Ampere Architecture features](https://devblogs.nvidia.com/nvidia-ampere-architecture-in-depth/)
    * Fast Tensor Core operations:
-    * Maximum performance via [`mma.sync`](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma-and-friends)
+    * Maximum performance via [`mma.sync`](https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions)
     * Tensor Float 32, BFloat16, and double-precision data types
     * Mixed integer data types (int8, int4, bin1)
    * Asynchronous copy for deep software pipelines via [`cp.async`](https://docs.nvidia.com/cuda/parallel-thread-execution)
@@ -849,9 +967,6 @@
 ## [1.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.2) (2019-07-09)
  * Performance improvement for Volta Tensor Cores TN and TT layouts.
 
-## [1.3.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.1) (2019-04-09)
- * Corrected NVRTC unit tests.
-
 ## [1.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.0) (2019-03-20)
  * Efficient GEMM kernel targeting Volta Tensor Cores via `mma.sync` instruction added in CUDA 10.1.
 
@@ -896,7 +1011,7 @@
 
 ## Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

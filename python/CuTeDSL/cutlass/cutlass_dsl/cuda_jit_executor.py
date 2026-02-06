@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -12,6 +12,7 @@
 """
 This module provides jit executor related classes for CUTLASS.
 """
+
 import ctypes
 import functools
 import weakref
@@ -31,6 +32,7 @@ from ..base_dsl.utils.logger import log
 from ..base_dsl.common import DSLRuntimeError
 from ..base_dsl.typing import Int32
 from ..base_dsl.runtime.cuda import checkCudaErrors
+
 
 class CudaDialectJitModule:
     """Holds the execution engine and cuda libraries."""
@@ -56,8 +58,6 @@ class CudaDialectJitModule:
             for library in self.cuda_library:
                 cuda_runtime.cudaLibraryUnload(library)
             self.cuda_library.clear()
-        except Exception as e:
-            pass
         finally:
             self._unloaded = True
 
@@ -80,22 +80,23 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         jit_function_artifacts,
         prefix=None,
         load_from_binary=False,
+        dynamic_args=None,
+        dynamic_kwargs=None,
     ):
-        self.ir_module = ir_module
-        self.engine = engine
-        self.capi_func = capi_func
-        self.function_name = function_name
-        self.kernel_info = kernel_info
-        if args_spec is not None:
-            self.args_spec = ExecutionArgs(args_spec, self.function_name)
-        self.jit_time_profiling = jit_time_profiling
-        self.prefix = prefix
-        assert (
-            isinstance(jit_function_artifacts, JitFunctionArtifacts)
-            or jit_function_artifacts is None
+        super().__init__(
+            ir_module,
+            engine,
+            capi_func,
+            args_spec,
+            function_name,
+            kernel_info,
+            jit_time_profiling,
+            jit_function_artifacts,
+            prefix,
+            load_from_binary,
+            dynamic_args,
+            dynamic_kwargs,
         )
-        self.artifacts = jit_function_artifacts
-        self.load_from_binary = load_from_binary
 
         # Set cuda result return type.
         # When execution engine/capi function is None, do not set the return type.
@@ -103,13 +104,6 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             self.capi_func.restype = ctypes.c_int32
         if self.args_spec:
             self.args_spec.args_spec.annotations["return"] = Int32
-
-        # This runtime state is stored here so that we can preserve the module
-        # in the compiler cache. Callers can extend the lifetime of the module
-        # by creating and retaining the executor.
-        self.jit_module = None
-        self._executor_lock = threading.RLock()
-        self._default_executor = None
 
     @functools.cached_property
     def num_devices(self):
@@ -222,7 +216,11 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         device_id = ctypes.c_int32(0)
         pointer_to_device_id = ctypes.pointer(device_id)
 
-        cuda_load_args = [pointer_to_library, pointer_to_device_id, pointer_to_err]
+        cuda_load_args = [
+            pointer_to_pointer_to_library,
+            pointer_to_device_id,
+            pointer_to_err,
+        ]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
         for i, arg in enumerate(cuda_load_args):
             packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)

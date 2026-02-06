@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -318,8 +318,30 @@ protected:
     int swizzle_size,
     bool is_dynamic_cluster_enabled);
 
-  /// Verifies CUTLASS against host and device references
-  bool verify_with_reference_(
+  /// Verifies CUTLASS against device reference (for regular grouped GEMM)
+  bool verify_with_device_reference_(
+    Options const& options,
+    PerformanceReport& report,
+    DeviceContext& device_context,
+    library::Operation const* operation,
+    ProblemSpace const& problem_space,
+    ProblemSpace::Problem const& problem,
+    cutlass::library::NumericTypeID element_A,
+    cutlass::library::NumericTypeID element_B);
+
+  /// Verifies CUTLASS against host reference (for regular grouped GEMM)
+  bool verify_regular_with_host_reference_(
+    Options const& options,
+    PerformanceReport& report,
+    DeviceContext& device_context,
+    library::Operation const* operation,
+    ProblemSpace const& problem_space,
+    ProblemSpace::Problem const& problem,
+    cutlass::library::NumericTypeID element_A,
+    cutlass::library::NumericTypeID element_B);
+
+  /// Verifies CUTLASS against host reference (for block-scaled/blockwise grouped GEMM)
+  bool verify_block_with_host_reference_(
     Options const& options,
     PerformanceReport& report,
     DeviceContext& device_context,

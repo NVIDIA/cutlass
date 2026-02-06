@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -400,11 +400,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         d_per_blk = 128
         d_blks = cute.ceil_div(d, d_per_blk)
 
-        reduction(
-            o, m, l,
-            o_partial, m_partial, l_partial,
-            scale_o
-        ).launch(
+        self.reduction(o, m, l, o_partial, m_partial, l_partial, scale_o).launch(
             grid=[d_blks, h_q, b],
             block=[d_per_blk, 1, 1],
             cluster=[1, 1, 1],
@@ -720,7 +716,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.tma_kv_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Apply block tiler and slice
             gK = cute.local_tile(mK, tiler=(blk_tile_s, blk_tile_d), coord=(None, 0, coord_hb)) # (TILE_S, TILE_D, #TILE_S)
@@ -785,7 +781,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.tma_qo_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Apply block tiler and slice
             gQ = cute.local_tile(mQ, tiler=(blk_tile_h, blk_tile_d), coord=(coord_hr, 0, coord_hb)) # (TILE_H, TILE_D)
@@ -855,7 +851,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warpgroup_idx in self.cvt_warpgroup_ids:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.cvt_regs)
+                cute.arch.setmaxregister_decrease(self.cvt_regs)
 
             # Initialize for dual convert if necessary
             convert_warpgroups = 1
@@ -989,7 +985,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.mma_kq_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Setup mma descriptors
             tBsQ_desc = thrblk_mma_kq.make_fragment_B(tBsQ)
@@ -1040,7 +1036,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warp_idx == self.mma_vp_warp_id:
             # Free registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_dealloc(self.mma_tma_regs)
+                cute.arch.setmaxregister_decrease(self.mma_tma_regs)
 
             # Setup mma descriptors
             tiled_mma_vp.set(tcgen05.Field.ACCUMULATE, True)
@@ -1098,7 +1094,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         elif warpgroup_idx == self.softmax_warpgroup_id:
             # Alloc registers
             if cutlass.const_expr(self.use_reg_reconfig):
-                cute.arch.warpgroup_reg_alloc(self.softmax_regs)
+                cute.arch.setmaxregister_increase(self.softmax_regs)
 
             # Construct tiled copies
             tmem_op_width = 32
@@ -1172,7 +1168,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
                 # Reduce colmax in smem
                 if lane_store_max:
-                    smem_fmax(tSsM.iterator + tSsM.layout(lane_idx), tSrM_lane)
+                    self.smem_fmax(tSsM.iterator + tSsM.layout(lane_idx), tSrM_lane)
 
                 # Wait for colmax then load
                 cute.arch.barrier(barrier_id=softmax_nbar_id, number_of_threads=warpgroup_threads)
@@ -1258,7 +1254,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 # Reduce cluster colmax
                 if warpgroup_widx == 0:
                     if lane_store_max:
-                        dsmem_fmax(
+                        self.dsmem_fmax(
                             sM_cluster.iterator + sM_layout((0, lane_idx)),
                             sM[(0, lane_idx)],
                             m_cluster_full_ptr
@@ -1279,7 +1275,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     else:
                         # other splits copy cluster colmax into local smem
                         if lane_store_max:
-                            sM_cluster[0, lane_idx] = dsmem_load(
+                            sM_cluster[0, lane_idx] = self.dsmem_load(
                                 sM_cluster.iterator + sM_layout((0, lane_idx))
                             )
 
@@ -1299,8 +1295,10 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     sM_lane = sM_lane * scale_qs
 
                     # Store colsum and colmax
-                    gmem_fadd(gL_partial.iterator + gL_partial.layout(lane_idx), sL_lane)
-                    gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
+                    self.gmem_fadd(
+                        gL_partial.iterator + gL_partial.layout(lane_idx), sL_lane
+                    )
+                    self.gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
                     if kv_split_in_cluster == 0:
                         gM_partial[lane_idx] = sM_lane
 
@@ -1349,7 +1347,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     # Store colsum and colmax
                     gL_partial[lane_idx] = sL_lane
                     gM_partial[lane_idx] = sM_lane
-                    gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
+                    self.gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
 
                 o_handle = o_consumer.wait_and_advance()
                 cute.copy(thr_load_s, tStO, tSrO)
@@ -1377,6 +1375,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
         return
 
+    @staticmethod
     @cute.kernel
     def reduction(
         o : cute.Tensor,
@@ -1413,6 +1412,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
         return
 
+    @staticmethod
     @cute.jit
     def _mapa(ptr : Pointer, cta_rank_in_cluster : Int32 = 0):
         llvm_ptr = ptr.llvm_ptr
@@ -1423,8 +1423,8 @@ class MixedInputFusedMultiHeadAttentionDecode:
         )
 
     @cute.jit
-    def dsmem_load(val_ptr : Pointer):
-        val_llvm_ptr = _mapa(val_ptr, 0)
+    def dsmem_load(self, val_ptr: Pointer):
+        val_llvm_ptr = self._mapa(val_ptr, 0)
 
         ret = llvm.inline_asm(
             Float32.mlir_type,
@@ -1438,6 +1438,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
         return Float32(ret)
 
+    @staticmethod
     @cute.jit
     def warp_fmax(val : Float32):
         ret = llvm.inline_asm(
@@ -1471,10 +1472,10 @@ class MixedInputFusedMultiHeadAttentionDecode:
         )
 
     @cute.jit
-    def dsmem_fmax(val_ptr : Pointer, val : Float32, mbar_ptr : Pointer):
+    def dsmem_fmax(self, val_ptr: Pointer, val: Float32, mbar_ptr: Pointer):
         expect_tx_bytes = Int32(Float32.width // 8)
-        val_llvm_ptr = _mapa(val_ptr, 0)
-        mbar_llvm_ptr = _mapa(mbar_ptr, 0)
+        val_llvm_ptr = self._mapa(val_ptr, 0)
+        mbar_llvm_ptr = self._mapa(mbar_ptr, 0)
 
         nvvm.mbarrier_txn(
             mbar_llvm_ptr,
@@ -1498,6 +1499,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
 
+    @staticmethod
     @cute.jit
     def gmem_fmax(ptr : Pointer, val : Float32):
         llvm.inline_asm(
@@ -1528,6 +1530,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
 
+    @staticmethod
     @cute.jit
     def gmem_fadd(ptr : Pointer, val : Float32):
         llvm.inline_asm(

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -294,7 +294,8 @@ def const(value, ty=None, *, loc=None, ip=None):
     Generates dynamic expression for constant values.
     """
     from ..typing import Numeric, NumericMeta
-    from ..dsl import is_dynamic_expression, _numpy_type_to_mlir_type
+    from ..dsl import is_dynamic_expression
+    from ..utils.numpy import _numpy_type_to_mlir_type
 
     if isinstance(value, Numeric):
         value = value.value
@@ -693,9 +694,9 @@ def _min(lhs, rhs, *, loc=None, ip=None):
     if isinstance(lhs.type, T.VectorType):
         elem_type = lhs.type.element_type
         if arith._is_integer_like_type(elem_type):
-            assert hasattr(
-                lhs, "signed"
-            ), "Should have attribute `signed`, must be a bug"
+            assert hasattr(lhs, "signed"), (
+                "Should have attribute `signed`, must be a bug"
+            )
             if lhs.signed != False:
                 return arith.minsi(lhs, rhs, loc=loc, ip=ip)
             else:
@@ -719,6 +720,7 @@ def _max(lhs, rhs, *, loc=None, ip=None):
     Assuming the operands have the same type
     """
     from ..dsl import is_dynamic_expression
+
     if not is_dynamic_expression(lhs):
         if not is_dynamic_expression(rhs):
             return max(lhs, rhs)
@@ -731,9 +733,9 @@ def _max(lhs, rhs, *, loc=None, ip=None):
     if isinstance(lhs.type, T.VectorType):
         elem_type = lhs.type.element_type
         if isinstance(elem_type, ir.IntegerType):
-            assert hasattr(
-                lhs, "signed"
-            ), "Should have attribute `signed`, must be a bug"
+            assert hasattr(lhs, "signed"), (
+                "Should have attribute `signed`, must be a bug"
+            )
             if lhs.signed != False:
                 return arith.maxsi(lhs, rhs, loc=loc, ip=ip)
             else:

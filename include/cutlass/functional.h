@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/platform/platform.h"
+#include "cutlass/detail/dependent_false.hpp"
+
 #if defined(__CUDACC_RTC__)
 #include "cutlass/floating_point_nvrtc.h"
 #endif
@@ -532,6 +534,49 @@ struct maximum_absolute_value_reduction {
     maximum<T, PropagateNaN> max_op;
 
     return max_op(lhs, abs_op(rhs));
+  }
+};
+
+// Maximal exponent reduction for zero-mantissa scaling factors
+template <typename T, bool PropagateNaN = false>
+struct maximum_absolute_value_zero_mantissa_reduction {
+
+  // Discard mantissa and sign bits for the input. Needs to specify the number of mantissa / exponent bits
+  template <typename T_, typename UI, int N_Mantissa>
+  static CUTLASS_HOST_DEVICE T_ discard_sign_mantissa_impl(T_ x) {
+    static constexpr UI one = 1;
+    static constexpr UI n_mantissa = N_Mantissa;
+    static constexpr UI pos_sign = sizeof(T_) * 8 - 1; // Position of sign bit: bit width - 1.
+    static constexpr UI mask = ~((one << n_mantissa) - one) & ~(one << pos_sign);
+    static constexpr UI subnormal_cap = one << n_mantissa;
+
+    UI out = *reinterpret_cast<UI *>(&x) & mask;
+    // Subnormals
+    if (out == 0) {
+      out = subnormal_cap;
+    }
+    return *reinterpret_cast<T_ *>(&out);
+  }
+
+  // Discard mantissa and sign bits s.t. multipling with this scaling factor only results in an exponent shift
+  template <typename T_>
+  static CUTLASS_HOST_DEVICE T_ discard_sign_mantissa(T_ x) {
+    if constexpr (cute::is_same_v<T_, float>) {
+      return discard_sign_mantissa_impl<float , uint32_t, 23>(x);
+    }
+    else if constexpr (cute::is_same_v<T_, double>) {
+      return discard_sign_mantissa_impl<double, uint64_t, 52>(x);
+    }
+    else {
+      static_assert(cutlass::detail::dependent_false<T_>, "Can't discard mantissa & sign bits for unknown data type");
+    }
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, T const &rhs) const {
+    cutlass::maximum<T, PropagateNaN> max_op;
+
+    return max_op(lhs, discard_sign_mantissa(rhs));
   }
 };
 

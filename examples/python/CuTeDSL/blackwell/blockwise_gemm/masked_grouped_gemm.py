@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -1001,7 +1001,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized Schedule warp
         #
         if warp_idx == self.sched_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_sched_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_sched_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1047,10 +1047,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                     )
 
                 # fence view async shared
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 self.sched_sync_barrier.arrive_and_wait()
                 # commit tile info pipeline
                 tile_info_pipeline.producer_commit(tile_info_producer_state)
@@ -1062,7 +1059,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized TMA load warp
         #
         if warp_idx == self.tma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1165,10 +1162,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1181,7 +1175,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized Scale load warp
         #
         if warp_idx == self.scale_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1340,10 +1334,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1356,7 +1347,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized MMA warp
         #
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Bar sync for retrieve tensor memory ptr from shared mem
             #
@@ -1498,10 +1489,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1514,7 +1502,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized acc update warps
         #
         if warp_idx <= self.acc_update_warp_id[-1]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_acc_update_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_acc_update_warps)
             #
             # Bar sync for retrieve tensor memory ptr from shared memory
             #
@@ -1735,10 +1723,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1746,7 +1731,7 @@ class BlockwiseMaskedGroupedGemmKernel:
         # Specialized epilogue warps
         #
         if warp_idx <= self.epilog_warp_id[-1] and warp_idx >= self.epilog_warp_id[0]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_epilogue_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_epilogue_warps)
             #
             # Alloc tensor memory buffer
             #
@@ -1905,10 +1890,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                         tRS_sC[(None, None, None, c_buffer)],
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     #
@@ -1938,10 +1920,7 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 

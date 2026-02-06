@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -562,6 +562,12 @@ class KernelScheduleType(enum.Enum):
   SparseNvf4TmaWarpSpecialized2SmSm100 = enum_auto()
   SparseMxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
   SparseMxf8f6f4TmaWarpSpecialized2SmSm100 = enum_auto()
+
+  InterleavedComplexTF32TmaWarpSpecialized1SmSm100 = enum_auto()
+  InterleavedComplexTF32TmaWarpSpecialized2SmSm100 = enum_auto()
+  TmaWarpSpecialized1SmFastFP32Sm100 = enum_auto()
+  TmaWarpSpecialized2SmFastFP32Sm100 = enum_auto()
+
   # FP4 Ultra
   MxNvf4UltraTmaWarpSpecialized1SmVs16Sm103 = enum_auto()
   MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103 = enum_auto()
@@ -679,7 +685,10 @@ KernelScheduleTag = {
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103DisablePrefetch: 'cutlass::gemm::KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch',
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103DisablePrefetch: 'cutlass::gemm::KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch',
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103DisablePrefetch: 'cutlass::gemm::KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch',
-  
+  KernelScheduleType.InterleavedComplexTF32TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmInterleavedComplexTF32Sm100',
+  KernelScheduleType.InterleavedComplexTF32TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmInterleavedComplexTF32Sm100',
+  KernelScheduleType.TmaWarpSpecialized1SmFastFP32Sm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmFastFP32Sm100',
+  KernelScheduleType.TmaWarpSpecialized2SmFastFP32Sm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmFastFP32Sm100',
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative',
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong',
@@ -799,7 +808,10 @@ KernelScheduleSuffixes = {
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103TmaPrefetch: '_o_vs16_ultra_2sm_tmapf',
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch: '_o_vs32_ultra_1sm_tmapf',
   KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch: '_o_vs32_ultra_2sm_tmapf',
-
+  KernelScheduleType.InterleavedComplexTF32TmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.InterleavedComplexTF32TmaWarpSpecialized2SmSm100: '_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmFastFP32Sm100: '_FastF32_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmFastFP32Sm100: '_FastF32_2sm',
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative: '_warpspecialized_cooperative',
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong: '_warpspecialized_pingpong',

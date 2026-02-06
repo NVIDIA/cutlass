@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -772,14 +772,14 @@ struct CollectiveMma<
     }
 
     // Check for SFA SFB layout requirement
-    const auto layout_sfa_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
-    const auto layout_sfb_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
-    implementable = implementable && (layout_sfa_ref == args.layout_SFA);
+    const auto layout_sfa_ref = take<0,2>(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
+    const auto layout_sfb_ref = take<0,2>(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
+    implementable = implementable && (layout_sfa_ref == take<0,2>(args.layout_SFA));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFA mismatch, layout_SFA needs to be K-major\n");
     }
 
-    implementable = implementable && (layout_sfb_ref == args.layout_SFB);
+    implementable = implementable && (layout_sfb_ref == take<0,2>(args.layout_SFB));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFB mismatch, layout_SFB needs to be K-major\n");
     }

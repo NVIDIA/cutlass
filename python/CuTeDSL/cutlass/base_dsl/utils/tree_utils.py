@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -14,15 +14,15 @@ import dataclasses
 import itertools as it
 from types import SimpleNamespace
 
-from ..base_dsl.typing import as_numeric, Numeric, Constexpr
-from ..base_dsl._mlir_helpers.arith import ArithValue
-from ..base_dsl.common import DSLBaseError
-from .._mlir import ir
+from ..typing import as_numeric, Numeric, Constexpr
+from .._mlir_helpers.arith import ArithValue
+from ..common import DSLBaseError
+from ..._mlir import ir
 
 NoneType = type(None)
 
 # =============================================================================
-# Tree Utils
+# Tree Utilsß
 # =============================================================================
 
 
@@ -41,6 +41,18 @@ def unzip2(pairs: Iterable[tuple[Any, Any]]) -> tuple[list[Any], list[Any]]:
         lst1.append(x1)
         lst2.append(x2)
     return lst1, lst2
+
+
+def unzip3(
+    triples: Iterable[tuple[Any, Any, Any]],
+) -> tuple[list[Any], list[Any], list[Any]]:
+    """Unzip a sequence of triples into three lists."""
+    lst1, lst2, lst3 = [], [], []
+    for x1, x2, x3 in triples:
+        lst1.append(x1)
+        lst2.append(x2)
+        lst3.append(x3)
+    return lst1, lst2, lst3
 
 
 def get_fully_qualified_class_name(x: Any) -> str:
@@ -251,6 +263,7 @@ def set_dataclass_attributes(
     instance: Any,
     fields: list[str],
     values: Iterable[Any],
+    is_frozen: bool,
     constexpr_fields: list[str],
 ) -> Any:
     """
@@ -268,10 +281,16 @@ def set_dataclass_attributes(
     if not fields:
         return instance
 
-    kwargs = dict(zip(fields, values))
-    for field in constexpr_fields:
-        kwargs[field] = getattr(instance, field)
-    return dataclasses.replace(instance, **kwargs)
+    if is_frozen:
+        kwargs = dict(zip(fields, values))
+        for field in constexpr_fields:
+            kwargs[field] = getattr(instance, field)
+        return dataclasses.replace(instance, **kwargs)
+    else:
+        for field, value in zip(fields, values):
+            setattr(instance, field, value)
+
+    return instance
 
 
 def default_dataclass_from_iterable(
@@ -290,12 +309,11 @@ def default_dataclass_from_iterable(
         The reconstructed dataclass instance
     """
     instance = metadata.original_obj
+    is_frozen = is_frozen_dataclass(instance)
 
-    new_instance = set_dataclass_attributes(
-        instance, metadata.fields, children, metadata.constexpr_fields
+    return set_dataclass_attributes(
+        instance, metadata.fields, children, is_frozen, metadata.constexpr_fields
     )
-    metadata.original_obj = new_instance
-    return new_instance
 
 
 def dynamic_expression_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
@@ -490,7 +508,7 @@ unflattened_a should be structurally identical to a, and unflattened_b should be
 """
 
 
-def tree_flatten(x: Any) -> tuple[list[Any], PyTreeDef]:
+def tree_flatten(x: Any) -> tuple[list[Any], list[ir.Attribute], PyTreeDef]:
     """
     Flatten a nested structure into a flat list of values and a tree definition.
 
@@ -512,8 +530,8 @@ def tree_flatten(x: Any) -> tuple[list[Any], PyTreeDef]:
         >>> tree_flatten([1, [2, 3], 4])
         ([1, 2, 3, 4], PyTreeDef(...))
     """
-    children_iter, treedef = _tree_flatten(x)
-    return list(children_iter), treedef
+    children_iter, child_attrs_iter, treedef = _tree_flatten(x)
+    return list(children_iter), list[ir.Attribute](child_attrs_iter), treedef
 
 
 def get_registered_node_types_or_insert(x: Any) -> Union[NodeType, None]:
@@ -576,7 +594,9 @@ def create_leaf_for_value(
     )
 
 
-def _tree_flatten(x: Any) -> tuple[Iterable[Any], Union[PyTreeDef, Leaf]]:
+def _tree_flatten(
+    x: Any,
+) -> tuple[Iterable[Any], Iterable[ir.Attribute], Union[PyTreeDef, Leaf]]:
     """
     Internal function to flatten a tree structure.
 
@@ -595,28 +615,46 @@ def _tree_flatten(x: Any) -> tuple[Iterable[Any], Union[PyTreeDef, Leaf]]:
         DSLTreeFlattenError: If the object type is not supported
     """
     if x is None:
-        return [], create_leaf_for_value(x, is_none=True)
+        return [], [], create_leaf_for_value(x, is_none=True)
 
     elif isinstance(x, ArithValue) and is_dynamic_expression(x):
         v = x.__extract_mlir_values__()
-        return v, create_leaf_for_value(
-            x,
-            node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-            ir_type_str=str(v[0].type),
+        a = (
+            [ir.DictAttr.get({})]
+            if not hasattr(x, "__extract_mlir_attributes__")
+            else x.__extract_mlir_attributes__()
+        )
+        return (
+            v,
+            a,
+            create_leaf_for_value(
+                x,
+                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+                ir_type_str=str(v[0].type),
+            ),
         )
 
     elif isinstance(x, ArithValue):
-        return [x], create_leaf_for_value(x, is_numeric=True)
+        return [x], [ir.DictAttr.get({})], create_leaf_for_value(x, is_numeric=True)
 
     elif isinstance(x, ir.Value):
-        return [x], create_leaf_for_value(x)
+        return [x], [ir.DictAttr.get({})], create_leaf_for_value(x)
 
     elif isinstance(x, Numeric):
         v = x.__extract_mlir_values__()
-        return v, create_leaf_for_value(
-            x,
-            node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-            ir_type_str=str(v[0].type),
+        a = (
+            [ir.DictAttr.get({})]
+            if not hasattr(x, "__extract_mlir_attributes__")
+            else x.__extract_mlir_attributes__()
+        )
+        return (
+            v,
+            a,
+            create_leaf_for_value(
+                x,
+                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+                ir_type_str=str(v[0].type),
+            ),
         )
 
     else:
@@ -628,14 +666,31 @@ def _tree_flatten(x: Any) -> tuple[Iterable[Any], Union[PyTreeDef, Leaf]]:
                 raise DSLTreeFlattenError(
                     "Flatten Error: children is None", get_fully_qualified_class_name(x)
                 )
-            children_flat, child_trees = unzip2(map(_tree_flatten, children))
+            children_flat, child_attrs_flat, child_trees = unzip3(
+                map(_tree_flatten, children)
+            )
             flattened = it.chain.from_iterable(children_flat)
-            return flattened, PyTreeDef(node_type, node_metadata, tuple(child_trees))
+
+            if hasattr(x, "__extract_mlir_attributes__"):
+                # If x has extract mlir attributes it overrides the child's default attributes
+                child_attrs_flat = [x.__extract_mlir_attributes__()] * len(
+                    child_attrs_flat
+                )
+            child_attrs_flattened = it.chain.from_iterable(child_attrs_flat)
+            return (
+                flattened,
+                child_attrs_flattened,
+                PyTreeDef(node_type, node_metadata, tuple(child_trees)),
+            )
 
         # Try to convert to numeric
         try:
             nval = as_numeric(x).ir_value()
-            return [nval], create_leaf_for_value(nval, is_numeric=True)
+            return (
+                [nval],
+                [ir.DictAttr.get({})],
+                create_leaf_for_value(nval, is_numeric=True),
+            )
         except Exception:
             raise DSLTreeFlattenError(
                 "Flatten Error", get_fully_qualified_class_name(x)
@@ -658,7 +713,7 @@ def tree_unflatten(treedef: PyTreeDef, xs: list[Any]) -> Any:
         The reconstructed nested structure
 
     Example:
-        >>> flat_values, treedef = tree_flatten([1, [2, 3], 4])
+        >>> flat_values, _, treedef = tree_flatten([1, [2, 3], 4])
         >>> tree_unflatten(treedef, flat_values)
         [1, [2, 3], 4]
     """
@@ -709,6 +764,7 @@ def _check_tree_equal(lhs: Union[PyTreeDef, Leaf], rhs: Union[PyTreeDef, Leaf]) 
     """
     if isinstance(lhs, Leaf) and isinstance(rhs, Leaf):
         return lhs.is_none == rhs.is_none and lhs.ir_type_str == rhs.ir_type_str
+
     elif isinstance(lhs, PyTreeDef) and isinstance(rhs, PyTreeDef):
         lhs_metadata = lhs.node_metadata
         rhs_metadata = rhs.node_metadata
@@ -725,6 +781,7 @@ def _check_tree_equal(lhs: Union[PyTreeDef, Leaf], rhs: Union[PyTreeDef, Leaf]) 
             and len(lhs.child_treedefs) == len(rhs.child_treedefs)
             and all(map(_check_tree_equal, lhs.child_treedefs, rhs.child_treedefs))
         )
+
     else:
         return False
 
@@ -744,8 +801,8 @@ def check_tree_equal(lhs: PyTreeDef, rhs: PyTreeDef) -> int:
         int: Index of the first differing child, or -1 if trees are equal
 
     Example:
-        >>> treedef1 = tree_flatten([1, [2, 3]])[1]
-        >>> treedef2 = tree_flatten([1, [2, 4]])[1]
+        >>> treedef1 = tree_flatten([1, [2, 3]])[2]
+        >>> treedef2 = tree_flatten([1, [2, 4]])[2]
         >>> check_tree_equal(treedef1, treedef2)
         1  # The second child differs
     """

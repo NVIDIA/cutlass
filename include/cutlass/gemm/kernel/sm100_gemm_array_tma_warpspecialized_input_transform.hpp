@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -652,11 +652,11 @@ public:
     // Allocate accumulators
     auto acc_shape = collective_mainloop.partition_accumulator_shape();
 
-    // TileID scheduler
-    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-
     // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
     cutlass::arch::wait_on_dependent_grids();
+
+    // TileID scheduler
+    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
 
     typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
@@ -1146,7 +1146,9 @@ public:
           // support fixup operations needed by split-/stream-K. These operations are pushed
           // to the collective layer so that they can reuse the TMEM -> RF copy performed
           // at the collective layer.
-          auto [mma2accum_pipeline_state_next] = collective_epilogue(
+          auto [mma2accum_pipeline_state_next, epi_load_pipe_consumer_state_next] = collective_epilogue(
+            epi_load_pipeline,
+            epi_load_pipe_consumer_state,
             mma2accum_pipeline,
             mma2accum_pipeline_consumer_state,
             problem_shape_MNKL,
@@ -1157,6 +1159,7 @@ public:
           );
           // Advance the mm2accum pipe
           mma2accum_pipeline_consumer_state = mma2accum_pipeline_state_next;
+          epi_load_pipe_consumer_state = epi_load_pipe_consumer_state_next;
         }
 
         work_tile_info = next_work_tile_info;

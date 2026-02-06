@@ -112,6 +112,9 @@ For compiled kernels, the generated PTX/CUBIN/IR can be accessed programmaticall
 - ``__cubin__``: The generated CUBIN data of the compiled kernel.
 - ``__mlir__``: The generated IR code of the compiled kernel.
 
+These attributes are populated only when the corresponding ``CUTE_DSL_KEEP_*`` environment variable is enabled;
+otherwise they return ``None``.
+
 .. code:: python
     
     compiled_foo = cute.compile(foo, ...)
@@ -172,6 +175,25 @@ For detecting memory errors and race conditions:
 
 Please refer to the `compute-sanitizer documentation <https://developer.nvidia.com/compute-sanitizer>`_ for more details.
 
+Set function name prefix
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, the function name (host function or kernel function) is automatically generated based on the function name and its parameters.
+Sometimes you may want to attach some runtime information to the function name to make performance profiling and debugging easier,
+e.g., the kernel configs or the rank ids. You can assign a name prefix to the name by calling the ``set_name_prefix`` 
+method on the  host function or kernel function.
+
+.. code:: python
+
+    @cute.kernel
+    def kernel(arg1, arg2, ...):
+        ...
+    @cute.jit
+    def launch_kernel():
+        kernel.set_name_prefix("your_custom_name_prefix")
+        kernel(arg1, arg2, ...).launch(grid=[1, 1, 1], block=[1, 1, 1], ...)
+
+For above example, the generated kernel name will be "your_custom_name_prefix_xxx".
 
 Conclusion
 ----------

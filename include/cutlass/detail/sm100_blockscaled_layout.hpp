@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -88,9 +88,14 @@ struct Sm1xxBlockScaledConfig {
   CUTE_HOST_DEVICE
   static constexpr auto
   tile_atom_to_shape_SFA(ProblemShape problem_shape, LayoutSFA layout_sfa = LayoutSFA{}) {
-    auto problem_shape_MNKL = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
-    return tile_to_shape(SfAtom{}, make_shape(M,K,L), Step<_2,_1,_3>{});
+    if constexpr (rank(ProblemShape{}) == 3) {
+      auto [M, N, K] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(M,K), Step<_2,_1>{});
+    }
+    else {
+      auto [M, N, K, L] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(M,K,L), Step<_2,_1,_3>{});
+    }
   }
 
   // The following function is provided for user fill dynamic problem size to the layout_SFB.
@@ -98,9 +103,14 @@ struct Sm1xxBlockScaledConfig {
   CUTE_HOST_DEVICE
   static constexpr auto
   tile_atom_to_shape_SFB(ProblemShape problem_shape, LayoutSFB layout_sfb = LayoutSFB{}) {
-    auto problem_shape_MNKL = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
-    return tile_to_shape(SfAtom{}, make_shape(N,K,L), Step<_2,_1,_3>{});
+    if constexpr (rank(ProblemShape{}) == 3) {
+      auto [M, N, K] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(N,K), Step<_2,_1>{});
+    }
+    else {
+      auto [M, N, K, L] = problem_shape;
+      return tile_to_shape(SfAtom{}, make_shape(N,K,L), Step<_2,_1,_3>{});
+    }
   }
 
   template<class TiledMma, class TileShape_MNK>

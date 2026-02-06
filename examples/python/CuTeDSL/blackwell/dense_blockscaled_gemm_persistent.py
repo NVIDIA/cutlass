@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -124,6 +124,10 @@ Constraints:
 """
 
 
+def ceil_div(a, b):
+    return (a + b - 1) // b
+
+
 class Sm100BlockScaledPersistentDenseGemmKernel:
     """This class implements batched matrix multiplication (C = A x SFA x B x SFB) with support for various data types
     and architectural features specific to Blackwell GPUs with persistent tile scheduling and warp specialization.
@@ -213,17 +217,18 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
         )
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.threads_per_cta = 32 * len(
+        self.threads_per_warp = 32
+        self.threads_per_cta = self.threads_per_warp * len(
             (self.mma_warp_id, self.tma_warp_id, *self.epilog_warp_id)
         )
         # Set barrier id for epilogue sync and tmem ptr sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
             barrier_id=1,
-            num_threads=32 * len(self.epilog_warp_id),
+            num_threads=self.threads_per_warp * len(self.epilog_warp_id),
         )
         self.tmem_alloc_barrier = pipeline.NamedBarrier(
             barrier_id=2,
-            num_threads=32 * len((self.mma_warp_id, *self.epilog_warp_id)),
+            num_threads=self.threads_per_warp * len((self.mma_warp_id, *self.epilog_warp_id)),
         )
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
         SM100_TMEM_CAPACITY_COLUMNS = 512
@@ -383,7 +388,9 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
         self.num_accumulator_tmem_cols = self.cta_tile_shape_mnk[1] * self.num_acc_stage if not self.overlapping_accum else self.cta_tile_shape_mnk[1] * 2 - self.num_sf_tmem_cols
 
         # Only when overlapping_accum is enabled, we need to release accumulator buffer early in epilogue
-        self.iter_acc_early_release_in_epilogue = self.num_sf_tmem_cols // self.epi_tile_n
+        # Use -1 since at that iteration the pipeline is updated after the tmem -> reg copy
+        num_subtiles_in_overlap_region = ceil_div(self.num_sf_tmem_cols, self.epi_tile_n)
+        self.iter_acc_early_release_in_epilogue = num_subtiles_in_overlap_region - 1
 
     @cute.jit
     def __call__(
@@ -755,7 +762,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
 
         # Initialize acc_pipeline (barrier) and states
         acc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_acc_consumer_threads = len(self.epilog_warp_id) * (
+        num_acc_consumer_threads = self.threads_per_warp * len(self.epilog_warp_id) * (
             2 if use_2cta_instrs else 1
         )
         acc_pipeline_consumer_group = pipeline.CooperativeGroup(
@@ -1366,7 +1373,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
             # Threads/warps participating in tma store pipeline
             c_producer_group = pipeline.CooperativeGroup(
                 pipeline.Agent.Thread,
-                32 * len(self.epilog_warp_id),
+                self.threads_per_warp * len(self.epilog_warp_id),
             )
             c_pipeline = pipeline.PipelineTmaStore.create(
                 num_stages=self.num_c_stage,
@@ -1439,8 +1446,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                         if subtile_idx == self.iter_acc_early_release_in_epilogue:
                             # Fence for TMEM load
                             cute.arch.fence_view_async_tmem_load()
-                            with cute.arch.elect_one():
-                                acc_pipeline.consumer_release(acc_consumer_state)
+                            acc_pipeline.consumer_release(acc_consumer_state)
                             acc_consumer_state.advance()
 
                     #
@@ -1453,17 +1459,14 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                     #
                     # Store C to shared memory
                     #
-                    c_buffer = (num_prev_subtiles + real_subtile_idx) % self.num_c_stage
+                    c_buffer = (num_prev_subtiles + subtile_idx) % self.num_c_stage
                     cute.copy(
                         tiled_copy_r2s,
                         tRS_rC,
                         tRS_sC[(None, None, None, c_buffer)],
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     #
@@ -1484,8 +1487,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                 # Async arrive accumulator buffer empty
                 #
                 if cutlass.const_expr(not self.overlapping_accum):
-                    with cute.arch.elect_one():
-                        acc_pipeline.consumer_release(acc_consumer_state)
+                    acc_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()
 
                 #
@@ -2242,9 +2244,6 @@ def run(
 
     # Create scale factor tensor SFA/SFB
     def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype):
-        def ceil_div(a, b):
-            return (a + b - 1) // b
-
         sf_k = ceil_div(k, sf_vec_size)
         ref_shape = (l, mn, sf_k)
 

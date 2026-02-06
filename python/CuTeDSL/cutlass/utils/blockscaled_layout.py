@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -82,6 +82,38 @@ def tile_atom_to_shape_SF(
         BlockScaledBasicChunk(sf_vec_size).layout, Shape, (2, 1, 3)
     )
     return sf_layout
+
+
+@dsl_user_op
+def make_smem_layout_sf(
+    tile_shape: cute.Tile,
+    sf_vec_size: int,
+    num_stages: int,
+    *,
+    loc=None,
+    ip=None,
+) -> cute.Layout:
+    """
+    A helper function to get dynamic SFA/SFB layout by filling dynamic A/B shape to the scale factor atom layout.
+
+    :param Shape: The shape of the A/B tensor
+    :param sf_vec_size: Scale factor vector size
+    :param num_stages: Number of stages
+
+    :return: The layout of the SFA/SFB tensor
+    :rtype: cute.Layout
+    """
+
+    smem_layout = cute.tile_to_shape(
+        BlockScaledBasicChunk(sf_vec_size).layout, tile_shape, (2, 1)
+    )
+    smem_layout_staged = cute.append(
+        smem_layout,
+        cute.make_layout(
+            num_stages, stride=cute.cosize(cute.filter_zeros(smem_layout))
+        ),
+    )
+    return smem_layout_staged
 
 
 @dsl_user_op
@@ -202,6 +234,177 @@ def make_smem_layout_sfb(
     tiler_inst = ((atom_n, sf_vec_size),)
     # (((Atom_Inst_M, Rest_M),(Atom_Inst_K, Rest_K)), MMA_M, MMA_K)
     smem_layout = cute.logical_divide(smem_layout, tiler_inst)
+
+    # (((Atom_Inst_M, Rest_M),(Atom_Inst_K, Rest_K)), MMA_M, MMA_K, STAGE)
+    sfb_smem_layout_staged = cute.append(
+        smem_layout,
+        cute.make_layout(
+            num_stages, stride=cute.cosize(cute.filter_zeros(smem_layout))
+        ),
+    )
+
+    return sfb_smem_layout_staged
+
+
+@dsl_user_op
+def sm120_make_smem_layout_sfa(
+    tiled_mma: cute.TiledMma,
+    tile_shape_mnk: cute.Tile,
+    sf_vec_size: int,
+    num_stages: int,
+    *,
+    loc=None,
+    ip=None,
+) -> cute.Layout:
+    """
+    Make smem layout for SFA based on:
+    1. BlockScaledBasicChunk
+    2. MMA tiler shape
+    3. Scale factor vector size
+    4. Number of stages
+
+    :param tiled_mma: The tiled MMA
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_mnk: The mma tiler shape
+    :type mma_tiler_mnk: cute.Tile
+    :param sf_vec_size: The scale factor vector size
+    :type sf_vec_size: int
+    :param num_stages: The number of stages
+    :type num_stages: int
+
+    :return: Smem layout for SFA
+    :rtype: cute.Layout
+    """
+
+    assert sf_vec_size == 16 or sf_vec_size == 32, "sf_vec_size must be 16 or 32"
+
+    blk_mn = 128
+    blk_sf = 4
+    blk_elems = blk_mn * blk_sf
+    mma_nsf = tiled_mma.shape_mnk[2] // sf_vec_size
+
+    mn_basic_block_shape = (32, 4)
+    mn_basic_block_stride = (16, 4)
+    k_basic_block_shape = (sf_vec_size, mma_nsf)
+    k_basic_block_stride = (0, 1)
+
+    assert tile_shape_mnk[0] % blk_mn == 0, (
+        "tile_shape_mnk[0] must be divisible by blk_mn"
+    )
+
+    sSFA_shapeM = (mn_basic_block_shape, tile_shape_mnk[0] // blk_mn)
+    sSF_strideM = (mn_basic_block_stride, blk_elems)
+
+    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (
+        "tile_shape_mnk[2] must be divisible by blk_sf * mma_nsf"
+    )
+
+    sSFA_shapeK = (
+        k_basic_block_shape,
+        blk_sf // mma_nsf,
+        tile_shape_mnk[2] // sf_vec_size // blk_sf,
+    )
+    sSF_strideK = (
+        k_basic_block_stride,
+        mma_nsf,
+        tile_shape_mnk[0] // blk_mn * blk_elems,
+    )
+
+    sSFA_shape = (sSFA_shapeM, sSFA_shapeK)
+    sSFA_stride = (sSF_strideM, sSF_strideK)
+
+    smem_layout = cute.make_layout(sSFA_shape, stride=sSFA_stride)
+
+    # (((Atom_Inst_M, Rest_M),(Atom_Inst_K, Rest_K)), MMA_M, MMA_K, STAGE)
+    sfa_smem_layout_staged = cute.append(
+        smem_layout,
+        cute.make_layout(
+            num_stages, stride=cute.cosize(cute.filter_zeros(smem_layout))
+        ),
+    )
+
+    return sfa_smem_layout_staged
+
+
+@dsl_user_op
+def sm120_make_smem_layout_sfb(
+    tiled_mma: cute.TiledMma,
+    tile_shape_mnk: cute.Tile,
+    sf_vec_size: int,
+    num_stages: int,
+    *,
+    loc=None,
+    ip=None,
+) -> cute.Layout:
+    """
+    Make smem layout for SFB based on:
+    1. BlockScaledBasicChunk
+    2. MMA tiler shape
+    3. Scale factor vector size
+    4. Number of stages
+
+    :param tiled_mma: The tiled MMA
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_mnk: The mma tiler shape
+    :type mma_tiler_mnk: cute.Tile
+    :param sf_vec_size: The scale factor vector size
+    :type sf_vec_size: int
+    :param num_stages: The number of stages
+    :type num_stages: int
+
+    :return: Smem layout for SFA
+    :rtype: cute.Layout
+    """
+
+    # A single indivisible block will hold 4 scale factors of 128 rows/columns (A/B matrix).
+    # 4 is chosen to make consecutive 32bits of data to have scale factors for only a single row(col).
+    blk_mn = 128
+    blk_sf = 4
+    blk_elems = blk_mn * blk_sf
+
+    assert sf_vec_size == 16 or sf_vec_size == 32, "sf_vec_size must be 16 or 32"
+
+    assert tile_shape_mnk[1] % blk_mn == 0, (
+        "tile_shape_mnk[1] must be divisible by blk_mn"
+    )
+
+    assert tile_shape_mnk[2] % sf_vec_size == 0, (
+        "tile_shape_mnk[2] must be divisible by sf_vec_size"
+    )
+
+    mma_nsf = tiled_mma.shape_mnk[2] // sf_vec_size
+
+    mn_basic_block_shape = (32, 4)
+    mn_basic_block_stride = (16, 4)
+    k_basic_block_shape = (sf_vec_size, mma_nsf)
+    k_basic_block_stride = (0, 1)
+
+    assert tile_shape_mnk[1] % blk_mn == 0, (
+        "tile_shape_mnk[1] must be divisible by blk_mn"
+    )
+
+    sSFA_shapeN = (mn_basic_block_shape, tile_shape_mnk[1] // blk_mn)
+    sSF_strideN = (mn_basic_block_stride, blk_elems)
+
+    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (
+        "tile_shape_mnk[2] must be divisible by blk_sf * mma_nsf"
+    )
+
+    sSFA_shapeK = (
+        k_basic_block_shape,
+        blk_sf // mma_nsf,
+        tile_shape_mnk[2] // sf_vec_size // blk_sf,
+    )
+    sSF_strideK = (
+        k_basic_block_stride,
+        mma_nsf,
+        tile_shape_mnk[1] // blk_mn * blk_elems,
+    )
+
+    sSFA_shape = (sSFA_shapeN, sSFA_shapeK)
+    sSFA_stride = (sSF_strideN, sSF_strideK)
+
+    smem_layout = cute.make_layout(sSFA_shape, stride=sSFA_stride)
 
     # (((Atom_Inst_M, Rest_M),(Atom_Inst_K, Rest_K)), MMA_M, MMA_K, STAGE)
     sfb_smem_layout_staged = cute.append(

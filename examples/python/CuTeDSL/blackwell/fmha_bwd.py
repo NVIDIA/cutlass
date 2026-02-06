@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -1050,7 +1050,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             #  LOAD
             # ///////////////////////////////////////////////////////////////////////////////
             if warp_idx == self.load_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_load)
+                cute.arch.setmaxregister_decrease(self.num_regs_load)
 
                 self.load(
                     K_in,
@@ -1088,7 +1088,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             #  MMA
             # ///////////////////////////////////////////////////////////////////////////////
             elif warp_idx == self.mma_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_mma)
+                cute.arch.setmaxregister_decrease(self.num_regs_mma)
 
                 self.mma(
                     KQ_tiled_mma,
@@ -1132,7 +1132,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 warp_idx >= self.compute_warp_id[0]
                 and warp_idx <= self.compute_warp_id[-1]
             ):
-                cute.arch.warpgroup_reg_alloc(self.num_regs_compute)
+                cute.arch.setmaxregister_increase(self.num_regs_compute)
 
                 self.compute(
                     tSTtST,
@@ -1183,7 +1183,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 warp_idx >= self.reduce_warp_id[0]
                 and warp_idx <= self.reduce_warp_id[-1]
             ):
-                cute.arch.warpgroup_reg_alloc(self.num_regs_reduce)
+                cute.arch.setmaxregister_increase(self.num_regs_reduce)
 
                 self.reduce(
                     dSK_tiled_mma,
@@ -1200,7 +1200,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 )
 
             else:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_empty)
+                cute.arch.setmaxregister_decrease(self.num_regs_empty)
 
     @cute.kernel
     def convert(
@@ -2168,10 +2168,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             cute.autovec_copy(tTR_rdST, sdS_slice)
 
             # Notify for dS
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             compute_mma_dS_pipeline.producer_commit(compute_mma_dS_producer_state)
             compute_mma_dS_producer_state.advance()
 
@@ -2289,10 +2286,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 )
 
                 # Wait for the stores to all be visible to the TMA
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 self.reduce_sync_barrier.arrive_and_wait()
 
                 if warp_idx == 0:

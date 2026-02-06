@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -37,21 +37,19 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/cute/tvm_ffi/aot_export.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_export.py
     # run example to use in torch
-    python examples/cute/tvm_ffi/aot_use_in_torch.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_torch.py
     # run example to use in jax
-    python examples/cute/tvm_ffi/aot_use_in_jax.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_jax.py
     # run example to use in c++ bundle
-    bash examples/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
+    bash cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
 """
 
 from pathlib import Path
-import torch
 import os
 import subprocess
 import tvm_ffi
-import torch
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
 
@@ -69,6 +67,8 @@ def add_one(a: cute.Tensor, b: cute.Tensor):
 
 
 def main():
+    import torch
+
     # compile the kernel with "--enable-tvm-ffi" option
     a_torch = torch.arange(10, dtype=torch.float32, device="cuda")
     b_torch = torch.zeros(10, dtype=torch.float32, device="cuda")

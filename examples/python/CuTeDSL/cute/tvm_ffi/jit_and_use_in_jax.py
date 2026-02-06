@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -39,7 +39,7 @@ To run this example:
     pip install jax-tvm-ffi
     pip install jax[cuda13]
 
-    python examples/cute/tvm_ffi/jit_and_use_in_jax.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/jit_and_use_in_jax.py
 """
 
 import jax

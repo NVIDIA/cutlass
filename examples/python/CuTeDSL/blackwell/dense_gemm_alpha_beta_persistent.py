@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -1183,10 +1183,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
                         tSR_sC[(None, None, None, c_pipeline_consumer_state.index)],
                         tSR_rC,
                     )
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     c_pipeline.consumer_release(c_pipeline_consumer_state)
 
                     # Advance pipeline states
@@ -1213,10 +1210,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
                         tiled_copy_r2s, tRS_rD, tRS_sD[(None, None, None, d_buffer)]
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     epilog_sync_barrier.arrive_and_wait()
 
                     #

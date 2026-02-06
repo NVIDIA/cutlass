@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -261,7 +261,7 @@ def make_smem_layout_a(
     a_smem_layout_staged = cute.tile_to_shape(
         a_smem_layout_atom,
         cute.append(a_smem_shape, num_stages),
-        order=(0, 1, 2) if is_k_major else (0, 1, 2),
+        order=(0, 1, 2) if is_k_major else (1, 0, 2),
         loc=loc,
         ip=ip,
     )

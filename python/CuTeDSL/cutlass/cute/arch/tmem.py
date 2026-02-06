@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -16,11 +16,60 @@ from cutlass.cutlass_dsl import dsl_user_op
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
-from ..typing import Pointer, Int, Int32, Numeric, NumericMeta
+from ..typing import Pointer, Int, Int32, Numeric, NumericMeta, Tensor
+
+SM100_TMEM_CAPACITY_COLUMNS = (
+    512  # deprecated; use get_max_tmem_alloc_cols(arch="sm_100") instead
+)
+SM100_TMEM_MIN_ALLOC_COLUMNS = (
+    32  # deprecated; use get_min_tmem_alloc_cols(arch="sm_100") instead
+)
+
+TMEM_MAX_ALLOC_COLUMNS_MAP = {
+    "sm_120": 512,
+    "sm_103": 512,
+    "sm_100": 512,
+}
+
+TMEM_MIN_ALLOC_COLUMNS_MAP = {
+    "sm_120": 32,
+    "sm_103": 32,
+    "sm_100": 32,
+}
 
 
-SM100_TMEM_CAPACITY_COLUMNS = 512
-SM100_TMEM_MIN_ALLOC_COLUMNS = 32
+def get_max_tmem_alloc_cols(compute_capability: str) -> int:
+    """Get the tensor memory capacity in columns for a given compute capability.
+
+    Returns the maximum TMEM capacity in columns available for the specified
+    GPU compute capability.
+
+    :param compute_capability: The compute capability string (e.g. "sm_100", "sm_103")
+    :type compute_capability: str
+    :return: The TMEM capacity in columns
+    :rtype: int
+    :raises ValueError: If the compute capability is not supported
+    """
+    if compute_capability not in TMEM_MAX_ALLOC_COLUMNS_MAP:
+        raise ValueError(f"Unsupported compute capability: {compute_capability}")
+    return TMEM_MAX_ALLOC_COLUMNS_MAP[compute_capability]
+
+
+def get_min_tmem_alloc_cols(compute_capability: str) -> int:
+    """Get the minimum TMEM allocation columns for a given compute capability.
+
+    Returns the minimum TMEM allocation columns available for the specified
+    GPU compute capability.
+
+    :param compute_capability: The compute capability string (e.g. "sm_100", "sm_103")
+    :type compute_capability: str
+    :return: The minimum TMEM allocation columns
+    :rtype: int
+    :raises ValueError: If the compute capability is not supported
+    """
+    if compute_capability not in TMEM_MIN_ALLOC_COLUMNS_MAP:
+        raise ValueError(f"Unsupported compute capability: {compute_capability}")
+    return TMEM_MIN_ALLOC_COLUMNS_MAP[compute_capability]
 
 
 @dsl_user_op
@@ -64,6 +113,7 @@ def alloc_tmem(
     smem_ptr_to_write_address: Pointer,
     is_two_cta=None,
     *,
+    arch: str = "sm_100",
     loc=None,
     ip=None,
 ) -> None:
@@ -76,15 +126,19 @@ def alloc_tmem(
                                       to
     :type smem_ptr_to_write_address:  Pointer
     :param is_two_cta:                Optional boolean parameter for 2-CTA MMAs
+    :param arch:                      The architecture of the GPU.
+    :type arch:                       str
     """
+    tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
+    tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
     if isinstance(num_columns, int):
         if (
-            num_columns < SM100_TMEM_MIN_ALLOC_COLUMNS
-            or num_columns > SM100_TMEM_CAPACITY_COLUMNS
+            num_columns < tmem_min_alloc_cols
+            or num_columns > tmem_max_alloc_cols
             or not (num_columns & (num_columns - 1) == 0)
         ):
             raise ValueError(
-                f"num_columns must be between 32 and 512, and must be pow of 2, but got {num_columns}"
+                f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, and must be pow of 2, but got {num_columns}"
             )
     _cute_nvgpu_ir.arch_sm100_alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
@@ -112,6 +166,7 @@ def dealloc_tmem(
     num_columns: Int,
     is_two_cta=None,
     *,
+    arch: str = "sm_100",
     loc=None,
     ip=None,
 ) -> None:
@@ -124,14 +179,16 @@ def dealloc_tmem(
     :type num_columns:  Int
     :param is_two_cta:  Optional boolean parameter for 2-CTA MMAs
     """
+    tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
+    tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     if isinstance(num_columns, int):
         if (
-            num_columns < SM100_TMEM_MIN_ALLOC_COLUMNS
-            or num_columns > SM100_TMEM_CAPACITY_COLUMNS
+            num_columns < tmem_min_alloc_cols
+            or num_columns > tmem_max_alloc_cols
             or not (num_columns & (num_columns - 1) == 0)
         ):
             raise ValueError(
-                f"num_columns must be between 32 and 512, and must be pow of 2, but got {num_columns}"
+                f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, and must be pow of 2, but got {num_columns}"
             )
     _cute_nvgpu_ir.arch_sm100_dealloc_tmem(
         tmem_ptr.value,
