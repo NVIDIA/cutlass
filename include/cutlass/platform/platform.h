@@ -582,7 +582,8 @@ template <typename value_t>
 struct alignment_of : std::alignment_of<value_t> {};
 
 #endif
-#if CUDA_VERSION >= 11080
+
+#if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
 /* 16B specializations where 32-bit Win32 host compiler disagrees with device compiler */
 template <>
 struct alignment_of<int4> {
@@ -678,7 +679,7 @@ struct alignment_of<double4> {
 };
 
 #endif
-#endif // CUDA_VERSION >= 11080
+#endif  // (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
 
 // Specializations for volatile/const qualified types
 template <typename value_t>
