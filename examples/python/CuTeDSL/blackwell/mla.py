@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -1045,7 +1045,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             )
             # Load page table when isasync is true
             if warp_idx == self.load_pt_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.other_reg_num)
+                cute.arch.setmaxregister_decrease(self.other_reg_num)
                 load_pt_producer_state = pipeline.make_pipeline_state(
                     pipeline.PipelineUserType.Producer, self.load_pt_stage
                 )
@@ -1084,7 +1084,7 @@ class BlackwellMultiHeadLatentAttentionForward:
                 warp_idx == self.load_cp_async_warp_ids[0]
                 or warp_idx == self.load_cp_async_warp_ids[1]
             ):
-                cute.arch.warpgroup_reg_dealloc(self.other_reg_num)
+                cute.arch.setmaxregister_decrease(self.other_reg_num)
                 load_pt_consumer_state = pipeline.make_pipeline_state(
                     pipeline.PipelineUserType.Consumer, self.load_pt_stage
                 )
@@ -1161,9 +1161,9 @@ class BlackwellMultiHeadLatentAttentionForward:
                 warp_idx >= self.empty_warp_ids[0]
                 and warp_idx <= self.empty_warp_ids[-1]
             ):
-                cute.arch.warpgroup_reg_dealloc(self.other_reg_num)
+                cute.arch.setmaxregister_decrease(self.other_reg_num)
             if warp_idx == self.load_tma_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.other_reg_num)
+                cute.arch.setmaxregister_decrease(self.other_reg_num)
                 load_q_producer_state = pipeline.make_pipeline_state(
                     pipeline.PipelineUserType.Producer, self.load_q_stage
                 )
@@ -1232,7 +1232,7 @@ class BlackwellMultiHeadLatentAttentionForward:
         #  MMA warp
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.other_reg_num)
+            cute.arch.setmaxregister_decrease(self.other_reg_num)
             # Alloc tensor memory buffer
             cute.arch.alloc_tmem(
                 cute.arch.SM100_TMEM_CAPACITY_COLUMNS,
@@ -1339,7 +1339,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             warp_idx >= self.compute_warp_ids[0]
             and warp_idx <= self.compute_warp_ids[-1]
         ):
-            cute.arch.warpgroup_reg_alloc(self.softmax_reg_num)
+            cute.arch.setmaxregister_increase(self.softmax_reg_num)
             mma_s_consumer_state = pipeline.make_pipeline_state(
                 pipeline.PipelineUserType.Consumer, self.mma_s_stage
             )
@@ -1413,7 +1413,7 @@ class BlackwellMultiHeadLatentAttentionForward:
             warp_idx >= self.correction_warp_ids[0]
             and warp_idx <= self.correction_warp_ids[-1]
         ):
-            cute.arch.warpgroup_reg_alloc(self.correction_reg_num)
+            cute.arch.setmaxregister_increase(self.correction_reg_num)
             p_cor_consumer_state = pipeline.make_pipeline_state(
                 pipeline.PipelineUserType.Consumer, self.p_cor_stage
             )

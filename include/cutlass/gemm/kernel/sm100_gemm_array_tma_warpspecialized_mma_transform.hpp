@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -735,11 +735,11 @@ public:
     Tensor accumulators = cutlass::detail::make_sm100_accumulator<AccumulatorPipelineStageCount, IsOverlappingAccum>(
         tiled_mma, acc_shape, EpilogueTile{});
 
-    // TileID scheduler
-    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-
     // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
     cutlass::arch::wait_on_dependent_grids();
+
+    // TileID scheduler
+    TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
 
     typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);

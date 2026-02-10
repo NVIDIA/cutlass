@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -36,8 +36,9 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/cute/tvm_ffi/error_reporting.py
+    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/error_reporting.py
 """
+
 import torch
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack

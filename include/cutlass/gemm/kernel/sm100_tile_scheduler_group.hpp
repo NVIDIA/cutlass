@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -116,12 +116,15 @@ public:
 
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group() { }
-
+  
+  // Note: constructing this tile scheduler can touch global memory that was
+  // written to by the prior kernel.
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params)
     : scheduler_params(params),
       scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
-
+  // Note: constructing this tile scheduler can touch global memory that was
+  // written to by the prior kernel.
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params, dim3 /* block_id_in_cluster */)
     : scheduler_params(params),

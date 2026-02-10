@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -11,23 +11,26 @@
 
 import io
 import os
-import array
-import tempfile
 
 from ..common import DSLRuntimeError
-from ..jit_executor import JitCompiledFunction, get_escaped_cubin_bytes
-from ...base_dsl.dsl import BaseDSL
-from ...base_dsl.typing import Int32, Int64, Float32, Float64
 from ..._mlir import ir
 from ..._mlir.dialects import llvm
 
-from .c_header_generator import CHeaderGenerator
+import json
+import base64
+import ctypes
+from inspect import FullArgSpec
 
-from typing import Union
+args_spec_suffix = "args_spec"
+function_name_suffix = "function_name"
+kernel_info_suffix = "kernel_info"
+version_suffix = "version"
+c_string_suffix = "\0"
 
-cubin_suffix = "cubin"
 
-def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symbols = None):
+def get_export_module(
+    ir_module: ir.Module, symbol_prefix: str, *, preserve_symbols=None
+):
     """Get the export module which is cloned from the original compiled ir module, and add the prefix
     to avoid the symbol conflict.
 
@@ -66,7 +69,10 @@ def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symb
                 symbol_prefix + "_" + op.attributes["callee"].value
             )
         # Rename addressof references
-        elif op.name == "llvm.mlir.addressof" and op.attributes["global_name"].value in defined_symbols:
+        elif (
+            op.name == "llvm.mlir.addressof"
+            and op.attributes["global_name"].value in defined_symbols
+        ):
             op.attributes["global_name"] = ir.FlatSymbolRefAttr.get(
                 symbol_prefix + "_" + op.attributes["global_name"].value
             )
@@ -76,9 +82,9 @@ def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symb
             renamed_ctors = []
             for ctor in ctors:
                 if ctor.value in defined_symbols:
-                    renamed_ctors.append(ir.FlatSymbolRefAttr.get(
-                        symbol_prefix + "_" + ctor.value
-                    ))
+                    renamed_ctors.append(
+                        ir.FlatSymbolRefAttr.get(symbol_prefix + "_" + ctor.value)
+                    )
                 else:
                     renamed_ctors.append(ctor)
             if renamed_ctors:
@@ -89,9 +95,9 @@ def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symb
             renamed_dtors = []
             for dtor in dtors:
                 if dtor.value in defined_symbols:
-                    renamed_dtors.append(ir.FlatSymbolRefAttr.get(
-                        symbol_prefix + "_" + dtor.value
-                    ))
+                    renamed_dtors.append(
+                        ir.FlatSymbolRefAttr.get(symbol_prefix + "_" + dtor.value)
+                    )
                 else:
                     renamed_dtors.append(dtor)
             if renamed_dtors:
@@ -107,135 +113,127 @@ def get_export_module(ir_module: ir.Module, symbol_prefix: str, *, preserve_symb
     return export_module
 
 
+class ArgsSpecProcessor:
+    """The args spec processor. The args_spec may contain the dsl specific types. The base processor
+    class is used to define an interface for dumping and loading the args_spec."""
 
-def dump_to_object(
-    prefix_name: str,
-    export_module: ir.Module,
-    jit_function: Union[JitCompiledFunction, "CudaDialectJitCompiledFunction"],
-    dsl: BaseDSL,
-    use_gpu_dialect: bool,
-) -> bytes:
-    """Dump the compiled ir function to a bytes object with ELF format. The bytes object contains the host
-    launch entry function and cubin inside.
+    def dumps(self, args_spec: FullArgSpec) -> bytes:
+        raise NotImplementedError("ArgsSpecProcessor does not support dumps")
 
-    @param prefix_name: The prefix name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
-    @param export_module: The export module of the function. This is the module that contains the function to be exported.
-    @param jit_function: The jit-compiled function. To provided other metadata for the object file.
-    @param dsl: The dsl object. This is the dsl object to get the compiler provider and shared libs.
-    @return: The bytes object of the function.
-    """
-    if use_gpu_dialect:
-        cubin_data = None
-
-        def strip_gpu_binary_op(op):
-            if op.name == "gpu.binary":
-                s = io.BytesIO()
-                op.operation.write_bytecode(s)
-                nonlocal cubin_data
-                cubin_data = s.getvalue()
-                cubin_data = cubin_data.split(b'bin = "')[1].split(b'">')[0]
-                cubin_data = get_escaped_cubin_bytes(cubin_data)
-                op.erase()
-                return ir.WalkResult.ADVANCE
-            return ir.WalkResult.ADVANCE
-
-        # Strip gpu related to avoid the object file generating builtin module load/unload functions
-        export_module.operation.walk(strip_gpu_binary_op)
-
-        cubin_array = array.array("b", cubin_data)
-        with (
-            export_module.context,
-            ir.Location.unknown(),
-            ir.InsertionPoint(export_module.body),
-        ):
-            new_binary_global_op = llvm.GlobalOp(
-                sym_name="_".join([prefix_name, cubin_suffix]),
-                global_type=ir.Type.parse(f"!llvm.array<{len(cubin_array)} x i8>"),
-                linkage=ir.Attribute.parse("#llvm.linkage<external>"),
-                value=ir.DenseIntElementsAttr.get(cubin_array),
-                constant=True,
-            )
-    if "gpu.container_module" in export_module.operation.attributes:
-        del export_module.operation.attributes["gpu.container_module"]
-    # Generate the object file
-    export_engine = dsl.compiler_provider.jit(
-        export_module, shared_libs=dsl.get_shared_libs()
-    )
-    # This lookup is necessary to make sure the compilation is done.
-    entry_func = export_engine.raw_lookup(
-        "_".join([prefix_name, jit_function.function_name])
-    )
-    if not entry_func:
-        raise DSLRuntimeError(
-            f"Execution engine cannot find the entry function {prefix_name}_{jit_function.function_name}"
-        )
-    try:
-        with tempfile.NamedTemporaryFile() as tmp_object_file:
-            export_engine.dump_to_object_file(tmp_object_file.name)
-            with open(tmp_object_file.name, "rb") as f:
-                ret = f.read()
-            return ret
-    except Exception as e:
-        raise DSLRuntimeError(f"Error dumping object file: {e}") from e
+    def loads(self, args_spec_bytes: bytes):
+        raise NotImplementedError("ArgsSpecProcessor does not support loads")
 
 
-def export_to_c(
-    jit_function: Union[JitCompiledFunction, "CudaDialectJitCompiledFunction"],
-    file_path: str,
-    file_name: str,
-    dsl: BaseDSL,
-    c_header_generator: CHeaderGenerator,
-    use_gpu_dialect: bool,
+def encode_metadata_into_ir_module(
+    prefix: str,
+    ir_module: ir.Module,
+    args_spec: FullArgSpec,
+    function_name: str,
+    kernel_info: dict,
+    args_spec_processor: ArgsSpecProcessor,
+    object_file_version: str,
 ):
-    """Exports the jit-compiled function to a C compatible files(header/library).
-    This is used for c/cpp AOT support.
-    The `file_name` will be used as the symbol prefix of the generated functions, it is guaranteed by
-    the caller that the generated functions are unique. And the function will always overwrite the existing file.
+    """Encode the executor metadata into the ir module. The metadata includes:
+    1. args_spec: The args_spec of the python function.
+    2. function_name: The name mangling function_name of the python host function.
+    3. kernel_info: The kernel_info of the jit-compiled function including the kernel name and attributes.
+    4. version: The version of the object file.
 
-
-    The c header file is generated with following components:
-    1. The host launch entry function. And the structure definitions of the arguments.
-    2. The device metadata load/unload functions.
-    3. The cubin data array and len.
-
-    The library contains the binary of the underlying host launch entry function.
-
-    @param jit_function: The jit-compiled function from `cute.compile`.
-    @param file_path: The path to the directory where the header and object files will be saved.
-    @param file_name: The name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
-    @param dsl: The dsl object. This is the dsl object to get the compiler provider and shared libs.
-    @param c_header_generator: The c header generator. This is the c header generator to generate the c header file.
+    @param prefix: The prefix name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
+    @param ir_module: The ir module to encode the metadata into.
+    @param args_spec: The args_spec of the python function.
+    @param function_name: The name mangling function_name of the python host function.
+    @param kernel_info: The kernel_info of the jit-compiled function including the kernel name and attributes.
+    @param args_spec_processor: The args spec processor. The args_spec may contain the dsl specific types. The processor will be used to dump and load the args_spec.
+    @param object_file_version: The version of the object file.
     """
-    export_module = get_export_module(jit_function.ir_module, file_name)
-    # Generate the c header file
-    header_file_content = c_header_generator(
-        file_name,
-        export_module,
-        jit_function.args_spec,
-        jit_function.function_name,
-        jit_function.kernel_info,
-        jit_function.dynamic_args,
-        jit_function.dynamic_kwargs,
-        dsl.name,
+    if not args_spec:
+        raise DSLRuntimeError(
+            "args_spec is empty, please set the args_spec for the python jit function."
+        )
+    version = object_file_version + c_string_suffix
+
+    args_spec_bytes = args_spec_processor.dumps(args_spec)
+    args_spec_str = base64.b64encode(args_spec_bytes).decode("utf-8") + c_string_suffix
+    packed_function_name = (
+        "_mlir_" + prefix + "__mlir_ciface_" + function_name + c_string_suffix
     )
-    try:
-        with open(os.path.join(file_path, file_name + ".h"), "w") as f:
-            f.write(header_file_content)
-    except Exception as e:
-        raise DSLRuntimeError(f"Error writing header file: {e}") from e
+    with ir_module.context, ir.Location.unknown():
+        with ir.InsertionPoint(ir_module.body):
+            args_spec_op = llvm.GlobalOp(
+                sym_name="_".join([prefix, args_spec_suffix]),
+                global_type=ir.Type.parse(f"!llvm.array<{len(args_spec_str)} x i8>"),
+                linkage=ir.Attribute.parse("#llvm.linkage<external>"),
+                value=ir.StringAttr.get(args_spec_str),
+            )
+            function_name_op = llvm.GlobalOp(
+                sym_name="_".join([prefix, function_name_suffix]),
+                global_type=ir.Type.parse(
+                    f"!llvm.array<{len(packed_function_name)} x i8>"
+                ),
+                linkage=ir.Attribute.parse("#llvm.linkage<external>"),
+                value=ir.StringAttr.get(packed_function_name),
+            )
+            # pack the kernel_info from a dict to a global op.
+            kernel_info = json.dumps(kernel_info) + c_string_suffix
+            kernel_info_op = llvm.GlobalOp(
+                sym_name="_".join([prefix, kernel_info_suffix]),
+                global_type=ir.Type.parse(f"!llvm.array<{len(kernel_info)} x i8>"),
+                linkage=ir.Attribute.parse("#llvm.linkage<external>"),
+                value=ir.StringAttr.get(kernel_info),
+            )
+            version_op = llvm.GlobalOp(
+                sym_name="_".join([prefix, version_suffix]),
+                global_type=ir.Type.parse(f"!llvm.array<{len(version)} x i8>"),
+                linkage=ir.Attribute.parse("#llvm.linkage<external>"),
+                value=ir.StringAttr.get(version),
+            )
 
-    # Generate the object file
-    object_file_content = dump_to_object(
-        file_name,
-        export_module,
-        jit_function,
-        dsl,
-        use_gpu_dialect,
+    return ir_module
+
+
+def decode_metadata_from_execution_engine(
+    prefix: str,
+    execution_engine: "BinaryExecutionEngine",
+    args_spec_processor: ArgsSpecProcessor,
+):
+    """Decode the executor metadata from the execution engine. The metadata includes:
+    1. args_spec: The args_spec of the python function.
+    2. function_name: The name mangling function_name of the python host function.
+    3. kernel_info: The kernel_info of the jit-compiled function including the kernel name and attributes.
+    4. version: The version of the object file.
+
+    @param prefix: The prefix name of the function. This is the unique identifier name of the function to avoid symbol conflict in the generated object file.
+    @param execution_engine: The binary execution engine. This is the execution engine to load the cuda module.
+    @param args_spec_processor: The args spec processor. The args_spec may contain the dsl specific types. The processor will be used to dump and load the args_spec.
+    @return: The args_spec, function_name, and kernel_info.
+    """
+    args_spec_str_p = execution_engine.lookup("_".join([prefix, args_spec_suffix]))
+    function_name_str_p = execution_engine.lookup(
+        "_".join([prefix, function_name_suffix])
     )
-    try:
-        with open(os.path.join(file_path, file_name + ".o"), "wb") as f:
-            f.write(object_file_content)
-    except Exception as e:
-        raise DSLRuntimeError(f"Error writing object file: {e}") from e
+    kernel_info_str_p = execution_engine.lookup("_".join([prefix, kernel_info_suffix]))
+    version_str_p = execution_engine.lookup("_".join([prefix, version_suffix]))
+    if args_spec_str_p:
+        args_spec_str = ctypes.c_char_p(args_spec_str_p).value.decode("utf-8")
+    else:
+        args_spec_str = None
+    # The StringAttr encodes the string as utf-8 format.
+    if function_name_str_p:
+        function_name_str = ctypes.c_char_p(function_name_str_p).value.decode("utf-8")
+    else:
+        function_name_str = None
+    if kernel_info_str_p:
+        kernel_info_str = ctypes.c_char_p(kernel_info_str_p).value.decode("utf-8")
+    else:
+        kernel_info_str = None
+    if version_str_p:
+        version_str = ctypes.c_char_p(version_str_p).value.decode("utf-8")
+    else:
+        version_str = None
+    args_spec_bytes = base64.b64decode(args_spec_str)
+    args_spec = args_spec_processor.loads(args_spec_bytes)
+    function_name = function_name_str
+    kernel_info = json.loads(kernel_info_str)
 
-
+    return args_spec, function_name, kernel_info, version_str

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -16,13 +16,8 @@ import cutlass.cute as cute
 from cutlass.cute.typing import Pointer, Int32
 from cutlass.cutlass_dsl import T, dsl_user_op
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import llvm, nvvm
-from cutlass._mlir.dialects.nvvm import (
-    MemOrderKind,
-    MemScopeKind,
-    AtomicOpKind,
-)
-
+from cutlass._mlir.dialects import llvm
+from cutlass.cute.typing import Literal
 
 __all__ = [
     # misc
@@ -43,14 +38,12 @@ __all__ = [
 
 
 @dsl_user_op
-def atomicAdd(dst_ptr: Pointer, val: Int32, loc=None, ip=None) -> Int32:
-    return nvvm.atomicrmw(
-        T.i32(),
-        AtomicOpKind.ADD,
-        dst_ptr.llvm_ptr,
-        val.ir_value(loc=loc, ip=ip),
-        mem_order=MemOrderKind.RELAXED,
-        syncscope=MemScopeKind.SYS,
+def atomicAdd(dst_ptr: Pointer, val: Int32, *, loc=None, ip=None) -> Int32:
+    return cute.arch.atomic_add(
+        ptr=dst_ptr.llvm_ptr,
+        val=val,
+        sem="relaxed",
+        scope="sys",
         loc=loc,
         ip=ip,
     )
@@ -78,6 +71,7 @@ def ld_bypass(input_tensor: cute.Tensor):
 @dsl_user_op
 def multimem_red_release_gpu_add1(
     lock_ptr: Pointer,
+    *,
     loc=None,
     ip=None,
 ) -> None:
@@ -96,6 +90,7 @@ def multimem_red_release_gpu_add1(
 @dsl_user_op
 def multimem_red_release_sys_add1(
     lock_ptr: Pointer,
+    *,
     loc=None,
     ip=None,
 ) -> None:
@@ -273,42 +268,24 @@ def spin_lock_atom_cas_relaxed_wait(
     *,
     expected_val: Int32,
     reset_val: Int32,
-    scope: str,
+    scope: Literal["gpu", "sys"],
     loc=None,
     ip=None,
 ) -> None:
     """
     wait on a spin lock until the expected count is reached. Reset flag to reset_val if the expected count is reached.
     """
-    if scope == "gpu":
-        result = 0
-        while result != expected_val:
-            result = nvvm.atomicrmw(
-                T.i32(),
-                AtomicOpKind.CAS,
-                lock_ptr.llvm_ptr,
-                Int32(reset_val).ir_value(loc=loc, ip=ip),
-                b=Int32(expected_val).ir_value(loc=loc, ip=ip),
-                mem_order=MemOrderKind.RELAXED,
-                syncscope=MemScopeKind.GPU,
-                loc=loc,
-                ip=ip,
-            )
-    elif scope == "sys":
-        result = 0
-        while result != expected_val:
-            result = nvvm.atomicrmw(
-                T.i32(),
-                AtomicOpKind.CAS,
-                lock_ptr.llvm_ptr,
-                Int32(reset_val).ir_value(loc=loc, ip=ip),
-                b=Int32(expected_val).ir_value(loc=loc, ip=ip),
-                mem_order=MemOrderKind.RELAXED,
-                syncscope=MemScopeKind.SYS,
-                loc=loc,
-                ip=ip,
-            )
-
+    result = 0
+    while result != expected_val:
+        result = cute.arch.atomic_cas(
+            ptr=lock_ptr.llvm_ptr,
+            cmp=Int32(expected_val),
+            val=Int32(reset_val),
+            sem="relaxed",
+            scope=scope,
+            loc=loc,
+            ip=ip,
+        )
 
 ########################################################
 # Multimem Load & Store

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -839,7 +839,7 @@ class SSDKernel:
         # Specialized TMA load Delta/CumsumDelta/X warp
         if warp_idx == self.tma_deltas_x_d_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
 
             # ((ATOM_V, REST_V), INPUT_STAGE)
             # ((ATOM_V, REST_V), 1, 1, C, EH, B)
@@ -1003,7 +1003,7 @@ class SSDKernel:
         # Specialized TMA load B/C warp
         elif warp_idx == self.tma_b_c_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
 
             # ((ATOM_V, REST_V), INPUT_STAGE)
             # ((ATOM_V, REST_V), 1, 1, C, G, B)
@@ -1107,7 +1107,7 @@ class SSDKernel:
         # Specialized MMA Intra warp
         elif warp_idx == self.mma_intra_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
 
             # Make shared/tmem fragments for INTRA_MMA1 B/C/ACC
             # (MMA, MMA_N, MMA_K, INPUT_STAGE)
@@ -1355,7 +1355,7 @@ class SSDKernel:
         # Specialized MMA Inter warp
         elif warp_idx == self.mma_inter_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
 
             # Make shared/tmem fragments for INTER_MMA1 X/B/ACC
             # (MMA, MMA_N, MMA_K, INPUT_STAGE)
@@ -1515,7 +1515,7 @@ class SSDKernel:
             or warp_idx == self.pre_inter_warp_id[3]
         ):
             # Alloc regs in pre_inter warps
-            cute.arch.warpgroup_reg_alloc(self.num_regs_pre_inter_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_pre_inter_warps)
 
             # Make tiledCopy and partition smem/register tensor for smem load Bt
             # ((S2R_ATOM_V, S2R_REST_V), S2R_M, S2R_N, INPUT_STAGE)
@@ -1670,10 +1670,7 @@ class SSDKernel:
                 cute.copy(tiled_r2s_p, tRS_rP, tRS_sP[inter2_p_coord])
 
                 # Fence for shared memory
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 # Async arrive INTER2_P buffer full
                 inter2_p_pipeline.producer_commit(inter2_p_producer_state)
                 # Advance INTER2_P producer state
@@ -1703,10 +1700,7 @@ class SSDKernel:
                     ]
 
                     # Fence for shared memory
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
 
                     # Combine B/Delta/DeltaA/last_column
                     tScaledB = self.pre_inter_scale_bt_with_delta(
@@ -1722,10 +1716,7 @@ class SSDKernel:
                     cute.copy(tiled_r2s_b, tBrB_r2s, tBsB_r2s[inter1_b_coord])
 
                     # Fence for shared memory
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
 
                     # Async arrive B/Delta/B_TMEM buffer empty/empty/full
                     b_pipeline.consumer_release(
@@ -1774,10 +1765,7 @@ class SSDKernel:
                     cute.copy(tiled_r2s_p, tRS_rP, tRS_sP[inter2_p_coord])
 
                     # Fence for shared memory
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
 
                     # Async arrive INTER1_ACC/INTER2_P buffer empty/full
                     inter1_acc_pipeline.consumer_release(inter1_acc_consumer_state)
@@ -1811,10 +1799,7 @@ class SSDKernel:
 
                 # Store last INTER2_P (State) from smem to gmem
                 # Wait for all previous stores to smem to be done
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 self.pre_inter_sync_barrier.arrive_and_wait()
 
                 if local_warp_idx == 0:
@@ -1849,7 +1834,7 @@ class SSDKernel:
             or warp_idx == self.pre_intra_warp_id[3]
         ):
             # Alloc regs in pre_inter warps
-            cute.arch.warpgroup_reg_alloc(self.num_regs_pre_intra_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_pre_intra_warps)
 
             # Make tmem fragment for INTRA1_ACC
             # (MMA, MMA_M, MMA_N, INTRA1_ACC_STAGE)
@@ -2022,7 +2007,7 @@ class SSDKernel:
         # Specialized Epilogue warp
         else:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_epilogue_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_epilogue_warps)
 
             # (L, D, INPUT_STAGE)
             sDeltaA = self.epilog_make_delta(smem_cumsum_delta)
@@ -2324,10 +2309,7 @@ class SSDKernel:
                             )
 
                             # Fence for R2S store
-                            cute.arch.fence_proxy(
-                                cute.arch.ProxyKind.async_shared,
-                                space=cute.arch.SharedSpace.shared_cta,
-                            )
+                            cute.arch.fence_proxy("async.shared", space="cta")
                             # Sync before TMA store
                             self.epilog_sync_barrier.arrive_and_wait()
 

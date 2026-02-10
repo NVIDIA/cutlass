@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -322,11 +322,19 @@ public:
       // more than 4 CTAs
       implementable &= (args.hw_info.cluster_shape.x <= 4 && args.hw_info.cluster_shape.y <= 4 &&
                         args.hw_info.cluster_shape_fallback.x <= 4 && args.hw_info.cluster_shape_fallback.y <= 4);
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Cluster Shapes cannot be greater than 4.\n");
+        return implementable;
+      }
     }
     else {
       // Special cluster check for scale factor multicasts. Due to limited size of scale factors, we can't multicast among
       // more than 4 CTAs
       implementable &= ((size<0>(ClusterShape{}) <= 4) && (size<1>(ClusterShape{}) <= 4));
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Cluster Shapes cannot be greater than 4.\n");
+        return implementable;
+      }
     }
     
     return implementable;

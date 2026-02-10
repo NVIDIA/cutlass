@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -13,19 +13,19 @@ import enum
 from dataclasses import dataclass
 from typing import Type, Any
 
-from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL, T
+from cutlass.cutlass_dsl import BaseDSL, T
+from typing_extensions import deprecated
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from ..common import OpError
+from ..common import OpError, normalize_field_to_ir_name
 from ...core import _pack_shape, rank, depth
-from ...tensor import _Tensor
 from ...typing import (
     Shape,
+    Tensor,
     Float16,
     BFloat16,
     Float32,
@@ -38,7 +38,7 @@ from ...typing import (
     Numeric,
     AddressSpace,
 )
-from ...atom import MmaOp, Trait
+from ...atom import MmaOp, Trait, make_atom
 
 
 ####################################################################################################
@@ -130,7 +130,7 @@ class MmaOp(WarpGroupMmaOp):
 
     def __post_init__(self) -> None:
         # Verify arch
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch == Arch.sm_90a:
             raise OpError(
                 self,
@@ -181,7 +181,7 @@ class MmaOp(WarpGroupMmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: _Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -193,7 +193,7 @@ class MmaOp(WarpGroupMmaOp):
             )
         return True
 
-    def _verify_fragment_B(self, input: _Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -209,27 +209,44 @@ class MmaOp(WarpGroupMmaOp):
 class MmaTraits(Trait):
     admissible_fields = [Field.ACCUMULATE]
 
+    def _normalize_field_name(self, field: Any) -> str:
+        """
+        Normalize a field specifier (enum or string) into the IR logical field name.
+        Accepted inputs:
+          - Field.ACCUMULATE
+          - "accum_c"
+        """
+        return normalize_field_to_ir_name(field, self.admissible_fields)
+
     def set(self, field, value, *, loc=None, ip=None) -> None:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"invalid field, must be {Field.ACCUMULATE}, but got {field}"
+        field_ir_name = self._normalize_field_name(field)
+        # Prefer the newer builder that accepts a logical field name, but keep
+        # a fallback for legacy attribute-based construction to avoid breaking changes.
+        bool_val = Boolean(value).ir_value(loc=loc, ip=ip)
+        try:
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, field_ir_name, bool_val, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm90<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, Boolean(value).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            # Legacy path: construct the per-arch field attribute explicitly
+            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
+            attr = ir.Attribute.parse(attr_asm)
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, attr, bool_val, loc=loc, ip=ip
+            )
 
     def get(self, field, *, loc=None, ip=None) -> Any:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"invalid field, must be {Field.ACCUMULATE}, but got {field}"
+        field_ir_name = self._normalize_field_name(field)
+        try:
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, field_ir_name, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm90<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
+            attr = ir.Attribute.parse(attr_asm)
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
 
 
 @dataclass(frozen=True)
@@ -305,12 +322,7 @@ class MmaF16BF16Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF16BF16Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 
@@ -391,12 +403,7 @@ class MmaF8Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF8Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 
@@ -486,12 +493,7 @@ class MmaI8Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaI8Trait(
-            cute.make_atom(
-                ty,
-                (Boolean(False).ir_value(loc=loc, ip=ip),),
-                loc=loc,
-                ip=ip,
-            )
+            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
         )
 
 

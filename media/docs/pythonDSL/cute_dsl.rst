@@ -17,4 +17,6 @@ CuTe DSL
   Debugging with the DSL <cute_dsl_general/debugging.rst>
   Autotuning with the DSL <cute_dsl_general/autotuning_gemm.rst>
   Educational Notebooks <cute_dsl_general/notebooks.rst>
+  Deprecation Policy <deprecation.rst>
   Compile with TVM FFI <cute_dsl_general/compile_with_tvm_ffi.rst>
+  Ahead-of-Time (AOT) Compilation <cute_dsl_general/dsl_ahead_of_time_compilation.rst>

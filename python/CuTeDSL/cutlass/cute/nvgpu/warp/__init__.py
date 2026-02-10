@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -16,9 +16,13 @@ from .mma import *
 # __all__ is required here for documentation generation
 __all__ = [
     # mma.py
+    "Field",
     "MmaF16BF16Op",
+    "MmaMXF4Op",
+    "MmaMXF4NVF4Op",
     # copy.py
     "LdMatrix8x8x16bOp",
+    "LdMatrix16x8x8bOp",
     "LdMatrix16x16x8bOp",
     "StMatrix8x8x16bOp",
     "StMatrix16x8x8bOp",

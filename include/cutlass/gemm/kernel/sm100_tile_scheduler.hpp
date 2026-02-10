@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -621,7 +621,7 @@ public:
                     , "r"(clc_response.data[1])
                     , "r"(clc_response.data[2])
                     , "r"(clc_response.data[3]));
-    cutlass::arch::fence_view_async_shared();
+    cutlass::arch::fence_view_shared();
     #endif
   }
 

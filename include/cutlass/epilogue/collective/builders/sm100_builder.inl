@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1121,6 +1121,23 @@ sm100_dense_dispatch_policy() {
   else if constexpr (is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>) {
     return Sm100NoSmemWarpSpecialized{};
   }
+  else if constexpr (is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexNoSmemWarpSpecialized1Sm> ||
+                     is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexNoSmemWarpSpecialized2Sm>) {
+    return Sm100PtrArrayPlanarComplexNoSmemWarpSpecialized{};
+  }
+  else if constexpr (is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexTmaWarpSpecialized1Sm> ||
+                     is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexTmaWarpSpecialized2Sm>) {
+    constexpr bool ReuseSmem_ = (sizeof_bits_v<ElementC_> == sizeof_bits_v<ElementD>); // limited smem reuse support for planar complex for now
+    constexpr int StagesC_ = ReuseSmem_ ? cute::max(cute::min(EpiTiles, 4), StagesD+1) : cute::min(EpiTiles, 4);
+    constexpr bool DelayTmaStore_ = false; // TMA store delay complicates tensormap updates for Ptr-Array GEMMs
+    return Sm100PtrArrayPlanarComplexTmaWarpSpecialized<StagesC_, StagesD, FragmentSize, ReuseSmem_, DelayTmaStore_>{};
+  }
+  else if constexpr (is_same_v<EpilogueScheduleType, PlanarComplexTmaWarpSpecialized1Sm> ||
+                     is_same_v<EpilogueScheduleType, PlanarComplexTmaWarpSpecialized2Sm>) {
+    constexpr bool ReuseSmem_ = (sizeof_bits_v<ElementC_> == sizeof_bits_v<ElementD>); // limited smem reuse support for planar complex for now
+    constexpr int StagesC_ = ReuseSmem_ ? cute::max(cute::min(EpiTiles, 4), StagesD+1) : cute::min(EpiTiles, 4);
+    return Sm100PlanarComplexTmaWarpSpecialized<StagesC_, StagesD, FragmentSize, ReuseSmem_, DelayTmaStore>{};
+  }
   else if constexpr (is_same_v<EpilogueScheduleType, PtrArrayTmaWarpSpecialized1Sm> ||
                      is_same_v<EpilogueScheduleType, PtrArrayTmaWarpSpecialized2Sm>) {
     constexpr bool DelayTmaStore_ = false; // TMA store delay complicates tensormap updates for Ptr-Array GEMMs
@@ -1235,6 +1252,16 @@ private:
 
   static constexpr auto
   fusion_callbacks() {
+    if constexpr (is_same_v<Schedule, PtrArrayPlanarComplexTmaWarpSpecialized1Sm> ||
+                  is_same_v<Schedule, PtrArrayPlanarComplexTmaWarpSpecialized2Sm> ||
+                  is_same_v<Schedule, PlanarComplexTmaWarpSpecialized1Sm> ||
+                  is_same_v<Schedule, PlanarComplexTmaWarpSpecialized2Sm>) {
+      static_assert(IsDefaultFusionOp<FusionOp>::value, "unsupported schedule + fusion");
+      constexpr thread::ScaleType::Kind ScaleType = DisableSource ? thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
+      return thread::LinearCombinationPlanarComplex<
+              ElementD, FragmentSize, ElementAccumulator, ElementCompute, FusionOp::RoundStyle, ScaleType>({});
+    }
+    else
     {
       return typename CallbacksBuilder<
                         decltype(dispatch_policy()),
@@ -1514,6 +1541,12 @@ private:
       return thread::LinearCombination<
                 ElementD, 1, ElementAccumulator, ElementCompute, ScaleType, FusionOp::RoundStyle, ElementC>({});
     }
+    else if constexpr (is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexNoSmemWarpSpecialized1Sm> ||
+                       is_same_v<EpilogueScheduleType, PtrArrayPlanarComplexNoSmemWarpSpecialized2Sm>) {
+      static_assert(IsDefaultFusionOp<FusionOp>::value, "unsupported schedule + fusion");
+      return thread::LinearCombinationPlanarComplex<
+                ElementD, FragmentSize, ElementAccumulator, ElementCompute, FusionOp::RoundStyle, ScaleType>({});
+    }
     else {
       return typename detail::CallbacksBuilder<
                 DispatchPolicy,
@@ -1780,6 +1813,7 @@ struct CollectiveBuilder<
       CopyAtomR2G,
       Schedule>;
 };
+
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective

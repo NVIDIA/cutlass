@@ -4,7 +4,8 @@
 Compile with TVM FFI
 ====================
 
-Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in the `official documentation <https://tvm.apache.org/ffi/>`_.
+Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in
+the `official documentation <https://tvm.apache.org/ffi/>`_.
 
 To install TVM FFI, you can run the following command:
 
@@ -14,7 +15,9 @@ To install TVM FFI, you can run the following command:
    # optional package for improved torch tensor calling performance
    pip install torch-c-dlpack-ext
 
-In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster JIT function invocation and provides better interoperability with machine learning frameworks (e.g., directly take ``torch.Tensor`` as arguments).
+In |DSL|, TVM FFI can be enabled as an option for JIT-compiled functions. Using TVM FFI can lead to faster
+JIT function invocation and provides better interoperability with machine learning frameworks
+(e.g., directly take ``torch.Tensor`` as arguments).
 
 
 Enable Apache TVM FFI in |DSL|
@@ -129,7 +132,8 @@ stride via the ``stride`` argument in the ``make_fake_tensor`` API.
 ``cute.Tensor`` adapter for TVM FFI
 -----------------------------------
 
-To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the ``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
+To adapt the ``cute.Tensor`` to the TVM FFI function, you can use the ``cute.runtime.from_dlpack`` function with the
+``enable_tvm_ffi=True`` option or the environment variable ``CUTE_DSL_ENABLE_TVM_FFI=1``. For example:
 
 .. code-block:: python
 
@@ -570,7 +574,7 @@ Then you can load back the exported module and use it in different ways:
    from cutlass import cute
 
    def example_load_module_add_one():
-      mod = cute.runtime.load_module("./add_one.so")
+      mod = cute.runtime.load_module("./add_one.so", enable_tvm_ffi=True)
       a_torch = torch.arange(10, dtype=torch.float32, device="cuda")
       b_torch = torch.empty(10, dtype=torch.float32, device="cuda")
       mod.add_one(a_torch, b_torch)
@@ -587,8 +591,10 @@ in the official documentation.
 
 When you build your own libraries, make sure you link against the necessary runtime libraries.
 You can use ``cute.runtime.find_runtime_libraries(enable_tvm_ffi=True)`` to get the path to these libraries.
-``cute.runtime.load_module`` will load these libraries automatically before loading
+``cute.runtime.load_module(path, enable_tvm_ffi=True)`` will load these libraries automatically before loading
 an exported module. You can also manually load these libraries in advanced use cases.
+
+For low-level cute ABI AOT compilation support without TVM FFI, you can refer to :doc:`dsl_ahead_of_time_compilation`.
 
 
 Keyword Arguments and Defaults
@@ -683,3 +689,32 @@ The code block below shows how to do this:
       wrapped_func(a_torch, b_torch, offset=4)
       print("result of b_torch after wrapped_func(a_torch, b_torch, offset=4)")
       print(b_torch)
+
+
+Limitations
+-----------
+
+The Fake Tensor flow is ONLY compatible with TVM FFI because TVM FFI supports more flexible constraints on Tensor arguments.
+For instance, fake tensor can specify per-mode static shape or constraints on shape and strides which are not supported by
+existing ``from_dlpack`` flow. It's expected that JIT function compiled with fake tensor will have different ABI compared to
+tensor converted by ``from_dlpack``.
+
+.. code-block:: python
+
+   import cutlass.cute as cute
+   import torch
+
+   n = cute.sym_int()
+   # Dynamic Shape
+   fake_a = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
+
+   # Compile without tvm-ffi
+   compiled_fn = cute.compile(foo, fake_a)
+
+   # Wrong, in compatible ABI
+   compiled_fn(from_dlpack(a))
+
+
+In order to avoid such issue, it's recommended to use fake tensor only with TVM FFI backend. Practically speaking,
+as we only want to call ``from_dlpack`` once and reuse for both compilation and runtime, the benefit of
+using fake tensor is limited in this case.

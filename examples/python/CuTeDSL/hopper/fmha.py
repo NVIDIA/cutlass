@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -661,7 +661,7 @@ class HopperFusedMultiHeadAttentionForward:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_o)
 
         if warp_group_idx == self.load_warp_group_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_load)
+            cute.arch.setmaxregister_decrease(self.num_regs_load)
 
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -784,7 +784,7 @@ class HopperFusedMultiHeadAttentionForward:
             warp_group_idx == self.compute_epilogue_0_warp_group_id
             or warp_group_idx == self.compute_epilogue_1_warp_group_id
         ):
-            cute.arch.warpgroup_reg_alloc(self.num_regs_mma)
+            cute.arch.setmaxregister_increase(self.num_regs_mma)
 
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -839,7 +839,7 @@ class HopperFusedMultiHeadAttentionForward:
                 )
 
                 s_max_layout = cute.make_layout(
-                    cute.size(layout_acc_mn(pv_tiled_mma, acc_pv.layout), mode=[0])
+                    cute.size(self.layout_acc_mn(pv_tiled_mma, acc_pv.layout), mode=[0])
                 )
                 s_max = cute.make_rmem_tensor_like(s_max_layout, self.qk_acc_dtype)
                 a_sum = cute.make_rmem_tensor_like(s_max, cutlass.Float32)
@@ -888,7 +888,7 @@ class HopperFusedMultiHeadAttentionForward:
                 # MMA QK
                 cute.nvgpu.warpgroup.fence()
 
-                gemm_zero_acc(
+                self.gemm_zero_acc(
                     qk_tiled_mma,
                     tSrQ[(None, None, None, q_handle.index)],
                     tSrK[(None, None, None, k_handle.index)],
@@ -901,7 +901,7 @@ class HopperFusedMultiHeadAttentionForward:
                 # Wait for the pipeline MMAs to drain
                 cute.nvgpu.warpgroup.wait_group(0)
 
-                s_max, a_sum = softmax_step(
+                s_max, a_sum = self.softmax_step(
                     True,
                     self.mask_type,
                     acc_qk,
@@ -919,7 +919,7 @@ class HopperFusedMultiHeadAttentionForward:
                     True,
                 )
 
-                acc_qk_fixed = make_acc_into_op(
+                acc_qk_fixed = self.make_acc_into_op(
                     acc_qk, pv_tiled_mma.tv_layout_A, self.q_dtype
                 )
 
@@ -928,7 +928,7 @@ class HopperFusedMultiHeadAttentionForward:
                 # MMA PV
                 cute.nvgpu.warpgroup.fence()
 
-                gemm_zero_acc(
+                self.gemm_zero_acc(
                     pv_tiled_mma,
                     acc_qk_fixed,
                     tOrV[(None, None, None, v_handle.index)],
@@ -1040,7 +1040,7 @@ class HopperFusedMultiHeadAttentionForward:
                 cute.nvgpu.warpgroup.wait_group(0)
 
                 # acc_pv updated
-                lse = tail(
+                lse = self.tail(
                     s_max, a_sum, acc_pv, pv_tiled_mma, scale_softmax, scale_output
                 )
 
@@ -1077,10 +1077,10 @@ class HopperFusedMultiHeadAttentionForward:
 
                 if tOcO[0][1] == 0:
                     tOgLSE_mn = cute.make_tensor(
-                        tOgLSE.iterator, layout_acc_mn(pv_tiled_mma, tOgLSE.layout)
+                        tOgLSE.iterator, self.layout_acc_mn(pv_tiled_mma, tOgLSE.layout)
                     )
                     tOcO_mn = cute.make_tensor(
-                        tOcO.iterator, layout_acc_mn(pv_tiled_mma, tOcO.layout)
+                        tOcO.iterator, self.layout_acc_mn(pv_tiled_mma, tOcO.layout)
                     )
                     for i in cutlass.range_constexpr(cute.size(tOgLSE_mn, mode=[0])):
                         if (
@@ -1164,10 +1164,7 @@ class HopperFusedMultiHeadAttentionForward:
                         tRS_sD[(None, None, None, epi_buffer, warp_group_idx - 1)],
                     )
 
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     pipeline.arrive_and_wait(
                         barrier_id=warp_group_idx,
                         num_threads=self.num_threads_per_warp_group,
@@ -1241,7 +1238,7 @@ class HopperFusedMultiHeadAttentionForward:
             # MMA QK
             cute.nvgpu.warpgroup.fence()
 
-            gemm_zero_acc(
+            self.gemm_zero_acc(
                 qk_tiled_mma,
                 tSrQ[(None, None, None, q_handle.index)],
                 tSrK[(None, None, None, k_handle.index)],
@@ -1255,7 +1252,7 @@ class HopperFusedMultiHeadAttentionForward:
             # Wait for the pipeline MMAs to drain
             cute.nvgpu.warpgroup.wait_group(0)
 
-            s_max, a_sum = softmax_step(
+            s_max, a_sum = self.softmax_step(
                 fusion,
                 self.mask_type,
                 acc_qk,
@@ -1272,7 +1269,7 @@ class HopperFusedMultiHeadAttentionForward:
                 window_size_right,
             )
 
-            acc_qk_fixed = make_acc_into_op(
+            acc_qk_fixed = self.make_acc_into_op(
                 acc_qk, pv_tiled_mma.tv_layout_A, self.q_dtype
             )
 
@@ -1300,6 +1297,7 @@ class HopperFusedMultiHeadAttentionForward:
 
     @cute.jit
     def softmax_step(
+        self,
         fusion: bool,
         mask_type: fmha_utils.MaskEnum,
         acc_qk: cute.ThrMma,
@@ -1328,10 +1326,10 @@ class HopperFusedMultiHeadAttentionForward:
             )
 
         acc_qk_mn = cute.make_tensor(
-            acc_qk.iterator, layout_acc_mn(tiled_mma_qk, acc_qk.layout)
+            acc_qk.iterator, self.layout_acc_mn(tiled_mma_qk, acc_qk.layout)
         )
 
-        reduction_target_qk = reduction_target_n(tiled_mma_qk)
+        reduction_target_qk = self.reduction_target_n(tiled_mma_qk)
         red_rank = cute.rank(reduction_target_qk)
 
         s_max_prev = None
@@ -1346,7 +1344,7 @@ class HopperFusedMultiHeadAttentionForward:
                     s_max[i] = cute.arch.fmax(s_max[i], acc_qk_mn[i, j])
         else:
             acc_pv_mn = cute.make_tensor(
-                acc_pv.iterator, layout_acc_mn(tiled_mma_pv, acc_pv.layout)
+                acc_pv.iterator, self.layout_acc_mn(tiled_mma_pv, acc_pv.layout)
             )
             s_max_prev = cute.make_rmem_tensor_like(s_max, s_max._dtype)
 
@@ -1396,15 +1394,15 @@ class HopperFusedMultiHeadAttentionForward:
         return s_max, a_sum
 
     @cute.jit
-    def reduction_target_n(tiled_mma):
-        separated = layout_separate(
+    def reduction_target_n(self, tiled_mma):
+        separated = self.layout_separate(
             tiled_mma.shape_mnk[0],
             cute.make_layout(tiled_mma.tv_layout_C.shape[0]),
             tiled_mma.tv_layout_C.stride[0],
         )
         return separated[1]
 
-    @cute.jit
+    @staticmethod
     def convert_c_layout_to_a_layout(c, a):
         return cute.make_layout(
             (a, c.shape[1], (c.shape[2], cute.size(c, mode=[0]) // cute.size(a))),
@@ -1416,9 +1414,9 @@ class HopperFusedMultiHeadAttentionForward:
         )
 
     @cute.jit
-    def make_acc_into_op(acc, operand_layout_tv, Element):
+    def make_acc_into_op(self, acc, operand_layout_tv, Element):
         operand = cute.make_rmem_tensor_like(
-            convert_c_layout_to_a_layout(acc.layout, operand_layout_tv.shape[1]),
+            self.convert_c_layout_to_a_layout(acc.layout, operand_layout_tv.shape[1]),
             Element,
         )
         operand_as_acc = cute.make_tensor(operand.iterator, acc.layout)
@@ -1499,7 +1497,7 @@ class HopperFusedMultiHeadAttentionForward:
         return operand
 
     @cute.jit
-    def tail(s_max, a_sum, acc_pv, tiled_mma_pv, scale_softmax, scale_output):
+    def tail(self, s_max, a_sum, acc_pv, tiled_mma_pv, scale_softmax, scale_output):
         """
         Final processing step for FMHA that computes log-sum-exp (LSE) and scales the output.
 
@@ -1527,9 +1525,9 @@ class HopperFusedMultiHeadAttentionForward:
         """
         # Create tensor view of accumulated P*V values with M*N layout
         acc_pv_mn = cute.make_tensor(
-            acc_pv.iterator, layout_acc_mn(tiled_mma_pv, acc_pv.layout)
+            acc_pv.iterator, self.layout_acc_mn(tiled_mma_pv, acc_pv.layout)
         )
-        reduction_target = reduction_target_n(tiled_mma_pv)
+        reduction_target = self.reduction_target_n(tiled_mma_pv)
         red_rank = cute.rank(reduction_target)
         for r in cutlass.range_constexpr(red_rank):
             for i in cutlass.range_constexpr(cute.size(acc_pv_mn, mode=[0])):
@@ -1538,7 +1536,7 @@ class HopperFusedMultiHeadAttentionForward:
                 )
 
         acc_mn = cute.make_tensor(
-            acc_pv.iterator, layout_acc_mn(tiled_mma_pv, acc_pv.layout)
+            acc_pv.iterator, self.layout_acc_mn(tiled_mma_pv, acc_pv.layout)
         )
 
         lse = cute.make_rmem_tensor_like(a_sum, a_sum._dtype)
@@ -1559,7 +1557,7 @@ class HopperFusedMultiHeadAttentionForward:
 
         return lse
 
-    @cute.jit
+    @staticmethod
     def layout_separate(thr, src, ref):
         lt = cute.make_layout(())
         ge = cute.make_layout(())
@@ -1577,6 +1575,7 @@ class HopperFusedMultiHeadAttentionForward:
             r = cute.append(cute.append(cute.make_layout(()), lt), ge)
         return r
 
+    @staticmethod
     @cute.jit
     def gemm_zero_acc(tiled_mma, A, B, C):
         rA = cute.rank(A)
@@ -1606,8 +1605,8 @@ class HopperFusedMultiHeadAttentionForward:
             assert 0
 
     @cute.jit
-    def layout_acc_mn(tiled_mma, acc):
-        separated = layout_separate(
+    def layout_acc_mn(self, tiled_mma, acc):
+        separated = self.layout_separate(
             tiled_mma.shape_mnk[0], acc[0], tiled_mma.tv_layout_C.stride[1]
         )
 

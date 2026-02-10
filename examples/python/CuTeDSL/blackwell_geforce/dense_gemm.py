@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -649,7 +649,7 @@ class Sm120GemmKernel:
 
         # MMA warp group
         if warp_idx < self.num_mma_warps:
-            cute.arch.warpgroup_reg_alloc(self.mma_register_requirement)
+            cute.arch.setmaxregister_increase(self.mma_register_requirement)
 
             num_k_blocks = cute.size(tCrA, mode=[2])
 
@@ -873,10 +873,7 @@ class Sm120GemmKernel:
                         tRS_sD[(None, None, None, epi_buffer)],
                     )
 
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     # barrier for sync
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -901,7 +898,7 @@ class Sm120GemmKernel:
         # End of MMA warp group
         # Start of DMA warp group
         elif warp_idx == self.num_mma_warps:
-            cute.arch.warpgroup_reg_dealloc(self.load_register_requirement)
+            cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
             while work_tile.is_valid_tile:
                 tile_coord_mnl = work_tile.tile_idx

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -837,7 +837,7 @@ class MixedInputFusedMultiHeadAttentionPrefill:
         #  Load
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.load_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
             while work_tile.is_valid_tile:
                 curr_block_coord = work_tile.tile_idx
                 mma_block_coord = (
@@ -923,7 +923,7 @@ class MixedInputFusedMultiHeadAttentionPrefill:
         #  MMA
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
             tmem.wait_for_alloc()
             while work_tile.is_valid_tile:
                 curr_block_coord = work_tile.tile_idx
@@ -1023,7 +1023,7 @@ class MixedInputFusedMultiHeadAttentionPrefill:
         #  Softmax
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx < self.mma_warp_id and warp_idx >= self.softmax_warp_ids[0]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_softmax)
+            cute.arch.setmaxregister_increase(self.num_regs_softmax)
             tmem.allocate(self.num_tmem_alloc_cols)
             tmem.wait_for_alloc()
             tmem_ptr = tmem.retrieve_ptr(self.qk_acc_dtype)
@@ -1117,7 +1117,7 @@ class MixedInputFusedMultiHeadAttentionPrefill:
         #  Trans
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx < self.softmax_warp_ids[0]:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_transform)
+            cute.arch.setmaxregister_decrease(self.num_regs_transform)
             qk_thr_mma_leader_cta = qk_tiled_mma.get_slice(0)
             pv_thr_mma_leader_cta = pv_tiled_mma.get_slice(0)
             sScaleK_ = qk_thr_mma_leader_cta.partition_B(sScaleK_s2r_view)
@@ -1181,7 +1181,7 @@ class MixedInputFusedMultiHeadAttentionPrefill:
         #  Empty
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx > self.load_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
 
         return
 

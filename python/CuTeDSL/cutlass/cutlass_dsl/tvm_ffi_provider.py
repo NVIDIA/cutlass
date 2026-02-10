@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -21,7 +21,6 @@ from cutlass._mlir.dialects import llvm
 from cutlass._mlir._mlir_libs._cutlass_ir import _aot_support
 from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.base_dsl.jit_executor import ExecutionArgs
 from typing import Optional, Callable
 import tvm_ffi
 
@@ -126,16 +125,22 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
             context.module.body.append(parsed_op)
 
-
         with ir.InsertionPoint(current_block):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
-            cuda_load_to_device_ptr = self.address_of("cuda_load_to_device", self.ptr_type)
-            set_error_ptr = self.address_of(
-                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
-            )
+
+        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_init"
+        )
+        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_load_to_device"
+        )
+        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "TVMFFIErrorSetRaisedFromCStr"
+        )
+
+        with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value
             init_result = llvm.call(
                 result=self.i32_type,  # function returns i32
@@ -205,6 +210,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 global_dtors = llvm.mlir_global_dtors(
                     dtors=[],
                     priorities=[],
+                    data=[],
                 )
         else:
             # use the existing global destructors
@@ -217,6 +223,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         global_dtors.attributes["priorities"] += [
             ir.IntegerAttr.get(self.i32_type, 65535)
         ]  # the default priority
+        global_dtors.attributes["data"] += [
+            ir.FlatSymbolRefAttr.get(unload_func_wrapper_symbol)
+        ]  # the data will not be used, but we need to pass something to satisfy the llvm.mlir.global_dtors op
 
         return current_block
 
@@ -410,6 +419,7 @@ def _inplace_hide_symbols(ir_module: ir.Module, hide_check: Callable[[str], bool
     @return: The ir module with the symbols hidden.
     """
     defined_symbols = set()
+
     def walk_llvm_func_op(op):
         # not a declaration
         if (
@@ -446,8 +456,13 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
 
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    # use direct call to the tvm_ffi.Function.__call__
+    # to avoid most of python overhead
+    __call__ = tvm_ffi.Function.__call__
 
     def to(self, device=None):
         """TVM FFI function itself is already support all devices."""
@@ -458,10 +473,12 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         return self.__call__(*exe_args)
 
     def export_to_c(
-        self, object_file_path: str, function_name: str = None,
+        self,
+        object_file_path: str,
+        function_name: str = None,
         *,
         enable_pic: bool = True,
-        export_only_tvm_ffi_symbols: bool = False
+        export_only_tvm_ffi_symbols: bool = False,
     ):
         """Export the TVM FFI function to an object file.
 
@@ -475,8 +492,9 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         internal_symbol_prefix = "__cute_internal_" + function_name
         mod = self.ir_module
         mod = get_export_module(
-            self.ir_module, internal_symbol_prefix,
-            preserve_symbols=[f"__tvm_ffi_{self.function_name}"]
+            self.ir_module,
+            internal_symbol_prefix,
+            preserve_symbols=[f"__tvm_ffi_{self.function_name}"],
         )
 
         rename_tvm_ffi_function(mod, self.function_name, function_name)
@@ -492,21 +510,27 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
             f.write(out_bytes)
 
     def _create_tvm_ffi_function(self):
-        """Create the tvm_ffi.Function from the current execution engine.
-        """
+        """Create the tvm_ffi.Function from the current execution engine."""
         if self.engine is not None:
+            # trigger eager compile of init callbacks
+            cuda_init = self.engine.raw_lookup("cuda_init")
+            cuda_load_to_device = self.engine.raw_lookup("cuda_load_to_device")
+            if cuda_init is None:
+                raise DSLRuntimeError("cuda_init not found")
+            if cuda_load_to_device is None:
+                raise DSLRuntimeError("cuda_load_to_device not found")
             tvm_ffi_function_ptr = self.engine.raw_lookup(
                 "__tvm_ffi_" + self.function_name
             )
             tvm_ffi_function = tvm_ffi.Function.__from_mlir_packed_safe_call__(
-                tvm_ffi_function_ptr, keep_alive_object=self.engine)
+                tvm_ffi_function_ptr, keep_alive_object=self.engine
+            )
             return tvm_ffi_function
         return None
 
 
 class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase):
-    """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments.
-    """
+    """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -524,8 +548,7 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
 
 
 class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
-    """TVM FFI Function with kwargs wrapper support
-    """
+    """TVM FFI Function with kwargs wrapper support"""
 
     def __init__(self, *args, **kwargs):
         assert "kwargs_wrapper_spec" in kwargs, "kwargs_wrapper_spec is required"
@@ -536,6 +559,7 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
         if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
             try:
                 from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+
                 self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
                     self._tvm_ffi_function,
                     arg_names=kwargs_wrapper_spec.arg_names,
@@ -544,14 +568,15 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
                     kwonly_defaults=kwargs_wrapper_spec.kwonly_defaults,
                 )
             except ImportError:
-                raise DSLRuntimeError("install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults")
+                raise DSLRuntimeError(
+                    "install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults"
+                )
         else:
             # positional only is probably fine
             self._kwargs_wrapper = self._tvm_ffi_function
 
     def __call__(self, *args, **kwargs):
-        """Call the TVM FFI function with kwargs wrapper.
-        """
+        """Call the TVM FFI function with kwargs wrapper."""
         return self._kwargs_wrapper(*args, **kwargs)
 
     def __tvm_ffi_object__(self):
@@ -561,7 +586,8 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
 def supports_kwargs_wrapper() -> bool:
     """Check if the kwargs wrapper is supported."""
     try:
-        from tvm_ffi.utils import kwargs_wrapper # type: ignore
+        from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+
         return True
     except ImportError:
         return False

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -144,8 +144,9 @@ public:
   static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
 
   // Transfer registers from regular warps to Accum warps
-  static constexpr uint32_t GenericRegisterRequirement = 152;
-  static constexpr uint32_t AccumRegisterRequirement = 200;
+  static constexpr uint32_t GenericRegisterRequirement = 64;
+  static constexpr uint32_t TransformRegisterRequirement = 184;
+  static constexpr uint32_t AccumRegisterRequirement = 256;
 
   // Pipeline and pipeline state types
   using Load2TransformPipeline = typename CollectiveMainloop::Load2TransformPipeline;
@@ -769,7 +770,7 @@ public:
 
     else if (is_participant.transformation) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      arch::warpgroup_reg_alloc<TransformRegisterRequirement>();
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -781,18 +782,19 @@ public:
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
         auto k_tile_start = TileScheduler::get_work_k_tile_start(work_tile_info);
         auto k_tile_iter = cute::make_coord_iterator(idx2crd(k_tile_start, shape<3>(gA_mkl)), shape<3>(gA_mkl));
-        auto [load2transform_pipeline_consumer_state_next, transform2mma_pipeline_producer_state_next] = collective_mainloop.transform(
-          load2transform_pipeline,
-          load2transform_pipeline_consumer_state,
-          transform2mma_pipeline,
-          transform2mma_pipeline_producer_state,
-          bulk_tmem,
-          transform_inputs,
-          k_tile_iter, k_tile_count
-        );
-        transform2mma_pipeline_producer_state = transform2mma_pipeline_producer_state_next;
-        load2transform_pipeline_consumer_state = load2transform_pipeline_consumer_state_next;
-
+        {
+          auto [load2transform_pipeline_consumer_state_next, transform2mma_pipeline_producer_state_next] = collective_mainloop.transform(
+            load2transform_pipeline,
+            load2transform_pipeline_consumer_state,
+            transform2mma_pipeline,
+            transform2mma_pipeline_producer_state,
+            bulk_tmem,
+            transform_inputs,
+            k_tile_iter, k_tile_count
+          );
+          transform2mma_pipeline_producer_state = transform2mma_pipeline_producer_state_next;
+          load2transform_pipeline_consumer_state = load2transform_pipeline_consumer_state_next;
+        }
         // Fetch next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
           work_tile_info,
@@ -950,7 +952,9 @@ public:
       // Wait for tmem allocation
       tmem_allocation_result_barrier.arrive_and_wait_unaligned();
 
-      auto accum_inputs = collective_mainloop.accum_init(bulk_tmem, typename CollectiveEpilogue::CopyOpT2R{}, typename CollectiveEpilogue::EpilogueTile{});
+      auto accum_inputs = [&]() {
+          return collective_mainloop.accum_init(bulk_tmem, typename CollectiveEpilogue::CopyOpT2R{}, typename CollectiveEpilogue::EpilogueTile{});
+      }();
       bool do_tail_store = false;
       do {
         // Fetch next work tile
@@ -967,12 +971,12 @@ public:
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
 
         if constexpr (InputTransformType == cutlass::gemm::detail::KernelInputTransformType::FastF32) {
-          auto [mma2accum_pipeline_consumer_state_next,tTR_rGlobAcc] = collective_mainloop.accum(
-            accum_inputs,
-            mma2accum_pipeline,
-            mma2accum_pipeline_consumer_state,
-            k_tile_count);
-
+          auto [mma2accum_pipeline_consumer_state_next,tTR_rGlobAcc] =
+              collective_mainloop.accum(
+                accum_inputs,
+                mma2accum_pipeline,
+                mma2accum_pipeline_consumer_state,
+                k_tile_count);
           mma2accum_pipeline_consumer_state_next = scheduler.template fixup<IsComplex>(
             TiledMma{},
             work_tile_info,
@@ -1028,7 +1032,9 @@ public:
           // Epilogue and write to gD
           //
           if (scheduler.compute_epilogue(work_tile_info)) {
-            auto [mma2accum_pipeline_state_next] = collective_epilogue(
+            auto [mma2accum_pipeline_state_next, epi_load_pipe_consumer_state_next] = collective_epilogue(
+              epi_load_pipeline,
+              epi_load_pipe_consumer_state,
               mma2accum_pipeline,
               mma2accum_pipeline_consumer_state,
               problem_shape_MNKL,
@@ -1039,6 +1045,7 @@ public:
             );
             // Advance the mm2accum pipe
             mma2accum_pipeline_consumer_state = mma2accum_pipeline_state_next;
+            epi_load_pipe_consumer_state = epi_load_pipe_consumer_state_next;
           }
         }
 

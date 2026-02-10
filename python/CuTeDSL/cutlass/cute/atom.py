@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -136,10 +136,15 @@ class Atom(ABC):
         self._trait = trait
 
     def __extract_mlir_values__(self):
-        return extract_mlir_values(self._trait)
+        return extract_mlir_values(self._trait) + extract_mlir_values(self._op)
 
     def __new_from_mlir_values__(self, values):
-        return self.__class__(self.op, new_from_mlir_values(self._trait, values))
+        traits_value = values[: len(extract_mlir_values(self._trait))]
+        op_value = values[len(extract_mlir_values(self._trait)) :]
+
+        new_trait = new_from_mlir_values(self._trait, traits_value)
+        new_op = new_from_mlir_values(self._op, op_value)
+        return self.__class__(new_op, new_trait)
 
     @property
     def op(self) -> Op:
@@ -280,6 +285,8 @@ class MmaAtom(Atom):
             if self.op is not None:
                 self.op._verify_fragment_B(input, loc=loc, ip=ip)
             input = input.value
+        if isinstance(input, tuple):
+            input = _pack_shape(input, loc=loc, ip=ip)
         return _cute_ir.mma_make_fragment(
             _cute_ir.MmaOperand.B, self._trait.value, input, loc=loc, ip=ip
         )
@@ -318,24 +325,29 @@ class TiledMma(MmaAtom):
     #
 
     @property
-    def tv_layout_A_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_a_tv_tiled)
+    @dsl_user_op
+    def tv_layout_A_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_a_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_B_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_b_tv_tiled)
+    @dsl_user_op
+    def tv_layout_B_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_b_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_C_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_c_tv_tiled)
+    @dsl_user_op
+    def tv_layout_C_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_c_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def permutation_mnk(self) -> Tile:
-        return _unpack_x_tuple(self._trait.value.type.permutation_mnk)
+    @dsl_user_op
+    def permutation_mnk(self, *, loc=None, ip=None) -> Tile:
+        return _unpack_x_tuple(self._trait.value.type.permutation_mnk, loc=loc, ip=ip)
 
     @property
-    def thr_layout_vmnk(self) -> Layout:
-        return static(self._trait.value.type.thr_layout_vmnk)
+    @dsl_user_op
+    def thr_layout_vmnk(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.thr_layout_vmnk, loc=loc, ip=ip)
 
     @property
     def size(self) -> int:
@@ -597,6 +609,33 @@ class CopyAtom(Atom):
     @property
     def layout_dst_tv(self) -> Layout:
         return static(self._trait.value.type.layout_dst_tv)
+
+    @property
+    def smem_layout(self):
+        """
+        Convenience property to access the SMEM layout for TMA copy atoms.
+
+        This is a shortcut for ``atom.op.smem_layout`` that checks if the operation
+        is a TMA operation and provides a clearer error message if not.
+
+        :return: The SMEM layout
+        :rtype: Layout or ComposedLayout
+        :raises TypeError: If the operation is not a TMA operation
+        :raises ValueError: If the SMEM layout is not set
+
+        Example:
+            >>> layout = tma_atom.smem_layout  # Instead of tma_atom.op.smem_layout
+        """
+        # Import here to avoid circular dependency
+        from .nvgpu.cpasync.copy import TmaCopyOp
+
+        if not isinstance(self.op, TmaCopyOp):
+            raise TypeError(
+                f"smem_layout is only available for TMA copy operations, "
+                f"but this atom uses {type(self.op).__name__}"
+            )
+
+        return self.op.smem_layout
 
 
 class TiledCopy(CopyAtom):
@@ -1152,4 +1191,53 @@ def copy_atom_call(
         pred = pred.value
     return _cute_ir.copy_atom_call(
         value, src.value, dst.value, pred=pred, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def mma_atom_call(
+    atom: MmaAtom,
+    d: Tensor,
+    a: Tensor,
+    b: Tensor,
+    c: Tensor,
+    *,
+    loc=None,
+    ip=None,
+    **kwargs,
+) -> None:
+    """
+    Execute a single MMA atom operation.
+
+    The mma_atom_call operation executes an MMA atom with the given operands.
+    This performs a matrix multiplication and accumulation operation:
+    D = A * B + C
+
+    Note: The tensors 'd', 'a', 'b', and 'c' must only have a single fragment.
+
+    :param atom: The MMA atom to execute
+    :type atom: MmaAtom
+    :param d: Destination tensor (output accumulator)
+    :type d: Tensor
+    :param a: First source tensor (matrix A)
+    :type a: Tensor
+    :param b: Second source tensor (matrix B)
+    :type b: Tensor
+    :param c: Third source tensor (input accumulator C)
+    :type c: Tensor
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    Examples:
+
+    .. code-block:: python
+
+        # Call an MMA atom operation
+        cute.mma_atom_call(mma_atom, d_tensor, a_tensor, b_tensor, c_tensor)
+    """
+    value = atom._unpack(loc=loc, ip=ip, **kwargs)
+    return _cute_ir.mma_atom_call(
+        value, d.value, a.value, b.value, c.value, loc=loc, ip=ip
     )

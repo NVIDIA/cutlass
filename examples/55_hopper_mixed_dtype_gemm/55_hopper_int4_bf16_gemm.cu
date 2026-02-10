@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -115,9 +115,29 @@ using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
-using MmaType = cutlass::bfloat16_t;
-using QuantType = cutlass::int4b_t;
-constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
+
+// Select MMA type via compile flag
+#if defined(CUTLASS_USE_FP16)
+  using MmaType = cutlass::half_t;        // FP16
+#elif defined(CUTLASS_USE_TF32)
+  using MmaType = cutlass::tfloat32_t;    // TF32 (FP32 format with reduced precision)
+#else
+  using MmaType = cutlass::bfloat16_t;    // BF16 (default)
+#endif
+
+// Select quantization type via compile flag for this example
+#if defined(CUTLASS_MIXED_DTYPE_E2M1)
+  using QuantType = cutlass::float_e2m1_t;  // E2M1 (FP4)
+#else
+  using QuantType = cutlass::int4b_t;       // INT4 Two's Complement (default)
+#endif
+
+// TF32 requires K to be multiple of 8; BF16/FP16 can go higher
+#if defined(CUTLASS_USE_TF32)
+  constexpr int TileShapeK = 64;  // TF32: K must be multiple of 8, use 64 for good performance
+#else
+  constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
+#endif
 
 // A matrix configuration
 using         ElementA    = MmaType;                                        // Element type for A matrix operand
@@ -139,11 +159,19 @@ using StrideB = cutlass::detail::TagToStrideB_t<LayoutB>;
 // Define the CuTe layout for reoredered quantized tensor B
 // LayoutAtomQuant places values that will be read by the same thread in contiguous locations in global memory.
 // It specifies the reordering within a single warp's fragment
-//using ValueShuffle = Layout<_1>;                          // no value reordering
+#if defined(CUTLASS_MIXED_DTYPE_E2M1) || defined(CUTLASS_USE_TF32)
+// E2M1 & TF32: Use simpler layout without ValueShuffle (like FP8 example)
+// ValueShuffle currrently isn't enabled for E2M1 until LayoutAwareConvertImpl specializations support shuffle reordering.
+// and for TF32 until we support both the K=8 vs K=16 dimensions for tiles
+using LayoutAtomQuant = decltype(cutlass::compute_memory_reordering_atom<MmaType>());
+#else
+// INT4: Use ValueShuffle for optimal performance with FP16/BF16
+// using ValueShuffle = Layout<_1>;                          // no value reordering
 using ValueShuffle = Layout<Shape<_2,_4>, Stride<_4,_1>>; // order [0,2,4,6,1,3,5,7]
 int constexpr NumShuffleAtoms = 1;
 using MmaAtomShape = Layout<Shape<_1,Int<NumShuffleAtoms>>>;
 using LayoutAtomQuant = decltype(cutlass::compute_memory_reordering_atom<MmaType, MmaAtomShape, ValueShuffle>());
+#endif
 using LayoutB_Reordered = decltype(cute::tile_to_shape(LayoutAtomQuant{}, Layout<Shape<int,int,int>, StrideB>{}));
 
 using ElementScale = MmaType;
@@ -151,7 +179,7 @@ using ElementZero = ElementScale;
 using LayoutScale = cutlass::layout::RowMajor;
 
 // C/D matrix configuration
-using         ElementC    = cutlass::half_t;                                // Element type for C and D matrix operands
+using         ElementC    = MmaType;                                        // Element type for C and D matrix operands (matches MMA type)
 using         LayoutC     = cutlass::layout::RowMajor;                      // Layout type for C and D matrix operands
 constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
 

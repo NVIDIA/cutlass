@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -353,6 +353,8 @@ def _convert_single_arg(
             elem_param = _convert_single_arg(elem, elem_name, None, ctx)
             tuple_params.append(elem_param)
         return spec.TupleParam(arg_name, tuple_params)
+    elif isinstance(arg, bool):
+        return spec.Var(arg_name, NumericToTVMFFIDtype[Boolean])
     elif isinstance(arg, int):
         # in cute.compile, unannotated const int is converted to int32
         return spec.Var(arg_name, NumericToTVMFFIDtype[Int32])
@@ -395,8 +397,6 @@ def _tvm_ffi_args_spec_converter(
     return params, kwargs_wrapper_spec
 
 
-def attach_args_spec_converter():
-    """Attach TVM FFI ABI interface postprocessor to the DSL."""
-    from .. import cutlass_dsl as _dsl
-
-    _dsl.CuTeDSL._get_dsl()._tvm_ffi_args_spec_converter = _tvm_ffi_args_spec_converter
+def attach_args_spec_converter(dsl):
+    """Attach TVM FFI ABI interface postprocessor to the DSL instance."""
+    dsl._tvm_ffi_args_spec_converter = _tvm_ffi_args_spec_converter

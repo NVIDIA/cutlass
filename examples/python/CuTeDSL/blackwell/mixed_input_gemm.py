@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -1326,10 +1326,7 @@ class MixedInputGemmKernel:
                     ):
                         cute.arch.fence_view_async_tmem_store()
                     else:
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                     # Signal the completion of transformation
                     trans2mma_pipeline.producer_commit(trans2mma_producer_state)
                     # Signal the completion of using A and scale tensors
@@ -1557,10 +1554,7 @@ class MixedInputGemmKernel:
                             tRS_sC[(None, None, None, c_buffer)],
                         )
                         # Fence and barrier to make sure shared memory store is visible to TMA store
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                         self.epilog_sync_barrier.arrive_and_wait()
                         # TMA store C to global memory
                         if warp_idx == self.epilog_warp_id[0]:
@@ -2482,6 +2476,17 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
+    # try to check CUDA version to decide the opt level
+    try:
+        from cutlass import CUDA_VERSION
+        opt_level = (
+            3
+            if CUDA_VERSION.major < 13
+            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
+            else 2
+        )
+    except ImportError:
+        opt_level = 3
     compiled_kernel = cute.compile(
         mixed_input_gemm,
         a_tensor,
@@ -2490,6 +2495,7 @@ def run(
         c_tensor,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     if not skip_ref_check:
