@@ -36,3 +36,4 @@ cutlass_example_add_executable(
 )
 
 target_include_directories(63_hopper_gemm_with_weight_prefetch PUBLIC .)
+target_compile_features(63_hopper_gemm_with_weight_prefetch PUBLIC cuda_std_20)
