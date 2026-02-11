@@ -65,7 +65,7 @@ PROBLEM_CASES = [
     # Larger balanced, mixed dtypes
     ("2Dx3D", 256, 32, 8, True, 2048, 4096, torch.float16, torch.float32, False),
     # Edge: many experts, few tokens, skewed → most experts empty
-    ("2Dx3D", 33, 513, 3, False, 512, 1024, torch.bfloat16, torch.bfloat16, False),
+    ("2Dx3D", 33, 367, 3, False, 512, 1024, torch.bfloat16, torch.bfloat16, False),
     # High token count (non-aligned), many tiles per expert
     ("2Dx3D", 4112, 8, 4, False, 1024, 2048, torch.bfloat16, torch.bfloat16, False),
 
@@ -77,7 +77,7 @@ PROBLEM_CASES = [
     # Mixed dtypes, grad acc, balanced
     ("2Dx2D", 128, 8, 4, True, 1024, 2048, torch.float16, torch.float32, True),
     # Edge: many experts, few tokens, skewed → most experts empty
-    ("2Dx2D", 33, 513, 3, False, 512, 1024, torch.bfloat16, torch.bfloat16, False),
+    ("2Dx2D", 33, 367, 3, False, 512, 1024, torch.bfloat16, torch.bfloat16, False),
     # High token count (non-aligned), many K-tiles per expert
     ("2Dx2D", 4112, 8, 4, False, 256, 512, torch.bfloat16, torch.bfloat16, True),
 ]
@@ -110,7 +110,7 @@ def _generate_offsets(tokens_after_repeat: int, expert_cnt: int, balance: bool) 
 
 def _generate_tensor(shape, dtype) -> torch.Tensor:
     """Generate a small-value integer tensor for exact comparison."""
-    return torch.randint(-1, 2, shape, device="cuda").to(dtype)
+    return torch.randint(-1, 2, shape, device="cuda", dtype=torch.int8).to(dtype)
 
 
 def _compute_reference(A, B, offsets, scenario, out_dtype):
