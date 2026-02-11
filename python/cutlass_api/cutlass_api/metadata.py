@@ -418,6 +418,29 @@ class Sm100DesignMetadata(BLASDesignMetadata):
     # Whether to use TMA to store the results of the operation
     use_tma_store: bool
 
+
+@dataclass
+class TorchStyleGroupedMmDesignMetadata(Sm100DesignMetadata):
+    """
+    Design metadata for torch-style grouped GEMM (MoE) kernels.
+
+    Extends SM100 design metadata with MoE-specific parameters:
+    - scenario: "2Dx3D" (forward) or "2Dx2D" (backward/weight gradient)
+    - separate_tensormap_init: whether to use a separate kernel for TMA descriptor initialization
+    - accumulate_on_output: whether to accumulate (add) onto the output (only valid for 2Dx2D)
+    """
+
+    # MoE scenario: "2Dx3D" for forward, "2Dx2D" for backward
+    scenario: str
+
+    # Whether to use a separate kernel to pre-initialize expert-wise TMA descriptors
+    separate_tensormap_init: bool
+
+    # Whether to accumulate (reduce-add) onto the output tensor instead of overwriting.
+    # Only valid for 2Dx2D (weight gradient accumulation).
+    accumulate_on_output: bool
+
+
 @dataclass
 class GemmOperandsMetadata(OperandsMetadata):
     """

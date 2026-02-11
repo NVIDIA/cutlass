@@ -1,20 +1,20 @@
 # Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-
+#
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-
+#
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -26,12 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# Importing is done for the side effect of registering the kernel classes with the provider.
-# Suppress linter warnings about unused import.
-# ruff: noqa: F401
-import cutlass_api.providers.cutedsl.gemm.sm100_static_persistent
-import cutlass_api.providers.cutedsl.gemm.sm100_static_persistent_efc
-import cutlass_api.providers.cutedsl.gemm.sm100_dense_blockscaled_static_persistent
-import cutlass_api.providers.cutedsl.gemm.sm80_tensorop_gemm
-import cutlass_api.providers.cutedsl.gemm.sm100_contiguous_offset_2d3d_dense_gemm
-import cutlass_api.providers.cutedsl.gemm.sm100_torch_style_grouped_mm
+"""
+MoE (Mixture of Experts) Grouped GEMM utilities.
+
+Provides persistent tile scheduler, scheduler extension, online TMA descriptor
+construction, and kernel implementation for MoE grouped GEMM operations.
+"""
