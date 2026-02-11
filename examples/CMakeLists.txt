@@ -172,6 +172,7 @@ foreach(EXAMPLE
   92_blackwell_moe_gemm
   93_blackwell_low_latency_gqa
   94_ada_fp8_blockwise
+  95_blackwell_gemm_green_context
   111_hopper_ssd
   112_blackwell_ssd
   )
