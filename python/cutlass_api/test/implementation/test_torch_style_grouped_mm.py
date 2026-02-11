@@ -40,9 +40,8 @@ import random
 import pytest
 import torch
 
-import cutlass
 import cutlass_api
-from cutlass_api.utils import is_device_cc_supported
+from cutlass_api.utils import cutlass_type_from_torch_type, is_device_cc_supported
 
 
 torch.manual_seed(2025)
@@ -149,8 +148,8 @@ def _discover_kernels_for_case(case):
     """
     scenario, tokens, experts, top_k, balance, hidden, intermediate, ab_dtype, out_dtype, grad_acc = case
 
-    ab_cutlass = cutlass.torch.dtype(ab_dtype)
-    out_cutlass = cutlass.torch.dtype(out_dtype)
+    ab_cutlass = cutlass_type_from_torch_type(ab_dtype)
+    out_cutlass = cutlass_type_from_torch_type(out_dtype)
 
     def combined_filter(metadata):
         if not _kernel_metadata_filter(metadata):

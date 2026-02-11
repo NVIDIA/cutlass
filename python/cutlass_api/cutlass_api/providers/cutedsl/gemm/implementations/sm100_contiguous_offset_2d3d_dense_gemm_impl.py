@@ -764,11 +764,11 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
 
         # Tensor memory dealloc barrier init
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_alloc_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
             is_two_cta=use_2cta_instrs,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr.ptr,
         )
 
         # Cluster arrive after barrier init
@@ -958,10 +958,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
                     sInfo_pipe[3] = m_remaining_in_cur_group
 
                 # fence view async shared
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 self.sched_sync_barrier.arrive_and_wait()
                 # commit tile info pipeline
                 sched_pipeline.producer_commit(sched_producer_state)
@@ -994,10 +991,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
             for idx in cutlass.range(4, unroll_full=True):
                 tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
             is_valid_tile = tile_info[2] < group_count
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             sched_pipeline.consumer_release(sched_consumer_state)
             sched_consumer_state.advance()
 
@@ -1069,10 +1063,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
                 is_valid_tile = tile_info[2] < group_count
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 sched_pipeline.consumer_release(sched_consumer_state)
                 sched_consumer_state.advance()
 
@@ -1115,10 +1106,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
             for idx in cutlass.range(4, unroll_full=True):
                 tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
             is_valid_tile = tile_info[2] < group_count
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
             sched_pipeline.consumer_release(sched_consumer_state)
             sched_consumer_state.advance()
 
@@ -1189,10 +1177,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
                 is_valid_tile = tile_info[2] < group_count
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
                 sched_pipeline.consumer_release(sched_consumer_state)
                 sched_consumer_state.advance()
 
@@ -1288,10 +1273,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
             for idx in cutlass.range(4, unroll_full=True):
                 tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
             is_valid_tile = tile_info[2] < group_count
-            cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
-            )
+            cute.arch.fence_proxy("async.shared", space="cta")
 
             num_prev_subtiles = cutlass.Int32(0)
 
@@ -1374,10 +1356,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
                             tRS_sC[(None, None, None, c_buffer)],
                         )
                         # Fence and barrier to make sure shared memory store is visible to TMA store
-                        cute.arch.fence_proxy(
-                            cute.arch.ProxyKind.async_shared,
-                            space=cute.arch.SharedSpace.shared_cta,
-                        )
+                        cute.arch.fence_proxy("async.shared", space="cta")
                         self.epilog_sync_barrier.arrive_and_wait()
 
                         #
@@ -1467,10 +1446,7 @@ class ContiguousOffset2D3DGemmDenseKernelImpl:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, sched_consumer_state.index)]
                 is_valid_tile = tile_info[2] < group_count
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
 
             sched_pipeline.consumer_release(sched_consumer_state)
             sched_consumer_state.advance()

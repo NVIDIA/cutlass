@@ -200,7 +200,7 @@ class TorchStyleGroupedMmKernel(CuteDslKernel):
             args.out.tensor,
             args.offsets.tensor,
             None,  # bias
-            TensorWrapper(fake_workspace, alignment_bytes=128),
+            fake_workspace,
             max_active_clusters,
             stream,
         )
@@ -406,6 +406,10 @@ class TorchStyleGroupedMmKernel(CuteDslKernel):
         if epilogue_args is not None:
             return []
 
+        def pad3d(s):
+            """Pad 2D stride to 3D so strides_to_layout_string can handle it."""
+            return (0, *s) if len(s) == 2 else s
+
         # M, N tile dimensions to enumerate
         tile_m_values = [64, 128, 256]
         tile_n_values = [32, 64, 128, 256]
@@ -460,7 +464,7 @@ class TorchStyleGroupedMmKernel(CuteDslKernel):
                 kernel_name = (
                     f"cutedsl.TorchStyleGroupedMmKernel_sm100"
                     f"_{scenario}"
-                    f"_{strides_to_layout_string(operands.A.stride, operands.B.stride, operands.out.stride)}"
+                    f"_{strides_to_layout_string(pad3d(operands.A.stride), pad3d(operands.B.stride), pad3d(operands.out.stride))}"
                     f"_A{operands.A.dtype}_B{operands.B.dtype}_out{operands.out.dtype}"
                     f"_acc{operands.accumulator_type}"
                     f"_{'2' if use_2cta else '1'}cta"
