@@ -1,0 +1,66 @@
+[INFO] Run tag: fp16_gemm_0
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+===================================================================
+Running Blackwell fp16 GEMM example 0 with:
+  mnk:       [8192, 8192, 8192]
+  tolerance: 0.1
+===================================================================
+
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_0_.mlir (1509 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_001_CuteRemoveStaticArgs.mlir (1511 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_002_MaterializeTmaMulticast.mlir (1511 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_003_SoftwarePipelinePass.mlir (1424 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_004_CuteDesugar.mlir (1940 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_005_CuteExpandOps.mlir (2677 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_006_CuteFoldStatic.mlir (1616 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_007_InsertRangeInformation.mlir (1616 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_008_Canonicalizer.mlir (955 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_009_CSE.mlir (765 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_010_LoopInvariantCodeMotion.mlir (765 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_011_LoopStrengthReductionPass.mlir (765 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_012_ConvertVectorToSCF.mlir (765 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_013_ConvertCuteTypesInScfOps.mlir (768 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_014_SCFToControlFlow.mlir (930 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_015_ArithExpandOpsPass.mlir (1085 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_016_ConvertMathToFuncs.mlir (1085 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_017_GpuLaunchSinkIndexComputations.mlir (1085 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_018_ConvertToLLVMPass.mlir (1414 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_019_ReconcileUnrealizedCasts.mlir (1366 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_020_GpuKernelOutlining.mlir (1366 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_021_SCFToControlFlow.mlir (1382 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_022_ReconcileUnrealizedCasts.mlir (1382 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_023_ConvertToLLVMPass.mlir (1382 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_024_Canonicalizer.mlir (979 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_025_CSE.mlir (925 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_026_ConvertVectorToLLVMPass.mlir (923 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_027_ConvertNVVMToLLVMPass.mlir (925 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_028_CudaComputeTargetPass.mlir (624 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_029_FinalizeMemRefToLLVMConversionPass.mlir (925 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_030_ExpandStridedMetadata.mlir (923 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_031_ArithToLLVMConversionPass.mlir (923 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_032_ConvertFastmathOps.mlir (622 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_033_ConvertGpuOpsToNVVMOps.mlir (622 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_034_StoreGpuLaunchAttribute.mlir (923 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_035_GpuToLLVMConversionPass.mlir (923 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_036_StoreGpuLaunchAttribute.mlir (923 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_037_ConvertMathToLLVMPass.mlir (923 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_038_Canonicalizer.mlir (923 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_039_CSE.mlir (923 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_040_ReconcileUnrealizedCasts.mlir (923 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_041_DIScopeForLLVMFuncOpPass.mlir (923 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_042_CudaToBinaryPass.mlir (311 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_043_ConvertToLLVMPass.mlir (481 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_044_ReconcileUnrealizedCasts.mlir (479 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0/fp16_gemm_0_045_CudaErrorHandlingPass.mlir (486 lines)
+[DUMP] per-pass IR split -> 45 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.

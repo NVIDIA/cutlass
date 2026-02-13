@@ -1,0 +1,278 @@
+!memref_gmem_f32_ = !cute.memref<f32, gmem, "(8,4):(4,1)">
+!memref_gmem_f32_1 = !cute.memref<f32, gmem, "(8,2):(2,1)">
+!memref_gmem_f32_2 = !cute.memref<f32, gmem, "(16,2):(2,1)">
+!memref_smem_f32_ = !cute.memref<f32, smem, align<32>, "(16,2):(1,16)">
+!memref_smem_f32_1 = !cute.memref<f32, smem, align<128>, "(8,4):(1,8)">
+!memref_smem_f32_2 = !cute.memref<f32, smem, align<128>, "(8,2):(1,8)">
+module attributes {gpu.container_module} {
+  gpu.module @kernels {
+    cuda.kernel @kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_2) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 1, 1, 1>} {
+      %iter = cute.get_iter(%arg0) : !memref_gmem_f32_
+      %iter_0 = cute.get_iter(%arg1) : !memref_gmem_f32_1
+      %iter_1 = cute.get_iter(%arg2) : !memref_gmem_f32_2
+      %iter_2 = cute.get_iter(%arg0) : !memref_gmem_f32_
+      %iter_3 = cute.get_iter(%arg1) : !memref_gmem_f32_1
+      %iter_4 = cute.get_iter(%arg2) : !memref_gmem_f32_2
+      %lay = cute.get_layout(%arg0) : !memref_gmem_f32_
+      %0 = cute.get_shape(%lay) : (!cute.layout<"(8,4):(4,1)">) -> !cute.shape<"(8,4)">
+      %e0, %e1 = cute.get_leaves(%0) : !cute.shape<"(8,4)">
+      %1 = cute.get_stride(%lay) : (!cute.layout<"(8,4):(4,1)">) -> !cute.stride<"(4,1)">
+      %e0_5, %e1_6 = cute.get_leaves(%1) : !cute.stride<"(4,1)">
+      %lay_7 = cute.get_layout(%arg1) : !memref_gmem_f32_1
+      %2 = cute.get_shape(%lay_7) : (!cute.layout<"(8,2):(2,1)">) -> !cute.shape<"(8,2)">
+      %e0_8, %e1_9 = cute.get_leaves(%2) : !cute.shape<"(8,2)">
+      %3 = cute.get_stride(%lay_7) : (!cute.layout<"(8,2):(2,1)">) -> !cute.stride<"(2,1)">
+      %e0_10, %e1_11 = cute.get_leaves(%3) : !cute.stride<"(2,1)">
+      %lay_12 = cute.get_layout(%arg2) : !memref_gmem_f32_2
+      %4 = cute.get_shape(%lay_12) : (!cute.layout<"(16,2):(2,1)">) -> !cute.shape<"(16,2)">
+      %e0_13, %e1_14 = cute.get_leaves(%4) : !cute.shape<"(16,2)">
+      %5 = cute.get_stride(%lay_12) : (!cute.layout<"(16,2):(2,1)">) -> !cute.stride<"(2,1)">
+      %e0_15, %e1_16 = cute.get_leaves(%5) : !cute.stride<"(2,1)">
+      %smem_ptr = cute_nvgpu.arch.get_dyn_smem() : !cute.ptr<i8, smem, align<1024>>
+      %int_tuple = cute.make_int_tuple() : () -> !cute.int_tuple<"32">
+      %tile = cute.make_tile() : () -> !cute.tile<"8:1">
+      %shp = cute.ceil_div(%int_tuple, %tile) : !cute.int_tuple<"32">, !cute.tile<"8:1">
+      %e0_17 = cute.get_leaves(%shp) : !cute.int_tuple<"4">
+      %int_tuple_18 = cute.make_int_tuple() : () -> !cute.int_tuple<"4">
+      %ptr = cute.add_offset(%smem_ptr, %int_tuple_18) : (!cute.ptr<i8, smem, align<1024>>, !cute.int_tuple<"4">) -> !cute.ptr<i8, smem, align<4>>
+      %smem_size = cute_nvgpu.arch.get_dyn_smem_size() : i32
+      %c4_i32 = arith.constant 4 : i32
+      %6 = arith.cmpi sge, %smem_size, %c4_i32 : i32
+      cf.assert %6, "Allocation failed: shared memory allocation exceeds available memory set in kernel launch. Allocated bytes: 4 bytes. Please reduce the allocation or set a larger smem size in kernel launch."
+      %iter_19 = cute.recast_iter(%smem_ptr) : !cute.ptr<i8, smem, align<1024>> to !cute.ptr<i32, smem, align<1024>>
+      %7 = cute.ptrtoint(%ptr) : !cute.ptr<i8, smem, align<4>> to i32
+      %c128_i32 = arith.constant 128 : i32
+      %8 = arith.addi %7, %c128_i32 : i32
+      %c1_i32 = arith.constant 1 : i32
+      %9 = arith.subi %8, %c1_i32 : i32
+      %c-128_i32 = arith.constant -128 : i32
+      %10 = arith.andi %9, %c-128_i32 : i32
+      %11 = arith.extsi %10 : i32 to i64
+      %iv = cute.assume(%11) : (i64) -> !cute.i64<divby 128>
+      %12 = cute.inttoptr(%iv) : !cute.i64<divby 128> to !cute.ptr<i8, smem, align<128>>
+      %int_tuple_20 = cute.make_int_tuple() : () -> !cute.int_tuple<"512">
+      %ptr_21 = cute.add_offset(%12, %int_tuple_20) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"512">) -> !cute.ptr<i8, smem, align<128>>
+      %smem_size_22 = cute_nvgpu.arch.get_dyn_smem_size() : i32
+      %c640_i32 = arith.constant 640 : i32
+      %13 = arith.cmpi sge, %smem_size_22, %c640_i32 : i32
+      cf.assert %13, "Allocation failed: shared memory allocation exceeds available memory set in kernel launch. Allocated bytes: 640 bytes. Please reduce the allocation or set a larger smem size in kernel launch."
+      %int_tuple_23 = cute.make_int_tuple() : () -> !cute.int_tuple<"0">
+      %ptr_24 = cute.add_offset(%12, %int_tuple_23) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"0">) -> !cute.ptr<i8, smem, align<128>>
+      %int_tuple_25 = cute.make_int_tuple() : () -> !cute.int_tuple<"128">
+      %ptr_26 = cute.add_offset(%12, %int_tuple_25) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"128">) -> !cute.ptr<i8, smem, align<128>>
+      %iter_27 = cute.recast_iter(%ptr_26) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<i64, smem, align<128>>
+      %int_tuple_28 = cute.make_int_tuple() : () -> !cute.int_tuple<"136">
+      %ptr_29 = cute.add_offset(%12, %int_tuple_28) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"136">) -> !cute.ptr<i8, smem, align<8>>
+      %int_tuple_30 = cute.make_int_tuple() : () -> !cute.int_tuple<"0">
+      %ptr_31 = cute.add_offset(%ptr_29, %int_tuple_30) : (!cute.ptr<i8, smem, align<8>>, !cute.int_tuple<"0">) -> !cute.ptr<i8, smem, align<8>>
+      %iter_32 = cute.recast_iter(%ptr_31) : !cute.ptr<i8, smem, align<8>> to !cute.ptr<f32, smem, align<8>>
+      %int_tuple_33 = cute.make_int_tuple() : () -> !cute.int_tuple<"4">
+      %ptr_34 = cute.add_offset(%ptr_29, %int_tuple_33) : (!cute.ptr<i8, smem, align<8>>, !cute.int_tuple<"4">) -> !cute.ptr<i8, smem, align<4>>
+      %iter_35 = cute.recast_iter(%ptr_34) : !cute.ptr<i8, smem, align<4>> to !cute.ptr<f32, smem>
+      %int_tuple_36 = cute.make_int_tuple() : () -> !cute.int_tuple<"256">
+      %ptr_37 = cute.add_offset(%12, %int_tuple_36) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"256">) -> !cute.ptr<i8, smem, align<128>>
+      %int_tuple_38 = cute.make_int_tuple() : () -> !cute.int_tuple<"384">
+      %ptr_39 = cute.add_offset(%12, %int_tuple_38) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"384">) -> !cute.ptr<i8, smem, align<128>>
+      %iter_40 = cute.recast_iter(%ptr_39) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<i32, smem, align<128>>
+      %int_tuple_41 = cute.make_int_tuple() : () -> !cute.int_tuple<"400">
+      %ptr_42 = cute.add_offset(%12, %int_tuple_41) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"400">) -> !cute.ptr<i8, smem, align<16>>
+      %int_tuple_43 = cute.make_int_tuple() : () -> !cute.int_tuple<"0">
+      %ptr_44 = cute.add_offset(%ptr_42, %int_tuple_43) : (!cute.ptr<i8, smem, align<16>>, !cute.int_tuple<"0">) -> !cute.ptr<i8, smem, align<16>>
+      %iter_45 = cute.recast_iter(%ptr_44) : !cute.ptr<i8, smem, align<16>> to !cute.ptr<f32, smem, align<16>>
+      %int_tuple_46 = cute.make_int_tuple() : () -> !cute.int_tuple<"4">
+      %ptr_47 = cute.add_offset(%ptr_42, %int_tuple_46) : (!cute.ptr<i8, smem, align<16>>, !cute.int_tuple<"4">) -> !cute.ptr<i8, smem, align<4>>
+      %iter_48 = cute.recast_iter(%ptr_47) : !cute.ptr<i8, smem, align<4>> to !cute.ptr<f32, smem>
+      %int_tuple_49 = cute.make_int_tuple() : () -> !cute.int_tuple<"64">
+      %ptr_50 = cute.add_offset(%ptr_21, %int_tuple_49) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"64">) -> !cute.ptr<i8, smem, align<64>>
+      %smem_size_51 = cute_nvgpu.arch.get_dyn_smem_size() : i32
+      %c704_i32 = arith.constant 704 : i32
+      %14 = arith.cmpi sge, %smem_size_51, %c704_i32 : i32
+      cf.assert %14, "Allocation failed: shared memory allocation exceeds available memory set in kernel launch. Allocated bytes: 704 bytes. Please reduce the allocation or set a larger smem size in kernel launch."
+      %int_tuple_52 = cute.make_int_tuple() : () -> !cute.int_tuple<"112">
+      %ptr_53 = cute.add_offset(%ptr_50, %int_tuple_52) : (!cute.ptr<i8, smem, align<64>>, !cute.int_tuple<"112">) -> !cute.ptr<i8, smem, align<16>>
+      %smem_size_54 = cute_nvgpu.arch.get_dyn_smem_size() : i32
+      %c816_i32 = arith.constant 816 : i32
+      %15 = arith.cmpi sge, %smem_size_54, %c816_i32 : i32
+      cf.assert %15, "Allocation failed: shared memory allocation exceeds available memory set in kernel launch. Allocated bytes: 816 bytes. Please reduce the allocation or set a larger smem size in kernel launch."
+      %iter_55 = cute.recast_iter(%ptr_50) : !cute.ptr<i8, smem, align<64>> to !cute.ptr<i64, smem, align<64>>
+      %shape = cute.make_shape() : () -> !cute.shape<"(16,2)">
+      %lay_56 = cute.make_layout(%shape) : !cute.layout<"(16,2):(1,16)">
+      %coord = cute.make_coord() : () -> !cute.coord<"0">
+      %idx = cute.crd2idx(%coord, %lay_56) : (!cute.coord<"0">, !cute.layout<"(16,2):(1,16)">) -> !cute.int_tuple<"0">
+      %e0_57 = cute.get_leaves(%idx) : !cute.int_tuple<"0">
+      %cosz = cute.cosize(%lay_56) : (!cute.layout<"(16,2):(1,16)">) -> !cute.int_tuple<"32">
+      %e0_58 = cute.get_leaves(%cosz) : !cute.int_tuple<"32">
+      %16 = cute.ptrtoint(%ptr_53) : !cute.ptr<i8, smem, align<16>> to i32
+      %c32_i32 = arith.constant 32 : i32
+      %17 = arith.addi %16, %c32_i32 : i32
+      %18 = arith.subi %17, %c1_i32 : i32
+      %c-32_i32 = arith.constant -32 : i32
+      %19 = arith.andi %18, %c-32_i32 : i32
+      %20 = arith.extsi %19 : i32 to i64
+      %iv_59 = cute.assume(%20) : (i64) -> !cute.i64<divby 32>
+      %21 = cute.inttoptr(%iv_59) : !cute.i64<divby 32> to !cute.ptr<i8, smem, align<32>>
+      %int_tuple_60 = cute.make_int_tuple() : () -> !cute.int_tuple<"128">
+      %ptr_61 = cute.add_offset(%21, %int_tuple_60) : (!cute.ptr<i8, smem, align<32>>, !cute.int_tuple<"128">) -> !cute.ptr<i8, smem, align<32>>
+      %smem_size_62 = cute_nvgpu.arch.get_dyn_smem_size() : i32
+      %c960_i32 = arith.constant 960 : i32
+      %22 = arith.cmpi sge, %smem_size_62, %c960_i32 : i32
+      cf.assert %22, "Allocation failed: shared memory allocation exceeds available memory set in kernel launch. Allocated bytes: 960 bytes. Please reduce the allocation or set a larger smem size in kernel launch."
+      %iter_63 = cute.recast_iter(%21) : !cute.ptr<i8, smem, align<32>> to !cute.ptr<f32, smem, align<32>>
+      %view = cute.make_view(%iter_63, %lay_56) : !memref_smem_f32_
+      %iter_64 = cute.get_iter(%view) : !memref_smem_f32_
+      %iter_65 = cute.recast_iter(%ptr_24) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<f32, smem, align<128>>
+      %lay_66 = cute.get_layout(%view) : !memref_smem_f32_
+      %23 = cute.get_shape(%lay_66) : (!cute.layout<"(16,2):(1,16)">) -> !cute.shape<"(16,2)">
+      %e0_67, %e1_68 = cute.get_leaves(%23) : !cute.shape<"(16,2)">
+      %24 = cute.get_stride(%lay_66) : (!cute.layout<"(16,2):(1,16)">) -> !cute.stride<"(1,16)">
+      %e0_69, %e1_70 = cute.get_leaves(%24) : !cute.stride<"(1,16)">
+      %shape_71 = cute.make_shape() : () -> !cute.shape<"(8,4)">
+      %lay_72 = cute.make_layout(%shape_71) : !cute.layout<"(8,4):(1,8)">
+      %iter_73 = cute.recast_iter(%ptr_24) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<f32, smem, align<128>>
+      %view_74 = cute.make_view(%iter_73, %lay_72) : !memref_smem_f32_1
+      %iter_75 = cute.get_iter(%view_74) : !memref_smem_f32_1
+      %sz = cute.size(%view_74) : (!memref_smem_f32_1) -> !cute.int_tuple<"32">
+      %e0_76 = cute.get_leaves(%sz) : !cute.int_tuple<"32">
+      %lay_77 = cute.get_layout(%view_74) : !memref_smem_f32_1
+      %25 = cute.get_shape(%lay_77) : (!cute.layout<"(8,4):(1,8)">) -> !cute.shape<"(8,4)">
+      %e0_78, %e1_79 = cute.get_leaves(%25) : !cute.shape<"(8,4)">
+      %int_tuple_80 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,4)">
+      %res = cute.tuple.product(%int_tuple_80) : (!cute.int_tuple<"(8,4)">) -> !cute.int_tuple<"32">
+      %e0_81 = cute.get_leaves(%res) : !cute.int_tuple<"32">
+      %cst = arith.constant 5.000000e-01 : f32
+      %26 = vector.splat %cst : vector<32xf32>
+      %int_tuple_82 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,4)">
+      %sz_83 = cute.size(%int_tuple_82) : (!cute.int_tuple<"(8,4)">) -> !cute.int_tuple<"32">
+      %e0_84 = cute.get_leaves(%sz_83) : !cute.int_tuple<"32">
+      %int_tuple_85 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,4)">
+      %sz_86 = cute.size(%int_tuple_85) : (!cute.int_tuple<"(8,4)">) -> !cute.int_tuple<"32">
+      %e0_87 = cute.get_leaves(%sz_86) : !cute.int_tuple<"32">
+      cute.memref.store_vec %26, %view_74 : !memref_smem_f32_1
+      cute.print("cute.struct.MemRange: {}\0A", %view_74) : !memref_smem_f32_1
+      %27 = cute.memref.load_vec %view_74 : !memref_smem_f32_1
+      %lay_88 = cute.get_layout(%arg0) : !memref_gmem_f32_
+      %28 = cute.get_shape(%lay_88) : (!cute.layout<"(8,4):(4,1)">) -> !cute.shape<"(8,4)">
+      %e0_89, %e1_90 = cute.get_leaves(%28) : !cute.shape<"(8,4)">
+      %int_tuple_91 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,4)">
+      %sz_92 = cute.size(%int_tuple_91) : (!cute.int_tuple<"(8,4)">) -> !cute.int_tuple<"32">
+      %e0_93 = cute.get_leaves(%sz_92) : !cute.int_tuple<"32">
+      %int_tuple_94 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,4)">
+      %sz_95 = cute.size(%int_tuple_94) : (!cute.int_tuple<"(8,4)">) -> !cute.int_tuple<"32">
+      %e0_96 = cute.get_leaves(%sz_95) : !cute.int_tuple<"32">
+      cute.memref.store_vec %27, %arg0 : !memref_gmem_f32_
+      %shape_97 = cute.make_shape() : () -> !cute.shape<"(8,2)">
+      %lay_98 = cute.make_layout(%shape_97) : !cute.layout<"(8,2):(1,8)">
+      %iter_99 = cute.recast_iter(%ptr_21) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<f32, smem, align<128>>
+      %view_100 = cute.make_view(%iter_99, %lay_98) : !memref_smem_f32_2
+      %iter_101 = cute.get_iter(%view_100) : !memref_smem_f32_2
+      %sz_102 = cute.size(%view_100) : (!memref_smem_f32_2) -> !cute.int_tuple<"16">
+      %e0_103 = cute.get_leaves(%sz_102) : !cute.int_tuple<"16">
+      %lay_104 = cute.get_layout(%view_100) : !memref_smem_f32_2
+      %29 = cute.get_shape(%lay_104) : (!cute.layout<"(8,2):(1,8)">) -> !cute.shape<"(8,2)">
+      %e0_105, %e1_106 = cute.get_leaves(%29) : !cute.shape<"(8,2)">
+      %int_tuple_107 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,2)">
+      %res_108 = cute.tuple.product(%int_tuple_107) : (!cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"16">
+      %e0_109 = cute.get_leaves(%res_108) : !cute.int_tuple<"16">
+      %cst_110 = arith.constant 1.000000e+00 : f32
+      %30 = vector.splat %cst_110 : vector<16xf32>
+      %int_tuple_111 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,2)">
+      %sz_112 = cute.size(%int_tuple_111) : (!cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"16">
+      %e0_113 = cute.get_leaves(%sz_112) : !cute.int_tuple<"16">
+      %int_tuple_114 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,2)">
+      %sz_115 = cute.size(%int_tuple_114) : (!cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"16">
+      %e0_116 = cute.get_leaves(%sz_115) : !cute.int_tuple<"16">
+      cute.memref.store_vec %30, %view_100 : !memref_smem_f32_2
+      cute.print("block of memory: {}\0A", %view_100) : !memref_smem_f32_2
+      %31 = cute.memref.load_vec %view_100 : !memref_smem_f32_2
+      %lay_117 = cute.get_layout(%arg1) : !memref_gmem_f32_1
+      %32 = cute.get_shape(%lay_117) : (!cute.layout<"(8,2):(2,1)">) -> !cute.shape<"(8,2)">
+      %e0_118, %e1_119 = cute.get_leaves(%32) : !cute.shape<"(8,2)">
+      %int_tuple_120 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,2)">
+      %sz_121 = cute.size(%int_tuple_120) : (!cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"16">
+      %e0_122 = cute.get_leaves(%sz_121) : !cute.int_tuple<"16">
+      %int_tuple_123 = cute.make_int_tuple() : () -> !cute.int_tuple<"(8,2)">
+      %sz_124 = cute.size(%int_tuple_123) : (!cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"16">
+      %e0_125 = cute.get_leaves(%sz_124) : !cute.int_tuple<"16">
+      cute.memref.store_vec %31, %arg1 : !memref_gmem_f32_1
+      %sz_126 = cute.size(%view) : (!memref_smem_f32_) -> !cute.int_tuple<"32">
+      %e0_127 = cute.get_leaves(%sz_126) : !cute.int_tuple<"32">
+      %lay_128 = cute.get_layout(%view) : !memref_smem_f32_
+      %33 = cute.get_shape(%lay_128) : (!cute.layout<"(16,2):(1,16)">) -> !cute.shape<"(16,2)">
+      %e0_129, %e1_130 = cute.get_leaves(%33) : !cute.shape<"(16,2)">
+      %int_tuple_131 = cute.make_int_tuple() : () -> !cute.int_tuple<"(16,2)">
+      %res_132 = cute.tuple.product(%int_tuple_131) : (!cute.int_tuple<"(16,2)">) -> !cute.int_tuple<"32">
+      %e0_133 = cute.get_leaves(%res_132) : !cute.int_tuple<"32">
+      %cst_134 = arith.constant 2.000000e+00 : f32
+      %34 = vector.splat %cst_134 : vector<32xf32>
+      %int_tuple_135 = cute.make_int_tuple() : () -> !cute.int_tuple<"(16,2)">
+      %sz_136 = cute.size(%int_tuple_135) : (!cute.int_tuple<"(16,2)">) -> !cute.int_tuple<"32">
+      %e0_137 = cute.get_leaves(%sz_136) : !cute.int_tuple<"32">
+      %int_tuple_138 = cute.make_int_tuple() : () -> !cute.int_tuple<"(16,2)">
+      %sz_139 = cute.size(%int_tuple_138) : (!cute.int_tuple<"(16,2)">) -> !cute.int_tuple<"32">
+      %e0_140 = cute.get_leaves(%sz_139) : !cute.int_tuple<"32">
+      cute.memref.store_vec %34, %view : !memref_smem_f32_
+      cute.print("tensor in smem: {}\0A", %view) : !memref_smem_f32_
+      %35 = cute.memref.load_vec %view : !memref_smem_f32_
+      %lay_141 = cute.get_layout(%arg2) : !memref_gmem_f32_2
+      %36 = cute.get_shape(%lay_141) : (!cute.layout<"(16,2):(2,1)">) -> !cute.shape<"(16,2)">
+      %e0_142, %e1_143 = cute.get_leaves(%36) : !cute.shape<"(16,2)">
+      %int_tuple_144 = cute.make_int_tuple() : () -> !cute.int_tuple<"(16,2)">
+      %sz_145 = cute.size(%int_tuple_144) : (!cute.int_tuple<"(16,2)">) -> !cute.int_tuple<"32">
+      %e0_146 = cute.get_leaves(%sz_145) : !cute.int_tuple<"32">
+      %int_tuple_147 = cute.make_int_tuple() : () -> !cute.int_tuple<"(16,2)">
+      %sz_148 = cute.size(%int_tuple_147) : (!cute.int_tuple<"(16,2)">) -> !cute.int_tuple<"32">
+      %e0_149 = cute.get_leaves(%sz_148) : !cute.int_tuple<"32">
+      cute.memref.store_vec %35, %arg2 : !memref_gmem_f32_2
+      return
+    }
+  }
+  func.func @cutlass_host_05_Tensorgmemo8441_10_Tensorgmemo8221_20_Tensorgmemo16221(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_2) -> i32 attributes {llvm.emit_c_interface} {
+    %iter = cute.get_iter(%arg0) : !memref_gmem_f32_
+    %iter_0 = cute.get_iter(%arg1) : !memref_gmem_f32_1
+    %iter_1 = cute.get_iter(%arg2) : !memref_gmem_f32_2
+    %iter_2 = cute.get_iter(%arg0) : !memref_gmem_f32_
+    %iter_3 = cute.get_iter(%arg1) : !memref_gmem_f32_1
+    %iter_4 = cute.get_iter(%arg2) : !memref_gmem_f32_2
+    %lay = cute.get_layout(%arg0) : !memref_gmem_f32_
+    %0 = cute.get_shape(%lay) : (!cute.layout<"(8,4):(4,1)">) -> !cute.shape<"(8,4)">
+    %e0, %e1 = cute.get_leaves(%0) : !cute.shape<"(8,4)">
+    %1 = cute.get_stride(%lay) : (!cute.layout<"(8,4):(4,1)">) -> !cute.stride<"(4,1)">
+    %e0_5, %e1_6 = cute.get_leaves(%1) : !cute.stride<"(4,1)">
+    %lay_7 = cute.get_layout(%arg1) : !memref_gmem_f32_1
+    %2 = cute.get_shape(%lay_7) : (!cute.layout<"(8,2):(2,1)">) -> !cute.shape<"(8,2)">
+    %e0_8, %e1_9 = cute.get_leaves(%2) : !cute.shape<"(8,2)">
+    %3 = cute.get_stride(%lay_7) : (!cute.layout<"(8,2):(2,1)">) -> !cute.stride<"(2,1)">
+    %e0_10, %e1_11 = cute.get_leaves(%3) : !cute.stride<"(2,1)">
+    %lay_12 = cute.get_layout(%arg2) : !memref_gmem_f32_2
+    %4 = cute.get_shape(%lay_12) : (!cute.layout<"(16,2):(2,1)">) -> !cute.shape<"(16,2)">
+    %e0_13, %e1_14 = cute.get_leaves(%4) : !cute.shape<"(16,2)">
+    %5 = cute.get_stride(%lay_12) : (!cute.layout<"(16,2):(2,1)">) -> !cute.stride<"(2,1)">
+    %e0_15, %e1_16 = cute.get_leaves(%5) : !cute.stride<"(2,1)">
+    %lay_17 = cute.get_layout(%arg0) : !memref_gmem_f32_
+    %6 = cute.get_shape(%lay_17) : (!cute.layout<"(8,4):(4,1)">) -> !cute.shape<"(8,4)">
+    %e0_18, %e1_19 = cute.get_leaves(%6) : !cute.shape<"(8,4)">
+    %7 = cute.get_stride(%lay_17) : (!cute.layout<"(8,4):(4,1)">) -> !cute.stride<"(4,1)">
+    %e0_20, %e1_21 = cute.get_leaves(%7) : !cute.stride<"(4,1)">
+    %lay_22 = cute.get_layout(%arg1) : !memref_gmem_f32_1
+    %8 = cute.get_shape(%lay_22) : (!cute.layout<"(8,2):(2,1)">) -> !cute.shape<"(8,2)">
+    %e0_23, %e1_24 = cute.get_leaves(%8) : !cute.shape<"(8,2)">
+    %9 = cute.get_stride(%lay_22) : (!cute.layout<"(8,2):(2,1)">) -> !cute.stride<"(2,1)">
+    %e0_25, %e1_26 = cute.get_leaves(%9) : !cute.stride<"(2,1)">
+    %lay_27 = cute.get_layout(%arg2) : !memref_gmem_f32_2
+    %10 = cute.get_shape(%lay_27) : (!cute.layout<"(16,2):(2,1)">) -> !cute.shape<"(16,2)">
+    %e0_28, %e1_29 = cute.get_leaves(%10) : !cute.shape<"(16,2)">
+    %11 = cute.get_stride(%lay_27) : (!cute.layout<"(16,2):(2,1)">) -> !cute.stride<"(2,1)">
+    %e0_30, %e1_31 = cute.get_leaves(%11) : !cute.stride<"(2,1)">
+    %c960_i32 = arith.constant 960 : i32
+    %c0_i64 = arith.constant 0 : i64
+    %12 = cuda.cast %c0_i64 : i64 -> !cuda.stream
+    %13 = arith.extsi %c960_i32 : i32 to i64
+    %c1_i32 = arith.constant 1 : i32
+    %14 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c1_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %13, gridDim = (%c1_i32, %c1_i32, %c1_i32), stream = %12) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
+    %15 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0<%14> (%arg0, %arg1, %arg2) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_f32_1, !memref_gmem_f32_2) -> !cuda.result
+    %16 = cuda.cast %15 : !cuda.result -> i32
+    cuda.return_if_error %16 : i32
+    %c0_i32 = arith.constant 0 : i32
+    return %c0_i32 : i32
+  }
+}

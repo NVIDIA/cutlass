@@ -1,0 +1,71 @@
+[INFO] Run tag: contiguous_grouped_gemm
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running Blackwell Persistent Dense Contiguous Grouped GEMM test with:
+mnkl: (256, 256, 512, 1)
+AB dtype: Float8E4M3FN, C dtype: BFloat16, Acc dtype: Float32, Scale dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: True
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_0_.mlir (422 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_001_CuteRemoveStaticArgs.mlir (424 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_002_MaterializeTmaMulticast.mlir (424 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_003_SoftwarePipelinePass.mlir (424 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_004_CuteDesugar.mlir (540 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_005_CuteExpandOps.mlir (613 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_006_CuteFoldStatic.mlir (277 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_007_InsertRangeInformation.mlir (277 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_008_Canonicalizer.mlir (169 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_009_CSE.mlir (162 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_010_LoopInvariantCodeMotion.mlir (162 lines)
+[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_011_LoopStrengthReductionPass.mlir (162 lines)
+[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_012_ConvertVectorToSCF.mlir (162 lines)
+[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_013_ConvertCuteTypesInScfOps.mlir (162 lines)
+[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_014_SCFToControlFlow.mlir (176 lines)
+[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_015_ArithExpandOpsPass.mlir (230 lines)
+[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_016_ConvertMathToFuncs.mlir (230 lines)
+[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_017_GpuLaunchSinkIndexComputations.mlir (230 lines)
+[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_018_ConvertToLLVMPass.mlir (450 lines)
+[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_019_ReconcileUnrealizedCasts.mlir (418 lines)
+[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_020_GpuKernelOutlining.mlir (418 lines)
+[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_021_SCFToControlFlow.mlir (418 lines)
+[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_022_ReconcileUnrealizedCasts.mlir (418 lines)
+[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_023_ConvertToLLVMPass.mlir (418 lines)
+[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_024_Canonicalizer.mlir (294 lines)
+[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_025_CSE.mlir (291 lines)
+[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_026_ConvertVectorToLLVMPass.mlir (291 lines)
+[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_027_ConvertNVVMToLLVMPass.mlir (291 lines)
+[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_028_CudaComputeTargetPass.mlir (146 lines)
+[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_029_FinalizeMemRefToLLVMConversionPass.mlir (291 lines)
+[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_030_ExpandStridedMetadata.mlir (291 lines)
+[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_031_ArithToLLVMConversionPass.mlir (291 lines)
+[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_032_ConvertFastmathOps.mlir (146 lines)
+[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_033_ConvertGpuOpsToNVVMOps.mlir (146 lines)
+[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_034_StoreGpuLaunchAttribute.mlir (291 lines)
+[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_035_GpuToLLVMConversionPass.mlir (291 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_036_StoreGpuLaunchAttribute.mlir (291 lines)
+[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_037_ConvertMathToLLVMPass.mlir (291 lines)
+[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_038_Canonicalizer.mlir (291 lines)
+[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_039_CSE.mlir (291 lines)
+[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_040_ReconcileUnrealizedCasts.mlir (291 lines)
+[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_041_DIScopeForLLVMFuncOpPass.mlir (291 lines)
+[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_042_CudaToBinaryPass.mlir (155 lines)
+[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_043_ConvertToLLVMPass.mlir (325 lines)
+[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_044_ReconcileUnrealizedCasts.mlir (323 lines)
+[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm/contiguous_grouped_gemm_045_CudaErrorHandlingPass.mlir (330 lines)
+[DUMP] per-pass IR split -> 45 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
