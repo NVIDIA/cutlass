@@ -957,6 +957,20 @@ def fmax(
 
 
 @dsl_user_op
+def fmin(
+    a: Union[float, Float32], b: Union[float, Float32], *, loc=None, ip=None
+) -> Float32:
+    return Float32(
+        nvvm.fmin(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
 def rcp_approx(a: Union[float, Float32], *, loc=None, ip=None):
     return Float32(
         nvvm.rcp_approx_ftz_f(Float32(a).ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
