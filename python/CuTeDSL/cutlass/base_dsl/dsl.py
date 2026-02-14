@@ -50,7 +50,11 @@ from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
 from .utils.timer import timer
 from .utils.logger import log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
-from .runtime.jit_arg_adapters import is_argument_constexpr, JitArgAdapterRegistry
+from .runtime.jit_arg_adapters import (
+    is_argument_constexpr,
+    is_arg_spec_constexpr,
+    JitArgAdapterRegistry,
+)
 
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
@@ -846,6 +850,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         use_pdl: bool = False
         auto_smem: bool = False
         cooperative: bool = False
+
         @staticmethod
         def _check_and_canonicalize_dim(dim, name):
             if not isinstance(dim, (list, tuple)):
@@ -967,18 +972,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             sys.stderr = redirect_stderr = io.StringIO()
             sys.stdout = redirect_stdout = io.StringIO()
 
-            compile_gpu_arch = (
-                self.envar.arch
-                if not self.compile_options.gpu_arch
-                else self.compile_options.gpu_arch
-            )
             try:
                 kernel = self.compiler_provider.compile_and_jit(
                     module,
                     pipeline,
                     shared_libs=shared_libs,
                     cuda_toolkit=self.envar.cuda_toolkit,
-                    arch=compile_gpu_arch,
+                    arch=self.envar.arch,
                 )
 
             finally:
@@ -1314,8 +1314,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         dynamic_args = []
         dynamic_kwargs = OrderedDict()
         for i, arg in enumerate(args):
-            if not is_argument_constexpr(
-                arg,
+            if not is_arg_spec_constexpr(
                 args_spec.annotations.get(args_spec.args[i], None),
                 args_spec.args[i],
                 i,
@@ -1323,7 +1322,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             ):
                 dynamic_args.append(arg)
         for i, (k, v) in enumerate(kwargs.items()):
-            if not is_argument_constexpr(v, args_spec.kwonlyargs[i], k, i, funcBody):
+            if not is_arg_spec_constexpr(args_spec.kwonlyargs[i], k, i, funcBody):
                 dynamic_kwargs[k] = v
         return dynamic_args, dynamic_kwargs
 

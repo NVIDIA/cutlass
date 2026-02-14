@@ -9,8 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from math import log2, ceil
 from typing import Optional, Type, Union, List
-from math import ceil, log2
 import inspect
 
 from cutlass import const_expr
@@ -29,7 +29,7 @@ from cutlass.cute.arch import get_max_tmem_alloc_cols, get_min_tmem_alloc_cols
 
 
 class TmemAllocator:
-    """A class for managing tensor memory allocation.
+    """A class for managing tensor memory allocation on GPUs.
 
     This class manages allocation/deallocation of tensor memory, including the mbarrier
     synchronization for two cta use case.
@@ -81,6 +81,7 @@ class TmemAllocator:
         two_cta_tmem_dealloc_mbar_ptr: Optional[cute.Pointer] = None,
         *,
         arch: str = "sm_100",
+        dealloc_mbarrier_initialized: bool = False,
         loc=None,
         ip=None,
     ):
@@ -126,7 +127,7 @@ class TmemAllocator:
         self._max_tmem_columns = get_max_tmem_alloc_cols(arch)
 
         # Init tmem dealloc mbarrier if two cta
-        if const_expr(self._is_two_cta):
+        if not dealloc_mbarrier_initialized and const_expr(self._is_two_cta):
             self._init_dealloc_mbarrier(loc=loc, ip=ip)
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
@@ -158,7 +159,8 @@ class TmemAllocator:
             self._is_two_cta,
             self._num_allocated_columns,
             new_two_cta_tmem_dealloc_mbar_ptr,
-            arch=self._arch,
+            arch=self._arch,  # Preserve the architecture parameter
+            dealloc_mbarrier_initialized=True,
         )
 
     @cute.jit

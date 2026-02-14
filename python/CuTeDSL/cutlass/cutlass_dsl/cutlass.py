@@ -22,6 +22,7 @@ from typing import (
     List,
     Tuple,
     Sequence,
+    Iterable,
     ForwardRef,
     Any,
     get_origin,
@@ -34,7 +35,6 @@ from dataclasses import is_dataclass, fields
 from math import ceil
 from itertools import chain
 from pathlib import Path
-from collections.abc import Sequence
 import builtins
 import ctypes
 import hashlib
@@ -65,10 +65,14 @@ from cutlass._mlir.dialects import (
 from cutlass._mlir.dialects._ods_common import (
     get_op_result_or_op_results as _get_op_result_or_op_results,
 )
+
+from cutlass._mlir.dialects import lir as cutlass_lir
+
 from cutlass._mlir.extras import types as T
 
 # Helpers
 from ..base_dsl._mlir_helpers import arith as cutlass_arith
+from ..base_dsl._mlir_helpers import lru_cache_ir
 from ..base_dsl._mlir_helpers.op import dsl_user_op
 from ..base_dsl._mlir_helpers.arith import const
 
@@ -94,6 +98,7 @@ from .cutlass_ast_decorators import (
     _loop_execute_range_dynamic,
     _if_execute_dynamic,
     _while_execute_dynamic,
+    _ifexp_execute_dynamic,
 )
 
 from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
@@ -275,6 +280,11 @@ class CutlassBaseDSL(BaseDSL):
         log().info(f"self: {self}")
         log().info(f"Entering GPU module for {self.name}")
         log().info(f"GPU module: {self.gpu_module}")
+        if not self.gpu_module:
+            raise DSLRuntimeError(
+                f"GPU module is not set, probably compilation of a kernel from different DSL decorator",
+                suggestion=f"Use the same DSL decorator to build the GPU module, DSL: {type(self).__name__}",
+            )
         return ir.InsertionPoint(self.gpu_module.bodyRegion.blocks[0])
 
     @staticmethod
@@ -290,9 +300,9 @@ class CutlassBaseDSL(BaseDSL):
         )
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
-        assert isinstance(config, BaseDSL.LaunchConfig), (
-            f"Expect LaunchConfig for @kernel, but got {type(config)}"
-        )
+        assert isinstance(
+            config, BaseDSL.LaunchConfig
+        ), f"Expect LaunchConfig for @kernel, but got {type(config)}"
 
         ret = {}
         if config.has_max_number_threads():
@@ -381,16 +391,7 @@ class CutlassBaseDSL(BaseDSL):
             ) from e
         files.append((giant_dso_name, so_path, so_size))
 
-        def handle_import_error(exc):
-            """Handle errors during package walking, ignoring ImportError and NotImplementedError."""
-            if isinstance(exc, (ImportError, NotImplementedError)):
-                log().info(f"Skipping module due to {type(exc).__name__}: {exc}")
-            else:
-                log().warning(f"Unexpected error during package walk: {exc}")
-
-        for lib in pkgutil.walk_packages(
-            [dsl_path], prefix="cutlass.", onerror=handle_import_error
-        ):
+        for lib in pkgutil.walk_packages([dsl_path], prefix="cutlass."):
             spec = lib.module_finder.find_spec(lib.name)
             if not spec or not spec.origin:
                 continue
@@ -624,12 +625,7 @@ class CutlassBaseDSL(BaseDSL):
         loc=None,
         ip=None,
     ):
-        # set to 3 for PDL, cluster size, and cooperative
-        max_num_attributes = 3
-
-        if preferred_cluster_size_x is not None:
-            max_num_attributes += 1
-
+        max_num_attributes = 17
         launch_config_type = cuda_dialect.LaunchConfigType.get(max_num_attributes)
 
         if len(stream) == 0:
@@ -653,8 +649,6 @@ class CutlassBaseDSL(BaseDSL):
         cfg = cuda_dialect.launch_cfg_create(
             # Launch config type
             launch_config_type,
-            # Max num of attributes the launch config can hold
-            # set to 3 for PDL, cluster size, and cooperative
             ir.IntegerAttr.get(ir.IntegerType.get_signless(32), max_num_attributes),
             block_size_x,
             block_size_y,
@@ -793,15 +787,15 @@ class CutlassBaseDSL(BaseDSL):
                 requiredArgs = kwargs.get("requiredArgs", None)
                 loc = kwargs.get("loc", None)
                 assert kernelSym is not None, "kernelSym being None is not expected!"
-                assert requiredArgs is not None, (
-                    "requiredArgs being None is not expected!"
-                )
-                assert kernelOperands is not None, (
-                    "kernelOperands being None is not expected!"
-                )
-                assert isinstance(requiredArgs.config, BaseDSL.LaunchConfig), (
-                    f"Expect LaunchConfig for @kernel, but got {type(requiredArgs.config)}"
-                )
+                assert (
+                    requiredArgs is not None
+                ), "requiredArgs being None is not expected!"
+                assert (
+                    kernelOperands is not None
+                ), "kernelOperands being None is not expected!"
+                assert isinstance(
+                    requiredArgs.config, BaseDSL.LaunchConfig
+                ), f"Expect LaunchConfig for @kernel, but got {type(requiredArgs.config)}"
 
                 cfg = requiredArgs.config
 
@@ -822,6 +816,7 @@ class CutlassBaseDSL(BaseDSL):
                 if not isinstance(cfg.async_deps, (list, tuple)):
                     async_deps = [cfg.async_deps]
 
+                # Prepare launch kwargs
                 launch_kwargs = {}
 
                 if cfg.has_fallback_cluster:
@@ -1092,6 +1087,58 @@ class CuTeDSL(CutlassBaseDSL):
 
 
 # =============================================================================
+# CuteExperimental DSL Class
+# =============================================================================
+
+
+class CuteExperimentalDSL(CutlassBaseDSL):
+    def __init__(self):
+        name = "CUTE_EXPERIMENTAL_DSL"
+        compiler_provider = compiler.Compiler(passmanager, execution_engine)
+        pass_sm_arch_name = "cubin-chip"
+
+        super().__init__(name, compiler_provider, pass_sm_arch_name, preprocess=True)
+
+    def _get_pipeline(self, pipeline):
+        if pipeline == None:
+            return "builtin.module(gpu.module(lir-to-cute{enable-cuda-dialect enable-lir-func-finalization=false}), lir-func-finalization{enable-cuda-dialect=true}, cute-to-nvvm{check-inline-asm=false cubin-format=bin enable-cuda-dialect})"
+        return pipeline
+
+    @staticmethod
+    def generate_func_op(arg_types, arg_attrs, kernel_name, loc=None):
+        func_op = cutlass_lir.FuncOp(
+            ir.StringAttr.get(kernel_name),
+            ir.TypeAttr.get(ir.FunctionType.get(arg_types, [])),
+            loc=loc,
+        )
+        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
+            {
+                str(
+                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
+                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
+                str(
+                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
+                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
+            }
+        )
+        # Monkey patch FuncOp to add an add_entry_block method, if not already defined.
+        if not hasattr(func_op, "add_entry_block"):
+
+            def add_entry_block(arg_locs):
+                if len(func_op.body.blocks) != 0:
+                    raise RuntimeError("The function already has an entry block.")
+                func_op.body.blocks.append(*arg_types)
+                return func_op.body.blocks[0]
+
+            func_op.add_entry_block = add_entry_block
+        return func_op
+
+    @staticmethod
+    def generate_func_ret_op(loc=None, ip=None):
+        return cutlass_lir.ReturnOp([])
+
+
+# =============================================================================
 # KernelLauncher
 # =============================================================================
 
@@ -1331,9 +1378,9 @@ def to_index(value):
     if is_dynamic_expression(value):
         if isinstance(value, Numeric):
             value = value.ir_value()
-        assert ir.IntegerType.isinstance(value.type), (
-            f"expects integer type, but got {value.type}"
-        )
+        assert ir.IntegerType.isinstance(
+            value.type
+        ), f"expects integer type, but got {value.type}"
         res = arith.index_cast(T.index(), value)
     else:
         res = const(int(value), ty=T.index())
@@ -1379,7 +1426,7 @@ def _validate_iter_args_structure(iter_args, ir_values):
 
 def _minmax(op, *args, loc=None, ip=None):
     """Computes the minimum or maximum value from the provided arguments."""
-    from ..base_dsl.typing import _binary_op_type_promote
+    from ..base_dsl.typing import _binary_op, _binary_op_type_promote
 
     # AST Traversal doesn't support early exit in if executor
     x = None
@@ -1830,7 +1877,7 @@ def for_generate(
 
     def _createI32Attr(value):
         if not isinstance(value, int):
-            raise DSLRuntimeError("value must be int.")
+            raise DSLRuntimeError(f"value must be int.")
         return ir.IntegerAttr.get(ir.IntegerType.get_signless(32), value)
 
     ir_iter_args = extract_mlir_values(iter_args) if iter_args is not None else None
@@ -1951,7 +1998,9 @@ def if_generate(
     # Collect MLIR results.
     mlir_results = _get_op_result_or_op_results(if_op)
 
-    if not isinstance(mlir_results, list):
+    if not isinstance(mlir_results, list) and not isinstance(
+        mlir_results, ir.OpResultList
+    ):
         mlir_results = [mlir_results]
 
     # Wrap the results with their DSL types.
@@ -2245,6 +2294,7 @@ executor.set_functions(
     any_executor=any_,
     all_executor=all_,
     builtin_redirector=_builtin_redirector,
+    ifexp_dynamic=_ifexp_execute_dynamic,
 )
 
 

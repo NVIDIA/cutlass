@@ -12,7 +12,6 @@
 from abc import ABC, abstractmethod
 import ctypes
 from typing import ForwardRef, Tuple, Union, Any, Type, List, Optional, Literal
-from functools import lru_cache
 
 from cutlass.base_dsl.typing import *
 
@@ -28,8 +27,12 @@ class SymInt:
     def __init__(self, width: Literal[32, 64] = 32, *, divisibility=1):
         if width not in [32, 64]:
             raise ValueError(f"Unsupported width: {width}")
+
         self._width = width
         self._divisibility = divisibility
+
+    def __hash__(self):
+        return hash((self._width, self._divisibility))
 
     @property
     def width(self):
@@ -80,6 +83,7 @@ class SymInt:
         else:
             assert False, f"Unsupported width: {self.width}"
             return self
+
 def sym_int(width: Literal[32, 64] = 32, *, divisibility=1) -> SymInt:
     return SymInt(width, divisibility=divisibility)
 
@@ -403,6 +407,4 @@ __all__ = [
     "XTuple",
     "is_integer",
     "is_int_tuple",
-    "Pointer",
-    "Tensor",
 ]

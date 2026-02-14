@@ -45,6 +45,7 @@ from typing import List, Set, Dict, Any, Callable, Optional
 from types import ModuleType
 from collections import OrderedDict
 from copy import deepcopy
+from itertools import chain
 
 from .common import *
 from .utils.logger import log
@@ -140,25 +141,150 @@ class ScopeManager:
     """
 
     scopes: List[Set[str]]
+    callables: List[Set[str]]
 
     @classmethod
     def create(cls) -> "ScopeManager":
-        return cls([])
+        return cls([], [])
 
     def add_to_scope(self, name: str) -> None:
         if name == "_":
             return
         self.scopes[-1].add(name)
 
+    def add_to_callables(self, name: str) -> None:
+        if not self.callables:
+            return
+        self.callables[-1].add(name)
+
     def get_active_symbols(self) -> List[Set[str]]:
         return self.scopes.copy()
 
-    def __enter__(self) -> "ScopeManager":
+    def get_active_callables(self) -> List[Set[str]]:
+        return self.callables.copy()
+
+    @contextlib.contextmanager
+    def enter_local_scope(self):
+        """
+        Context manager for entering a new local variable and callable scope.
+
+        This is conceptually Python's local scope, such as within a function or class definition.
+
+        Use this in a ``with`` statement to temporarily push a new, empty set for both variable and callable
+        tracking onto the respective ScopeManager stacks. These sets accumulate any new symbols
+        introduced within the local context. When the context manager exits, the local sets are popped,
+        restoring the previous scope state.
+
+        **Example**
+            .. code-block:: python
+
+                with scope_manager.enter_local_scope():
+                    # Symbols defined here are local to this scope
+                    ...
+
+        :yields: None
+        """
         self.scopes.append(set())
+        self.callables.append(set())
+        yield
+        self.scopes.pop()
+        self.callables.pop()
+
+    @contextlib.contextmanager
+    def enter_control_flow_scope(self):
+        """
+        Context manager for entering a new dynamic control-flow scope.
+
+        This scope rule diverge from Python's local scope, variables defined here are discarded after exiting the block, but callables are kept in parent scope.
+
+        This context manager pushes a new, empty variable scope onto the stack for the
+        duration of a control-flow block (such as within loops or if/else blocks). Variables
+        introduced inside this block are tracked separately and discarded after exiting the block.
+        Callable symbol scopes are not affected.
+
+        :yields: None
+
+        **Example**
+            .. code-block:: python
+
+                with scope_manager.enter_control_flow_scope():
+                    # Variables defined here are local to this control-flow scope
+                    ...
+        """
+        self.scopes.append(set())
+        yield
+        self.scopes.pop()
+
+
+class Region:
+    """
+    Context manager for handling regions during AST transformations.
+
+    This class is used to manage region-scoped state during DSL preprocessing.
+    It is responsible for tracking and collecting new statements generated while
+    visiting and transforming regions, such as the bodies of AST nodes representing
+    constructs like loops or conditional blocks.
+
+    Upon entering a region (using a ``with`` statement), the region is pushed onto
+    the session's ``region_stack``, and prepares a place for new statements to be collected.
+    On exit, the region is popped from the stack and any temporary state is cleaned up.
+
+    Parameters
+    ----------
+    session_data : SessionData
+        The shared session context for the AST preprocessor, which holds the region stack.
+    owning_node : Optional[ast.stmt], default=None
+        If provided, the AST statement node that owns this region; new statements will be append to _new_value of this new node.
+    new_value : Optional[list[ast.stmt]], default=None
+        If provided, a list for collecting new statements for this region.
+
+    Methods
+    -------
+    __enter__()
+        Enter the region context, mutate state as needed.
+    __exit__(exc_type, exc_value, traceback)
+        Exit the context, clean up state.
+    append_new_stmts(stmts)
+        Append new AST statements to the region's collection.
+    """
+
+    def __init__(
+        self,
+        session_data: "SessionData",
+        *,
+        owning_node: ast.stmt = None,
+        new_value: list[ast.stmt] = None,
+    ):
+        self.session_data = session_data
+        self.owning_node = owning_node
+        self.new_value = new_value
+
+    def __enter__(self):
+        if self.new_value is not None or isinstance(self.owning_node, ast.stmt):
+            self.session_data.region_stack.append(self)
+        if self.owning_node is not None:
+            self.owning_node._new_value = []
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.scopes.pop()
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.new_value is not None or isinstance(self.owning_node, ast.stmt):
+            self.session_data.region_stack.pop()
+        if self.owning_node is not None:
+            delattr(self.owning_node, "_new_value")
+
+    def append_new_stmts(self, stmts: list[ast.stmt]):
+        """
+        Append a list of statements to the region's collection.
+
+        Parameters
+        ----------
+        stmts : list[ast.stmt]
+            The AST statements to append to this region.
+        """
+        if self.owning_node is not None:
+            self.owning_node._new_value.extend(stmts)
+        else:
+            self.new_value.extend(stmts)
 
 
 @dataclass
@@ -173,10 +299,25 @@ class SessionData:
     function_name: str = "<unknown function>"
     class_name: Optional[str] = None
     file_name: str = "<unknown filename>"
-    function_depth: int = 0
-    local_closures: set[str] = field(default_factory=set)
     function_globals: Optional[dict[str, Any]] = None
     import_top_module: bool = False
+    region_stack: list[Region] = field(default_factory=list)
+    generator_targets: list[str] = field(default_factory=list)
+    lambda_args: list[str] = field(default_factory=list)
+
+    @contextlib.contextmanager
+    def set_current_class_name(self, class_name: str):
+        old_class_name = self.class_name
+        self.class_name = class_name
+        yield
+        self.class_name = old_class_name
+
+    @contextlib.contextmanager
+    def set_current_function_name(self, function_name: str):
+        old_function_name = self.function_name
+        self.function_name = function_name
+        yield
+        self.function_name = old_function_name
 
 
 def _create_module_attribute(
@@ -225,54 +366,6 @@ def _create_module_attribute(
     set_location(node, lineno, col_offset)
     return node
 
-
-class DSLPreprocessorSession:
-    """Context manager for managing a DSL preprocessor session.
-
-    This context manager is used to ensure that each preprocessing operation
-    (typically a transformation of a Python AST via the DSL preprocessor)
-    is performed within a well-defined session. When entering the context,
-    it initializes session-specific resources or state by calling
-    `_start_session()` on the provided DSL object. Upon exit, it performs
-    appropriate cleanup by calling `_end_session()`.
-
-    Example usage::
-
-        with DSLPreprocessorSession(dsl_object):
-            # perform AST transformations or other preprocessing actions
-
-    :param dsl_object: An instance of a DSL object that implements
-        `_start_session()` and `_end_session()` methods to manage the
-        session state
-    :type dsl_object: DSLPreprocessor
-    """
-
-    def __init__(self, dsl_object):
-        self.dsl_object = dsl_object
-
-    def __enter__(self):
-        """Starts the DSL preprocessor session.
-
-        :return: The DSL object for use within the context
-        :rtype: DSLPreprocessor
-        """
-        self.dsl_object._start_session()
-        # Let `with preprocessor.get_session() as p:` keep using `p` as the preprocessor.
-        return self.dsl_object
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Ends the DSL preprocessor session.
-
-        :param exc_type: The exception type if an exception was raised in the context
-        :type exc_type: type, optional
-        :param exc_value: The exception value if an exception was raised in the context
-        :type exc_value: Exception, optional
-        :param traceback: The traceback if an exception was raised in the context
-        :type traceback: traceback, optional
-        """
-        self.dsl_object._end_session()
-
-
 class DSLPreprocessor(ast.NodeTransformer):
     """
     A preprocessor for transforming Python ASTs. It supports:
@@ -286,14 +379,51 @@ class DSLPreprocessor(ast.NodeTransformer):
     DECORATOR_IF_STATEMENT = "if_selector"
     DECORATOR_WHILE_STATEMENT = "while_selector"
     IF_EXECUTOR = "if_executor"
+    IFEXP_EXECUTOR = "ifExp_executor"
     WHILE_EXECUTOR = "while_executor"
     ASSERT_EXECUTOR = "assert_executor"
     BOOL_CAST = "bool_cast"
     IMPLICIT_DOWNCAST_NUMERIC_TYPE = "implicitDowncastNumericType"
     SUPPORTED_FOR_RANGE_STATEMENTS = {"range", "range_dynamic", "range_constexpr"}
+    CONST_EXPR_NAME = {"const_expr", "target_version"}
     COMPARE_EXECUTOR = "compare_executor"
     ANY_EXECUTOR = "any_executor"
     ALL_EXECUTOR = "all_executor"
+
+    def generic_visit(self, node):
+        """
+        Copy of :meth:`ast.NodeTransformer.generic_visit` with support for inserting statements during expression visits.
+
+        This version provides the same recursive traversal and transformation as the standard
+        ``generic_visit``, but extends it to allow statement insertion when visiting expressions.
+        This is particularly useful for DSL AST processing that needs to emit new statements within
+        regions associated with expression nodes (e.g., using the ``Region`` context manager).
+
+        :param node: The AST node to process.
+        :type node: ast.AST
+        :return: The transformed AST node.
+        :rtype: ast.AST
+        """
+        for field, old_value in ast.iter_fields(node):
+            if isinstance(old_value, list):
+                with Region(self.session_data, owning_node=node):
+                    for value in old_value:
+                        if isinstance(value, ast.AST):
+                            value = self.visit(value)
+                            if value is None:
+                                continue
+                            elif not isinstance(value, ast.AST):
+                                node._new_value.extend(value)
+                                continue
+                        node._new_value.append(value)
+                    old_value[:] = node._new_value
+            elif isinstance(old_value, ast.AST):
+                new_node = self.visit(old_value)
+                if new_node is None:
+                    delattr(node, field)
+                else:
+                    setattr(node, field, new_node)
+        return node
 
     def __init__(self, client_module_name):
         super().__init__()
@@ -303,29 +433,14 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.module_cache = {}
         self._session_data = None
 
-    def _start_session(self):
-        """
-        Starts a new preprocessing session by initializing session data.
 
-        This method sets up a fresh SessionData instance for use during
-        AST transformations. It must be called before performing any
-        preprocessing actions that require access to context-specific
-        information during the transformation of a function's AST.
-        """
-        self._session_data = SessionData()
-
-    def _end_session(self):
-        """
-        Ends the current preprocessing session and clears session data.
-
-        This method resets the session-specific data, marking the end of
-        a preprocessing context. It should be called after all necessary
-        AST processing is complete to ensure no stale context remains.
-        """
-        self._session_data = None
-
+    @contextlib.contextmanager
     def get_session(self):
-        return DSLPreprocessorSession(dsl_object=self)
+        try:
+            self._session_data = SessionData()
+            yield self
+        finally:
+            self._session_data = None
 
     @property
     def session_data(self):
@@ -733,10 +848,13 @@ class DSLPreprocessor(ast.NodeTransformer):
             if isinstance(node.test, ast.Call):
                 func = node.test.func
 
-                if isinstance(func, ast.Attribute) and func.attr == "const_expr":
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr in self.CONST_EXPR_NAME
+                ):
                     return True
 
-                elif isinstance(func, ast.Name) and func.id == "const_expr":
+                elif isinstance(func, ast.Name) and func.id in self.CONST_EXPR_NAME:
                     return True
         return False
 
@@ -775,7 +893,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         return unified_tree
 
     def analyze_region_variables(
-        self, node: Union[ast.For, ast.If, ast.While], active_symbols: List[Set[str]]
+        self,
+        node: Union[ast.For, ast.If, ast.While],
+        active_symbols: List[Set[str]],
+        active_callables: List[Set[str]],
     ):
         """
         Analyze variables in different code regions to identify read-only, write-only,
@@ -785,8 +906,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         # we need orderedset to keep the insertion order the same. otherwise generated IR is different each time
         write_args = OrderedSet()
         invoked_args = OrderedSet()
-        local_closure = self.session_data.local_closures
-        called_closures = OrderedSet()
+        called_functions = OrderedSet()
 
         class RegionAnalyzer(ast.NodeVisitor):
             force_store = False
@@ -853,8 +973,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
                 if isinstance(node.func, ast.Name):
                     func_name = node.func.id
-                    if func_name in local_closure:
-                        called_closures.add(func_name)
+                    called_functions.add(func_name)
 
                 # Classes are mutable by default. Mark them as write. If they are
                 # dataclass(frozen=True), treat them as read in runtime.
@@ -878,8 +997,8 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         write_args = list(write_args.intersections(active_symbols))
         invoked_args = list(invoked_args.intersections(active_symbols))
-
-        return write_args + invoked_args, len(write_args), called_closures
+        called_functions = list(called_functions.intersections(active_callables))
+        return write_args + invoked_args, len(write_args), called_functions
 
     def extract_range_args(self, iter_node):
         args = iter_node.args
@@ -958,12 +1077,15 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Create the loop body
         transformed_body = []
-        for stmt in node.body:
-            transformed_stmt = self.visit(stmt)  # Recursively visit inner statements
-            if isinstance(transformed_stmt, list):
-                transformed_body.extend(transformed_stmt)
-            else:
-                transformed_body.append(transformed_stmt)
+        with Region(self.session_data, new_value=transformed_body):
+            for stmt in node.body:
+                transformed_stmt = self.visit(
+                    stmt
+                )  # Recursively visit inner statements
+                if isinstance(transformed_stmt, list):
+                    transformed_body.extend(transformed_stmt)
+                else:
+                    transformed_body.append(transformed_stmt)
 
         # Handle the return for a single iterated argument correctly
         if len(write_args) == 0:
@@ -1186,8 +1308,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             return node
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
+        active_callables = self.session_data.scope_manager.get_active_callables()
 
-        with self.session_data.scope_manager:
+        with self.session_data.scope_manager.enter_control_flow_scope():
             if isinstance(node.target, ast.Name):
                 self.session_data.scope_manager.add_to_scope(node.target.id)
 
@@ -1210,7 +1333,9 @@ class DSLPreprocessor(ast.NodeTransformer):
                     # Get toplevel module
                     check_call = self._insert_cf_symbol_check(node.iter.func.value)
 
-            new_for_node = self.transform_for_loop(node, active_symbols)
+            new_for_node = self.transform_for_loop(
+                node, active_symbols, active_callables
+            )
             if check_call is not None:
                 new_for_node = [check_call] + new_for_node
 
@@ -1234,7 +1359,6 @@ class DSLPreprocessor(ast.NodeTransformer):
             ),
             location,
         )
-        self.generic_visit(node)
         return node
 
     def _handle_negative_step(self, node, start_expr, stop_expr, step_expr):
@@ -1309,11 +1433,12 @@ class DSLPreprocessor(ast.NodeTransformer):
             location=node,
         )
 
-        extra_exprs.append(isNegative)
-        extra_exprs.append(start)
-        extra_exprs.append(stop)
-        extra_exprs.append(step)
-        extra_exprs.append(offset)
+        with Region(self.session_data, new_value=extra_exprs):
+            extra_exprs.append(self.generic_visit(isNegative))
+            extra_exprs.append(self.generic_visit(start))
+            extra_exprs.append(self.generic_visit(stop))
+            extra_exprs.append(self.generic_visit(step))
+            extra_exprs.append(self.generic_visit(offset))
 
         # Add this to begining of loop body
         # for i in range(start, stop, step):
@@ -1360,7 +1485,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             )
         )
 
-    def transform_for_loop(self, node, active_symbols):
+    def transform_for_loop(self, node, active_symbols, active_callables):
         # Check for early exit and raise exception
         self.check_early_exit(node, "for")
         if node.orelse:
@@ -1409,7 +1534,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         prefetch_stages = self.extract_prefetch_stages_args(node.iter)
         vectorize = self.extract_vectorize_args(node.iter)
         write_args, full_write_args_count, called_closures = (
-            self.analyze_region_variables(node, active_symbols)
+            self.analyze_region_variables(node, active_symbols, active_callables)
         )
 
         if has_step and self.client_module_name[0] == "cutlass":
@@ -1678,10 +1803,8 @@ class DSLPreprocessor(ast.NodeTransformer):
         return node
 
     def visit_ClassDef(self, node):
-        self.session_data.class_name = node.name
-        self.generic_visit(node)
-        self.session_data.class_name = None
-        return node
+        with self.session_data.set_current_class_name(node.name):
+            return self.generic_visit(node)
 
     def _visit_target(self, target):
         if isinstance(target, ast.Name):
@@ -1798,13 +1921,13 @@ class DSLPreprocessor(ast.NodeTransformer):
         return new_decorator_list
 
     def visit_FunctionDef(self, node):
-        with self.session_data.scope_manager:
-            self.session_data.function_counter += 1
-            self.session_data.function_name = node.name
-            if self.session_data.function_depth > 0:
-                self.session_data.local_closures.add(node.name)
+        # Add self to active symbols of parent scope
+        self.session_data.scope_manager.add_to_callables(node.name)
 
-            self.session_data.function_depth += 1
+        with self.session_data.scope_manager.enter_local_scope(), self.session_data.set_current_function_name(
+            node.name
+        ):
+            self.session_data.function_counter += 1
 
             # Add function name and arguments
             self.session_data.scope_manager.add_to_scope(node.name)
@@ -1822,7 +1945,6 @@ class DSLPreprocessor(ast.NodeTransformer):
 
             self.generic_visit(node)
 
-        self.session_data.function_depth -= 1
 
         # Remove .jit and .kernel decorators
         node.decorator_list = self.remove_dsl_decorator(node.decorator_list)
@@ -1832,13 +1954,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         return node
 
     def visit_With(self, node):
-        with self.session_data.scope_manager:
-            for item in node.items:
-                if isinstance(item.optional_vars, ast.Name):
-                    self.session_data.scope_manager.add_to_scope(item.optional_vars.id)
-            self.generic_visit(node)
-
-        return node
+        for item in node.items:
+            if isinstance(item.optional_vars, ast.Name):
+                self.session_data.scope_manager.add_to_scope(item.optional_vars.id)
+        return self.generic_visit(node)
 
     def visit_While(self, node):
         # Constexpr doesn't get preprocessed
@@ -1848,12 +1967,14 @@ class DSLPreprocessor(ast.NodeTransformer):
             return [check, node]
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
-        with self.session_data.scope_manager:
+        active_callables = self.session_data.scope_manager.get_active_callables()
+
+        with self.session_data.scope_manager.enter_control_flow_scope():
             # Check for early exit and raise exception
             self.check_early_exit(node, "while")
 
             write_args, full_write_args_count, called_closures = (
-                self.analyze_region_variables(node, active_symbols)
+                self.analyze_region_variables(node, active_symbols, active_callables)
             )
             exprs = []
             if called_closures:
@@ -1868,18 +1989,6 @@ class DSLPreprocessor(ast.NodeTransformer):
             assign = self.create_cf_call(func_name, write_args, node)
 
         return exprs + [func_def] + assign
-
-    def visit_Try(self, node):
-        with self.session_data.scope_manager:
-            self.generic_visit(node)
-        return node
-
-    def visit_ExceptHandler(self, node):
-        with self.session_data.scope_manager:
-            if node.name:  # Exception variable
-                self.session_data.scope_manager.add_to_scope(node.name)
-            self.generic_visit(node)
-        return node
 
     def create_cf_call(self, func_name, yield_args, node):
         """Creates the assignment statement for the if function call"""
@@ -1928,42 +2037,164 @@ class DSLPreprocessor(ast.NodeTransformer):
         else:
             return [ast.copy_location(assign, node)]
 
+    def _visit_Comprehension(self, node, ele_visitor):
+        node.generators = [self.visit(generator) for generator in node.generators]
+
+        targets = []
+
+        class NameCollector(ast.NodeVisitor):
+            def visit_Name(self, node):
+                if isinstance(node.ctx, ast.Store):
+                    targets.append(node.id)
+
+        # Collect generator targets
+        collector = NameCollector()
+        [collector.visit(generator) for generator in node.generators]
+
+        self.session_data.generator_targets = targets
+
+        ele_visitor(node)
+
+        self.session_data.generator_targets = []
+        return node
+
+    def visit_DictComp(self, node):
+        def key_value_visitor(n):
+            n.key = self.visit(n.key)
+            n.value = self.visit(n.value)
+
+        return self._visit_Comprehension(node, key_value_visitor)
+
+    def visit_Lambda(self, node):
+        current_lambda_args = len(self.session_data.lambda_args)
+        for arg in node.args.args:
+            self.session_data.lambda_args.append(arg.arg)
+
+        node.body = self.visit(node.body)
+
+        self.session_data.lambda_args = self.session_data.lambda_args[
+            :current_lambda_args
+        ]
+
+        return node
+
+    def visit_ListComp(self, node):
+        return self._visit_Comprehension(
+            node, lambda n: setattr(n, "elt", self.visit(n.elt))
+        )
+
+    def visit_GeneratorExp(self, node):
+        return self._visit_Comprehension(
+            node, lambda n: setattr(n, "elt", self.visit(n.elt))
+        )
+
+    def visit_SetComp(self, node):
+        return self._visit_Comprehension(
+            node, lambda n: setattr(n, "elt", self.visit(n.elt))
+        )
+
     def visit_IfExp(self, node):
         """
-        Visits an inline if-else expression (ternary operator).
-        This is the Python equivalent of `x if condition else y`.
+        Transforms an inline if-else (ternary) expression into runtime-dispatched
+        control flow using synthesized function definitions for each branch.
+
+        This converts an expression of the form ``x if cond else y`` into two local
+        function blocks (for the ``then`` and ``else`` branches), inserts those blocks
+        just before the current statement, and produces a call to the conditional executor.
+
+        This lets the DSL infrastructure analyze and dispatch dynamic inline conditionals
+        in a uniform way at runtime.
+
+        Parameters
+        ----------
+        node : ast.IfExp
+            The AST node representing the inline if-else expression.
+
+        Returns
+        -------
+        ast.Call
+            An AST node that calls the conditional expression executor, referencing
+            the synthesized blocks and the predicate.
         """
-        self.generic_visit(node)
-        # Emit
-        # node if type(pred) == bool else select_(pred, body, orelse)
-        # so if pred is a python bool, use python to short-circuit and avoid emit arith.select
-        self.session_data.import_top_module = True
-        return ast.copy_location(
-            ast.IfExp(
-                test=ast.Compare(
-                    left=ast.Call(
-                        func=ast.Name(id="type", ctx=ast.Load()),
-                        args=[node.test],
-                        keywords=[],
-                    ),
-                    ops=[ast.Eq()],
-                    comparators=[ast.Name(id="bool", ctx=ast.Load())],
-                ),
-                body=node,  # Original ternary expression
-                orelse=ast.Call(
-                    func=_create_module_attribute(
-                        "select_", use_base_dsl=False, submodule_name=None
-                    ),
-                    args=[
-                        node.test,
-                        node.body,
-                        node.orelse,
-                    ],
-                    keywords=[],
-                ),
+        # Create unique names for the then and else branch function blocks
+        then_block_name = f"ifexp_then_block_{self.session_data.counter}"
+        else_block_name = f"ifexp_else_block_{self.session_data.counter}"
+        self.session_data.counter += 1
+
+        # Define the then-block function, with no arguments and returning the visited body
+        then_block_def = ast.FunctionDef(
+            name=then_block_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(arg=target, annotation=None)
+                    for target in chain(
+                        self.session_data.generator_targets,
+                        self.session_data.lambda_args,
+                    )
+                ],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
             ),
-            node,
+            body=[ast.Return(value=self.visit(node.body))],
+            decorator_list=[],
         )
+        # Define the else-block function, with no arguments and returning the visited orelse
+        else_block_def = ast.FunctionDef(
+            name=else_block_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(arg=target, annotation=None)
+                    for target in chain(
+                        self.session_data.generator_targets,
+                        self.session_data.lambda_args,
+                    )
+                ],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=[ast.Return(value=self.visit(node.orelse))],
+            decorator_list=[],
+        )
+
+        # Insert the block definitions into the most recent (innermost) region before the statement
+        self.session_data.region_stack[-1].append_new_stmts(
+            [then_block_def, else_block_def]
+        )
+
+        # Create the executor call node, wiring up the predicate and newly synthesized blocks
+        executor_call = ast.Call(
+            func=_create_module_attribute(self.IFEXP_EXECUTOR),
+            args=[],
+            keywords=[
+                ast.keyword(arg="pred", value=self.visit(node.test)),
+                ast.keyword(
+                    arg="block_args",
+                    value=ast.Tuple(
+                        elts=[
+                            ast.Name(id=name, ctx=ast.Load())
+                            for name in chain(
+                                self.session_data.generator_targets,
+                                self.session_data.lambda_args,
+                            )
+                        ],
+                        ctx=ast.Load(),
+                    ),
+                ),
+                ast.keyword(
+                    arg="then_block", value=ast.Name(id=then_block_name, ctx=ast.Load())
+                ),
+                ast.keyword(
+                    arg="else_block", value=ast.Name(id=else_block_name, ctx=ast.Load())
+                ),
+            ],
+        )
+
+        # Return the transformed executor call node at the original location in the AST
+        return ast.copy_location(executor_call, node)
 
     cmpops = {
         "Eq": "==",
@@ -2016,12 +2247,14 @@ class DSLPreprocessor(ast.NodeTransformer):
             return [check, node]
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
-        with self.session_data.scope_manager:
+        active_callables = self.session_data.scope_manager.get_active_callables()
+
+        with self.session_data.scope_manager.enter_control_flow_scope():
             # Check for early exit and raise exception
             self.check_early_exit(node, "if")
 
             yield_args, full_write_args_count, called_closures = (
-                self.analyze_region_variables(node, active_symbols)
+                self.analyze_region_variables(node, active_symbols, active_callables)
             )
             exprs = []
             if called_closures:
@@ -2060,12 +2293,18 @@ class DSLPreprocessor(ast.NodeTransformer):
         func_args_then_else = [ast.arg(arg=var, annotation=None) for var in write_args]
 
         then_body = []
-        for stmt in node.body:
-            transformed_stmt = self.visit(stmt)  # Recursively visit inner statements
-            if isinstance(transformed_stmt, list):
-                then_body.extend(transformed_stmt)
-            else:
-                then_body.append(transformed_stmt)
+        with (
+            Region(self.session_data, new_value=then_body),
+            self.session_data.scope_manager.enter_control_flow_scope(),
+        ):
+            for stmt in node.body:
+                transformed_stmt = self.visit(
+                    stmt
+                )  # Recursively visit inner statements
+                if isinstance(transformed_stmt, list):
+                    then_body.extend(transformed_stmt)
+                else:
+                    then_body.append(transformed_stmt)
 
         # Create common return list for all blocks
         return_list = ast.List(
@@ -2210,14 +2449,18 @@ class DSLPreprocessor(ast.NodeTransformer):
                         )
                 else:
                     else_body = []
-                    for stmt in node.orelse:
-                        transformed_stmt = self.visit(
-                            stmt
-                        )  # Recursively visit inner statements
-                        if isinstance(transformed_stmt, list):
-                            else_body.extend(transformed_stmt)
-                        else:
-                            else_body.append(transformed_stmt)
+                    with (
+                        Region(self.session_data, new_value=else_body),
+                        self.session_data.scope_manager.enter_control_flow_scope(),
+                    ):
+                        for stmt in node.orelse:
+                            transformed_stmt = self.visit(
+                                stmt
+                            )  # Recursively visit inner statements
+                            if isinstance(transformed_stmt, list):
+                                else_body.extend(transformed_stmt)
+                            else:
+                                else_body.append(transformed_stmt)
 
                     # Regular else block
                     else_block = ast.FunctionDef(
@@ -2302,7 +2545,6 @@ class DSLPreprocessor(ast.NodeTransformer):
             cond, write_args = while_before_block(write_args)
         return write_args
         """
-        test_expr = self.visit(node.test)
 
         # Section: decorator construction
         decorator_keywords = [
@@ -2343,11 +2585,15 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
 
         # Section: while_before_block FunctionDef, which contains condition
+        while_before_stmts = []
+        with Region(self.session_data, new_value=while_before_stmts):
+            test_expr = ast.copy_location(self.visit(node.test), node.test)
+
         while_before_return_list = ast.List(
             elts=[test_expr, yield_args_ast_name_list],
             ctx=ast.Load(),
         )
-        while_before_stmts = [ast.Return(value=while_before_return_list)]
+        while_before_stmts.append(ast.Return(value=while_before_return_list))
         while_before_block = ast.copy_location(
             ast.FunctionDef(
                 name=while_before_block_name,
@@ -2360,12 +2606,15 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Section: while_after_block FunctionDef, which contains loop body
         while_after_stmts = []
-        for stmt in node.body:
-            transformed_stmt = self.visit(stmt)  # Recursively visit inner statements
-            if isinstance(transformed_stmt, list):
-                while_after_stmts.extend(transformed_stmt)
-            else:
-                while_after_stmts.append(transformed_stmt)
+        with Region(self.session_data, new_value=while_after_stmts):
+            for stmt in node.body:
+                transformed_stmt = self.visit(
+                    stmt
+                )  # Recursively visit inner statements
+                if isinstance(transformed_stmt, list):
+                    while_after_stmts.extend(transformed_stmt)
+                else:
+                    while_after_stmts.append(transformed_stmt)
         while_after_stmts.append(ast.Return(value=yield_args_ast_name_list))
 
         while_after_block = ast.copy_location(

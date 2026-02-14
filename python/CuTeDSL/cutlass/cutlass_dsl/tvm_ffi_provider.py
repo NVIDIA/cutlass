@@ -21,7 +21,6 @@ from cutlass._mlir.dialects import llvm
 from cutlass._mlir._mlir_libs._cutlass_ir import _aot_support
 from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.base_dsl.jit_executor import ExecutionArgs
 from typing import Optional, Callable
 import tvm_ffi
 
@@ -130,16 +129,13 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-
-        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_init"
-        )
-        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_load_to_device"
-        )
-        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "TVMFFIErrorSetRaisedFromCStr"
-        )
+            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
+            cuda_load_to_device_ptr = self.address_of(
+                "cuda_load_to_device", self.ptr_type
+            )
+            set_error_ptr = self.address_of(
+                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
+            )
 
         with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value
@@ -211,6 +207,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 global_dtors = llvm.mlir_global_dtors(
                     dtors=[],
                     priorities=[],
+                    data=[],
                 )
         else:
             # use the existing global destructors
@@ -223,6 +220,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         global_dtors.attributes["priorities"] += [
             ir.IntegerAttr.get(self.i32_type, 65535)
         ]  # the default priority
+        global_dtors.attributes["data"] += [
+            ir.FlatSymbolRefAttr.get(unload_func_wrapper_symbol)
+        ]  # the data will not be used, but we need to pass something to satisfy the llvm.mlir.global_dtors op
 
         return current_block
 
@@ -255,7 +255,8 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         current_device: Optional[ir.Value],
         target_device: Optional[ir.Value],
     ) -> ir.Block:
-        """Set the CUDA device index if it differs from the target device."""
+        """Set the CUDA device index if it differs from the target device.
+        """
         # If either device is None, no switching needed
         if current_device is None:
             assert target_device is None
@@ -273,7 +274,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             self.cond_br(
                 cond=devices_differ,
                 true_block=switch_device_block,
-                false_block=continuation_block,
+                false_block=continuation_block
             )
 
         # Switch device block: call cudaSetDevice
@@ -287,9 +288,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
 
         # Check for errors and branch to continuation
-        switch_device_block = self.check_cuda_error(
-            result, switch_device_block, context
-        )
+        switch_device_block = self.check_cuda_error(result, switch_device_block, context)
         with ir.InsertionPoint(switch_device_block):
             self.br(continuation_block)
 
@@ -320,9 +319,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-            current_block = self.check_cuda_error(
-                get_device_result, current_block, context
-            )
+            current_block = self.check_cuda_error(get_device_result, current_block, context)
 
             # Load the current device index from the alloca
             with ir.InsertionPoint(current_block):
@@ -354,6 +351,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
         return current_block
 
+
     def find_cuda_device_index_from_params(self, context: CallContext):
         """Find the CUDA device index from tensor parameters."""
         for param in context.params:
@@ -365,9 +363,12 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         return None
 
     def create_shared_cuda_error_block(
-        self, current_block: ir.Block, context: CallContext
+        self,
+        current_block: ir.Block,
+        context: CallContext
     ) -> ir.Block:
-        """Create a shared error handling block for all CUDA errors."""
+        """Create a shared error handling block for all CUDA errors.
+        """
         # Create the shared error block after the current block (setup phase)
         # This block will be branched to from multiple error checking sites
         # It accepts the error code as a block argument
@@ -397,9 +398,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         current_block = self.append_unload_to_global_dtors(current_block, context)
         # Create shared CUDA error handling block after the setup blocks
         # This reduces code duplication - all CUDA errors branch to this single block
-        self.cuda_error_handle_block = self.create_shared_cuda_error_block(
-            current_block, context
-        )
+        self.cuda_error_handle_block = self.create_shared_cuda_error_block(current_block, context)
         # setup device index, will be set around the call to the target function
         self.cuda_device_index = self.find_cuda_device_index_from_params(context)
         current_block = super().__call__(current_block, context)
@@ -457,6 +456,10 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    # use direct call to the tvm_ffi.Function.__call__
+    # to avoid most of python overhead
+    __call__ = tvm_ffi.Function.__call__
 
     def to(self, device=None):
         """TVM FFI function itself is already support all devices."""

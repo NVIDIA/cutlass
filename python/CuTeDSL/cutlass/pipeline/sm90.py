@@ -308,7 +308,7 @@ class PipelineAsync:
 @dataclass(frozen=True)
 class PipelineCpAsync(PipelineAsync):
     """
-    PipelineCpAsync is used for CpAsync producers and AsyncThread consumers (e.g. Hopper non-TMA mainloops).
+    PipelineCpAsync is used for CpAsync producers and AsyncThread consumers
     """
 
     @staticmethod
@@ -656,6 +656,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         )
 
         if not defer_sync:
+            cute.arch.mbarrier_init_fence()
             if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
                 agent_sync(Agent.ThreadBlock)
             else:

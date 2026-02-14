@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import inspect
 from typing import Tuple
 
 from cutlass.cutlass_dsl import (
@@ -323,6 +324,14 @@ class PersistentTileSchedulerParams:
         num_persistent_clusters = num_persistent_ctas // num_ctas_per_cluster
 
         return (*self.cluster_shape_mn, num_persistent_clusters)
+
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+PersistentTileSchedulerParams.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]
+)
 
 
 class StaticPersistentTileScheduler:

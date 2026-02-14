@@ -276,7 +276,11 @@ public:
       static constexpr int MaxClusterSize = 16;
       implementable &= size(args.hw_info.cluster_shape) <= MaxClusterSize;
       implementable &= size(args.hw_info.cluster_shape_fallback) <= MaxClusterSize;
-      implementable &= cutlass::detail::preferred_cluster_can_implement<AtomThrShapeMNK>(args.hw_info.cluster_shape, args.hw_info.cluster_shape_fallback);
+      // Early return if cluster shape validation failed to avoid division by zero below
+      if (not cutlass::detail::preferred_cluster_can_implement<AtomThrShapeMNK>(args.hw_info.cluster_shape, args.hw_info.cluster_shape_fallback)) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Invalid dynamic cluster shape\n");
+        return false;
+      }
     }
 
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, args.hw_info.cluster_shape);

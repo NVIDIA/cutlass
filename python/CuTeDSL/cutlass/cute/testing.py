@@ -20,15 +20,12 @@ from typing import Type, Union, Callable, Optional, Dict, List, Any
 import cuda.bindings.driver as cuda_driver
 import cuda.bindings.runtime as cuda_runtime
 
-import cutlass
-import cutlass.base_dsl.jit_executor
-import cutlass.cutlass_dsl.cuda_jit_executor
 from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, dsl_user_op, const_expr
 
 from .typing import Numeric, Int8, Boolean, Tensor, Layout, Shape
 
 from . import nvgpu
-from .core import recast_layout, make_layout, composition, get, rank, size, zipped_divide
+from .core import recast_layout, make_layout, composition, get, rank, size
 from .tuple import elem_less
 from .tensor import (
     make_rmem_tensor,
@@ -39,6 +36,7 @@ from .tensor import (
 )
 from .atom import make_copy_atom
 from .algorithm import copy
+from .core import zipped_divide
 from .runtime import from_dlpack
 
 from cutlass._mlir.dialects import builtin, cf, nvvm, vector
@@ -76,7 +74,7 @@ class _CompileTimeAssertion(Assertion):
 
     def __init__(
         self,
-        tensor: _Tensor,
+        tensor: Tensor,
         num_assertions: int = 1,
         msgs=None,
         device=None,
@@ -849,7 +847,9 @@ def get_workspace_count(
     :return: Number of workspaces needed
     :rtype: int
     """
-    num_l2_cache_bytes = cutlass.utils.HardwareInfo().get_l2_cache_size_in_bytes()
+    from cutlass.utils import HardwareInfo
+
+    num_l2_cache_bytes = HardwareInfo().get_l2_cache_size_in_bytes()
     num_workspaces = (num_l2_cache_bytes * 3) // one_workspace_bytes + 1
     num_iters = warmup_iterations + iterations
     return num_iters if num_iters < num_workspaces else num_workspaces

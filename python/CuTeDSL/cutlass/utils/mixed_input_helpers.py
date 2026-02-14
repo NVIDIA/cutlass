@@ -513,9 +513,9 @@ def get_smem_layout_scale(
         cute.size(mma_tiler[2]) % cute.size(smem_layout_scale_per_stage.outer[1]) == 0
     ), "smem_layout_scale_per_stage must evenly divide tile k shape."
     # Shared memory buffer for scale must be at least 128B to satisfy TMA requirement
-    assert (
-        cute.size_in_bytes(a_scale_dtype, smem_layout_scale_per_stage) >= 128
-    ), "smem size for scale must be at least 128B"
+    assert cute.size_in_bytes(a_scale_dtype, smem_layout_scale_per_stage) >= 128, (
+        "smem size for scale must be at least 128B"
+    )
     # Scale layout in smem with multiple stages
     smem_layout_scale = cute.append(
         smem_layout_scale_per_stage,
@@ -972,10 +972,9 @@ def cvt_tensor_a(
     for int4-to-bf16 conversion.
     """
     from cutlass import CUDA_VERSION
-
     # shuffle is supported since CUDA 13.1
     shuffle_supported = True
-    if CUDA_VERSION.major < 13 or (CUDA_VERSION == 13 and CUDA_VERSION.minor < 1):
+    if CUDA_VERSION.major < 13 or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1):
         shuffle_supported = False
     shuffle = shuffle and shuffle_supported
     rst = src.load()

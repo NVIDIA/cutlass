@@ -10,7 +10,9 @@
 # is strictly prohibited.
 
 import os
-from typing import Any, Dict, Iterable, Optional, Union, Sequence
+from typing import Any, Dict, Optional, Union
+from functools import total_ordering
+from dataclasses import dataclass
 
 """
 This module provides a Exception classes DSL class for any Dialect.
@@ -325,29 +327,143 @@ This error typically occurs when:
         )
 
 
+def _get_cuda_version() -> str:
+    # Client of this module should implement this function
+    """
+    Placeholder for CUDA version query.
+
+    This function should be implemented by the client of this module.
+    When implemented, it must return the CUDA version as a string, e.g. "12.2".
+
+    Raises:
+        NotImplementedError: Always, unless overridden by the package initializer or client.
+    """
+    raise NotImplementedError("_get_cuda_version is not implemented")
+
+
+@total_ordering
+@dataclass(frozen=True)
 class DSLCudaVersion:
     """
     Class to represent the CUDA version used to build the DSL.
     """
 
-    def __init__(self, version: str):
-        self.version_tuple = tuple(int(part) for part in version.split("."))
+    major: int
+    minor: int
 
-    def __str__(self):
-        return f"{self.major}.{self.minor}"
+    def __init__(self, version: str):
+        parts = version.split(".")
+        object.__setattr__(self, "major", int(parts[0]))
+        object.__setattr__(self, "minor", int(parts[1]))
 
     def __eq__(self, other):
-        if isinstance(other, DSLCudaVersion):
-            return self.version_tuple == other.version_tuple
-        elif isinstance(other, str):
-            return self == DSLCudaVersion(other)
-        else:
-            return False
+        return self.major == other.major and self.minor == other.minor
 
-    @property
-    def major(self):
-        return self.version_tuple[0]
+    def __lt__(self, other):
+        return [self.major, self.minor] < [other.major, other.minor]
 
-    @property
-    def minor(self):
-        return self.version_tuple[1]
+
+def _coerce_to_cuda_version(
+    value: Optional[Union[DSLCudaVersion, str]], param_name: str
+) -> Optional[DSLCudaVersion]:
+    """
+    Coerce a value to DSLCudaVersion.
+
+    :param value: The value to coerce (DSLCudaVersion, str, or None).
+    :param param_name: The parameter name for error messages.
+    :returns: DSLCudaVersion or None if value is None.
+    :raises DSLRuntimeError: If value is not a supported type.
+    """
+    if value is None:
+        return None
+    if isinstance(value, DSLCudaVersion):
+        return value
+    if isinstance(value, str):
+        return DSLCudaVersion(value)
+    raise DSLRuntimeError(
+        f"{param_name} must be a DSLCudaVersion or str, got {type(value).__name__}"
+    )
+
+
+def target_version(
+    exact_version: Optional[Union[DSLCudaVersion, str]] = None,
+    *,
+    min_version: Optional[Union[DSLCudaVersion, str]] = None,
+    max_version: Optional[Union[DSLCudaVersion, str]] = None,
+) -> bool:
+    """
+    Check if the current CUDA version used to build the DSL matches an exact version
+    or falls within specified bounds at compile-time.
+
+    Only one of ``exact_version`` *or* ``min_version``/``max_version`` may be specified.
+    At least one must be provided.
+
+    :param exact_version: The required CUDA version (e.g., "12.3").
+    :type exact_version: Optional[Union[DSLCudaVersion, str]]
+    :param min_version: The minimum CUDA version required (inclusive, e.g., "12.0").
+    :type min_version: Optional[Union[DSLCudaVersion, str]]
+    :param max_version: The maximum CUDA version allowed (inclusive, e.g., "13.2").
+    :type max_version: Optional[Union[DSLCudaVersion, str]]
+
+    :returns: ``True`` if the CUDA version matches the requirement(s) specified.
+    :rtype: bool
+
+    :raises DSLRuntimeError:
+        - If neither an ``exact_version`` nor version range is given.
+        - If both an exact version and a range are provided.
+        - If ``min_version`` > ``max_version``.
+        - If any version parameter is not a DSLCudaVersion or str.
+
+    **Examples**
+
+    .. code-block:: python
+
+        target_version(exact_version="12.3")
+        # True if CUDA_VERSION == 12.3
+
+        target_version(min_version="12.0")
+        # True if CUDA_VERSION >= 12.0
+
+        target_version(max_version="13.2")
+        # True if CUDA_VERSION <= 13.2
+
+        target_version(min_version="12.0", max_version="13.2")
+        # True if 12.0 <= CUDA_VERSION <= 13.2
+    """
+    # Avoid circular dependency
+    from .version_info import CUDA_VERSION
+
+    # Coerce all version parameters to DSLCudaVersion at the start
+    exact_v = _coerce_to_cuda_version(exact_version, "exact_version")
+    min_v = _coerce_to_cuda_version(min_version, "min_version")
+    max_v = _coerce_to_cuda_version(max_version, "max_version")
+
+    # Sanity check
+    is_range_check = min_v is not None or max_v is not None
+    is_exact_version_check = exact_v is not None
+    if is_range_check and is_exact_version_check:
+        raise DSLRuntimeError(
+            "Cannot use exact_version and [min_version, max_version] check at the same time"
+        )
+
+    if is_range_check:
+        if min_v is None and max_v is None:
+            raise DSLRuntimeError(
+                "min_version and max_version cannot be None at the same time"
+            )
+        if min_v is not None and max_v is not None:
+            if min_v > max_v:
+                raise DSLRuntimeError("min_version must be less than max_version")
+
+        result = True
+        if min_v is not None:
+            result = result and CUDA_VERSION >= min_v
+        if max_v is not None:
+            result = result and CUDA_VERSION <= max_v
+        return result
+    elif is_exact_version_check:
+        return CUDA_VERSION == exact_v
+    else:
+        raise DSLRuntimeError(
+            "either exact_version, min_version, or max_version must be provided"
+        )

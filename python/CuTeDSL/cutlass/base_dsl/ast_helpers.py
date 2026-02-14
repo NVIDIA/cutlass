@@ -52,6 +52,7 @@ class Executor:
         self._any_executor = None
         self._all_executor = None
         self._builtin_redirector = None
+        self._ifexp_dynamic = None
 
     def set_functions(
         self,
@@ -64,6 +65,7 @@ class Executor:
         any_executor: Callable = None,
         all_executor: Callable = None,
         builtin_redirector: Callable = None,
+        ifexp_dynamic: Callable = None,
     ):
         self._is_dynamic_expression = is_dynamic_expression
         self._loop_execute_range_dynamic = loop_execute_range_dynamic
@@ -73,6 +75,7 @@ class Executor:
         self._any_executor = any_executor
         self._all_executor = all_executor
         self._builtin_redirector = builtin_redirector
+        self._ifexp_dynamic = ifexp_dynamic
 
     @staticmethod
     def convert_to_list(x):
@@ -172,6 +175,16 @@ class Executor:
             full_write_args_count,
             write_args_names,
         )
+
+    def ifexp_execute(
+        self,
+        pred,
+        block_args: tuple,
+        then_block: Callable,
+        else_block: Callable,
+    ):
+        assert self._ifexp_dynamic, "Functions must be set before execution."
+        return self._ifexp_dynamic(pred, block_args, then_block, else_block)
 
 
 # =============================================================================
@@ -291,6 +304,19 @@ def if_executor(
         full_write_args_count,
         write_args_names,
     )
+
+
+def ifExp_executor(
+    *,
+    pred,
+    block_args: tuple,
+    then_block: Callable,
+    else_block: Callable,
+):
+    if not executor._is_dynamic_expression(pred):
+        return then_block(*block_args) if pred else else_block(*block_args)
+    else:
+        return executor.ifexp_execute(pred, block_args, then_block, else_block)
 
 
 # =============================================================================
@@ -552,18 +578,19 @@ def cf_symbol_check(symbol):
     name = symbol.__name__
     self_module = _get_self_module()
     if inspect.ismodule(symbol):
-        name = "range"
-        if not self_module.__name__.startswith(symbol.__name__):
+        if not self_module.__name__.startswith(name):
             failed = True
     else:
         owning_module = inspect.getmodule(symbol)
-        if owning_module != self_module:
+        root_module = owning_module.__name__.split(".")[0]
+        self_root_module = self_module.__name__.split(".")[0]
+        if root_module != self_root_module:
             failed = True
 
     if failed:
         raise DSLRuntimeError(
-            f"Incorrect {symbol.__name__} is used.",
-            suggestion=f"Please avoid overriding `{symbol.__name__}` from DSL package.",
+            f"Incorrect `{name}` is used.",
+            suggestion=f"Please avoid overriding `{name}` from DSL package.",
         )
 
 

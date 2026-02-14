@@ -14,9 +14,6 @@ import cutlass.cute as cute
 from cutlass.cutlass_dsl import Int32, Boolean, Constexpr, const_expr
 import cutlass.pipeline as pipeline
 from cutlass.utils.static_persistent_tile_scheduler import StaticPersistentTileScheduler
-from cutlass.utils.dynamic_persistent_tile_scheduler import (
-    ClcDynamicPersistentTileScheduler,
-)
 from cutlass.utils.blackwell_helpers import get_tmem_load_op, get_smem_store_op
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.nvgpu.common import CacheEvictionPriority
@@ -161,8 +158,6 @@ def epilogue_tma_store(
     gemm_kernel,
     epi_tidx: Int32,
     warp_idx: Int32,
-    acc_pipeline: pipeline.PipelineAsync,
-    tiled_mma: cute.TiledMma,
     tma_atom_c: cute.CopyAtom,
     # Input of epilogue
     tCtAcc_base: cute.Tensor,
@@ -171,11 +166,13 @@ def epilogue_tma_store(
     # Output of epilogue
     tCgC_base: cute.Tensor,
     epi_tile: cute.Tile,
-    tile_sched: Union[StaticPersistentTileScheduler, ClcDynamicPersistentTileScheduler],
+    num_tiles_executed: Int32,
     epilogue_op: Constexpr,
-    clc_pipeline: Union[pipeline.PipelineClcFetchAsync, None] = None,
-    clc_consumer_state: Union[pipeline.PipelineState, None] = None,
-) -> None:
+    mma_tile_coord_mnl: Tuple[Int32, Int32, Int32],
+    acc_consumer_state: pipeline.PipelineState,
+    acc_pipeline: pipeline.PipelineAsync,
+    c_pipeline: pipeline.PipelineTmaStore,
+) -> pipeline.PipelineState:
     # Layout transformation for tCgC_base
     # ((MMA_ATOM_M, MMA_ATOM_N), MMA_M, MMA_N, TILE_M, TILE_N, TILE_K)
     # -> ((MMA_ATOM_M, MMA_M), (MMA_ATOM_N, MMA_N), TILE_M, TILE_N, TILE_K)
@@ -207,142 +204,97 @@ def epilogue_tma_store(
         cute.group_modes(tCgC_epi, 0, 2),
     )
 
-    acc_consumer_state = pipeline.make_pipeline_state(
-        pipeline.PipelineUserType.Consumer, gemm_kernel.num_acc_stage
-    )
-
-    # Threads/warps participating in tma store pipeline
-    c_producer_group = pipeline.CooperativeGroup(
-        pipeline.Agent.Thread,
-        32 * len(gemm_kernel.epilogue_warp_id),
-    )
-    c_pipeline = pipeline.PipelineTmaStore.create(
-        num_stages=gemm_kernel.num_c_stage, producer_group=c_producer_group
-    )
-
     epilog_sync_barrier = pipeline.NamedBarrier(
         barrier_id=gemm_kernel.epilog_sync_bar_id,
         num_threads=32 * len(gemm_kernel.epilogue_warp_id),
     )
 
-    work_tile = tile_sched.initial_work_tile_info()
-    while work_tile.is_valid_tile:
-        # Get tile coord from tile scheduler
-        cur_tile_coord = work_tile.tile_idx
-        mma_tile_coord_mnl = (
-            cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-            cur_tile_coord[1],
-            cur_tile_coord[2],
-        )
+    #
+    # Slice to per mma tile index
+    #
+    # ((ATOM_V, REST_V), EPI_M, EPI_N)
+    bSG_gC = bSG_gC_partitioned[(None, None, None, *mma_tile_coord_mnl)]
+
+    # Set tensor memory buffer for current tile
+    # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
+    tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_consumer_state.index)]
+
+    #
+    # Wait for accumulator buffer full
+    #
+    acc_pipeline.consumer_wait(acc_consumer_state)
+
+    tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
+    bSG_gC = cute.group_modes(bSG_gC, 1, cute.rank(bSG_gC))
+
+    #
+    # Store accumulator to global memory in subtiles
+    #
+    subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
+    num_prev_subtiles = num_tiles_executed * subtile_cnt
+    for subtile_idx in range(subtile_cnt):
+        #
+        # Load accumulator from tensor memory buffer to register
+        #
+        tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
+        cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
 
         #
-        # Slice to per mma tile index
+        # Convert to C type
         #
-        # ((ATOM_V, REST_V), EPI_M, EPI_N)
-        bSG_gC = bSG_gC_partitioned[(None, None, None, *mma_tile_coord_mnl)]
-
-        # Set tensor memory buffer for current tile
-        # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
-        tTR_tAcc = tTR_tAcc_base[
-            (None, None, None, None, None, acc_consumer_state.index)
-        ]
+        acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
+        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
+        tRS_rC.store(acc_vec)
 
         #
-        # Wait for accumulator buffer full
+        # Store C to shared memory
         #
-        acc_pipeline.consumer_wait(acc_consumer_state)
-
-        tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
-        bSG_gC = cute.group_modes(bSG_gC, 1, cute.rank(bSG_gC))
-
-        #
-        # Store accumulator to global memory in subtiles
-        #
-        subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
-        num_prev_subtiles = tile_sched.num_tiles_executed * subtile_cnt
-        for subtile_idx in range(subtile_cnt):
-            #
-            # Load accumulator from tensor memory buffer to register
-            #
-            tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
-            cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
-
-            #
-            # Convert to C type
-            #
-            acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
-            acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
-            tRS_rC.store(acc_vec)
-
-            #
-            # Store C to shared memory
-            #
-            c_buffer = (num_prev_subtiles + subtile_idx) % gemm_kernel.num_c_stage
-            cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
-            # Fence and barrier to make sure shared memory store is visible to TMA store
-            cute.arch.fence_proxy("async.shared", space="cta")
-            epilog_sync_barrier.arrive_and_wait()
-
-            #
-            # TMA store C to global memory
-            #
-            if warp_idx == gemm_kernel.epilogue_warp_id[0]:
-                cute.copy(
-                    tma_atom_c,
-                    bSG_sC[(None, c_buffer)],
-                    bSG_gC[(None, subtile_idx)],
-                )
-                # Fence and barrier to make sure shared memory store is visible to TMA store
-                c_pipeline.producer_commit()
-                c_pipeline.producer_acquire()
-            epilog_sync_barrier.arrive_and_wait()
-
+        c_buffer = (num_prev_subtiles + subtile_idx) % gemm_kernel.num_c_stage
+        cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
+        # Fence and barrier to make sure shared memory store is visible to TMA store
+        cute.arch.fence_proxy("async.shared", space="cta")
         epilog_sync_barrier.arrive_and_wait()
 
         #
-        # Async arrive accumulator buffer empty
+        # TMA store C to global memory
         #
-        with cute.arch.elect_one():
-            acc_pipeline.consumer_release(acc_consumer_state)
-        acc_consumer_state.advance()
+        if warp_idx == gemm_kernel.epilogue_warp_id[0]:
+            cute.copy(
+                tma_atom_c,
+                bSG_sC[(None, c_buffer)],
+                bSG_gC[(None, subtile_idx)],
+            )
+            # Fence and barrier to make sure shared memory store is visible to TMA store
+            c_pipeline.producer_commit()
+            c_pipeline.producer_acquire()
+        epilog_sync_barrier.arrive_and_wait()
 
-        #
-        # Advance to next tile
-        #
-        # Check if tile_sched is StaticPersistentTileScheduler or any subclass inheriting from it
-        if const_expr(isinstance(tile_sched, StaticPersistentTileScheduler)):
-            tile_sched.advance_to_next_work()
-            work_tile = tile_sched.get_current_work()
-        elif const_expr(isinstance(tile_sched, ClcDynamicPersistentTileScheduler)):
-            clc_pipeline.consumer_wait(clc_consumer_state)
-            work_tile = tile_sched.get_current_work()
-            clc_pipeline.consumer_release(clc_consumer_state)
-            clc_consumer_state.advance()
-        else:
-            # Not match
-            pass
+    epilog_sync_barrier.arrive_and_wait()
 
-    # Wait for C store complete
-    c_pipeline.producer_tail()
+    #
+    # Async arrive accumulator buffer empty
+    #
+    with cute.arch.elect_one():
+        acc_pipeline.consumer_release(acc_consumer_state)
+    acc_consumer_state.advance()
+    return acc_consumer_state
 
 
 @cute.jit
 def epilogue(
     gemm_kernel,
     epi_tidx: Int32,
-    acc_pipeline: pipeline.PipelineAsync,
-    tiled_mma: cute.TiledMma,
     tCtAcc_base: cute.Tensor,
     tCgC_base: cute.Tensor,
     epi_tile: cute.Tile,
-    tile_sched: Union[StaticPersistentTileScheduler, ClcDynamicPersistentTileScheduler],
     epilogue_op: Constexpr,
-    tmem_dealloc_barrier: pipeline.NamedBarrier,
+    mma_tile_coord_mnl: Tuple[Int32, Int32, Int32],
+    acc_consumer_state: pipeline.PipelineState,
+    acc_pipeline: pipeline.PipelineAsync,
     tCcC_base: cute.Tensor = None,
     mC_mnl: cute.Tensor = None,
-    clc_pipeline: Union[pipeline.PipelineClcFetchAsync, None] = None,
-    clc_consumer_state: Union[pipeline.PipelineState, None] = None,
-) -> None:
+    overlapping_accum: Constexpr = False,
+) -> pipeline.PipelineState:
     """
     Epilogue function that stores accumulator results directly to global memory.
     Used when TMA store is not enabled.
@@ -351,32 +303,26 @@ def epilogue(
     :type gemm_kernel: Any
     :param epi_tidx: Thread index in epilogue warp groups
     :type epi_tidx: Int32
-    :param acc_pipeline: Accumulator pipeline for async operations
-    :type acc_pipeline: pipeline.PipelineAsync
-    :param tiled_mma: The tiled MMA configuration
-    :type tiled_mma: cute.TiledMma
     :param tCtAcc_base: Base accumulator tensor in tensor memory
     :type tCtAcc_base: cute.Tensor
     :param tCgC_base: The global memory tensor C to be copied and partitioned
     :type tCgC_base: cute.Tensor
     :param epi_tile: Epilogue tile configuration
     :type epi_tile: cute.Tile
-    :param tile_sched: Tile scheduler for persistent scheduling
-    :type tile_sched: StaticPersistentTileScheduler
     :param epilogue_op: Optional elementwise operation to apply
     :type epilogue_op: Constexpr
-    :param tmem_dealloc_barrier: Barrier for tensor memory deallocation
-    :type tmem_dealloc_barrier: pipeline.NamedBarrier
-    :param alignment_bytes: Alignment bytes for global memory store
-    :type alignment_bytes: int
+    :param mma_tile_coord_mnl: MMA tile coordinates (M, N, L)
+    :type mma_tile_coord_mnl: Tuple[Int32, Int32, Int32]
+    :param acc_consumer_state: Accumulator consumer pipeline state
+    :type acc_consumer_state: pipeline.PipelineState
+    :param acc_pipeline: Accumulator pipeline for async operations
+    :type acc_pipeline: pipeline.PipelineAsync
     :param tCcC_base: Identity/coordinate tensor C
     :type tCcC_base: cute.Tensor
     :param mC_mnl: Global memory tensor C (full tensor for predicate computation)
     :type mC_mnl: cute.Tensor
-    :param clc_pipeline: Pipeline for dynamic persistent tile scheduling
-    :type clc_pipeline: Union[pipeline.PipelineClcFetchAsync, None]
-    :param clc_consumer_state: Consumer state for dynamic persistent tile scheduling
-    :type clc_consumer_state: Union[pipeline.PipelineState, None]
+    :param overlapping_accum: Whether to use overlapping accumulator
+    :type overlapping_accum: Constexpr
     """
 
     # Layout transformation for tCgC_base
@@ -434,29 +380,21 @@ def epilogue(
         cC_epi = cute.flat_divide(tCcC, epi_tile)
         tTR_cC_partitioned = thr_copy_t2r.partition_D(cC_epi)
 
-    acc_consumer_state = pipeline.make_pipeline_state(
-        pipeline.PipelineUserType.Consumer, gemm_kernel.num_acc_stage
-    )
-
-    work_tile = tile_sched.initial_work_tile_info()
-    while work_tile.is_valid_tile:
-        #
-        # Pre-advance to next tile
-        #
-        if const_expr(isinstance(tile_sched, StaticPersistentTileScheduler)):
-            tile_sched.advance_to_next_work()
-            next_work_tile = tile_sched.get_current_work()
-
-        # Get tile coord from current work tile
-        cur_tile_coord = work_tile.tile_idx
-        mma_tile_coord_mnl = (
-            cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-            cur_tile_coord[1],
-            cur_tile_coord[2],
+    # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
+    tTR_gC = tTR_gC_partitioned[
+        (
+            None,
+            None,
+            None,
+            None,
+            None,
+            *mma_tile_coord_mnl,
         )
+    ]
 
+    if const_expr(use_predication):
         # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
-        tTR_gC = tTR_gC_partitioned[
+        tTR_cC = tTR_cC_partitioned[
             (
                 None,
                 None,
@@ -466,88 +404,89 @@ def epilogue(
                 *mma_tile_coord_mnl,
             )
         ]
-        if const_expr(use_predication):
-            # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
-            tTR_cC = tTR_cC_partitioned[
-                (
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    *mma_tile_coord_mnl,
-                )
-            ]
-            tTR_cC = cute.group_modes(tTR_cC, 3, cute.rank(tTR_cC))
+        tTR_cC = cute.group_modes(tTR_cC, 3, cute.rank(tTR_cC))
 
-        # Set tensor memory buffer for current tile
-        # (T2R, T2R_M, T2R_N, EPI_M, EPI_M)
-        tTR_tAcc = tTR_tAcc_base[
-            (None, None, None, None, None, acc_consumer_state.index)
-        ]
+    # Get accumulator stage index
+    if const_expr(overlapping_accum):
+        acc_stage_index = acc_consumer_state.phase
+        reverse_subtile = acc_stage_index == 0
+    else:
+        acc_stage_index = acc_consumer_state.index
+
+    # Set tensor memory buffer for current tile
+    # (T2R, T2R_M, T2R_N, EPI_M, EPI_M)
+    tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_stage_index)]
+
+    #
+    # Wait for accumulator buffer full
+    #
+    acc_pipeline.consumer_wait(acc_consumer_state)
+
+    tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
+    tTR_gC = cute.group_modes(tTR_gC, 3, cute.rank(tTR_gC))
+    #
+    # Store accumulator to global memory in subtiles
+    #
+    subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
+    for subtile_idx in range(subtile_cnt):
+        # Compute the actual subtile index
+        real_subtile_idx = subtile_idx
+        if const_expr(overlapping_accum):
+            if reverse_subtile:
+                real_subtile_idx = subtile_cnt - 1 - subtile_idx
+        #
+        # Get the destination and coordinate slices for this subtile
+        #
+        tTR_gC_subtile = tTR_gC[(None, None, None, real_subtile_idx)]
+        #
+        # Load accumulator from tensor memory buffer to register
+        #
+        tTR_tAcc_mn = tTR_tAcc[(None, None, None, real_subtile_idx)]
+        cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
 
         #
-        # Wait for accumulator buffer full
+        # Async arrive accumulator buffer empty
         #
-        acc_pipeline.consumer_wait(acc_consumer_state)
-
-        tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
-        tTR_gC = cute.group_modes(tTR_gC, 3, cute.rank(tTR_gC))
-        #
-        # Store accumulator to global memory in subtiles
-        #
-        subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
-        for subtile_idx in range(subtile_cnt):
-            #
-            # Get the destination and coordinate slices for this subtile
-            #
-            tTR_gC_subtile = tTR_gC[(None, None, None, subtile_idx)]
-            #
-            # Load accumulator from tensor memory buffer to register
-            #
-            tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
-            cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
-            # Async arrive accumulator buffer empty
-            # Release early for perf
+        if const_expr(overlapping_accum):
+            # Early release when overlapping: release after processing the
+            # overlapping region (SF columns) so they can be reused
+            if subtile_idx == gemm_kernel.iter_acc_early_release_in_epilogue:
+                cute.arch.fence_view_async_tmem_load()
+                with cute.arch.elect_one():
+                    acc_pipeline.consumer_release(acc_consumer_state)
+                acc_consumer_state.advance()
+        else:
+            # Release early for perf at the last subtile
             if subtile_idx == subtile_cnt - 1:
                 with cute.arch.elect_one():
                     acc_pipeline.consumer_release(acc_consumer_state)
                 acc_consumer_state.advance()
 
-            #
-            # Convert to C type
-            #
-            acc_vec = tTR_rAcc.load()
-            acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
-            tTR_rC.store(acc_vec)
+        #
+        # Convert to C type
+        #
+        acc_vec = tTR_rAcc.load()
+        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
+        tTR_rC.store(acc_vec)
 
-            if const_expr(use_predication):
-                # compute predicate
-                tTR_cC_subtile = tTR_cC[(None, None, None, subtile_idx)]
-                pred_C_shape = (1, *tTR_cC_subtile.shape[1:])
-                pred_C = cute.make_rmem_tensor(pred_C_shape, Boolean)
-                for m_idx in range(tTR_cC_subtile.shape[1]):
-                    for n_idx in range(tTR_cC_subtile.shape[2]):
-                        vector_first_coord = tTR_cC_subtile[(0, m_idx, n_idx)]
-                        pred_C[(0, m_idx, n_idx)] = cute.elem_less(
-                            vector_first_coord, mC_mnl.shape
-                        )
-                # Store C to global memory with predication
-                cute.copy(simt_atom, tTR_rC, tTR_gC_subtile, pred=pred_C)
-            else:
-                # Store C directly to global memory
-                cute.copy(simt_atom, tTR_rC, tTR_gC_subtile)
+        if const_expr(use_predication):
+            # compute predicate
+            tTR_cC_subtile = tTR_cC[(None, None, None, real_subtile_idx)]
+            pred_C_shape = (1, *tTR_cC_subtile.shape[1:])
+            pred_C = cute.make_rmem_tensor(pred_C_shape, Boolean)
+            for m_idx in range(tTR_cC_subtile.shape[1]):
+                for n_idx in range(tTR_cC_subtile.shape[2]):
+                    vector_first_coord = tTR_cC_subtile[(0, m_idx, n_idx)]
+                    pred_C[(0, m_idx, n_idx)] = cute.elem_less(
+                        vector_first_coord, mC_mnl.shape
+                    )
+            # Store C to global memory with predication
+            cute.copy(simt_atom, tTR_rC, tTR_gC_subtile, pred=pred_C)
+        else:
+            # Store C directly to global memory
+            cute.copy(simt_atom, tTR_rC, tTR_gC_subtile)
 
-        if const_expr(isinstance(tile_sched, StaticPersistentTileScheduler)):
-            work_tile = next_work_tile
-        elif const_expr(isinstance(tile_sched, ClcDynamicPersistentTileScheduler)):
-            clc_pipeline.consumer_wait(clc_consumer_state)
-            work_tile = tile_sched.get_current_work()
-            clc_pipeline.consumer_release(clc_consumer_state)
-            clc_consumer_state.advance()
-
-    # Synchronize before TMEM dealloc (done by the caller)
-    tmem_dealloc_barrier.arrive_and_wait()
+    return acc_consumer_state
 
 
 @cute.jit
@@ -908,4 +847,3 @@ def epilogue_release_flag(
 
     # Synchronize before TMEM dealloc (done by the caller)
     tmem_dealloc_barrier.arrive_and_wait()
-

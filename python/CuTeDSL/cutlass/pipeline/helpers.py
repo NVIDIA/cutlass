@@ -10,22 +10,14 @@
 # is strictly prohibited.
 
 import enum
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Union
 import warnings
 
 import cutlass.cute as cute
-from cutlass.cutlass_dsl import (
-    Boolean,
-    Int32,
-    Int64,
-    if_generate,
-    dsl_user_op,
-    dsl_user_op,
-)
-from cutlass._mlir.dialects import llvm
-import cutlass._mlir.dialects.cute as _cute_ir
+from cutlass.cutlass_dsl import Boolean, Int32, if_generate, dsl_user_op
 
 
 ##############################################################################
@@ -110,7 +102,6 @@ class PipelineOp(enum.Enum):
     Composite = enum.auto()
     # Async load without TMA
     AsyncLoad = enum.auto()
-
 
 def _get_pipeline_op(type_str):
     return PipelineOp(type_str)
@@ -336,7 +327,9 @@ class MbarrierArray(SyncObject):
     def arrive_and_expect_tx_with_dst(
         self, index: int, tx_count: int, dst: Optional[int] = None, *, loc=None, ip=None
     ) -> None:
-        cute.arch.mbarrier_arrive_and_expect_tx(self.get_barrier(index), tx_count, dst, loc=loc, ip=ip)
+        cute.arch.mbarrier_arrive_and_expect_tx(
+            self.get_barrier(index, loc=loc, ip=ip), tx_count, dst, loc=loc, ip=ip
+        )
 
     @dsl_user_op
     def try_wait(self, index: int, phase: int, *, loc=None, ip=None) -> Boolean:
@@ -386,6 +379,14 @@ class MbarrierArray(SyncObject):
         )
 
 
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+MbarrierArray.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]
+)
+
+
 ##############################################################################
 # NamedBarrier class
 ##############################################################################
@@ -429,14 +430,11 @@ class NamedBarrier(SyncObject):
         """
         The unaligned flavor of arrive can be used with an arbitrary number of threads in the CTA.
         """
-        llvm.inline_asm(
-            None,
-            [Int32(self.barrier_id).ir_value(), Int32(self.num_threads).ir_value()],
-            "barrier.arrive $0, $1;",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
+        cute.arch.barrier_arrive(
+            barrier_id=self.barrier_id,
+            number_of_threads=self.num_threads,
+            loc=loc,
+            ip=ip,
         )
 
     @dsl_user_op
@@ -453,15 +451,13 @@ class NamedBarrier(SyncObject):
         )
         self.arrive_and_wait(loc=loc, ip=ip)
 
-    def wait_unaligned(self) -> None:
-        llvm.inline_asm(
-            None,
-            [Int32(self.barrier_id).ir_value(), Int32(self.num_threads).ir_value()],
-            "barrier.sync $0, $1;",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
+    @dsl_user_op
+    def wait_unaligned(self, *, loc=None, ip=None) -> None:
+        cute.arch.barrier(
+            barrier_id=self.barrier_id,
+            number_of_threads=self.num_threads,
+            loc=loc,
+            ip=ip,
         )
 
     @dsl_user_op
@@ -751,18 +747,6 @@ def agent_sync(group: Agent, is_relaxed: bool = False, *, loc=None, ip=None):
         )
 
 
-def _mbarrier_i64_to_ptr(val: Int64) -> cute.Pointer:
-    """
-    Converts a smem pointer of type Int64 to cute.Pointer with 8B alignment
-    """
-    return cute.make_ptr(
-        Int64,
-        val.ir_value(),
-        mem_space=_cute_ir.AddressSpace.smem,
-        assumed_align=8,
-    )
-
-
 # NamedBarrier free functions
 @dsl_user_op
 def arrive(barrier_id: int, num_threads: int, *, loc=None, ip=None):
@@ -780,19 +764,13 @@ def arrive_unaligned(barrier_id: int, num_threads: int, *, loc=None, ip=None):
     """
     The unaligned flavor of arrive can be used with an arbitrary number of threads in the CTA.
     """
-    llvm.inline_asm(
-        None,
-        [Int32(barrier_id).ir_value(), Int32(num_threads).ir_value()],
-        "barrier.arrive $0, $1;",
-        "r,r",
-        has_side_effects=True,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
+    cute.arch.barrier_arrive(
+        barrier_id=barrier_id, number_of_threads=num_threads, loc=loc, ip=ip
     )
 
 
 @dsl_user_op
-def wait(barrier_id: int, num_threads: int):
+def wait(*, loc=None, ip=None):
     """
     NamedBarriers do not have a standalone wait like mbarriers, only an arrive_and_wait.
     If synchronizing two warps in a producer/consumer pairing, the arrive count would be
@@ -811,14 +789,8 @@ def wait_unaligned(barrier_id: int, num_threads: int, *, loc=None, ip=None):
     warnings.warn(
         "NamedBarrier wait also arrives on the barrier. Routing call to NamedBarrier.arrive_and_wait()."
     )
-    llvm.inline_asm(
-        None,
-        [Int32(barrier_id).ir_value(), Int32(num_threads).ir_value()],
-        "barrier.sync $0, $1;",
-        "r,r",
-        has_side_effects=True,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
+    cute.arch.barrier(
+        barrier_id=barrier_id, number_of_threads=num_threads, loc=loc, ip=ip
     )
 
 

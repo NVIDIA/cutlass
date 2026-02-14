@@ -82,6 +82,7 @@ class LdMatrix8x8x16bOp(BaseOp):
 class LdMatrix8x8x16bTrait(Trait):
     pass
 
+
 @dataclass(frozen=True)
 class LdMatrix8x16x8bOp(BaseOp):
     """
@@ -102,15 +103,20 @@ class LdMatrix8x16x8bOp(BaseOp):
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
-        if self.unpack_bits not in [4, 6]:
-            raise OpError(self, "Op unpack bits must be 4 or 6")
+        if self.unpack_bits not in [None, 4, 6]:
+            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "LdMatrix8x16x8bTrait":
-        mode = _pack_shape((8, 16), loc=loc, ip=ip)
-        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
-        if self.unpack_bits == 6:
+        # LdMatrix8x16x8b without unpacking doesn't exist
+        # but is equivalent to LdMatrix8x8x16b
+        mode_n = 8 if self.unpack_bits is None else 16
+        mode = _pack_shape((8, mode_n), loc=loc, ip=ip)
+        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u16
+        if self.unpack_bits == 4:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
+        elif self.unpack_bits == 6:
             sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u6x16p32to8
         ty = _cute_nvgpu_ir.CopyAtomLdsmType.get(
             copy_internal_type.mlir_type,
@@ -125,11 +131,12 @@ class LdMatrix8x16x8bOp(BaseOp):
 class LdMatrix8x16x8bTrait(Trait):
     pass
 
+
 @dataclass(frozen=True)
 class LdMatrix16x8x8bOp(BaseOp):
     """
     16x8 8b ``ldmatrix`` Operation with transpose
-    
+
     There is no direct PTX correspondance to this Op.
     This actually lowers to ldmatrix with the ``.m16n16`` qualifier and
     additional address and value permutations to match stmatrix.m16n8.trans.
@@ -166,6 +173,7 @@ class LdMatrix16x8x8bOp(BaseOp):
         )
         return LdMatrix16x8x8bTrait(make_atom(ty, loc=loc, ip=ip))
 
+
 class LdMatrix16x8x8bTrait(Trait):
     pass
 
@@ -176,7 +184,7 @@ class LdMatrix16x16x8bOp(BaseOp):
     16x16 ``ldmatrix`` Operation with transpose and optional unpacking to 8b container.
     Packed source container is 16x4b elements with 64b padding
     or 16x6b elements with 32b padding (total 128b per 16 elements)
-    
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-load-instruction-ldmatrix>`__.
     This operation corresponds to the ``.m16n16`` and the ``.b4x16_p64``,``.b6x16_p32``,``.b8`` qualifiers.
     """

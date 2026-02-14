@@ -27,6 +27,7 @@ from cutlass.utils.static_persistent_tile_scheduler import (
 )
 import cutlass.cute as cute
 
+
 class ClcDynamicPersistentTileSchedulerParams:
     """A class to represent parameters for a dynamic persistent tile scheduler.
 
@@ -98,6 +99,7 @@ class ClcDynamicPersistentTileSchedulerParams:
         )
         return problem_ceiling_cta_mnl
 
+
 class ClcDynamicPersistentTileScheduler:
     """A scheduler for dynamic persistent tile execution in CUTLASS/CuTe kernels.
 
@@ -127,7 +129,7 @@ class ClcDynamicPersistentTileScheduler:
         :param num_tiles_executed: Counter for executed tiles.
         :type num_tiles_executed: Int32
         :param clc_response_ptr: Pointer of the clc rsponse.
-        :type clc_response_ptr: Tuple[Integer, Integer, Integer, Integer]
+        :type clc_response_ptr: cute.Pointer
         :param block_idx: The block index.
         :type block_idx: Tuple[Integer, Integer, Integer]
         """
@@ -236,14 +238,17 @@ class ClcDynamicPersistentTileScheduler:
 
     @dsl_user_op
     def work_tile_info_from_clc_response(
-        self, result_addr: Int32, *, loc=None, ip=None
+        self, result_addr: cute.Pointer, *, loc=None, ip=None
     ) -> WorkTileInfo:
         """
         Simulates parsing CLC response data in Python.
         result_addr: 16-byte response data (simulating shared memory access)
         """
         m_idx, n_idx, l_idx, vld = cute.arch.clc_response(result_addr, loc=loc, ip=ip)
-        cute.arch.fence_proxy("async.shared", space="cta")
+        cute.arch.fence_proxy(
+            "async.shared",
+            space="cta",
+        )
         cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster
         cur_tile_coord = (m_idx + cta_idx_in_cluster, n_idx + cta_idy_in_cluster, l_idx)
         return WorkTileInfo(cur_tile_coord, vld)

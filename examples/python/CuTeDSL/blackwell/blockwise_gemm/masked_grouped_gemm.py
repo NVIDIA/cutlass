@@ -30,13 +30,11 @@ import argparse
 from typing import Type, Tuple, Union
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
@@ -79,7 +77,7 @@ Matrix A/C Memory Layout Diagrams:
 
 This GEMM works as follows:
 1. DMA warp: Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using non-TMA operations.
+2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using async copy operations.
 2. MMA warp: Perform matrix multiply-accumulate (MMA) operations using tcgen05.mma instruction.
 3. EPILOGUE warp:
     - Load completed accumulator from tensor memory (TMEM) to registers (RMEM) using tcgen05.ld.
@@ -1041,7 +1039,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                     )
 
                 # fence view async shared
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 self.sched_sync_barrier.arrive_and_wait()
                 # commit tile info pipeline
                 tile_info_pipeline.producer_commit(tile_info_producer_state)
@@ -1156,7 +1157,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1328,7 +1332,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1483,7 +1490,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1717,7 +1727,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1884,7 +1897,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                         tRS_sC[(None, None, None, c_buffer)],
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy("async.shared", space="cta")
+                    cute.arch.fence_proxy(
+                        "async.shared",
+                        space="cta",
+                    )
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     #
@@ -1914,7 +1930,10 @@ class BlockwiseMaskedGroupedGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -2586,6 +2605,8 @@ class BlockwiseMaskedGroupedGemmKernel:
 
 
 def create_mask(num_groups: int, m: int, fixed_m=False, tile_m=128):
+    import torch
+
     # align with block_m (or block_n if swapAB)
     masked_m_candidates = list(
         filter(
@@ -2617,6 +2638,9 @@ def create_tensors(
     scale_dtype,
     fixed_m=False,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     torch.manual_seed(1111)
 
     _gidx_mapping, masked_m = create_mask(l, m, fixed_m)
@@ -2684,6 +2708,9 @@ def run(
     fixed_m: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     """
     Prepare A/B/C tensors, launch GPU kernel, and reference checking.
     """

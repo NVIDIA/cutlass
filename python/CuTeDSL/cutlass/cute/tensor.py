@@ -20,6 +20,7 @@ from cutlass.cutlass_dsl import (
     T,
     cutlass_arith,
     _binary_op_type_promote,
+    MLIR_DYNAMIC,
     BaseDSL,
 )
 from cutlass._mlir import ir
@@ -75,35 +76,8 @@ from .core import (
     recast_layout,
 )
 
-from .typing import (
-    IntTuple,
-    Coord,
-    Shape,
-    Stride,
-    Pointer,
-    Layout,
-    ComposedLayout,
-    Tensor,
-    AddressSpace,
-    is_integer,
-    is_int_tuple,
-    as_numeric,
-)
-from .typing import (
-    Numeric,
-    Integer,
-    Boolean,
-    Int4,
-    Uint8,
-    Int8,
-    Int32,
-    Float4E2M1FN,
-    Float16,
-    Float32,
-    BFloat16,
-)
 from .tuple import transform_leaf, product, product_like, flatten_to_tuple
-from .arch import cvt_i8_bf16_intrinsic, cvt_i4_bf16_intrinsic, cvt_f4e2m1_f16_intrinsic
+from .arch import cvt_i8_bf16_intrinsic, cvt_i4_bf16_intrinsic
 
 
 __all__ = [
@@ -439,10 +413,9 @@ class _Tensor(Tensor):
         return _cute_ir.get_layout(self.value, loc=loc, ip=ip)
 
     @property
-    @dsl_user_op
     @lru_cache_ir()
-    def shape(self, *, loc=None, ip=None) -> Shape:
-        return self.layout.shape_method(loc=loc, ip=ip)
+    def shape(self) -> Shape:
+        return self.layout.shape
 
     @property
     @lru_cache_ir()
@@ -480,12 +453,23 @@ class _Tensor(Tensor):
         raise ValueError(f"{self} doesn't have memspace")
 
     @dsl_user_op
-    def load(self, *, loc=None, ip=None) -> "TensorSSA":
+    def load(
+        self,
+        *,
+        mask: Optional["TensorSSA"] = None,
+        pass_thru: Optional["TensorSSA"] = None,
+        loc=None,
+        ip=None,
+    ) -> "TensorSSA":
         """Load tensor elements as a vector.
 
         Loads all elements of the tensor into a vector representation, assuming the tensor
         has a static shape and is in a memory space that supports load operations.
 
+        :param mask: Mask vector, defaults to None
+        :type mask: Optional[TensorSSA]
+        :param pass_thru: Pass through vector, defaults to None
+        :type pass_thru: Optional[TensorSSA]
         :param loc: Source location for MLIR operation tracking, defaults to None
         :type loc: Optional[Location]
         :param ip: Insertion point for MLIR operation, defaults to None
@@ -501,9 +485,15 @@ class _Tensor(Tensor):
         if not is_static(self.shape):
             raise ValueError("dynamic layout doesn't support load")
 
-        self._check_can_load_store()
+        self._check_can_load_store(vectorized=True)
 
-        res_vect = _cute_ir.memref_load_vec(self.value, loc=loc, ip=ip)
+        mask_val = None if mask is None else mask.ir_value(loc=loc, ip=ip)
+        pass_thru_val = (
+            None if pass_thru is None else self._cvt_to_dest(pass_thru, loc=loc, ip=ip)
+        )
+        res_vect = _cute_ir.memref_load_vec(
+            self.value, mask=mask_val, pass_thru=pass_thru_val, loc=loc, ip=ip
+        )
         if self.element_type is Boolean:
             assert res_vect.type.element_type == T.i8(), (
                 f"Boolean tensor must be stored as i8 in memory, but got {res_vect.type.element_type}"
@@ -515,7 +505,14 @@ class _Tensor(Tensor):
         return TensorSSA(res_vect, self.shape, self.element_type)
 
     @dsl_user_op
-    def store(self, data: "TensorSSA", *, loc=None, ip=None):
+    def store(
+        self,
+        data: "TensorSSA",
+        *,
+        mask: Optional["TensorSSA"] = None,
+        loc=None,
+        ip=None,
+    ):
         """Store vector data into tensor.
 
         Stores vector data into the tensor, assuming matching shapes and a memory space
@@ -523,6 +520,8 @@ class _Tensor(Tensor):
 
         :param data: Vector data to store into tensor
         :type data: TensorSSA
+        :param mask: Mask vector, defaults to None
+        :type mask: Optional[TensorSSA]
         :param loc: Source location for MLIR operation tracking, defaults to None
         :type loc: Optional[Location]
         :param ip: Insertion point for MLIR operation, defaults to None
@@ -538,7 +537,7 @@ class _Tensor(Tensor):
         if not is_static(self.shape):
             raise ValueError("Dynamic layout doesn't support vectorized store")
 
-        self._check_can_load_store()
+        self._check_can_load_store(vectorized=True)
 
         n_elems = size(self.shape, loc=loc, ip=ip)
         if n_elems != size(data.shape, loc=loc, ip=ip):
@@ -556,7 +555,11 @@ class _Tensor(Tensor):
         # Implicit upcast to wider type
         new_data = self._cvt_to_dest(data, loc=loc, ip=ip)
 
-        return _cute_ir.memref_store_vec(new_data, self.value, loc=loc, ip=ip)
+        mask_val = None if mask is None else mask.ir_value(loc=loc, ip=ip)
+
+        return _cute_ir.memref_store_vec(
+            new_data, self.value, mask=mask_val, loc=loc, ip=ip
+        )
 
     @dsl_user_op
     def fill(self, value: Numeric, *, loc=None, ip=None) -> None:
@@ -585,7 +588,7 @@ class _Tensor(Tensor):
             # Fill tensor with constant value
             tensor.fill(0.5)  # All elements become 0.5
         """
-        self._check_can_load_store()
+        self._check_can_load_store(vectorized=True)
 
         sz = size(self, loc=loc, ip=ip)
         if type(sz) is not int:
@@ -599,7 +602,7 @@ class _Tensor(Tensor):
         )
         self.store(vect_val, loc=loc, ip=ip)
 
-    def _check_can_load_store(self):
+    def _check_can_load_store(self, vectorized: bool = False):
         if not isinstance(self.type, _cute_ir.MemRefType) or self.memspace not in (
             AddressSpace.rmem,
             AddressSpace.smem,
@@ -608,9 +611,9 @@ class _Tensor(Tensor):
         ):
             raise ValueError(f"{self} doesn't support load and store")
 
-        if self.type.is_swizzled:
+        if vectorized and isinstance(self.layout, ComposedLayout):
             raise NotImplementedError(
-                f"load & store swizzled memory is not supported yet: {self}"
+                "vectorized load/store on tensor with composed layout is not supported yet"
             )
 
     def _check_can_dereference(self):
@@ -1038,8 +1041,10 @@ def print_tensor(
             signed = tensor.element_type.signed
         else:
             signed = False
-    else:
+    elif isinstance(tensor.type, _cute_ir.CoordTensorType):
         signed = True
+    else:
+        raise ValueError(f"unsupported tensor type for print_tensor, got {tensor.type}")
 
     _cute_ir.print_view(tensor.value, verbose=verbose, is_signed=signed, loc=loc, ip=ip)
 
@@ -1750,7 +1755,8 @@ class TensorSSA(cutlass_arith.ArithValue):
             idx = crd2idx(crd, self._layout, loc=loc, ip=ip)
             assert not isinstance(idx, tuple), "index must be scalar"
             idx_val = as_numeric(idx).ir_value(loc=loc, ip=ip)
-            res_val = vector.extractelement(self, position=idx_val, loc=loc, ip=ip)
+            idx_val = arith.index_cast(T.index(), idx_val, loc=loc, ip=ip)
+            res_val = vector.extract(self, [idx_val], [MLIR_DYNAMIC], loc=loc, ip=ip)
             return self.dtype(res_val)
 
         if not is_static(crd):
@@ -1817,16 +1823,7 @@ class TensorSSA(cutlass_arith.ArithValue):
         # maybe downcast can lose signedness
         src = self.maybe_downcast().with_signedness(self.signed)
         if src_dtype.is_float and dtype.is_float:
-            if src_dtype == Float4E2M1FN and dtype in (Float16, Float32):
-                res_vect = cvt_f4e2m1_f16_intrinsic(
-                    src, size(self.shape), loc=loc, ip=ip
-                )
-                if dtype == Float32:
-                    res_vect = cutlass_arith.cvtf(
-                        res_vect, dtype.mlir_type, loc=loc, ip=ip
-                    )
-            else:
-                res_vect = cutlass_arith.cvtf(src, dtype.mlir_type, loc=loc, ip=ip)
+            res_vect = cutlass_arith.cvtf(src, dtype.mlir_type, loc=loc, ip=ip)
         elif src_dtype.is_float and issubclass(dtype, Integer):
             res_vect = cutlass_arith.fptoi(
                 src, dtype.signed, dtype.mlir_type, loc=loc, ip=ip

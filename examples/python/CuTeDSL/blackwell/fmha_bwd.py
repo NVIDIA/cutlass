@@ -166,8 +166,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         self.num_reduce_warps = 4
         self.num_compute_warps = 8
 
-        SM100_TMEM_CAPACITY_COLUMNS = 512
-        self.tmem_alloc_cols = SM100_TMEM_CAPACITY_COLUMNS
+        self.tmem_alloc_cols = cute.arch.get_max_tmem_alloc_cols("sm_100")
 
         self.threads_per_warp = 32
         self.threads_per_cta = self.threads_per_warp * (
@@ -2093,7 +2092,6 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
             cute.arch.fence_view_async_tmem_load()
             self.compute_sync_barrier.arrive_and_wait()
-            cute.arch.fence_view_async_tmem_load()
 
             cute.copy(tiled_r2t, tRT_rST_reshaped, tRT_tP)
 
@@ -2161,7 +2159,10 @@ class BlackwellFusedMultiHeadAttentionBackward:
             cute.autovec_copy(tTR_rdST, sdS_slice)
 
             # Notify for dS
-            cute.arch.fence_proxy("async.shared", space="cta")
+            cute.arch.fence_proxy(
+                "async.shared",
+                space="cta",
+            )
             compute_mma_dS_pipeline.producer_commit(compute_mma_dS_producer_state)
             compute_mma_dS_producer_state.advance()
 
@@ -2279,7 +2280,10 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 )
 
                 # Wait for the stores to all be visible to the TMA
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 self.reduce_sync_barrier.arrive_and_wait()
 
                 if warp_idx == 0:
@@ -2489,11 +2493,13 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
         mma_compute_dKdV_pipeline.consumer_wait(mma_compute_dKdV_consumer_state)
 
+        # Load tdKtdK
         cute.copy(tiled_t2r_dK, tTR_tdK, tTR_rdK)
 
         for i in cutlass.range(cute.size(tTR_rdK), unroll_full=True):
             tTR_rdK[i] = scale_softmax * tTR_rdK[i]
 
+        # Store tdKgdK
         self.store(tTR_gdK, tTR_rdK, tTR_cdK, (K, D))
 
         cute.arch.fence_view_async_tmem_load()

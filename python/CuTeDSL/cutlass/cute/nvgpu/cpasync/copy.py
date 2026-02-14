@@ -21,7 +21,7 @@ from cutlass._mlir.dialects.cute import ReductionOp as ReductionOp
 from cutlass._mlir import ir
 
 from ...atom import CopyOp, Trait, make_atom
-from ...typing import Int16, Int64, Pointer, Integer, Numeric
+from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
 from ..common import OpError
 from ..tcgen05.mma import CtaGroup
 
@@ -112,6 +112,7 @@ TMA_MBAR_PTR_FIELD_NAME = "tma_bar"
 TMA_MCAST_MASK_FIELD_NAME = "mcast_mask"
 TMA_DESC_PTR_FIELD_NAME = "tma_descriptor_ptr"
 TMA_BYTE_MASK_FIELD_NAME = "byte_mask"
+TMA_CTA_RANK_FIELD_NAME = "cta_rank"
 TMA_CACHE_POLICY_FIELD_NAME = "cache_policy"
 
 
@@ -249,6 +250,7 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
 class CopyBulkTensorTileG2STrait(Trait):
     pass
 
+
 #
 # TMA GMEM -> SMEM multicast copies
 #
@@ -374,6 +376,7 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
         )
         return exec_value
 
+
 class CopyBulkTensorTileG2SMulticastTrait(Trait):
     pass
 
@@ -451,10 +454,6 @@ class CopyBulkTensorTileS2GNonExecTrait(Trait):
                 exec_value, attr, cache_policy.value, loc=loc, ip=ip
             )
         return exec_value
-
-
-class CopyBulkTensorTileS2GTrait(Trait):
-    pass
 
 
 class CopyBulkTensorTileS2GTrait(Trait):
@@ -800,7 +799,7 @@ class CopyBulkS2GByteMaskOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_100:
             raise OpError(
                 self,
@@ -874,7 +873,7 @@ class CopyBulkS2SOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -958,7 +957,7 @@ class CopyDsmemStoreOp(CopyOp):
 
     def __post_init__(self) -> None:
         # Arch verification
-        arch: Arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
             raise OpError(
                 self,
@@ -982,6 +981,11 @@ class CopyDsmemStoreOp(CopyOp):
         if not isinstance(num_bits_per_copy, int) or (num_bits_per_copy < 0):
             raise ValueError(
                 "expects a 'num_bits_per_copy' kw argument of type int that is non-negative "
+                f"when creating a copy Atom for {self.__class__.__name__}"
+            )
+        if num_bits_per_copy not in [0, 32, 64, 128]:
+            raise ValueError(
+                "expects a 'num_bits_per_copy' kw argument that is one of {0, 32, 64, 128} "
                 f"when creating a copy Atom for {self.__class__.__name__}"
             )
         ty = _cute_nvgpu_ir.CopyAtomDsmemStoreType.get(

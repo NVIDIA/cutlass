@@ -246,8 +246,9 @@ public:
 
   static bool
   can_implement(Arguments const& args) {
-    // Split count > 1 is only valid for heuristic and split-K decomposition modes
-    return (args.splits == 1 ||
+    // Split count must be positive, and > 1 is only valid for heuristic and split-K decomposition modes
+    return args.splits >= 1 &&
+           (args.splits == 1 ||
             args.decomposition_mode == DecompositionMode::Heuristic ||
             args.decomposition_mode == DecompositionMode::SplitK);
   }

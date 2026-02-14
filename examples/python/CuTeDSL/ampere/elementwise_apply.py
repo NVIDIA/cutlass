@@ -36,8 +36,6 @@ from typing import List, Type
 import cuda.bindings.driver as cuda
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
-import cutlass.torch as cutlass_torch
-import torch
 from cutlass.cute.runtime import from_dlpack
 
 import cutlass
@@ -274,6 +272,8 @@ def leaky_relu(x, alpha, *, loc=None, ip=None):
 
 
 def leaky_relu_ref(x, alpha):
+    import torch
+
     return torch.where(x > 0, x, alpha * x)
 
 
@@ -287,6 +287,9 @@ def run_and_verify(
     warmup_iterations=2,
     iterations=100,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     if not torch.cuda.is_available():
         raise RuntimeError("NVIDIA GPU is required to run this example!")
 

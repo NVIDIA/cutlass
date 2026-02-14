@@ -20,7 +20,7 @@ import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
-from ..common import OpError
+from ..common import OpError, normalize_field_to_ir_name
 from ... import core, atom
 from ...core import _pack_shape, rank, depth
 from ...typing import (
@@ -139,6 +139,7 @@ class Field(enum.Enum):
 
     def _to_ir_field_name(self) -> str:
         return self.value
+
 
 
 # Base class for all tcgen05 MMA Ops with syntax `tcgen05.mma.cta_group.kind` used to factor out some internal code
@@ -268,26 +269,30 @@ class MmaTraits(Trait):
     admissible_fields = [Field.ACCUMULATE, Field.NEGATE_A, Field.NEGATE_B]
 
     def set(self, field, value, *, loc=None, ip=None) -> None:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"expects field to be one of {self.admissible_fields}, but got {field}"
+        field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
+        bool_val = Boolean(value).ir_value(loc=loc, ip=ip)
+        try:
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, field_ir, bool_val, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm100<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, Boolean(value).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            # Legacy fallback
+            attr = ir.Attribute.parse(f"#cute_nvgpu.atom_mma_field_sm100<{field_ir}>")
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, attr, bool_val, loc=loc, ip=ip
+            )
 
     def get(self, field, *, loc=None, ip=None) -> Any:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"expects field to be one of {self.admissible_fields}, but got {field}"
+        field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
+        try:
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, field_ir, loc=loc, ip=ip
             )
-        field_name = f"#cute_nvgpu.atom_mma_field_sm100<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-        )
+        except (TypeError, AttributeError):
+            attr = ir.Attribute.parse(f"#cute_nvgpu.atom_mma_field_sm100<{field_ir}>")
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
 
 
 # Base class for all tcgen05 BlockScaled MMA Ops with syntax `tcgen05.mma.cta_group.kind.block_scale` used to factor out some internal code
@@ -420,33 +425,58 @@ class BlockScaledMmaTraits(Trait):
     ]
 
     def set(self, field, value, *, loc=None, ip=None) -> None:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"expects field to be one of {self.admissible_fields}, but got {field}"
-            )
-        if field in [Field.ACCUMULATE, Field.NEGATE_A, Field.NEGATE_B]:
-            value = Boolean(value).ir_value(loc=loc, ip=ip)
-        elif field in [Field.SFA, Field.SFB]:
+        field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
+        # Derive boolean/pointer IR names from enum values, no hard-coded strings.
+        bool_field_ir = {
+            f._to_ir_field_name()
+            for f in self.admissible_fields
+            if f in (Field.ACCUMULATE, Field.NEGATE_A, Field.NEGATE_B)
+        }
+        ptr_field_ir = {
+            f._to_ir_field_name()
+            for f in self.admissible_fields
+            if f in (Field.SFA, Field.SFB)
+        }
+        # Coerce value based on field kind
+        if field_ir in bool_field_ir:
+            val = Boolean(value).ir_value(loc=loc, ip=ip)
+        elif field_ir in ptr_field_ir:
             if not isinstance(value, Pointer):
                 raise ValueError(
-                    f"expects value to be a pointer for {field}, but got {type(value).__name__}"
+                    f"expects value to be a pointer for {field_ir}, but got {type(value).__name__}"
                 )
-            value = value.value
-
-        field_name = f"#cute_nvgpu.atom_mma_field_sm100_block_scaled<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, value, loc=loc, ip=ip
-        )
+            val = value.value
+        else:
+            raise ValueError(f"unsupported field: {field_ir}")
+        try:
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, field_ir, val, loc=loc, ip=ip
+            )
+        except (TypeError, AttributeError):
+            attr = ir.Attribute.parse(
+                f"#cute_nvgpu.atom_mma_field_sm100_block_scaled<{field_ir}>"
+            )
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, attr, val, loc=loc, ip=ip
+            )
 
     def get(self, field, *, loc=None, ip=None) -> Any:
-        if field not in [Field.ACCUMULATE, Field.NEGATE_A, Field.NEGATE_B]:
-            raise ValueError(f"the get method for {field} is not supported")
-        field_name = f"#cute_nvgpu.atom_mma_field_sm100_block_scaled<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-        )
+        # Only boolean-returning fields supported for get. Derive from admissible_fields.
+        gettable_fields = [
+            f for f in self.admissible_fields if f not in (Field.SFA, Field.SFB)
+        ]
+        field_ir = normalize_field_to_ir_name(field, gettable_fields)
+        try:
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, field_ir, loc=loc, ip=ip
+            )
+        except (TypeError, AttributeError):
+            attr = ir.Attribute.parse(
+                f"#cute_nvgpu.atom_mma_field_sm100_block_scaled<{field_ir}>"
+            )
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
 
 
 #
@@ -802,6 +832,7 @@ class MmaFP8Trait(MmaTraits):
     pass
 
 
+
 #
 # MXF8F6F4 MMA
 #
@@ -946,7 +977,7 @@ class MmaMXF4Op(BlockScaledMmaOp):
                 f"but got {self.shape_mnk[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF8Trait":
+    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -1039,7 +1070,7 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
                 f"but got {self.shape_mnk[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF8Trait":
+    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4NVF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -1075,6 +1106,181 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
 
 class MmaMXF4NVF4Trait(BlockScaledMmaTraits):
     pass
+
+
+#
+# SM103 MXF4 MMA
+#
+
+
+@dataclass(frozen=True)
+class SM103MmaMXF4Op(BlockScaledMmaOp):
+    """
+    SM103 MXF4 tcgen05 BlockScaled MMA Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
+    This Operation corresponds to the ``.kind::mxf4`` qualifier.
+    This Operation is for SM103.
+    """
+
+    descriptive_name = "tcgen05 SM103 MXF4 BlockScaled MMA Operation"
+
+    def __init__(
+        self,
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+    ) -> None:
+        super().__init__(
+            Float4E2M1FN,
+            Float4E2M1FN,
+            Float32,
+            Float8E8M0FNU,
+            32,
+            instruction_shape,
+            cta_group,
+            a_src,
+            OperandMajorMode.K,
+            OperandMajorMode.K,
+        )
+        self._verify()
+
+    def _verify(self) -> None:
+        # Instruction shape verification
+        instruction_k = 96
+        if rank(self.shape_mnk) == 2:
+            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
+        if self.shape_mnk[2] != instruction_k:
+            raise OpError(
+                self,
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {self.shape_mnk[2]}",
+            )
+
+    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            self.sf_dtype.mlir_type,
+            self.a_src._to_ir(),
+            self.sf_vec_size,
+            1030,
+        )
+        return MmaMXF4Trait(
+            make_atom(
+                ty,
+                (
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                ),
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+#
+# SM103 MXF4NVF4 MMA
+#
+
+
+@dataclass(frozen=True)
+class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
+    """
+    SM103 MXF4NVF4 tcgen05 BlockScaled MMA Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
+    This Operation corresponds to the ``.kind::mxf4nvf4`` qualifier.
+    This Operation is for SM103.
+    """
+
+    descriptive_name = "tcgen05 SM103 MXF4NVF4 BlockScaled MMA Operation"
+
+    def __init__(
+        self,
+        sf_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+    ) -> None:
+        super().__init__(
+            Float4E2M1FN,
+            Float4E2M1FN,
+            Float32,
+            sf_dtype,
+            16,
+            instruction_shape,
+            cta_group,
+            a_src,
+            OperandMajorMode.K,
+            OperandMajorMode.K,
+        )
+        self._verify()
+
+    def _verify(self) -> None:
+        # Scale Factor data type verification
+        if self.sf_dtype not in [Float8E8M0FNU, Float8E4M3FN]:
+            raise OpError(
+                self,
+                "expects the 'sf_dtype' Op parameter to be one of Float8E8M0FNU",
+            )
+        # Instruction shape verification
+        instruction_k = 96
+        if rank(self.shape_mnk) == 2:
+            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
+        if self.shape_mnk[2] != instruction_k:
+            raise OpError(
+                self,
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {self.shape_mnk[2]}",
+            )
+
+    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4NVF4Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            self.sf_dtype.mlir_type,
+            self.a_src._to_ir(),
+            self.sf_vec_size,
+            1030,
+        )
+        return MmaMXF4NVF4Trait(
+            make_atom(
+                ty,
+                (
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                ),
+                loc=loc,
+                ip=ip,
+            )
+        )
 
 
 ####################################################################################################

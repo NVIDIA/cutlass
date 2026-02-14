@@ -9,6 +9,15 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-raise NotImplementedError(
-    "CuTe Experimental module is only supported on Cuda toolkit 13.1 and above!"
-)
+from ... import cutlass_dsl as _dsl
+
+jit = _dsl.CuteExperimentalDSL.jit
+kernel = _dsl.CuteExperimentalDSL.kernel
+compile = _dsl.CompileCallable()
+
+from .algorithm import *
+from .core import *
+from .math import *
+from .memory import *
+from .pipeline import *
+from .utils import *

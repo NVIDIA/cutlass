@@ -3,7 +3,7 @@
 
 # CUTLASS 4.4.0
 
-_CUTLASS 4.4.0 - Jan 2026_
+_CUTLASS 4.4.0 - Feb 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -45,8 +45,21 @@ To get started quickly - please refer :
 
 # What's New in CUTLASS 4.4
 
-### CuTe DSL
+## CuTe DSL
 * New features
+  - CuTe DSL now supports CUDA toolkit 13.1!
+    + Set up with cutlass/python/CuTeDSL/setup.sh --cu13
+    + Refer to https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html for more details
+  - GB300 is now supported in CuTe DSL with CTK 13.1
+    + Refer to [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py) for example kernel
+  - cute.experimental: introduce a higher-level, composable layer on top of existing CuTe DSL APIs (not a separate abstraction), which can be mixed with existing Cute DSL building blocks.
+    + Fragment-free programming model: copy/dot APIs take memrefs directly instead of descriptors/fragments.
+    + Automatic TMA descriptor generation and update insertion.
+    + Automatic vectorization and predication for SIMT copies.
+    + New pipeline abstraction with convenience wrappers
+    + New Partition ops to simplify partitioning logic.
+    + Device-side TMA descriptor allocation, initialization, and management
+    + These examples can be found here https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/experimental
   - Ahead of Time (AoT) compilation is now available!
     + Refer to files under https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/export for example usage
   - JAX support - you can now use CuTeDSL along with JAX
@@ -55,20 +68,56 @@ To get started quickly - please refer :
     + cutlass.__version__ for a string representation of DSL version
     + cutlass.CUDA_VERSION for a version class to tell the CUDA version used for DSL
   - Added CopyDsmemStoreOp to store data to distributed shared memory with explicit synchronization.
+  - Grouped GEMM example now supports device-only problem shapes.
+  - We allow grid carve-out without problem shapes being available on host.
+  - Tma+LdMatrix features for loading+unpacking narrow-width types (refer to mixed_input_fmha_decode.py for example usage).
+  - It is possible now to have customized epilogue fusion for persistent dense GEMM through a Python Epilogue Fusion Configuration (EFC) function, somewhat similar to CUTLASS C++ EVT. It also provides a PyTorch evaluator to compare the results.
+
+* More examples of authorizing peak-performance kernels
+  - [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
+  - Mixed input FMHA decode example with support for int4 KV (int8 KV supported in 4.3)
+  - New acc_scale grouped mixed input gemm kernel variant is introduced to deliver better performance for decoding cases.
+  - All mixed_input_gemm examples are moved into a separate folder `mixed_input_gemm`. Common utility functions are also extracted into mixed_input_host_utils.py under the same folder.
 
 * Bug fixing and improvements
+  - Fixed an issue that both branches of if are executed
   - Fixed `cute.printf` with f-string
-  - Fixed an issue that cutlass.cuda.initialize_cuda_context() silently kills python
+  - Fixed an indexing issue of scalar tensor
+  - Fixed small K reference check error for cta_tile_n = 256 case with overlapping accumulator optimization in [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py).
 
 * API changes
   - Deprecate get_num_tmem_alloc_cols from blackwell_helpers.py. Use the one from tmem_allocator.py instead.
   - Deprecate SM100_TMEM_CAPACITY_COLUMNS and SM100_TMEM_MIN_ALLOC_COLUMNS.
   - LdMatrix16x16x8bOp and StMatrix16x8x8bOp now require explicit transpose=True when calling __init__, to avoid ambiguity in data transposition.
   - LdMatrix16x16x8bOp copy traits updated to be faithful to PTX without permutations. Permuted variant is renamed to LdMatrix16x8x8bOp.
+  - Grouped GEMM example takes the argument --host_problem_shape_available. If the argument is provided, grid is carved out based upon the host problem shapes, otherwise, we launch maximum possible SMs.
+  - hardware_info.get_max_active_cluster support pass in specific stream to query. Useful for green context based SM partition.
   - group_bulk_copy_modes in async bulk copy example is now deprecated, use group_modes directly instead.
+  - Deprecate nvvm wrapper from using nvvm enum, use str instead.
   - cute.arch.calc_packed_f32x2_op default enable ftz to default disable ftz
+  - In CuTe DSL with CTK 13.1, following APIs in cutlass.cute.arch now require string literal instead of enum as argument:
+    + fence_proxy
+    + fence_view_async_tmem_op
+    + calc_packed_f32x2_op
+    + warp_redux_sync
+    + atomic_add
+    + atomic_and
+    + atomic_or
+    + atomic_xor
+    + atomic_max
+    + atomic_min
+    + atomic_exch
+    + atomic_cas
+    + store
+    + load
 
-### CUTLASS C++
+* Advanced compiler control
+Use 'Advanced compiler control' for mixed input gemm examples for better performance.
+Advanced compiler control is an experimental feature of CUDA compiler. The controls file contains internal compiler settings tuned for specific kernels with a specific version of CUDA toolkit to get better GPU kernel code. More details and documentation on how to create these controls files will be provided in future CUDA toolkit release.
+
+Note: The advanced compiler control file is not expected to work for kernels that it was not tuned for. There is no compatibility guarantee, and the controls file will not work for CUDA toolkit with a different version.
+
+## CUTLASS C++
 * Add Hopper e2m1 to fp32 optimized conversion and e2m1 * TF32 tensor core GEMM.
     - Set MmaType to tfloat32_t for FP32 mode.
     - TF32 provides FP32 inputs with reduced precision (19-bit vs 32-bit)
@@ -95,12 +144,19 @@ To get started quickly - please refer :
     - Fix a TMA descriptor bug where the CUDA driver is not properly setting the OOB address gen mode correctly.
     - Fix memory fence for clc scheduler in Blackwell SM120 pingpong kernel.
     - Fix missing SMEM alignment in Blackwell SM120 scale factors.
+    - Fix a PDL issue for grouped gemm.
+    - Fix divide-by-zero issue in canimplement for sm100 implicit gemm kernels.
+    - Fix cluster swizzle for Grouped GEMMs.
+        + Move host-side swizzling heuristics to device.
+        + Apply swizzle per group based on problem shape and max swizzle size.
+        + Improve examples and unit tests.
 * Fix some profiler issues:
     - Refactor L1 functional test generation logic to reduce the L1 test cases to avoid timeout.
     - Fix a core dump issue for nvfp4 grouped GEMM kernel.
     - Fix inconsistent GEMM verification logic.
     - Rework grouped gemm verification logic for different types.
-* Fix some broken links under `media/docs`.
+    - Fix api break change in libheuristics.
+* Fix some failed links under `media/docs`.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

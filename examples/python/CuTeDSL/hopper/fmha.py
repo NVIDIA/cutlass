@@ -83,9 +83,6 @@ import sys
 import time
 from typing import Type, Tuple, Optional
 
-import torch
-
-
 import cuda.bindings.driver as cuda
 
 import cutlass
@@ -96,7 +93,6 @@ import cutlass.cute.nvgpu.warpgroup as warpgroup
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-import cutlass.torch as cutlass_torch
 from cutlass._mlir.dialects import math as _math
 
 import cutlass.utils.hopper_helpers as sm90_utils
@@ -598,6 +594,7 @@ class HopperFusedMultiHeadAttentionForward:
             k_smem_layout_staged.outer, swizzle=k_smem_layout_staged.inner
         )
         # (MMA, MMA_K, MMA_D, PIPE)
+        # Adjust swizzle info to reuse smem
         sV_ptr = cute.recast_ptr(sK.iterator, v_smem_layout_staged.inner)
         sV = cute.make_tensor(sV_ptr, v_smem_layout_staged.outer)
 
@@ -648,11 +645,19 @@ class HopperFusedMultiHeadAttentionForward:
 
         producer_warp_role = warp_idx % 4  # self.num_warps_per_warp_group
 
+        # Fence the mbarrier init to ensure all mbarrier initializations are visible
+        # to all threads. This is critical for FP8 performance - without this fence,
+        # the compiler may generate software polling loops instead of hardware waits.
+        cute.arch.mbarrier_init_fence()
+
         # We need this to guarantee that the Pipeline init is visible
         # To all producers and consumer blocks in the Cluster
         # and to finish smem init
-        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mnk, is_relaxed=True)
-        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mnk)
+        if cute.size(self.cluster_shape_mnk) > 1:
+            cute.arch.cluster_arrive_relaxed()
+            cute.arch.cluster_wait()
+        else:
+            cute.arch.sync_threads()
 
         if warp_idx == 0:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_q)
@@ -1164,7 +1169,10 @@ class HopperFusedMultiHeadAttentionForward:
                         tRS_sD[(None, None, None, epi_buffer, warp_group_idx - 1)],
                     )
 
-                    cute.arch.fence_proxy("async.shared", space="cta")
+                    cute.arch.fence_proxy(
+                        "async.shared",
+                        space="cta",
+                    )
                     pipeline.arrive_and_wait(
                         barrier_id=warp_group_idx,
                         num_threads=self.num_threads_per_warp_group,
@@ -1935,6 +1943,9 @@ def run(
     :return: Execution time of the FMHA kernel in microseconds
     :rtype: float
     """
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("Running Hopper SM90 FMHA test with:")
     print(f"  q_shape: {q_shape}")
     print(f"  k_shape: {k_shape}")

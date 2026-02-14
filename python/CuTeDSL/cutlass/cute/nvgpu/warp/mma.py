@@ -15,7 +15,7 @@ from typing import Type, Any
 import enum
 from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL
+from cutlass.cutlass_dsl import BaseDSL
 
 
 from ..common import OpError
@@ -134,7 +134,7 @@ class MmaSM120BlockScaledOp(MmaOp):
 
     def __post_init__(self) -> None:
         # Verify arch
-        arch = CuTeDSL._get_dsl().get_arch_enum()
+        arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch == Arch.sm_120a:
             raise OpError(
                 self,
@@ -174,6 +174,7 @@ class MmaSM120BlockScaledOp(MmaOp):
                 self,
                 "expects the 'sf_vec_size' Op parameter to be 16 or 32",
             )
+
     def __str__(self) -> str:
         return (
             "warp-level MXF4/MXF4NVF4 MMA Operation"
@@ -189,6 +190,7 @@ class MmaSM120BlockScaledOp(MmaOp):
 
     def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
         pass
+
 
 class Field(enum.Enum):
     """

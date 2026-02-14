@@ -374,7 +374,7 @@ def _loop_execute_range_dynamic(
                 for i, d in enumerate(dyn_yield_ops)
             )
             raise DSLRuntimeError(
-                f"Failed to create scf.ForOp \n\t\tstart={start_}: type : {type(start_)}"
+                f"Failed to create dynamic for loop \n\t\tstart={start_}: type : {type(start_)}"
                 f"\n\t\tstop={stop_}: type : {type(stop_)}\n\t\tstep={step_}: type : {type(step_)}"
                 f", \n\tdyn_yield_ops:\n{yield_ops}"
             ) from e
@@ -461,7 +461,7 @@ def _if_execute_dynamic(
             )
         except Exception as e:
             raise DSLRuntimeError(
-                f"Failed to create scf.IfOp \n\t\tpred={pred_}: type : {type(pred_)}"
+                f"Failed to create dynamic if \n\t\tpred={pred_}: type : {type(pred_)}"
             ) from e
         return if_op
 
@@ -550,7 +550,7 @@ def _while_execute_dynamic(
                 for i, d in enumerate(dyn_yield_ops)
             )
             raise DSLRuntimeError(
-                f"Failed to create scf.WhileOp with yield_ops:\n{yield_ops}"
+                f"Failed to create dynamic while loop with yield_ops:\n{yield_ops}"
             ) from e
 
     def before_block_builder(
@@ -643,3 +643,121 @@ def _while_execute_dynamic(
             before_block_builder: before_block_terminator
         },  # Only customize the before block
     )
+
+
+def _ifexp_execute_dynamic(
+    pred: "ir.Value",
+    block_args: tuple,
+    then_block: Callable,
+    else_block: Callable,
+):
+    """
+    Dynamically execute a Python inline if-expression (ternary) as a runtime-dispatched control flow op.
+
+    This function builds an SCF (Structured Control Flow) `if` operation in the IR, using the given
+    predicate and block functions for the 'then' and 'else' branches, and infers the result types
+    from the return signature of those blocks. It ensures that both branches return values of the same
+    tree structure and types, so that the IR op can properly yield their results.
+
+    Parameters
+    ----------
+    pred : ir.Value
+        The predicate value (a boolean IR value) that determines which branch is executed.
+    block_args : tuple
+        The block arguments that are passed to the then and else blocks.
+    then_block : Callable
+        A Python function that executes the 'then' branch and returns the result(s). This will be
+        executed if `pred` evaluates to True.
+    else_block : Callable
+        A Python function that executes the 'else' branch and returns the result(s). This will be
+        executed if `pred` evaluates to False.
+
+    Returns
+    -------
+    list
+        The evaluated result(s) of the selected branch, in a standardized (possibly list-wrapped) format.
+
+    Raises
+    ------
+    DSLRuntimeError
+        If the 'then' and 'else' blocks return values of different tree structures or types,
+        or if IR construction fails.
+
+    Notes
+    -----
+    This function is a low-level implementation intended for use by the AST transformation machinery,
+    and not for direct user invocation. It acts as the backend for transformed Python inline if-expressions.
+    """
+    # Infer result types by running both branches with dummy arguments in a temporary region
+    execution_region = scf.ExecuteRegionOp(result=[])
+    execution_region.region.blocks.append()
+
+    result_types = []
+    mix_iter_args = []
+
+    with ir.InsertionPoint(execution_region.region.blocks[0]):
+        # Call the then block and unpack its results to IR values and tree structure
+        then_results = ScfGenerator._normalize_region_result_to_list(
+            then_block(*block_args)
+        )
+        ir_values, then_tree = cutlass_dsl.unpack_to_irvalue(then_results, "ifexp", 0)
+
+        # Call the else block and unpack its results to IR values and tree structure
+        else_results = ScfGenerator._normalize_region_result_to_list(
+            else_block(*block_args)
+        )
+        _, else_tree = cutlass_dsl.unpack_to_irvalue(else_results, "ifexp", 0)
+
+        # Check that both branches are structurally and type compatible
+        if check_tree_equal(then_tree, else_tree) != -1:
+            raise DSLRuntimeError(
+                "Then and else blocks of ifexp return different types"
+            )
+
+        # Collect result types for the SCF IfOp
+        result_types.extend([arg.type for arg in ir_values])
+        mix_iter_args.extend(then_results)
+
+    # Set up a generator for SCF op creation
+    scf_gen = ScfGenerator()
+
+    # Function to create the IfOp with correct predicate and result types
+    def create_if_op(_):
+        pred_ = Boolean(pred)
+        try:
+            if_op = scf.IfOp(
+                pred_.ir_value(),
+                hasElse=True,
+                results_=result_types,
+            )
+        except Exception as e:
+            raise DSLRuntimeError(
+                f"Failed to create dynamic if-expression \n\t\tpred={pred_}: type : {type(pred_)}"
+            ) from e
+        return if_op
+
+    # SCF region builder for then block
+    def then_builder(*args):
+        # Just call the then_block as no arguments are passed to it
+        return then_block(*block_args)
+
+    # SCF region builder for else block
+    def else_builder(*args):
+        return else_block(*block_args)
+
+    # Prepare the list of region builders for the SCF IfOp: first for "then", then for "else"
+    region_builders = [then_builder, else_builder]
+
+    ret = scf_gen.scf_execute_dynamic(
+        op_type_name="if",
+        mix_iter_args=mix_iter_args,
+        full_write_args_count=0,
+        mix_iter_arg_names=["unknown" for _ in mix_iter_args],
+        create_op_func=create_if_op,
+        region_builders=region_builders,
+    )
+
+    # Clean up: Remove the temporary execution region from the IR graph
+    execution_region.operation.erase()
+
+    return ret
