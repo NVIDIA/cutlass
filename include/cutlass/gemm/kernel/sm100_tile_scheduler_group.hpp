@@ -164,9 +164,6 @@ public:
 
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     Arguments args{};
-    if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
-      args.max_swizzle_size = 1 << params.params_sm90_.log_swizzle_size_;
-    }
     args.raster_order = params.params_sm90_.raster_order_ == RasterOrder::AlongN ? RasterOrderOptions::AlongN : RasterOrderOptions::AlongM;
 
     return Params::get_grid_shape(

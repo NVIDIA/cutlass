@@ -30,13 +30,11 @@ import argparse
 from typing import Type, Tuple, Union
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
@@ -64,7 +62,7 @@ This GEMM kernel supports the following features:
 
 This GEMM works as follows:
 1. DMA warp: Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using non-TMA operations.
+2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using async copy operations.
 2. MMA warp: Perform matrix multiply-accumulate (MMA) operations using tcgen05.mma instruction.
 3. EPILOGUE warp:
     - Load completed accumulator from tensor memory (TMEM) to registers (RMEM) using tcgen05.ld.
@@ -1008,7 +1006,10 @@ class BlockwiseGemmKernel:
                     )
 
                 # fence view async shared
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 self.sched_sync_barrier.arrive_and_wait()
                 # commit tile info pipeline
                 tile_info_pipeline.producer_commit(tile_info_producer_state)
@@ -1123,7 +1124,10 @@ class BlockwiseGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1295,7 +1299,10 @@ class BlockwiseGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1450,7 +1457,10 @@ class BlockwiseGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1684,7 +1694,10 @@ class BlockwiseGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -1851,7 +1864,10 @@ class BlockwiseGemmKernel:
                         tRS_sC[(None, None, None, c_buffer)],
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy("async.shared", space="cta")
+                    cute.arch.fence_proxy(
+                        "async.shared",
+                        space="cta",
+                    )
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     #
@@ -1881,7 +1897,10 @@ class BlockwiseGemmKernel:
                 for idx in cutlass.range(4, unroll_full=True):
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
-                cute.arch.fence_proxy("async.shared", space="cta")
+                cute.arch.fence_proxy(
+                    "async.shared",
+                    space="cta",
+                )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
 
@@ -2553,6 +2572,9 @@ class BlockwiseGemmKernel:
 def create_tensors(
     l, m, n, k, a_major, b_major, cd_major, ab_dtype, c_dtype, scale_dtype
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     torch.manual_seed(1111)
 
     a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
@@ -2613,6 +2635,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     """
     Prepare A/B/C tensors, launch GPU kernel, and reference checking.
     """
@@ -2688,6 +2713,7 @@ def run(
     # try to check CUDA version to decide the opt level
     try:
         from cutlass import CUDA_VERSION
+
         opt_level = (
             3
             if CUDA_VERSION.major < 13

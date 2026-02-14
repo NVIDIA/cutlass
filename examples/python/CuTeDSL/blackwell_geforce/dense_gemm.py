@@ -29,7 +29,6 @@
 import argparse
 from typing import Tuple, Type
 
-import torch
 import cuda.bindings.driver as cuda
 
 import cutlass
@@ -37,7 +36,6 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
-import cutlass.torch as cutlass_torch
 import cutlass.utils.hopper_helpers as sm90_utils
 
 """
@@ -49,15 +47,15 @@ using CUTE DSL.
 
 This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
-    - Utilizes non-Tensor Core MMA for matrix multiply-accumulate (MMA) operations
+    - Utilizes Blackwell MMA for matrix multiply-accumulate (MMA) operations
     - Supports multi-stage pipeline to overlap computation and memory access
 
 This GEMM works as follows:
 1. Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. Perform matrix multiply-accumulate (MMA) operations using non-Tensor Core MMA instruction.
+2. Perform matrix multiply-accumulate (MMA) operations using Blackwell MMA instruction.
 3. Store results from registers (RMEM) to shared memory (SMEM), then to global memory (GMEM) with TMA operations.
 
-Non-Tensor Core MMA instructions operate as follows:
+Blackwell MMA instructions operate as follows:
 - Read matrix A from registers
 - Read matrix B from registers
 - Perform MMA operation and store the result in Accumulator(register)
@@ -114,9 +112,7 @@ def parse_comma_separated_ints(s: str):
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Example of MxNxKxL GEMM on Blackwell Geforce."
-    )
+    parser = argparse.ArgumentParser(description="Example of MxNxKxL GEMM on Blackwell Geforce.")
 
     parser.add_argument(
         "--mnkl",
@@ -873,7 +869,10 @@ class Sm120GemmKernel:
                         tRS_sD[(None, None, None, epi_buffer)],
                     )
 
-                    cute.arch.fence_proxy("async.shared", space="cta")
+                    cute.arch.fence_proxy(
+                        "async.shared",
+                        space="cta",
+                    )
                     # barrier for sync
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -1176,6 +1175,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("Running Blackwell Geforce Dense GEMM with:")
     print(f"mnkl: {mnkl}")
     print(

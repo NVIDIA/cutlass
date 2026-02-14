@@ -179,12 +179,12 @@ class Executor:
     def ifexp_execute(
         self,
         pred,
-        generator_targets: tuple,
+        block_args: tuple,
         then_block: Callable,
         else_block: Callable,
     ):
         assert self._ifexp_dynamic, "Functions must be set before execution."
-        return self._ifexp_dynamic(pred, generator_targets, then_block, else_block)
+        return self._ifexp_dynamic(pred, block_args, then_block, else_block)
 
 
 # =============================================================================
@@ -309,16 +309,14 @@ def if_executor(
 def ifExp_executor(
     *,
     pred,
-    generator_targets: tuple,
+    block_args: tuple,
     then_block: Callable,
     else_block: Callable,
 ):
     if not executor._is_dynamic_expression(pred):
-        return (
-            then_block(*generator_targets) if pred else else_block(*generator_targets)
-        )
+        return then_block(*block_args) if pred else else_block(*block_args)
     else:
-        return executor.ifexp_execute(pred, generator_targets, then_block, else_block)
+        return executor.ifexp_execute(pred, block_args, then_block, else_block)
 
 
 # =============================================================================

@@ -31,14 +31,11 @@ from typing import Optional, Tuple, Type
 import math
 import cuda.bindings.driver as cuda
 
-import torch
-
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.hopper_helpers as sm90_utils
 
@@ -952,7 +949,10 @@ class HopperWgmmaGemmPersistentKernel:
                         tRS_sD[(None, None, None, epi_buffer)],
                     )
 
-                    cute.arch.fence_proxy("async.shared", space="cta")
+                    cute.arch.fence_proxy(
+                        "async.shared",
+                        space="cta",
+                    )
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     gmem_coord = epi_tile_layout.get_hier_coord(epi_idx)
@@ -1465,6 +1465,8 @@ def run(
     :return: Execution time of the GEMM kernel in microseconds
     :rtype: float
     """
+    import torch
+    import cutlass.torch as cutlass_torch
 
     print("Running Hopper Persistent Dense GEMM with:")
     print(f"mnkl: {mnkl}")

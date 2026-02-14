@@ -29,7 +29,6 @@
 import sys
 import os
 from typing import Tuple
-import torch
 
 import cutlass
 import cutlass.cute as cute
@@ -125,6 +124,8 @@ def tensor_op_gemm_wrapper(
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
+    import torch
+
     print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
 

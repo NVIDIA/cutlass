@@ -112,9 +112,6 @@ For compiled kernels, the generated PTX/CUBIN/IR can be accessed programmaticall
 - ``__cubin__``: The generated CUBIN data of the compiled kernel.
 - ``__mlir__``: The generated IR code of the compiled kernel.
 
-These attributes are populated only when the corresponding ``CUTE_DSL_KEEP_*`` environment variable is enabled;
-otherwise they return ``None``.
-
 .. code:: python
     
     compiled_foo = cute.compile(foo, ...)

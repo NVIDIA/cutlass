@@ -31,7 +31,6 @@ import time
 from typing import Tuple
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
@@ -643,6 +642,8 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+
     """Execute SIMT GEMM operation and benchmark performance.
 
     :param mnk: GEMM problem size (M, N, K, L)
@@ -666,6 +667,7 @@ def run(
     :return: Execution time of the GEMM kernel in microseconds
     :rtype: float
     """
+    torch.manual_seed(1024)
     print("Running Ampere SIMT GEMM example:")
     print(f"mnk: {mnk}")
     print(f"A major: {a_major}, B major: {b_major}, C major: {c_major}")
@@ -850,8 +852,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print("Running SIMT GEMM example:")
-
-    torch.manual_seed(1024)
 
     run(
         args.mnk,

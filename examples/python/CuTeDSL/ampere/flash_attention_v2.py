@@ -30,13 +30,11 @@ import argparse
 from types import SimpleNamespace
 from typing import Type, Callable
 
-import torch
 import cuda.bindings.driver as cuda
 import cutlass.cute.testing as testing
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu import cpasync, warp
-import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
 import cutlass.pipeline as pipeline
 import cutlass.utils as utils
@@ -1162,6 +1160,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     # Skip unsupported testcase
     if not FlashAttentionForwardAmpere.can_implement(
         dtype,
@@ -1237,8 +1238,12 @@ def run(
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
+    # Pass compile options if needed
+    compile_options = ""
     # compile the fa2 forward pass
-    compiled_fa2_fwd = cute.compile(fa2_fwd, q, k, v, o, softmax_scale, current_stream)
+    compiled_fa2_fwd = cute.compile(
+        fa2_fwd, q, k, v, o, softmax_scale, current_stream, options=compile_options
+    )
 
     if not skip_ref_check:
         compiled_fa2_fwd(q, k, v, o, softmax_scale, current_stream)
@@ -1317,7 +1322,6 @@ if __name__ == "__main__":
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
-
     args = parser.parse_args()
     run(
         args.dtype,

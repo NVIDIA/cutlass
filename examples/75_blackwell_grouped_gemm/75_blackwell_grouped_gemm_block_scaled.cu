@@ -309,6 +309,8 @@ struct Options {
   dim3 cluster_shape = dim3(2,1,1);
   dim3 cluster_shape_fallback = dim3(2,1,1);
   RasterOrderOptions raster_order = RasterOrderOptions::AlongN;
+  char raster_char = 'N';
+  int swizzle = 1;
   int max_sm_count = INT_MAX;
   std::string benchmark_path;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
@@ -356,7 +358,6 @@ struct Options {
       randomize_problems(cmd);
     }
 
-    char raster_char;
     cmd.get_cmd_line_argument("raster", raster_char);
 
     if (raster_char == 'N' || raster_char == 'n') {
@@ -365,6 +366,7 @@ struct Options {
     else if (raster_char == 'M' || raster_char == 'm') {
       raster_order = RasterOrderOptions::AlongM;
     }
+    cmd.get_cmd_line_argument("swizzle", swizzle, 1);
   }
 
   void randomize_problems(cutlass::CommandLine &cmd) {
@@ -441,7 +443,8 @@ struct Options {
       << "  --norm_constant=<f32>                                        Epilogue scalar normalization constant for the output matrix\n\n"
       << "  --cluster_m=<int>          and --cluster_n=<int>             Sets the X,Y dims of the preferred cluster shape\n"
       << "  --cluster_fallback_m=<int> and --cluster_fallback_n=<int>    Sets the X,Y dims of the fallback cluster shape\n\n"
-      << "  --raster=<char>                                              CTA Rasterization direction (N for along N, M for along M)\n\n"
+      << "  --raster=<char>                                              Cluster rasterization direction (N for along N, M for along M)\n"
+      << "  --swizzle=<int>                                              Cluster swizzle (swizzle up to 8 and with the nearest multiple of 2)\n\n"
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
       << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
@@ -722,6 +725,7 @@ typename Gemm::Arguments args_from_options(Options &options, bool host_problem_s
 
   typename Gemm::GemmKernel::TileSchedulerArguments scheduler;
   scheduler.raster_order = options.raster_order;
+  scheduler.max_swizzle_size = options.swizzle;
 
   if (host_problem_shapes_available) {
     arguments = typename Gemm::Arguments {
@@ -813,7 +817,13 @@ int run(Options &options, bool host_problem_shapes_available = true)
     std::cout << "    " << options.problem_sizes_host.at(i);
     std::cout << ", " << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
   }
-  std::cout << "  Groups      : " << options.groups  << std::endl;
+  std::cout << "  Groups : " << options.groups  << std::endl;
+
+  std::cout << "  Cluster Shape          : " << options.cluster_shape.x << "x" << options.cluster_shape.y << std::endl;
+  std::cout << "  Cluster Fallback Shape : " << options.cluster_shape_fallback.x << "x" << options.cluster_shape_fallback.y << std::endl;
+
+  std::cout << "  Raster Order     : Along-" << options.raster_char << std::endl;
+  std::cout << "  Max Swizzle Size : " << options.swizzle << std::endl;
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm;

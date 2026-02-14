@@ -28,7 +28,6 @@
 
 import cutlass.cute as cute
 import cutlass
-import torch
 import numpy as np
 from cutlass.cute.runtime import from_dlpack
 
@@ -175,6 +174,8 @@ def host(
 
 
 def run_and_verify(const_a, const_b, const_c):
+    import torch
+
     dst_a = torch.zeros((8, 4), dtype=torch.float32, device="cuda")
     dst_b = torch.zeros((8, 2), dtype=torch.float32, device="cuda")
     dst_c = torch.zeros((16, 2), dtype=torch.float32, device="cuda")

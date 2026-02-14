@@ -213,12 +213,10 @@ class BlockScaledDenseGemmKernel:
         )
 
         # UMMA ACC TMEM Layout
-        # ((MMA_M, MMA_N), REST_MMA_M, REST_MMA_N)
-        acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
         # ((MMA_M, MMA_N), REST_MMA_M, REST_MMA_N, ACC_STAGES)
-        tmem_accs_layout = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, self.num_acc_stages)
-        ).layout
+        tmem_accs_layout = cute_ext.make_tmem_layout_acc(
+            tiled_mma, mma_tiler_mnk, self.num_acc_stages
+        )
 
         sfa_tmem_layout = blockscaled_utils.make_tmem_layout_sfa(
             tiled_mma,
@@ -318,21 +316,17 @@ class BlockScaledDenseGemmKernel:
             self.use_2cta_instrs,
         )
 
-        # Performing layout calculations for one stage, in order to anticipate the
-        # required RMEM per thread and for reading from TMEM, and writing into SMEM
-        # tmem_acc: (MMA_M, MMA_N, MMA_REST_M, MMA_REST_N)
-        tmem_acc = tiled_mma.make_fragment_C(acc_shape)
-        # tmem_acc_epi: (EPI_TILE_M, EPI_TILE_N, EPI_REST_M, EPI_REST_N)
-        tmem_acc_epi = cute.flat_divide(tmem_acc[((None, None), 0, 0)], epi_tile)
-        tiled_copy_t2r = tcgen05.make_tmem_copy(
-            copy_atom_t2r, tmem_acc_epi[(None, None, 0, 0)]
-        )
+        # Derive tiled_copy_t2r from the allocated TMEM buffer
+        accumulators = cute.zipped_divide(buffer_tmem_accs, ((epi_tile), 1))
+        acc_epi_div = accumulators[((None, None), 0), 0]
+        tiled_copy_t2r = tcgen05.make_tmem_copy(copy_atom_t2r, acc_epi_div)
         thr_copy_t2r = tiled_copy_t2r.get_slice(tidx)
 
-        # gC_tile_epi: (EPI_TILE_M, EPI_TILE_N, EPI_REST_M, EPI_REST_N)
+        # Derive per-thread RMEM layout for the T2R epilogue copy
         gC_tile_epi = cute.flat_divide(gC_tile, epi_tile)
-        t2r_rmem_epi = thr_copy_t2r.partition_D(gC_tile_epi[(None, None, 0, 0)])
-        acc_epi_rmem_layout = cute.make_fragment_like(t2r_rmem_epi.layout)
+        acc_epi_rmem_layout = cute_ext.make_t2r_rmem_layout(
+            tiled_copy_t2r, gC_tile_epi, tidx
+        )
 
         # Allocate RMEM buffers
         buffer_rmem_t2r = cute_ext.allocate(

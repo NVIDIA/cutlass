@@ -50,7 +50,11 @@ from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
 from .utils.timer import timer
 from .utils.logger import log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
-from .runtime.jit_arg_adapters import is_argument_constexpr, JitArgAdapterRegistry
+from .runtime.jit_arg_adapters import (
+    is_argument_constexpr,
+    is_arg_spec_constexpr,
+    JitArgAdapterRegistry,
+)
 
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
@@ -1310,8 +1314,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         dynamic_args = []
         dynamic_kwargs = OrderedDict()
         for i, arg in enumerate(args):
-            if not is_argument_constexpr(
-                arg,
+            if not is_arg_spec_constexpr(
                 args_spec.annotations.get(args_spec.args[i], None),
                 args_spec.args[i],
                 i,
@@ -1319,7 +1322,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             ):
                 dynamic_args.append(arg)
         for i, (k, v) in enumerate(kwargs.items()):
-            if not is_argument_constexpr(v, args_spec.kwonlyargs[i], k, i, funcBody):
+            if not is_arg_spec_constexpr(args_spec.kwonlyargs[i], k, i, funcBody):
                 dynamic_kwargs[k] = v
         return dynamic_args, dynamic_kwargs
 

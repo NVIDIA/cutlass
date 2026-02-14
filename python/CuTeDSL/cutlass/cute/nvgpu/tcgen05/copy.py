@@ -26,6 +26,22 @@ from ...typing import Numeric
 from .mma import CtaGroup
 
 
+class TmemLoadRedOp(enum.Enum):
+    """
+    An enumeration for the possible reduce operations for TMEM load operations.
+    """
+
+    MAX = _cute_nvgpu_ir.TmemLoadRedOp.max
+    MAXABS = _cute_nvgpu_ir.TmemLoadRedOp.maxabs
+    MIN = _cute_nvgpu_ir.TmemLoadRedOp.min
+    MINABS = _cute_nvgpu_ir.TmemLoadRedOp.minabs
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.name}>"
+
 class Repetition(enum.Enum):
     """
     An enumeration for the number of repetitions of a given TMEM copy within the instruction.
@@ -387,6 +403,97 @@ class Ld32x32bOp(_LdBase):
 
 
 class Ld32x32bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class LdRed16x32bx2Op(_LdBase):
+    """
+    16x32bx2 TMEM load Reduce Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``.red`` and ``.16x32bx2`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+    nan: bool = False
+    half_split_off: int = 0
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "LdRed16x32bx2Trait":
+        """
+        Create a trait object for the 16x32bx2 TMEM load Reduce operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdRed16x32bx2Trait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM10xTmemLoadRedType.get(
+            copy_internal_type.mlir_type,
+            16,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            ir.UnitAttr.get() if self.nan else None,
+            ir.IntegerAttr.get(ir.IntegerType.get_signless(32), self.half_split_off),
+        )
+        return LdRed16x32bx2Trait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdRed16x32bx2Trait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class LdRed32x32bOp(_LdBase):
+    """
+    32x32b TMEM load Reduce Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``red`` and ``.32x32`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+    nan: bool = False
+
+    def _make_trait(
+        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    ) -> "LdRed32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load Reduce operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdRed32x32bTrait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM10xTmemLoadRedType.get(
+            copy_internal_type.mlir_type,
+            32,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            ir.UnitAttr.get() if self.nan else None,
+            None,
+        )
+        return LdRed32x32bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdRed32x32bTrait(Trait):
     pass
 
 

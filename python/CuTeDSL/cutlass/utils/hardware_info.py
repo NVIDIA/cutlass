@@ -41,7 +41,23 @@ class HardwareInfo:
         self.driver_version = self._checkCudaErrors(driver.cuDriverGetVersion())
 
     # Getting the max active clusters for a given cluster size
-    def get_max_active_clusters(self, cluster_size: int) -> int:
+    def get_max_active_clusters(
+        self, cluster_size: int, stream: driver.CUstream = None
+    ) -> int:
+        """
+        Get the maximum number of active clusters for a given cluster size.
+
+        When a stream from a green context is provided, the occupancy calculation
+        will reflect the reduced SM partition of the green context.
+
+        :param cluster_size: Number of blocks per cluster (must be between 1 and 32)
+        :type cluster_size: int
+        :param stream: Optional CUDA stream handle. If provided (especially from a green context),
+                      the occupancy calculation reflects the stream's SM partition.
+        :type stream: driver.CUstream, optional
+        :return: Maximum number of active clusters
+        :rtype: int
+        """
         if self._cuda_driver_version_lt(11, 8):
             raise RuntimeError(
                 "CUDA Driver version < 11.8, cannot get _max_active_clusters"
@@ -94,6 +110,13 @@ class HardwareInfo:
         launch_config.blockDimY = 1
         launch_config.blockDimZ = 1
         launch_config.sharedMemBytes = max_dynamic_shared_memory
+
+        # IMPORTANT: Set the stream for green context support
+        # When hStream is set, cuOccupancyMaxActiveClusters will use the context
+        # associated with that stream, which includes the green context's SM partition
+        if stream is not None:
+            launch_config.hStream = stream
+
         launch_config.numAttrs = 1
         # max possible cluster size is 32
         cluster_dims_attr = driver.CUlaunchAttribute()

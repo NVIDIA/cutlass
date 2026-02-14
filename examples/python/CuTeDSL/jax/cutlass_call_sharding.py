@@ -31,7 +31,7 @@ import argparse
 
 import jax
 import jax.numpy as jnp
-from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
+from jax.sharding import NamedSharding, PartitionSpec as P, AxisType
 from jax.experimental.custom_partitioning import custom_partitioning
 
 import cutlass
@@ -42,8 +42,8 @@ import cuda.bindings.driver as cuda
 
 
 """
-Examples of combining jax.jit and jax.shard_map for sharding and executing kernels
-across multiple GPU devices.
+Examples of combining jax.jit, jax.shard_map and custom_partitioning for sharding
+and executing kernels across multiple GPU devices.
 
 To run this example:
 
@@ -84,25 +84,57 @@ def launch(
     )
 
 
+def sharded_cutlass_call_impl(a_block, b_block):
+    """The sharded implementation that operates on a single device."""
+    call = cjax.cutlass_call(
+        launch,
+        use_static_tensors=True,
+        output_shape_dtype=jax.ShapeDtypeStruct(a_block.shape, a_block.dtype),
+    )
+    ref_result = a_block + b_block
+    return call(a_block, b_block), ref_result
+
+
+@custom_partitioning
+def custom_shared_call(a, b):
+    return sharded_cutlass_call_impl(a, b)
+
+
+def custom_shared_call_partitioner(mesh, arg_shapes, result_shape):
+    arg_shardings = jax.tree.map(lambda x: x.sharding, arg_shapes)
+    result_shardings = tuple([arg_shardings[0]] * len(result_shape))
+
+    def lower_fn(*args):
+        return sharded_cutlass_call_impl(*args)
+
+    return mesh, lower_fn, result_shardings, arg_shardings
+
+
+custom_shared_call.def_partition(custom_shared_call_partitioner)
+
+
 def run_example():
     # Create a device mesh with one axis b
     ngpu = jax.device_count()
-    mesh = jax.make_mesh((ngpu,), "b")
+    mesh = jax.make_mesh((ngpu,), "b", axis_types=(AxisType.Explicit,))
 
     if ngpu == 1:
         print("Note: only 1 GPU was detected.")
 
     # We will shard our 3D tensors over b
     sharding = P("b", None, None)
+    named_sharding = NamedSharding(mesh, sharding)
 
-    @partial(jax.jit, static_argnums=[0, 1])
+    print("Testing shard_map...")
+
+    @partial(
+        jax.jit, static_argnums=[0, 1], out_shardings=(named_sharding, named_sharding)
+    )
     def allocate_sharded_tensors(shape, dtype):
         key = jax.random.key(1123)
-        a_key, b_keys = jax.random.split(key, 2)
+        a_key, b_key = jax.random.split(key, 2)
         a = create_tensor(shape, dtype, a_key)
-        b = create_tensor(shape, dtype, b_keys)
-        a = jax.lax.with_sharding_constraint(a, NamedSharding(mesh, sharding))
-        b = jax.lax.with_sharding_constraint(b, NamedSharding(mesh, sharding))
+        b = create_tensor(shape, dtype, b_key)
         return a, b
 
     @jax.jit
@@ -115,13 +147,7 @@ def run_example():
             out_specs=(sharding, sharding),
         )
         def sharded_call(a_block, b_block):
-            call = cjax.cutlass_call(
-                launch,
-                use_static_tensors=True,
-                output_shape_dtype=jax.ShapeDtypeStruct(a_block.shape, a_block.dtype),
-            )
-            ref_result = a_block + b_block
-            return call(a_block, b_block), ref_result
+            return sharded_cutlass_call_impl(a_block, b_block)
 
         return sharded_call(a, b)
 
@@ -131,6 +157,17 @@ def run_example():
 
     a, b = allocate_sharded_tensors(shape, dtype)
     c, c_ref = compute(a, b)
+
+    assert jnp.allclose(c, c_ref)
+
+    print("Testing custom_partitioning...")
+
+    # Test custom_partitioning implementation which should produce identical results
+    @jax.jit
+    def compute_cp(a, b):
+        return custom_shared_call(a, b)
+
+    c, c_ref = compute_cp(a, b)
 
     assert jnp.allclose(c, c_ref)
 

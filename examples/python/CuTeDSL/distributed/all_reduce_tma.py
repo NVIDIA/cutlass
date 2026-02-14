@@ -53,8 +53,8 @@ Tile Assignment:
     - CTA i on rank r processes global_tile_id = r * ctas_per_rank + i
 
 TMA Usage Notes (for tutorial purposes, not perf-optimal):
-    - Uses TMALDG.1D to load from remote GPU memory via NVSHMEM addresses
-    - Uses TMASTG.1D to store to multicast address for broadcasting to all ranks
+    - Uses 1D TMA load to load from remote GPU memory via NVSHMEM addresses
+    - Uses 1D TMA load to store to multicast address for broadcasting to all ranks
     - Supports any input shape by flattening to 1D and tiling linearly
     - Pipeline with 2 stages overlaps TMA loads across ranks
 
@@ -339,7 +339,7 @@ class AllReduceTmaKernel:
                     producer_state.advance()
 
             # ======================================================================
-            # Warp 1-4: Consumer - LDS, ADD, STS
+            # Warp 1-4: Consumer - Load from smem, ADD, Store to smem
             # ======================================================================
             else:
                 consumer_tid = tidx - self._tma_threads

@@ -13,7 +13,7 @@ from functools import partial
 from typing import Any, Optional, Tuple, Union, Callable, Literal
 from typing_extensions import deprecated
 
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cutlass_dsl import T, dsl_user_op, target_version
 
 import cutlass.cutlass_dsl as cutlass_dsl
 
@@ -2557,3 +2557,42 @@ def cvt_f4e2m1x8_to_f16x8(src_vec8, *, loc=None, ip=None):
     vec_f16x8_type = ir.VectorType.get([8], Float16.mlir_type, loc=loc)
     vec_f16x8 = llvm.bitcast(vec_f16x8_type, vec_f32x4, loc=loc, ip=ip)
     return vec_f16x8
+
+
+@dsl_user_op
+def mapa(ptr, cta_rank_in_cluster=0, *, loc=None, ip=None):
+    """
+    Map a pointer to distributed shared memory across cluster.
+
+    Portable wrapper that uses the appropriate NVVM API based on CUDA version:
+    - CUDA 13.1+: Uses nvvm.mapa with dsmem address space
+    - CUDA 12.9: Uses nvvm.mapa_shared_cluster
+
+    Args:
+        ptr: Pointer to shared memory (llvm_ptr attribute will be used)
+        cta_rank_in_cluster: CTA rank within the cluster (default 0)
+
+    Returns:
+        Mapped LLVM pointer to shared memory
+    """
+    if target_version(min_version="13.1"):
+        dsmem_ptr_ty = llvm.PointerType.get(7)  # dsmem
+        smem_ptr_ty = llvm.PointerType.get(3)  # smem
+
+        llvm_ptr = nvvm.mapa(
+            dsmem_ptr_ty,
+            ptr.llvm_ptr,
+            Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+        return llvm.addrspacecast(smem_ptr_ty, llvm_ptr, loc=loc, ip=ip)
+    else:
+        llvm_ptr = ptr.llvm_ptr
+        return nvvm.mapa_shared_cluster(
+            llvm_ptr.type,
+            llvm_ptr,
+            Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )

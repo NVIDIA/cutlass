@@ -173,6 +173,11 @@ public:
   static constexpr uint32_t NumTransformationThreads = 128;
   static constexpr uint32_t NumAccumThreads = 128;
 
+  // Register reconfiguration
+  static constexpr uint32_t GenericRegisterRequirement = 152;
+  static constexpr uint32_t TransformRegisterRequirement = 200;
+  static constexpr uint32_t AccumRegisterRequirement = 152;
+
   // Get the Algorithm parameters
   constexpr static int NumComputeMtxs = 2;
   constexpr static int AccumulatorPipelineStageCount = DispatchPolicy::Schedule::AccumulatorPipelineStageCount;
