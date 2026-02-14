@@ -312,7 +312,7 @@ For convenience, CuTe also interprets `Shape`s as a tiler as well. A `Shape` is 
 // (12,(4,8)):(59,(13,1))
 auto a = make_layout(make_shape (12,make_shape ( 4,8)),
                      make_stride(59,make_stride(13,1)));
-// (8, 3)
+// (3, 8)
 auto tiler = make_shape(Int<3>{}, Int<8>{});
 // Equivalent to <3:1, 8:1>
 // auto tiler = make_tile(Layout<_3,_1>{},  // Apply 3:1 to mode-0
