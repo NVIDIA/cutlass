@@ -144,7 +144,7 @@ class _Tensor(Tensor):
         elif enable_tvm_ffi:
             import tvm_ffi
 
-            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor)
+            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor, stream=-1)
             self._dlpack_data = self._tvm_ffi_tensor.__dlpack__()
         else:
             try:
