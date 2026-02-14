@@ -1587,7 +1587,7 @@ def pretty_str(arg) -> str:
 
 
 @dsl_user_op
-def printf(*args, loc=None, ip=None) -> None:
+def printf(*args, loc=None, ip=None, end="\n") -> None:
     """
     Print one or more values with optional formatting.
 
@@ -1607,6 +1607,8 @@ def printf(*args, loc=None, ip=None) -> None:
     :type loc: Optional[Location]
     :param ip: Insertion point for code generation, defaults to None
     :type ip: Optional[InsertionPoint]
+    :param end: Suffix for the printed value, defaults to newline
+    :type end: Optional[str]
     :raises ValueError: If no arguments are provided
     :raises TypeError: If an unsupported argument type is passed
 
@@ -1636,10 +1638,10 @@ def printf(*args, loc=None, ip=None) -> None:
         raise ValueError("expects at least one argument to print")
 
     if isinstance(args[0], str):
-        fmt = args[0] + "\n"
+        fmt = args[0] + end
         args = args[1:]
     else:
-        fmt = "{}" + ", {}" * (len(args) - 1) + "\n"
+        fmt = "{}" + ", {}" * (len(args) - 1) + end
 
     def process_arg(arg):
         arg0 = arg.value if isinstance(arg, Numeric) else arg
