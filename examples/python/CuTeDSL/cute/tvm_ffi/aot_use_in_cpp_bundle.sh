@@ -28,7 +28,7 @@
 
 #!/bin/bash
 # Set up library paths for runtime
-export LD_LIBRARY_PATH=$(python3 -m cutlass.cute.export.aot_config --libdir):$(tvm-ffi-config --libdir)
+export LD_LIBRARY_PATH=$(python3 -m cutlass.cute.export.aot_config --libdir):$(tvm-ffi-config --libdir):$LD_LIBRARY_PATH
 
 CUDA_HOME=/usr/local/cuda
 SOURCE_FILE="$(dirname "$0")/aot_use_in_cpp_bundle.cpp"

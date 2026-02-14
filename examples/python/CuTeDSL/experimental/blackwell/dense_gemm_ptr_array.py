@@ -198,10 +198,7 @@ class DenseGemmPtrArrayKernel:
         )
 
         # UMMA ACC TMEM Layout
-        acc_shape = tiled_mma.partition_shape_C(mnk_tiler[:2])
-        tmem_layout = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, acc_stage)
-        ).layout
+        tmem_layout = cute_ext.make_tmem_layout_acc(tiled_mma, mnk_tiler, acc_stage)
 
         # Allocate UMMA Buffers
         bufferA = cute_ext.allocate(
@@ -251,11 +248,9 @@ class DenseGemmPtrArrayKernel:
         tiled_copy_t2r = cute.nvgpu.tcgen05.make_tmem_copy(copy_atom_t2r, acc_epi_div)
 
         # Calculate the per thread destination size per iteration for output of TMEM and input of SMEM
-        thr_copy_t2r = tiled_copy_t2r.get_slice(tid_x)
         gC_mnl_epi = cute.flat_divide(gD_tile, epi_tile)
-        tTR_gC = thr_copy_t2r.partition_D(gC_mnl_epi)
-        acc_d_rmem_layout = cute.make_fragment_like(
-            tTR_gC[(None, None, None, 0, 0)].layout
+        acc_d_rmem_layout = cute_ext.make_t2r_rmem_layout(
+            tiled_copy_t2r, gC_mnl_epi, tid_x
         )
 
         # Allocate RMEM buffers

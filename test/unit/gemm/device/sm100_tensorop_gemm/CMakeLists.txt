@@ -70,3 +70,4 @@ cutlass_test_unit_gemm_device_add_executable(
 endif()
 
 add_subdirectory(narrow_precision) 
+add_subdirectory(extra_tests)

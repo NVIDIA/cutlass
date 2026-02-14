@@ -582,6 +582,7 @@ template <typename value_t>
 struct alignment_of : std::alignment_of<value_t> {};
 
 #endif
+
 #if CUDA_VERSION >= 11080
 /* 16B specializations where 32-bit Win32 host compiler disagrees with device compiler */
 template <>
@@ -609,12 +610,7 @@ struct alignment_of<double2> {
   enum { value = 16 };
 };
 
-
-#if !defined(CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED)
-#define CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED (__CUDACC_VER_MAJOR__ >= 13)
-#endif
-
-#if (CUDA_VECTOR_TYPE_ALIGNMENT_16_32_ENABLED)
+#if CUDA_VERSION >= 13000
 template <>
 struct alignment_of<long4_16a> {
   enum { value = 16 };
@@ -655,7 +651,9 @@ template <>
 struct alignment_of<double4_32a> {
   enum { value = 32 };
 };
+
 #else
+
 template <>
 struct alignment_of<long4> {
   enum { value = 16 };
@@ -677,7 +675,7 @@ struct alignment_of<double4> {
   enum { value = 16 };
 };
 
-#endif
+#endif // CUDA_VERSION >= 13000
 #endif // CUDA_VERSION >= 11080
 
 // Specializations for volatile/const qualified types

@@ -29,10 +29,8 @@
 from typing import Type
 import argparse
 
-import torch
 import cuda.bindings.driver as cuda
 import cutlass
-import cutlass.torch as cutlass_torch
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
 from cutlass._mlir.dialects import llvm
@@ -838,28 +836,25 @@ class HSTUAttentionForwardAmpere(object):
 
 
 def run_pytorch_hstu_test(
-    dtype: torch.dtype,
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    rab: torch.Tensor,
+    dtype,
+    q,
+    k,
+    v,
+    rab,
     is_causal: bool,
 ):
     """Generate the reference output of the HSTU attention with Pytorch.
 
     :param dtype: data type of the input tensors
-    :type dtype: torch.dtype
     :param q: query tensor
-    :type q: torch.Tensor
     :param k: key tensor
-    :type k: torch.Tensor
     :param v: value tensor
-    :type v: torch.Tensor
     :param rab: RAB tensor
-    :type rab: torch.Tensor
     :param is_causal: whether to use causal masking
     :type is_causal: bool
     """
+    import torch
+
     q = q.to(dtype)
     k = k.to(dtype)
     v = v.to(dtype)
@@ -921,6 +916,9 @@ def run(
     :type is_causal: bool
     """
     assert dtype == cutlass.Float16 or dtype == cutlass.BFloat16
+
+    import torch
+    import cutlass.torch as cutlass_torch
 
     torch_stream = torch.cuda.current_stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)

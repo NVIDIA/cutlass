@@ -129,16 +129,13 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-
-        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_init"
-        )
-        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_load_to_device"
-        )
-        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "TVMFFIErrorSetRaisedFromCStr"
-        )
+            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
+            cuda_load_to_device_ptr = self.address_of(
+                "cuda_load_to_device", self.ptr_type
+            )
+            set_error_ptr = self.address_of(
+                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
+            )
 
         with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value

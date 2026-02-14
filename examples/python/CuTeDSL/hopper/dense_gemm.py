@@ -31,15 +31,12 @@ from typing import Tuple, Type
 import math
 import cuda.bindings.driver as cuda
 
-import torch
-
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
 import cutlass.utils.hopper_helpers as sm90_utils
 
@@ -1006,7 +1003,10 @@ class HopperWgmmaGemmKernel:
                 tiled_copy_r2s, tRS_rD_out, tRS_sD[(None, None, None, epi_buffer)]
             )
 
-            cute.arch.fence_proxy("async.shared", space="cta")
+            cute.arch.fence_proxy(
+                "async.shared",
+                space="cta",
+            )
             # barrier for sync
             pipeline.sync(barrier_id=1)
 
@@ -1431,6 +1431,9 @@ def run(
     :rtype: float
     """
 
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("Running Hopper Dense GEMM with:")
     print(f"mnkl: {mnkl}")
     print(
@@ -1519,7 +1522,7 @@ def run(
 
     gemm = HopperWgmmaGemmKernel(acc_dtype, tile_shape_mn, cluster_shape_mn)
 
-    torch_stream = torch.cuda.Stream()
+    torch_stream = torch.cuda.current_stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)
     # compile gemm kernel
     compiled_gemm = cute.compile(gemm, mA, mB, mC, stream)

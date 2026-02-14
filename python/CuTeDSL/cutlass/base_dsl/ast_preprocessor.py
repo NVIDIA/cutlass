@@ -45,6 +45,7 @@ from typing import List, Set, Dict, Any, Callable, Optional
 from types import ModuleType
 from collections import OrderedDict
 from copy import deepcopy
+from itertools import chain
 
 from .common import *
 from .utils.logger import log
@@ -302,6 +303,7 @@ class SessionData:
     import_top_module: bool = False
     region_stack: list[Region] = field(default_factory=list)
     generator_targets: list[str] = field(default_factory=list)
+    lambda_args: list[str] = field(default_factory=list)
 
     @contextlib.contextmanager
     def set_current_class_name(self, class_name: str):
@@ -2063,6 +2065,19 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         return self._visit_Comprehension(node, key_value_visitor)
 
+    def visit_Lambda(self, node):
+        current_lambda_args = len(self.session_data.lambda_args)
+        for arg in node.args.args:
+            self.session_data.lambda_args.append(arg.arg)
+
+        node.body = self.visit(node.body)
+
+        self.session_data.lambda_args = self.session_data.lambda_args[
+            :current_lambda_args
+        ]
+
+        return node
+
     def visit_ListComp(self, node):
         return self._visit_Comprehension(
             node, lambda n: setattr(n, "elt", self.visit(n.elt))
@@ -2113,7 +2128,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                 posonlyargs=[],
                 args=[
                     ast.arg(arg=target, annotation=None)
-                    for target in self.session_data.generator_targets
+                    for target in chain(
+                        self.session_data.generator_targets,
+                        self.session_data.lambda_args,
+                    )
                 ],
                 kwonlyargs=[],
                 kw_defaults=[],
@@ -2129,7 +2147,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                 posonlyargs=[],
                 args=[
                     ast.arg(arg=target, annotation=None)
-                    for target in self.session_data.generator_targets
+                    for target in chain(
+                        self.session_data.generator_targets,
+                        self.session_data.lambda_args,
+                    )
                 ],
                 kwonlyargs=[],
                 kw_defaults=[],
@@ -2151,11 +2172,14 @@ class DSLPreprocessor(ast.NodeTransformer):
             keywords=[
                 ast.keyword(arg="pred", value=self.visit(node.test)),
                 ast.keyword(
-                    arg="generator_targets",
+                    arg="block_args",
                     value=ast.Tuple(
                         elts=[
                             ast.Name(id=name, ctx=ast.Load())
-                            for name in self.session_data.generator_targets
+                            for name in chain(
+                                self.session_data.generator_targets,
+                                self.session_data.lambda_args,
+                            )
                         ],
                         ctx=ast.Load(),
                     ),

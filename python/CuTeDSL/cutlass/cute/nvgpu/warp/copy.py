@@ -103,15 +103,20 @@ class LdMatrix8x16x8bOp(BaseOp):
                 self,
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
-        if self.unpack_bits not in [4, 6]:
-            raise OpError(self, "Op unpack bits must be 4 or 6")
+        if self.unpack_bits not in [None, 4, 6]:
+            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
     ) -> "LdMatrix8x16x8bTrait":
-        mode = _pack_shape((8, 16), loc=loc, ip=ip)
-        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
-        if self.unpack_bits == 6:
+        # LdMatrix8x16x8b without unpacking doesn't exist
+        # but is equivalent to LdMatrix8x8x16b
+        mode_n = 8 if self.unpack_bits is None else 16
+        mode = _pack_shape((8, mode_n), loc=loc, ip=ip)
+        sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u16
+        if self.unpack_bits == 4:
+            sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u4x16p64to8
+        elif self.unpack_bits == 6:
             sz_pattern = _cute_nvgpu_ir.LdsmSzPattern.u6x16p32to8
         ty = _cute_nvgpu_ir.CopyAtomLdsmType.get(
             copy_internal_type.mlir_type,

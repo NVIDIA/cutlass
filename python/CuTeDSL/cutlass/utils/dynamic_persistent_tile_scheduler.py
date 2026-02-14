@@ -129,7 +129,7 @@ class ClcDynamicPersistentTileScheduler:
         :param num_tiles_executed: Counter for executed tiles.
         :type num_tiles_executed: Int32
         :param clc_response_ptr: Pointer of the clc rsponse.
-        :type clc_response_ptr: Tuple[Integer, Integer, Integer, Integer]
+        :type clc_response_ptr: cute.Pointer
         :param block_idx: The block index.
         :type block_idx: Tuple[Integer, Integer, Integer]
         """
@@ -238,7 +238,7 @@ class ClcDynamicPersistentTileScheduler:
 
     @dsl_user_op
     def work_tile_info_from_clc_response(
-        self, result_addr: Int32, *, loc=None, ip=None
+        self, result_addr: cute.Pointer, *, loc=None, ip=None
     ) -> WorkTileInfo:
         """
         Simulates parsing CLC response data in Python.
