@@ -415,10 +415,7 @@ class AllReduceTmaKernel:
             # ======================================================================
             if warp_idx == 0:
                 # Fence to ensure SMEM writes are visible
-                cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
-                )
+                cute.arch.fence_proxy("async.shared", space="cta")
 
                 smem_tile_out = cute.slice_(staged_smem_tensor, (None, 0))
 
