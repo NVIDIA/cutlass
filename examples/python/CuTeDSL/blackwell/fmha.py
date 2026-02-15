@@ -70,7 +70,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/fmha.py                                     \
+    python examples/python/CuTeDSL/blackwell/fmha.py                                     \
       --qk_acc_dtype Float32 --pv_acc_dtype Float32                       \
       --mma_tiler_mn 128,128                                              \
       --q_shape 4,1024,8,64 --k_shape 4,1024,8,64                         \
@@ -84,7 +84,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/fmha.py                                 \
+    ncu python examples/python/CuTeDSL/blackwell/fmha.py                                 \
       --qk_acc_dtype Float32 --pv_acc_dtype Float32                       \
       --mma_tiler_mn 128,128                                              \
       --q_shape 4,1024,8,64 --k_shape 4,1024,8,64                         \

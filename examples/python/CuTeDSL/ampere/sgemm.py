@@ -65,7 +65,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/sgemm.py                       \
+    python examples/python/CuTeDSL/ampere/sgemm.py                       \
       --mnk 8192,8192,8192                                \
       --a_major m --b_major n --c_major n
 
@@ -73,7 +73,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/ampere/sgemm.py                   \
+    ncu python examples/python/CuTeDSL/ampere/sgemm.py                   \
       --mnk 8192,8192,8192                                \
       --a_major m --b_major n --c_major n                 \
       --skip_ref_check --iterations 2

@@ -116,16 +116,16 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/elementwise_add.py --M 3 --N 12
-    python examples/ampere/elementwise_add.py --M 1024 --N 512
-    python examples/ampere/elementwise_add.py --M 1024 --N 1024 --benchmark --warmup_iterations 2 --iterations 1000
+    python examples/python/CuTeDSL/ampere/elementwise_add.py --M 3 --N 12
+    python examples/python/CuTeDSL/ampere/elementwise_add.py --M 1024 --N 512
+    python examples/python/CuTeDSL/ampere/elementwise_add.py --M 1024 --N 1024 --benchmark --warmup_iterations 2 --iterations 1000
 
 To collect performance with NCU profiler:
 
 .. code-block:: bash
 
     # Don't iterate too many times when profiling with ncu
-    ncu python examples/ampere/elementwise_add.py --M 2048 --N 2048 --benchmark --iterations 10 --skip_ref_check
+    ncu python examples/python/CuTeDSL/ampere/elementwise_add.py --M 2048 --N 2048 --benchmark --iterations 10 --skip_ref_check
 """
 
 
