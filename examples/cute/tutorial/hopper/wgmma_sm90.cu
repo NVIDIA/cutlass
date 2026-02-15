@@ -218,10 +218,11 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // Prefetch all but the last
   CUTE_UNROLL
-  for (int k = 0; k < K_PIPE_MAX-1; ++k)
+  int k_ahead;
+  for (k_ahead = 0; k_ahead < K_PIPE_MAX-1; ++k_ahead)
   {
-    copy(copy_a, tAgA(_,_,_,k), tAsA(_,_,_,k));
-    copy(copy_b, tBgB(_,_,_,k), tBsB(_,_,_,k));
+    copy(copy_a, tAgA(_,_,_,k_ahead), tAsA(_,_,_,k_ahead));
+    copy(copy_b, tBgB(_,_,_,k_ahead), tBsB(_,_,_,k_ahead));
     cp_async_fence();
   }
 
@@ -242,16 +243,16 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   CUTE_NO_UNROLL
   for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
   {
-    int k_tile_next = k_tile + (K_PIPE_MAX-1);
-    k_tile_next = (k_tile_next >= K_TILE_MAX) ? K_TILE_MAX-1 : k_tile_next;
-
     //
     // Copy gmem to smem for k_tile_write
     //
 
-    copy(copy_a, tAgA(_,_,_,k_tile_next), tAsA(_,_,_,k_pipe_write));
-    copy(copy_b, tBgB(_,_,_,k_tile_next), tBsB(_,_,_,k_pipe_write));
-    cp_async_fence();
+    if (k_tile + k_ahead < K_TILE_MAX) {
+      int k_tile_next = k_tile + k_ahead;
+      copy(copy_a, tAgA(_,_,_,k_tile_next), tAsA(_,_,_,k_pipe_write));
+      copy(copy_b, tBgB(_,_,_,k_tile_next), tBsB(_,_,_,k_pipe_write));
+      cp_async_fence();
+    }
 
     // Advance k_pipe_write
     ++k_pipe_write;
