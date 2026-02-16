@@ -158,6 +158,7 @@ struct CollectiveBuilder<
   using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVectorSize>;
 
   using SmemLayoutAtomA = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeA, decltype(size<2>(TileShape_MNK{}))>());
+
   using SmemLayoutAtomB = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeB, decltype(size<2>(TileShape_MNK{}))>());
 
   using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA,
@@ -189,12 +190,15 @@ struct CollectiveBuilder<
   using kBasicBlockShape  = Shape<Int<SFVectorSize>, Int<MMA_NSF>>;
   using kBasicBlockStride = Stride<_0, _1>;
   
-  using sSFA_shapeM       = decltype(prepend(size<0>(TileShape_MNK{}) / Blk_MN{},   mnBasicBlockShape{}));
+  // M dimension must be rounded up to at least Blk_MN (128) for TMA and UTCCP to work.
+  // Use ceil_div to ensure at least 1 block for M < 128 tiles (e.g., 64x128).
+  static constexpr int SFA_NumBlocks = (cute::size<0>(TileShape_MNK{}) + Blk_MN{} - cute::Int<1>{}) / Blk_MN{};
+  using sSFA_shapeM       = decltype(prepend(cute::Int<SFA_NumBlocks>{},   mnBasicBlockShape{}));
   using sSF_strideMN      = decltype(prepend(                        Blk_Elems{},  mnBasicBlockStride{}));
   using sSFA_strideM      = sSF_strideMN;
   using sSF_shapeK        = decltype(prepend(make_shape( Blk_SF{}/Int<MMA_NSF>{},   size<2>(TileShape_MNK{}) / Int<SFVectorSize>{} / Blk_SF{}),  kBasicBlockShape{}));
   
-  using sSFA_strideK      = decltype(prepend(make_stride(         Int<MMA_NSF>{},   size<0>(TileShape_MNK{}) / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
+  using sSFA_strideK      = decltype(prepend(make_stride(         Int<MMA_NSF>{},   cute::Int<SFA_NumBlocks>{} * Blk_Elems{}), kBasicBlockStride{}));
   using sSFA_shape        = decltype(make_shape(  sSFA_shapeM{},   sSF_shapeK{}));
   using sSFA_stride       = decltype(make_stride(sSFA_strideM{}, sSFA_strideK{}));
   using SmemLayoutAtomSFA = decltype(make_layout(  sSFA_shape{},  sSFA_stride{}));

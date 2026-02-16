@@ -452,7 +452,7 @@ struct CollectiveMma<
       stride_a = InternalStrideA{};
       stride_b = InternalStrideB{};
       layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
-      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
+      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(init_M, init_N, init_K, 1));
     }
     else {
       // Tensor shapes for Ptr-Array are initialized correctly only here.
