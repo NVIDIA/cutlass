@@ -19,6 +19,7 @@ __all__ = [
     # copy.py
     #
     "Repetition",
+    "TmemLoadRedOp",
     "Pack",
     "Unpack",
     "Ld16x64bOp",

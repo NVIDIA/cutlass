@@ -29,8 +29,14 @@ from .core import (
     append_ones,
     group_modes,
 )
-from .atom import MmaAtom, CopyAtom, make_atom
-
+from .atom import (
+    MmaAtom,
+    CopyAtom,
+    make_atom,
+    _normalize_variadic_tensor_operand,
+    copy_atom_call,
+)
+from .nvgpu.common import CacheEvictionPriority
 
 def _normalize_gemm_operand_list(
     x: Union["Tensor", List["Tensor"], Tuple["Tensor", ...]], name: str
@@ -156,7 +162,7 @@ def basic_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
             src.element_type.mlir_type, src.element_type.width
         )
         simt_copy = make_atom(simt_copy_ty, loc=loc, ip=ip)
-        return _cute_ir.copy(simt_copy, src.value, dst.value, loc=loc, ip=ip)
+        return _cute_ir.copy(simt_copy, [src.value], [dst.value], loc=loc, ip=ip)
 
     s = size(dst, loc=loc, ip=ip)
     # Always generate an scf.for Op when one of the tensors is dynamic
@@ -210,7 +216,14 @@ def _basic_copy_if_static(
 
 
 @dsl_user_op
-def autovec_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
+def autovec_copy(
+    src: Tensor,
+    dst: Tensor,
+    *,
+    l1c_evict_priority: CacheEvictionPriority = CacheEvictionPriority.EVICT_NORMAL,
+    loc=None,
+    ip=None,
+) -> None:
     """
     Auto-vectorization SIMT copy policy.
 
@@ -263,11 +276,15 @@ def autovec_copy(src: Tensor, dst: Tensor, *, loc=None, ip=None) -> None:
 
         # Dispatch to copy with atom
         simt_type = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
-            src.element_type.mlir_type, num_bits_per_copy
+            src.element_type.mlir_type,
+            num_bits_per_copy,
+            0,
+            0,
+            l1c_evict_priority._to_ir(),
         )
         simt_copy = make_atom(simt_type, loc=loc, ip=ip)
         return _cute_ir.copy(
-            simt_copy, tiled_src.value, tiled_dst.value, loc=loc, ip=ip
+            simt_copy, [tiled_src.value], [tiled_dst.value], loc=loc, ip=ip
         )
 
     # Failed to vectorize, use a basic copy
@@ -331,8 +348,8 @@ def _parse_auto_multicast_args(
 @dsl_user_op
 def copy(
     atom: CopyAtom,
-    src: Tensor,
-    dst: Tensor,
+    src: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    dst: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
     *,
     pred: Optional[Tensor] = None,
     loc=None,
@@ -343,10 +360,10 @@ def copy(
 
     :param atom: Copy atom specifying the transfer operation
     :type atom: CopyAtom
-    :param src: Source tensor with layout profile ``(V, Rest...)``
-    :type src: Tensor
-    :param dst: Destination tensor with layout profile ``(V, Rest...)``
-    :type dst: Tensor
+    :param src: Source tensor or list of tensors with layout profile ``(V, Rest...)``
+    :type src: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
+    :param dst: Destination tensor or list of tensors with layout profile ``(V, Rest...)``
+    :type dst: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
     :param pred: Optional predication tensor for conditional transfers, defaults to None
     :type pred: Optional[Tensor], optional
     :param loc: Source location information, defaults to None
@@ -374,6 +391,12 @@ def copy(
     Source and destination tensors must be partitioned in accordance with the Copy Atom specifications.
     Post-partitioning, both tensors will exhibit a ``(V, Rest...)`` layout profile.
 
+    The operands `src` and `dst` are variadic, each containing a variable number of tensors:
+
+    - For regular copy, `src` and `dst` contain single source and destination tensors respectively.
+    - For copy with auxiliary operands, `src` and `dst` contain the primary tensors followed by
+      their respective auxiliary tensors.
+
     **Precondition:** The size of mode 1 must be equal for both source and destination tensors:
     ``size(src, mode=[1]) == size(dst, mode=[1])``
 
@@ -399,41 +422,54 @@ def copy(
           for future releases.
 
     """
-    if isinstance(src.type, _cute_ir.MemRefType) and isinstance(
-        dst.type, _cute_ir.MemRefType
+    # Normalize src/dst to lists for variadic IR operands
+    src_list = _normalize_variadic_tensor_operand(src, "src")
+    dst_list = _normalize_variadic_tensor_operand(dst, "dst")
+
+    # Validate primary tensors (first element)
+    src_primary = src_list[0]
+    dst_primary = dst_list[0]
+
+    if isinstance(src_primary.type, _cute_ir.MemRefType) and isinstance(
+        dst_primary.type, _cute_ir.MemRefType
     ):
-        if src.element_type.width != dst.element_type.width:
+        if src_primary.element_type.width != dst_primary.element_type.width:
             raise TypeError(
                 "`copy` currently only supports equal source and destination "
                 "element type bit width"
             )
 
-    if rank(src) != rank(dst):
+    if rank(src_primary) != rank(dst_primary):
         raise ValueError(
             "Expected source and destination tensors to have the same rank, "
-            f"but got {rank(src)} and {rank(dst)}"
+            f"but got {rank(src_primary)} and {rank(dst_primary)}"
         )
 
-    # Canonicalize to at least rank-2 tensors
-    src = group_modes(append_ones(src, up_to_rank=2), 1)
-    dst = group_modes(append_ones(dst, up_to_rank=2), 1)
+    # Canonicalize all tensors to at least rank-2
+    src_list = [group_modes(append_ones(t, up_to_rank=2), 1) for t in src_list]
+    dst_list = [group_modes(append_ones(t, up_to_rank=2), 1) for t in dst_list]
     if pred is not None:
         pred = group_modes(append_ones(pred, up_to_rank=2), 1)
 
-    if is_static(src.shape[1]) and is_static(dst.shape[1]):
-        if size(src, mode=[1]) != size(dst, mode=[1]):
+    # Recompute primary references after canonicalization
+    src_primary = src_list[0]
+    dst_primary = dst_list[0]
+
+    if is_static(src_primary.shape[1]) and is_static(dst_primary.shape[1]):
+        if size(src_primary, mode=[1]) != size(dst_primary, mode=[1]):
             raise ValueError(
                 "Expected source and destination tensors to have the same size in mode-1, "
-                f"but got {size(src, mode=[1])} and {size(dst, mode=[1])}"
+                f"but got {size(src_primary, mode=[1])} and {size(dst_primary, mode=[1])}"
             )
 
     multicast_attr_pairs = _parse_auto_multicast_args(kwargs)
 
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
-    if isinstance(pred, Tensor):
-        pred = pred.value
+    pred_value = pred.value if isinstance(pred, Tensor) else pred
 
-    op = _cute_ir.copy(value, src.value, dst.value, pred=pred, loc=loc, ip=ip)
+    src_vals = [t.value for t in src_list]
+    dst_vals = [t.value for t in dst_list]
+    op = _cute_ir.copy(value, src_vals, dst_vals, pred=pred_value, loc=loc, ip=ip)
 
     for name, attr in multicast_attr_pairs:
         op.attributes[name] = attr

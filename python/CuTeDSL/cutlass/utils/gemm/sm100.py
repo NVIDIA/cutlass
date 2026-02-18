@@ -293,6 +293,7 @@ def epilogue(
     acc_pipeline: pipeline.PipelineAsync,
     tCcC_base: cute.Tensor = None,
     mC_mnl: cute.Tensor = None,
+    overlapping_accum: Constexpr = False,
 ) -> pipeline.PipelineState:
     """
     Epilogue function that stores accumulator results directly to global memory.
@@ -310,12 +311,18 @@ def epilogue(
     :type epi_tile: cute.Tile
     :param epilogue_op: Optional elementwise operation to apply
     :type epilogue_op: Constexpr
-    :param alignment_bytes: Alignment bytes for global memory store
-    :type alignment_bytes: int
+    :param mma_tile_coord_mnl: MMA tile coordinates (M, N, L)
+    :type mma_tile_coord_mnl: Tuple[Int32, Int32, Int32]
+    :param acc_consumer_state: Accumulator consumer pipeline state
+    :type acc_consumer_state: pipeline.PipelineState
+    :param acc_pipeline: Accumulator pipeline for async operations
+    :type acc_pipeline: pipeline.PipelineAsync
     :param tCcC_base: Identity/coordinate tensor C
     :type tCcC_base: cute.Tensor
     :param mC_mnl: Global memory tensor C (full tensor for predicate computation)
     :type mC_mnl: cute.Tensor
+    :param overlapping_accum: Whether to use overlapping accumulator
+    :type overlapping_accum: Constexpr
     """
 
     # Layout transformation for tCgC_base
@@ -399,9 +406,16 @@ def epilogue(
         ]
         tTR_cC = cute.group_modes(tTR_cC, 3, cute.rank(tTR_cC))
 
+    # Get accumulator stage index
+    if const_expr(overlapping_accum):
+        acc_stage_index = acc_consumer_state.phase
+        reverse_subtile = acc_stage_index == 0
+    else:
+        acc_stage_index = acc_consumer_state.index
+
     # Set tensor memory buffer for current tile
     # (T2R, T2R_M, T2R_N, EPI_M, EPI_M)
-    tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_consumer_state.index)]
+    tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_stage_index)]
 
     #
     # Wait for accumulator buffer full
@@ -415,21 +429,38 @@ def epilogue(
     #
     subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])
     for subtile_idx in range(subtile_cnt):
+        # Compute the actual subtile index
+        real_subtile_idx = subtile_idx
+        if const_expr(overlapping_accum):
+            if reverse_subtile:
+                real_subtile_idx = subtile_cnt - 1 - subtile_idx
         #
         # Get the destination and coordinate slices for this subtile
         #
-        tTR_gC_subtile = tTR_gC[(None, None, None, subtile_idx)]
+        tTR_gC_subtile = tTR_gC[(None, None, None, real_subtile_idx)]
         #
         # Load accumulator from tensor memory buffer to register
         #
-        tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
+        tTR_tAcc_mn = tTR_tAcc[(None, None, None, real_subtile_idx)]
         cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
+
+        #
         # Async arrive accumulator buffer empty
-        # Release early for perf
-        if subtile_idx == subtile_cnt - 1:
-            with cute.arch.elect_one():
-                acc_pipeline.consumer_release(acc_consumer_state)
-            acc_consumer_state.advance()
+        #
+        if const_expr(overlapping_accum):
+            # Early release when overlapping: release after processing the
+            # overlapping region (SF columns) so they can be reused
+            if subtile_idx == gemm_kernel.iter_acc_early_release_in_epilogue:
+                cute.arch.fence_view_async_tmem_load()
+                with cute.arch.elect_one():
+                    acc_pipeline.consumer_release(acc_consumer_state)
+                acc_consumer_state.advance()
+        else:
+            # Release early for perf at the last subtile
+            if subtile_idx == subtile_cnt - 1:
+                with cute.arch.elect_one():
+                    acc_pipeline.consumer_release(acc_consumer_state)
+                acc_consumer_state.advance()
 
         #
         # Convert to C type
@@ -440,7 +471,7 @@ def epilogue(
 
         if const_expr(use_predication):
             # compute predicate
-            tTR_cC_subtile = tTR_cC[(None, None, None, subtile_idx)]
+            tTR_cC_subtile = tTR_cC[(None, None, None, real_subtile_idx)]
             pred_C_shape = (1, *tTR_cC_subtile.shape[1:])
             pred_C = cute.make_rmem_tensor(pred_C_shape, Boolean)
             for m_idx in range(tTR_cC_subtile.shape[1]):

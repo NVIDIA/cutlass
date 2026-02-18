@@ -1635,7 +1635,7 @@ struct PersistentTileSchedulerSm90GroupParams {
 
   uint64_t blocks_across_problem_ = 0;
   bool pre_processed_problem_shapes = true;
-  int32_t log_swizzle_size_ = 0;
+  int32_t max_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
   GroupProblemShape problem_shapes_;
@@ -1658,10 +1658,8 @@ struct PersistentTileSchedulerSm90GroupParams {
 
     CUTLASS_UNUSED(hw_info);
 
-    // Round up to nearest multiple of swizzle_size along each mode
-    auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
-    auto problem_blocks_m = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
-    auto problem_blocks_n = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+    auto problem_blocks_m = round_up(problem_blocks.x, cluster_shape.m());
+    auto problem_blocks_n = round_up(problem_blocks.y, cluster_shape.n());
 
     RasterOrder raster_order = get_rasterization_order(
       problem_blocks_m,
@@ -1678,7 +1676,7 @@ struct PersistentTileSchedulerSm90GroupParams {
 
     blocks_across_problem_ = problem_blocks.x * problem_blocks.y * problem_blocks.z;
     pre_processed_problem_shapes = problem_shapes.is_host_problem_shape_available();
-    log_swizzle_size_ = log_swizzle_size;
+    max_swizzle_size_ = max_swizzle_size;
     raster_order_ = raster_order;
 
     if (raster_order == RasterOrder::AlongN) {
@@ -1727,10 +1725,8 @@ struct PersistentTileSchedulerSm90GroupParams {
     int const sm_count = hw_info.sm_count;
     int const max_active_clusters = hw_info.max_active_clusters;
 
-    // Round up to nearest multiple of swizzle_size along each mode
-    auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
-    auto problem_blocks_m = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
-    auto problem_blocks_n = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+    auto problem_blocks_m = round_up(problem_blocks.x, cluster_shape.m());
+    auto problem_blocks_n = round_up(problem_blocks.y, cluster_shape.n());
 
     int problem_blocks_total = problem_blocks_m * problem_blocks_n * problem_blocks.z;
 
@@ -1801,24 +1797,6 @@ struct PersistentTileSchedulerSm90GroupParams {
           "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
     }
     return launch_grid;
-  }
-
-  CUTLASS_HOST_DEVICE
-  static int32_t
-  get_log_swizzle_size(int problem_ctas_m, int problem_ctas_n, int max_swizzle_size) {
-    int min_cta_dim = platform::min(problem_ctas_m, problem_ctas_n);
-    if (max_swizzle_size >= 8 && min_cta_dim >= 6) {
-      return 3;
-    }
-    else if (max_swizzle_size >= 4 && min_cta_dim >= 3) {
-      return 2;
-    }
-    else if (max_swizzle_size >= 2 && min_cta_dim >= 2) {
-      return 1;
-    }
-    else {
-      return 0;
-    }
   }
 
   CUTLASS_HOST_DEVICE
@@ -2496,10 +2474,8 @@ struct PersistentTileSchedulerSm100GroupParams {
     int const sm_count = hw_info.sm_count;
     int const max_active_clusters = hw_info.max_active_clusters;
 
-    // Round up to nearest multiple of swizzle_size along each mode
-    auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
-    auto problem_blocks_m = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
-    auto problem_blocks_n = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+    auto problem_blocks_m = round_up(problem_blocks.x, cluster_shape.m());
+    auto problem_blocks_n = round_up(problem_blocks.y, cluster_shape.n());
 
     int problem_blocks_total = problem_blocks_m * problem_blocks_n * problem_blocks.z;
 
@@ -2579,12 +2555,6 @@ struct PersistentTileSchedulerSm100GroupParams {
           "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
     }
     return launch_grid;
-  }
-
-  CUTLASS_HOST_DEVICE
-  static int32_t
-  get_log_swizzle_size(int problem_ctas_m, int problem_ctas_n, int max_swizzle_size) {
-    return UnderlyingSm90Params::get_log_swizzle_size(problem_ctas_m, problem_ctas_n, max_swizzle_size);
   }
 
   CUTLASS_HOST_DEVICE

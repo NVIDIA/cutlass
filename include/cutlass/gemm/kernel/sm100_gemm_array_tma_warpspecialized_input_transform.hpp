@@ -148,9 +148,10 @@ public:
   static constexpr uint32_t NumFixupBarriers = 1;
   static constexpr uint32_t CLCResponseSize = sizeof(typename TileScheduler::CLCResponse);
 
-  // Transfer registers from regular warps to Accum warps
-  static constexpr uint32_t GenericRegisterRequirement = 152;
-  static constexpr uint32_t AccumRegisterRequirement = 200;
+  // Register reconfiguration
+  static constexpr uint32_t GenericRegisterRequirement = CollectiveMainloop::GenericRegisterRequirement;
+  static constexpr uint32_t TransformRegisterRequirement = CollectiveMainloop::TransformRegisterRequirement;
+  static constexpr uint32_t AccumRegisterRequirement = CollectiveMainloop::AccumRegisterRequirement;
 
   // Pipeline and pipeline state types
   using Load2TransformPipeline = typename CollectiveMainloop::Load2TransformPipeline;
@@ -410,6 +411,22 @@ public:
   static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
+  }
+
+  // Register alloc/dealloc behavior might change according to the underlying collective used
+  template <uint32_t NReg>
+  CUTLASS_DEVICE
+  static constexpr void
+  warpgroup_reg_reconfig() {
+    // Compute default-allocated registers per thread: round_down((512 / NumWG), 8)
+    constexpr int32_t MaxWarpGroupsPerBlock = ceil_div(MaxThreadsPerBlock, NumThreadsPerWarpGroup);
+    constexpr int32_t NumRegsPerThread = (512 / MaxWarpGroupsPerBlock) / 8 * 8;
+    if constexpr (NReg < NumRegsPerThread) {
+      arch::warpgroup_reg_dealloc<NReg>();
+    }
+    else if constexpr (NReg > NumRegsPerThread) {
+      arch::warpgroup_reg_alloc<NReg>();
+    }
   }
 
   CUTLASS_DEVICE
@@ -677,7 +694,7 @@ public:
 
     if (is_participant.main_load) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
@@ -791,7 +808,7 @@ public:
 
     else if (is_participant.transformation) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<TransformRegisterRequirement>();
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -833,7 +850,7 @@ public:
 
     else if (is_participant.sched) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -898,7 +915,7 @@ public:
 
     else if (is_participant.mma) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Allocate all tmem
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
@@ -966,7 +983,7 @@ public:
 
     else if (is_participant.epi_load) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
@@ -1051,7 +1068,7 @@ public:
 
     else if (is_participant.epilogue) {
       // Register reconfiguration
-      arch::warpgroup_reg_alloc<AccumRegisterRequirement>();
+      warpgroup_reg_reconfig<AccumRegisterRequirement>();
 
       // Throttle the epilogue warps to improve prologue performance
       static constexpr int epilogue_throttle_phase_bit = 0;
@@ -1182,7 +1199,7 @@ public:
 
     else {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
     }
   }
 };

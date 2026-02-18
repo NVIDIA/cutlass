@@ -463,18 +463,9 @@ class DenseGemmKernel:
         # - Has a capacity limit of 512 columns
         # - Requires specific layout patterns matching MMA instructions
         #
-        # partition_shape_C: Computes the accumulator shape based on MMA configuration.
-        # This returns the shape needed to store C = A × B results.
-        #
-        # cute.append(shape, stage): Appends a dimension for staging.
-        # For acc_stage=2: shape becomes (..., 2) for double-buffering.
-        #
-        # make_fragment_C: Creates a tensor descriptor with the appropriate layout
-        # for MMA accumulator storage. The .layout attribute extracts just the layout.
-        acc_shape = tiled_mma.partition_shape_C(mnk_tiler[:2])  # (M_tile, N_tile)
-        tmem_layout = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, acc_stage)  # Add stage dimension
-        ).layout
+        # make_tmem_layout_acc: Derives the TMEM accumulator buffer layout from the
+        # tiled MMA and MNK tiler, with the given number of pipeline stages.
+        tmem_layout = cute_ext.make_tmem_layout_acc(tiled_mma, mnk_tiler, acc_stage)
 
         # ========================================================================================
         # STEP 10: ALLOCATE SMEM BUFFERS
@@ -583,9 +574,6 @@ class DenseGemmKernel:
         # We derive the RMEM layout by partitioning the destination and extracting
         # the per-thread layout.
         #
-        # get_slice(tid_x): Gets the per-thread view of the tiled copy.
-        # partition_D: Partitions the destination tensor according to the copy layout.
-        #
         # CUTE ALGEBRA EXPLANATION - flat_divide:
         # ---------------------------------------
         # flat_divide(tensor, tiler) flattens all dimensions:
@@ -594,20 +582,11 @@ class DenseGemmKernel:
         # Unlike zipped_divide which groups tile and rest separately,
         # flat_divide keeps everything flat, which is useful for iteration.
         #
-        # For epilogue: gC_mnl_epi = cute.flat_divide(gD_tile, epi_tile)
-        # This creates a flat view where we can iterate over sub-tiles with indices.
-        thr_copy_t2r = tiled_copy_t2r.get_slice(tid_x)
+        # make_t2r_rmem_layout: Derives the per-thread RMEM buffer layout
+        # produced by a TMEM->RMEM copy for a single epilogue iteration.
         gC_mnl_epi = cute.flat_divide(gD_tile, epi_tile)
-
-        # Partition the output tensor according to the copy layout.
-        # tTR_gC has the thread's view of the output.
-        tTR_gC = thr_copy_t2r.partition_D(gC_mnl_epi)
-
-        # make_fragment_like: Creates a layout matching a given tensor's layout.
-        # This is the standard way to derive RMEM layouts from copy partitions.
-        # The slicing [(None, None, None, 0, 0)] extracts one sub-tile's layout.
-        acc_d_rmem_layout = cute.make_fragment_like(
-            tTR_gC[(None, None, None, 0, 0)].layout
+        acc_d_rmem_layout = cute_ext.make_t2r_rmem_layout(
+            tiled_copy_t2r, gC_mnl_epi, tid_x
         )
 
         # ========================================================================================

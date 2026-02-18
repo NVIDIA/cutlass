@@ -51,4 +51,7 @@
 
 - `get_cta_v_map_ab` — Compute CTA-V map for A/B operands
 - `get_cta_v_map_c` — Compute CTA-V map for C operand
+- `make_tmem_layout_acc` — Derive TMEM accumulator buffer layout from a tiled MMA
+- `make_tmem_layout_a` — Derive TMEM A-operand buffer layout from a tiled MMA
+- `make_t2r_rmem_layout` — Derive per-thread RMEM buffer layout for the T2R epilogue copy
 

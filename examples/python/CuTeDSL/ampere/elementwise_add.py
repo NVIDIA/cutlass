@@ -28,7 +28,6 @@
 
 
 import argparse
-import torch
 import time
 from typing import Type
 
@@ -36,7 +35,6 @@ from typing import Type
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
-import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack
 
 """
@@ -252,6 +250,8 @@ def elementwise_add(mA, mB, mC, copy_bits: cutlass.Constexpr = 128):
     cC = cute.zipped_divide(idC, tiler=tiler_mn)
     print(f"[DSL INFO]   coord tensor = {cC.type}")
 
+    kernel_name = f"cutlass_dsl_elementwise_add_kernel"
+    elementwise_add_kernel.set_name_prefix(kernel_name)
     elementwise_add_kernel(gA, gB, gC, cC, mC.shape, thr_layout, val_layout).launch(
         grid=[cute.size(gC, mode=[1]), 1, 1],
         block=[cute.size(tv_layout, mode=[0]), 1, 1],
@@ -270,6 +270,12 @@ def run_elementwise_add(
     warmup_iterations=2,
     iterations=200,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("Ampere GPU is required to run this example!")
+
     print("\nRunning Elementwise Add test with:")
     print(f"Tensor dimensions: [{M}, {N}]")
     print(f"Input and Output Data type: {dtype}")
@@ -303,6 +309,8 @@ def run_elementwise_add(
         c_tensor = from_dlpack(c).mark_layout_dynamic()
     else:
         c_tensor = c
+
+    elementwise_add.set_name_prefix("host_prefix")
 
     print("Compiling kernel with cute.compile ...")
     start_time = time.time()
@@ -385,9 +393,6 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", action="store_true")
 
     args = parser.parse_args()
-
-    if not torch.cuda.is_available():
-        raise RuntimeError("Ampere GPU is required to run this example!")
 
     run_elementwise_add(
         args.M,

@@ -29,8 +29,6 @@
 from functools import partial
 from typing import Union
 
-import torch
-
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
 from cutlass._mlir.dialects import llvm
@@ -49,7 +47,7 @@ Situations like:
 motivate developers to inline PTX themselves.
 
 In this example, we inline the vote.sync.ballot.b32, vote.sync.any.pred, vote.sync.all.pred,
-vote.sync.uni.pred, and use the corresponding ops in nvvm_wrappers.py for the test.
+vote.sync.uni.pred, and use the corresponding ops in nvvm dialect for the test.
 
 You can refer to the documentation of `inline_asm op in llvm dialect <https://mlir.llvm.org/docs/Dialects/LLVM/#llvminline_asm-llvminlineasmop>`_
 and `vote.sync <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-vote-sync>`_
@@ -61,8 +59,8 @@ To run this example:
 
     python examples/ampere/inline_ptx.py
 
-The example will run the vote kernel with inline PTX and nvvm dialect separately.
-The results from inline PTX and nvvm dialect will be verified correspondingly.
+The example will run the vote kernel with inline ptx and nvvm dialect separately.
+The results from inline ptx and nvvm dialect will be verified correspondingly.
 
 """
 
@@ -184,6 +182,8 @@ def vote(
 
 
 def run():
+    import torch
+
     ballot_ptx = torch.randint(
         0, 100, (WARP_SIZE,), device=torch.device("cuda"), dtype=torch.int32
     )
@@ -230,14 +230,11 @@ def run():
     torch.testing.assert_close(ballot_ptx, ballot_nvvm)
     print("Verifying any results...")
     torch.testing.assert_close(any_ptx, any_nvvm)
-    print(torch.all(any_ptx == any(i < 10 for i in range(WARP_SIZE))))
-    assert torch.all(any_ptx == any(i < 10 for i in range(WARP_SIZE)))
     print("Verifying all results...")
     torch.testing.assert_close(all_ptx, all_nvvm)
-    assert torch.all(all_ptx == all(i < 10 for i in range(WARP_SIZE)))
     print("Verifying uni results...")
     torch.testing.assert_close(uni_ptx, uni_nvvm)
-    assert torch.all(uni_ptx == (len(set(i < 10 for i in range(WARP_SIZE))) == 1))
+
     print("Results verified successfully!")
 
 

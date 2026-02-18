@@ -387,9 +387,6 @@ public:
   get_grid_shape(Params const& params) {
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     TileSchedulerArguments args{};
-    if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
-      args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
-    }
     args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
     dim3 grid_shape;
     if constexpr (IsGroupedGemmKernel) {

@@ -401,6 +401,7 @@ class PersistentDenseGemmKernel:
 
         # Setup clc stage by default
         self.num_clc_stage = 1
+        assert self.num_clc_stage == 1, "Only single-stage CLC pipeline is supported"
 
         # Compute A/B/C shared memory layout
         self.a_smem_layout_staged = utils.sm100.make_smem_layout_a(
@@ -615,8 +616,8 @@ class PersistentDenseGemmKernel:
             ]
             tmem_dealloc_mbar_ptr: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
-            clc_ptr: cute.struct.MemRange[cutlass.Int64, self.num_clc_stage * 2]
-            clc_response_ptr: cute.struct.MemRange[cutlass.Int32, 1]
+            clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+            clc_response: cute.struct.MemRange[cutlass.Int32, 4]
 
         smem = utils.SmemAllocator()
         storage = smem.allocate(SharedStorage)
@@ -664,7 +665,7 @@ class PersistentDenseGemmKernel:
             pipeline.Agent.Thread, num_clc_consumer_threads
         )
         clc_pipeline = pipeline.PipelineClcFetchAsync.create(
-            barrier_storage=storage.clc_ptr.data_ptr(),
+            barrier_storage=storage.clc_mbar_ptr.data_ptr(),
             num_stages=self.num_clc_stage,
             producer_group=clc_pipeline_producer_group,
             consumer_group=clc_pipeline_consumer_group,
@@ -696,7 +697,7 @@ class PersistentDenseGemmKernel:
         pipeline_init_arrive(cluster_shape_mn=cluster_layout_vmnk, is_relaxed=True)
 
         # Initial clc response pointer
-        clc_response_ptr = storage.clc_response_ptr.data_ptr()
+        clc_response_ptr = storage.clc_response.data_ptr()
 
         clc_consumer_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Consumer, self.num_clc_stage
@@ -1733,7 +1734,6 @@ def run(
         return 0
 
     def generate_tensors():
-        init_normal = ab_dtype not in [cutlass.Int8, cutlass.Uint8]
         a_f32, b_f32, c_f32, a_st, b_st, c_st = prepare_tensors(
             mnkl,
             ab_dtype,
@@ -1742,7 +1742,6 @@ def run(
             a_major,
             b_major,
             c_major,
-            init_random=not init_normal,
         )
         a_ = create_cute_tensor_for_fp8(
             a_st, ab_dtype, leading_dim_a, source_f32_tensor=a_f32

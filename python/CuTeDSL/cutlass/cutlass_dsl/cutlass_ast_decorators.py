@@ -647,7 +647,7 @@ def _while_execute_dynamic(
 
 def _ifexp_execute_dynamic(
     pred: "ir.Value",
-    generator_targets: tuple,
+    block_args: tuple,
     then_block: Callable,
     else_block: Callable,
 ):
@@ -663,8 +663,8 @@ def _ifexp_execute_dynamic(
     ----------
     pred : ir.Value
         The predicate value (a boolean IR value) that determines which branch is executed.
-    generator_targets : tuple
-        The generator targets that are passed to the then and else blocks.
+    block_args : tuple
+        The block arguments that are passed to the then and else blocks.
     then_block : Callable
         A Python function that executes the 'then' branch and returns the result(s). This will be
         executed if `pred` evaluates to True.
@@ -698,13 +698,13 @@ def _ifexp_execute_dynamic(
     with ir.InsertionPoint(execution_region.region.blocks[0]):
         # Call the then block and unpack its results to IR values and tree structure
         then_results = ScfGenerator._normalize_region_result_to_list(
-            then_block(*generator_targets)
+            then_block(*block_args)
         )
         ir_values, then_tree = cutlass_dsl.unpack_to_irvalue(then_results, "ifexp", 0)
 
         # Call the else block and unpack its results to IR values and tree structure
         else_results = ScfGenerator._normalize_region_result_to_list(
-            else_block(*generator_targets)
+            else_block(*block_args)
         )
         _, else_tree = cutlass_dsl.unpack_to_irvalue(else_results, "ifexp", 0)
 
@@ -739,11 +739,11 @@ def _ifexp_execute_dynamic(
     # SCF region builder for then block
     def then_builder(*args):
         # Just call the then_block as no arguments are passed to it
-        return then_block(*generator_targets)
+        return then_block(*block_args)
 
     # SCF region builder for else block
     def else_builder(*args):
-        return else_block(*generator_targets)
+        return else_block(*block_args)
 
     # Prepare the list of region builders for the SCF IfOp: first for "then", then for "else"
     region_builders = [then_builder, else_builder]

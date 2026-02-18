@@ -30,12 +30,9 @@ import argparse
 import math
 from typing import Tuple, Type
 
-import torch
-
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 from cutlass.cute.runtime import from_dlpack
 
@@ -849,6 +846,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("Running Ampere tensor core GEMM example:")
     print(f"mnkl: {mnkl}")
     print(

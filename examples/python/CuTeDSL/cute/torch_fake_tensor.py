@@ -27,8 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-import torch
-
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
 
@@ -66,6 +64,7 @@ def print_tensor(t: cute.Tensor):
 
 
 def run():
+    import torch
     from torch._subclasses.fake_tensor import FakeTensorMode
 
     shape = (3, 4)

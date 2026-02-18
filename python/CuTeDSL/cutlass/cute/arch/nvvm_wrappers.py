@@ -13,7 +13,7 @@ from functools import partial
 from typing import Any, Optional, Tuple, Union, Callable, Literal
 from typing_extensions import deprecated
 
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cutlass_dsl import T, dsl_user_op, target_version
 
 import cutlass.cutlass_dsl as cutlass_dsl
 
@@ -940,6 +940,9 @@ mul_packed_f32x2 = partial(
 add_packed_f32x2 = partial(
     calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
 )
+sub_packed_f32x2 = partial(
+    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.sub_packed_f32x2
+)
 
 
 @dsl_user_op
@@ -948,6 +951,20 @@ def fmax(
 ) -> Float32:
     return Float32(
         nvvm.fmax(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def fmin(
+    a: Union[float, Float32], b: Union[float, Float32], *, loc=None, ip=None
+) -> Float32:
+    return Float32(
+        nvvm.fmin(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
             loc=loc,
@@ -2540,3 +2557,42 @@ def cvt_f4e2m1x8_to_f16x8(src_vec8, *, loc=None, ip=None):
     vec_f16x8_type = ir.VectorType.get([8], Float16.mlir_type, loc=loc)
     vec_f16x8 = llvm.bitcast(vec_f16x8_type, vec_f32x4, loc=loc, ip=ip)
     return vec_f16x8
+
+
+@dsl_user_op
+def mapa(ptr, cta_rank_in_cluster=0, *, loc=None, ip=None):
+    """
+    Map a pointer to distributed shared memory across cluster.
+
+    Portable wrapper that uses the appropriate NVVM API based on CUDA version:
+    - CUDA 13.1+: Uses nvvm.mapa with dsmem address space
+    - CUDA 12.9: Uses nvvm.mapa_shared_cluster
+
+    Args:
+        ptr: Pointer to shared memory (llvm_ptr attribute will be used)
+        cta_rank_in_cluster: CTA rank within the cluster (default 0)
+
+    Returns:
+        Mapped LLVM pointer to shared memory
+    """
+    if target_version(min_version="13.1"):
+        dsmem_ptr_ty = llvm.PointerType.get(7)  # dsmem
+        smem_ptr_ty = llvm.PointerType.get(3)  # smem
+
+        llvm_ptr = nvvm.mapa(
+            dsmem_ptr_ty,
+            ptr.llvm_ptr,
+            Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+        return llvm.addrspacecast(smem_ptr_ty, llvm_ptr, loc=loc, ip=ip)
+    else:
+        llvm_ptr = ptr.llvm_ptr
+        return nvvm.mapa_shared_cluster(
+            llvm_ptr.type,
+            llvm_ptr,
+            Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )

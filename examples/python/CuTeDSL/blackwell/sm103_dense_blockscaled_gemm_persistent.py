@@ -304,7 +304,12 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
         self.is_sfb_mcast = self.num_mcast_ctas_sfb > 1
 
         # Compute epilogue subtile
-        self.epi_tile = (self.cta_tile_shape_mnk[0], 64)
+        self.epi_tile = sm103_utils.compute_epilogue_tile_shape(
+            self.cta_tile_shape_mnk,
+            self.use_2cta_instrs,
+            self.c_layout,
+            self.c_dtype,
+        )
 
         self.num_acc_stage, self.num_ab_stage, self.num_sf_stage, self.num_c_stage = (
             self._compute_stages(
@@ -369,6 +374,38 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
         if self.use_tma_store:
             self.c_smem_layout_staged = sm103_utils.make_smem_layout_epi(
                 self.c_dtype, self.c_layout, self.epi_tile, self.num_c_stage
+            )
+
+        # Overlap and double buffer accumulator when num_acc_stage == 1 for cta_tile_n = 256 case
+        self.overlapping_accum = self.num_acc_stage == 1 and not self.use_tma_store
+        self.epi_tile_n = cute.size(self.epi_tile[1])
+
+        if self.overlapping_accum:
+            # Compute SF TMEM column count from a scale factor layout.
+            # Column count = cosize of Int32-recast layout & 0xFFFF,
+            # mirroring the computation in find_tmem_tensor_col_offset.
+            def _sf_tmem_cols(make_tmem_layout_fn, smem_layout_staged):
+                layout = make_tmem_layout_fn(
+                    tiled_mma,
+                    self.mma_tiler,
+                    self.sf_vec_size,
+                    cute.slice_(smem_layout_staged, (None, None, None, 0)),
+                )
+                return (
+                    cute.cosize(cute.recast_layout(32, self.sf_dtype.width, layout))
+                    & 0xFFFF
+                )
+
+            self.num_sfa_tmem_cols = _sf_tmem_cols(
+                blockscaled_utils.make_tmem_layout_sfa, self.sfa_smem_layout_staged
+            )
+            self.num_sfb_tmem_cols = _sf_tmem_cols(
+                blockscaled_utils.make_tmem_layout_sfb, self.sfb_smem_layout_staged
+            )
+            self.num_sf_tmem_cols = self.num_sfa_tmem_cols + self.num_sfb_tmem_cols
+            # Release accumulator buffer early in epilogue when overlapping
+            self.iter_acc_early_release_in_epilogue = (
+                self.num_sf_tmem_cols // self.epi_tile_n
             )
 
     @cute.jit
@@ -944,10 +981,30 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
         #
         # (MMA, MMA_M, MMA_N)
         acc_shape = tiled_mma.partition_shape_C(self.mma_tiler[:2])
-        # (MMA, MMA_M, MMA_N, STAGE)
-        tCtAcc_fake = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, self.num_acc_stage)
-        )
+        if cutlass.const_expr(self.overlapping_accum):
+            num_acc_stage_overlapped = 2
+            tCtAcc_fake = tiled_mma.make_fragment_C(
+                cute.append(acc_shape, num_acc_stage_overlapped)
+            )
+            # (MMA, MMA_M, MMA_N, STAGE)
+            tCtAcc_fake = cute.make_tensor(
+                tCtAcc_fake.iterator,
+                cute.make_layout(
+                    tCtAcc_fake.shape,
+                    stride=(
+                        tCtAcc_fake.stride[0],
+                        tCtAcc_fake.stride[1],
+                        tCtAcc_fake.stride[2],
+                        (self.cta_tile_shape_mnk[1] - self.num_sf_tmem_cols)
+                        * tCtAcc_fake.stride[0][1],
+                    ),
+                ),
+            )
+        else:
+            # (MMA, MMA_M, MMA_N, STAGE)
+            tCtAcc_fake = tiled_mma.make_fragment_C(
+                cute.append(acc_shape, self.num_acc_stage)
+            )
 
         #
         # Cluster wait before tensor memory alloc
@@ -1244,8 +1301,14 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
                     cur_tile_coord[2],
                 )
 
+                # Get accumulator stage index
+                if cutlass.const_expr(self.overlapping_accum):
+                    acc_stage_index = acc_producer_state.phase ^ 1
+                else:
+                    acc_stage_index = acc_producer_state.index
+
                 # Set tensor memory buffer for current tile
-                tCtAcc = tCtAcc_base[(None, 0, 0, acc_producer_state.index)]
+                tCtAcc = tCtAcc_base[(None, 0, 0, acc_stage_index)]
 
                 # Peek (try_wait) AB buffer full for k_tile = 0
                 ab_consumer.reset()
@@ -1665,6 +1728,7 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
                         acc_pipeline,
                         tCcC_base=tCcC,
                         mC_mnl=mC_mnl,
+                        overlapping_accum=self.overlapping_accum,
                     )
 
             if cutlass.const_expr(self.use_tma_store):
@@ -1679,8 +1743,6 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
             #
             tmem.relinquish_alloc_permit()
             tmem.free(acc_tmem_ptr)
-
-            cute.arch.mbarrier_init_fence()
 
     @staticmethod
     def make_desc_and_call_mma(
