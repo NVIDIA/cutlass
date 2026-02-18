@@ -610,7 +610,7 @@ public:
     // Consumer1 is not on the critical path at prologue.
     if (warp_group_role == WarpGroupRole::Consumer1) [[unlikely]] {
       // Advance 2nd Math WG to the next work tile for the startup
-      const auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
+      auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
 
       auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
       work_tile_info = next_work_tile_info;
