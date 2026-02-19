@@ -74,7 +74,7 @@ def print_fp4_x2_tensor_info(t_f4: cute.Tensor, t_uint8: cute.Tensor):
 def torch_float4_x2_tensor():
     """Demonstrate passing torch.float4_e2m1fn_x2 tensors to compiled function."""
     print("=" * 60)
-    print("Example 3: Pass torch.float4_e2m1fn_x2 tensor to compiled function")
+    print("Pass torch.float4_e2m1fn_x2 tensor to compiled function")
     print("=" * 60)
 
     if not torch.cuda.is_available():
@@ -82,8 +82,10 @@ def torch_float4_x2_tensor():
         return
 
     m = cute.sym_int()
-    # f4 is packed as x2 which must be divisible by 2
+    # float4_e2m1fn_x2 packs two 4-bit values per byte, so the float4
+    # dimension must be even.
     k_f4 = cute.sym_int(divisibility=2)
+    # The uint8 dimension is half the float4 dimension (1 byte = 2 float4 values).
     k_uint8 = cute.sym_int()
     fake_tensor_f4 = make_fake_compact_tensor(
         cutlass.Float4E2M1FN,
@@ -113,6 +115,7 @@ def torch_float4_x2_tensor():
     print(f"  Device: {tensor_f4.device}")
 
     print("\n[Runtime INFO] Calling compiled function with float4 tensor...")
+    # TVM-FFI allows passing torch tensors directly (no DLPack conversion needed).
     compiled_fn(tensor_f4, tensor_uint8)
     torch.cuda.synchronize()
 
