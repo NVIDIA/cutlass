@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,7 +68,22 @@
 #include "cutlass/gemm/threadblock/mma_multistage.h"
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace debug {
 
+template<class Tag, int V>
+struct kv;
+
+struct kWarpCountM;
+struct kWarpCountN;
+struct kWarpCountK;
+struct kWarpSize;
+struct kWarpThreadArrangementContiguousA;
+struct kWarpThreadArrangementStridedA;
+
+template<class... KVs>
+struct dump;   // intentionally left undefined
+
+} // namespace debug
 namespace cutlass {
 namespace gemm {
 namespace threadblock {
@@ -1428,6 +1443,74 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   using Operator = Operator_;
 
   // Warp thread arrangement
+  #ifdef DPHPC
+  static int const kWarpThreadArrangementContiguousAPreferred = 
+      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
+  static int const kWarpThreadArrangementContiguousA =
+     (kWarpSize % (kWarpThreadArrangementContiguousAPreferred) == 0)
+     ? kWarpThreadArrangementContiguousAPreferred
+     : (
+        (kWarpSize % (kWarpThreadArrangementContiguousAPreferred/2) == 0)
+        ? kWarpThreadArrangementContiguousAPreferred/2
+        : (
+            (kWarpSize % (kWarpThreadArrangementContiguousAPreferred/3) == 0)
+            ? kWarpThreadArrangementContiguousAPreferred/3
+            : (
+                (kWarpSize % (kWarpThreadArrangementContiguousAPreferred/5) == 0)
+                ? kWarpThreadArrangementContiguousAPreferred/5
+                : (
+                    kWarpThreadArrangementContiguousAPreferred
+                )
+            )
+        )
+     );
+  static int const kWarpThreadArrangementStridedA =
+      kWarpSize / kWarpThreadArrangementContiguousA;
+
+  static int const kWarpThreadArrangementContiguousBPreferred = 
+      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementB>::value);
+  static int const kWarpThreadArrangementContiguousB =
+     (kWarpSize % (kWarpThreadArrangementContiguousBPreferred) == 0)
+     ? kWarpThreadArrangementContiguousBPreferred
+     : (
+        (kWarpSize % (kWarpThreadArrangementContiguousBPreferred/2) == 0)
+        ? kWarpThreadArrangementContiguousBPreferred/2
+        : (
+            (kWarpSize % (kWarpThreadArrangementContiguousBPreferred/3) == 0)
+            ? kWarpThreadArrangementContiguousBPreferred/3
+            : (
+                (kWarpSize % (kWarpThreadArrangementContiguousBPreferred/5) == 0)
+                ? kWarpThreadArrangementContiguousBPreferred/5
+                : (
+                    kWarpThreadArrangementContiguousBPreferred
+                )
+            )
+        )
+     );
+  static int const kWarpThreadArrangementStridedB =
+      kWarpSize / kWarpThreadArrangementContiguousB;
+  //
+  // Shared memory layouts
+  //
+
+  static_assert(
+    ((Shape::kK<=64) || (Shape::kK%32 == 0)),
+    "Large Threadblock shapes should be a multiple of 32 along the k dimension " \
+    "to align with shared memory cache lines");
+
+  using SmemLayoutA = layout::RowMajorTensorOpMultiplicandCrosswise<
+      sizeof_bits<ElementA>::value, (
+        Shape::kK<=64
+        ? Shape::kK
+        :32)>;
+
+  // Shared memory layout
+  using SmemLayoutB = layout::ColumnMajorTensorOpMultiplicandCrosswise<
+      sizeof_bits<ElementB>::value, (
+        Shape::kK<=64
+        ? Shape::kK
+        :32)>;
+  #else
   static int const kWarpThreadArrangementContiguousA =
       Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
 
@@ -1439,7 +1522,6 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
 
   static int const kWarpThreadArrangementStridedB =
       kWarpSize / kWarpThreadArrangementContiguousB;
-
   //
   // Shared memory layouts
   //
@@ -1450,6 +1532,19 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   // Shared memory layout
   using SmemLayoutB = layout::ColumnMajorTensorOpMultiplicandCrosswise<
       sizeof_bits<ElementB>::value, Shape::kK>;
+#endif
+  
+#ifdef DEBUGDUMP
+  using DebugDump = debug::dump<
+    debug::kv<debug::kWarpCountM, WarpCount::kM>,
+    debug::kv<debug::kWarpCountN, WarpCount::kN>,
+    debug::kv<debug::kWarpCountK, WarpCount::kK>,
+    debug::kv<debug::kWarpSize, kWarpSize>,
+    debug::kv<debug::kWarpThreadArrangementContiguousA, kWarpThreadArrangementContiguousA>,
+    debug::kv<debug::kWarpThreadArrangementStridedA, kWarpThreadArrangementStridedA>,
+  >;
+  static_assert(sizeof(DebugDump) == 0, "DEBUG: Turn this assertion only on for debugging.");
+  #endif
 
   //
   // Iterators to write to shared memory
