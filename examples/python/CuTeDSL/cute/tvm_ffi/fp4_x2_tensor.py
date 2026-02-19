@@ -32,6 +32,7 @@ This example shows how to:
 1. Use make_fake_compact_tensor with Float4E2M1FN dtype for compilation
 2. Compile the function with "--enable-tvm-ffi" option
 3. Pass torch tensors with dtype=float4_e2m1fn_x2 to the compiled function
+4. Use recast_tensor to reinterpret a Uint8 tensor as Float4E2M1FN
 
 Note: Float4E2M1FN is a 4-bit floating point type (2-bit exponent, 1-bit mantissa).
 In PyTorch, this is represented as torch.float4_e2m1fn_x2, where two float4 values
@@ -41,7 +42,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/python/CuTeDSL/cute/tvm_ffi/float4_tensor_example.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/fp4_x2_tensor.py
 """
 
 import torch
