@@ -28,6 +28,28 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+/*
+  This example demonstrates a high-performance FP16xFP16 GEMM (HGEMM) using CuTe
+  for SM80 (Ampere) and later architectures.
+
+  Key features:
+  - Half-precision (FP16) inputs and outputs using cute::half_t
+  - Tensor Core operations via SM80_16x8x16_F16F16F16F16_TN MMA atom
+  - Asynchronous global-to-shared memory copy using cp.async (SM80_CP_ASYNC)
+  - Multi-stage software pipelining for latency hiding
+  - Swizzled shared memory layouts to avoid bank conflicts
+
+  Note: Despite the filename "sgemm", this example uses FP16 data types for the
+  TN (A transposed, B normal) layout variant, making it suitable as a reference
+  for developing fused FP16 GEMM kernels with CuTe.
+
+  Usage:
+    ./cute_tutorial_sgemm_sm80 [M] [N] [K] [transA] [transB]
+
+  Example:
+    ./cute_tutorial_sgemm_sm80 4096 4096 4096 T N
+*/
 #include <cstdlib>
 #include <cstdio>
 #include <cassert>
