@@ -41,6 +41,7 @@ from cutlass.cute.runtime import from_dlpack
 import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 
+
 """
 A flash attention v2 forward pass example for NVIDIA Blackwell GeForce SM120 architecture
 (RTX 5090, GB10 / DGX Spark) using CUTE DSL.
@@ -1698,6 +1699,13 @@ class FlashAttentionForwardSm120Tma:
         return self._threadquad_reduce(val, lambda x, y: x + y)
 
 
+# NOTE: FP8 FA on SM120 requires the `kind::f8f6f4` MMA instruction variant
+# (SM120_16x8x32_TN in mma_sm120.hpp), which is not yet exposed in the CuTe
+# Python DSL. The SM89-era mma.sync.aligned.m16n8k32 FP8 MMA does not work on
+# SM120. Once the Python DSL exposes SM120's F8F6F4 MMA, an FP8 FA kernel can
+# be added here with 2x theoretical throughput over BF16.
+
+
 def run(
     dtype: Type[cutlass.Numeric],
     batch_size: int,
@@ -1977,7 +1985,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.use_tma:
-        run_tma(
+        avg_time_us = run_tma(
             args.dtype, args.batch_size, args.seqlen_q, args.seqlen_k,
             args.num_head, args.head_dim, args.softmax_scale,
             args.m_block_size, args.n_block_size, args.num_mma_warps,
@@ -1985,11 +1993,13 @@ if __name__ == "__main__":
             args.iterations, args.skip_ref_check, args.use_cold_l2,
         )
     else:
-        run(
+        avg_time_us = run(
             args.dtype, args.batch_size, args.seqlen_q, args.seqlen_k,
             args.num_head, args.head_dim, args.softmax_scale,
             args.m_block_size, args.n_block_size, args.num_threads,
             args.is_causal, args.warmup_iterations, args.iterations,
             args.skip_ref_check, args.use_cold_l2,
         )
+    if avg_time_us is not None:
+        print(f"avg execution time: {avg_time_us:.2f} us")
     print("PASS")
