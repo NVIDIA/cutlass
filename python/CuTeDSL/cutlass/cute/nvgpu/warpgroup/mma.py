@@ -333,7 +333,7 @@ class MmaF16BF16Trait(MmaTraits):
 @dataclass(frozen=True)
 class MmaF8Op(MmaOp):
     """
-    F16/BF16 warpgroup MMA Operation.
+    FP8 warpgroup MMA Operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma>`__.
     This Operation covers the instructions using the ``.e4m3`` or ``.e5m2`` qualifiers for the input operands.
