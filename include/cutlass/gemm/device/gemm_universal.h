@@ -401,9 +401,9 @@ public:
   }
 
   /// Lightweight update given a subset of arguments
-  Status update(Arguments const &args, void *workspace = nullptr) {
+  Status update(Arguments const &args) {
 
-    return underlying_operator_.update(to_underlying_arguments(args), workspace);
+    return underlying_operator_.update(to_underlying_arguments(args));
   }
 
   /// Runs the kernel using initialized state.
