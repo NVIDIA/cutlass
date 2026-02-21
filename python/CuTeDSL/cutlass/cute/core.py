@@ -3544,7 +3544,7 @@ def composition(lhs, rhs: Union[Layout, Shape, Tile], *, loc=None, ip=None):
         @cute.jit
         def foo():
             # Create a layout that maps (i,j) to i*4 + j
-            L1 = cute.make_layout((2, 3), stride=(4, 1))
+            L1 = cute.make_layout((3, 4), stride=(4, 1))
             # Create a layout that maps (i,j) to i*3 + j
             L2 = cute.make_layout((3, 4), stride=(3, 1))
             # Compose L1 and L2
