@@ -58,16 +58,16 @@ To run this example:
 .. code-block:: bash
 
     # Run with addition operation
-    python examples/ampere/elementwise_apply.py --M 1024 --N 512 --op add
+    python examples/python/CuTeDSL/ampere/elementwise_apply.py --M 1024 --N 512 --op add
 
     # Run with multiplication operation
-    python examples/ampere/elementwise_apply.py --M 1024 --N 512 --op mul
+    python examples/python/CuTeDSL/ampere/elementwise_apply.py --M 1024 --N 512 --op mul
 
     # Run with subtraction operation
-    python examples/ampere/elementwise_apply.py --M 1024 --N 512 --op sub
+    python examples/python/CuTeDSL/ampere/elementwise_apply.py --M 1024 --N 512 --op sub
 
     # Benchmark performance
-    python examples/ampere/elementwise_apply.py --M 2048 --N 2048 --op add --benchmark --warmup_iterations 2 --iterations 10
+    python examples/python/CuTeDSL/ampere/elementwise_apply.py --M 2048 --N 2048 --op add --benchmark --warmup_iterations 2 --iterations 10
 
 The example demonstrates how to express complex CUDA kernels with customizable operations
 while maintaining high performance through efficient memory access patterns.
