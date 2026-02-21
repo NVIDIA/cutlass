@@ -370,8 +370,8 @@ public:
     for (int stage = 0; stage < Base::kStages - 1; ++stage, --gemm_k_iterations) {
 
       // Disable global fetching if done with global fetch iterations
-      iterator_A.clear_mask(gemm_k_iterations == 0);
-      iterator_B.clear_mask(gemm_k_iterations == 0);
+      iterator_A.clear_mask(gemm_k_iterations <= 0);
+      iterator_B.clear_mask(gemm_k_iterations <= 0);
 
       iterator_A.set_iteration_index(0);
       this->smem_iterator_A_.set_iteration_index(0);
@@ -588,8 +588,8 @@ public:
 
         // Disable global fetching when done with global fetch iterations
         --gemm_k_iterations;
-        iterator_A.clear_mask(gemm_k_iterations == 0);
-        iterator_B.clear_mask(gemm_k_iterations == 0);
+        iterator_A.clear_mask(gemm_k_iterations <= 0);
+        iterator_B.clear_mask(gemm_k_iterations <= 0);
       }
 
       // The last warp-tile also converts the shared memory fragments used by
@@ -620,8 +620,8 @@ public:
     PipeState pipe_state;
 
     // Disable global fetching if done with global fetch iterations
-    iterator_A.clear_mask(gemm_k_iterations == 0);
-    iterator_B.clear_mask(gemm_k_iterations == 0);
+    iterator_A.clear_mask(gemm_k_iterations <= 0);
+    iterator_B.clear_mask(gemm_k_iterations <= 0);
 
     // Load first warp-tile's A fragment from shared memory
     this->warp_tile_iterator_A_.set_kgroup_index(0);
