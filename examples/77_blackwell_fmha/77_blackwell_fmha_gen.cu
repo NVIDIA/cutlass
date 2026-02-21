@@ -323,10 +323,14 @@ enum class KernelType {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<KernelType kKernelType, class TileShape, class ThreadShape>
+#if defined(FP16)
+using ElementType = cutlass::half_t;
+#else
+using ElementType = cutlass::float_e5m2_t;
+#endif
+template<KernelType kKernelType, class TileShape, class ThreadShape, typename Element = ElementType>
 struct ExampleRunner {
 
-  using Element = cutlass::float_e5m2_t;
   using ElementAcc = float;
   using ElementOut = cutlass::half_t;
 
@@ -334,7 +338,7 @@ struct ExampleRunner {
 
   using StrideQ = Stride<_0, _1, Stride<Stride<int, int>, int>>;
   using StrideNewK = Stride<_0, _1, Stride<Stride<_0, int>, int>>;
-  using StrideCacheK = Stride<int, _1, Stride<Stride<_0, int>, int>>;
+  using StrideCacheK = Stride<int, _1, Stride<Stride<_0, int64_t>, int64_t>>;
   using StrideNewV = StrideNewK;
   using StrideCacheV = StrideCacheK;
   using StrideO = StrideQ;
@@ -346,7 +350,8 @@ struct ExampleRunner {
         Element, ElementAcc, ElementAcc, ElementOut,
         TileShape,
         StrideQ, StrideNewK, StrideNewV,
-        StrideCacheK, StrideCacheV, StrideO
+        StrideCacheK, StrideCacheV, StrideO,
+        cutlass::fmha::collective::ResidualMask, ThreadShape
       >,
       cutlass::fmha::collective::Sm100FmhaGenEpilogueWarpspecialized<ElementOut, StrideO>,
       std::conditional_t<kKernelType == KernelType::UMMA_P,
@@ -473,7 +478,7 @@ struct ExampleRunner {
 
     stride_q = make_stride(_0{}, _1{}, make_stride(make_stride(options.d, options.d * size<3,0,0>(result)), options.d * size<3,0>(result)));
     stride_new_k = make_stride(_0{}, _1{}, make_stride(make_stride(_0{}, options.d), options.d * size<3,0,1>(result)));
-    stride_cache_k = make_stride(options.d * size<3,0,1>(result), _1{}, make_stride(make_stride(_0{}, options.d), options.d * size<3,0,1>(result) * get<1>(result)));
+    stride_cache_k = make_stride(options.d * size<3,0,1>(result), _1{}, make_stride(make_stride(_0{}, static_cast<int64_t>(options.d)), static_cast<int64_t>(options.d) * size<3,0,1>(result) * get<1>(result)));
 
     stride_new_v = stride_new_k;
     stride_cache_v = stride_cache_k;
@@ -774,7 +779,7 @@ int main_single(int argc, char const **args) {
     hw_info.sm_count = options.sm_count;
   }
 
-  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " K " << options.k << " D " << options.d << " ";
+  std::cout << "###### B " << options.b << " H " << options.h << " H_K " << options.h_k << " K " << options.k << " D " << options.d << " sizeof(dtype) " << sizeof(ElementType) << " ";
   std::cout << "Gen" << " " << (options.varlen ? "Variable" : "Uniform") << " " << (options.remap ? "Remap" : "Linear") << " ";
   std::cout << "#SM " << hw_info.sm_count << std::endl;
 
@@ -797,12 +802,20 @@ int main_single(int argc, char const **args) {
     )
 
   if (options.d == 128) {
-    RUN(UMMA_I, 128, 64, 128, 1, 1, 1);
-    RUN(UMMA_I, 128, 128, 128, 1, 1, 1);
-    RUN(UMMA_I, 128, 256, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 64, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 128, 128, 1, 1, 1);
-    RUN(UMMA_P, 128, 256, 128, 1, 1, 1);
+    // MTile=64
+    RUN(UMMA_I, 64, 64, 128, 1, 2, 1);
+    RUN(UMMA_I, 64, 128, 128, 1, 2, 1);
+    RUN(UMMA_I, 64, 256, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 64, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 128, 128, 1, 2, 1);
+    RUN(UMMA_P, 64, 256, 128, 1, 2, 1);
+    // MTile=128
+    RUN(UMMA_I, 128, 64, 128, 1, 2, 1);
+    RUN(UMMA_I, 128, 128, 128, 1, 2, 1);
+    RUN(UMMA_I, 128, 256, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 64, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 128, 128, 1, 2, 1);
+    RUN(UMMA_P, 128, 256, 128, 1, 2, 1);
   }
   else {
     std::cout << "Head Dimension != 128 is not supported for the fmha_gen example\n";
