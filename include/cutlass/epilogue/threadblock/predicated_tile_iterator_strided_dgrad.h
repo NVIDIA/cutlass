@@ -116,6 +116,9 @@ public:
     /// Convolution problem size
     cutlass::conv::Conv2dProblemSize problem_size;
     int tiled_rows_per_filter;
+    
+    FastDivmod pq_divmod;
+    FastDivmod q_divmod;
 
     CUTLASS_HOST_DEVICE
     Params() { }
@@ -234,7 +237,8 @@ public:
   ): 
     params_(params)
   {
-
+    
+    
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
 
     int r = start_r;
@@ -254,6 +258,8 @@ public:
 
     p_ = (params_.problem_size.H - start_h_ + params_.problem_size.stride_h - 1) / params_.problem_size.stride_h;
     q_ = (params_.problem_size.W - start_w_ + params_.problem_size.stride_w - 1) / params_.problem_size.stride_w;
+    params_.pq_divmod = FastDivmod(p_*q_);
+    params_.q_divmod = FastDivmod(q_);
 
     extent_row_ = extent.row();
     thread_start_row_ = thread_offset.row();
@@ -312,11 +318,19 @@ public:
           int npq_offset = (row_offset + thread_start_row_) % params_.tiled_rows_per_filter;
 
           // (STEP 4.a) [order NHW rows to be loaded and stored in output Dx NHWxC layout]
-          int n = npq_offset / (p_ * q_); 
-          int residual = npq_offset % (p_ * q_);
-          int p = residual / q_;
-          int q = residual % q_;
-        
+
+          // The subsequent fast_divmod() operations are equivalent to the following logical computation:
+          // int nzpq = npq_offset;
+          // int n = nzpq / (p_ * q_); 
+          // int residual = nzpq %  (p_ * q_);
+          // int p = residual1 / q_; 
+          // int q = residual1 % q_;
+
+          int p, q, residual, n; 
+
+          params_.pq_divmod(n, residual, npq_offset);
+          params_.q_divmod(p, q, residual);         
+
           int mapped_row_offset = n * (params_.problem_size.H * params_.problem_size.W) +
                                   (start_h_ + p * params_.problem_size.stride_h) * params_.problem_size.W +
                                   (start_w_ + q * params_.problem_size.stride_w);
@@ -379,11 +393,18 @@ public:
           int npq_offset = (row_offset + thread_start_row_) % params_.tiled_rows_per_filter;
 
           // (STEP 4.a) [order NHW rows to be loaded and stored in output Dx NHWxC layout]
-          int n = npq_offset / (p_ * q_); 
-          int residual = npq_offset % (p_ * q_);
-          int p = residual / q_;
-          int q = residual % q_;
-        
+
+          // The subsequent fast_divmod() operations are equivalent to the following logical computation:
+
+          // int n = npq_offset / (p_ * q_); 
+          // int residual = npq_offset % (p_ * q_);
+          // int p = residual / q_;
+          // int q = residual % q_;
+
+          int n, residual, p, q;
+          params_.pq_divmod(n, residual, npq_offset);
+          params_.q_divmod(p, q, residual);
+
           int mapped_row_offset = n * (params_.problem_size.H * params_.problem_size.W) +
                                   (start_h_ + p * params_.problem_size.stride_h) * params_.problem_size.W +
                                   (start_w_ + q * params_.problem_size.stride_w);
