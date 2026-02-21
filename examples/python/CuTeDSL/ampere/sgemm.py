@@ -143,7 +143,7 @@ class SGemm:
         # global memory -> shared memory copies:
         #   - The majorness of tA/tB follows the majorness of gA/gB
         #   - For k-major, these layouts will copy values one-by-one from
-        #       from global memory, without vectorizing
+        #       global memory, without vectorizing
         #   - For m/n-major, it will vectorize to a 128bit copy for faster
         #       data transfer between global and shared memory, as long
         #       as the alignment of the tensor allows it. Otherwise, it
