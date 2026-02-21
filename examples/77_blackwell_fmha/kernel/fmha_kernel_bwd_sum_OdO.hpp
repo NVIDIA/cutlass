@@ -123,18 +123,29 @@ struct FmhaKernelBwdSumOdO {
     CUTLASS_PRAGMA_UNROLL
     for (int idx_q_t = threadIdx.y; idx_q_t < kBlockQ; idx_q_t += kNumThreadsQ) {
       int idx_q = idx_q_t + kBlockQ * blockIdx.x;
-      if (idx_q >= seqlen_q) continue;
-      ElementAcc acc = 0;
-      auto ptr_O_bhq = ptr_O_bh + idx_q * get<0>(params.stride_O);
-      auto ptr_dO_bhq = ptr_dO_bh + idx_q * get<0>(params.stride_dO);
       auto ptr_sum_OdO_bhq = ptr_sum_OdO_bh + idx_q * get<0>(params.stride_sum_OdO);
       auto ptr_lse_bhq = ptr_lse_bh + idx_q * get<0>(params.stride_lse);
       auto ptr_scaled_lse_bhq = ptr_scaled_lse_bh + idx_q * get<0>(params.stride_scaled_lse);
 
+      if (idx_q >= seqlen_q) {
+        // Write zeros into padding
+        if (threadIdx.x == 0) {
+          *ptr_sum_OdO_bhq = ElementAcc(0);
+          if (params.ptr_scaled_lse) {
+            *ptr_scaled_lse_bhq = ElementAcc(0);
+          }
+        }
+        continue;
+      }
+
+      ElementAcc acc = 0;
+      auto ptr_O_bhq = ptr_O_bh + idx_q * get<0>(params.stride_O);
+      auto ptr_dO_bhq = ptr_dO_bh + idx_q * get<0>(params.stride_dO);
+
       for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<3>(params.problem_shape); idx_d += kElementsPerLoad * kNumThreadsD) {
         Element value_O[kElementsPerLoad];
         Element value_dO[kElementsPerLoad];
-        
+
         using Vec = uint_bit_t<sizeof_bits_v<Element> * kElementsPerLoad>;
         *reinterpret_cast<Vec*>(value_O) = *reinterpret_cast<const Vec*>(&ptr_O_bhq[idx_d]);
         *reinterpret_cast<Vec*>(value_dO) = *reinterpret_cast<const Vec*>(&ptr_dO_bhq[idx_d]);
