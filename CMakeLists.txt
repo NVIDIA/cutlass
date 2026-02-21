@@ -499,6 +499,7 @@ if (CUTLASS_CLANG_HOST_COMPILE)
     "-Wno-error=inconsistent-missing-override"
     "-Wno-sign-conversion"
     "-Wno-unused-parameter"
+    "-Wimplicit-fallthrough"
   )
 
   foreach(FLAG ${FLAGS_TO_ADD})
