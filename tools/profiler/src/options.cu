@@ -347,19 +347,19 @@ void Options::Initialization::get_distribution(
   // Default initialization
   switch (dist.kind) {
     case cutlass::Distribution::Uniform:
-      dist.set_uniform(-4/*min*/, 4/*max*/);
+      dist.set_uniform(-4/*min*/, 4/*max*/, -1/*int_scale*/);
       break;
     case cutlass::Distribution::Gaussian:
-      dist.set_gaussian(0/*mean*/, 4/*stddev*/);
+      dist.set_gaussian(0/*mean*/, 4/*stddev*/, -1/*int_scale*/);
       break;
     case cutlass::Distribution::Identity:
       dist.set_identity();
       break;
     case cutlass::Distribution::Sequential:
-      dist.set_sequential(0/*start*/, 4/*delta*/);
+      dist.set_sequential(0/*start*/, 4/*delta*/, -1/*int_scale*/);
       break;
     default:
-      dist.set_uniform(-4/*min*/, 4/*max*/);
+      dist.set_uniform(-4/*min*/, 4/*max*/, -1/*int_scale*/);
       return;
   }
 
