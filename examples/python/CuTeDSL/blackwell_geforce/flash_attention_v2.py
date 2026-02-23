@@ -1392,13 +1392,38 @@ class FlashAttentionForwardSm120Tma:
                 k_consumer_state.advance()
 
                 # --- Online softmax ---
-                self._softmax_rescale_O(
-                    m_block, n_block, mQ, mK, batch_idx, head_idx,
-                    thr_mma, tiled_mma, acc_O,
-                    row_max, row_sum, softmax_scale_log2,
-                    acc_S,
-                    in_mask_steps=cutlass.const_expr(self._is_causal),
-                )
+                # Two-path approach: only apply per-element causal masking
+                # for tiles near the diagonal (mask_steps tiles). For tiles
+                # fully below the diagonal, skip the expensive masking.
+                # This matches the CpAsync variant's two-loop structure.
+                if cutlass.const_expr(self._is_causal):
+                    causal_mask_boundary = n_block_max - cute.ceil_div(
+                        self._m_block_size, self._n_block_size
+                    )
+                    if n_block >= causal_mask_boundary:
+                        self._softmax_rescale_O(
+                            m_block, n_block, mQ, mK, batch_idx, head_idx,
+                            thr_mma, tiled_mma, acc_O,
+                            row_max, row_sum, softmax_scale_log2,
+                            acc_S,
+                            in_mask_steps=True,
+                        )
+                    else:
+                        self._softmax_rescale_O(
+                            m_block, n_block, mQ, mK, batch_idx, head_idx,
+                            thr_mma, tiled_mma, acc_O,
+                            row_max, row_sum, softmax_scale_log2,
+                            acc_S,
+                            in_mask_steps=False,
+                        )
+                else:
+                    self._softmax_rescale_O(
+                        m_block, n_block, mQ, mK, batch_idx, head_idx,
+                        thr_mma, tiled_mma, acc_O,
+                        row_max, row_sum, softmax_scale_log2,
+                        acc_S,
+                        in_mask_steps=False,
+                    )
                 rP = cute.make_fragment_like(acc_S, self._dtype)
                 rP.store(acc_S.load().to(self._dtype))
 
