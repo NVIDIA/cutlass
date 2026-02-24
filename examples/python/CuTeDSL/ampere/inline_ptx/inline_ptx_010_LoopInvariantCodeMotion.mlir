@@ -1,37 +1,41 @@
 !memref_gmem_i32_ = !cute.memref<i32, gmem, "(?):(1)">
 !memref_gmem_i8_ = !cute.memref<i8, gmem, "(?):(1)">
-module attributes {gpu.container_module} {
-  gpu.module @kernels {
-    cuda.kernel @kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} {
-      %c-1_i32 = arith.constant -1 : i32
-      %c10_i32 = arith.constant 10 : i32
-      %0 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
-      %1 = arith.cmpi slt, %0, %c10_i32 : i32
-      %2 = nvvm.vote.ballot.sync %c-1_i32, %1 : i32
-      %3 = llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.any.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", "=r,r,i" %1, %c-1_i32 : (i1, i32) -> i1
-      %4 = llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.all.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", "=r,r,i" %1, %c-1_i32 : (i1, i32) -> i1
-      %5 = llvm.inline_asm has_side_effects asm_dialect = att "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.uni.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", "=r,r,i" %1, %c-1_i32 : (i1, i32) -> i1
-      %coord = cute.make_coord(%0) : (i32) -> !cute.coord<"?">
-      cute.memref.store(%arg0, %coord, %2) : (!memref_gmem_i32_, !cute.coord<"?">, i32) -> ()
-      %6 = arith.extui %3 : i1 to i8
-      cute.memref.store(%arg1, %coord, %6) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
-      %7 = arith.extui %4 : i1 to i8
-      cute.memref.store(%arg2, %coord, %7) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
-      %8 = arith.extui %5 : i1 to i8
-      cute.memref.store(%arg3, %coord, %8) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
-      return
-    }
-  }
-  func.func @cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_) -> i32 attributes {llvm.emit_c_interface} {
-    %c1_i32 = arith.constant 1 : i32
-    %c32_i32 = arith.constant 32 : i32
-    %c0_i32 = arith.constant 0 : i32
-    %c0_i64 = arith.constant 0 : i64
-    %0 = cuda.cast %c0_i64 : i64 -> !cuda.stream
-    %1 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c32_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%c1_i32, %c1_i32, %c1_i32), stream = %0) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %2 = cuda.launch_ex @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0<%1> (%arg0, %arg1, %arg2, %arg3) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_i32_, !memref_gmem_i8_, !memref_gmem_i8_, !memref_gmem_i8_) -> !cuda.result
-    %3 = cuda.cast %2 : !cuda.result -> i32
-    cuda.return_if_error %3 : i32
-    return %c0_i32 : i32
-  }
-}
+"builtin.module"() ({
+  "gpu.module"() <{sym_name = "kernels"}> ({
+    "cuda.kernel"() <{arg_attrs = [{}, {}, {}, {}], function_type = (!memref_gmem_i32_, !memref_gmem_i8_, !memref_gmem_i8_, !memref_gmem_i8_) -> (), sym_name = "kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0"}> ({
+    ^bb0(%arg4: !memref_gmem_i32_, %arg5: !memref_gmem_i8_, %arg6: !memref_gmem_i8_, %arg7: !memref_gmem_i8_):
+      %8 = "arith.constant"() <{value = -1 : i32}> : () -> i32
+      %9 = "arith.constant"() <{value = 10 : i32}> : () -> i32
+      %10 = "nvvm.read.ptx.sreg.tid.x"() <{range = #llvm.constant_range<i32, 0, 1024>}> : () -> i32
+      %11 = "arith.cmpi"(%10, %9) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %12 = "nvvm.vote.ballot.sync"(%8, %11) : (i32, i1) -> i32
+      %13 = "llvm.inline_asm"(%11, %8) <{asm_dialect = 0 : i64, asm_string = "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.any.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", constraints = "=r,r,i", has_side_effects}> : (i1, i32) -> i1
+      %14 = "llvm.inline_asm"(%11, %8) <{asm_dialect = 0 : i64, asm_string = "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.all.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", constraints = "=r,r,i", has_side_effects}> : (i1, i32) -> i1
+      %15 = "llvm.inline_asm"(%11, %8) <{asm_dialect = 0 : i64, asm_string = "{\0A\09\0A            .reg .pred ps;\0A\09\0A            .reg .pred pd;\0A\09\0A            setp.ne.b32 ps, $1, 0;\0A\09\0A            vote.sync.uni.pred pd, ps, $2;\0A\09\0A            selp.b32 $0, 1, 0, pd;\0A\09\0A            }", constraints = "=r,r,i", has_side_effects}> : (i1, i32) -> i1
+      %16 = "cute.make_coord"(%10) : (i32) -> !cute.coord<"?">
+      "cute.memref.store"(%arg4, %16, %12) : (!memref_gmem_i32_, !cute.coord<"?">, i32) -> ()
+      %17 = "arith.extui"(%13) : (i1) -> i8
+      "cute.memref.store"(%arg5, %16, %17) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
+      %18 = "arith.extui"(%14) : (i1) -> i8
+      "cute.memref.store"(%arg6, %16, %18) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
+      %19 = "arith.extui"(%15) : (i1) -> i8
+      "cute.memref.store"(%arg7, %16, %19) : (!memref_gmem_i8_, !cute.coord<"?">, i8) -> ()
+      "cuda.return"() : () -> ()
+    }) {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 32, 1, 1>} : () -> ()
+  }) : () -> ()
+  "func.func"() <{function_type = (!memref_gmem_i32_, !memref_gmem_i8_, !memref_gmem_i8_, !memref_gmem_i8_) -> i32, sym_name = "cutlass_vote_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_Tensorgmemo1_False"}> ({
+  ^bb0(%arg0: !memref_gmem_i32_, %arg1: !memref_gmem_i8_, %arg2: !memref_gmem_i8_, %arg3: !memref_gmem_i8_):
+    %0 = "arith.constant"() <{value = 1 : i32}> : () -> i32
+    %1 = "arith.constant"() <{value = 32 : i32}> : () -> i32
+    %2 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    %3 = "arith.constant"() <{value = 0 : i64}> : () -> i64
+    %4 = "cuda.cast"(%3) : (i64) -> !cuda.stream
+    %5 = "cuda.launch_cfg.create"(%1, %0, %0, %3, %0, %0, %0, %4) <{maxNumAttrs = 3 : i32}> : (i32, i32, i32, i64, i32, i32, i32, !cuda.stream) -> !cuda.launch_cfg<max_attrs = 3>
+    "cuda.launch_cfg.programmatic_stream_serialization_allowed"(%5, %2) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    "cuda.launch_cfg.cooperative"(%5, %2) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    %6 = "cuda.launch_ex"(%5, %arg0, %arg1, %arg2, %arg3) <{assume_kernel_attr = #cuda.assume_kernel_attr<true>, callee = @kernels::@kernel_cutlass_vote_kernel_tensorptri32gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_tensorptri8gmemo1_False_0}> : (!cuda.launch_cfg<max_attrs = 3>, !memref_gmem_i32_, !memref_gmem_i8_, !memref_gmem_i8_, !memref_gmem_i8_) -> !cuda.result
+    %7 = "cuda.cast"(%6) : (!cuda.result) -> i32
+    "cuda.return_if_error"(%7) : (i32) -> ()
+    "func.return"(%2) : (i32) -> ()
+  }) {llvm.emit_c_interface} : () -> ()
+}) {gpu.container_module} : () -> ()

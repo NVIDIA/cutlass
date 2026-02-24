@@ -4,170 +4,176 @@
 !memref_smem_f32_ = !cute.memref<f32, smem, align<32>, "(16,2):(1,16)">
 !memref_smem_f32_1 = !cute.memref<f32, smem, align<128>, "(8,4):(1,8)">
 !memref_smem_f32_2 = !cute.memref<f32, smem, align<128>, "(8,2):(1,8)">
-module attributes {gpu.container_module} {
-  gpu.module @kernels {
-    cuda.kernel @kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_2) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 1, 1, 1>} {
-      %smem_ptr = cute_nvgpu.arch.get_dyn_smem() : !cute.ptr<i8, smem, align<1024>>
-      %0 = cute.static : !cute.int_tuple<"4">
-      %ptr = cute.add_offset(%smem_ptr, %0) : (!cute.ptr<i8, smem, align<1024>>, !cute.int_tuple<"4">) -> !cute.ptr<i8, smem, align<4>>
-      %1 = cute.ptrtoint(%ptr) : !cute.ptr<i8, smem, align<4>> to i32
-      %c128_i32 = arith.constant 128 : i32
-      %2 = arith.addi %1, %c128_i32 : i32
-      %c1_i32 = arith.constant 1 : i32
-      %3 = arith.subi %2, %c1_i32 : i32
-      %c-128_i32 = arith.constant -128 : i32
-      %4 = arith.andi %3, %c-128_i32 : i32
-      %5 = arith.extsi %4 : i32 to i64
-      %iv = cute.assume(%5) : (i64) -> !cute.i64<divby 128>
-      %6 = cute.inttoptr(%iv) : !cute.i64<divby 128> to !cute.ptr<i8, smem, align<128>>
-      %7 = cute.static : !cute.int_tuple<"512">
-      %ptr_0 = cute.add_offset(%6, %7) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"512">) -> !cute.ptr<i8, smem, align<128>>
-      %8 = cute.static : !cute.int_tuple<"0">
-      %ptr_1 = cute.add_offset(%6, %8) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"0">) -> !cute.ptr<i8, smem, align<128>>
-      %9 = cute.static : !cute.int_tuple<"64">
-      %ptr_2 = cute.add_offset(%ptr_0, %9) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"64">) -> !cute.ptr<i8, smem, align<64>>
-      %10 = cute.static : !cute.int_tuple<"112">
-      %ptr_3 = cute.add_offset(%ptr_2, %10) : (!cute.ptr<i8, smem, align<64>>, !cute.int_tuple<"112">) -> !cute.ptr<i8, smem, align<16>>
-      %11 = cute.static : !cute.layout<"(16,2):(1,16)">
-      %12 = cute.ptrtoint(%ptr_3) : !cute.ptr<i8, smem, align<16>> to i32
-      %c32_i32 = arith.constant 32 : i32
-      %13 = arith.addi %12, %c32_i32 : i32
-      %14 = arith.subi %13, %c1_i32 : i32
-      %c-32_i32 = arith.constant -32 : i32
-      %15 = arith.andi %14, %c-32_i32 : i32
-      %16 = arith.extsi %15 : i32 to i64
-      %iv_4 = cute.assume(%16) : (i64) -> !cute.i64<divby 32>
-      %17 = cute.inttoptr(%iv_4) : !cute.i64<divby 32> to !cute.ptr<i8, smem, align<32>>
-      %iter = cute.recast_iter(%17) : !cute.ptr<i8, smem, align<32>> to !cute.ptr<f32, smem, align<32>>
-      %view = cute.make_view(%iter, %11) : !memref_smem_f32_
-      %18 = cute.static : !cute.layout<"(8,4):(1,8)">
-      %iter_5 = cute.recast_iter(%ptr_1) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<f32, smem, align<128>>
-      %view_6 = cute.make_view(%iter_5, %18) : !memref_smem_f32_1
-      %cst = arith.constant 5.000000e-01 : f32
-      %19 = vector.splat %cst : vector<32xf32>
-      cute.memref.store_vec %19, %view_6 : !memref_smem_f32_1
-      %iter_7 = cute.get_iter(%view_6) : !memref_smem_f32_1
-      %20 = builtin.unrealized_conversion_cast %iter_7 : !cute.ptr<f32, smem, align<128>> to !llvm.ptr<3>
-      %21 = llvm.ptrtoint %20 : !llvm.ptr<3> to i64
-      %22 = cute.memref.load_vec %view_6 : !memref_smem_f32_1
-      %23 = vector.extract %22[0] : f32 from vector<32xf32>
-      %24 = vector.extract %22[1] : f32 from vector<32xf32>
-      %25 = vector.extract %22[2] : f32 from vector<32xf32>
-      %26 = vector.extract %22[3] : f32 from vector<32xf32>
-      %27 = vector.extract %22[4] : f32 from vector<32xf32>
-      %28 = vector.extract %22[5] : f32 from vector<32xf32>
-      %29 = vector.extract %22[6] : f32 from vector<32xf32>
-      %30 = vector.extract %22[7] : f32 from vector<32xf32>
-      %31 = vector.extract %22[8] : f32 from vector<32xf32>
-      %32 = vector.extract %22[9] : f32 from vector<32xf32>
-      %33 = vector.extract %22[10] : f32 from vector<32xf32>
-      %34 = vector.extract %22[11] : f32 from vector<32xf32>
-      %35 = vector.extract %22[12] : f32 from vector<32xf32>
-      %36 = vector.extract %22[13] : f32 from vector<32xf32>
-      %37 = vector.extract %22[14] : f32 from vector<32xf32>
-      %38 = vector.extract %22[15] : f32 from vector<32xf32>
-      %39 = vector.extract %22[16] : f32 from vector<32xf32>
-      %40 = vector.extract %22[17] : f32 from vector<32xf32>
-      %41 = vector.extract %22[18] : f32 from vector<32xf32>
-      %42 = vector.extract %22[19] : f32 from vector<32xf32>
-      %43 = vector.extract %22[20] : f32 from vector<32xf32>
-      %44 = vector.extract %22[21] : f32 from vector<32xf32>
-      %45 = vector.extract %22[22] : f32 from vector<32xf32>
-      %46 = vector.extract %22[23] : f32 from vector<32xf32>
-      %47 = vector.extract %22[24] : f32 from vector<32xf32>
-      %48 = vector.extract %22[25] : f32 from vector<32xf32>
-      %49 = vector.extract %22[26] : f32 from vector<32xf32>
-      %50 = vector.extract %22[27] : f32 from vector<32xf32>
-      %51 = vector.extract %22[28] : f32 from vector<32xf32>
-      %52 = vector.extract %22[29] : f32 from vector<32xf32>
-      %53 = vector.extract %22[30] : f32 from vector<32xf32>
-      gpu.printf "cute.struct.MemRange: raw_ptr(0x%016llx: f32, smem, align<128>) o (8,4):(1,8) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, [...] )\0A", %21, %23, %24, %25, %26, %27, %28, %29, %30, %31, %32, %33, %34, %35, %36, %37, %38, %39, %40, %41, %42, %43, %44, %45, %46, %47, %48, %49, %50, %51, %52, %53 : i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32
-      %54 = cute.memref.load_vec %view_6 : !memref_smem_f32_1
-      cute.memref.store_vec %54, %arg0 : !memref_gmem_f32_
-      %55 = cute.static : !cute.layout<"(8,2):(1,8)">
-      %iter_8 = cute.recast_iter(%ptr_0) : !cute.ptr<i8, smem, align<128>> to !cute.ptr<f32, smem, align<128>>
-      %view_9 = cute.make_view(%iter_8, %55) : !memref_smem_f32_2
-      %cst_10 = arith.constant 1.000000e+00 : f32
-      %56 = vector.splat %cst_10 : vector<16xf32>
-      cute.memref.store_vec %56, %view_9 : !memref_smem_f32_2
-      %iter_11 = cute.get_iter(%view_9) : !memref_smem_f32_2
-      %57 = builtin.unrealized_conversion_cast %iter_11 : !cute.ptr<f32, smem, align<128>> to !llvm.ptr<3>
-      %58 = llvm.ptrtoint %57 : !llvm.ptr<3> to i64
-      %59 = cute.memref.load_vec %view_9 : !memref_smem_f32_2
-      %60 = vector.extract %59[0] : f32 from vector<16xf32>
-      %61 = vector.extract %59[1] : f32 from vector<16xf32>
-      %62 = vector.extract %59[2] : f32 from vector<16xf32>
-      %63 = vector.extract %59[3] : f32 from vector<16xf32>
-      %64 = vector.extract %59[4] : f32 from vector<16xf32>
-      %65 = vector.extract %59[5] : f32 from vector<16xf32>
-      %66 = vector.extract %59[6] : f32 from vector<16xf32>
-      %67 = vector.extract %59[7] : f32 from vector<16xf32>
-      %68 = vector.extract %59[8] : f32 from vector<16xf32>
-      %69 = vector.extract %59[9] : f32 from vector<16xf32>
-      %70 = vector.extract %59[10] : f32 from vector<16xf32>
-      %71 = vector.extract %59[11] : f32 from vector<16xf32>
-      %72 = vector.extract %59[12] : f32 from vector<16xf32>
-      %73 = vector.extract %59[13] : f32 from vector<16xf32>
-      %74 = vector.extract %59[14] : f32 from vector<16xf32>
-      %75 = vector.extract %59[15] : f32 from vector<16xf32>
-      gpu.printf "block of memory: raw_ptr(0x%016llx: f32, smem, align<128>) o (8,2):(1,8) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f )\0A", %58, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70, %71, %72, %73, %74, %75 : i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32
-      %76 = cute.memref.load_vec %view_9 : !memref_smem_f32_2
-      cute.memref.store_vec %76, %arg1 : !memref_gmem_f32_1
-      %cst_12 = arith.constant 2.000000e+00 : f32
-      %77 = vector.splat %cst_12 : vector<32xf32>
-      cute.memref.store_vec %77, %view : !memref_smem_f32_
-      %iter_13 = cute.get_iter(%view) : !memref_smem_f32_
-      %78 = builtin.unrealized_conversion_cast %iter_13 : !cute.ptr<f32, smem, align<32>> to !llvm.ptr<3>
-      %79 = llvm.ptrtoint %78 : !llvm.ptr<3> to i64
-      %80 = cute.memref.load_vec %view : !memref_smem_f32_
-      %81 = vector.extract %80[0] : f32 from vector<32xf32>
-      %82 = vector.extract %80[1] : f32 from vector<32xf32>
-      %83 = vector.extract %80[2] : f32 from vector<32xf32>
-      %84 = vector.extract %80[3] : f32 from vector<32xf32>
-      %85 = vector.extract %80[4] : f32 from vector<32xf32>
-      %86 = vector.extract %80[5] : f32 from vector<32xf32>
-      %87 = vector.extract %80[6] : f32 from vector<32xf32>
-      %88 = vector.extract %80[7] : f32 from vector<32xf32>
-      %89 = vector.extract %80[8] : f32 from vector<32xf32>
-      %90 = vector.extract %80[9] : f32 from vector<32xf32>
-      %91 = vector.extract %80[10] : f32 from vector<32xf32>
-      %92 = vector.extract %80[11] : f32 from vector<32xf32>
-      %93 = vector.extract %80[12] : f32 from vector<32xf32>
-      %94 = vector.extract %80[13] : f32 from vector<32xf32>
-      %95 = vector.extract %80[14] : f32 from vector<32xf32>
-      %96 = vector.extract %80[15] : f32 from vector<32xf32>
-      %97 = vector.extract %80[16] : f32 from vector<32xf32>
-      %98 = vector.extract %80[17] : f32 from vector<32xf32>
-      %99 = vector.extract %80[18] : f32 from vector<32xf32>
-      %100 = vector.extract %80[19] : f32 from vector<32xf32>
-      %101 = vector.extract %80[20] : f32 from vector<32xf32>
-      %102 = vector.extract %80[21] : f32 from vector<32xf32>
-      %103 = vector.extract %80[22] : f32 from vector<32xf32>
-      %104 = vector.extract %80[23] : f32 from vector<32xf32>
-      %105 = vector.extract %80[24] : f32 from vector<32xf32>
-      %106 = vector.extract %80[25] : f32 from vector<32xf32>
-      %107 = vector.extract %80[26] : f32 from vector<32xf32>
-      %108 = vector.extract %80[27] : f32 from vector<32xf32>
-      %109 = vector.extract %80[28] : f32 from vector<32xf32>
-      %110 = vector.extract %80[29] : f32 from vector<32xf32>
-      %111 = vector.extract %80[30] : f32 from vector<32xf32>
-      gpu.printf "tensor in smem: raw_ptr(0x%016llx: f32, smem, align<32>) o (16,2):(1,16) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, [...] )\0A", %79, %81, %82, %83, %84, %85, %86, %87, %88, %89, %90, %91, %92, %93, %94, %95, %96, %97, %98, %99, %100, %101, %102, %103, %104, %105, %106, %107, %108, %109, %110, %111 : i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32
-      %112 = cute.memref.load_vec %view : !memref_smem_f32_
-      cute.memref.store_vec %112, %arg2 : !memref_gmem_f32_2
-      return
-    }
-  }
-  func.func @cutlass_host_05_Tensorgmemo8441_10_Tensorgmemo8221_20_Tensorgmemo16221(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_2) -> i32 attributes {llvm.emit_c_interface} {
-    %c960_i32 = arith.constant 960 : i32
-    %c0_i64 = arith.constant 0 : i64
-    %0 = cuda.cast %c0_i64 : i64 -> !cuda.stream
-    %1 = arith.extsi %c960_i32 : i32 to i64
-    %c1_i32 = arith.constant 1 : i32
-    %2 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c1_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %1, gridDim = (%c1_i32, %c1_i32, %c1_i32), stream = %0) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %3 = cuda.launch_ex @kernels::@kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0<%2> (%arg0, %arg1, %arg2) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_f32_1, !memref_gmem_f32_2) -> !cuda.result
-    %4 = cuda.cast %3 : !cuda.result -> i32
-    cuda.return_if_error %4 : i32
-    %c0_i32 = arith.constant 0 : i32
-    return %c0_i32 : i32
-  }
-}
+"builtin.module"() ({
+  "gpu.module"() <{sym_name = "kernels"}> ({
+    "cuda.kernel"() <{arg_attrs = [{}, {}, {}], function_type = (!memref_gmem_f32_, !memref_gmem_f32_1, !memref_gmem_f32_2) -> (), sym_name = "kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0"}> ({
+    ^bb0(%arg3: !memref_gmem_f32_, %arg4: !memref_gmem_f32_1, %arg5: !memref_gmem_f32_2):
+      %11 = "cute_nvgpu.arch.get_dyn_smem"() : () -> !cute.ptr<i8, smem, align<1024>>
+      %12 = "cute.static"() : () -> !cute.int_tuple<"4">
+      %13 = "cute.add_offset"(%11, %12) : (!cute.ptr<i8, smem, align<1024>>, !cute.int_tuple<"4">) -> !cute.ptr<i8, smem, align<4>>
+      %14 = "cute.ptrtoint"(%13) : (!cute.ptr<i8, smem, align<4>>) -> i32
+      %15 = "arith.constant"() <{value = 128 : i32}> : () -> i32
+      %16 = "arith.addi"(%14, %15) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+      %17 = "arith.constant"() <{value = 1 : i32}> : () -> i32
+      %18 = "arith.subi"(%16, %17) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+      %19 = "arith.constant"() <{value = -128 : i32}> : () -> i32
+      %20 = "arith.andi"(%18, %19) : (i32, i32) -> i32
+      %21 = "arith.extsi"(%20) : (i32) -> i64
+      %22 = "cute.assume"(%21) : (i64) -> !cute.i64<divby 128>
+      %23 = "cute.inttoptr"(%22) : (!cute.i64<divby 128>) -> !cute.ptr<i8, smem, align<128>>
+      %24 = "cute.static"() : () -> !cute.int_tuple<"512">
+      %25 = "cute.add_offset"(%23, %24) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"512">) -> !cute.ptr<i8, smem, align<128>>
+      %26 = "cute.static"() : () -> !cute.int_tuple<"0">
+      %27 = "cute.add_offset"(%23, %26) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"0">) -> !cute.ptr<i8, smem, align<128>>
+      %28 = "cute.static"() : () -> !cute.int_tuple<"64">
+      %29 = "cute.add_offset"(%25, %28) : (!cute.ptr<i8, smem, align<128>>, !cute.int_tuple<"64">) -> !cute.ptr<i8, smem, align<64>>
+      %30 = "cute.static"() : () -> !cute.int_tuple<"112">
+      %31 = "cute.add_offset"(%29, %30) : (!cute.ptr<i8, smem, align<64>>, !cute.int_tuple<"112">) -> !cute.ptr<i8, smem, align<16>>
+      %32 = "cute.static"() : () -> !cute.layout<"(16,2):(1,16)">
+      %33 = "cute.ptrtoint"(%31) : (!cute.ptr<i8, smem, align<16>>) -> i32
+      %34 = "arith.constant"() <{value = 32 : i32}> : () -> i32
+      %35 = "arith.addi"(%33, %34) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+      %36 = "arith.subi"(%35, %17) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+      %37 = "arith.constant"() <{value = -32 : i32}> : () -> i32
+      %38 = "arith.andi"(%36, %37) : (i32, i32) -> i32
+      %39 = "arith.extsi"(%38) : (i32) -> i64
+      %40 = "cute.assume"(%39) : (i64) -> !cute.i64<divby 32>
+      %41 = "cute.inttoptr"(%40) : (!cute.i64<divby 32>) -> !cute.ptr<i8, smem, align<32>>
+      %42 = "cute.recast_iter"(%41) : (!cute.ptr<i8, smem, align<32>>) -> !cute.ptr<f32, smem, align<32>>
+      %43 = "cute.make_view"(%42, %32) : (!cute.ptr<f32, smem, align<32>>, !cute.layout<"(16,2):(1,16)">) -> !memref_smem_f32_
+      %44 = "cute.static"() : () -> !cute.layout<"(8,4):(1,8)">
+      %45 = "cute.recast_iter"(%27) : (!cute.ptr<i8, smem, align<128>>) -> !cute.ptr<f32, smem, align<128>>
+      %46 = "cute.make_view"(%45, %44) : (!cute.ptr<f32, smem, align<128>>, !cute.layout<"(8,4):(1,8)">) -> !memref_smem_f32_1
+      %47 = "arith.constant"() <{value = 5.000000e-01 : f32}> : () -> f32
+      %48 = "vector.splat"(%47) : (f32) -> vector<32xf32>
+      "cute.memref.store_vec"(%48, %46) : (vector<32xf32>, !memref_smem_f32_1) -> ()
+      %49 = "cute.get_iter"(%46) : (!memref_smem_f32_1) -> !cute.ptr<f32, smem, align<128>>
+      %50 = "builtin.unrealized_conversion_cast"(%49) : (!cute.ptr<f32, smem, align<128>>) -> !llvm.ptr<3>
+      %51 = "llvm.ptrtoint"(%50) : (!llvm.ptr<3>) -> i64
+      %52 = "cute.memref.load_vec"(%46) : (!memref_smem_f32_1) -> vector<32xf32>
+      %53 = "vector.extract"(%52) <{static_position = array<i64: 0>}> : (vector<32xf32>) -> f32
+      %54 = "vector.extract"(%52) <{static_position = array<i64: 1>}> : (vector<32xf32>) -> f32
+      %55 = "vector.extract"(%52) <{static_position = array<i64: 2>}> : (vector<32xf32>) -> f32
+      %56 = "vector.extract"(%52) <{static_position = array<i64: 3>}> : (vector<32xf32>) -> f32
+      %57 = "vector.extract"(%52) <{static_position = array<i64: 4>}> : (vector<32xf32>) -> f32
+      %58 = "vector.extract"(%52) <{static_position = array<i64: 5>}> : (vector<32xf32>) -> f32
+      %59 = "vector.extract"(%52) <{static_position = array<i64: 6>}> : (vector<32xf32>) -> f32
+      %60 = "vector.extract"(%52) <{static_position = array<i64: 7>}> : (vector<32xf32>) -> f32
+      %61 = "vector.extract"(%52) <{static_position = array<i64: 8>}> : (vector<32xf32>) -> f32
+      %62 = "vector.extract"(%52) <{static_position = array<i64: 9>}> : (vector<32xf32>) -> f32
+      %63 = "vector.extract"(%52) <{static_position = array<i64: 10>}> : (vector<32xf32>) -> f32
+      %64 = "vector.extract"(%52) <{static_position = array<i64: 11>}> : (vector<32xf32>) -> f32
+      %65 = "vector.extract"(%52) <{static_position = array<i64: 12>}> : (vector<32xf32>) -> f32
+      %66 = "vector.extract"(%52) <{static_position = array<i64: 13>}> : (vector<32xf32>) -> f32
+      %67 = "vector.extract"(%52) <{static_position = array<i64: 14>}> : (vector<32xf32>) -> f32
+      %68 = "vector.extract"(%52) <{static_position = array<i64: 15>}> : (vector<32xf32>) -> f32
+      %69 = "vector.extract"(%52) <{static_position = array<i64: 16>}> : (vector<32xf32>) -> f32
+      %70 = "vector.extract"(%52) <{static_position = array<i64: 17>}> : (vector<32xf32>) -> f32
+      %71 = "vector.extract"(%52) <{static_position = array<i64: 18>}> : (vector<32xf32>) -> f32
+      %72 = "vector.extract"(%52) <{static_position = array<i64: 19>}> : (vector<32xf32>) -> f32
+      %73 = "vector.extract"(%52) <{static_position = array<i64: 20>}> : (vector<32xf32>) -> f32
+      %74 = "vector.extract"(%52) <{static_position = array<i64: 21>}> : (vector<32xf32>) -> f32
+      %75 = "vector.extract"(%52) <{static_position = array<i64: 22>}> : (vector<32xf32>) -> f32
+      %76 = "vector.extract"(%52) <{static_position = array<i64: 23>}> : (vector<32xf32>) -> f32
+      %77 = "vector.extract"(%52) <{static_position = array<i64: 24>}> : (vector<32xf32>) -> f32
+      %78 = "vector.extract"(%52) <{static_position = array<i64: 25>}> : (vector<32xf32>) -> f32
+      %79 = "vector.extract"(%52) <{static_position = array<i64: 26>}> : (vector<32xf32>) -> f32
+      %80 = "vector.extract"(%52) <{static_position = array<i64: 27>}> : (vector<32xf32>) -> f32
+      %81 = "vector.extract"(%52) <{static_position = array<i64: 28>}> : (vector<32xf32>) -> f32
+      %82 = "vector.extract"(%52) <{static_position = array<i64: 29>}> : (vector<32xf32>) -> f32
+      %83 = "vector.extract"(%52) <{static_position = array<i64: 30>}> : (vector<32xf32>) -> f32
+      "gpu.printf"(%51, %53, %54, %55, %56, %57, %58, %59, %60, %61, %62, %63, %64, %65, %66, %67, %68, %69, %70, %71, %72, %73, %74, %75, %76, %77, %78, %79, %80, %81, %82, %83) <{format = "cute.struct.MemRange: raw_ptr(0x%016llx: f32, smem, align<128>) o (8,4):(1,8) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, [...] )\0A"}> : (i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) -> ()
+      %84 = "cute.memref.load_vec"(%46) : (!memref_smem_f32_1) -> vector<32xf32>
+      "cute.memref.store_vec"(%84, %arg3) : (vector<32xf32>, !memref_gmem_f32_) -> ()
+      %85 = "cute.static"() : () -> !cute.layout<"(8,2):(1,8)">
+      %86 = "cute.recast_iter"(%25) : (!cute.ptr<i8, smem, align<128>>) -> !cute.ptr<f32, smem, align<128>>
+      %87 = "cute.make_view"(%86, %85) : (!cute.ptr<f32, smem, align<128>>, !cute.layout<"(8,2):(1,8)">) -> !memref_smem_f32_2
+      %88 = "arith.constant"() <{value = 1.000000e+00 : f32}> : () -> f32
+      %89 = "vector.splat"(%88) : (f32) -> vector<16xf32>
+      "cute.memref.store_vec"(%89, %87) : (vector<16xf32>, !memref_smem_f32_2) -> ()
+      %90 = "cute.get_iter"(%87) : (!memref_smem_f32_2) -> !cute.ptr<f32, smem, align<128>>
+      %91 = "builtin.unrealized_conversion_cast"(%90) : (!cute.ptr<f32, smem, align<128>>) -> !llvm.ptr<3>
+      %92 = "llvm.ptrtoint"(%91) : (!llvm.ptr<3>) -> i64
+      %93 = "cute.memref.load_vec"(%87) : (!memref_smem_f32_2) -> vector<16xf32>
+      %94 = "vector.extract"(%93) <{static_position = array<i64: 0>}> : (vector<16xf32>) -> f32
+      %95 = "vector.extract"(%93) <{static_position = array<i64: 1>}> : (vector<16xf32>) -> f32
+      %96 = "vector.extract"(%93) <{static_position = array<i64: 2>}> : (vector<16xf32>) -> f32
+      %97 = "vector.extract"(%93) <{static_position = array<i64: 3>}> : (vector<16xf32>) -> f32
+      %98 = "vector.extract"(%93) <{static_position = array<i64: 4>}> : (vector<16xf32>) -> f32
+      %99 = "vector.extract"(%93) <{static_position = array<i64: 5>}> : (vector<16xf32>) -> f32
+      %100 = "vector.extract"(%93) <{static_position = array<i64: 6>}> : (vector<16xf32>) -> f32
+      %101 = "vector.extract"(%93) <{static_position = array<i64: 7>}> : (vector<16xf32>) -> f32
+      %102 = "vector.extract"(%93) <{static_position = array<i64: 8>}> : (vector<16xf32>) -> f32
+      %103 = "vector.extract"(%93) <{static_position = array<i64: 9>}> : (vector<16xf32>) -> f32
+      %104 = "vector.extract"(%93) <{static_position = array<i64: 10>}> : (vector<16xf32>) -> f32
+      %105 = "vector.extract"(%93) <{static_position = array<i64: 11>}> : (vector<16xf32>) -> f32
+      %106 = "vector.extract"(%93) <{static_position = array<i64: 12>}> : (vector<16xf32>) -> f32
+      %107 = "vector.extract"(%93) <{static_position = array<i64: 13>}> : (vector<16xf32>) -> f32
+      %108 = "vector.extract"(%93) <{static_position = array<i64: 14>}> : (vector<16xf32>) -> f32
+      %109 = "vector.extract"(%93) <{static_position = array<i64: 15>}> : (vector<16xf32>) -> f32
+      "gpu.printf"(%92, %94, %95, %96, %97, %98, %99, %100, %101, %102, %103, %104, %105, %106, %107, %108, %109) <{format = "block of memory: raw_ptr(0x%016llx: f32, smem, align<128>) o (8,2):(1,8) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f )\0A"}> : (i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) -> ()
+      %110 = "cute.memref.load_vec"(%87) : (!memref_smem_f32_2) -> vector<16xf32>
+      "cute.memref.store_vec"(%110, %arg4) : (vector<16xf32>, !memref_gmem_f32_1) -> ()
+      %111 = "arith.constant"() <{value = 2.000000e+00 : f32}> : () -> f32
+      %112 = "vector.splat"(%111) : (f32) -> vector<32xf32>
+      "cute.memref.store_vec"(%112, %43) : (vector<32xf32>, !memref_smem_f32_) -> ()
+      %113 = "cute.get_iter"(%43) : (!memref_smem_f32_) -> !cute.ptr<f32, smem, align<32>>
+      %114 = "builtin.unrealized_conversion_cast"(%113) : (!cute.ptr<f32, smem, align<32>>) -> !llvm.ptr<3>
+      %115 = "llvm.ptrtoint"(%114) : (!llvm.ptr<3>) -> i64
+      %116 = "cute.memref.load_vec"(%43) : (!memref_smem_f32_) -> vector<32xf32>
+      %117 = "vector.extract"(%116) <{static_position = array<i64: 0>}> : (vector<32xf32>) -> f32
+      %118 = "vector.extract"(%116) <{static_position = array<i64: 1>}> : (vector<32xf32>) -> f32
+      %119 = "vector.extract"(%116) <{static_position = array<i64: 2>}> : (vector<32xf32>) -> f32
+      %120 = "vector.extract"(%116) <{static_position = array<i64: 3>}> : (vector<32xf32>) -> f32
+      %121 = "vector.extract"(%116) <{static_position = array<i64: 4>}> : (vector<32xf32>) -> f32
+      %122 = "vector.extract"(%116) <{static_position = array<i64: 5>}> : (vector<32xf32>) -> f32
+      %123 = "vector.extract"(%116) <{static_position = array<i64: 6>}> : (vector<32xf32>) -> f32
+      %124 = "vector.extract"(%116) <{static_position = array<i64: 7>}> : (vector<32xf32>) -> f32
+      %125 = "vector.extract"(%116) <{static_position = array<i64: 8>}> : (vector<32xf32>) -> f32
+      %126 = "vector.extract"(%116) <{static_position = array<i64: 9>}> : (vector<32xf32>) -> f32
+      %127 = "vector.extract"(%116) <{static_position = array<i64: 10>}> : (vector<32xf32>) -> f32
+      %128 = "vector.extract"(%116) <{static_position = array<i64: 11>}> : (vector<32xf32>) -> f32
+      %129 = "vector.extract"(%116) <{static_position = array<i64: 12>}> : (vector<32xf32>) -> f32
+      %130 = "vector.extract"(%116) <{static_position = array<i64: 13>}> : (vector<32xf32>) -> f32
+      %131 = "vector.extract"(%116) <{static_position = array<i64: 14>}> : (vector<32xf32>) -> f32
+      %132 = "vector.extract"(%116) <{static_position = array<i64: 15>}> : (vector<32xf32>) -> f32
+      %133 = "vector.extract"(%116) <{static_position = array<i64: 16>}> : (vector<32xf32>) -> f32
+      %134 = "vector.extract"(%116) <{static_position = array<i64: 17>}> : (vector<32xf32>) -> f32
+      %135 = "vector.extract"(%116) <{static_position = array<i64: 18>}> : (vector<32xf32>) -> f32
+      %136 = "vector.extract"(%116) <{static_position = array<i64: 19>}> : (vector<32xf32>) -> f32
+      %137 = "vector.extract"(%116) <{static_position = array<i64: 20>}> : (vector<32xf32>) -> f32
+      %138 = "vector.extract"(%116) <{static_position = array<i64: 21>}> : (vector<32xf32>) -> f32
+      %139 = "vector.extract"(%116) <{static_position = array<i64: 22>}> : (vector<32xf32>) -> f32
+      %140 = "vector.extract"(%116) <{static_position = array<i64: 23>}> : (vector<32xf32>) -> f32
+      %141 = "vector.extract"(%116) <{static_position = array<i64: 24>}> : (vector<32xf32>) -> f32
+      %142 = "vector.extract"(%116) <{static_position = array<i64: 25>}> : (vector<32xf32>) -> f32
+      %143 = "vector.extract"(%116) <{static_position = array<i64: 26>}> : (vector<32xf32>) -> f32
+      %144 = "vector.extract"(%116) <{static_position = array<i64: 27>}> : (vector<32xf32>) -> f32
+      %145 = "vector.extract"(%116) <{static_position = array<i64: 28>}> : (vector<32xf32>) -> f32
+      %146 = "vector.extract"(%116) <{static_position = array<i64: 29>}> : (vector<32xf32>) -> f32
+      %147 = "vector.extract"(%116) <{static_position = array<i64: 30>}> : (vector<32xf32>) -> f32
+      "gpu.printf"(%115, %117, %118, %119, %120, %121, %122, %123, %124, %125, %126, %127, %128, %129, %130, %131, %132, %133, %134, %135, %136, %137, %138, %139, %140, %141, %142, %143, %144, %145, %146, %147) <{format = "tensor in smem: raw_ptr(0x%016llx: f32, smem, align<32>) o (16,2):(1,16) = \0A  ( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, [...] )\0A"}> : (i64, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) -> ()
+      %148 = "cute.memref.load_vec"(%43) : (!memref_smem_f32_) -> vector<32xf32>
+      "cute.memref.store_vec"(%148, %arg5) : (vector<32xf32>, !memref_gmem_f32_2) -> ()
+      "cuda.return"() : () -> ()
+    }) {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 1, 1, 1>} : () -> ()
+  }) : () -> ()
+  "func.func"() <{function_type = (!memref_gmem_f32_, !memref_gmem_f32_1, !memref_gmem_f32_2) -> i32, sym_name = "cutlass_host_05_Tensorgmemo8441_10_Tensorgmemo8221_20_Tensorgmemo16221"}> ({
+  ^bb0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_1, %arg2: !memref_gmem_f32_2):
+    %0 = "arith.constant"() <{value = 960 : i32}> : () -> i32
+    %1 = "arith.constant"() <{value = 0 : i64}> : () -> i64
+    %2 = "cuda.cast"(%1) : (i64) -> !cuda.stream
+    %3 = "arith.extsi"(%0) : (i32) -> i64
+    %4 = "arith.constant"() <{value = 1 : i32}> : () -> i32
+    %5 = "cuda.launch_cfg.create"(%4, %4, %4, %3, %4, %4, %4, %2) <{maxNumAttrs = 3 : i32}> : (i32, i32, i32, i64, i32, i32, i32, !cuda.stream) -> !cuda.launch_cfg<max_attrs = 3>
+    %6 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    "cuda.launch_cfg.programmatic_stream_serialization_allowed"(%5, %6) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    %7 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    "cuda.launch_cfg.cooperative"(%5, %7) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    %8 = "cuda.launch_ex"(%5, %arg0, %arg1, %arg2) <{assume_kernel_attr = #cuda.assume_kernel_attr<true>, callee = @kernels::@kernel_cutlass_kernel_05_tensorptrf32gmemo8441_10_tensorptrf32gmemo8221_20_tensorptrf32gmemo16221_0}> : (!cuda.launch_cfg<max_attrs = 3>, !memref_gmem_f32_, !memref_gmem_f32_1, !memref_gmem_f32_2) -> !cuda.result
+    %9 = "cuda.cast"(%8) : (!cuda.result) -> i32
+    "cuda.return_if_error"(%9) : (i32) -> ()
+    %10 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    "func.return"(%10) : (i32) -> ()
+  }) {llvm.emit_c_interface} : () -> ()
+}) {gpu.container_module} : () -> ()

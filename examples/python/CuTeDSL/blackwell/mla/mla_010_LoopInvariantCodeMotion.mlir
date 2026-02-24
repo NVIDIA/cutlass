@@ -4,142 +4,140 @@
 !memref_gmem_f8E4M3FN1 = !cute.memref<f8E4M3FN, gmem, align<16>, "(?,?{div=16},?):(?{div=16},1,?{div=16})">
 !memref_rmem_f32_ = !cute.memref<f32, rmem, align<32>, "4:1">
 !memref_rmem_f8E4M3FN = !cute.memref<f8E4M3FN, rmem, align<32>, "4:1">
-#loop_unroll = #llvm.loop_unroll<disable = false, full = true>
-#loop_annotation = #llvm.loop_annotation<unroll = #loop_unroll>
-module attributes {gpu.container_module} {
-  gpu.module @kernels {
-    cuda.kernel @kernel_cutlass__convert_kernel_tensorptrf32gmemo15121010512_tensorptrf8E4M3FNgmemalign16o15121010div16512div16_tensor000o15121011010512112____Float32_Float8E4M3FN_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f8E4M3FN, %arg2: !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">, %arg3: i32, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} {
-      %0 = cute.static : !cute.int_tuple<"3">
-      %1 = cute.static : !cute.int_tuple<"2">
-      %c1_i32 = arith.constant 1 : i32
-      %c0_i32 = arith.constant 0 : i32
-      %2 = cute.static : !cute.int_tuple<"1">
-      %3 = cute.static : !cute.layout<"(128,4):(4@1,1@1)">
-      %4 = cute.static : !cute.int_tuple<"(0,0,0)">
-      %5 = cute.static : !cute.layout<"(128,4):(4,1)">
-      %6 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
-      %7 = nvvm.read.ptx.sreg.ctaid.x range <i32, 0, 2147483647> : i32
-      %coord = cute.make_coord(%7) : (i32) -> !cute.coord<"(_,?)">
-      %lay = cute.get_layout(%arg0) : !memref_gmem_f32_
-      %idx = cute.crd2idx(%coord, %lay) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">) -> !cute.int_tuple<"?{i64}">
-      %iter = cute.get_iter(%arg0) : !memref_gmem_f32_
-      %ptr = cute.add_offset(%iter, %idx) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{i64}">) -> !cute.ptr<f32, gmem>
-      %lay_0 = cute.get_layout(%arg1) : !memref_gmem_f8E4M3FN
-      %idx_1 = cute.crd2idx(%coord, %lay_0) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">) -> !cute.int_tuple<"?{div=16}">
-      %iter_2 = cute.get_iter(%arg1) : !memref_gmem_f8E4M3FN
-      %ptr_3 = cute.add_offset(%iter_2, %idx_1) : (!cute.ptr<f8E4M3FN, gmem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f8E4M3FN, gmem, align<16>>
-      %lay_4 = cute.get_layout(%arg2) : !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
-      %idx_5 = cute.crd2idx(%coord, %lay_4) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.int_tuple<"(?,?{div=512},?)">
-      %tup = cute.add_offset(%4, %idx_5) : (!cute.int_tuple<"(0,0,0)">, !cute.int_tuple<"(?,?{div=512},?)">) -> !cute.int_tuple<"(?,?{div=512},?)">
-      %coord_6 = cute.make_coord(%6) : (i32) -> !cute.coord<"(?,_)">
-      %idx_7 = cute.crd2idx(%coord_6, %5) : (!cute.coord<"(?,_)">, !cute.layout<"(128,4):(4,1)">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_8 = cute.add_offset(%ptr, %idx_7) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem>
-      %ptr_9 = cute.add_offset(%ptr_3, %idx_7) : (!cute.ptr<f8E4M3FN, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f8E4M3FN, gmem, align<4>>
-      %idx_10 = cute.crd2idx(%coord_6, %3) : (!cute.coord<"(?,_)">, !cute.layout<"(128,4):(4@1,1@1)">) -> !cute.int_tuple<"(0,?{div=4})">
-      %tup_11 = cute.add_offset(%tup, %idx_10) : (!cute.int_tuple<"(?,?{div=512},?)">, !cute.int_tuple<"(0,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4},?)">
-      %e0, %e1, %e2 = cute.get_leaves(%tup_11) : !cute.int_tuple<"(?,?{div=4},?)">
-      %coord_12 = cute.make_coord(%e0, %e1, %e2) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?{div=4},?)">
-      %coord_13 = cute.make_coord(%arg3, %arg4, %arg5) : (i32, i32, i32) -> !cute.coord<"(?,?,?)">
-      %8:3 = cute.get_scalars(%coord_12) : !cute.coord<"(?,?{div=4},?)">
-      %9:3 = cute.get_scalars(%coord_13) : !cute.coord<"(?,?,?)">
-      %10 = arith.cmpi slt, %8#0, %9#0 : i32
-      %11 = arith.cmpi slt, %8#1, %9#1 : i32
-      %12 = arith.andi %10, %11 : i1
-      %13 = arith.cmpi slt, %8#2, %9#2 : i32
-      %14 = arith.andi %12, %13 : i1
-      scf.if %14 {
-        %rmem = cute.memref.alloca() : !memref_rmem_f32_
-        %iter_14 = cute.get_iter(%rmem) : !memref_rmem_f32_
-        %rmem_15 = cute.memref.alloca() : !memref_rmem_f8E4M3FN
-        %iter_16 = cute.get_iter(%rmem_15) : !memref_rmem_f8E4M3FN
-        %15 = cute.get_scalars(%2) : !cute.int_tuple<"1">
-        %16 = builtin.unrealized_conversion_cast %ptr_8 : !cute.ptr<f32, gmem> to !llvm.ptr<1>
-        %17 = builtin.unrealized_conversion_cast %iter_14 : !cute.ptr<f32, rmem, align<32>> to !llvm.ptr
-        %ptr_17 = cute.add_offset(%ptr_8, %2) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"1">) -> !cute.ptr<f32, gmem>
-        %ptr_18 = cute.add_offset(%iter_14, %2) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"1">) -> !cute.ptr<f32, rmem>
-        %18 = builtin.unrealized_conversion_cast %ptr_17 : !cute.ptr<f32, gmem> to !llvm.ptr<1>
-        %19 = builtin.unrealized_conversion_cast %ptr_18 : !cute.ptr<f32, rmem> to !llvm.ptr
-        %ptr_19 = cute.add_offset(%ptr_8, %1) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"2">) -> !cute.ptr<f32, gmem>
-        %ptr_20 = cute.add_offset(%iter_14, %1) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"2">) -> !cute.ptr<f32, rmem, align<8>>
-        %20 = builtin.unrealized_conversion_cast %ptr_19 : !cute.ptr<f32, gmem> to !llvm.ptr<1>
-        %21 = builtin.unrealized_conversion_cast %ptr_20 : !cute.ptr<f32, rmem, align<8>> to !llvm.ptr
-        %ptr_21 = cute.add_offset(%ptr_8, %0) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"3">) -> !cute.ptr<f32, gmem>
-        %ptr_22 = cute.add_offset(%iter_14, %0) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"3">) -> !cute.ptr<f32, rmem>
-        %22 = builtin.unrealized_conversion_cast %ptr_21 : !cute.ptr<f32, gmem> to !llvm.ptr<1>
-        %23 = builtin.unrealized_conversion_cast %ptr_22 : !cute.ptr<f32, rmem> to !llvm.ptr
-        scf.for %arg6 = %c0_i32 to %15 step %c1_i32  : i32 {
-          %28 = llvm.load %16 {alignment = 4 : i64} : !llvm.ptr<1> -> vector<1xf32>
-          llvm.store %28, %17 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr
-          %29 = llvm.load %18 {alignment = 4 : i64} : !llvm.ptr<1> -> vector<1xf32>
-          llvm.store %29, %19 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr
-          %30 = llvm.load %20 {alignment = 4 : i64} : !llvm.ptr<1> -> vector<1xf32>
-          llvm.store %30, %21 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr
-          %31 = llvm.load %22 {alignment = 4 : i64} : !llvm.ptr<1> -> vector<1xf32>
-          llvm.store %31, %23 {alignment = 4 : i64} : vector<1xf32>, !llvm.ptr
-        } {llvm.loop_annotation = #loop_annotation}
-        %24 = cute.memref.load_vec %rmem : !memref_rmem_f32_
-        %25 = nvgpu.cvt_fptrunc %24 : vector<4xf32> to vector<4xf8E4M3FN>
-        cute.memref.store_vec %25, %rmem_15 : !memref_rmem_f8E4M3FN
-        %26 = builtin.unrealized_conversion_cast %iter_16 : !cute.ptr<f8E4M3FN, rmem, align<32>> to !llvm.ptr
-        %27 = builtin.unrealized_conversion_cast %ptr_9 : !cute.ptr<f8E4M3FN, gmem, align<4>> to !llvm.ptr<1>
-        scf.for %arg6 = %c0_i32 to %15 step %c1_i32  : i32 {
-          %28 = llvm.load %26 {alignment = 4 : i64} : !llvm.ptr -> vector<4xi8>
-          llvm.store %28, %27 {alignment = 4 : i64} : vector<4xi8>, !llvm.ptr<1>
-        } {llvm.loop_annotation = #loop_annotation}
-      }
-      return
-    }
-  }
-  func.func @cutlass__convert_Tensorgmemoi641i64_Tensorgmemodiv16div161div16_1_4(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_f8E4M3FN1) -> i32 attributes {llvm.emit_c_interface} {
-    %c1_i32 = arith.constant 1 : i32
-    %c128_i32 = arith.constant 128 : i32
-    %c0_i64 = arith.constant 0 : i64
-    %c0_i32 = arith.constant 0 : i32
-    %0 = cute.static : !cute.stride<"((0,1@1,0),(1@0,512@1,1@2))">
-    %c512_i32 = arith.constant 512 : i32
-    %1 = cute.static : !cute.stride<"(1@0,1@1,1@2)">
-    %2 = cute.static : !cute.int_tuple<"(0,0,0)">
-    %lay = cute.get_layout(%arg0) : !memref_gmem_f32_1
-    %3 = cute.get_shape(%lay) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
-    %e0, %e1, %e2 = cute.get_leaves(%3) : !cute.shape<"(?,?,?)">
-    %itup = cute.to_int_tuple(%e0) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %4 = cute.get_scalars(%itup) : !cute.int_tuple<"?">
-    %itup_0 = cute.to_int_tuple(%e1) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %5 = cute.get_scalars(%itup_0) : !cute.int_tuple<"?">
-    %itup_1 = cute.to_int_tuple(%e2) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %6 = cute.get_scalars(%itup_1) : !cute.int_tuple<"?">
-    %shape = cute.make_shape(%itup, %itup_0, %itup_1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,?)">
-    %lay_2 = cute.make_layout(%shape, %1) : !cute.layout<"(?,?,?):(1@0,1@1,1@2)">
-    %iter = cute.get_iter(%arg0) : !memref_gmem_f32_1
-    %7:5 = cute.get_scalars(%lay) <{only_dynamic}> : !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
-    %8 = arith.ceildivsi %7#1, %c512_i32 : i32
-    %shape_3 = cute.make_shape(%7#0, %8, %7#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
-    %stride = cute.make_stride(%7#3, %7#4) : (i64, i64) -> !cute.stride<"((0,1,0),(?{i64},512,?{i64}))">
-    %lay_4 = cute.make_layout(%shape_3, %stride) : !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">
-    %view = cute.make_view(%iter, %lay_4) : !memref_gmem_f32_
-    %9:3 = cute.get_scalars(%lay_2) <{only_dynamic}> : !cute.layout<"(?,?,?):(1@0,1@1,1@2)">
-    %10 = arith.ceildivsi %9#1, %c512_i32 : i32
-    %shape_5 = cute.make_shape(%9#0, %10, %9#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
-    %lay_6 = cute.make_layout(%shape_5, %0) : !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
-    %view_7 = cute.make_view(%2, %lay_6) : !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
-    %iter_8 = cute.get_iter(%arg1) : !memref_gmem_f8E4M3FN1
-    %lay_9 = cute.get_layout(%arg1) : !memref_gmem_f8E4M3FN1
-    %11:5 = cute.get_scalars(%lay_9) <{only_dynamic}> : !cute.layout<"(?,?{div=16},?):(?{div=16},1,?{div=16})">
-    %12 = arith.ceildivsi %11#1, %c512_i32 : i32
-    %shape_10 = cute.make_shape(%11#0, %12, %11#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
-    %iv = cute.assume(%11#3) : (i32) -> !cute.i32<divby 16>
-    %iv_11 = cute.assume(%11#4) : (i32) -> !cute.i32<divby 16>
-    %stride_12 = cute.make_stride(%iv, %iv_11) : (!cute.i32<divby 16>, !cute.i32<divby 16>) -> !cute.stride<"((0,1,0),(?{div=16},512,?{div=16}))">
-    %lay_13 = cute.make_layout(%shape_10, %stride_12) : !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">
-    %view_14 = cute.make_view(%iter_8, %lay_13) : !memref_gmem_f8E4M3FN
-    %sz = cute.size(%lay_4) <{mode = [1]}> : (!cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">) -> !cute.int_tuple<"?">
-    %e0_15 = cute.get_leaves(%sz) : !cute.int_tuple<"?">
-    %13 = cute.get_scalars(%e0_15) : !cute.int_tuple<"?">
-    %14 = cuda.cast %c0_i64 : i64 -> !cuda.stream
-    %15 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c128_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%13, %c1_i32, %c1_i32), stream = %14) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %16 = cuda.launch_ex @kernels::@kernel_cutlass__convert_kernel_tensorptrf32gmemo15121010512_tensorptrf8E4M3FNgmemalign16o15121010div16512div16_tensor000o15121011010512112____Float32_Float8E4M3FN_0<%15> (%view, %view_14, %view_7, %4, %5, %6) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_f8E4M3FN, !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">, i32, i32, i32) -> !cuda.result
-    %17 = cuda.cast %16 : !cuda.result -> i32
-    cuda.return_if_error %17 : i32
-    return %c0_i32 : i32
-  }
-}
+"builtin.module"() ({
+  "gpu.module"() <{sym_name = "kernels"}> ({
+    "cuda.kernel"() <{function_type = (!memref_gmem_f32_, !memref_gmem_f8E4M3FN, !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">, i32, i32, i32) -> (), sym_name = "kernel_cutlass__convert_kernel_tensorptrf32gmemo15121010i64512i64_tensorptrf8E4M3FNgmemalign16o15121010div16512div16_tensor000o15121011010512112____Float32_Float8E4M3FN_0"}> ({
+    ^bb0(%arg2: !memref_gmem_f32_, %arg3: !memref_gmem_f8E4M3FN, %arg4: !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">, %arg5: i32, %arg6: i32, %arg7: i32):
+      %48 = "cute.static"() : () -> !cute.int_tuple<"3">
+      %49 = "cute.static"() : () -> !cute.int_tuple<"2">
+      %50 = "cute.static"() : () -> !cute.int_tuple<"1">
+      %51 = "cute.static"() : () -> !cute.layout<"(128,4):(4@1,1@1)">
+      %52 = "cute.static"() : () -> !cute.layout<"(128,4):(4,1)">
+      %53 = "nvvm.read.ptx.sreg.tid.x"() <{range = #llvm.constant_range<i32, 0, 1024>}> : () -> i32
+      %54 = "nvvm.read.ptx.sreg.ctaid.x"() <{range = #llvm.constant_range<i32, 0, 2147483647>}> : () -> i32
+      %55 = "cute.make_coord"(%54) : (i32) -> !cute.coord<"(_,?)">
+      %56 = "cute.get_layout"(%arg2) : (!memref_gmem_f32_) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">
+      %57 = "cute.crd2idx"(%55, %56) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">) -> !cute.int_tuple<"?{i64}">
+      %58 = "cute.get_iter"(%arg2) : (!memref_gmem_f32_) -> !cute.ptr<f32, gmem>
+      %59 = "cute.add_offset"(%58, %57) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{i64}">) -> !cute.ptr<f32, gmem>
+      %60 = "cute.get_layout"(%arg3) : (!memref_gmem_f8E4M3FN) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">
+      %61 = "cute.crd2idx"(%55, %60) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">) -> !cute.int_tuple<"?{div=16}">
+      %62 = "cute.get_iter"(%arg3) : (!memref_gmem_f8E4M3FN) -> !cute.ptr<f8E4M3FN, gmem, align<16>>
+      %63 = "cute.add_offset"(%62, %61) : (!cute.ptr<f8E4M3FN, gmem, align<16>>, !cute.int_tuple<"?{div=16}">) -> !cute.ptr<f8E4M3FN, gmem, align<16>>
+      %64 = "cute.get_layout"(%arg4) : (!cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
+      %65 = "cute.crd2idx"(%55, %64) : (!cute.coord<"(_,?)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.int_tuple<"(?,?{div=512},?)">
+      %66 = "cute.get_iter"(%arg4) : (!cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.arith_tuple_iter<"(0,0,0)">
+      %67 = "cute.add_offset"(%66, %65) : (!cute.arith_tuple_iter<"(0,0,0)">, !cute.int_tuple<"(?,?{div=512},?)">) -> !cute.arith_tuple_iter<"(?,?{div=512},?)">
+      %68 = "cute.make_coord"(%53) : (i32) -> !cute.coord<"(?,_)">
+      %69 = "cute.crd2idx"(%68, %52) : (!cute.coord<"(?,_)">, !cute.layout<"(128,4):(4,1)">) -> !cute.int_tuple<"?{div=4}">
+      %70 = "cute.add_offset"(%59, %69) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem>
+      %71 = "cute.add_offset"(%63, %69) : (!cute.ptr<f8E4M3FN, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f8E4M3FN, gmem, align<4>>
+      %72 = "cute.crd2idx"(%68, %51) : (!cute.coord<"(?,_)">, !cute.layout<"(128,4):(4@1,1@1)">) -> !cute.int_tuple<"(0,?{div=4})">
+      %73 = "cute.add_offset"(%67, %72) : (!cute.arith_tuple_iter<"(?,?{div=512},?)">, !cute.int_tuple<"(0,?{div=4})">) -> !cute.arith_tuple_iter<"(?,?{div=4},?)">
+      %74 = "cute.deref_arith_tuple_iter"(%73) : (!cute.arith_tuple_iter<"(?,?{div=4},?)">) -> !cute.int_tuple<"(?,?{div=4},?)">
+      %75:3 = "cute.get_leaves"(%74) : (!cute.int_tuple<"(?,?{div=4},?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">)
+      %76 = "cute.make_coord"(%75#0, %75#1, %75#2) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?{div=4},?)">
+      %77 = "cute.make_coord"(%arg5, %arg6, %arg7) : (i32, i32, i32) -> !cute.coord<"(?,?,?)">
+      %78:3 = "cute.get_scalars"(%76) : (!cute.coord<"(?,?{div=4},?)">) -> (i32, i32, i32)
+      %79:3 = "cute.get_scalars"(%77) : (!cute.coord<"(?,?,?)">) -> (i32, i32, i32)
+      %80 = "arith.cmpi"(%78#0, %79#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %81 = "arith.cmpi"(%78#1, %79#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %82 = "arith.andi"(%80, %81) : (i1, i1) -> i1
+      %83 = "arith.cmpi"(%78#2, %79#2) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %84 = "arith.andi"(%82, %83) : (i1, i1) -> i1
+      "scf.if"(%84) ({
+        %85 = "cute.memref.alloca"() : () -> !memref_rmem_f32_
+        %86 = "cute.get_iter"(%85) : (!memref_rmem_f32_) -> !cute.ptr<f32, rmem, align<32>>
+        %87 = "cute.memref.alloca"() : () -> !memref_rmem_f8E4M3FN
+        %88 = "cute.get_iter"(%87) : (!memref_rmem_f8E4M3FN) -> !cute.ptr<f8E4M3FN, rmem, align<32>>
+        %89 = "builtin.unrealized_conversion_cast"(%70) : (!cute.ptr<f32, gmem>) -> !llvm.ptr<1>
+        %90 = "builtin.unrealized_conversion_cast"(%86) : (!cute.ptr<f32, rmem, align<32>>) -> !llvm.ptr
+        %91 = "llvm.load"(%89) <{alignment = 4 : i64, ordering = 0 : i64}> : (!llvm.ptr<1>) -> vector<1xf32>
+        "llvm.store"(%91, %90) <{alignment = 4 : i64, ordering = 0 : i64}> : (vector<1xf32>, !llvm.ptr) -> ()
+        %92 = "cute.add_offset"(%70, %50) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"1">) -> !cute.ptr<f32, gmem>
+        %93 = "cute.add_offset"(%86, %50) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"1">) -> !cute.ptr<f32, rmem>
+        %94 = "builtin.unrealized_conversion_cast"(%92) : (!cute.ptr<f32, gmem>) -> !llvm.ptr<1>
+        %95 = "builtin.unrealized_conversion_cast"(%93) : (!cute.ptr<f32, rmem>) -> !llvm.ptr
+        %96 = "llvm.load"(%94) <{alignment = 4 : i64, ordering = 0 : i64}> : (!llvm.ptr<1>) -> vector<1xf32>
+        "llvm.store"(%96, %95) <{alignment = 4 : i64, ordering = 0 : i64}> : (vector<1xf32>, !llvm.ptr) -> ()
+        %97 = "cute.add_offset"(%70, %49) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"2">) -> !cute.ptr<f32, gmem>
+        %98 = "cute.add_offset"(%86, %49) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"2">) -> !cute.ptr<f32, rmem, align<8>>
+        %99 = "builtin.unrealized_conversion_cast"(%97) : (!cute.ptr<f32, gmem>) -> !llvm.ptr<1>
+        %100 = "builtin.unrealized_conversion_cast"(%98) : (!cute.ptr<f32, rmem, align<8>>) -> !llvm.ptr
+        %101 = "llvm.load"(%99) <{alignment = 4 : i64, ordering = 0 : i64}> : (!llvm.ptr<1>) -> vector<1xf32>
+        "llvm.store"(%101, %100) <{alignment = 4 : i64, ordering = 0 : i64}> : (vector<1xf32>, !llvm.ptr) -> ()
+        %102 = "cute.add_offset"(%70, %48) : (!cute.ptr<f32, gmem>, !cute.int_tuple<"3">) -> !cute.ptr<f32, gmem>
+        %103 = "cute.add_offset"(%86, %48) : (!cute.ptr<f32, rmem, align<32>>, !cute.int_tuple<"3">) -> !cute.ptr<f32, rmem>
+        %104 = "builtin.unrealized_conversion_cast"(%102) : (!cute.ptr<f32, gmem>) -> !llvm.ptr<1>
+        %105 = "builtin.unrealized_conversion_cast"(%103) : (!cute.ptr<f32, rmem>) -> !llvm.ptr
+        %106 = "llvm.load"(%104) <{alignment = 4 : i64, ordering = 0 : i64}> : (!llvm.ptr<1>) -> vector<1xf32>
+        "llvm.store"(%106, %105) <{alignment = 4 : i64, ordering = 0 : i64}> : (vector<1xf32>, !llvm.ptr) -> ()
+        %107 = "cute.memref.load_vec"(%85) : (!memref_rmem_f32_) -> vector<4xf32>
+        %108 = "nvgpu.cvt_fptrunc"(%107) <{packed_kind = #nvgpu.subbytes_packedkind<compact>, rnd = #nvgpu.rnd<rn>}> : (vector<4xf32>) -> vector<4xf8E4M3FN>
+        "cute.memref.store_vec"(%108, %87) : (vector<4xf8E4M3FN>, !memref_rmem_f8E4M3FN) -> ()
+        %109 = "builtin.unrealized_conversion_cast"(%88) : (!cute.ptr<f8E4M3FN, rmem, align<32>>) -> !llvm.ptr
+        %110 = "builtin.unrealized_conversion_cast"(%71) : (!cute.ptr<f8E4M3FN, gmem, align<4>>) -> !llvm.ptr<1>
+        %111 = "llvm.load"(%109) <{alignment = 4 : i64, ordering = 0 : i64}> : (!llvm.ptr) -> vector<4xi8>
+        "llvm.store"(%111, %110) <{alignment = 4 : i64, ordering = 0 : i64}> : (vector<4xi8>, !llvm.ptr<1>) -> ()
+        "scf.yield"() : () -> ()
+      }, {
+      }) : (i1) -> ()
+      "cuda.return"() : () -> ()
+    }) {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 128, 1, 1>} : () -> ()
+  }) : () -> ()
+  "func.func"() <{function_type = (!memref_gmem_f32_1, !memref_gmem_f8E4M3FN1) -> i32, sym_name = "cutlass__convert_Tensorgmemoi641i64_Tensorgmemodiv16div161div16_1_4"}> ({
+  ^bb0(%arg0: !memref_gmem_f32_1, %arg1: !memref_gmem_f8E4M3FN1):
+    %0 = "arith.constant"() <{value = 1 : i32}> : () -> i32
+    %1 = "arith.constant"() <{value = 128 : i32}> : () -> i32
+    %2 = "arith.constant"() <{value = 0 : i64}> : () -> i64
+    %3 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    %4 = "cute.static"() : () -> !cute.stride<"((0,1@1,0),(1@0,512@1,1@2))">
+    %5 = "arith.constant"() <{value = 512 : i32}> : () -> i32
+    %6 = "cute.static"() : () -> !cute.stride<"(1@0,1@1,1@2)">
+    %7 = "cute.get_layout"(%arg0) : (!memref_gmem_f32_1) -> !cute.layout<"(?,?,?):(?{i64},1,?{i64})">
+    %8 = "cute.get_shape"(%7) : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> !cute.shape<"(?,?,?)">
+    %9:3 = "cute.get_leaves"(%8) : (!cute.shape<"(?,?,?)">) -> (!cute.shape<"?">, !cute.shape<"?">, !cute.shape<"?">)
+    %10 = "cute.to_int_tuple"(%9#0) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %11 = "cute.get_scalars"(%10) : (!cute.int_tuple<"?">) -> i32
+    %12 = "cute.to_int_tuple"(%9#1) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %13 = "cute.get_scalars"(%12) : (!cute.int_tuple<"?">) -> i32
+    %14 = "cute.to_int_tuple"(%9#2) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %15 = "cute.get_scalars"(%14) : (!cute.int_tuple<"?">) -> i32
+    %16 = "cute.make_shape"(%10, %12, %14) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?,?)">
+    %17 = "cute.make_arith_tuple_iter"() : () -> !cute.arith_tuple_iter<"(0,0,0)">
+    %18 = "cute.make_layout"(%16, %6) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"(?,?,?)">, !cute.stride<"(1@0,1@1,1@2)">) -> !cute.layout<"(?,?,?):(1@0,1@1,1@2)">
+    %19 = "cute.get_iter"(%arg0) : (!memref_gmem_f32_1) -> !cute.ptr<f32, gmem>
+    %20:5 = "cute.get_scalars"(%7) <{only_dynamic}> : (!cute.layout<"(?,?,?):(?{i64},1,?{i64})">) -> (i32, i32, i32, i64, i64)
+    %21 = "arith.ceildivsi"(%20#1, %5) : (i32, i32) -> i32
+    %22 = "cute.make_shape"(%20#0, %21, %20#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
+    %23 = "cute.make_stride"(%20#3, %20#4) : (i64, i64) -> !cute.stride<"((0,1,0),(?{i64},512,?{i64}))">
+    %24 = "cute.make_layout"(%22, %23) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((1,512,1),(?,?,?))">, !cute.stride<"((0,1,0),(?{i64},512,?{i64}))">) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">
+    %25 = "cute.make_view"(%19, %24) : (!cute.ptr<f32, gmem>, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">) -> !memref_gmem_f32_
+    %26:3 = "cute.get_scalars"(%18) <{only_dynamic}> : (!cute.layout<"(?,?,?):(1@0,1@1,1@2)">) -> (i32, i32, i32)
+    %27 = "arith.ceildivsi"(%26#1, %5) : (i32, i32) -> i32
+    %28 = "cute.make_shape"(%26#0, %27, %26#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
+    %29 = "cute.make_layout"(%28, %4) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((1,512,1),(?,?,?))">, !cute.stride<"((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
+    %30 = "cute.make_view"(%17, %29) : (!cute.arith_tuple_iter<"(0,0,0)">, !cute.layout<"((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">) -> !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">
+    %31 = "cute.get_iter"(%arg1) : (!memref_gmem_f8E4M3FN1) -> !cute.ptr<f8E4M3FN, gmem, align<16>>
+    %32 = "cute.get_layout"(%arg1) : (!memref_gmem_f8E4M3FN1) -> !cute.layout<"(?,?{div=16},?):(?{div=16},1,?{div=16})">
+    %33:5 = "cute.get_scalars"(%32) <{only_dynamic}> : (!cute.layout<"(?,?{div=16},?):(?{div=16},1,?{div=16})">) -> (i32, i32, i32, i32, i32)
+    %34 = "arith.ceildivsi"(%33#1, %5) : (i32, i32) -> i32
+    %35 = "cute.make_shape"(%33#0, %34, %33#2) : (i32, i32, i32) -> !cute.shape<"((1,512,1),(?,?,?))">
+    %36 = "cute.assume"(%33#3) : (i32) -> !cute.i32<divby 16>
+    %37 = "cute.assume"(%33#4) : (i32) -> !cute.i32<divby 16>
+    %38 = "cute.make_stride"(%36, %37) : (!cute.i32<divby 16>, !cute.i32<divby 16>) -> !cute.stride<"((0,1,0),(?{div=16},512,?{div=16}))">
+    %39 = "cute.make_layout"(%35, %38) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((1,512,1),(?,?,?))">, !cute.stride<"((0,1,0),(?{div=16},512,?{div=16}))">) -> !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">
+    %40 = "cute.make_view"(%31, %39) : (!cute.ptr<f8E4M3FN, gmem, align<16>>, !cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{div=16},512,?{div=16}))">) -> !memref_gmem_f8E4M3FN
+    %41 = "cute.size"(%24) <{mode = array<i32: 1>}> : (!cute.layout<"((1,512,1),(?,?,?)):((0,1,0),(?{i64},512,?{i64}))">) -> !cute.int_tuple<"?">
+    %42 = "cute.get_leaves"(%41) : (!cute.int_tuple<"?">) -> !cute.int_tuple<"?">
+    %43 = "cute.get_scalars"(%42) : (!cute.int_tuple<"?">) -> i32
+    %44 = "cuda.cast"(%2) : (i64) -> !cuda.stream
+    %45 = "cuda.launch_cfg.create"(%1, %0, %0, %2, %43, %0, %0, %44) <{maxNumAttrs = 3 : i32}> : (i32, i32, i32, i64, i32, i32, i32, !cuda.stream) -> !cuda.launch_cfg<max_attrs = 3>
+    "cuda.launch_cfg.programmatic_stream_serialization_allowed"(%45, %3) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    "cuda.launch_cfg.cooperative"(%45, %3) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    %46 = "cuda.launch_ex"(%45, %25, %40, %30, %11, %13, %15) <{assume_kernel_attr = #cuda.assume_kernel_attr<true>, callee = @kernels::@kernel_cutlass__convert_kernel_tensorptrf32gmemo15121010i64512i64_tensorptrf8E4M3FNgmemalign16o15121010div16512div16_tensor000o15121011010512112____Float32_Float8E4M3FN_0}> : (!cuda.launch_cfg<max_attrs = 3>, !memref_gmem_f32_, !memref_gmem_f8E4M3FN, !cute.coord_tensor<"(0,0,0)", "((1,512,1),(?,?,?)):((0,1@1,0),(1@0,512@1,1@2))">, i32, i32, i32) -> !cuda.result
+    %47 = "cuda.cast"(%46) : (!cuda.result) -> i32
+    "cuda.return_if_error"(%47) : (i32) -> ()
+    "func.return"(%3) : (i32) -> ()
+  }) {llvm.emit_c_interface} : () -> ()
+}) {gpu.container_module} : () -> ()

@@ -3,6 +3,8 @@
 [INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_stderr.log
 [INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
 [INFO] cute_ir_dump_patch installed.
 
 Running TensorOpGemm test with:
@@ -15,9 +17,9 @@ c: torch.Size([16, 512, 256]), dtype: torch.float16
 
 [DSL INFO] Input Parameters:
 [DSL INFO]   mnkl: (512, 256, 128, 16)
-[DSL INFO]   buffer_a: <__main__.BufferWithLayout object at 0x7fdb0490bb50>
-[DSL INFO]   buffer_b: <__main__.BufferWithLayout object at 0x7fdb0490baf0>
-[DSL INFO]   buffer_c: <__main__.BufferWithLayout object at 0x7fdb0490ba90>
+[DSL INFO]   buffer_a: <__main__.BufferWithLayout object at 0x7f7b88ac77f0>
+[DSL INFO]   buffer_b: <__main__.BufferWithLayout object at 0x7f7b88ac7790>
+[DSL INFO]   buffer_c: <__main__.BufferWithLayout object at 0x7f7b88ac7760>
 [DSL INFO]   acc_dtype: Float32
 [DSL INFO]   atom_layout_mnk: (2, 2, 1)
 
@@ -37,65 +39,68 @@ c: torch.Size([16, 512, 256]), dtype: torch.float16
 
 
 [PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_0_.mlir (3120 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_001_CuteRemoveStaticArgs.mlir (3127 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_002_MaterializeTmaMulticast.mlir (3127 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_003_SoftwarePipelinePass.mlir (3127 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_004_CuteDesugar.mlir (3889 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_005_CuteExpandOps.mlir (5289 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_006_CuteFoldStatic.mlir (2047 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_007_InsertRangeInformation.mlir (2047 lines)
-[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_008_Canonicalizer.mlir (984 lines)
-[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_009_CSE.mlir (848 lines)
-[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_010_LoopInvariantCodeMotion.mlir (848 lines)
-[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_011_LoopStrengthReductionPass.mlir (848 lines)
-[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_012_ConvertVectorToSCF.mlir (848 lines)
-[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_013_ConvertCuteTypesInScfOps.mlir (854 lines)
-[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_014_SCFToControlFlow.mlir (1001 lines)
-[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_015_ArithExpandOpsPass.mlir (1011 lines)
-[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_016_ConvertMathToFuncs.mlir (1011 lines)
-[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_017_GpuLaunchSinkIndexComputations.mlir (1011 lines)
-[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_018_ConvertToLLVMPass.mlir (1669 lines)
-[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_019_ReconcileUnrealizedCasts.mlir (1596 lines)
-[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_020_GpuKernelOutlining.mlir (1596 lines)
-[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_021_SCFToControlFlow.mlir (1596 lines)
-[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_022_ReconcileUnrealizedCasts.mlir (1596 lines)
-[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_023_ConvertToLLVMPass.mlir (1596 lines)
-[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_024_Canonicalizer.mlir (914 lines)
-[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_025_CSE.mlir (881 lines)
-[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_026_ConvertVectorToLLVMPass.mlir (896 lines)
-[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_027_ConvertNVVMToLLVMPass.mlir (902 lines)
-[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_028_CudaComputeTargetPass.mlir (843 lines)
-[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_029_FinalizeMemRefToLLVMConversionPass.mlir (902 lines)
-[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_030_ExpandStridedMetadata.mlir (881 lines)
-[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_031_ArithToLLVMConversionPass.mlir (881 lines)
-[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_032_ConvertFastmathOps.mlir (822 lines)
-[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_033_ConvertGpuOpsToNVVMOps.mlir (822 lines)
-[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_034_StoreGpuLaunchAttribute.mlir (881 lines)
-[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_035_GpuToLLVMConversionPass.mlir (881 lines)
-[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_036_StoreGpuLaunchAttribute.mlir (881 lines)
-[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_037_ConvertMathToLLVMPass.mlir (881 lines)
-[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_038_Canonicalizer.mlir (881 lines)
-[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_039_CSE.mlir (881 lines)
-[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_040_ReconcileUnrealizedCasts.mlir (881 lines)
-[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_041_DIScopeForLLVMFuncOpPass.mlir (881 lines)
-[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_042_CudaToBinaryPass.mlir (67 lines)
-[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_043_ConvertToLLVMPass.mlir (227 lines)
-[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_044_ReconcileUnrealizedCasts.mlir (225 lines)
-[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_045_CudaErrorHandlingPass.mlir (232 lines)
-[DUMP] per-pass IR split -> 45 files
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_0_.mlir (2312 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_001_CuteRemoveStaticArgs.mlir (2319 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_002_MaterializeTmaMulticast.mlir (2319 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_003_SoftwarePipelinePass.mlir (2319 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_004_CuteDesugar.mlir (3113 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_005_CuteExpandOps.mlir (4515 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_006_CuteFoldStatic.mlir (2071 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_007_InsertRangeInformation.mlir (2071 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_008_Canonicalizer.mlir (994 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_009_CSE.mlir (896 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_010_LoopInvariantCodeMotion.mlir (896 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_011_LoopVectorizePass.mlir (896 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_012_EliminateUnnecessarySyncPass.mlir (896 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_013_StrengthReductionPass.mlir (896 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_014_ConvertVectorToSCF.mlir (896 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_015_ConvertCuteTypesInScfOps.mlir (902 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_016_SCFToControlFlow.mlir (989 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_017_ArithExpandOpsPass.mlir (999 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_018_ConvertMathToFuncs.mlir (999 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_019_GpuLaunchSinkIndexComputations.mlir (999 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_020_ConvertToLLVMPass.mlir (1748 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_021_ReconcileUnrealizedCasts.mlir (1675 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_022_GpuKernelOutlining.mlir (1675 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_023_SCFToControlFlow.mlir (1675 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_024_ReconcileUnrealizedCasts.mlir (1675 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_025_ConvertToLLVMPass.mlir (1675 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_026_Canonicalizer.mlir (1000 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_027_CSE.mlir (965 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_028_ConvertVectorToLLVMPass.mlir (974 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_029_ConvertNVVMToLLVMPass.mlir (980 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_030_CudaComputeTargetPass.mlir (837 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_031_FinalizeMemRefToLLVMConversionPass.mlir (980 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_032_ExpandStridedMetadata.mlir (959 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_033_ArithToLLVMConversionPass.mlir (959 lines)
+[DUMP] 034_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_034_ConvertFastmathOps.mlir (816 lines)
+[DUMP] 035_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_035_ConvertGpuOpsToNVVMOps.mlir (816 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_036_StoreGpuLaunchAttribute.mlir (959 lines)
+[DUMP] 037_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_037_GpuToLLVMConversionPass.mlir (959 lines)
+[DUMP] 038_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_038_StoreGpuLaunchAttribute.mlir (959 lines)
+[DUMP] 039_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_039_ConvertMathToLLVMPass.mlir (959 lines)
+[DUMP] 040_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_040_Canonicalizer.mlir (959 lines)
+[DUMP] 041_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_041_CSE.mlir (959 lines)
+[DUMP] 042_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_042_ReconcileUnrealizedCasts.mlir (959 lines)
+[DUMP] 043_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_043_DIScopeForLLVMFuncOpPass.mlir (959 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_044_CudaToBinaryPass.mlir (152 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_045_ConvertToLLVMPass.mlir (322 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_046_ReconcileUnrealizedCasts.mlir (320 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_from_jit/call_from_jit_047_CudaErrorHandlingPass.mlir (327 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 
 [DSL INFO] Results verified successfully!
 First few elements of result: 
-tensor([[[ -0.2661,   3.9668,   5.6016],
-         [ -1.6416,   5.0117,  17.0312],
-         [  6.0820,   6.1211,   3.3320]],
+tensor([[[-1.8740e+00,  2.6953e+01,  3.9746e-01],
+         [-3.7949e+00,  5.8711e+00,  2.0176e+00],
+         [-5.8154e-01,  1.1084e-01, -6.2109e+00]],
 
-        [[  3.8359,   9.1797,  -6.6445],
-         [-12.4375,  12.7266,   2.9707],
-         [ -1.4844,  -6.2734,   6.7930]],
+        [[ 6.7812e+00,  1.6022e-02,  5.1250e+00],
+         [ 7.2412e-01,  3.4961e-01,  2.9734e+01],
+         [ 3.0020e+00, -1.4836e+01,  1.6969e+01]],
 
-        [[ 10.8438,   6.9648,   7.0352],
-         [  4.2539,   8.6484,  11.6250],
-         [ 14.9062,   7.8125,  -0.2366]]], device='cuda:0',
+        [[ 6.2773e+00,  1.1680e+01, -2.8234e+01],
+         [ 2.0801e+00,  2.1641e+01,  1.1180e+01],
+         [ 9.6172e+00,  5.1602e+00, -5.1641e+00]]], device='cuda:0',
        dtype=torch.float16)

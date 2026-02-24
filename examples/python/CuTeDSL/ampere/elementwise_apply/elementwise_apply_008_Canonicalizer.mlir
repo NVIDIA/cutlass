@@ -5,1067 +5,1140 @@
 !memref_gmem_f32_4 = !cute.memref<f32, gmem, align<16>, "(4096,4096):(4096,1)">
 !memref_gmem_f32_5 = !cute.memref<f32, gmem, align<16>, "(?,?):(?{i64},1)">
 !memref_rmem_i8_ = !cute.memref<i8, rmem, align<32>, "((4,16)):((1,4))">
-module attributes {gpu.container_module} {
-  gpu.module @kernels {
-    cuda.kernel @kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0(%arg0: !memref_gmem_f32_, %arg1: !memref_gmem_f32_, %arg2: !memref_gmem_f32_1, %arg3: !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, %arg4: i32, %arg5: i32) attributes {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} {
-      %0 = cute.static : !cute.coord<"63">
-      %1 = cute.static : !cute.int_tuple<"(15,3)">
-      %2 = cute.static : !cute.coord<"62">
-      %3 = cute.static : !cute.int_tuple<"(15,2)">
-      %4 = cute.static : !cute.coord<"61">
-      %5 = cute.static : !cute.int_tuple<"(15,1)">
-      %6 = cute.static : !cute.coord<"60">
-      %7 = cute.static : !cute.int_tuple<"(15,0)">
-      %8 = cute.static : !cute.coord<"59">
-      %9 = cute.static : !cute.int_tuple<"(14,3)">
-      %10 = cute.static : !cute.coord<"58">
-      %11 = cute.static : !cute.int_tuple<"(14,2)">
-      %12 = cute.static : !cute.coord<"57">
-      %13 = cute.static : !cute.int_tuple<"(14,1)">
-      %14 = cute.static : !cute.coord<"56">
-      %15 = cute.static : !cute.int_tuple<"(14,0)">
-      %16 = cute.static : !cute.coord<"55">
-      %17 = cute.static : !cute.int_tuple<"(13,3)">
-      %18 = cute.static : !cute.coord<"54">
-      %19 = cute.static : !cute.int_tuple<"(13,2)">
-      %20 = cute.static : !cute.coord<"53">
-      %21 = cute.static : !cute.int_tuple<"(13,1)">
-      %22 = cute.static : !cute.coord<"52">
-      %23 = cute.static : !cute.int_tuple<"(13,0)">
-      %24 = cute.static : !cute.coord<"51">
-      %25 = cute.static : !cute.int_tuple<"(12,3)">
-      %26 = cute.static : !cute.coord<"50">
-      %27 = cute.static : !cute.int_tuple<"(12,2)">
-      %28 = cute.static : !cute.coord<"49">
-      %29 = cute.static : !cute.int_tuple<"(12,1)">
-      %30 = cute.static : !cute.coord<"48">
-      %31 = cute.static : !cute.int_tuple<"(12,0)">
-      %32 = cute.static : !cute.coord<"47">
-      %33 = cute.static : !cute.int_tuple<"(11,3)">
-      %34 = cute.static : !cute.coord<"46">
-      %35 = cute.static : !cute.int_tuple<"(11,2)">
-      %36 = cute.static : !cute.coord<"45">
-      %37 = cute.static : !cute.int_tuple<"(11,1)">
-      %38 = cute.static : !cute.coord<"44">
-      %39 = cute.static : !cute.int_tuple<"(11,0)">
-      %40 = cute.static : !cute.coord<"43">
-      %41 = cute.static : !cute.int_tuple<"(10,3)">
-      %42 = cute.static : !cute.coord<"42">
-      %43 = cute.static : !cute.int_tuple<"(10,2)">
-      %44 = cute.static : !cute.coord<"41">
-      %45 = cute.static : !cute.int_tuple<"(10,1)">
-      %46 = cute.static : !cute.coord<"40">
-      %47 = cute.static : !cute.int_tuple<"(10,0)">
-      %48 = cute.static : !cute.coord<"39">
-      %49 = cute.static : !cute.int_tuple<"(9,3)">
-      %50 = cute.static : !cute.coord<"38">
-      %51 = cute.static : !cute.int_tuple<"(9,2)">
-      %52 = cute.static : !cute.coord<"37">
-      %53 = cute.static : !cute.int_tuple<"(9,1)">
-      %54 = cute.static : !cute.coord<"36">
-      %55 = cute.static : !cute.int_tuple<"(9,0)">
-      %56 = cute.static : !cute.coord<"35">
-      %57 = cute.static : !cute.int_tuple<"(8,3)">
-      %58 = cute.static : !cute.coord<"34">
-      %59 = cute.static : !cute.int_tuple<"(8,2)">
-      %60 = cute.static : !cute.coord<"33">
-      %61 = cute.static : !cute.int_tuple<"(8,1)">
-      %62 = cute.static : !cute.coord<"32">
-      %63 = cute.static : !cute.int_tuple<"(8,0)">
-      %64 = cute.static : !cute.coord<"31">
-      %65 = cute.static : !cute.int_tuple<"(7,3)">
-      %66 = cute.static : !cute.coord<"30">
-      %67 = cute.static : !cute.int_tuple<"(7,2)">
-      %68 = cute.static : !cute.coord<"29">
-      %69 = cute.static : !cute.int_tuple<"(7,1)">
-      %70 = cute.static : !cute.coord<"28">
-      %71 = cute.static : !cute.int_tuple<"(7,0)">
-      %72 = cute.static : !cute.coord<"27">
-      %73 = cute.static : !cute.int_tuple<"(6,3)">
-      %74 = cute.static : !cute.coord<"26">
-      %75 = cute.static : !cute.int_tuple<"(6,2)">
-      %76 = cute.static : !cute.coord<"25">
-      %77 = cute.static : !cute.int_tuple<"(6,1)">
-      %78 = cute.static : !cute.coord<"24">
-      %79 = cute.static : !cute.int_tuple<"(6,0)">
-      %80 = cute.static : !cute.coord<"23">
-      %81 = cute.static : !cute.int_tuple<"(5,3)">
-      %82 = cute.static : !cute.coord<"22">
-      %83 = cute.static : !cute.int_tuple<"(5,2)">
-      %84 = cute.static : !cute.coord<"21">
-      %85 = cute.static : !cute.int_tuple<"(5,1)">
-      %86 = cute.static : !cute.coord<"20">
-      %87 = cute.static : !cute.int_tuple<"(5,0)">
-      %88 = cute.static : !cute.coord<"19">
-      %89 = cute.static : !cute.int_tuple<"(4,3)">
-      %90 = cute.static : !cute.coord<"18">
-      %91 = cute.static : !cute.int_tuple<"(4,2)">
-      %92 = cute.static : !cute.coord<"17">
-      %93 = cute.static : !cute.int_tuple<"(4,1)">
-      %94 = cute.static : !cute.coord<"16">
-      %95 = cute.static : !cute.int_tuple<"(4,0)">
-      %96 = cute.static : !cute.coord<"15">
-      %97 = cute.static : !cute.int_tuple<"(3,3)">
-      %98 = cute.static : !cute.coord<"14">
-      %99 = cute.static : !cute.int_tuple<"(3,2)">
-      %100 = cute.static : !cute.coord<"13">
-      %101 = cute.static : !cute.int_tuple<"(3,1)">
-      %102 = cute.static : !cute.coord<"12">
-      %103 = cute.static : !cute.int_tuple<"(3,0)">
-      %104 = cute.static : !cute.coord<"11">
-      %105 = cute.static : !cute.int_tuple<"(2,3)">
-      %106 = cute.static : !cute.coord<"10">
-      %107 = cute.static : !cute.int_tuple<"(2,2)">
-      %108 = cute.static : !cute.coord<"9">
-      %109 = cute.static : !cute.int_tuple<"(2,1)">
-      %110 = cute.static : !cute.coord<"8">
-      %111 = cute.static : !cute.int_tuple<"(2,0)">
-      %112 = cute.static : !cute.coord<"7">
-      %113 = cute.static : !cute.int_tuple<"(1,3)">
-      %114 = cute.static : !cute.coord<"6">
-      %115 = cute.static : !cute.int_tuple<"(1,2)">
-      %116 = cute.static : !cute.coord<"5">
-      %117 = cute.static : !cute.int_tuple<"(1,1)">
-      %118 = cute.static : !cute.coord<"4">
-      %119 = cute.static : !cute.int_tuple<"(1,0)">
-      %120 = cute.static : !cute.coord<"3">
-      %121 = cute.static : !cute.int_tuple<"(0,3)">
-      %122 = cute.static : !cute.coord<"2">
-      %123 = cute.static : !cute.int_tuple<"(0,2)">
-      %124 = cute.static : !cute.int_tuple<"(0,1)">
-      %125 = cute.static : !cute.coord<"0">
-      %126 = cute.static : !cute.layout<"((64,4),(4,16)):((4@1,16@0),(1@1,1@0))">
-      %127 = cute.static : !cute.shape<"((4,16))">
-      %128 = cute.static : !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">
-      %129 = cute.static : !cute.coord<"1">
-      %130 = cute.static : !cute.shape<"((64,4),(4,16))">
-      %c16_i64 = arith.constant 16 : i64
-      %131 = cute.static : !cute.int_tuple<"(0,0)">
-      %132 = cute.static : !cute.shape<"(64,256)">
-      %133 = cute.static : !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">
-      %134 = nvvm.read.ptx.sreg.tid.x range <i32, 0, 1024> : i32
-      %135 = nvvm.read.ptx.sreg.ctaid.x range <i32, 0, 2147483647> : i32
-      %136 = nvvm.read.ptx.sreg.ctaid.y range <i32, 0, 65535> : i32
-      %coord = cute.make_coord(%135, %136) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
-      %idx = cute.crd2idx(%coord, %133) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">) -> !cute.int_tuple<"?{div=256}">
-      %iter = cute.get_iter(%arg0) : !memref_gmem_f32_
-      %ptr = cute.add_offset(%iter, %idx) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=256}">) -> !cute.ptr<f32, gmem, align<16>>
-      %coord_0 = cute.make_coord(%135, %136) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
-      %idx_1 = cute.crd2idx(%coord_0, %133) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">) -> !cute.int_tuple<"?{div=256}">
-      %iter_2 = cute.get_iter(%arg1) : !memref_gmem_f32_
-      %ptr_3 = cute.add_offset(%iter_2, %idx_1) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=256}">) -> !cute.ptr<f32, gmem, align<16>>
-      %coord_4 = cute.make_coord(%135, %136) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
-      %lay = cute.get_layout(%arg2) : !memref_gmem_f32_1
-      %137:9 = cute.get_scalars(%lay) <{only_dynamic}> : !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
-      %stride = cute.make_stride(%137#4) : (i64) -> !cute.stride<"(?{i64},1)">
-      %lay_5 = cute.make_layout(%132, %stride) : !cute.layout<"(64,256):(?{i64},1)">
-      %idx_6 = cute.crd2idx(%coord_4, %lay) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !cute.int_tuple<"?{i64 div=64}">
-      %iter_7 = cute.get_iter(%arg2) : !memref_gmem_f32_1
-      %ptr_8 = cute.add_offset(%iter_7, %idx_6) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<f32, gmem, align<16>>
-      %coord_9 = cute.make_coord(%135, %136) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
-      %lay_10 = cute.get_layout(%arg3) : !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
-      %idx_11 = cute.crd2idx(%coord_9, %lay_10) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">) -> !cute.int_tuple<"(?{div=64},?{div=256})">
-      %tup = cute.add_offset(%131, %idx_11) : (!cute.int_tuple<"(0,0)">, !cute.int_tuple<"(?{div=64},?{div=256})">) -> !cute.int_tuple<"(?{div=64},?{div=256})">
-      %138 = cute.get_scalars(%lay_5) <{only_dynamic}> : !cute.layout<"(64,256):(?{i64},1)">
-      %139 = arith.muli %138, %c16_i64 : i64
-      %iv = cute.assume(%139) : (i64) -> !cute.i64<divby 16>
-      %stride_12 = cute.make_stride(%iv, %138) : (!cute.i64<divby 16>, i64) -> !cute.stride<"((4,?{i64 div=16}),(1,?{i64}))">
-      %lay_13 = cute.make_layout(%130, %stride_12) : !cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">
-      %coord_14 = cute.make_coord(%134) : (i32) -> !cute.coord<"(?,_)">
-      %idx_15 = cute.crd2idx(%coord_14, %128) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_16 = cute.add_offset(%ptr, %idx_15) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem, align<16>>
-      %view = cute.make_view(%ptr_16) : !memref_gmem_f32_2
-      %coord_17 = cute.make_coord(%134) : (i32) -> !cute.coord<"(?,_)">
-      %idx_18 = cute.crd2idx(%coord_17, %128) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">) -> !cute.int_tuple<"?{div=4}">
-      %ptr_19 = cute.add_offset(%ptr_3, %idx_18) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem, align<16>>
-      %view_20 = cute.make_view(%ptr_19) : !memref_gmem_f32_2
-      %coord_21 = cute.make_coord(%134) : (i32) -> !cute.coord<"(?,_)">
-      %140:2 = cute.get_scalars(%lay_13) <{only_dynamic}> : !cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">
-      %stride_22 = cute.make_stride(%140#1) : (i64) -> !cute.stride<"((1,?{i64}))">
-      %lay_23 = cute.make_layout(%127, %stride_22) : !cute.layout<"((4,16)):((1,?{i64}))">
-      %idx_24 = cute.crd2idx(%coord_21, %lay_13) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">) -> !cute.int_tuple<"?{i64 div=4}">
-      %ptr_25 = cute.add_offset(%ptr_8, %idx_24) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{i64 div=4}">) -> !cute.ptr<f32, gmem, align<16>>
-      %view_26 = cute.make_view(%ptr_25, %lay_23) : !memref_gmem_f32_3
-      %coord_27 = cute.make_coord(%134) : (i32) -> !cute.coord<"(?,_)">
-      %idx_28 = cute.crd2idx(%coord_27, %126) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4@1,16@0),(1@1,1@0))">) -> !cute.int_tuple<"(?{div=16},?{div=4})">
-      %tup_29 = cute.add_offset(%tup, %idx_28) : (!cute.int_tuple<"(?{div=64},?{div=256})">, !cute.int_tuple<"(?{div=16},?{div=4})">) -> !cute.int_tuple<"(?{div=16},?{div=4})">
-      %rmem = cute.memref.alloca() : !memref_rmem_i8_
-      %e0, %e1 = cute.get_leaves(%tup_29) : !cute.int_tuple<"(?{div=16},?{div=4})">
-      %coord_30 = cute.make_coord(%e0, %e1) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=16},?{div=4})">
-      %coord_31 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %141:2 = cute.get_scalars(%coord_30) : !cute.coord<"(?{div=16},?{div=4})">
-      %142:2 = cute.get_scalars(%coord_31) : !cute.coord<"(?,?)">
-      %143 = arith.cmpi slt, %141#0, %142#0 : i32
-      %144 = arith.cmpi slt, %141#1, %142#1 : i32
-      %145 = arith.andi %143, %144 : i1
-      %146 = arith.extui %145 : i1 to i8
-      cute.memref.store(%rmem, %125, %146) : (!memref_rmem_i8_, !cute.coord<"0">, i8) -> ()
-      %tup_32 = cute.add_offset(%tup_29, %124) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,1)">) -> !cute.int_tuple<"(?{div=16},?)">
-      %e0_33, %e1_34 = cute.get_leaves(%tup_32) : !cute.int_tuple<"(?{div=16},?)">
-      %coord_35 = cute.make_coord(%e0_33, %e1_34) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=16},?)">
-      %coord_36 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %147:2 = cute.get_scalars(%coord_35) : !cute.coord<"(?{div=16},?)">
-      %148:2 = cute.get_scalars(%coord_36) : !cute.coord<"(?,?)">
-      %149 = arith.cmpi slt, %147#0, %148#0 : i32
-      %150 = arith.cmpi slt, %147#1, %148#1 : i32
-      %151 = arith.andi %149, %150 : i1
-      %152 = arith.extui %151 : i1 to i8
-      cute.memref.store(%rmem, %129, %152) : (!memref_rmem_i8_, !cute.coord<"1">, i8) -> ()
-      %tup_37 = cute.add_offset(%tup_29, %123) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,2)">) -> !cute.int_tuple<"(?{div=16},?{div=2})">
-      %e0_38, %e1_39 = cute.get_leaves(%tup_37) : !cute.int_tuple<"(?{div=16},?{div=2})">
-      %coord_40 = cute.make_coord(%e0_38, %e1_39) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=16},?{div=2})">
-      %coord_41 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %153:2 = cute.get_scalars(%coord_40) : !cute.coord<"(?{div=16},?{div=2})">
-      %154:2 = cute.get_scalars(%coord_41) : !cute.coord<"(?,?)">
-      %155 = arith.cmpi slt, %153#0, %154#0 : i32
-      %156 = arith.cmpi slt, %153#1, %154#1 : i32
-      %157 = arith.andi %155, %156 : i1
-      %158 = arith.extui %157 : i1 to i8
-      cute.memref.store(%rmem, %122, %158) : (!memref_rmem_i8_, !cute.coord<"2">, i8) -> ()
-      %tup_42 = cute.add_offset(%tup_29, %121) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,3)">) -> !cute.int_tuple<"(?{div=16},?)">
-      %e0_43, %e1_44 = cute.get_leaves(%tup_42) : !cute.int_tuple<"(?{div=16},?)">
-      %coord_45 = cute.make_coord(%e0_43, %e1_44) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=16},?)">
-      %coord_46 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %159:2 = cute.get_scalars(%coord_45) : !cute.coord<"(?{div=16},?)">
-      %160:2 = cute.get_scalars(%coord_46) : !cute.coord<"(?,?)">
-      %161 = arith.cmpi slt, %159#0, %160#0 : i32
-      %162 = arith.cmpi slt, %159#1, %160#1 : i32
-      %163 = arith.andi %161, %162 : i1
-      %164 = arith.extui %163 : i1 to i8
-      cute.memref.store(%rmem, %120, %164) : (!memref_rmem_i8_, !cute.coord<"3">, i8) -> ()
-      %tup_47 = cute.add_offset(%tup_29, %119) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_48, %e1_49 = cute.get_leaves(%tup_47) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_50 = cute.make_coord(%e0_48, %e1_49) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_51 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %165:2 = cute.get_scalars(%coord_50) : !cute.coord<"(?,?{div=4})">
-      %166:2 = cute.get_scalars(%coord_51) : !cute.coord<"(?,?)">
-      %167 = arith.cmpi slt, %165#0, %166#0 : i32
-      %168 = arith.cmpi slt, %165#1, %166#1 : i32
-      %169 = arith.andi %167, %168 : i1
-      %170 = arith.extui %169 : i1 to i8
-      cute.memref.store(%rmem, %118, %170) : (!memref_rmem_i8_, !cute.coord<"4">, i8) -> ()
-      %tup_52 = cute.add_offset(%tup_29, %117) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_53, %e1_54 = cute.get_leaves(%tup_52) : !cute.int_tuple<"(?,?)">
-      %coord_55 = cute.make_coord(%e0_53, %e1_54) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_56 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %171:2 = cute.get_scalars(%coord_55) : !cute.coord<"(?,?)">
-      %172:2 = cute.get_scalars(%coord_56) : !cute.coord<"(?,?)">
-      %173 = arith.cmpi slt, %171#0, %172#0 : i32
-      %174 = arith.cmpi slt, %171#1, %172#1 : i32
-      %175 = arith.andi %173, %174 : i1
-      %176 = arith.extui %175 : i1 to i8
-      cute.memref.store(%rmem, %116, %176) : (!memref_rmem_i8_, !cute.coord<"5">, i8) -> ()
-      %tup_57 = cute.add_offset(%tup_29, %115) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_58, %e1_59 = cute.get_leaves(%tup_57) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_60 = cute.make_coord(%e0_58, %e1_59) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_61 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %177:2 = cute.get_scalars(%coord_60) : !cute.coord<"(?,?{div=2})">
-      %178:2 = cute.get_scalars(%coord_61) : !cute.coord<"(?,?)">
-      %179 = arith.cmpi slt, %177#0, %178#0 : i32
-      %180 = arith.cmpi slt, %177#1, %178#1 : i32
-      %181 = arith.andi %179, %180 : i1
-      %182 = arith.extui %181 : i1 to i8
-      cute.memref.store(%rmem, %114, %182) : (!memref_rmem_i8_, !cute.coord<"6">, i8) -> ()
-      %tup_62 = cute.add_offset(%tup_29, %113) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_63, %e1_64 = cute.get_leaves(%tup_62) : !cute.int_tuple<"(?,?)">
-      %coord_65 = cute.make_coord(%e0_63, %e1_64) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_66 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %183:2 = cute.get_scalars(%coord_65) : !cute.coord<"(?,?)">
-      %184:2 = cute.get_scalars(%coord_66) : !cute.coord<"(?,?)">
-      %185 = arith.cmpi slt, %183#0, %184#0 : i32
-      %186 = arith.cmpi slt, %183#1, %184#1 : i32
-      %187 = arith.andi %185, %186 : i1
-      %188 = arith.extui %187 : i1 to i8
-      cute.memref.store(%rmem, %112, %188) : (!memref_rmem_i8_, !cute.coord<"7">, i8) -> ()
-      %tup_67 = cute.add_offset(%tup_29, %111) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,0)">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
-      %e0_68, %e1_69 = cute.get_leaves(%tup_67) : !cute.int_tuple<"(?{div=2},?{div=4})">
-      %coord_70 = cute.make_coord(%e0_68, %e1_69) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
-      %coord_71 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %189:2 = cute.get_scalars(%coord_70) : !cute.coord<"(?{div=2},?{div=4})">
-      %190:2 = cute.get_scalars(%coord_71) : !cute.coord<"(?,?)">
-      %191 = arith.cmpi slt, %189#0, %190#0 : i32
-      %192 = arith.cmpi slt, %189#1, %190#1 : i32
-      %193 = arith.andi %191, %192 : i1
-      %194 = arith.extui %193 : i1 to i8
-      cute.memref.store(%rmem, %110, %194) : (!memref_rmem_i8_, !cute.coord<"8">, i8) -> ()
-      %tup_72 = cute.add_offset(%tup_29, %109) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,1)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_73, %e1_74 = cute.get_leaves(%tup_72) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_75 = cute.make_coord(%e0_73, %e1_74) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_76 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %195:2 = cute.get_scalars(%coord_75) : !cute.coord<"(?{div=2},?)">
-      %196:2 = cute.get_scalars(%coord_76) : !cute.coord<"(?,?)">
-      %197 = arith.cmpi slt, %195#0, %196#0 : i32
-      %198 = arith.cmpi slt, %195#1, %196#1 : i32
-      %199 = arith.andi %197, %198 : i1
-      %200 = arith.extui %199 : i1 to i8
-      cute.memref.store(%rmem, %108, %200) : (!memref_rmem_i8_, !cute.coord<"9">, i8) -> ()
-      %tup_77 = cute.add_offset(%tup_29, %107) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,2)">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
-      %e0_78, %e1_79 = cute.get_leaves(%tup_77) : !cute.int_tuple<"(?{div=2},?{div=2})">
-      %coord_80 = cute.make_coord(%e0_78, %e1_79) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
-      %coord_81 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %201:2 = cute.get_scalars(%coord_80) : !cute.coord<"(?{div=2},?{div=2})">
-      %202:2 = cute.get_scalars(%coord_81) : !cute.coord<"(?,?)">
-      %203 = arith.cmpi slt, %201#0, %202#0 : i32
-      %204 = arith.cmpi slt, %201#1, %202#1 : i32
-      %205 = arith.andi %203, %204 : i1
-      %206 = arith.extui %205 : i1 to i8
-      cute.memref.store(%rmem, %106, %206) : (!memref_rmem_i8_, !cute.coord<"10">, i8) -> ()
-      %tup_82 = cute.add_offset(%tup_29, %105) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,3)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_83, %e1_84 = cute.get_leaves(%tup_82) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_85 = cute.make_coord(%e0_83, %e1_84) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_86 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %207:2 = cute.get_scalars(%coord_85) : !cute.coord<"(?{div=2},?)">
-      %208:2 = cute.get_scalars(%coord_86) : !cute.coord<"(?,?)">
-      %209 = arith.cmpi slt, %207#0, %208#0 : i32
-      %210 = arith.cmpi slt, %207#1, %208#1 : i32
-      %211 = arith.andi %209, %210 : i1
-      %212 = arith.extui %211 : i1 to i8
-      cute.memref.store(%rmem, %104, %212) : (!memref_rmem_i8_, !cute.coord<"11">, i8) -> ()
-      %tup_87 = cute.add_offset(%tup_29, %103) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_88, %e1_89 = cute.get_leaves(%tup_87) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_90 = cute.make_coord(%e0_88, %e1_89) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_91 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %213:2 = cute.get_scalars(%coord_90) : !cute.coord<"(?,?{div=4})">
-      %214:2 = cute.get_scalars(%coord_91) : !cute.coord<"(?,?)">
-      %215 = arith.cmpi slt, %213#0, %214#0 : i32
-      %216 = arith.cmpi slt, %213#1, %214#1 : i32
-      %217 = arith.andi %215, %216 : i1
-      %218 = arith.extui %217 : i1 to i8
-      cute.memref.store(%rmem, %102, %218) : (!memref_rmem_i8_, !cute.coord<"12">, i8) -> ()
-      %tup_92 = cute.add_offset(%tup_29, %101) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_93, %e1_94 = cute.get_leaves(%tup_92) : !cute.int_tuple<"(?,?)">
-      %coord_95 = cute.make_coord(%e0_93, %e1_94) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_96 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %219:2 = cute.get_scalars(%coord_95) : !cute.coord<"(?,?)">
-      %220:2 = cute.get_scalars(%coord_96) : !cute.coord<"(?,?)">
-      %221 = arith.cmpi slt, %219#0, %220#0 : i32
-      %222 = arith.cmpi slt, %219#1, %220#1 : i32
-      %223 = arith.andi %221, %222 : i1
-      %224 = arith.extui %223 : i1 to i8
-      cute.memref.store(%rmem, %100, %224) : (!memref_rmem_i8_, !cute.coord<"13">, i8) -> ()
-      %tup_97 = cute.add_offset(%tup_29, %99) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_98, %e1_99 = cute.get_leaves(%tup_97) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_100 = cute.make_coord(%e0_98, %e1_99) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_101 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %225:2 = cute.get_scalars(%coord_100) : !cute.coord<"(?,?{div=2})">
-      %226:2 = cute.get_scalars(%coord_101) : !cute.coord<"(?,?)">
-      %227 = arith.cmpi slt, %225#0, %226#0 : i32
-      %228 = arith.cmpi slt, %225#1, %226#1 : i32
-      %229 = arith.andi %227, %228 : i1
-      %230 = arith.extui %229 : i1 to i8
-      cute.memref.store(%rmem, %98, %230) : (!memref_rmem_i8_, !cute.coord<"14">, i8) -> ()
-      %tup_102 = cute.add_offset(%tup_29, %97) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_103, %e1_104 = cute.get_leaves(%tup_102) : !cute.int_tuple<"(?,?)">
-      %coord_105 = cute.make_coord(%e0_103, %e1_104) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_106 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %231:2 = cute.get_scalars(%coord_105) : !cute.coord<"(?,?)">
-      %232:2 = cute.get_scalars(%coord_106) : !cute.coord<"(?,?)">
-      %233 = arith.cmpi slt, %231#0, %232#0 : i32
-      %234 = arith.cmpi slt, %231#1, %232#1 : i32
-      %235 = arith.andi %233, %234 : i1
-      %236 = arith.extui %235 : i1 to i8
-      cute.memref.store(%rmem, %96, %236) : (!memref_rmem_i8_, !cute.coord<"15">, i8) -> ()
-      %tup_107 = cute.add_offset(%tup_29, %95) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,0)">) -> !cute.int_tuple<"(?{div=4},?{div=4})">
-      %e0_108, %e1_109 = cute.get_leaves(%tup_107) : !cute.int_tuple<"(?{div=4},?{div=4})">
-      %coord_110 = cute.make_coord(%e0_108, %e1_109) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=4},?{div=4})">
-      %coord_111 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %237:2 = cute.get_scalars(%coord_110) : !cute.coord<"(?{div=4},?{div=4})">
-      %238:2 = cute.get_scalars(%coord_111) : !cute.coord<"(?,?)">
-      %239 = arith.cmpi slt, %237#0, %238#0 : i32
-      %240 = arith.cmpi slt, %237#1, %238#1 : i32
-      %241 = arith.andi %239, %240 : i1
-      %242 = arith.extui %241 : i1 to i8
-      cute.memref.store(%rmem, %94, %242) : (!memref_rmem_i8_, !cute.coord<"16">, i8) -> ()
-      %tup_112 = cute.add_offset(%tup_29, %93) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,1)">) -> !cute.int_tuple<"(?{div=4},?)">
-      %e0_113, %e1_114 = cute.get_leaves(%tup_112) : !cute.int_tuple<"(?{div=4},?)">
-      %coord_115 = cute.make_coord(%e0_113, %e1_114) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
-      %coord_116 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %243:2 = cute.get_scalars(%coord_115) : !cute.coord<"(?{div=4},?)">
-      %244:2 = cute.get_scalars(%coord_116) : !cute.coord<"(?,?)">
-      %245 = arith.cmpi slt, %243#0, %244#0 : i32
-      %246 = arith.cmpi slt, %243#1, %244#1 : i32
-      %247 = arith.andi %245, %246 : i1
-      %248 = arith.extui %247 : i1 to i8
-      cute.memref.store(%rmem, %92, %248) : (!memref_rmem_i8_, !cute.coord<"17">, i8) -> ()
-      %tup_117 = cute.add_offset(%tup_29, %91) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,2)">) -> !cute.int_tuple<"(?{div=4},?{div=2})">
-      %e0_118, %e1_119 = cute.get_leaves(%tup_117) : !cute.int_tuple<"(?{div=4},?{div=2})">
-      %coord_120 = cute.make_coord(%e0_118, %e1_119) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=4},?{div=2})">
-      %coord_121 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %249:2 = cute.get_scalars(%coord_120) : !cute.coord<"(?{div=4},?{div=2})">
-      %250:2 = cute.get_scalars(%coord_121) : !cute.coord<"(?,?)">
-      %251 = arith.cmpi slt, %249#0, %250#0 : i32
-      %252 = arith.cmpi slt, %249#1, %250#1 : i32
-      %253 = arith.andi %251, %252 : i1
-      %254 = arith.extui %253 : i1 to i8
-      cute.memref.store(%rmem, %90, %254) : (!memref_rmem_i8_, !cute.coord<"18">, i8) -> ()
-      %tup_122 = cute.add_offset(%tup_29, %89) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,3)">) -> !cute.int_tuple<"(?{div=4},?)">
-      %e0_123, %e1_124 = cute.get_leaves(%tup_122) : !cute.int_tuple<"(?{div=4},?)">
-      %coord_125 = cute.make_coord(%e0_123, %e1_124) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
-      %coord_126 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %255:2 = cute.get_scalars(%coord_125) : !cute.coord<"(?{div=4},?)">
-      %256:2 = cute.get_scalars(%coord_126) : !cute.coord<"(?,?)">
-      %257 = arith.cmpi slt, %255#0, %256#0 : i32
-      %258 = arith.cmpi slt, %255#1, %256#1 : i32
-      %259 = arith.andi %257, %258 : i1
-      %260 = arith.extui %259 : i1 to i8
-      cute.memref.store(%rmem, %88, %260) : (!memref_rmem_i8_, !cute.coord<"19">, i8) -> ()
-      %tup_127 = cute.add_offset(%tup_29, %87) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_128, %e1_129 = cute.get_leaves(%tup_127) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_130 = cute.make_coord(%e0_128, %e1_129) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_131 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %261:2 = cute.get_scalars(%coord_130) : !cute.coord<"(?,?{div=4})">
-      %262:2 = cute.get_scalars(%coord_131) : !cute.coord<"(?,?)">
-      %263 = arith.cmpi slt, %261#0, %262#0 : i32
-      %264 = arith.cmpi slt, %261#1, %262#1 : i32
-      %265 = arith.andi %263, %264 : i1
-      %266 = arith.extui %265 : i1 to i8
-      cute.memref.store(%rmem, %86, %266) : (!memref_rmem_i8_, !cute.coord<"20">, i8) -> ()
-      %tup_132 = cute.add_offset(%tup_29, %85) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_133, %e1_134 = cute.get_leaves(%tup_132) : !cute.int_tuple<"(?,?)">
-      %coord_135 = cute.make_coord(%e0_133, %e1_134) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_136 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %267:2 = cute.get_scalars(%coord_135) : !cute.coord<"(?,?)">
-      %268:2 = cute.get_scalars(%coord_136) : !cute.coord<"(?,?)">
-      %269 = arith.cmpi slt, %267#0, %268#0 : i32
-      %270 = arith.cmpi slt, %267#1, %268#1 : i32
-      %271 = arith.andi %269, %270 : i1
-      %272 = arith.extui %271 : i1 to i8
-      cute.memref.store(%rmem, %84, %272) : (!memref_rmem_i8_, !cute.coord<"21">, i8) -> ()
-      %tup_137 = cute.add_offset(%tup_29, %83) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_138, %e1_139 = cute.get_leaves(%tup_137) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_140 = cute.make_coord(%e0_138, %e1_139) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_141 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %273:2 = cute.get_scalars(%coord_140) : !cute.coord<"(?,?{div=2})">
-      %274:2 = cute.get_scalars(%coord_141) : !cute.coord<"(?,?)">
-      %275 = arith.cmpi slt, %273#0, %274#0 : i32
-      %276 = arith.cmpi slt, %273#1, %274#1 : i32
-      %277 = arith.andi %275, %276 : i1
-      %278 = arith.extui %277 : i1 to i8
-      cute.memref.store(%rmem, %82, %278) : (!memref_rmem_i8_, !cute.coord<"22">, i8) -> ()
-      %tup_142 = cute.add_offset(%tup_29, %81) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_143, %e1_144 = cute.get_leaves(%tup_142) : !cute.int_tuple<"(?,?)">
-      %coord_145 = cute.make_coord(%e0_143, %e1_144) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_146 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %279:2 = cute.get_scalars(%coord_145) : !cute.coord<"(?,?)">
-      %280:2 = cute.get_scalars(%coord_146) : !cute.coord<"(?,?)">
-      %281 = arith.cmpi slt, %279#0, %280#0 : i32
-      %282 = arith.cmpi slt, %279#1, %280#1 : i32
-      %283 = arith.andi %281, %282 : i1
-      %284 = arith.extui %283 : i1 to i8
-      cute.memref.store(%rmem, %80, %284) : (!memref_rmem_i8_, !cute.coord<"23">, i8) -> ()
-      %tup_147 = cute.add_offset(%tup_29, %79) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,0)">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
-      %e0_148, %e1_149 = cute.get_leaves(%tup_147) : !cute.int_tuple<"(?{div=2},?{div=4})">
-      %coord_150 = cute.make_coord(%e0_148, %e1_149) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
-      %coord_151 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %285:2 = cute.get_scalars(%coord_150) : !cute.coord<"(?{div=2},?{div=4})">
-      %286:2 = cute.get_scalars(%coord_151) : !cute.coord<"(?,?)">
-      %287 = arith.cmpi slt, %285#0, %286#0 : i32
-      %288 = arith.cmpi slt, %285#1, %286#1 : i32
-      %289 = arith.andi %287, %288 : i1
-      %290 = arith.extui %289 : i1 to i8
-      cute.memref.store(%rmem, %78, %290) : (!memref_rmem_i8_, !cute.coord<"24">, i8) -> ()
-      %tup_152 = cute.add_offset(%tup_29, %77) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,1)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_153, %e1_154 = cute.get_leaves(%tup_152) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_155 = cute.make_coord(%e0_153, %e1_154) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_156 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %291:2 = cute.get_scalars(%coord_155) : !cute.coord<"(?{div=2},?)">
-      %292:2 = cute.get_scalars(%coord_156) : !cute.coord<"(?,?)">
-      %293 = arith.cmpi slt, %291#0, %292#0 : i32
-      %294 = arith.cmpi slt, %291#1, %292#1 : i32
-      %295 = arith.andi %293, %294 : i1
-      %296 = arith.extui %295 : i1 to i8
-      cute.memref.store(%rmem, %76, %296) : (!memref_rmem_i8_, !cute.coord<"25">, i8) -> ()
-      %tup_157 = cute.add_offset(%tup_29, %75) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,2)">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
-      %e0_158, %e1_159 = cute.get_leaves(%tup_157) : !cute.int_tuple<"(?{div=2},?{div=2})">
-      %coord_160 = cute.make_coord(%e0_158, %e1_159) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
-      %coord_161 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %297:2 = cute.get_scalars(%coord_160) : !cute.coord<"(?{div=2},?{div=2})">
-      %298:2 = cute.get_scalars(%coord_161) : !cute.coord<"(?,?)">
-      %299 = arith.cmpi slt, %297#0, %298#0 : i32
-      %300 = arith.cmpi slt, %297#1, %298#1 : i32
-      %301 = arith.andi %299, %300 : i1
-      %302 = arith.extui %301 : i1 to i8
-      cute.memref.store(%rmem, %74, %302) : (!memref_rmem_i8_, !cute.coord<"26">, i8) -> ()
-      %tup_162 = cute.add_offset(%tup_29, %73) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,3)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_163, %e1_164 = cute.get_leaves(%tup_162) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_165 = cute.make_coord(%e0_163, %e1_164) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_166 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %303:2 = cute.get_scalars(%coord_165) : !cute.coord<"(?{div=2},?)">
-      %304:2 = cute.get_scalars(%coord_166) : !cute.coord<"(?,?)">
-      %305 = arith.cmpi slt, %303#0, %304#0 : i32
-      %306 = arith.cmpi slt, %303#1, %304#1 : i32
-      %307 = arith.andi %305, %306 : i1
-      %308 = arith.extui %307 : i1 to i8
-      cute.memref.store(%rmem, %72, %308) : (!memref_rmem_i8_, !cute.coord<"27">, i8) -> ()
-      %tup_167 = cute.add_offset(%tup_29, %71) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_168, %e1_169 = cute.get_leaves(%tup_167) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_170 = cute.make_coord(%e0_168, %e1_169) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_171 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %309:2 = cute.get_scalars(%coord_170) : !cute.coord<"(?,?{div=4})">
-      %310:2 = cute.get_scalars(%coord_171) : !cute.coord<"(?,?)">
-      %311 = arith.cmpi slt, %309#0, %310#0 : i32
-      %312 = arith.cmpi slt, %309#1, %310#1 : i32
-      %313 = arith.andi %311, %312 : i1
-      %314 = arith.extui %313 : i1 to i8
-      cute.memref.store(%rmem, %70, %314) : (!memref_rmem_i8_, !cute.coord<"28">, i8) -> ()
-      %tup_172 = cute.add_offset(%tup_29, %69) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_173, %e1_174 = cute.get_leaves(%tup_172) : !cute.int_tuple<"(?,?)">
-      %coord_175 = cute.make_coord(%e0_173, %e1_174) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_176 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %315:2 = cute.get_scalars(%coord_175) : !cute.coord<"(?,?)">
-      %316:2 = cute.get_scalars(%coord_176) : !cute.coord<"(?,?)">
-      %317 = arith.cmpi slt, %315#0, %316#0 : i32
-      %318 = arith.cmpi slt, %315#1, %316#1 : i32
-      %319 = arith.andi %317, %318 : i1
-      %320 = arith.extui %319 : i1 to i8
-      cute.memref.store(%rmem, %68, %320) : (!memref_rmem_i8_, !cute.coord<"29">, i8) -> ()
-      %tup_177 = cute.add_offset(%tup_29, %67) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_178, %e1_179 = cute.get_leaves(%tup_177) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_180 = cute.make_coord(%e0_178, %e1_179) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_181 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %321:2 = cute.get_scalars(%coord_180) : !cute.coord<"(?,?{div=2})">
-      %322:2 = cute.get_scalars(%coord_181) : !cute.coord<"(?,?)">
-      %323 = arith.cmpi slt, %321#0, %322#0 : i32
-      %324 = arith.cmpi slt, %321#1, %322#1 : i32
-      %325 = arith.andi %323, %324 : i1
-      %326 = arith.extui %325 : i1 to i8
-      cute.memref.store(%rmem, %66, %326) : (!memref_rmem_i8_, !cute.coord<"30">, i8) -> ()
-      %tup_182 = cute.add_offset(%tup_29, %65) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_183, %e1_184 = cute.get_leaves(%tup_182) : !cute.int_tuple<"(?,?)">
-      %coord_185 = cute.make_coord(%e0_183, %e1_184) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_186 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %327:2 = cute.get_scalars(%coord_185) : !cute.coord<"(?,?)">
-      %328:2 = cute.get_scalars(%coord_186) : !cute.coord<"(?,?)">
-      %329 = arith.cmpi slt, %327#0, %328#0 : i32
-      %330 = arith.cmpi slt, %327#1, %328#1 : i32
-      %331 = arith.andi %329, %330 : i1
-      %332 = arith.extui %331 : i1 to i8
-      cute.memref.store(%rmem, %64, %332) : (!memref_rmem_i8_, !cute.coord<"31">, i8) -> ()
-      %tup_187 = cute.add_offset(%tup_29, %63) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,0)">) -> !cute.int_tuple<"(?{div=8},?{div=4})">
-      %e0_188, %e1_189 = cute.get_leaves(%tup_187) : !cute.int_tuple<"(?{div=8},?{div=4})">
-      %coord_190 = cute.make_coord(%e0_188, %e1_189) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=8},?{div=4})">
-      %coord_191 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %333:2 = cute.get_scalars(%coord_190) : !cute.coord<"(?{div=8},?{div=4})">
-      %334:2 = cute.get_scalars(%coord_191) : !cute.coord<"(?,?)">
-      %335 = arith.cmpi slt, %333#0, %334#0 : i32
-      %336 = arith.cmpi slt, %333#1, %334#1 : i32
-      %337 = arith.andi %335, %336 : i1
-      %338 = arith.extui %337 : i1 to i8
-      cute.memref.store(%rmem, %62, %338) : (!memref_rmem_i8_, !cute.coord<"32">, i8) -> ()
-      %tup_192 = cute.add_offset(%tup_29, %61) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,1)">) -> !cute.int_tuple<"(?{div=8},?)">
-      %e0_193, %e1_194 = cute.get_leaves(%tup_192) : !cute.int_tuple<"(?{div=8},?)">
-      %coord_195 = cute.make_coord(%e0_193, %e1_194) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=8},?)">
-      %coord_196 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %339:2 = cute.get_scalars(%coord_195) : !cute.coord<"(?{div=8},?)">
-      %340:2 = cute.get_scalars(%coord_196) : !cute.coord<"(?,?)">
-      %341 = arith.cmpi slt, %339#0, %340#0 : i32
-      %342 = arith.cmpi slt, %339#1, %340#1 : i32
-      %343 = arith.andi %341, %342 : i1
-      %344 = arith.extui %343 : i1 to i8
-      cute.memref.store(%rmem, %60, %344) : (!memref_rmem_i8_, !cute.coord<"33">, i8) -> ()
-      %tup_197 = cute.add_offset(%tup_29, %59) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,2)">) -> !cute.int_tuple<"(?{div=8},?{div=2})">
-      %e0_198, %e1_199 = cute.get_leaves(%tup_197) : !cute.int_tuple<"(?{div=8},?{div=2})">
-      %coord_200 = cute.make_coord(%e0_198, %e1_199) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=8},?{div=2})">
-      %coord_201 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %345:2 = cute.get_scalars(%coord_200) : !cute.coord<"(?{div=8},?{div=2})">
-      %346:2 = cute.get_scalars(%coord_201) : !cute.coord<"(?,?)">
-      %347 = arith.cmpi slt, %345#0, %346#0 : i32
-      %348 = arith.cmpi slt, %345#1, %346#1 : i32
-      %349 = arith.andi %347, %348 : i1
-      %350 = arith.extui %349 : i1 to i8
-      cute.memref.store(%rmem, %58, %350) : (!memref_rmem_i8_, !cute.coord<"34">, i8) -> ()
-      %tup_202 = cute.add_offset(%tup_29, %57) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,3)">) -> !cute.int_tuple<"(?{div=8},?)">
-      %e0_203, %e1_204 = cute.get_leaves(%tup_202) : !cute.int_tuple<"(?{div=8},?)">
-      %coord_205 = cute.make_coord(%e0_203, %e1_204) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=8},?)">
-      %coord_206 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %351:2 = cute.get_scalars(%coord_205) : !cute.coord<"(?{div=8},?)">
-      %352:2 = cute.get_scalars(%coord_206) : !cute.coord<"(?,?)">
-      %353 = arith.cmpi slt, %351#0, %352#0 : i32
-      %354 = arith.cmpi slt, %351#1, %352#1 : i32
-      %355 = arith.andi %353, %354 : i1
-      %356 = arith.extui %355 : i1 to i8
-      cute.memref.store(%rmem, %56, %356) : (!memref_rmem_i8_, !cute.coord<"35">, i8) -> ()
-      %tup_207 = cute.add_offset(%tup_29, %55) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_208, %e1_209 = cute.get_leaves(%tup_207) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_210 = cute.make_coord(%e0_208, %e1_209) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_211 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %357:2 = cute.get_scalars(%coord_210) : !cute.coord<"(?,?{div=4})">
-      %358:2 = cute.get_scalars(%coord_211) : !cute.coord<"(?,?)">
-      %359 = arith.cmpi slt, %357#0, %358#0 : i32
-      %360 = arith.cmpi slt, %357#1, %358#1 : i32
-      %361 = arith.andi %359, %360 : i1
-      %362 = arith.extui %361 : i1 to i8
-      cute.memref.store(%rmem, %54, %362) : (!memref_rmem_i8_, !cute.coord<"36">, i8) -> ()
-      %tup_212 = cute.add_offset(%tup_29, %53) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_213, %e1_214 = cute.get_leaves(%tup_212) : !cute.int_tuple<"(?,?)">
-      %coord_215 = cute.make_coord(%e0_213, %e1_214) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_216 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %363:2 = cute.get_scalars(%coord_215) : !cute.coord<"(?,?)">
-      %364:2 = cute.get_scalars(%coord_216) : !cute.coord<"(?,?)">
-      %365 = arith.cmpi slt, %363#0, %364#0 : i32
-      %366 = arith.cmpi slt, %363#1, %364#1 : i32
-      %367 = arith.andi %365, %366 : i1
-      %368 = arith.extui %367 : i1 to i8
-      cute.memref.store(%rmem, %52, %368) : (!memref_rmem_i8_, !cute.coord<"37">, i8) -> ()
-      %tup_217 = cute.add_offset(%tup_29, %51) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_218, %e1_219 = cute.get_leaves(%tup_217) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_220 = cute.make_coord(%e0_218, %e1_219) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_221 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %369:2 = cute.get_scalars(%coord_220) : !cute.coord<"(?,?{div=2})">
-      %370:2 = cute.get_scalars(%coord_221) : !cute.coord<"(?,?)">
-      %371 = arith.cmpi slt, %369#0, %370#0 : i32
-      %372 = arith.cmpi slt, %369#1, %370#1 : i32
-      %373 = arith.andi %371, %372 : i1
-      %374 = arith.extui %373 : i1 to i8
-      cute.memref.store(%rmem, %50, %374) : (!memref_rmem_i8_, !cute.coord<"38">, i8) -> ()
-      %tup_222 = cute.add_offset(%tup_29, %49) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_223, %e1_224 = cute.get_leaves(%tup_222) : !cute.int_tuple<"(?,?)">
-      %coord_225 = cute.make_coord(%e0_223, %e1_224) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_226 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %375:2 = cute.get_scalars(%coord_225) : !cute.coord<"(?,?)">
-      %376:2 = cute.get_scalars(%coord_226) : !cute.coord<"(?,?)">
-      %377 = arith.cmpi slt, %375#0, %376#0 : i32
-      %378 = arith.cmpi slt, %375#1, %376#1 : i32
-      %379 = arith.andi %377, %378 : i1
-      %380 = arith.extui %379 : i1 to i8
-      cute.memref.store(%rmem, %48, %380) : (!memref_rmem_i8_, !cute.coord<"39">, i8) -> ()
-      %tup_227 = cute.add_offset(%tup_29, %47) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,0)">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
-      %e0_228, %e1_229 = cute.get_leaves(%tup_227) : !cute.int_tuple<"(?{div=2},?{div=4})">
-      %coord_230 = cute.make_coord(%e0_228, %e1_229) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
-      %coord_231 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %381:2 = cute.get_scalars(%coord_230) : !cute.coord<"(?{div=2},?{div=4})">
-      %382:2 = cute.get_scalars(%coord_231) : !cute.coord<"(?,?)">
-      %383 = arith.cmpi slt, %381#0, %382#0 : i32
-      %384 = arith.cmpi slt, %381#1, %382#1 : i32
-      %385 = arith.andi %383, %384 : i1
-      %386 = arith.extui %385 : i1 to i8
-      cute.memref.store(%rmem, %46, %386) : (!memref_rmem_i8_, !cute.coord<"40">, i8) -> ()
-      %tup_232 = cute.add_offset(%tup_29, %45) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,1)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_233, %e1_234 = cute.get_leaves(%tup_232) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_235 = cute.make_coord(%e0_233, %e1_234) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_236 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %387:2 = cute.get_scalars(%coord_235) : !cute.coord<"(?{div=2},?)">
-      %388:2 = cute.get_scalars(%coord_236) : !cute.coord<"(?,?)">
-      %389 = arith.cmpi slt, %387#0, %388#0 : i32
-      %390 = arith.cmpi slt, %387#1, %388#1 : i32
-      %391 = arith.andi %389, %390 : i1
-      %392 = arith.extui %391 : i1 to i8
-      cute.memref.store(%rmem, %44, %392) : (!memref_rmem_i8_, !cute.coord<"41">, i8) -> ()
-      %tup_237 = cute.add_offset(%tup_29, %43) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,2)">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
-      %e0_238, %e1_239 = cute.get_leaves(%tup_237) : !cute.int_tuple<"(?{div=2},?{div=2})">
-      %coord_240 = cute.make_coord(%e0_238, %e1_239) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
-      %coord_241 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %393:2 = cute.get_scalars(%coord_240) : !cute.coord<"(?{div=2},?{div=2})">
-      %394:2 = cute.get_scalars(%coord_241) : !cute.coord<"(?,?)">
-      %395 = arith.cmpi slt, %393#0, %394#0 : i32
-      %396 = arith.cmpi slt, %393#1, %394#1 : i32
-      %397 = arith.andi %395, %396 : i1
-      %398 = arith.extui %397 : i1 to i8
-      cute.memref.store(%rmem, %42, %398) : (!memref_rmem_i8_, !cute.coord<"42">, i8) -> ()
-      %tup_242 = cute.add_offset(%tup_29, %41) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,3)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_243, %e1_244 = cute.get_leaves(%tup_242) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_245 = cute.make_coord(%e0_243, %e1_244) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_246 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %399:2 = cute.get_scalars(%coord_245) : !cute.coord<"(?{div=2},?)">
-      %400:2 = cute.get_scalars(%coord_246) : !cute.coord<"(?,?)">
-      %401 = arith.cmpi slt, %399#0, %400#0 : i32
-      %402 = arith.cmpi slt, %399#1, %400#1 : i32
-      %403 = arith.andi %401, %402 : i1
-      %404 = arith.extui %403 : i1 to i8
-      cute.memref.store(%rmem, %40, %404) : (!memref_rmem_i8_, !cute.coord<"43">, i8) -> ()
-      %tup_247 = cute.add_offset(%tup_29, %39) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_248, %e1_249 = cute.get_leaves(%tup_247) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_250 = cute.make_coord(%e0_248, %e1_249) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_251 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %405:2 = cute.get_scalars(%coord_250) : !cute.coord<"(?,?{div=4})">
-      %406:2 = cute.get_scalars(%coord_251) : !cute.coord<"(?,?)">
-      %407 = arith.cmpi slt, %405#0, %406#0 : i32
-      %408 = arith.cmpi slt, %405#1, %406#1 : i32
-      %409 = arith.andi %407, %408 : i1
-      %410 = arith.extui %409 : i1 to i8
-      cute.memref.store(%rmem, %38, %410) : (!memref_rmem_i8_, !cute.coord<"44">, i8) -> ()
-      %tup_252 = cute.add_offset(%tup_29, %37) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_253, %e1_254 = cute.get_leaves(%tup_252) : !cute.int_tuple<"(?,?)">
-      %coord_255 = cute.make_coord(%e0_253, %e1_254) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_256 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %411:2 = cute.get_scalars(%coord_255) : !cute.coord<"(?,?)">
-      %412:2 = cute.get_scalars(%coord_256) : !cute.coord<"(?,?)">
-      %413 = arith.cmpi slt, %411#0, %412#0 : i32
-      %414 = arith.cmpi slt, %411#1, %412#1 : i32
-      %415 = arith.andi %413, %414 : i1
-      %416 = arith.extui %415 : i1 to i8
-      cute.memref.store(%rmem, %36, %416) : (!memref_rmem_i8_, !cute.coord<"45">, i8) -> ()
-      %tup_257 = cute.add_offset(%tup_29, %35) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_258, %e1_259 = cute.get_leaves(%tup_257) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_260 = cute.make_coord(%e0_258, %e1_259) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_261 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %417:2 = cute.get_scalars(%coord_260) : !cute.coord<"(?,?{div=2})">
-      %418:2 = cute.get_scalars(%coord_261) : !cute.coord<"(?,?)">
-      %419 = arith.cmpi slt, %417#0, %418#0 : i32
-      %420 = arith.cmpi slt, %417#1, %418#1 : i32
-      %421 = arith.andi %419, %420 : i1
-      %422 = arith.extui %421 : i1 to i8
-      cute.memref.store(%rmem, %34, %422) : (!memref_rmem_i8_, !cute.coord<"46">, i8) -> ()
-      %tup_262 = cute.add_offset(%tup_29, %33) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_263, %e1_264 = cute.get_leaves(%tup_262) : !cute.int_tuple<"(?,?)">
-      %coord_265 = cute.make_coord(%e0_263, %e1_264) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_266 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %423:2 = cute.get_scalars(%coord_265) : !cute.coord<"(?,?)">
-      %424:2 = cute.get_scalars(%coord_266) : !cute.coord<"(?,?)">
-      %425 = arith.cmpi slt, %423#0, %424#0 : i32
-      %426 = arith.cmpi slt, %423#1, %424#1 : i32
-      %427 = arith.andi %425, %426 : i1
-      %428 = arith.extui %427 : i1 to i8
-      cute.memref.store(%rmem, %32, %428) : (!memref_rmem_i8_, !cute.coord<"47">, i8) -> ()
-      %tup_267 = cute.add_offset(%tup_29, %31) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,0)">) -> !cute.int_tuple<"(?{div=4},?{div=4})">
-      %e0_268, %e1_269 = cute.get_leaves(%tup_267) : !cute.int_tuple<"(?{div=4},?{div=4})">
-      %coord_270 = cute.make_coord(%e0_268, %e1_269) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=4},?{div=4})">
-      %coord_271 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %429:2 = cute.get_scalars(%coord_270) : !cute.coord<"(?{div=4},?{div=4})">
-      %430:2 = cute.get_scalars(%coord_271) : !cute.coord<"(?,?)">
-      %431 = arith.cmpi slt, %429#0, %430#0 : i32
-      %432 = arith.cmpi slt, %429#1, %430#1 : i32
-      %433 = arith.andi %431, %432 : i1
-      %434 = arith.extui %433 : i1 to i8
-      cute.memref.store(%rmem, %30, %434) : (!memref_rmem_i8_, !cute.coord<"48">, i8) -> ()
-      %tup_272 = cute.add_offset(%tup_29, %29) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,1)">) -> !cute.int_tuple<"(?{div=4},?)">
-      %e0_273, %e1_274 = cute.get_leaves(%tup_272) : !cute.int_tuple<"(?{div=4},?)">
-      %coord_275 = cute.make_coord(%e0_273, %e1_274) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
-      %coord_276 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %435:2 = cute.get_scalars(%coord_275) : !cute.coord<"(?{div=4},?)">
-      %436:2 = cute.get_scalars(%coord_276) : !cute.coord<"(?,?)">
-      %437 = arith.cmpi slt, %435#0, %436#0 : i32
-      %438 = arith.cmpi slt, %435#1, %436#1 : i32
-      %439 = arith.andi %437, %438 : i1
-      %440 = arith.extui %439 : i1 to i8
-      cute.memref.store(%rmem, %28, %440) : (!memref_rmem_i8_, !cute.coord<"49">, i8) -> ()
-      %tup_277 = cute.add_offset(%tup_29, %27) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,2)">) -> !cute.int_tuple<"(?{div=4},?{div=2})">
-      %e0_278, %e1_279 = cute.get_leaves(%tup_277) : !cute.int_tuple<"(?{div=4},?{div=2})">
-      %coord_280 = cute.make_coord(%e0_278, %e1_279) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=4},?{div=2})">
-      %coord_281 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %441:2 = cute.get_scalars(%coord_280) : !cute.coord<"(?{div=4},?{div=2})">
-      %442:2 = cute.get_scalars(%coord_281) : !cute.coord<"(?,?)">
-      %443 = arith.cmpi slt, %441#0, %442#0 : i32
-      %444 = arith.cmpi slt, %441#1, %442#1 : i32
-      %445 = arith.andi %443, %444 : i1
-      %446 = arith.extui %445 : i1 to i8
-      cute.memref.store(%rmem, %26, %446) : (!memref_rmem_i8_, !cute.coord<"50">, i8) -> ()
-      %tup_282 = cute.add_offset(%tup_29, %25) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,3)">) -> !cute.int_tuple<"(?{div=4},?)">
-      %e0_283, %e1_284 = cute.get_leaves(%tup_282) : !cute.int_tuple<"(?{div=4},?)">
-      %coord_285 = cute.make_coord(%e0_283, %e1_284) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
-      %coord_286 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %447:2 = cute.get_scalars(%coord_285) : !cute.coord<"(?{div=4},?)">
-      %448:2 = cute.get_scalars(%coord_286) : !cute.coord<"(?,?)">
-      %449 = arith.cmpi slt, %447#0, %448#0 : i32
-      %450 = arith.cmpi slt, %447#1, %448#1 : i32
-      %451 = arith.andi %449, %450 : i1
-      %452 = arith.extui %451 : i1 to i8
-      cute.memref.store(%rmem, %24, %452) : (!memref_rmem_i8_, !cute.coord<"51">, i8) -> ()
-      %tup_287 = cute.add_offset(%tup_29, %23) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_288, %e1_289 = cute.get_leaves(%tup_287) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_290 = cute.make_coord(%e0_288, %e1_289) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_291 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %453:2 = cute.get_scalars(%coord_290) : !cute.coord<"(?,?{div=4})">
-      %454:2 = cute.get_scalars(%coord_291) : !cute.coord<"(?,?)">
-      %455 = arith.cmpi slt, %453#0, %454#0 : i32
-      %456 = arith.cmpi slt, %453#1, %454#1 : i32
-      %457 = arith.andi %455, %456 : i1
-      %458 = arith.extui %457 : i1 to i8
-      cute.memref.store(%rmem, %22, %458) : (!memref_rmem_i8_, !cute.coord<"52">, i8) -> ()
-      %tup_292 = cute.add_offset(%tup_29, %21) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_293, %e1_294 = cute.get_leaves(%tup_292) : !cute.int_tuple<"(?,?)">
-      %coord_295 = cute.make_coord(%e0_293, %e1_294) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_296 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %459:2 = cute.get_scalars(%coord_295) : !cute.coord<"(?,?)">
-      %460:2 = cute.get_scalars(%coord_296) : !cute.coord<"(?,?)">
-      %461 = arith.cmpi slt, %459#0, %460#0 : i32
-      %462 = arith.cmpi slt, %459#1, %460#1 : i32
-      %463 = arith.andi %461, %462 : i1
-      %464 = arith.extui %463 : i1 to i8
-      cute.memref.store(%rmem, %20, %464) : (!memref_rmem_i8_, !cute.coord<"53">, i8) -> ()
-      %tup_297 = cute.add_offset(%tup_29, %19) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_298, %e1_299 = cute.get_leaves(%tup_297) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_300 = cute.make_coord(%e0_298, %e1_299) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_301 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %465:2 = cute.get_scalars(%coord_300) : !cute.coord<"(?,?{div=2})">
-      %466:2 = cute.get_scalars(%coord_301) : !cute.coord<"(?,?)">
-      %467 = arith.cmpi slt, %465#0, %466#0 : i32
-      %468 = arith.cmpi slt, %465#1, %466#1 : i32
-      %469 = arith.andi %467, %468 : i1
-      %470 = arith.extui %469 : i1 to i8
-      cute.memref.store(%rmem, %18, %470) : (!memref_rmem_i8_, !cute.coord<"54">, i8) -> ()
-      %tup_302 = cute.add_offset(%tup_29, %17) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_303, %e1_304 = cute.get_leaves(%tup_302) : !cute.int_tuple<"(?,?)">
-      %coord_305 = cute.make_coord(%e0_303, %e1_304) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_306 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %471:2 = cute.get_scalars(%coord_305) : !cute.coord<"(?,?)">
-      %472:2 = cute.get_scalars(%coord_306) : !cute.coord<"(?,?)">
-      %473 = arith.cmpi slt, %471#0, %472#0 : i32
-      %474 = arith.cmpi slt, %471#1, %472#1 : i32
-      %475 = arith.andi %473, %474 : i1
-      %476 = arith.extui %475 : i1 to i8
-      cute.memref.store(%rmem, %16, %476) : (!memref_rmem_i8_, !cute.coord<"55">, i8) -> ()
-      %tup_307 = cute.add_offset(%tup_29, %15) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,0)">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
-      %e0_308, %e1_309 = cute.get_leaves(%tup_307) : !cute.int_tuple<"(?{div=2},?{div=4})">
-      %coord_310 = cute.make_coord(%e0_308, %e1_309) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
-      %coord_311 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %477:2 = cute.get_scalars(%coord_310) : !cute.coord<"(?{div=2},?{div=4})">
-      %478:2 = cute.get_scalars(%coord_311) : !cute.coord<"(?,?)">
-      %479 = arith.cmpi slt, %477#0, %478#0 : i32
-      %480 = arith.cmpi slt, %477#1, %478#1 : i32
-      %481 = arith.andi %479, %480 : i1
-      %482 = arith.extui %481 : i1 to i8
-      cute.memref.store(%rmem, %14, %482) : (!memref_rmem_i8_, !cute.coord<"56">, i8) -> ()
-      %tup_312 = cute.add_offset(%tup_29, %13) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,1)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_313, %e1_314 = cute.get_leaves(%tup_312) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_315 = cute.make_coord(%e0_313, %e1_314) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_316 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %483:2 = cute.get_scalars(%coord_315) : !cute.coord<"(?{div=2},?)">
-      %484:2 = cute.get_scalars(%coord_316) : !cute.coord<"(?,?)">
-      %485 = arith.cmpi slt, %483#0, %484#0 : i32
-      %486 = arith.cmpi slt, %483#1, %484#1 : i32
-      %487 = arith.andi %485, %486 : i1
-      %488 = arith.extui %487 : i1 to i8
-      cute.memref.store(%rmem, %12, %488) : (!memref_rmem_i8_, !cute.coord<"57">, i8) -> ()
-      %tup_317 = cute.add_offset(%tup_29, %11) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,2)">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
-      %e0_318, %e1_319 = cute.get_leaves(%tup_317) : !cute.int_tuple<"(?{div=2},?{div=2})">
-      %coord_320 = cute.make_coord(%e0_318, %e1_319) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
-      %coord_321 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %489:2 = cute.get_scalars(%coord_320) : !cute.coord<"(?{div=2},?{div=2})">
-      %490:2 = cute.get_scalars(%coord_321) : !cute.coord<"(?,?)">
-      %491 = arith.cmpi slt, %489#0, %490#0 : i32
-      %492 = arith.cmpi slt, %489#1, %490#1 : i32
-      %493 = arith.andi %491, %492 : i1
-      %494 = arith.extui %493 : i1 to i8
-      cute.memref.store(%rmem, %10, %494) : (!memref_rmem_i8_, !cute.coord<"58">, i8) -> ()
-      %tup_322 = cute.add_offset(%tup_29, %9) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,3)">) -> !cute.int_tuple<"(?{div=2},?)">
-      %e0_323, %e1_324 = cute.get_leaves(%tup_322) : !cute.int_tuple<"(?{div=2},?)">
-      %coord_325 = cute.make_coord(%e0_323, %e1_324) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
-      %coord_326 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %495:2 = cute.get_scalars(%coord_325) : !cute.coord<"(?{div=2},?)">
-      %496:2 = cute.get_scalars(%coord_326) : !cute.coord<"(?,?)">
-      %497 = arith.cmpi slt, %495#0, %496#0 : i32
-      %498 = arith.cmpi slt, %495#1, %496#1 : i32
-      %499 = arith.andi %497, %498 : i1
-      %500 = arith.extui %499 : i1 to i8
-      cute.memref.store(%rmem, %8, %500) : (!memref_rmem_i8_, !cute.coord<"59">, i8) -> ()
-      %tup_327 = cute.add_offset(%tup_29, %7) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,0)">) -> !cute.int_tuple<"(?,?{div=4})">
-      %e0_328, %e1_329 = cute.get_leaves(%tup_327) : !cute.int_tuple<"(?,?{div=4})">
-      %coord_330 = cute.make_coord(%e0_328, %e1_329) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
-      %coord_331 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %501:2 = cute.get_scalars(%coord_330) : !cute.coord<"(?,?{div=4})">
-      %502:2 = cute.get_scalars(%coord_331) : !cute.coord<"(?,?)">
-      %503 = arith.cmpi slt, %501#0, %502#0 : i32
-      %504 = arith.cmpi slt, %501#1, %502#1 : i32
-      %505 = arith.andi %503, %504 : i1
-      %506 = arith.extui %505 : i1 to i8
-      cute.memref.store(%rmem, %6, %506) : (!memref_rmem_i8_, !cute.coord<"60">, i8) -> ()
-      %tup_332 = cute.add_offset(%tup_29, %5) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,1)">) -> !cute.int_tuple<"(?,?)">
-      %e0_333, %e1_334 = cute.get_leaves(%tup_332) : !cute.int_tuple<"(?,?)">
-      %coord_335 = cute.make_coord(%e0_333, %e1_334) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_336 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %507:2 = cute.get_scalars(%coord_335) : !cute.coord<"(?,?)">
-      %508:2 = cute.get_scalars(%coord_336) : !cute.coord<"(?,?)">
-      %509 = arith.cmpi slt, %507#0, %508#0 : i32
-      %510 = arith.cmpi slt, %507#1, %508#1 : i32
-      %511 = arith.andi %509, %510 : i1
-      %512 = arith.extui %511 : i1 to i8
-      cute.memref.store(%rmem, %4, %512) : (!memref_rmem_i8_, !cute.coord<"61">, i8) -> ()
-      %tup_337 = cute.add_offset(%tup_29, %3) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,2)">) -> !cute.int_tuple<"(?,?{div=2})">
-      %e0_338, %e1_339 = cute.get_leaves(%tup_337) : !cute.int_tuple<"(?,?{div=2})">
-      %coord_340 = cute.make_coord(%e0_338, %e1_339) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
-      %coord_341 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %513:2 = cute.get_scalars(%coord_340) : !cute.coord<"(?,?{div=2})">
-      %514:2 = cute.get_scalars(%coord_341) : !cute.coord<"(?,?)">
-      %515 = arith.cmpi slt, %513#0, %514#0 : i32
-      %516 = arith.cmpi slt, %513#1, %514#1 : i32
-      %517 = arith.andi %515, %516 : i1
-      %518 = arith.extui %517 : i1 to i8
-      cute.memref.store(%rmem, %2, %518) : (!memref_rmem_i8_, !cute.coord<"62">, i8) -> ()
-      %tup_342 = cute.add_offset(%tup_29, %1) : (!cute.int_tuple<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,3)">) -> !cute.int_tuple<"(?,?)">
-      %e0_343, %e1_344 = cute.get_leaves(%tup_342) : !cute.int_tuple<"(?,?)">
-      %coord_345 = cute.make_coord(%e0_343, %e1_344) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
-      %coord_346 = cute.make_coord(%arg4, %arg5) : (i32, i32) -> !cute.coord<"(?,?)">
-      %519:2 = cute.get_scalars(%coord_345) : !cute.coord<"(?,?)">
-      %520:2 = cute.get_scalars(%coord_346) : !cute.coord<"(?,?)">
-      %521 = arith.cmpi slt, %519#0, %520#0 : i32
-      %522 = arith.cmpi slt, %519#1, %520#1 : i32
-      %523 = arith.andi %521, %522 : i1
-      %524 = arith.extui %523 : i1 to i8
-      cute.memref.store(%rmem, %0, %524) : (!memref_rmem_i8_, !cute.coord<"63">, i8) -> ()
-      %525 = cute.memref.load_vec %view : !memref_gmem_f32_2
-      %526 = cute.memref.load_vec %view_20 : !memref_gmem_f32_2
-      %527 = arith.addf %525, %526 : vector<64xf32>
-      cute.memref.store_vec %527, %view_26 : !memref_gmem_f32_3
-      return
-    }
-  }
-  func.func @cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream(%arg0: !memref_gmem_f32_4, %arg1: !memref_gmem_f32_4, %arg2: !memref_gmem_f32_5, %arg3: !cuda.stream) -> i32 attributes {llvm.emit_c_interface} {
-    %c0_i64 = arith.constant 0 : i64
-    %0 = cute.static : !cute.stride<"((1@0,1@1),(64@0,256@1))">
-    %1 = cute.static : !cute.stride<"(1@0,1@1)">
-    %2 = cute.static : !cute.int_tuple<"(0,0)">
-    %c16_i32 = arith.constant 16 : i32
-    %c-1_i32 = arith.constant -1 : i32
-    %c1_i32 = arith.constant 1 : i32
-    %c0_i32 = arith.constant 0 : i32
-    %c256_i32 = arith.constant 256 : i32
-    %c64_i64 = arith.constant 64 : i64
-    %c64_i32 = arith.constant 64 : i32
-    %3 = cute.static : !cute.layout<"(16,16):(16,1)">
-    %4 = cute.recast_layout<32, 8> (%3) : !cute.layout<"(16,16):(16,1)"> to !cute.layout<"(16,4):(4,1)">
-    %iter = cute.get_iter(%arg0) : !memref_gmem_f32_4
-    %iter_0 = cute.get_iter(%arg1) : !memref_gmem_f32_4
-    %iter_1 = cute.get_iter(%arg2) : !memref_gmem_f32_5
-    %lay = cute.get_layout(%arg2) : !memref_gmem_f32_5
-    %5:3 = cute.get_scalars(%lay) <{only_dynamic}> : !cute.layout<"(?,?):(?{i64},1)">
-    %6 = arith.ceildivsi %5#0, %c64_i32 : i32
-    %7 = arith.muli %5#2, %c64_i64 : i64
-    %8 = arith.ceildivsi %5#1, %c256_i32 : i32
-    %shape = cute.make_shape(%6, %8) : (i32, i32) -> !cute.shape<"((64,256),(?,?))">
-    %iv = cute.assume(%7) : (i64) -> !cute.i64<divby 64>
-    %stride = cute.make_stride(%5#2, %iv) : (i64, !cute.i64<divby 64>) -> !cute.stride<"((?{i64},1),(?{i64 div=64},256))">
-    %lay_2 = cute.make_layout(%shape, %stride) : !cute.layout<"((64,256),(?,?)):((?{i64},1),(?{i64 div=64},256))">
-    %view = cute.make_view(%iter) : !memref_gmem_f32_
-    %view_3 = cute.make_view(%iter_0) : !memref_gmem_f32_
-    %9:4 = cute.get_scalars(%lay_2) <{only_dynamic}> : !cute.layout<"((64,256),(?,?)):((?{i64},1),(?{i64 div=64},256))">
-    %10 = arith.divsi %9#0, %c64_i32 : i32
-    %11 = arith.cmpi ne, %10, %c0_i32 : i32
-    %12 = scf.if %11 -> (i32) {
-      scf.yield %10 : i32
-    } else {
-      %49 = arith.cmpi sgt, %9#0, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %9#0, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %13 = arith.minsi %12, %c16_i32 : i32
-    %14 = arith.muli %9#3, %c64_i64 : i64
-    %15 = math.absi %12 : i32
-    %16 = arith.divsi %c16_i32, %15 : i32
-    %17 = arith.cmpi ne, %16, %c0_i32 : i32
-    %18 = scf.if %17 -> (i32) {
-      scf.yield %16 : i32
-    } else {
-      %49 = arith.cmpi sgt, %15, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %15, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %19 = arith.divsi %c64_i32, %9#0 : i32
-    %20 = arith.cmpi ne, %19, %c0_i32 : i32
-    %21 = scf.if %20 -> (i32) {
-      scf.yield %19 : i32
-    } else {
-      %49 = arith.cmpi sgt, %9#0, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %9#0, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %22 = arith.muli %21, %c256_i32 : i32
-    %23 = arith.cmpi ne, %9#0, %c0_i32 : i32
-    %24 = scf.if %23 -> (i32) {
-      scf.yield %9#0 : i32
-    } else {
-      %49 = arith.cmpi sgt, %9#0, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %9#0, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %25 = arith.minsi %24, %c64_i32 : i32
-    %26 = math.absi %24 : i32
-    %27 = arith.divsi %c64_i32, %26 : i32
-    %28 = arith.cmpi ne, %27, %c0_i32 : i32
-    %29 = scf.if %28 -> (i32) {
-      scf.yield %27 : i32
-    } else {
-      %49 = arith.cmpi sgt, %26, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %26, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %30 = arith.divsi %c1_i32, %9#0 : i32
-    %31 = arith.cmpi ne, %30, %c0_i32 : i32
-    %32 = scf.if %31 -> (i32) {
-      scf.yield %30 : i32
-    } else {
-      %49 = arith.cmpi sgt, %9#0, %c0_i32 : i32
-      %50 = scf.if %49 -> (i32) {
-        scf.yield %c1_i32 : i32
-      } else {
-        %51 = arith.cmpi eq, %9#0, %c0_i32 : i32
-        %52 = arith.select %51, %c0_i32, %c-1_i32 : i32
-        scf.yield %52 : i32
-      }
-      scf.yield %50 : i32
-    }
-    %33 = arith.muli %32, %c256_i32 : i32
-    %shape_4 = cute.make_shape(%13, %18, %25, %29) : (i32, i32, i32, i32) -> !cute.shape<"((64,256),((?,?),(?,?)))">
-    %iv_5 = cute.assume(%14) : (i64) -> !cute.i64<divby 4096>
-    %iv_6 = cute.assume(%22) : (i32) -> !cute.i32<divby 256>
-    %iv_7 = cute.assume(%9#3) : (i64) -> !cute.i64<divby 64>
-    %iv_8 = cute.assume(%33) : (i32) -> !cute.i32<divby 256>
-    %stride_9 = cute.make_stride(%9#2, %iv_5, %iv_6, %iv_7, %iv_8) : (i64, !cute.i64<divby 4096>, !cute.i32<divby 256>, !cute.i64<divby 64>, !cute.i32<divby 256>) -> !cute.stride<"((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
-    %lay_10 = cute.make_layout(%shape_4, %stride_9) : !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
-    %view_11 = cute.make_view(%iter_1, %lay_10) : !memref_gmem_f32_1
-    %lay_12 = cute.get_layout(%arg2) : !memref_gmem_f32_5
-    %34 = cute.get_shape(%lay_12) : (!cute.layout<"(?,?):(?{i64},1)">) -> !cute.shape<"(?,?)">
-    %e0, %e1 = cute.get_leaves(%34) : !cute.shape<"(?,?)">
-    %itup = cute.to_int_tuple(%e0) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %35 = cute.get_scalars(%itup) : !cute.int_tuple<"?">
-    %itup_13 = cute.to_int_tuple(%e1) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %36 = cute.get_scalars(%itup_13) : !cute.int_tuple<"?">
-    %shape_14 = cute.make_shape(%itup, %itup_13) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?)">
-    %lay_15 = cute.make_layout(%shape_14, %1) : !cute.layout<"(?,?):(1@0,1@1)">
-    %37:2 = cute.get_scalars(%lay_15) <{only_dynamic}> : !cute.layout<"(?,?):(1@0,1@1)">
-    %38 = arith.ceildivsi %37#0, %c64_i32 : i32
-    %39 = arith.ceildivsi %37#1, %c256_i32 : i32
-    %shape_16 = cute.make_shape(%38, %39) : (i32, i32) -> !cute.shape<"((64,256),(?,?))">
-    %lay_17 = cute.make_layout(%shape_16, %0) : !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
-    %view_18 = cute.make_view(%2, %lay_17) : !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
-    %40 = cute.get_shape(%lay_10) : (!cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !cute.shape<"((64,256),((?,?),(?,?)))">
-    %e0_19, %e1_20, %e2, %e3, %e4, %e5 = cute.get_leaves(%40) : !cute.shape<"((64,256),((?,?),(?,?)))">
-    %itup_21 = cute.to_int_tuple(%e2) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %itup_22 = cute.to_int_tuple(%e3) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %itup_23 = cute.to_int_tuple(%e4) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %itup_24 = cute.to_int_tuple(%e5) : !cute.shape<"?"> to !cute.int_tuple<"?">
-    %int_tuple = cute.make_int_tuple(%itup_21, %itup_22, %itup_23, %itup_24) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"((?,?),(?,?))">
-    %41:4 = cute.get_scalars(%int_tuple) <{only_dynamic}> : !cute.int_tuple<"((?,?),(?,?))">
-    %42 = arith.muli %41#0, %41#1 : i32
-    %43 = arith.muli %41#2, %41#3 : i32
-    %int_tuple_25 = cute.make_int_tuple(%42, %43) : (i32, i32) -> !cute.int_tuple<"(?,?)">
-    %e0_26, %e1_27 = cute.get_leaves(%int_tuple_25) : !cute.int_tuple<"(?,?)">
-    %44 = cute.get_scalars(%e0_26) : !cute.int_tuple<"?">
-    %45 = cute.get_scalars(%e1_27) : !cute.int_tuple<"?">
-    %46 = cuda.launch_cfg.create<max_attrs = 2 : i32> (blockDim = (%c256_i32, %c1_i32, %c1_i32), dynamicSmemBytes = %c0_i64, gridDim = (%44, %45, %c1_i32), stream = %arg3) : i32, i32, i32, i64, i32, i32, i32, !cuda.stream -> !cuda.launch_cfg<max_attrs = 2>
-    %47 = cuda.launch_ex @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0<%46> (%view, %view_3, %view_11, %view_18, %35, %36) : !cuda.launch_cfg<max_attrs = 2>, (!memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, i32, i32) -> !cuda.result
-    %48 = cuda.cast %47 : !cuda.result -> i32
-    cuda.return_if_error %48 : i32
-    return %c0_i32 : i32
-  }
-}
+"builtin.module"() ({
+  "gpu.module"() <{sym_name = "kernels"}> ({
+    "cuda.kernel"() <{function_type = (!memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, i32, i32) -> (), sym_name = "kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0"}> ({
+    ^bb0(%arg4: !memref_gmem_f32_, %arg5: !memref_gmem_f32_, %arg6: !memref_gmem_f32_1, %arg7: !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, %arg8: i32, %arg9: i32):
+      %121 = "cute.static"() : () -> !cute.coord<"63">
+      %122 = "cute.static"() : () -> !cute.int_tuple<"(15,3)">
+      %123 = "cute.static"() : () -> !cute.coord<"62">
+      %124 = "cute.static"() : () -> !cute.int_tuple<"(15,2)">
+      %125 = "cute.static"() : () -> !cute.coord<"61">
+      %126 = "cute.static"() : () -> !cute.int_tuple<"(15,1)">
+      %127 = "cute.static"() : () -> !cute.coord<"60">
+      %128 = "cute.static"() : () -> !cute.int_tuple<"(15,0)">
+      %129 = "cute.static"() : () -> !cute.coord<"59">
+      %130 = "cute.static"() : () -> !cute.int_tuple<"(14,3)">
+      %131 = "cute.static"() : () -> !cute.coord<"58">
+      %132 = "cute.static"() : () -> !cute.int_tuple<"(14,2)">
+      %133 = "cute.static"() : () -> !cute.coord<"57">
+      %134 = "cute.static"() : () -> !cute.int_tuple<"(14,1)">
+      %135 = "cute.static"() : () -> !cute.coord<"56">
+      %136 = "cute.static"() : () -> !cute.int_tuple<"(14,0)">
+      %137 = "cute.static"() : () -> !cute.coord<"55">
+      %138 = "cute.static"() : () -> !cute.int_tuple<"(13,3)">
+      %139 = "cute.static"() : () -> !cute.coord<"54">
+      %140 = "cute.static"() : () -> !cute.int_tuple<"(13,2)">
+      %141 = "cute.static"() : () -> !cute.coord<"53">
+      %142 = "cute.static"() : () -> !cute.int_tuple<"(13,1)">
+      %143 = "cute.static"() : () -> !cute.coord<"52">
+      %144 = "cute.static"() : () -> !cute.int_tuple<"(13,0)">
+      %145 = "cute.static"() : () -> !cute.coord<"51">
+      %146 = "cute.static"() : () -> !cute.int_tuple<"(12,3)">
+      %147 = "cute.static"() : () -> !cute.coord<"50">
+      %148 = "cute.static"() : () -> !cute.int_tuple<"(12,2)">
+      %149 = "cute.static"() : () -> !cute.coord<"49">
+      %150 = "cute.static"() : () -> !cute.int_tuple<"(12,1)">
+      %151 = "cute.static"() : () -> !cute.coord<"48">
+      %152 = "cute.static"() : () -> !cute.int_tuple<"(12,0)">
+      %153 = "cute.static"() : () -> !cute.coord<"47">
+      %154 = "cute.static"() : () -> !cute.int_tuple<"(11,3)">
+      %155 = "cute.static"() : () -> !cute.coord<"46">
+      %156 = "cute.static"() : () -> !cute.int_tuple<"(11,2)">
+      %157 = "cute.static"() : () -> !cute.coord<"45">
+      %158 = "cute.static"() : () -> !cute.int_tuple<"(11,1)">
+      %159 = "cute.static"() : () -> !cute.coord<"44">
+      %160 = "cute.static"() : () -> !cute.int_tuple<"(11,0)">
+      %161 = "cute.static"() : () -> !cute.coord<"43">
+      %162 = "cute.static"() : () -> !cute.int_tuple<"(10,3)">
+      %163 = "cute.static"() : () -> !cute.coord<"42">
+      %164 = "cute.static"() : () -> !cute.int_tuple<"(10,2)">
+      %165 = "cute.static"() : () -> !cute.coord<"41">
+      %166 = "cute.static"() : () -> !cute.int_tuple<"(10,1)">
+      %167 = "cute.static"() : () -> !cute.coord<"40">
+      %168 = "cute.static"() : () -> !cute.int_tuple<"(10,0)">
+      %169 = "cute.static"() : () -> !cute.coord<"39">
+      %170 = "cute.static"() : () -> !cute.int_tuple<"(9,3)">
+      %171 = "cute.static"() : () -> !cute.coord<"38">
+      %172 = "cute.static"() : () -> !cute.int_tuple<"(9,2)">
+      %173 = "cute.static"() : () -> !cute.coord<"37">
+      %174 = "cute.static"() : () -> !cute.int_tuple<"(9,1)">
+      %175 = "cute.static"() : () -> !cute.coord<"36">
+      %176 = "cute.static"() : () -> !cute.int_tuple<"(9,0)">
+      %177 = "cute.static"() : () -> !cute.coord<"35">
+      %178 = "cute.static"() : () -> !cute.int_tuple<"(8,3)">
+      %179 = "cute.static"() : () -> !cute.coord<"34">
+      %180 = "cute.static"() : () -> !cute.int_tuple<"(8,2)">
+      %181 = "cute.static"() : () -> !cute.coord<"33">
+      %182 = "cute.static"() : () -> !cute.int_tuple<"(8,1)">
+      %183 = "cute.static"() : () -> !cute.coord<"32">
+      %184 = "cute.static"() : () -> !cute.int_tuple<"(8,0)">
+      %185 = "cute.static"() : () -> !cute.coord<"31">
+      %186 = "cute.static"() : () -> !cute.int_tuple<"(7,3)">
+      %187 = "cute.static"() : () -> !cute.coord<"30">
+      %188 = "cute.static"() : () -> !cute.int_tuple<"(7,2)">
+      %189 = "cute.static"() : () -> !cute.coord<"29">
+      %190 = "cute.static"() : () -> !cute.int_tuple<"(7,1)">
+      %191 = "cute.static"() : () -> !cute.coord<"28">
+      %192 = "cute.static"() : () -> !cute.int_tuple<"(7,0)">
+      %193 = "cute.static"() : () -> !cute.coord<"27">
+      %194 = "cute.static"() : () -> !cute.int_tuple<"(6,3)">
+      %195 = "cute.static"() : () -> !cute.coord<"26">
+      %196 = "cute.static"() : () -> !cute.int_tuple<"(6,2)">
+      %197 = "cute.static"() : () -> !cute.coord<"25">
+      %198 = "cute.static"() : () -> !cute.int_tuple<"(6,1)">
+      %199 = "cute.static"() : () -> !cute.coord<"24">
+      %200 = "cute.static"() : () -> !cute.int_tuple<"(6,0)">
+      %201 = "cute.static"() : () -> !cute.coord<"23">
+      %202 = "cute.static"() : () -> !cute.int_tuple<"(5,3)">
+      %203 = "cute.static"() : () -> !cute.coord<"22">
+      %204 = "cute.static"() : () -> !cute.int_tuple<"(5,2)">
+      %205 = "cute.static"() : () -> !cute.coord<"21">
+      %206 = "cute.static"() : () -> !cute.int_tuple<"(5,1)">
+      %207 = "cute.static"() : () -> !cute.coord<"20">
+      %208 = "cute.static"() : () -> !cute.int_tuple<"(5,0)">
+      %209 = "cute.static"() : () -> !cute.coord<"19">
+      %210 = "cute.static"() : () -> !cute.int_tuple<"(4,3)">
+      %211 = "cute.static"() : () -> !cute.coord<"18">
+      %212 = "cute.static"() : () -> !cute.int_tuple<"(4,2)">
+      %213 = "cute.static"() : () -> !cute.coord<"17">
+      %214 = "cute.static"() : () -> !cute.int_tuple<"(4,1)">
+      %215 = "cute.static"() : () -> !cute.coord<"16">
+      %216 = "cute.static"() : () -> !cute.int_tuple<"(4,0)">
+      %217 = "cute.static"() : () -> !cute.coord<"15">
+      %218 = "cute.static"() : () -> !cute.int_tuple<"(3,3)">
+      %219 = "cute.static"() : () -> !cute.coord<"14">
+      %220 = "cute.static"() : () -> !cute.int_tuple<"(3,2)">
+      %221 = "cute.static"() : () -> !cute.coord<"13">
+      %222 = "cute.static"() : () -> !cute.int_tuple<"(3,1)">
+      %223 = "cute.static"() : () -> !cute.coord<"12">
+      %224 = "cute.static"() : () -> !cute.int_tuple<"(3,0)">
+      %225 = "cute.static"() : () -> !cute.coord<"11">
+      %226 = "cute.static"() : () -> !cute.int_tuple<"(2,3)">
+      %227 = "cute.static"() : () -> !cute.coord<"10">
+      %228 = "cute.static"() : () -> !cute.int_tuple<"(2,2)">
+      %229 = "cute.static"() : () -> !cute.coord<"9">
+      %230 = "cute.static"() : () -> !cute.int_tuple<"(2,1)">
+      %231 = "cute.static"() : () -> !cute.coord<"8">
+      %232 = "cute.static"() : () -> !cute.int_tuple<"(2,0)">
+      %233 = "cute.static"() : () -> !cute.coord<"7">
+      %234 = "cute.static"() : () -> !cute.int_tuple<"(1,3)">
+      %235 = "cute.static"() : () -> !cute.coord<"6">
+      %236 = "cute.static"() : () -> !cute.int_tuple<"(1,2)">
+      %237 = "cute.static"() : () -> !cute.coord<"5">
+      %238 = "cute.static"() : () -> !cute.int_tuple<"(1,1)">
+      %239 = "cute.static"() : () -> !cute.coord<"4">
+      %240 = "cute.static"() : () -> !cute.int_tuple<"(1,0)">
+      %241 = "cute.static"() : () -> !cute.coord<"3">
+      %242 = "cute.static"() : () -> !cute.int_tuple<"(0,3)">
+      %243 = "cute.static"() : () -> !cute.coord<"2">
+      %244 = "cute.static"() : () -> !cute.int_tuple<"(0,2)">
+      %245 = "cute.static"() : () -> !cute.int_tuple<"(0,1)">
+      %246 = "cute.static"() : () -> !cute.coord<"0">
+      %247 = "cute.static"() : () -> !cute.layout<"((64,4),(4,16)):((4@1,16@0),(1@1,1@0))">
+      %248 = "cute.static"() : () -> !cute.shape<"((4,16))">
+      %249 = "cute.static"() : () -> !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">
+      %250 = "cute.static"() : () -> !cute.coord<"1">
+      %251 = "cute.static"() : () -> !cute.shape<"((64,4),(4,16))">
+      %252 = "arith.constant"() <{value = 16 : i64}> : () -> i64
+      %253 = "cute.static"() : () -> !cute.shape<"(64,256)">
+      %254 = "cute.static"() : () -> !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">
+      %255 = "nvvm.read.ptx.sreg.tid.x"() <{range = #llvm.constant_range<i32, 0, 1024>}> : () -> i32
+      %256 = "nvvm.read.ptx.sreg.ctaid.x"() <{range = #llvm.constant_range<i32, 0, 2147483647>}> : () -> i32
+      %257 = "nvvm.read.ptx.sreg.ctaid.y"() <{range = #llvm.constant_range<i32, 0, 65535>}> : () -> i32
+      %258 = "cute.make_coord"(%256, %257) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
+      %259 = "cute.crd2idx"(%258, %254) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">) -> !cute.int_tuple<"?{div=256}">
+      %260 = "cute.get_iter"(%arg4) : (!memref_gmem_f32_) -> !cute.ptr<f32, gmem, align<16>>
+      %261 = "cute.add_offset"(%260, %259) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=256}">) -> !cute.ptr<f32, gmem, align<16>>
+      %262 = "cute.make_coord"(%256, %257) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
+      %263 = "cute.crd2idx"(%262, %254) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(16,64)):((4096,1),(256,262144))">) -> !cute.int_tuple<"?{div=256}">
+      %264 = "cute.get_iter"(%arg5) : (!memref_gmem_f32_) -> !cute.ptr<f32, gmem, align<16>>
+      %265 = "cute.add_offset"(%264, %263) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=256}">) -> !cute.ptr<f32, gmem, align<16>>
+      %266 = "cute.make_coord"(%256, %257) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
+      %267 = "cute.get_layout"(%arg6) : (!memref_gmem_f32_1) -> !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
+      %268:9 = "cute.get_scalars"(%267) <{only_dynamic}> : (!cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> (i32, i32, i32, i32, i64, i64, i32, i64, i32)
+      %269 = "cute.make_stride"(%268#4) : (i64) -> !cute.stride<"(?{i64},1)">
+      %270 = "cute.make_layout"(%253, %269) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"(64,256)">, !cute.stride<"(?{i64},1)">) -> !cute.layout<"(64,256):(?{i64},1)">
+      %271 = "cute.crd2idx"(%266, %267) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !cute.int_tuple<"?{i64 div=64}">
+      %272 = "cute.get_iter"(%arg6) : (!memref_gmem_f32_1) -> !cute.ptr<f32, gmem, align<16>>
+      %273 = "cute.add_offset"(%272, %271) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{i64 div=64}">) -> !cute.ptr<f32, gmem, align<16>>
+      %274 = "cute.make_coord"(%256, %257) : (i32, i32) -> !cute.coord<"((_,_),(?,?))">
+      %275 = "cute.get_layout"(%arg7) : (!cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">) -> !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
+      %276 = "cute.crd2idx"(%274, %275) : (!cute.coord<"((_,_),(?,?))">, !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">) -> !cute.int_tuple<"(?{div=64},?{div=256})">
+      %277 = "cute.get_iter"(%arg7) : (!cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">) -> !cute.arith_tuple_iter<"(0,0)">
+      %278 = "cute.add_offset"(%277, %276) : (!cute.arith_tuple_iter<"(0,0)">, !cute.int_tuple<"(?{div=64},?{div=256})">) -> !cute.arith_tuple_iter<"(?{div=64},?{div=256})">
+      %279 = "cute.get_scalars"(%270) <{only_dynamic}> : (!cute.layout<"(64,256):(?{i64},1)">) -> i64
+      %280 = "arith.muli"(%279, %252) <{overflowFlags = #arith.overflow<none>}> : (i64, i64) -> i64
+      %281 = "cute.assume"(%280) : (i64) -> !cute.i64<divby 16>
+      %282 = "cute.make_stride"(%281, %279) : (!cute.i64<divby 16>, i64) -> !cute.stride<"((4,?{i64 div=16}),(1,?{i64}))">
+      %283 = "cute.make_layout"(%251, %282) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((64,4),(4,16))">, !cute.stride<"((4,?{i64 div=16}),(1,?{i64}))">) -> !cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">
+      %284 = "cute.make_coord"(%255) : (i32) -> !cute.coord<"(?,_)">
+      %285 = "cute.crd2idx"(%284, %249) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">) -> !cute.int_tuple<"?{div=4}">
+      %286 = "cute.add_offset"(%261, %285) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem, align<16>>
+      %287 = "cute.make_view"(%286) : (!cute.ptr<f32, gmem, align<16>>) -> !memref_gmem_f32_2
+      %288 = "cute.make_coord"(%255) : (i32) -> !cute.coord<"(?,_)">
+      %289 = "cute.crd2idx"(%288, %249) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,65536),(1,4096))">) -> !cute.int_tuple<"?{div=4}">
+      %290 = "cute.add_offset"(%265, %289) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{div=4}">) -> !cute.ptr<f32, gmem, align<16>>
+      %291 = "cute.make_view"(%290) : (!cute.ptr<f32, gmem, align<16>>) -> !memref_gmem_f32_2
+      %292 = "cute.make_coord"(%255) : (i32) -> !cute.coord<"(?,_)">
+      %293:2 = "cute.get_scalars"(%283) <{only_dynamic}> : (!cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">) -> (i64, i64)
+      %294 = "cute.make_stride"(%293#1) : (i64) -> !cute.stride<"((1,?{i64}))">
+      %295 = "cute.make_layout"(%248, %294) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((4,16))">, !cute.stride<"((1,?{i64}))">) -> !cute.layout<"((4,16)):((1,?{i64}))">
+      %296 = "cute.crd2idx"(%292, %283) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4,?{i64 div=16}),(1,?{i64}))">) -> !cute.int_tuple<"?{i64 div=4}">
+      %297 = "cute.add_offset"(%273, %296) : (!cute.ptr<f32, gmem, align<16>>, !cute.int_tuple<"?{i64 div=4}">) -> !cute.ptr<f32, gmem, align<16>>
+      %298 = "cute.make_view"(%297, %295) : (!cute.ptr<f32, gmem, align<16>>, !cute.layout<"((4,16)):((1,?{i64}))">) -> !memref_gmem_f32_3
+      %299 = "cute.make_coord"(%255) : (i32) -> !cute.coord<"(?,_)">
+      %300 = "cute.crd2idx"(%299, %247) : (!cute.coord<"(?,_)">, !cute.layout<"((64,4),(4,16)):((4@1,16@0),(1@1,1@0))">) -> !cute.int_tuple<"(?{div=16},?{div=4})">
+      %301 = "cute.add_offset"(%278, %300) : (!cute.arith_tuple_iter<"(?{div=64},?{div=256})">, !cute.int_tuple<"(?{div=16},?{div=4})">) -> !cute.arith_tuple_iter<"(?{div=16},?{div=4})">
+      %302 = "cute.memref.alloca"() : () -> !memref_rmem_i8_
+      %303 = "cute.deref_arith_tuple_iter"(%301) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">) -> !cute.int_tuple<"(?{div=16},?{div=4})">
+      %304:2 = "cute.get_leaves"(%303) : (!cute.int_tuple<"(?{div=16},?{div=4})">) -> (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=4}">)
+      %305 = "cute.make_coord"(%304#0, %304#1) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=16},?{div=4})">
+      %306 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %307:2 = "cute.get_scalars"(%305) : (!cute.coord<"(?{div=16},?{div=4})">) -> (i32, i32)
+      %308:2 = "cute.get_scalars"(%306) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %309 = "arith.cmpi"(%307#0, %308#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %310 = "arith.cmpi"(%307#1, %308#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %311 = "arith.andi"(%309, %310) : (i1, i1) -> i1
+      %312 = "arith.extui"(%311) : (i1) -> i8
+      "cute.memref.store"(%302, %246, %312) : (!memref_rmem_i8_, !cute.coord<"0">, i8) -> ()
+      %313 = "cute.add_offset"(%301, %245) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,1)">) -> !cute.arith_tuple_iter<"(?{div=16},?)">
+      %314 = "cute.deref_arith_tuple_iter"(%313) : (!cute.arith_tuple_iter<"(?{div=16},?)">) -> !cute.int_tuple<"(?{div=16},?)">
+      %315:2 = "cute.get_leaves"(%314) : (!cute.int_tuple<"(?{div=16},?)">) -> (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">)
+      %316 = "cute.make_coord"(%315#0, %315#1) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=16},?)">
+      %317 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %318:2 = "cute.get_scalars"(%316) : (!cute.coord<"(?{div=16},?)">) -> (i32, i32)
+      %319:2 = "cute.get_scalars"(%317) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %320 = "arith.cmpi"(%318#0, %319#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %321 = "arith.cmpi"(%318#1, %319#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %322 = "arith.andi"(%320, %321) : (i1, i1) -> i1
+      %323 = "arith.extui"(%322) : (i1) -> i8
+      "cute.memref.store"(%302, %250, %323) : (!memref_rmem_i8_, !cute.coord<"1">, i8) -> ()
+      %324 = "cute.add_offset"(%301, %244) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,2)">) -> !cute.arith_tuple_iter<"(?{div=16},?{div=2})">
+      %325 = "cute.deref_arith_tuple_iter"(%324) : (!cute.arith_tuple_iter<"(?{div=16},?{div=2})">) -> !cute.int_tuple<"(?{div=16},?{div=2})">
+      %326:2 = "cute.get_leaves"(%325) : (!cute.int_tuple<"(?{div=16},?{div=2})">) -> (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=2}">)
+      %327 = "cute.make_coord"(%326#0, %326#1) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=16},?{div=2})">
+      %328 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %329:2 = "cute.get_scalars"(%327) : (!cute.coord<"(?{div=16},?{div=2})">) -> (i32, i32)
+      %330:2 = "cute.get_scalars"(%328) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %331 = "arith.cmpi"(%329#0, %330#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %332 = "arith.cmpi"(%329#1, %330#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %333 = "arith.andi"(%331, %332) : (i1, i1) -> i1
+      %334 = "arith.extui"(%333) : (i1) -> i8
+      "cute.memref.store"(%302, %243, %334) : (!memref_rmem_i8_, !cute.coord<"2">, i8) -> ()
+      %335 = "cute.add_offset"(%301, %242) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(0,3)">) -> !cute.arith_tuple_iter<"(?{div=16},?)">
+      %336 = "cute.deref_arith_tuple_iter"(%335) : (!cute.arith_tuple_iter<"(?{div=16},?)">) -> !cute.int_tuple<"(?{div=16},?)">
+      %337:2 = "cute.get_leaves"(%336) : (!cute.int_tuple<"(?{div=16},?)">) -> (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">)
+      %338 = "cute.make_coord"(%337#0, %337#1) : (!cute.int_tuple<"?{div=16}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=16},?)">
+      %339 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %340:2 = "cute.get_scalars"(%338) : (!cute.coord<"(?{div=16},?)">) -> (i32, i32)
+      %341:2 = "cute.get_scalars"(%339) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %342 = "arith.cmpi"(%340#0, %341#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %343 = "arith.cmpi"(%340#1, %341#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %344 = "arith.andi"(%342, %343) : (i1, i1) -> i1
+      %345 = "arith.extui"(%344) : (i1) -> i8
+      "cute.memref.store"(%302, %241, %345) : (!memref_rmem_i8_, !cute.coord<"3">, i8) -> ()
+      %346 = "cute.add_offset"(%301, %240) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %347 = "cute.deref_arith_tuple_iter"(%346) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %348:2 = "cute.get_leaves"(%347) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %349 = "cute.make_coord"(%348#0, %348#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %350 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %351:2 = "cute.get_scalars"(%349) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %352:2 = "cute.get_scalars"(%350) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %353 = "arith.cmpi"(%351#0, %352#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %354 = "arith.cmpi"(%351#1, %352#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %355 = "arith.andi"(%353, %354) : (i1, i1) -> i1
+      %356 = "arith.extui"(%355) : (i1) -> i8
+      "cute.memref.store"(%302, %239, %356) : (!memref_rmem_i8_, !cute.coord<"4">, i8) -> ()
+      %357 = "cute.add_offset"(%301, %238) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %358 = "cute.deref_arith_tuple_iter"(%357) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %359:2 = "cute.get_leaves"(%358) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %360 = "cute.make_coord"(%359#0, %359#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %361 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %362:2 = "cute.get_scalars"(%360) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %363:2 = "cute.get_scalars"(%361) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %364 = "arith.cmpi"(%362#0, %363#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %365 = "arith.cmpi"(%362#1, %363#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %366 = "arith.andi"(%364, %365) : (i1, i1) -> i1
+      %367 = "arith.extui"(%366) : (i1) -> i8
+      "cute.memref.store"(%302, %237, %367) : (!memref_rmem_i8_, !cute.coord<"5">, i8) -> ()
+      %368 = "cute.add_offset"(%301, %236) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %369 = "cute.deref_arith_tuple_iter"(%368) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %370:2 = "cute.get_leaves"(%369) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %371 = "cute.make_coord"(%370#0, %370#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %372 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %373:2 = "cute.get_scalars"(%371) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %374:2 = "cute.get_scalars"(%372) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %375 = "arith.cmpi"(%373#0, %374#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %376 = "arith.cmpi"(%373#1, %374#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %377 = "arith.andi"(%375, %376) : (i1, i1) -> i1
+      %378 = "arith.extui"(%377) : (i1) -> i8
+      "cute.memref.store"(%302, %235, %378) : (!memref_rmem_i8_, !cute.coord<"6">, i8) -> ()
+      %379 = "cute.add_offset"(%301, %234) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(1,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %380 = "cute.deref_arith_tuple_iter"(%379) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %381:2 = "cute.get_leaves"(%380) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %382 = "cute.make_coord"(%381#0, %381#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %383 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %384:2 = "cute.get_scalars"(%382) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %385:2 = "cute.get_scalars"(%383) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %386 = "arith.cmpi"(%384#0, %385#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %387 = "arith.cmpi"(%384#1, %385#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %388 = "arith.andi"(%386, %387) : (i1, i1) -> i1
+      %389 = "arith.extui"(%388) : (i1) -> i8
+      "cute.memref.store"(%302, %233, %389) : (!memref_rmem_i8_, !cute.coord<"7">, i8) -> ()
+      %390 = "cute.add_offset"(%301, %232) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,0)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=4})">
+      %391 = "cute.deref_arith_tuple_iter"(%390) : (!cute.arith_tuple_iter<"(?{div=2},?{div=4})">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
+      %392:2 = "cute.get_leaves"(%391) : (!cute.int_tuple<"(?{div=2},?{div=4})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">)
+      %393 = "cute.make_coord"(%392#0, %392#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
+      %394 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %395:2 = "cute.get_scalars"(%393) : (!cute.coord<"(?{div=2},?{div=4})">) -> (i32, i32)
+      %396:2 = "cute.get_scalars"(%394) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %397 = "arith.cmpi"(%395#0, %396#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %398 = "arith.cmpi"(%395#1, %396#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %399 = "arith.andi"(%397, %398) : (i1, i1) -> i1
+      %400 = "arith.extui"(%399) : (i1) -> i8
+      "cute.memref.store"(%302, %231, %400) : (!memref_rmem_i8_, !cute.coord<"8">, i8) -> ()
+      %401 = "cute.add_offset"(%301, %230) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,1)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %402 = "cute.deref_arith_tuple_iter"(%401) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %403:2 = "cute.get_leaves"(%402) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %404 = "cute.make_coord"(%403#0, %403#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %405 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %406:2 = "cute.get_scalars"(%404) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %407:2 = "cute.get_scalars"(%405) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %408 = "arith.cmpi"(%406#0, %407#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %409 = "arith.cmpi"(%406#1, %407#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %410 = "arith.andi"(%408, %409) : (i1, i1) -> i1
+      %411 = "arith.extui"(%410) : (i1) -> i8
+      "cute.memref.store"(%302, %229, %411) : (!memref_rmem_i8_, !cute.coord<"9">, i8) -> ()
+      %412 = "cute.add_offset"(%301, %228) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,2)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=2})">
+      %413 = "cute.deref_arith_tuple_iter"(%412) : (!cute.arith_tuple_iter<"(?{div=2},?{div=2})">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
+      %414:2 = "cute.get_leaves"(%413) : (!cute.int_tuple<"(?{div=2},?{div=2})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">)
+      %415 = "cute.make_coord"(%414#0, %414#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
+      %416 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %417:2 = "cute.get_scalars"(%415) : (!cute.coord<"(?{div=2},?{div=2})">) -> (i32, i32)
+      %418:2 = "cute.get_scalars"(%416) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %419 = "arith.cmpi"(%417#0, %418#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %420 = "arith.cmpi"(%417#1, %418#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %421 = "arith.andi"(%419, %420) : (i1, i1) -> i1
+      %422 = "arith.extui"(%421) : (i1) -> i8
+      "cute.memref.store"(%302, %227, %422) : (!memref_rmem_i8_, !cute.coord<"10">, i8) -> ()
+      %423 = "cute.add_offset"(%301, %226) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(2,3)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %424 = "cute.deref_arith_tuple_iter"(%423) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %425:2 = "cute.get_leaves"(%424) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %426 = "cute.make_coord"(%425#0, %425#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %427 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %428:2 = "cute.get_scalars"(%426) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %429:2 = "cute.get_scalars"(%427) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %430 = "arith.cmpi"(%428#0, %429#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %431 = "arith.cmpi"(%428#1, %429#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %432 = "arith.andi"(%430, %431) : (i1, i1) -> i1
+      %433 = "arith.extui"(%432) : (i1) -> i8
+      "cute.memref.store"(%302, %225, %433) : (!memref_rmem_i8_, !cute.coord<"11">, i8) -> ()
+      %434 = "cute.add_offset"(%301, %224) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %435 = "cute.deref_arith_tuple_iter"(%434) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %436:2 = "cute.get_leaves"(%435) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %437 = "cute.make_coord"(%436#0, %436#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %438 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %439:2 = "cute.get_scalars"(%437) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %440:2 = "cute.get_scalars"(%438) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %441 = "arith.cmpi"(%439#0, %440#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %442 = "arith.cmpi"(%439#1, %440#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %443 = "arith.andi"(%441, %442) : (i1, i1) -> i1
+      %444 = "arith.extui"(%443) : (i1) -> i8
+      "cute.memref.store"(%302, %223, %444) : (!memref_rmem_i8_, !cute.coord<"12">, i8) -> ()
+      %445 = "cute.add_offset"(%301, %222) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %446 = "cute.deref_arith_tuple_iter"(%445) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %447:2 = "cute.get_leaves"(%446) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %448 = "cute.make_coord"(%447#0, %447#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %449 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %450:2 = "cute.get_scalars"(%448) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %451:2 = "cute.get_scalars"(%449) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %452 = "arith.cmpi"(%450#0, %451#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %453 = "arith.cmpi"(%450#1, %451#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %454 = "arith.andi"(%452, %453) : (i1, i1) -> i1
+      %455 = "arith.extui"(%454) : (i1) -> i8
+      "cute.memref.store"(%302, %221, %455) : (!memref_rmem_i8_, !cute.coord<"13">, i8) -> ()
+      %456 = "cute.add_offset"(%301, %220) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %457 = "cute.deref_arith_tuple_iter"(%456) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %458:2 = "cute.get_leaves"(%457) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %459 = "cute.make_coord"(%458#0, %458#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %460 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %461:2 = "cute.get_scalars"(%459) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %462:2 = "cute.get_scalars"(%460) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %463 = "arith.cmpi"(%461#0, %462#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %464 = "arith.cmpi"(%461#1, %462#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %465 = "arith.andi"(%463, %464) : (i1, i1) -> i1
+      %466 = "arith.extui"(%465) : (i1) -> i8
+      "cute.memref.store"(%302, %219, %466) : (!memref_rmem_i8_, !cute.coord<"14">, i8) -> ()
+      %467 = "cute.add_offset"(%301, %218) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(3,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %468 = "cute.deref_arith_tuple_iter"(%467) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %469:2 = "cute.get_leaves"(%468) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %470 = "cute.make_coord"(%469#0, %469#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %471 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %472:2 = "cute.get_scalars"(%470) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %473:2 = "cute.get_scalars"(%471) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %474 = "arith.cmpi"(%472#0, %473#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %475 = "arith.cmpi"(%472#1, %473#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %476 = "arith.andi"(%474, %475) : (i1, i1) -> i1
+      %477 = "arith.extui"(%476) : (i1) -> i8
+      "cute.memref.store"(%302, %217, %477) : (!memref_rmem_i8_, !cute.coord<"15">, i8) -> ()
+      %478 = "cute.add_offset"(%301, %216) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,0)">) -> !cute.arith_tuple_iter<"(?{div=4},?{div=4})">
+      %479 = "cute.deref_arith_tuple_iter"(%478) : (!cute.arith_tuple_iter<"(?{div=4},?{div=4})">) -> !cute.int_tuple<"(?{div=4},?{div=4})">
+      %480:2 = "cute.get_leaves"(%479) : (!cute.int_tuple<"(?{div=4},?{div=4})">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">)
+      %481 = "cute.make_coord"(%480#0, %480#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=4},?{div=4})">
+      %482 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %483:2 = "cute.get_scalars"(%481) : (!cute.coord<"(?{div=4},?{div=4})">) -> (i32, i32)
+      %484:2 = "cute.get_scalars"(%482) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %485 = "arith.cmpi"(%483#0, %484#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %486 = "arith.cmpi"(%483#1, %484#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %487 = "arith.andi"(%485, %486) : (i1, i1) -> i1
+      %488 = "arith.extui"(%487) : (i1) -> i8
+      "cute.memref.store"(%302, %215, %488) : (!memref_rmem_i8_, !cute.coord<"16">, i8) -> ()
+      %489 = "cute.add_offset"(%301, %214) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,1)">) -> !cute.arith_tuple_iter<"(?{div=4},?)">
+      %490 = "cute.deref_arith_tuple_iter"(%489) : (!cute.arith_tuple_iter<"(?{div=4},?)">) -> !cute.int_tuple<"(?{div=4},?)">
+      %491:2 = "cute.get_leaves"(%490) : (!cute.int_tuple<"(?{div=4},?)">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">)
+      %492 = "cute.make_coord"(%491#0, %491#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
+      %493 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %494:2 = "cute.get_scalars"(%492) : (!cute.coord<"(?{div=4},?)">) -> (i32, i32)
+      %495:2 = "cute.get_scalars"(%493) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %496 = "arith.cmpi"(%494#0, %495#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %497 = "arith.cmpi"(%494#1, %495#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %498 = "arith.andi"(%496, %497) : (i1, i1) -> i1
+      %499 = "arith.extui"(%498) : (i1) -> i8
+      "cute.memref.store"(%302, %213, %499) : (!memref_rmem_i8_, !cute.coord<"17">, i8) -> ()
+      %500 = "cute.add_offset"(%301, %212) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,2)">) -> !cute.arith_tuple_iter<"(?{div=4},?{div=2})">
+      %501 = "cute.deref_arith_tuple_iter"(%500) : (!cute.arith_tuple_iter<"(?{div=4},?{div=2})">) -> !cute.int_tuple<"(?{div=4},?{div=2})">
+      %502:2 = "cute.get_leaves"(%501) : (!cute.int_tuple<"(?{div=4},?{div=2})">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">)
+      %503 = "cute.make_coord"(%502#0, %502#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=4},?{div=2})">
+      %504 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %505:2 = "cute.get_scalars"(%503) : (!cute.coord<"(?{div=4},?{div=2})">) -> (i32, i32)
+      %506:2 = "cute.get_scalars"(%504) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %507 = "arith.cmpi"(%505#0, %506#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %508 = "arith.cmpi"(%505#1, %506#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %509 = "arith.andi"(%507, %508) : (i1, i1) -> i1
+      %510 = "arith.extui"(%509) : (i1) -> i8
+      "cute.memref.store"(%302, %211, %510) : (!memref_rmem_i8_, !cute.coord<"18">, i8) -> ()
+      %511 = "cute.add_offset"(%301, %210) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(4,3)">) -> !cute.arith_tuple_iter<"(?{div=4},?)">
+      %512 = "cute.deref_arith_tuple_iter"(%511) : (!cute.arith_tuple_iter<"(?{div=4},?)">) -> !cute.int_tuple<"(?{div=4},?)">
+      %513:2 = "cute.get_leaves"(%512) : (!cute.int_tuple<"(?{div=4},?)">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">)
+      %514 = "cute.make_coord"(%513#0, %513#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
+      %515 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %516:2 = "cute.get_scalars"(%514) : (!cute.coord<"(?{div=4},?)">) -> (i32, i32)
+      %517:2 = "cute.get_scalars"(%515) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %518 = "arith.cmpi"(%516#0, %517#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %519 = "arith.cmpi"(%516#1, %517#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %520 = "arith.andi"(%518, %519) : (i1, i1) -> i1
+      %521 = "arith.extui"(%520) : (i1) -> i8
+      "cute.memref.store"(%302, %209, %521) : (!memref_rmem_i8_, !cute.coord<"19">, i8) -> ()
+      %522 = "cute.add_offset"(%301, %208) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %523 = "cute.deref_arith_tuple_iter"(%522) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %524:2 = "cute.get_leaves"(%523) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %525 = "cute.make_coord"(%524#0, %524#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %526 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %527:2 = "cute.get_scalars"(%525) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %528:2 = "cute.get_scalars"(%526) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %529 = "arith.cmpi"(%527#0, %528#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %530 = "arith.cmpi"(%527#1, %528#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %531 = "arith.andi"(%529, %530) : (i1, i1) -> i1
+      %532 = "arith.extui"(%531) : (i1) -> i8
+      "cute.memref.store"(%302, %207, %532) : (!memref_rmem_i8_, !cute.coord<"20">, i8) -> ()
+      %533 = "cute.add_offset"(%301, %206) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %534 = "cute.deref_arith_tuple_iter"(%533) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %535:2 = "cute.get_leaves"(%534) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %536 = "cute.make_coord"(%535#0, %535#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %537 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %538:2 = "cute.get_scalars"(%536) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %539:2 = "cute.get_scalars"(%537) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %540 = "arith.cmpi"(%538#0, %539#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %541 = "arith.cmpi"(%538#1, %539#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %542 = "arith.andi"(%540, %541) : (i1, i1) -> i1
+      %543 = "arith.extui"(%542) : (i1) -> i8
+      "cute.memref.store"(%302, %205, %543) : (!memref_rmem_i8_, !cute.coord<"21">, i8) -> ()
+      %544 = "cute.add_offset"(%301, %204) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %545 = "cute.deref_arith_tuple_iter"(%544) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %546:2 = "cute.get_leaves"(%545) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %547 = "cute.make_coord"(%546#0, %546#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %548 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %549:2 = "cute.get_scalars"(%547) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %550:2 = "cute.get_scalars"(%548) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %551 = "arith.cmpi"(%549#0, %550#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %552 = "arith.cmpi"(%549#1, %550#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %553 = "arith.andi"(%551, %552) : (i1, i1) -> i1
+      %554 = "arith.extui"(%553) : (i1) -> i8
+      "cute.memref.store"(%302, %203, %554) : (!memref_rmem_i8_, !cute.coord<"22">, i8) -> ()
+      %555 = "cute.add_offset"(%301, %202) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(5,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %556 = "cute.deref_arith_tuple_iter"(%555) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %557:2 = "cute.get_leaves"(%556) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %558 = "cute.make_coord"(%557#0, %557#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %559 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %560:2 = "cute.get_scalars"(%558) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %561:2 = "cute.get_scalars"(%559) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %562 = "arith.cmpi"(%560#0, %561#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %563 = "arith.cmpi"(%560#1, %561#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %564 = "arith.andi"(%562, %563) : (i1, i1) -> i1
+      %565 = "arith.extui"(%564) : (i1) -> i8
+      "cute.memref.store"(%302, %201, %565) : (!memref_rmem_i8_, !cute.coord<"23">, i8) -> ()
+      %566 = "cute.add_offset"(%301, %200) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,0)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=4})">
+      %567 = "cute.deref_arith_tuple_iter"(%566) : (!cute.arith_tuple_iter<"(?{div=2},?{div=4})">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
+      %568:2 = "cute.get_leaves"(%567) : (!cute.int_tuple<"(?{div=2},?{div=4})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">)
+      %569 = "cute.make_coord"(%568#0, %568#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
+      %570 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %571:2 = "cute.get_scalars"(%569) : (!cute.coord<"(?{div=2},?{div=4})">) -> (i32, i32)
+      %572:2 = "cute.get_scalars"(%570) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %573 = "arith.cmpi"(%571#0, %572#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %574 = "arith.cmpi"(%571#1, %572#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %575 = "arith.andi"(%573, %574) : (i1, i1) -> i1
+      %576 = "arith.extui"(%575) : (i1) -> i8
+      "cute.memref.store"(%302, %199, %576) : (!memref_rmem_i8_, !cute.coord<"24">, i8) -> ()
+      %577 = "cute.add_offset"(%301, %198) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,1)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %578 = "cute.deref_arith_tuple_iter"(%577) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %579:2 = "cute.get_leaves"(%578) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %580 = "cute.make_coord"(%579#0, %579#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %581 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %582:2 = "cute.get_scalars"(%580) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %583:2 = "cute.get_scalars"(%581) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %584 = "arith.cmpi"(%582#0, %583#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %585 = "arith.cmpi"(%582#1, %583#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %586 = "arith.andi"(%584, %585) : (i1, i1) -> i1
+      %587 = "arith.extui"(%586) : (i1) -> i8
+      "cute.memref.store"(%302, %197, %587) : (!memref_rmem_i8_, !cute.coord<"25">, i8) -> ()
+      %588 = "cute.add_offset"(%301, %196) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,2)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=2})">
+      %589 = "cute.deref_arith_tuple_iter"(%588) : (!cute.arith_tuple_iter<"(?{div=2},?{div=2})">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
+      %590:2 = "cute.get_leaves"(%589) : (!cute.int_tuple<"(?{div=2},?{div=2})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">)
+      %591 = "cute.make_coord"(%590#0, %590#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
+      %592 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %593:2 = "cute.get_scalars"(%591) : (!cute.coord<"(?{div=2},?{div=2})">) -> (i32, i32)
+      %594:2 = "cute.get_scalars"(%592) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %595 = "arith.cmpi"(%593#0, %594#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %596 = "arith.cmpi"(%593#1, %594#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %597 = "arith.andi"(%595, %596) : (i1, i1) -> i1
+      %598 = "arith.extui"(%597) : (i1) -> i8
+      "cute.memref.store"(%302, %195, %598) : (!memref_rmem_i8_, !cute.coord<"26">, i8) -> ()
+      %599 = "cute.add_offset"(%301, %194) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(6,3)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %600 = "cute.deref_arith_tuple_iter"(%599) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %601:2 = "cute.get_leaves"(%600) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %602 = "cute.make_coord"(%601#0, %601#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %603 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %604:2 = "cute.get_scalars"(%602) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %605:2 = "cute.get_scalars"(%603) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %606 = "arith.cmpi"(%604#0, %605#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %607 = "arith.cmpi"(%604#1, %605#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %608 = "arith.andi"(%606, %607) : (i1, i1) -> i1
+      %609 = "arith.extui"(%608) : (i1) -> i8
+      "cute.memref.store"(%302, %193, %609) : (!memref_rmem_i8_, !cute.coord<"27">, i8) -> ()
+      %610 = "cute.add_offset"(%301, %192) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %611 = "cute.deref_arith_tuple_iter"(%610) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %612:2 = "cute.get_leaves"(%611) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %613 = "cute.make_coord"(%612#0, %612#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %614 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %615:2 = "cute.get_scalars"(%613) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %616:2 = "cute.get_scalars"(%614) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %617 = "arith.cmpi"(%615#0, %616#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %618 = "arith.cmpi"(%615#1, %616#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %619 = "arith.andi"(%617, %618) : (i1, i1) -> i1
+      %620 = "arith.extui"(%619) : (i1) -> i8
+      "cute.memref.store"(%302, %191, %620) : (!memref_rmem_i8_, !cute.coord<"28">, i8) -> ()
+      %621 = "cute.add_offset"(%301, %190) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %622 = "cute.deref_arith_tuple_iter"(%621) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %623:2 = "cute.get_leaves"(%622) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %624 = "cute.make_coord"(%623#0, %623#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %625 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %626:2 = "cute.get_scalars"(%624) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %627:2 = "cute.get_scalars"(%625) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %628 = "arith.cmpi"(%626#0, %627#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %629 = "arith.cmpi"(%626#1, %627#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %630 = "arith.andi"(%628, %629) : (i1, i1) -> i1
+      %631 = "arith.extui"(%630) : (i1) -> i8
+      "cute.memref.store"(%302, %189, %631) : (!memref_rmem_i8_, !cute.coord<"29">, i8) -> ()
+      %632 = "cute.add_offset"(%301, %188) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %633 = "cute.deref_arith_tuple_iter"(%632) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %634:2 = "cute.get_leaves"(%633) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %635 = "cute.make_coord"(%634#0, %634#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %636 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %637:2 = "cute.get_scalars"(%635) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %638:2 = "cute.get_scalars"(%636) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %639 = "arith.cmpi"(%637#0, %638#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %640 = "arith.cmpi"(%637#1, %638#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %641 = "arith.andi"(%639, %640) : (i1, i1) -> i1
+      %642 = "arith.extui"(%641) : (i1) -> i8
+      "cute.memref.store"(%302, %187, %642) : (!memref_rmem_i8_, !cute.coord<"30">, i8) -> ()
+      %643 = "cute.add_offset"(%301, %186) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(7,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %644 = "cute.deref_arith_tuple_iter"(%643) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %645:2 = "cute.get_leaves"(%644) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %646 = "cute.make_coord"(%645#0, %645#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %647 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %648:2 = "cute.get_scalars"(%646) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %649:2 = "cute.get_scalars"(%647) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %650 = "arith.cmpi"(%648#0, %649#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %651 = "arith.cmpi"(%648#1, %649#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %652 = "arith.andi"(%650, %651) : (i1, i1) -> i1
+      %653 = "arith.extui"(%652) : (i1) -> i8
+      "cute.memref.store"(%302, %185, %653) : (!memref_rmem_i8_, !cute.coord<"31">, i8) -> ()
+      %654 = "cute.add_offset"(%301, %184) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,0)">) -> !cute.arith_tuple_iter<"(?{div=8},?{div=4})">
+      %655 = "cute.deref_arith_tuple_iter"(%654) : (!cute.arith_tuple_iter<"(?{div=8},?{div=4})">) -> !cute.int_tuple<"(?{div=8},?{div=4})">
+      %656:2 = "cute.get_leaves"(%655) : (!cute.int_tuple<"(?{div=8},?{div=4})">) -> (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=4}">)
+      %657 = "cute.make_coord"(%656#0, %656#1) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=8},?{div=4})">
+      %658 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %659:2 = "cute.get_scalars"(%657) : (!cute.coord<"(?{div=8},?{div=4})">) -> (i32, i32)
+      %660:2 = "cute.get_scalars"(%658) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %661 = "arith.cmpi"(%659#0, %660#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %662 = "arith.cmpi"(%659#1, %660#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %663 = "arith.andi"(%661, %662) : (i1, i1) -> i1
+      %664 = "arith.extui"(%663) : (i1) -> i8
+      "cute.memref.store"(%302, %183, %664) : (!memref_rmem_i8_, !cute.coord<"32">, i8) -> ()
+      %665 = "cute.add_offset"(%301, %182) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,1)">) -> !cute.arith_tuple_iter<"(?{div=8},?)">
+      %666 = "cute.deref_arith_tuple_iter"(%665) : (!cute.arith_tuple_iter<"(?{div=8},?)">) -> !cute.int_tuple<"(?{div=8},?)">
+      %667:2 = "cute.get_leaves"(%666) : (!cute.int_tuple<"(?{div=8},?)">) -> (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">)
+      %668 = "cute.make_coord"(%667#0, %667#1) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=8},?)">
+      %669 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %670:2 = "cute.get_scalars"(%668) : (!cute.coord<"(?{div=8},?)">) -> (i32, i32)
+      %671:2 = "cute.get_scalars"(%669) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %672 = "arith.cmpi"(%670#0, %671#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %673 = "arith.cmpi"(%670#1, %671#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %674 = "arith.andi"(%672, %673) : (i1, i1) -> i1
+      %675 = "arith.extui"(%674) : (i1) -> i8
+      "cute.memref.store"(%302, %181, %675) : (!memref_rmem_i8_, !cute.coord<"33">, i8) -> ()
+      %676 = "cute.add_offset"(%301, %180) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,2)">) -> !cute.arith_tuple_iter<"(?{div=8},?{div=2})">
+      %677 = "cute.deref_arith_tuple_iter"(%676) : (!cute.arith_tuple_iter<"(?{div=8},?{div=2})">) -> !cute.int_tuple<"(?{div=8},?{div=2})">
+      %678:2 = "cute.get_leaves"(%677) : (!cute.int_tuple<"(?{div=8},?{div=2})">) -> (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=2}">)
+      %679 = "cute.make_coord"(%678#0, %678#1) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=8},?{div=2})">
+      %680 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %681:2 = "cute.get_scalars"(%679) : (!cute.coord<"(?{div=8},?{div=2})">) -> (i32, i32)
+      %682:2 = "cute.get_scalars"(%680) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %683 = "arith.cmpi"(%681#0, %682#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %684 = "arith.cmpi"(%681#1, %682#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %685 = "arith.andi"(%683, %684) : (i1, i1) -> i1
+      %686 = "arith.extui"(%685) : (i1) -> i8
+      "cute.memref.store"(%302, %179, %686) : (!memref_rmem_i8_, !cute.coord<"34">, i8) -> ()
+      %687 = "cute.add_offset"(%301, %178) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(8,3)">) -> !cute.arith_tuple_iter<"(?{div=8},?)">
+      %688 = "cute.deref_arith_tuple_iter"(%687) : (!cute.arith_tuple_iter<"(?{div=8},?)">) -> !cute.int_tuple<"(?{div=8},?)">
+      %689:2 = "cute.get_leaves"(%688) : (!cute.int_tuple<"(?{div=8},?)">) -> (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">)
+      %690 = "cute.make_coord"(%689#0, %689#1) : (!cute.int_tuple<"?{div=8}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=8},?)">
+      %691 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %692:2 = "cute.get_scalars"(%690) : (!cute.coord<"(?{div=8},?)">) -> (i32, i32)
+      %693:2 = "cute.get_scalars"(%691) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %694 = "arith.cmpi"(%692#0, %693#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %695 = "arith.cmpi"(%692#1, %693#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %696 = "arith.andi"(%694, %695) : (i1, i1) -> i1
+      %697 = "arith.extui"(%696) : (i1) -> i8
+      "cute.memref.store"(%302, %177, %697) : (!memref_rmem_i8_, !cute.coord<"35">, i8) -> ()
+      %698 = "cute.add_offset"(%301, %176) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %699 = "cute.deref_arith_tuple_iter"(%698) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %700:2 = "cute.get_leaves"(%699) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %701 = "cute.make_coord"(%700#0, %700#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %702 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %703:2 = "cute.get_scalars"(%701) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %704:2 = "cute.get_scalars"(%702) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %705 = "arith.cmpi"(%703#0, %704#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %706 = "arith.cmpi"(%703#1, %704#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %707 = "arith.andi"(%705, %706) : (i1, i1) -> i1
+      %708 = "arith.extui"(%707) : (i1) -> i8
+      "cute.memref.store"(%302, %175, %708) : (!memref_rmem_i8_, !cute.coord<"36">, i8) -> ()
+      %709 = "cute.add_offset"(%301, %174) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %710 = "cute.deref_arith_tuple_iter"(%709) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %711:2 = "cute.get_leaves"(%710) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %712 = "cute.make_coord"(%711#0, %711#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %713 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %714:2 = "cute.get_scalars"(%712) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %715:2 = "cute.get_scalars"(%713) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %716 = "arith.cmpi"(%714#0, %715#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %717 = "arith.cmpi"(%714#1, %715#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %718 = "arith.andi"(%716, %717) : (i1, i1) -> i1
+      %719 = "arith.extui"(%718) : (i1) -> i8
+      "cute.memref.store"(%302, %173, %719) : (!memref_rmem_i8_, !cute.coord<"37">, i8) -> ()
+      %720 = "cute.add_offset"(%301, %172) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %721 = "cute.deref_arith_tuple_iter"(%720) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %722:2 = "cute.get_leaves"(%721) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %723 = "cute.make_coord"(%722#0, %722#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %724 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %725:2 = "cute.get_scalars"(%723) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %726:2 = "cute.get_scalars"(%724) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %727 = "arith.cmpi"(%725#0, %726#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %728 = "arith.cmpi"(%725#1, %726#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %729 = "arith.andi"(%727, %728) : (i1, i1) -> i1
+      %730 = "arith.extui"(%729) : (i1) -> i8
+      "cute.memref.store"(%302, %171, %730) : (!memref_rmem_i8_, !cute.coord<"38">, i8) -> ()
+      %731 = "cute.add_offset"(%301, %170) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(9,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %732 = "cute.deref_arith_tuple_iter"(%731) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %733:2 = "cute.get_leaves"(%732) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %734 = "cute.make_coord"(%733#0, %733#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %735 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %736:2 = "cute.get_scalars"(%734) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %737:2 = "cute.get_scalars"(%735) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %738 = "arith.cmpi"(%736#0, %737#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %739 = "arith.cmpi"(%736#1, %737#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %740 = "arith.andi"(%738, %739) : (i1, i1) -> i1
+      %741 = "arith.extui"(%740) : (i1) -> i8
+      "cute.memref.store"(%302, %169, %741) : (!memref_rmem_i8_, !cute.coord<"39">, i8) -> ()
+      %742 = "cute.add_offset"(%301, %168) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,0)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=4})">
+      %743 = "cute.deref_arith_tuple_iter"(%742) : (!cute.arith_tuple_iter<"(?{div=2},?{div=4})">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
+      %744:2 = "cute.get_leaves"(%743) : (!cute.int_tuple<"(?{div=2},?{div=4})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">)
+      %745 = "cute.make_coord"(%744#0, %744#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
+      %746 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %747:2 = "cute.get_scalars"(%745) : (!cute.coord<"(?{div=2},?{div=4})">) -> (i32, i32)
+      %748:2 = "cute.get_scalars"(%746) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %749 = "arith.cmpi"(%747#0, %748#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %750 = "arith.cmpi"(%747#1, %748#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %751 = "arith.andi"(%749, %750) : (i1, i1) -> i1
+      %752 = "arith.extui"(%751) : (i1) -> i8
+      "cute.memref.store"(%302, %167, %752) : (!memref_rmem_i8_, !cute.coord<"40">, i8) -> ()
+      %753 = "cute.add_offset"(%301, %166) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,1)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %754 = "cute.deref_arith_tuple_iter"(%753) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %755:2 = "cute.get_leaves"(%754) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %756 = "cute.make_coord"(%755#0, %755#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %757 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %758:2 = "cute.get_scalars"(%756) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %759:2 = "cute.get_scalars"(%757) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %760 = "arith.cmpi"(%758#0, %759#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %761 = "arith.cmpi"(%758#1, %759#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %762 = "arith.andi"(%760, %761) : (i1, i1) -> i1
+      %763 = "arith.extui"(%762) : (i1) -> i8
+      "cute.memref.store"(%302, %165, %763) : (!memref_rmem_i8_, !cute.coord<"41">, i8) -> ()
+      %764 = "cute.add_offset"(%301, %164) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,2)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=2})">
+      %765 = "cute.deref_arith_tuple_iter"(%764) : (!cute.arith_tuple_iter<"(?{div=2},?{div=2})">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
+      %766:2 = "cute.get_leaves"(%765) : (!cute.int_tuple<"(?{div=2},?{div=2})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">)
+      %767 = "cute.make_coord"(%766#0, %766#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
+      %768 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %769:2 = "cute.get_scalars"(%767) : (!cute.coord<"(?{div=2},?{div=2})">) -> (i32, i32)
+      %770:2 = "cute.get_scalars"(%768) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %771 = "arith.cmpi"(%769#0, %770#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %772 = "arith.cmpi"(%769#1, %770#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %773 = "arith.andi"(%771, %772) : (i1, i1) -> i1
+      %774 = "arith.extui"(%773) : (i1) -> i8
+      "cute.memref.store"(%302, %163, %774) : (!memref_rmem_i8_, !cute.coord<"42">, i8) -> ()
+      %775 = "cute.add_offset"(%301, %162) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(10,3)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %776 = "cute.deref_arith_tuple_iter"(%775) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %777:2 = "cute.get_leaves"(%776) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %778 = "cute.make_coord"(%777#0, %777#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %779 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %780:2 = "cute.get_scalars"(%778) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %781:2 = "cute.get_scalars"(%779) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %782 = "arith.cmpi"(%780#0, %781#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %783 = "arith.cmpi"(%780#1, %781#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %784 = "arith.andi"(%782, %783) : (i1, i1) -> i1
+      %785 = "arith.extui"(%784) : (i1) -> i8
+      "cute.memref.store"(%302, %161, %785) : (!memref_rmem_i8_, !cute.coord<"43">, i8) -> ()
+      %786 = "cute.add_offset"(%301, %160) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %787 = "cute.deref_arith_tuple_iter"(%786) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %788:2 = "cute.get_leaves"(%787) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %789 = "cute.make_coord"(%788#0, %788#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %790 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %791:2 = "cute.get_scalars"(%789) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %792:2 = "cute.get_scalars"(%790) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %793 = "arith.cmpi"(%791#0, %792#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %794 = "arith.cmpi"(%791#1, %792#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %795 = "arith.andi"(%793, %794) : (i1, i1) -> i1
+      %796 = "arith.extui"(%795) : (i1) -> i8
+      "cute.memref.store"(%302, %159, %796) : (!memref_rmem_i8_, !cute.coord<"44">, i8) -> ()
+      %797 = "cute.add_offset"(%301, %158) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %798 = "cute.deref_arith_tuple_iter"(%797) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %799:2 = "cute.get_leaves"(%798) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %800 = "cute.make_coord"(%799#0, %799#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %801 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %802:2 = "cute.get_scalars"(%800) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %803:2 = "cute.get_scalars"(%801) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %804 = "arith.cmpi"(%802#0, %803#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %805 = "arith.cmpi"(%802#1, %803#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %806 = "arith.andi"(%804, %805) : (i1, i1) -> i1
+      %807 = "arith.extui"(%806) : (i1) -> i8
+      "cute.memref.store"(%302, %157, %807) : (!memref_rmem_i8_, !cute.coord<"45">, i8) -> ()
+      %808 = "cute.add_offset"(%301, %156) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %809 = "cute.deref_arith_tuple_iter"(%808) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %810:2 = "cute.get_leaves"(%809) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %811 = "cute.make_coord"(%810#0, %810#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %812 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %813:2 = "cute.get_scalars"(%811) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %814:2 = "cute.get_scalars"(%812) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %815 = "arith.cmpi"(%813#0, %814#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %816 = "arith.cmpi"(%813#1, %814#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %817 = "arith.andi"(%815, %816) : (i1, i1) -> i1
+      %818 = "arith.extui"(%817) : (i1) -> i8
+      "cute.memref.store"(%302, %155, %818) : (!memref_rmem_i8_, !cute.coord<"46">, i8) -> ()
+      %819 = "cute.add_offset"(%301, %154) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(11,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %820 = "cute.deref_arith_tuple_iter"(%819) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %821:2 = "cute.get_leaves"(%820) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %822 = "cute.make_coord"(%821#0, %821#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %823 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %824:2 = "cute.get_scalars"(%822) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %825:2 = "cute.get_scalars"(%823) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %826 = "arith.cmpi"(%824#0, %825#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %827 = "arith.cmpi"(%824#1, %825#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %828 = "arith.andi"(%826, %827) : (i1, i1) -> i1
+      %829 = "arith.extui"(%828) : (i1) -> i8
+      "cute.memref.store"(%302, %153, %829) : (!memref_rmem_i8_, !cute.coord<"47">, i8) -> ()
+      %830 = "cute.add_offset"(%301, %152) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,0)">) -> !cute.arith_tuple_iter<"(?{div=4},?{div=4})">
+      %831 = "cute.deref_arith_tuple_iter"(%830) : (!cute.arith_tuple_iter<"(?{div=4},?{div=4})">) -> !cute.int_tuple<"(?{div=4},?{div=4})">
+      %832:2 = "cute.get_leaves"(%831) : (!cute.int_tuple<"(?{div=4},?{div=4})">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">)
+      %833 = "cute.make_coord"(%832#0, %832#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=4},?{div=4})">
+      %834 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %835:2 = "cute.get_scalars"(%833) : (!cute.coord<"(?{div=4},?{div=4})">) -> (i32, i32)
+      %836:2 = "cute.get_scalars"(%834) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %837 = "arith.cmpi"(%835#0, %836#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %838 = "arith.cmpi"(%835#1, %836#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %839 = "arith.andi"(%837, %838) : (i1, i1) -> i1
+      %840 = "arith.extui"(%839) : (i1) -> i8
+      "cute.memref.store"(%302, %151, %840) : (!memref_rmem_i8_, !cute.coord<"48">, i8) -> ()
+      %841 = "cute.add_offset"(%301, %150) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,1)">) -> !cute.arith_tuple_iter<"(?{div=4},?)">
+      %842 = "cute.deref_arith_tuple_iter"(%841) : (!cute.arith_tuple_iter<"(?{div=4},?)">) -> !cute.int_tuple<"(?{div=4},?)">
+      %843:2 = "cute.get_leaves"(%842) : (!cute.int_tuple<"(?{div=4},?)">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">)
+      %844 = "cute.make_coord"(%843#0, %843#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
+      %845 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %846:2 = "cute.get_scalars"(%844) : (!cute.coord<"(?{div=4},?)">) -> (i32, i32)
+      %847:2 = "cute.get_scalars"(%845) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %848 = "arith.cmpi"(%846#0, %847#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %849 = "arith.cmpi"(%846#1, %847#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %850 = "arith.andi"(%848, %849) : (i1, i1) -> i1
+      %851 = "arith.extui"(%850) : (i1) -> i8
+      "cute.memref.store"(%302, %149, %851) : (!memref_rmem_i8_, !cute.coord<"49">, i8) -> ()
+      %852 = "cute.add_offset"(%301, %148) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,2)">) -> !cute.arith_tuple_iter<"(?{div=4},?{div=2})">
+      %853 = "cute.deref_arith_tuple_iter"(%852) : (!cute.arith_tuple_iter<"(?{div=4},?{div=2})">) -> !cute.int_tuple<"(?{div=4},?{div=2})">
+      %854:2 = "cute.get_leaves"(%853) : (!cute.int_tuple<"(?{div=4},?{div=2})">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">)
+      %855 = "cute.make_coord"(%854#0, %854#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=4},?{div=2})">
+      %856 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %857:2 = "cute.get_scalars"(%855) : (!cute.coord<"(?{div=4},?{div=2})">) -> (i32, i32)
+      %858:2 = "cute.get_scalars"(%856) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %859 = "arith.cmpi"(%857#0, %858#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %860 = "arith.cmpi"(%857#1, %858#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %861 = "arith.andi"(%859, %860) : (i1, i1) -> i1
+      %862 = "arith.extui"(%861) : (i1) -> i8
+      "cute.memref.store"(%302, %147, %862) : (!memref_rmem_i8_, !cute.coord<"50">, i8) -> ()
+      %863 = "cute.add_offset"(%301, %146) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(12,3)">) -> !cute.arith_tuple_iter<"(?{div=4},?)">
+      %864 = "cute.deref_arith_tuple_iter"(%863) : (!cute.arith_tuple_iter<"(?{div=4},?)">) -> !cute.int_tuple<"(?{div=4},?)">
+      %865:2 = "cute.get_leaves"(%864) : (!cute.int_tuple<"(?{div=4},?)">) -> (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">)
+      %866 = "cute.make_coord"(%865#0, %865#1) : (!cute.int_tuple<"?{div=4}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=4},?)">
+      %867 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %868:2 = "cute.get_scalars"(%866) : (!cute.coord<"(?{div=4},?)">) -> (i32, i32)
+      %869:2 = "cute.get_scalars"(%867) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %870 = "arith.cmpi"(%868#0, %869#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %871 = "arith.cmpi"(%868#1, %869#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %872 = "arith.andi"(%870, %871) : (i1, i1) -> i1
+      %873 = "arith.extui"(%872) : (i1) -> i8
+      "cute.memref.store"(%302, %145, %873) : (!memref_rmem_i8_, !cute.coord<"51">, i8) -> ()
+      %874 = "cute.add_offset"(%301, %144) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %875 = "cute.deref_arith_tuple_iter"(%874) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %876:2 = "cute.get_leaves"(%875) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %877 = "cute.make_coord"(%876#0, %876#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %878 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %879:2 = "cute.get_scalars"(%877) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %880:2 = "cute.get_scalars"(%878) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %881 = "arith.cmpi"(%879#0, %880#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %882 = "arith.cmpi"(%879#1, %880#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %883 = "arith.andi"(%881, %882) : (i1, i1) -> i1
+      %884 = "arith.extui"(%883) : (i1) -> i8
+      "cute.memref.store"(%302, %143, %884) : (!memref_rmem_i8_, !cute.coord<"52">, i8) -> ()
+      %885 = "cute.add_offset"(%301, %142) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %886 = "cute.deref_arith_tuple_iter"(%885) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %887:2 = "cute.get_leaves"(%886) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %888 = "cute.make_coord"(%887#0, %887#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %889 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %890:2 = "cute.get_scalars"(%888) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %891:2 = "cute.get_scalars"(%889) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %892 = "arith.cmpi"(%890#0, %891#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %893 = "arith.cmpi"(%890#1, %891#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %894 = "arith.andi"(%892, %893) : (i1, i1) -> i1
+      %895 = "arith.extui"(%894) : (i1) -> i8
+      "cute.memref.store"(%302, %141, %895) : (!memref_rmem_i8_, !cute.coord<"53">, i8) -> ()
+      %896 = "cute.add_offset"(%301, %140) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %897 = "cute.deref_arith_tuple_iter"(%896) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %898:2 = "cute.get_leaves"(%897) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %899 = "cute.make_coord"(%898#0, %898#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %900 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %901:2 = "cute.get_scalars"(%899) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %902:2 = "cute.get_scalars"(%900) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %903 = "arith.cmpi"(%901#0, %902#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %904 = "arith.cmpi"(%901#1, %902#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %905 = "arith.andi"(%903, %904) : (i1, i1) -> i1
+      %906 = "arith.extui"(%905) : (i1) -> i8
+      "cute.memref.store"(%302, %139, %906) : (!memref_rmem_i8_, !cute.coord<"54">, i8) -> ()
+      %907 = "cute.add_offset"(%301, %138) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(13,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %908 = "cute.deref_arith_tuple_iter"(%907) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %909:2 = "cute.get_leaves"(%908) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %910 = "cute.make_coord"(%909#0, %909#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %911 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %912:2 = "cute.get_scalars"(%910) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %913:2 = "cute.get_scalars"(%911) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %914 = "arith.cmpi"(%912#0, %913#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %915 = "arith.cmpi"(%912#1, %913#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %916 = "arith.andi"(%914, %915) : (i1, i1) -> i1
+      %917 = "arith.extui"(%916) : (i1) -> i8
+      "cute.memref.store"(%302, %137, %917) : (!memref_rmem_i8_, !cute.coord<"55">, i8) -> ()
+      %918 = "cute.add_offset"(%301, %136) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,0)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=4})">
+      %919 = "cute.deref_arith_tuple_iter"(%918) : (!cute.arith_tuple_iter<"(?{div=2},?{div=4})">) -> !cute.int_tuple<"(?{div=2},?{div=4})">
+      %920:2 = "cute.get_leaves"(%919) : (!cute.int_tuple<"(?{div=2},?{div=4})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">)
+      %921 = "cute.make_coord"(%920#0, %920#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?{div=2},?{div=4})">
+      %922 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %923:2 = "cute.get_scalars"(%921) : (!cute.coord<"(?{div=2},?{div=4})">) -> (i32, i32)
+      %924:2 = "cute.get_scalars"(%922) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %925 = "arith.cmpi"(%923#0, %924#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %926 = "arith.cmpi"(%923#1, %924#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %927 = "arith.andi"(%925, %926) : (i1, i1) -> i1
+      %928 = "arith.extui"(%927) : (i1) -> i8
+      "cute.memref.store"(%302, %135, %928) : (!memref_rmem_i8_, !cute.coord<"56">, i8) -> ()
+      %929 = "cute.add_offset"(%301, %134) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,1)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %930 = "cute.deref_arith_tuple_iter"(%929) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %931:2 = "cute.get_leaves"(%930) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %932 = "cute.make_coord"(%931#0, %931#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %933 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %934:2 = "cute.get_scalars"(%932) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %935:2 = "cute.get_scalars"(%933) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %936 = "arith.cmpi"(%934#0, %935#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %937 = "arith.cmpi"(%934#1, %935#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %938 = "arith.andi"(%936, %937) : (i1, i1) -> i1
+      %939 = "arith.extui"(%938) : (i1) -> i8
+      "cute.memref.store"(%302, %133, %939) : (!memref_rmem_i8_, !cute.coord<"57">, i8) -> ()
+      %940 = "cute.add_offset"(%301, %132) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,2)">) -> !cute.arith_tuple_iter<"(?{div=2},?{div=2})">
+      %941 = "cute.deref_arith_tuple_iter"(%940) : (!cute.arith_tuple_iter<"(?{div=2},?{div=2})">) -> !cute.int_tuple<"(?{div=2},?{div=2})">
+      %942:2 = "cute.get_leaves"(%941) : (!cute.int_tuple<"(?{div=2},?{div=2})">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">)
+      %943 = "cute.make_coord"(%942#0, %942#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?{div=2},?{div=2})">
+      %944 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %945:2 = "cute.get_scalars"(%943) : (!cute.coord<"(?{div=2},?{div=2})">) -> (i32, i32)
+      %946:2 = "cute.get_scalars"(%944) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %947 = "arith.cmpi"(%945#0, %946#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %948 = "arith.cmpi"(%945#1, %946#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %949 = "arith.andi"(%947, %948) : (i1, i1) -> i1
+      %950 = "arith.extui"(%949) : (i1) -> i8
+      "cute.memref.store"(%302, %131, %950) : (!memref_rmem_i8_, !cute.coord<"58">, i8) -> ()
+      %951 = "cute.add_offset"(%301, %130) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(14,3)">) -> !cute.arith_tuple_iter<"(?{div=2},?)">
+      %952 = "cute.deref_arith_tuple_iter"(%951) : (!cute.arith_tuple_iter<"(?{div=2},?)">) -> !cute.int_tuple<"(?{div=2},?)">
+      %953:2 = "cute.get_leaves"(%952) : (!cute.int_tuple<"(?{div=2},?)">) -> (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">)
+      %954 = "cute.make_coord"(%953#0, %953#1) : (!cute.int_tuple<"?{div=2}">, !cute.int_tuple<"?">) -> !cute.coord<"(?{div=2},?)">
+      %955 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %956:2 = "cute.get_scalars"(%954) : (!cute.coord<"(?{div=2},?)">) -> (i32, i32)
+      %957:2 = "cute.get_scalars"(%955) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %958 = "arith.cmpi"(%956#0, %957#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %959 = "arith.cmpi"(%956#1, %957#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %960 = "arith.andi"(%958, %959) : (i1, i1) -> i1
+      %961 = "arith.extui"(%960) : (i1) -> i8
+      "cute.memref.store"(%302, %129, %961) : (!memref_rmem_i8_, !cute.coord<"59">, i8) -> ()
+      %962 = "cute.add_offset"(%301, %128) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,0)">) -> !cute.arith_tuple_iter<"(?,?{div=4})">
+      %963 = "cute.deref_arith_tuple_iter"(%962) : (!cute.arith_tuple_iter<"(?,?{div=4})">) -> !cute.int_tuple<"(?,?{div=4})">
+      %964:2 = "cute.get_leaves"(%963) : (!cute.int_tuple<"(?,?{div=4})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">)
+      %965 = "cute.make_coord"(%964#0, %964#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=4}">) -> !cute.coord<"(?,?{div=4})">
+      %966 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %967:2 = "cute.get_scalars"(%965) : (!cute.coord<"(?,?{div=4})">) -> (i32, i32)
+      %968:2 = "cute.get_scalars"(%966) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %969 = "arith.cmpi"(%967#0, %968#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %970 = "arith.cmpi"(%967#1, %968#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %971 = "arith.andi"(%969, %970) : (i1, i1) -> i1
+      %972 = "arith.extui"(%971) : (i1) -> i8
+      "cute.memref.store"(%302, %127, %972) : (!memref_rmem_i8_, !cute.coord<"60">, i8) -> ()
+      %973 = "cute.add_offset"(%301, %126) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,1)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %974 = "cute.deref_arith_tuple_iter"(%973) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %975:2 = "cute.get_leaves"(%974) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %976 = "cute.make_coord"(%975#0, %975#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %977 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %978:2 = "cute.get_scalars"(%976) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %979:2 = "cute.get_scalars"(%977) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %980 = "arith.cmpi"(%978#0, %979#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %981 = "arith.cmpi"(%978#1, %979#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %982 = "arith.andi"(%980, %981) : (i1, i1) -> i1
+      %983 = "arith.extui"(%982) : (i1) -> i8
+      "cute.memref.store"(%302, %125, %983) : (!memref_rmem_i8_, !cute.coord<"61">, i8) -> ()
+      %984 = "cute.add_offset"(%301, %124) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,2)">) -> !cute.arith_tuple_iter<"(?,?{div=2})">
+      %985 = "cute.deref_arith_tuple_iter"(%984) : (!cute.arith_tuple_iter<"(?,?{div=2})">) -> !cute.int_tuple<"(?,?{div=2})">
+      %986:2 = "cute.get_leaves"(%985) : (!cute.int_tuple<"(?,?{div=2})">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">)
+      %987 = "cute.make_coord"(%986#0, %986#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?{div=2}">) -> !cute.coord<"(?,?{div=2})">
+      %988 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %989:2 = "cute.get_scalars"(%987) : (!cute.coord<"(?,?{div=2})">) -> (i32, i32)
+      %990:2 = "cute.get_scalars"(%988) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %991 = "arith.cmpi"(%989#0, %990#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %992 = "arith.cmpi"(%989#1, %990#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %993 = "arith.andi"(%991, %992) : (i1, i1) -> i1
+      %994 = "arith.extui"(%993) : (i1) -> i8
+      "cute.memref.store"(%302, %123, %994) : (!memref_rmem_i8_, !cute.coord<"62">, i8) -> ()
+      %995 = "cute.add_offset"(%301, %122) : (!cute.arith_tuple_iter<"(?{div=16},?{div=4})">, !cute.int_tuple<"(15,3)">) -> !cute.arith_tuple_iter<"(?,?)">
+      %996 = "cute.deref_arith_tuple_iter"(%995) : (!cute.arith_tuple_iter<"(?,?)">) -> !cute.int_tuple<"(?,?)">
+      %997:2 = "cute.get_leaves"(%996) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+      %998 = "cute.make_coord"(%997#0, %997#1) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.coord<"(?,?)">
+      %999 = "cute.make_coord"(%arg8, %arg9) : (i32, i32) -> !cute.coord<"(?,?)">
+      %1000:2 = "cute.get_scalars"(%998) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %1001:2 = "cute.get_scalars"(%999) : (!cute.coord<"(?,?)">) -> (i32, i32)
+      %1002 = "arith.cmpi"(%1000#0, %1001#0) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %1003 = "arith.cmpi"(%1000#1, %1001#1) <{predicate = 2 : i64}> : (i32, i32) -> i1
+      %1004 = "arith.andi"(%1002, %1003) : (i1, i1) -> i1
+      %1005 = "arith.extui"(%1004) : (i1) -> i8
+      "cute.memref.store"(%302, %121, %1005) : (!memref_rmem_i8_, !cute.coord<"63">, i8) -> ()
+      %1006 = "cute.memref.load_vec"(%287) : (!memref_gmem_f32_2) -> vector<64xf32>
+      %1007 = "cute.memref.load_vec"(%291) : (!memref_gmem_f32_2) -> vector<64xf32>
+      %1008 = "arith.addf"(%1006, %1007) <{fastmath = #arith.fastmath<none>}> : (vector<64xf32>, vector<64xf32>) -> vector<64xf32>
+      "cute.memref.store_vec"(%1008, %298) : (vector<64xf32>, !memref_gmem_f32_3) -> ()
+      "cuda.return"() : () -> ()
+    }) {cu_attrs = {max_dynamic_shared_size_bytes = #cuda.dev_max_shared_memory_optin, non_portable_cluster_size_allowed = 1 : i32}, cute.kernel, gpu.kernel, nvvm.reqntid = array<i32: 256, 1, 1>} : () -> ()
+  }) : () -> ()
+  "func.func"() <{function_type = (!memref_gmem_f32_4, !memref_gmem_f32_4, !memref_gmem_f32_5, !cuda.stream) -> i32, sym_name = "cutlass_elementwise_apply_builtinfunctionadd_Tensorgmem_o_4096409640961_Tensorgmem_o_4096409640961_Tensorgmemoi641_CUstream"}> ({
+  ^bb0(%arg0: !memref_gmem_f32_4, %arg1: !memref_gmem_f32_4, %arg2: !memref_gmem_f32_5, %arg3: !cuda.stream):
+    %0 = "arith.constant"() <{value = 0 : i64}> : () -> i64
+    %1 = "cute.static"() : () -> !cute.stride<"((1@0,1@1),(64@0,256@1))">
+    %2 = "cute.static"() : () -> !cute.stride<"(1@0,1@1)">
+    %3 = "arith.constant"() <{value = 16 : i32}> : () -> i32
+    %4 = "arith.constant"() <{value = -1 : i32}> : () -> i32
+    %5 = "arith.constant"() <{value = 1 : i32}> : () -> i32
+    %6 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+    %7 = "arith.constant"() <{value = 256 : i32}> : () -> i32
+    %8 = "arith.constant"() <{value = 64 : i64}> : () -> i64
+    %9 = "arith.constant"() <{value = 64 : i32}> : () -> i32
+    %10 = "cute.static"() : () -> !cute.layout<"(16,16):(16,1)">
+    %11 = "cute.recast_layout"(%10) <{new_type_bits = 32 : i32, old_type_bits = 8 : i32}> : (!cute.layout<"(16,16):(16,1)">) -> !cute.layout<"(16,4):(4,1)">
+    %12 = "cute.get_iter"(%arg0) : (!memref_gmem_f32_4) -> !cute.ptr<f32, gmem, align<16>>
+    %13 = "cute.get_iter"(%arg1) : (!memref_gmem_f32_4) -> !cute.ptr<f32, gmem, align<16>>
+    %14 = "cute.get_iter"(%arg2) : (!memref_gmem_f32_5) -> !cute.ptr<f32, gmem, align<16>>
+    %15 = "cute.get_layout"(%arg2) : (!memref_gmem_f32_5) -> !cute.layout<"(?,?):(?{i64},1)">
+    %16:3 = "cute.get_scalars"(%15) <{only_dynamic}> : (!cute.layout<"(?,?):(?{i64},1)">) -> (i32, i32, i64)
+    %17 = "arith.ceildivsi"(%16#0, %9) : (i32, i32) -> i32
+    %18 = "arith.muli"(%16#2, %8) <{overflowFlags = #arith.overflow<none>}> : (i64, i64) -> i64
+    %19 = "arith.ceildivsi"(%16#1, %7) : (i32, i32) -> i32
+    %20 = "cute.make_shape"(%17, %19) : (i32, i32) -> !cute.shape<"((64,256),(?,?))">
+    %21 = "cute.assume"(%18) : (i64) -> !cute.i64<divby 64>
+    %22 = "cute.make_stride"(%16#2, %21) : (i64, !cute.i64<divby 64>) -> !cute.stride<"((?{i64},1),(?{i64 div=64},256))">
+    %23 = "cute.make_layout"(%20, %22) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((64,256),(?,?))">, !cute.stride<"((?{i64},1),(?{i64 div=64},256))">) -> !cute.layout<"((64,256),(?,?)):((?{i64},1),(?{i64 div=64},256))">
+    %24 = "cute.make_view"(%12) : (!cute.ptr<f32, gmem, align<16>>) -> !memref_gmem_f32_
+    %25 = "cute.make_view"(%13) : (!cute.ptr<f32, gmem, align<16>>) -> !memref_gmem_f32_
+    %26:4 = "cute.get_scalars"(%23) <{only_dynamic}> : (!cute.layout<"((64,256),(?,?)):((?{i64},1),(?{i64 div=64},256))">) -> (i32, i32, i64, i64)
+    %27 = "arith.divsi"(%26#0, %9) : (i32, i32) -> i32
+    %28 = "arith.cmpi"(%27, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %29 = "scf.if"(%28) ({
+      "scf.yield"(%27) : (i32) -> ()
+    }, {
+      %117 = "arith.cmpi"(%26#0, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %118 = "scf.if"(%117) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %119 = "arith.cmpi"(%26#0, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %120 = "arith.select"(%119, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%120) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%118) : (i32) -> ()
+    }) : (i1) -> i32
+    %30 = "arith.minsi"(%29, %3) : (i32, i32) -> i32
+    %31 = "arith.muli"(%26#3, %8) <{overflowFlags = #arith.overflow<none>}> : (i64, i64) -> i64
+    %32 = "math.absi"(%29) : (i32) -> i32
+    %33 = "arith.divsi"(%3, %32) : (i32, i32) -> i32
+    %34 = "arith.cmpi"(%33, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %35 = "scf.if"(%34) ({
+      "scf.yield"(%33) : (i32) -> ()
+    }, {
+      %113 = "arith.cmpi"(%32, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %114 = "scf.if"(%113) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %115 = "arith.cmpi"(%32, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %116 = "arith.select"(%115, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%116) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%114) : (i32) -> ()
+    }) : (i1) -> i32
+    %36 = "arith.divsi"(%9, %26#0) : (i32, i32) -> i32
+    %37 = "arith.cmpi"(%36, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %38 = "scf.if"(%37) ({
+      "scf.yield"(%36) : (i32) -> ()
+    }, {
+      %109 = "arith.cmpi"(%26#0, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %110 = "scf.if"(%109) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %111 = "arith.cmpi"(%26#0, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %112 = "arith.select"(%111, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%112) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%110) : (i32) -> ()
+    }) : (i1) -> i32
+    %39 = "arith.muli"(%38, %7) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+    %40 = "arith.cmpi"(%26#0, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %41 = "scf.if"(%40) ({
+      "scf.yield"(%26#0) : (i32) -> ()
+    }, {
+      %105 = "arith.cmpi"(%26#0, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %106 = "scf.if"(%105) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %107 = "arith.cmpi"(%26#0, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %108 = "arith.select"(%107, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%108) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%106) : (i32) -> ()
+    }) : (i1) -> i32
+    %42 = "arith.minsi"(%41, %9) : (i32, i32) -> i32
+    %43 = "math.absi"(%41) : (i32) -> i32
+    %44 = "arith.divsi"(%9, %43) : (i32, i32) -> i32
+    %45 = "arith.cmpi"(%44, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %46 = "scf.if"(%45) ({
+      "scf.yield"(%44) : (i32) -> ()
+    }, {
+      %101 = "arith.cmpi"(%43, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %102 = "scf.if"(%101) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %103 = "arith.cmpi"(%43, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %104 = "arith.select"(%103, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%104) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%102) : (i32) -> ()
+    }) : (i1) -> i32
+    %47 = "arith.divsi"(%5, %26#0) : (i32, i32) -> i32
+    %48 = "arith.cmpi"(%47, %6) <{predicate = 1 : i64}> : (i32, i32) -> i1
+    %49 = "scf.if"(%48) ({
+      "scf.yield"(%47) : (i32) -> ()
+    }, {
+      %97 = "arith.cmpi"(%26#0, %6) <{predicate = 4 : i64}> : (i32, i32) -> i1
+      %98 = "scf.if"(%97) ({
+        "scf.yield"(%5) : (i32) -> ()
+      }, {
+        %99 = "arith.cmpi"(%26#0, %6) <{predicate = 0 : i64}> : (i32, i32) -> i1
+        %100 = "arith.select"(%99, %6, %4) : (i1, i32, i32) -> i32
+        "scf.yield"(%100) : (i32) -> ()
+      }) : (i1) -> i32
+      "scf.yield"(%98) : (i32) -> ()
+    }) : (i1) -> i32
+    %50 = "arith.muli"(%49, %7) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+    %51 = "cute.make_shape"(%30, %35, %42, %46) : (i32, i32, i32, i32) -> !cute.shape<"((64,256),((?,?),(?,?)))">
+    %52 = "cute.assume"(%31) : (i64) -> !cute.i64<divby 4096>
+    %53 = "cute.assume"(%39) : (i32) -> !cute.i32<divby 256>
+    %54 = "cute.assume"(%26#3) : (i64) -> !cute.i64<divby 64>
+    %55 = "cute.assume"(%50) : (i32) -> !cute.i32<divby 256>
+    %56 = "cute.make_stride"(%26#2, %52, %53, %54, %55) : (i64, !cute.i64<divby 4096>, !cute.i32<divby 256>, !cute.i64<divby 64>, !cute.i32<divby 256>) -> !cute.stride<"((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
+    %57 = "cute.make_layout"(%51, %56) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((64,256),((?,?),(?,?)))">, !cute.stride<"((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">
+    %58 = "cute.make_view"(%14, %57) : (!cute.ptr<f32, gmem, align<16>>, !cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !memref_gmem_f32_1
+    %59 = "cute.get_layout"(%arg2) : (!memref_gmem_f32_5) -> !cute.layout<"(?,?):(?{i64},1)">
+    %60 = "cute.get_shape"(%59) : (!cute.layout<"(?,?):(?{i64},1)">) -> !cute.shape<"(?,?)">
+    %61:2 = "cute.get_leaves"(%60) : (!cute.shape<"(?,?)">) -> (!cute.shape<"?">, !cute.shape<"?">)
+    %62 = "cute.to_int_tuple"(%61#0) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %63 = "cute.to_int_tuple"(%61#1) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %64 = "cute.make_shape"(%62, %63) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.shape<"(?,?)">
+    %65 = "cute.make_arith_tuple_iter"() : () -> !cute.arith_tuple_iter<"(0,0)">
+    %66 = "cute.make_layout"(%64, %2) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"(?,?)">, !cute.stride<"(1@0,1@1)">) -> !cute.layout<"(?,?):(1@0,1@1)">
+    %67:2 = "cute.get_scalars"(%66) <{only_dynamic}> : (!cute.layout<"(?,?):(1@0,1@1)">) -> (i32, i32)
+    %68 = "arith.ceildivsi"(%67#0, %9) : (i32, i32) -> i32
+    %69 = "arith.ceildivsi"(%67#1, %7) : (i32, i32) -> i32
+    %70 = "cute.make_shape"(%68, %69) : (i32, i32) -> !cute.shape<"((64,256),(?,?))">
+    %71 = "cute.make_layout"(%70, %1) <{operandSegmentSizes = array<i32: 1, 1>}> : (!cute.shape<"((64,256),(?,?))">, !cute.stride<"((1@0,1@1),(64@0,256@1))">) -> !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
+    %72 = "cute.make_view"(%65, %71) : (!cute.arith_tuple_iter<"(0,0)">, !cute.layout<"((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">) -> !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">
+    %73 = "cute.get_layout"(%arg2) : (!memref_gmem_f32_5) -> !cute.layout<"(?,?):(?{i64},1)">
+    %74 = "cute.get_shape"(%73) : (!cute.layout<"(?,?):(?{i64},1)">) -> !cute.shape<"(?,?)">
+    %75:2 = "cute.get_leaves"(%74) : (!cute.shape<"(?,?)">) -> (!cute.shape<"?">, !cute.shape<"?">)
+    %76 = "cute.to_int_tuple"(%75#0) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %77 = "cute.get_scalars"(%76) : (!cute.int_tuple<"?">) -> i32
+    %78 = "cute.to_int_tuple"(%75#1) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %79 = "cute.get_scalars"(%78) : (!cute.int_tuple<"?">) -> i32
+    %80 = "cute.get_shape"(%57) : (!cute.layout<"((64,256),((?,?),(?,?))):((?{i64},1),((?{i64 div=4096},?{div=256}),(?{i64 div=64},?{div=256})))">) -> !cute.shape<"((64,256),((?,?),(?,?)))">
+    %81:6 = "cute.get_leaves"(%80) : (!cute.shape<"((64,256),((?,?),(?,?)))">) -> (!cute.shape<"64">, !cute.shape<"256">, !cute.shape<"?">, !cute.shape<"?">, !cute.shape<"?">, !cute.shape<"?">)
+    %82 = "cute.to_int_tuple"(%81#2) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %83 = "cute.to_int_tuple"(%81#3) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %84 = "cute.to_int_tuple"(%81#4) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %85 = "cute.to_int_tuple"(%81#5) : (!cute.shape<"?">) -> !cute.int_tuple<"?">
+    %86 = "cute.make_int_tuple"(%82, %83, %84, %85) : (!cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">, !cute.int_tuple<"?">) -> !cute.int_tuple<"((?,?),(?,?))">
+    %87:4 = "cute.get_scalars"(%86) <{only_dynamic}> : (!cute.int_tuple<"((?,?),(?,?))">) -> (i32, i32, i32, i32)
+    %88 = "arith.muli"(%87#0, %87#1) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+    %89 = "arith.muli"(%87#2, %87#3) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32
+    %90 = "cute.make_int_tuple"(%88, %89) : (i32, i32) -> !cute.int_tuple<"(?,?)">
+    %91:2 = "cute.get_leaves"(%90) : (!cute.int_tuple<"(?,?)">) -> (!cute.int_tuple<"?">, !cute.int_tuple<"?">)
+    %92 = "cute.get_scalars"(%91#0) : (!cute.int_tuple<"?">) -> i32
+    %93 = "cute.get_scalars"(%91#1) : (!cute.int_tuple<"?">) -> i32
+    %94 = "cuda.launch_cfg.create"(%7, %5, %5, %0, %92, %93, %5, %arg3) <{maxNumAttrs = 3 : i32}> : (i32, i32, i32, i64, i32, i32, i32, !cuda.stream) -> !cuda.launch_cfg<max_attrs = 3>
+    "cuda.launch_cfg.programmatic_stream_serialization_allowed"(%94, %6) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    "cuda.launch_cfg.cooperative"(%94, %6) : (!cuda.launch_cfg<max_attrs = 3>, i32) -> ()
+    %95 = "cuda.launch_ex"(%94, %24, %25, %58, %72, %77, %79) <{assume_kernel_attr = #cuda.assume_kernel_attr<true>, callee = @kernels::@kernel_cutlass_elementwise_apply_kernel_builtinfunctionadd_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32_gmem_align16_o_64256166440961256262144_tensorptrf32gmemalign16o_0}> : (!cuda.launch_cfg<max_attrs = 3>, !memref_gmem_f32_, !memref_gmem_f32_, !memref_gmem_f32_1, !cute.coord_tensor<"(0,0)", "((64,256),(?,?)):((1@0,1@1),(64@0,256@1))">, i32, i32) -> !cuda.result
+    %96 = "cuda.cast"(%95) : (!cuda.result) -> i32
+    "cuda.return_if_error"(%96) : (i32) -> ()
+    "func.return"(%6) : (i32) -> ()
+  }) {llvm.emit_c_interface} : () -> ()
+}) {gpu.container_module} : () -> ()

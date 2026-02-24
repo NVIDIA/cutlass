@@ -3,6 +3,8 @@
 [INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_stderr.log
 [INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_0_with_loc.mlir
 [INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
 [INFO] cute_ir_dump_patch installed.
 
 Running TensorOpGemm test with:
@@ -30,65 +32,68 @@ c: torch.Size([512, 256, 16]), dtype: torch.float16
 
 
 [PATCH] hit Compiler.compile
-[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_0_.mlir (3299 lines)
-[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_001_CuteRemoveStaticArgs.mlir (3306 lines)
-[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_002_MaterializeTmaMulticast.mlir (3306 lines)
-[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_003_SoftwarePipelinePass.mlir (3306 lines)
-[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_004_CuteDesugar.mlir (4268 lines)
-[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_005_CuteExpandOps.mlir (5898 lines)
-[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_006_CuteFoldStatic.mlir (2471 lines)
-[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_007_InsertRangeInformation.mlir (2471 lines)
-[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_008_Canonicalizer.mlir (1369 lines)
-[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_009_CSE.mlir (1168 lines)
-[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_010_LoopInvariantCodeMotion.mlir (1168 lines)
-[DUMP] 011_LoopStrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_011_LoopStrengthReductionPass.mlir (1168 lines)
-[DUMP] 012_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_012_ConvertVectorToSCF.mlir (1168 lines)
-[DUMP] 013_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_013_ConvertCuteTypesInScfOps.mlir (1174 lines)
-[DUMP] 014_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_014_SCFToControlFlow.mlir (1329 lines)
-[DUMP] 015_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_015_ArithExpandOpsPass.mlir (1627 lines)
-[DUMP] 016_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_016_ConvertMathToFuncs.mlir (1627 lines)
-[DUMP] 017_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_017_GpuLaunchSinkIndexComputations.mlir (1627 lines)
-[DUMP] 018_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_018_ConvertToLLVMPass.mlir (2472 lines)
-[DUMP] 019_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_019_ReconcileUnrealizedCasts.mlir (2401 lines)
-[DUMP] 020_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_020_GpuKernelOutlining.mlir (2401 lines)
-[DUMP] 021_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_021_SCFToControlFlow.mlir (2401 lines)
-[DUMP] 022_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_022_ReconcileUnrealizedCasts.mlir (2401 lines)
-[DUMP] 023_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_023_ConvertToLLVMPass.mlir (2401 lines)
-[DUMP] 024_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_024_Canonicalizer.mlir (1219 lines)
-[DUMP] 025_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_025_CSE.mlir (1168 lines)
-[DUMP] 026_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_026_ConvertVectorToLLVMPass.mlir (1176 lines)
-[DUMP] 027_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_027_ConvertNVVMToLLVMPass.mlir (1182 lines)
-[DUMP] 028_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_028_CudaComputeTargetPass.mlir (1048 lines)
-[DUMP] 029_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_029_FinalizeMemRefToLLVMConversionPass.mlir (1182 lines)
-[DUMP] 030_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_030_ExpandStridedMetadata.mlir (1161 lines)
-[DUMP] 031_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_031_ArithToLLVMConversionPass.mlir (1161 lines)
-[DUMP] 032_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_032_ConvertFastmathOps.mlir (1027 lines)
-[DUMP] 033_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_033_ConvertGpuOpsToNVVMOps.mlir (1027 lines)
-[DUMP] 034_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_034_StoreGpuLaunchAttribute.mlir (1161 lines)
-[DUMP] 035_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_035_GpuToLLVMConversionPass.mlir (1161 lines)
-[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_036_StoreGpuLaunchAttribute.mlir (1161 lines)
-[DUMP] 037_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_037_ConvertMathToLLVMPass.mlir (1161 lines)
-[DUMP] 038_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_038_Canonicalizer.mlir (1161 lines)
-[DUMP] 039_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_039_CSE.mlir (1161 lines)
-[DUMP] 040_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_040_ReconcileUnrealizedCasts.mlir (1161 lines)
-[DUMP] 041_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_041_DIScopeForLLVMFuncOpPass.mlir (1161 lines)
-[DUMP] 042_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_042_CudaToBinaryPass.mlir (142 lines)
-[DUMP] 043_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_043_ConvertToLLVMPass.mlir (302 lines)
-[DUMP] 044_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_044_ReconcileUnrealizedCasts.mlir (300 lines)
-[DUMP] 045_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_045_CudaErrorHandlingPass.mlir (307 lines)
-[DUMP] per-pass IR split -> 45 files
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_0_.mlir (2443 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_001_CuteRemoveStaticArgs.mlir (2450 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_002_MaterializeTmaMulticast.mlir (2450 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_003_SoftwarePipelinePass.mlir (2450 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_004_CuteDesugar.mlir (3444 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_005_CuteExpandOps.mlir (5076 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_006_CuteFoldStatic.mlir (2486 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_007_InsertRangeInformation.mlir (2486 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_008_Canonicalizer.mlir (1376 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_009_CSE.mlir (1214 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_010_LoopInvariantCodeMotion.mlir (1214 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_011_LoopVectorizePass.mlir (1214 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_012_EliminateUnnecessarySyncPass.mlir (1214 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_013_StrengthReductionPass.mlir (1214 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_014_ConvertVectorToSCF.mlir (1214 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_015_ConvertCuteTypesInScfOps.mlir (1220 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_016_SCFToControlFlow.mlir (1305 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_017_ArithExpandOpsPass.mlir (1603 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_018_ConvertMathToFuncs.mlir (1603 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_019_GpuLaunchSinkIndexComputations.mlir (1603 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_020_ConvertToLLVMPass.mlir (2539 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_021_ReconcileUnrealizedCasts.mlir (2468 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_022_GpuKernelOutlining.mlir (2468 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_023_SCFToControlFlow.mlir (2468 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_024_ReconcileUnrealizedCasts.mlir (2468 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_025_ConvertToLLVMPass.mlir (2468 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_026_Canonicalizer.mlir (1287 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_027_CSE.mlir (1234 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_028_ConvertVectorToLLVMPass.mlir (1236 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_029_ConvertNVVMToLLVMPass.mlir (1242 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_030_CudaComputeTargetPass.mlir (1024 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_031_FinalizeMemRefToLLVMConversionPass.mlir (1242 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_032_ExpandStridedMetadata.mlir (1221 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_033_ArithToLLVMConversionPass.mlir (1221 lines)
+[DUMP] 034_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_034_ConvertFastmathOps.mlir (1003 lines)
+[DUMP] 035_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_035_ConvertGpuOpsToNVVMOps.mlir (1003 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_036_StoreGpuLaunchAttribute.mlir (1221 lines)
+[DUMP] 037_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_037_GpuToLLVMConversionPass.mlir (1221 lines)
+[DUMP] 038_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_038_StoreGpuLaunchAttribute.mlir (1221 lines)
+[DUMP] 039_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_039_ConvertMathToLLVMPass.mlir (1221 lines)
+[DUMP] 040_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_040_Canonicalizer.mlir (1221 lines)
+[DUMP] 041_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_041_CSE.mlir (1221 lines)
+[DUMP] 042_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_042_ReconcileUnrealizedCasts.mlir (1221 lines)
+[DUMP] 043_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_043_DIScopeForLLVMFuncOpPass.mlir (1221 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_044_CudaToBinaryPass.mlir (227 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_045_ConvertToLLVMPass.mlir (397 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_046_ReconcileUnrealizedCasts.mlir (395 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/call_bypass_dlpack/call_bypass_dlpack_047_CudaErrorHandlingPass.mlir (402 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
 
 [DSL INFO] Results verified successfully!
 First few elements of result: 
-tensor([[[  3.3926,  -3.7715, -27.8438],
-         [  0.3267,  -4.5664,  -7.5078],
-         [ 23.0000,  22.4531,   3.3535]],
+tensor([[[-15.6875,  -0.6880,   2.9395],
+         [ -6.8867,  -2.1914,  11.8516],
+         [  5.1211,   5.0742,  17.5000]],
 
-        [[ -9.2422,  19.5625,   9.2031],
-         [ -5.0156,  31.3438,   4.4805],
-         [  0.6670,   5.1289, -12.9688]],
+        [[ -4.2109,  -5.4727,  -5.2070],
+         [ -0.4424,   4.2773,  -2.9316],
+         [-10.9688,   2.2656, -17.2500]],
 
-        [[ 12.7891, -21.9531,  16.2500],
-         [  2.1152,  -9.7578,  22.5625],
-         [-19.5000,  -1.5752,  -0.0617]]], device='cuda:0',
+        [[-19.3906,  13.7656,  -7.0469],
+         [  9.4922, -15.8516,  -3.7383],
+         [  7.1367,   1.1553,  -7.6445]]], device='cuda:0',
        dtype=torch.float16)

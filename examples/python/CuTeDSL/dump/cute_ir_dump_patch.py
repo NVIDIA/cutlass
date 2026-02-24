@@ -1,22 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-cute_ir_dump_patch.py（单环境变量总开关版）
+cute_ir_dump_patch.py（单环境变量总开关版 + 全量generic打印版）
 
-- 只有一个环境变量：CUTE_DSL_ON
-  * 未开启时：仍可通过 `python -m cute_ir_dump_patch your_script.py ...` 运行包装脚本，
-    但不会启用"只编译/跳驱动/NOOP launch"这些强力补丁。
-  * 开启时（CUTE_DSL_ON=1）：启用 COMPILE-ONLY 模式
-    - 跳过 JIT 和执行，只进行编译
-    - 跳过 CUDA 内核加载，避免架构兼容性检查
-    - 允许编译不同架构的代码（如 sm_100a, sm_120）即使当前 GPU 不支持
-    - Mock HardwareInfo.get_max_active_clusters 防止脚本计算 Occupancy 时崩溃
+目标：
+- 所有落盘的 .mlir（0_ / per-pass / stdout slice）尽可能全部是 MLIR generic form
+  即等价于 --mlir-print-op-generic 的效果（但不依赖命令行全局开关）
 
-- 一直保留：
-  * Python 层 stdout/stderr 分别镜像到 {RUN_TAG}_stdout.log / {RUN_TAG}_stderr.log
-  * 逐 pass IR 拆分（stderr 中的 MLIR pass After 段），默认开启
-
-使用示例（编译不同架构的代码）：
-  CUTE_DSL_ON=1 python examples/python/CuTeDSL/blackwell/dense_gemm.py --help
+说明：
+- PassManager 的 enable_ir_printing/print_ir_after_all 有的版本无法传 OpPrintingFlags
+  所以这里采用：
+  1) 尝试让 PM 自己 generic 打印（若支持）
+  2) 无论 PM 输出是什么，split 后对每段做 parse->generic 重打印（强兜底）
 """
 
 from __future__ import annotations
@@ -50,6 +44,9 @@ _INSTALLED = False
 
 _TARGET_FILE: Path | None = None    # -m 入口记录目标脚本路径
 _STD_SPLIT_TEE = None
+
+# 记录最近一次可用的 MLIR Context（用于 parse->generic 重打印）
+_LAST_MLIR_CONTEXT = None
 
 # stdout IR 片段标记与输出文件名
 STDOUT_IR_START = "//===--- ------ Generated IR ------ ---===="
@@ -108,6 +105,10 @@ class Tee:
         for s in self.streams: s.flush()
 
 class SplitStdoutTee:
+    """
+    stdout 同时写到 console 和 stdout.log
+    并识别 Generated IR 标记，把 IR slice 写入一个单独的 .mlir 文件
+    """
     def __init__(self, console_stream, stdout_file_stream, mlir_path: Path):
         self.console = console_stream
         self.out = stdout_file_stream
@@ -122,10 +123,9 @@ class SplitStdoutTee:
 
     def _ensure_mlir_open(self):
         if self.mlir_f is None:
-            self.mlir_f = open(self.mlir_path, "w")  # Default buffering
+            self.mlir_f = open(self.mlir_path, "w")
 
     def write(self, data):
-        # Removed aggressive flush() for performance
         self.console.write(data)
         self.buf += data
         while True:
@@ -135,14 +135,14 @@ class SplitStdoutTee:
                     safe_len = max(0, len(self.buf) - self._safe_tail_keep_normal)
                     if safe_len > 0:
                         self.out.write(self.buf[:safe_len])
-                        self.out.flush()  # Force flush
+                        self.out.flush()
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     pre = self.buf[:idx]
                     if pre:
                         self.out.write(pre)
-                        self.out.flush() # Force flush
+                        self.out.flush()
                     self.buf = self.buf[idx + len(self.start):]
                     self.capturing = True
                     self._ensure_mlir_open()
@@ -153,21 +153,20 @@ class SplitStdoutTee:
                     if safe_len > 0:
                         if self.mlir_f:
                             self.mlir_f.write(self.buf[:safe_len])
-                            self.mlir_f.flush() # Force flush
+                            self.mlir_f.flush()
                         self.buf = self.buf[safe_len:]
                     break
                 else:
                     seg = self.buf[:idx2]
                     if seg and self.mlir_f:
                         self.mlir_f.write(seg)
-                        self.mlir_f.flush() # Force flush
+                        self.mlir_f.flush()
                     self.buf = self.buf[idx2 + len(self.end):]
                     self.capturing = False
         return len(data)
 
     def fileno(self):
         return self.console.fileno()
-
 
     def flush(self):
         self.console.flush()
@@ -210,12 +209,106 @@ def redirect_fds(stdout_path=None, stderr_path=None):
         if f_out: f_out.close()
         if f_err: f_err.close()
 
+# -------------------------
+# MLIR genericize (强兜底)
+# -------------------------
+def _get_mlir_ir_module():
+    try:
+        from mlir import ir  # type: ignore
+        return ir
+    except Exception:
+        return None
+
+def _ctx_with_unregistered(ctx):
+    try:
+        ctx.allow_unregistered_dialects = True
+    except Exception:
+        pass
+    return ctx
+
+def _print_generic_from_op(op) -> str:
+    # 统一走 generic form
+    try:
+        return op.get_asm(print_generic_op_form=True, large_elements_limit=2**31)
+    except TypeError:
+        # 某些版本参数名不同/不支持，退化
+        return op.get_asm(large_elements_limit=2**31)
+
+def _genericize_mlir_text(asm: str, context=None) -> tuple[str, bool]:
+    """
+    返回 (generic_text, ok)
+    ok=False 表示 parse/重打印失败，返回原文
+    """
+    ir = _get_mlir_ir_module()
+    if ir is None:
+        return asm, False
+
+    txt = asm if asm.endswith("\n") else (asm + "\n")
+    if not txt.strip():
+        return asm, False
+
+    # 选择 context：优先使用已有（能识别 cute/cuda 等 dialect 的 custom asm）
+    try:
+        if context is None:
+            ctx = _ctx_with_unregistered(ir.Context())
+        else:
+            ctx = _ctx_with_unregistered(context)
+    except Exception:
+        return asm, False
+
+    # 1) 尝试按完整 module parse
+    try:
+        with ctx:
+            m = ir.Module.parse(txt, context=ctx)
+            return _print_generic_from_op(m.operation), True
+    except Exception:
+        pass
+
+    # 2) 尝试按 operation parse（某些 pass dump 可能不是完整 module）
+    try:
+        with ctx:
+            op = ir.Operation.parse(txt, context=ctx)  # type: ignore
+            return _print_generic_from_op(op), True
+    except Exception:
+        pass
+
+    # 3) 尝试 wrap 成 module { ... }
+    wrapped = "module {\n" + txt + "\n}\n"
+    try:
+        with ctx:
+            m = ir.Module.parse(wrapped, context=ctx)
+            return _print_generic_from_op(m.operation), True
+    except Exception:
+        pass
+
+    return asm, False
+
+def _rewrite_file_generic(path: Path, context=None) -> bool:
+    try:
+        txt = path.read_text(errors="ignore")
+    except Exception:
+        return False
+    out, ok = _genericize_mlir_text(txt, context=context)
+    if not ok:
+        return False
+    try:
+        path.write_text(out, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
 def _op_to_text(module_or_op) -> str:
+    """
+    对内存里的 module/op 直接 generic 打印（无需 parse）
+    """
     op = getattr(module_or_op, "operation", module_or_op)
     try:
-        return op.get_asm(large_elements_limit=2**31)
+        return op.get_asm(print_generic_op_form=True, large_elements_limit=2**31)
     except Exception:
-        return str(op)
+        try:
+            return op.get_asm(large_elements_limit=2**31)
+        except Exception:
+            return str(op)
 
 def _save_text(tag: str, content: str, suffix="txt") -> str:
     _ensure_dump_dir()
@@ -228,34 +321,52 @@ def _save_text(tag: str, content: str, suffix="txt") -> str:
 def _save_ir(tag, module_or_op) -> str:
     return _save_text(tag, _op_to_text(module_or_op), "mlir")
 
-def _split_pass_text_to_files(text: str) -> list[str]:
-    # Simplified and optimized using regex split instead of line-by-line iteration
+def _split_pass_text_to_files(text: str, *, context=None) -> list[str]:
+    """
+    从 pass manager 的 stderr dump 中切分每个 pass 的 IR。
+    关键：每段写盘前强制 genericize（parse->generic），写盘后再文件级兜底重写一次。
+    """
     if not text.strip():
         return []
 
-    # Matches markers: //----- // IR Dump After <name> (<arg>) //----- //
-    # Captures: 1=name, 2=arg
     pat = re.compile(
         r"^\s*//\s*-{2,}\s*//\s*IR\s+Dump\s+After\s+([^(]+?)\s*\(([^)]*)\)\s*//\s*-{2,}\s*//\s*$",
         re.MULTILINE
     )
     parts = pat.split(text)
-    
-    # parts format: [pre_text, name1, arg1, content1, name2, arg2, content2, ...]
-    out_files = []
+
+    out_files: list[str] = []
     if len(parts) < 4:
-        out_files.append(_save_text("pass_dump_unparsed", text, "txt"))
-        print("[WARN] per-pass markers not detected; wrote raw dump as TXT.")
-    else:
-        for i in range(1, len(parts), 3):
-            pass_name = parts[i].strip()
-            # parts[i+1] is arg, currently unused
-            content = parts[i+2].strip() + "\n"
-            
-            idx = (i // 3) + 1
-            tag = f"{idx:03d}_{_sanitize_for_fs(pass_name)}"
-            out_files.append(_save_text(tag, content, "mlir"))
-            
+        # 尝试把整个 stderr 当成 MLIR genericize 一次再落盘
+        whole, ok = _genericize_mlir_text(text, context=context)
+        if ok:
+            out_files.append(_save_text("pass_dump_all_generic", whole, "mlir"))
+            print("[WARN] per-pass markers not detected; wrote whole dump as GENERIC MLIR (best effort).")
+        else:
+            out_files.append(_save_text("pass_dump_unparsed", text, "txt"))
+            print("[WARN] per-pass markers not detected; wrote raw dump as TXT.")
+        return out_files
+
+    for i in range(1, len(parts), 3):
+        pass_name = parts[i].strip()
+        content = (parts[i+2] or "").strip() + "\n"
+
+        generic, ok = _genericize_mlir_text(content, context=context)
+        if not ok:
+            # 失败也照样写盘，但标记一下，方便定位
+            generic = content
+
+        idx = (i // 3) + 1
+        tag = f"{idx:03d}_{_sanitize_for_fs(pass_name)}"
+        fn = _save_text(tag, generic, "mlir")
+        out_files.append(fn)
+
+        # 文件级再兜底重写一次（确保最终是 generic）
+        try:
+            _rewrite_file_generic(Path(fn), context=context)
+        except Exception:
+            pass
+
     print(f"[DUMP] per-pass IR split -> {len(out_files)} files")
     return out_files
 
@@ -274,7 +385,6 @@ class _DummyJIT:
 # 只编译模式：跳过架构兼容性检查
 # -------------------------
 def _get_result_payload(result):
-    """Helper to extract payload from potential (status, payload) tuple"""
     if isinstance(result, (tuple, list)):
         if len(result) <= 1: return None
         elif len(result) == 2: return result[1]
@@ -282,11 +392,10 @@ def _get_result_payload(result):
     return None
 
 def _checkCudaErrors_compile_only(result):
-    # Handle specific error code extraction if it's an object with .value
     first = result[0] if isinstance(result, (tuple, list)) and len(result) > 0 else result
     error_code = getattr(first, "value", first)
 
-    if error_code == 209: # CUDA_ERROR_NO_BINARY_FOR_GPU
+    if error_code == 209:  # CUDA_ERROR_NO_BINARY_FOR_GPU
         print("[COMPILE-ONLY] Ignoring CUDA_ERROR_NO_BINARY_FOR_GPU (arch mismatch) in compile-only mode")
         return _get_result_payload(result)
 
@@ -296,7 +405,7 @@ def _checkCudaErrors_compile_only(result):
 
     if error_code not in (0, None):
         raise RuntimeError(f"CUDA error code {error_code}")
-    
+
     return _get_result_payload(result)
 
 def _load_kernels_from_ir_module_compile_only(module, kernel_info):
@@ -311,7 +420,7 @@ def _patch_cuda_runtime_for_compile_only():
     except Exception as e:
         print(f"[WARN] import cutlass modules for compile-only patch failed: {e}")
         return
-    
+
     if not hasattr(_patch_cuda_runtime_for_compile_only, "_patched"):
         _patch_cuda_runtime_for_compile_only._original_checkCudaErrors = _cuda_rt.checkCudaErrors
         _cuda_rt.checkCudaErrors = _checkCudaErrors_compile_only
@@ -328,52 +437,97 @@ def _patch_hardware_info_for_compile_only():
         return
 
     if hasattr(_hwi, "HardwareInfo"):
-        # Mock get_max_active_clusters to always return 1
         _hwi.HardwareInfo.get_max_active_clusters = lambda self, *args, **kwargs: 1
         print("[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode")
+
+# -------------------------
+# PassManager 打印：尽可能启用 generic
+# -------------------------
+def _enable_pm_ir_printing_best_effort(pm):
+    """
+    兼容不同 MLIR Python 绑定版本：尽量让 PM 自己在 dump 时就用 generic form。
+    如果不支持，就退化到原来的 enable_ir_printing / print_ir_after_all。
+    """
+    # 常见组合：enable_ir_printing(print_after_only=True, print_generic_op_form=True)
+    candidates = []
+
+    if hasattr(pm, "enable_ir_printing"):
+        candidates += [
+            ("enable_ir_printing", dict(print_after_only=True, print_generic_op_form=True)),
+            ("enable_ir_printing", dict(print_generic_op_form=True)),
+            ("enable_ir_printing", dict(print_after_only=True)),
+            ("enable_ir_printing", dict()),
+        ]
+    if hasattr(pm, "print_ir_after_all"):
+        candidates += [
+            ("print_ir_after_all", dict(_arg=True)),  # 兼容只接收 bool 的版本
+        ]
+
+    for method, kwargs in candidates:
+        try:
+            fn = getattr(pm, method)
+            if method == "print_ir_after_all":
+                fn(True)
+            else:
+                if kwargs:
+                    fn(**kwargs)
+                else:
+                    fn()
+            return True
+        except TypeError:
+            # 可能不接受这些 kwargs，继续尝试
+            continue
+        except Exception:
+            continue
+    return False
 
 # -------------------------
 # 核心：补丁 Compiler.compile
 # -------------------------
 def compile_and_dump(self, module, pipeline, *args, **kwargs):
+    global _LAST_MLIR_CONTEXT
     print("[PATCH] hit Compiler.compile")
-    _save_ir("0_", module)
-    
-    pm = self.passmanager.PassManager.parse(pipeline)
-    
-    # Try various methods to enable IR printing
-    for method in ["enable_ir_printing", "print_ir_after_all"]:
+
+    # 记录 context（用于后续 parse->generic）
+    _LAST_MLIR_CONTEXT = getattr(module, "context", None)
+    if _LAST_MLIR_CONTEXT is None:
         try:
-            attr = getattr(pm, method)
-            # Try calling with print_after_only=True if it's enable_ir_printing
-            if method == "enable_ir_printing":
-                try: attr(print_after_only=True)
-                except TypeError: attr()
-            else:
-                attr(True)
-            break
+            _LAST_MLIR_CONTEXT = module.operation.context
         except Exception:
-            continue
+            _LAST_MLIR_CONTEXT = None
+
+    # 0_：内存 module 直接 generic 打印
+    _save_ir("0_", module)
+
+    pm = self.passmanager.PassManager.parse(pipeline)
+
+    # 让 PM 尽可能 generic dump（如果版本支持）
+    _enable_pm_ir_printing_best_effort(pm)
 
     tmp_file = None
     text = ""
     try:
         _ensure_dump_dir()
-        # Use default temp file handling
         with tempfile.NamedTemporaryFile(prefix=f"{RUN_TAG}_pass_", suffix=".tmp", dir=str(DUMP_DIR), delete=False) as tf:
             tmp_file = tf.name
-        
+
         with redirect_fds(stderr_path=tmp_file):
             pm.enable_verifier(kwargs.get("enable_verifier", False))
             pm.run(module.operation)
-            
-        try: text = Path(tmp_file).read_text(errors="ignore")
-        except Exception: pass
-    finally:
-        if tmp_file: Path(tmp_file).unlink(missing_ok=True)
 
-    try: _split_pass_text_to_files(text)
-    except Exception as _e: print(f"[WARN] split per-pass text failed: {_e}")
+        try:
+            text = Path(tmp_file).read_text(errors="ignore")
+        except Exception:
+            pass
+    finally:
+        if tmp_file:
+            Path(tmp_file).unlink(missing_ok=True)
+
+    # per-pass：split 后每段强制 genericize 再落盘
+    try:
+        _split_pass_text_to_files(text, context=_LAST_MLIR_CONTEXT)
+    except Exception as _e:
+        print(f"[WARN] split per-pass text failed: {_e}")
 
     if _ENV_ON:
         print("[INFO] COMPILE-ONLY mode: skip JIT & execution completely.")
@@ -386,10 +540,14 @@ def compile_and_dump(self, module, pipeline, *args, **kwargs):
         raise
 
 def _patch_compiler_compile():
-    try: import cutlass.base_dsl.compiler as _cbc
-    except Exception as e: print(f"[WARN] import cutlass.base_dsl.compiler failed: {e}"); return
-    
-    if getattr(_patch_compiler_compile, "_installed", False): return
+    try:
+        import cutlass.base_dsl.compiler as _cbc
+    except Exception as e:
+        print(f"[WARN] import cutlass.base_dsl.compiler failed: {e}")
+        return
+
+    if getattr(_patch_compiler_compile, "_installed", False):
+        return
     _cbc.Compiler.compile = compile_and_dump
     _patch_compiler_compile._installed = True
     print("[INFO] Patched Compiler.compile -> compile_and_dump")
@@ -411,8 +569,7 @@ def install(run_tag: str | None = None):
     _SYS_STDOUT_ORIG, _SYS_STDERR_ORIG = sys.stdout, sys.stderr
     _STD_LOG_PATH = DUMP_DIR / f"{RUN_TAG}_stdout.log"
     _ERR_LOG_PATH = DUMP_DIR / f"{RUN_TAG}_stderr.log"
-    
-    # Use default buffering for performance (not 1=line buffered)
+
     _STD_LOG_F = open(_STD_LOG_PATH, "w")
     _ERR_LOG_F = open(_ERR_LOG_PATH, "w")
 
@@ -448,35 +605,53 @@ def _run_target_script(argv):
 def _finalize_report():
     """
     进程退出时的清理与安全退出逻辑。
+    额外：把 stdout IR slice 的 .mlir 强制重写成 generic form（去糖）。
     """
     global _STD_LOG_F, _ERR_LOG_F, _STD_SPLIT_TEE
-    
-    # 1. 极其激进的 Flush，确保日志落盘
+    global _LAST_MLIR_CONTEXT
+
+    # 1) Flush & drain
     try:
         if _STD_SPLIT_TEE:
             _STD_SPLIT_TEE.flush()
             _STD_SPLIT_TEE.drain()
-        
         if _STD_LOG_F: _STD_LOG_F.flush()
         if _ERR_LOG_F: _ERR_LOG_F.flush()
-        
         if _SYS_STDOUT_ORIG: _SYS_STDOUT_ORIG.flush()
         if _SYS_STDERR_ORIG: _SYS_STDERR_ORIG.flush()
     except Exception:
         pass
 
-    # 2. 只有在非 COMPILE-ONLY 模式下，才尝试还原 stdout
+    # 2) 关闭 stdout tee 的 mlir 文件句柄（确保可被重写）
+    try:
+        if _STD_SPLIT_TEE:
+            _STD_SPLIT_TEE.close()
+    except Exception:
+        pass
+
+    # 3) stdout slice：文件级强制 genericize
+    try:
+        if DUMP_DIR and RUN_TAG:
+            p = DUMP_DIR / _stdout_ir_mlir_filename()
+            if p.exists():
+                ok = _rewrite_file_generic(p, context=_LAST_MLIR_CONTEXT)
+                if ok and _SYS_STDOUT_ORIG:
+                    _SYS_STDOUT_ORIG.write(f"[DUMP] genericized stdout IR slice -> {p}\n")
+                    _SYS_STDOUT_ORIG.flush()
+    except Exception:
+        pass
+
+    # 4) 非 COMPILE-ONLY 才恢复 stdout/stderr 并关文件
     if not _ENV_ON:
         try:
             if _SYS_STDOUT_ORIG: sys.stdout = _SYS_STDOUT_ORIG
             if _SYS_STDERR_ORIG: sys.stderr = _SYS_STDERR_ORIG
-            if _STD_SPLIT_TEE: _STD_SPLIT_TEE.close()
             if _STD_LOG_F: _STD_LOG_F.close()
             if _ERR_LOG_F: _ERR_LOG_F.close()
         except Exception:
             pass
 
-    # 3. [核选项] COMPILE-ONLY 模式下，直接调用 os._exit(0)
+    # 5) COMPILE-ONLY 直接退出
     if _ENV_ON:
         os._exit(0)
 

@@ -15,7 +15,7 @@ cutlass.base_dsl.common.DSLCudaRuntimeError: DSLCudaRuntimeError: cudaErrorNoKer
 - [1mError name: cudaErrorNoKernelImageForDevice
 - Error code: 209
 - CUDA_TOOLKIT_PATH: not set
-- Target SM ARCH: sm_100a[0m
+- Target SM ARCH: sm_103a[0m
 
 [94m📊 GPU Information:[0m
 [1m- CUDA devices available: 2 (current: <CUdevice 0>)
@@ -24,6 +24,6 @@ cutlass.base_dsl.common.DSLCudaRuntimeError: DSLCudaRuntimeError: cudaErrorNoKer
 - Total Memory: [94m79.18 GB[0m
 
 [1mCompatibility Check:[0m
-[91m❌ Error: Target SM ARCH sm_100a is not compatible
+[91m❌ Error: Target SM ARCH sm_103a is not compatible
 💡 Please use one of SM ARCHs: [92msm_90a[0m
 
