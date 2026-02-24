@@ -919,12 +919,17 @@ class FlashAttentionForwardSm120Tma:
         if m_block_size % (num_mma_warps * 16) != 0:
             return False
         head_dim_padded = (head_dim + 31) // 32 * 32
-        # SMEM: sQ (1 stage) + sK (kv_stages) + sV (kv_stages) + mbar arrays
-        smem_q = m_block_size * head_dim_padded * (dtype.width // 8)
-        smem_kv = n_block_size * head_dim_padded * (dtype.width // 8) * kv_stages * 2
-        smem_mbar = (1 * 2 + kv_stages * 2 * 2) * 8  # Q + K + V mbar arrays
-        smem_align = 3 * 1024  # alignment overhead for 3 buffers
-        smem_total = smem_q + smem_kv + smem_mbar + smem_align
+        # SMEM layout: [q_mbar | k_mbar | v_mbar | <pad> | sQ | sK | sV]
+        # The mbar arrays are padded up to the first 1024-byte boundary by the
+        # first Align[..., 1024] field.  sQ, sK, sV are typically multiples of
+        # 1024 B (e.g. 128*128*2 = 32768) so they need no further padding.
+        elem_bytes = dtype.width // 8
+        smem_q = m_block_size * head_dim_padded * elem_bytes
+        smem_kv = n_block_size * head_dim_padded * elem_bytes * kv_stages * 2
+        smem_mbar = (1 * 2 + kv_stages * 2 * 2) * 8  # q + k + v mbar arrays
+        smem_mbar_region = ((smem_mbar + 1023) // 1024) * 1024  # round up to 1024
+        smem_align_q = (1024 - smem_q % 1024) % 1024        # padding after sQ
+        smem_total = smem_mbar_region + smem_q + smem_align_q + smem_kv
         smem_capacity = utils.get_smem_capacity_in_bytes("sm_120")
         if smem_total > smem_capacity:
             return False
@@ -1417,13 +1422,25 @@ class FlashAttentionForwardSm120Tma:
                             in_mask_steps=False,
                         )
                 else:
-                    self._softmax_rescale_O(
-                        m_block, n_block, mQ, mK, batch_idx, head_idx,
-                        thr_mma, tiled_mma, acc_O,
-                        row_max, row_sum, softmax_scale_log2,
-                        acc_S,
-                        in_mask_steps=False,
-                    )
+                    # Non-causal: the last K tile (highest n_block index) may be
+                    # partial if seqlen_k is not divisible by n_block_size. Apply
+                    # OOB masking on that tile only.
+                    if n_block == n_block_max - 1:
+                        self._softmax_rescale_O(
+                            m_block, n_block, mQ, mK, batch_idx, head_idx,
+                            thr_mma, tiled_mma, acc_O,
+                            row_max, row_sum, softmax_scale_log2,
+                            acc_S,
+                            in_mask_steps=True,
+                        )
+                    else:
+                        self._softmax_rescale_O(
+                            m_block, n_block, mQ, mK, batch_idx, head_idx,
+                            thr_mma, tiled_mma, acc_O,
+                            row_max, row_sum, softmax_scale_log2,
+                            acc_S,
+                            in_mask_steps=False,
+                        )
                 rP = cute.make_fragment_like(acc_S, self._dtype)
                 rP.store(acc_S.load().to(self._dtype))
 
@@ -1614,24 +1631,40 @@ class FlashAttentionForwardSm120Tma:
         row_max_prev = cute.make_fragment_like(row_max, cutlass.Float32)
         cute.basic_copy(row_max, row_max_prev)
 
+        # Build the S-tile coordinate view once (needed for masking).
+        # Constructed conditionally to avoid dead code when in_mask_steps=False.
+        tScS_mn = None
+        if cutlass.const_expr(in_mask_steps):
+            mcS = cute.make_identity_tensor((
+                mQ.shape[0], mQ.shape[1], mQ.shape[2], mK.shape[1],
+            ))
+            cS = cute.local_tile(
+                mcS[batch_idx, None, head_idx, None],
+                (self._m_block_size, self._n_block_size),
+                (m_block, n_block),
+            )
+            tScS = thr_mma.partition_C(cS)
+            tScS_mn = self._make_acc_tensor_mn_view(tScS)
+
         for r in cutlass.range_constexpr(cute.size(row_max)):
-            if cutlass.const_expr(in_mask_steps and self._is_causal):
-                mcS = cute.make_identity_tensor((
-                    mQ.shape[0], mQ.shape[1], mQ.shape[2], mK.shape[1],
-                ))
-                cS = cute.local_tile(
-                    mcS[batch_idx, None, head_idx, None],
-                    (self._m_block_size, self._n_block_size),
-                    (m_block, n_block),
-                )
-                tScS = thr_mma.partition_C(cS)
-                tScS_mn = self._make_acc_tensor_mn_view(tScS)
-                col_idx_limit = cutlass.min(
-                    tScS_mn[r, 0][1] + 1, mK.shape[1]
-                )
-                for c in cutlass.range_constexpr(cute.size(tScS_mn.shape[1])):
-                    if cute.elem_less(col_idx_limit, tScS_mn[0, c][3] + 1):
-                        acc_S_mn[r, c] = -cutlass.Float32.inf
+            if cutlass.const_expr(in_mask_steps):
+                if cutlass.const_expr(self._is_causal):
+                    # Causal masking: zero out attention to future tokens,
+                    # and OOB tokens beyond seqlen_k.
+                    col_idx_limit = cutlass.min(
+                        tScS_mn[r, 0][1] + 1, mK.shape[1]
+                    )
+                    for c in cutlass.range_constexpr(cute.size(tScS_mn.shape[1])):
+                        if cute.elem_less(col_idx_limit, tScS_mn[0, c][3] + 1):
+                            acc_S_mn[r, c] = -cutlass.Float32.inf
+                else:
+                    # Non-causal OOB masking: zero out columns beyond seqlen_k.
+                    # Needed when seqlen_k is not divisible by n_block_size (the
+                    # last K tile has padding that TMA zero-fills, but softmax
+                    # must treat those as -inf, not 0).
+                    for c in cutlass.range_constexpr(cute.size(tScS_mn.shape[1])):
+                        if cute.elem_less(mK.shape[1], tScS_mn[0, c][3] + 1):
+                            acc_S_mn[r, c] = -cutlass.Float32.inf
 
             acc_S_row = acc_S_mn[r, None].load()
             row_max_cur_row = acc_S_row.reduce(
