@@ -1341,7 +1341,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         location=None,
     ):
         """Generate MLIR module and compile iself.T_provider."""
-        with ir.Context(), self.get_ir_location(location):
+        with ir.Context() as ctx, self.get_ir_location(location):
+            # If threading is enabled, each MLIR context will keep alive a thread pool.
+            # When we cache MLIR compilation results, we also cache its context thus accumulating #(compilations) * thread_pool_size threads.
+            # Disable threading to avoid such excessive number of threads.
+            ctx.enable_multithreading(False)
+
             try:
                 # Convert input arguments to MLIR arguments
                 exe_args, func_types, adapted_args = self.generate_mlir_function_types(
