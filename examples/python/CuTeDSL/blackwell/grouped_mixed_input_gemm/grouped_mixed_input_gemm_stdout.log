@@ -1,0 +1,62 @@
+[INFO] Run tag: grouped_mixed_input_gemm
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_0_.mlir (373 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_001_CuteRemoveStaticArgs.mlir (375 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_002_MaterializeTmaMulticast.mlir (375 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_003_SoftwarePipelinePass.mlir (375 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_004_CuteDesugar.mlir (495 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_005_CuteExpandOps.mlir (600 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_006_CuteFoldStatic.mlir (340 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_007_InsertRangeInformation.mlir (340 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_008_Canonicalizer.mlir (209 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_009_CSE.mlir (198 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_010_LoopInvariantCodeMotion.mlir (198 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_011_LoopVectorizePass.mlir (198 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_012_EliminateUnnecessarySyncPass.mlir (198 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_013_StrengthReductionPass.mlir (198 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_014_ConvertVectorToSCF.mlir (198 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_015_ConvertCuteTypesInScfOps.mlir (198 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_016_SCFToControlFlow.mlir (198 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_017_ArithExpandOpsPass.mlir (252 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_018_ConvertMathToFuncs.mlir (252 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_019_GpuLaunchSinkIndexComputations.mlir (252 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_020_ConvertToLLVMPass.mlir (655 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_021_ReconcileUnrealizedCasts.mlir (607 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_022_GpuKernelOutlining.mlir (607 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_023_SCFToControlFlow.mlir (625 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_024_ReconcileUnrealizedCasts.mlir (625 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_025_ConvertToLLVMPass.mlir (625 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_026_Canonicalizer.mlir (453 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_027_CSE.mlir (447 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_028_ConvertVectorToLLVMPass.mlir (433 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_029_ConvertNVVMToLLVMPass.mlir (433 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_030_CudaComputeTargetPass.mlir (128 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_031_FinalizeMemRefToLLVMConversionPass.mlir (433 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_032_ExpandStridedMetadata.mlir (433 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_033_ArithToLLVMConversionPass.mlir (433 lines)
+[DUMP] 034_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_034_StripDebugInfo.mlir (128 lines)
+[DUMP] 035_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_035_ConvertFastmathOps.mlir (128 lines)
+[DUMP] 036_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_036_ConvertGpuOpsToNVVMOps.mlir (128 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_037_StoreGpuLaunchAttribute.mlir (433 lines)
+[DUMP] 038_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_038_GpuToLLVMConversionPass.mlir (433 lines)
+[DUMP] 039_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_039_StoreGpuLaunchAttribute.mlir (433 lines)
+[DUMP] 040_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_040_ConvertMathToLLVMPass.mlir (433 lines)
+[DUMP] 041_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_041_Canonicalizer.mlir (433 lines)
+[DUMP] 042_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_042_CSE.mlir (433 lines)
+[DUMP] 043_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_043_ReconcileUnrealizedCasts.mlir (433 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_044_CudaToBinaryPass.mlir (318 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_045_ConvertToLLVMPass.mlir (498 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_046_ReconcileUnrealizedCasts.mlir (496 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm/grouped_mixed_input_gemm_047_CudaErrorHandlingPass.mlir (503 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.

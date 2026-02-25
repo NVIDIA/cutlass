@@ -1,4 +1,4 @@
-# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -26,12 +26,21 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
+import sys
+import os
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dump_dir = os.path.join(base_dir, "..","..","dump")
+sys.path.append(dump_dir)
+import cute_ir_dump_patch as cid
+cid.install()
 import os
 import sys
 import argparse
 from typing import List, Type, Tuple, Optional
 import cuda.bindings.driver as cuda
+
+import torch
+import torch.nn.functional as F
 
 import cutlass
 import cutlass.cute as cute
@@ -40,6 +49,7 @@ import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
+import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
@@ -698,7 +708,7 @@ class SSDKernel:
         G = cute.size(tma_tensor_b, mode=[3])
         NGROUP_RATIO = EH // G
 
-        # Make tiledMma
+        # Make TiledMma
         (
             tiled_mma_intra1,
             tiled_mma_intra2,
@@ -835,7 +845,7 @@ class SSDKernel:
         # Specialized TMA load Delta/CumsumDelta/X warp
         if warp_idx == self.tma_deltas_x_d_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
+            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
 
             # ((ATOM_V, REST_V), INPUT_STAGE)
             # ((ATOM_V, REST_V), 1, 1, C, EH, B)
@@ -999,7 +1009,7 @@ class SSDKernel:
         # Specialized TMA load B/C warp
         elif warp_idx == self.tma_b_c_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
+            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
 
             # ((ATOM_V, REST_V), INPUT_STAGE)
             # ((ATOM_V, REST_V), 1, 1, C, G, B)
@@ -1103,7 +1113,7 @@ class SSDKernel:
         # Specialized MMA Intra warp
         elif warp_idx == self.mma_intra_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
+            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
 
             # Make shared/tmem fragments for INTRA_MMA1 B/C/ACC
             # (MMA, MMA_N, MMA_K, INPUT_STAGE)
@@ -1351,7 +1361,7 @@ class SSDKernel:
         # Specialized MMA Inter warp
         elif warp_idx == self.mma_inter_warp_id:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
+            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
 
             # Make shared/tmem fragments for INTER_MMA1 X/B/ACC
             # (MMA, MMA_N, MMA_K, INPUT_STAGE)
@@ -1511,7 +1521,7 @@ class SSDKernel:
             or warp_idx == self.pre_inter_warp_id[3]
         ):
             # Alloc regs in pre_inter warps
-            cute.arch.setmaxregister_increase(self.num_regs_pre_inter_warps)
+            cute.arch.warpgroup_reg_alloc(self.num_regs_pre_inter_warps)
 
             # Make tiledCopy and partition smem/register tensor for smem load Bt
             # ((S2R_ATOM_V, S2R_REST_V), S2R_M, S2R_N, INPUT_STAGE)
@@ -1667,8 +1677,8 @@ class SSDKernel:
 
                 # Fence for shared memory
                 cute.arch.fence_proxy(
-                    "async.shared",
-                    space="cta",
+                    cute.arch.ProxyKind.async_shared,
+                    space=cute.arch.SharedSpace.shared_cta,
                 )
                 # Async arrive INTER2_P buffer full
                 inter2_p_pipeline.producer_commit(inter2_p_producer_state)
@@ -1700,8 +1710,8 @@ class SSDKernel:
 
                     # Fence for shared memory
                     cute.arch.fence_proxy(
-                        "async.shared",
-                        space="cta",
+                        cute.arch.ProxyKind.async_shared,
+                        space=cute.arch.SharedSpace.shared_cta,
                     )
 
                     # Combine B/Delta/DeltaA/last_column
@@ -1719,8 +1729,8 @@ class SSDKernel:
 
                     # Fence for shared memory
                     cute.arch.fence_proxy(
-                        "async.shared",
-                        space="cta",
+                        cute.arch.ProxyKind.async_shared,
+                        space=cute.arch.SharedSpace.shared_cta,
                     )
 
                     # Async arrive B/Delta/B_TMEM buffer empty/empty/full
@@ -1748,9 +1758,14 @@ class SSDKernel:
 
                     # Combine INTER1_ACC/last_column/State
                     exp_last_column = cute.math.exp(last_column, fastmath=True)
-                    for reg_idx in cutlass.range(cute.size(tTR_rP), vectorize=True):
-                        tTR_rP[reg_idx] = (
-                            exp_last_column * tState[reg_idx] + tTR_rP[reg_idx]
+                    for reg_idx in range(0, cute.size(tTR_rP), 2):
+                        (
+                            tTR_rP[reg_idx],
+                            tTR_rP[reg_idx + 1],
+                        ) = cute.arch.fma_packed_f32x2(
+                            (exp_last_column, exp_last_column),
+                            (tState[reg_idx], tState[reg_idx + 1]),
+                            (tTR_rP[reg_idx], tTR_rP[reg_idx + 1]),
                         )
 
                     # Store scaled P to tRS_rP
@@ -1766,8 +1781,8 @@ class SSDKernel:
 
                     # Fence for shared memory
                     cute.arch.fence_proxy(
-                        "async.shared",
-                        space="cta",
+                        cute.arch.ProxyKind.async_shared,
+                        space=cute.arch.SharedSpace.shared_cta,
                     )
 
                     # Async arrive INTER1_ACC/INTER2_P buffer empty/full
@@ -1801,10 +1816,10 @@ class SSDKernel:
                 # END of for chunk_idx in cutlass.range(C, unroll=1)
 
                 # Store last INTER2_P (State) from smem to gmem
-                # Wait for all previous store to smem done
+                # Wait for all previous stores to smem to be done
                 cute.arch.fence_proxy(
-                    "async.shared",
-                    space="cta",
+                    cute.arch.ProxyKind.async_shared,
+                    space=cute.arch.SharedSpace.shared_cta,
                 )
                 self.pre_inter_sync_barrier.arrive_and_wait()
 
@@ -1840,7 +1855,7 @@ class SSDKernel:
             or warp_idx == self.pre_intra_warp_id[3]
         ):
             # Alloc regs in pre_inter warps
-            cute.arch.setmaxregister_increase(self.num_regs_pre_intra_warps)
+            cute.arch.warpgroup_reg_alloc(self.num_regs_pre_intra_warps)
 
             # Make tmem fragment for INTRA1_ACC
             # (MMA, MMA_M, MMA_N, INTRA1_ACC_STAGE)
@@ -2013,7 +2028,7 @@ class SSDKernel:
         # Specialized Epilogue warp
         else:
             # Dealloc regs for pre-inter/pre-intra warps
-            cute.arch.setmaxregister_decrease(self.num_regs_epilogue_warps)
+            cute.arch.warpgroup_reg_dealloc(self.num_regs_epilogue_warps)
 
             # (L, D, INPUT_STAGE)
             sDeltaA = self.epilog_make_delta(smem_cumsum_delta)
@@ -2251,26 +2266,58 @@ class SSDKernel:
                                 cute.copy(s2r_atom_d, tRS_sD[d_coord], tRS_rD)
 
                             # Combine INTRA2_ACC/INTER2_ACC/Delta/X/D
-                            for reg_idx in cutlass.range(
-                                cute.size(tRS_rCompute), vectorize=True
-                            ):
-                                tRS_rCompute[reg_idx] = (
-                                    tTR_rInter[reg_idx]
-                                    * cute.math.exp(tTR_rDeltaA[reg_idx], fastmath=True)
-                                    + tTR_rIntra[reg_idx]
+                            for reg_idx in range(0, cute.size(tRS_rCompute), 2):
+                                (
+                                    tRS_rCompute[reg_idx],
+                                    tRS_rCompute[reg_idx + 1],
+                                ) = cute.arch.fma_packed_f32x2(
+                                    (tTR_rInter[reg_idx], tTR_rInter[reg_idx + 1]),
+                                    (
+                                        cute.math.exp(
+                                            tTR_rDeltaA[reg_idx], fastmath=True
+                                        ),
+                                        cute.math.exp(
+                                            tTR_rDeltaA[reg_idx + 1], fastmath=True
+                                        ),
+                                    ),
+                                    (tTR_rIntra[reg_idx], tTR_rIntra[reg_idx + 1]),
                                 )
                                 # Fuse Y += X * D
                                 if cutlass.const_expr(self.d_has_hdim):
-                                    tRS_rCompute[reg_idx] = (
-                                        tRS_rD[reg_idx].to(self.acc_dtype)
-                                        * tSR_rX[reg_idx].to(self.acc_dtype)
-                                        + tRS_rCompute[reg_idx]
+                                    (
+                                        tRS_rCompute[reg_idx],
+                                        tRS_rCompute[reg_idx + 1],
+                                    ) = cute.arch.fma_packed_f32x2(
+                                        (
+                                            tRS_rD[reg_idx].to(self.acc_dtype),
+                                            tRS_rD[reg_idx + 1].to(self.acc_dtype),
+                                        ),
+                                        (
+                                            tSR_rX[reg_idx].to(self.acc_dtype),
+                                            tSR_rX[reg_idx + 1].to(self.acc_dtype),
+                                        ),
+                                        (
+                                            tRS_rCompute[reg_idx],
+                                            tRS_rCompute[reg_idx + 1],
+                                        ),
                                     )
                                 elif cutlass.const_expr(self.has_d):
-                                    tRS_rCompute[reg_idx] = (
-                                        tRS_rD.to(self.acc_dtype)
-                                        * tSR_rX[reg_idx].to(self.acc_dtype)
-                                        + tRS_rCompute[reg_idx]
+                                    (
+                                        tRS_rCompute[reg_idx],
+                                        tRS_rCompute[reg_idx + 1],
+                                    ) = cute.arch.fma_packed_f32x2(
+                                        (
+                                            tRS_rD.to(self.acc_dtype),
+                                            tRS_rD.to(self.acc_dtype),
+                                        ),
+                                        (
+                                            tSR_rX[reg_idx].to(self.acc_dtype),
+                                            tSR_rX[reg_idx + 1].to(self.acc_dtype),
+                                        ),
+                                        (
+                                            tRS_rCompute[reg_idx],
+                                            tRS_rCompute[reg_idx + 1],
+                                        ),
                                     )
 
                             tRS_rY.store(tRS_rCompute.load().to(self.io_dtype))
@@ -2284,8 +2331,8 @@ class SSDKernel:
 
                             # Fence for R2S store
                             cute.arch.fence_proxy(
-                                "async.shared",
-                                space="cta",
+                                cute.arch.ProxyKind.async_shared,
+                                space=cute.arch.SharedSpace.shared_cta,
                             )
                             # Sync before TMA store
                             self.epilog_sync_barrier.arrive_and_wait()
@@ -2403,6 +2450,7 @@ class SSDKernel:
         internal_stages,
         intra1_acc_stages,
     ):
+        SM100_TMEM_CAPACITY_COLUMNS = 512
         BITS_PER_TMEM_COL = 32
         # (MMA, MMA_M, MMA_N)
         acc_shape_intra1 = tiled_mma_intra1.partition_shape_C(tile_shape_mnk_intra1[:2])
@@ -2459,7 +2507,7 @@ class SSDKernel:
         num_tmem_cols_total = 1
         while num_tmem_cols_total < num_tmem_cols_total_tmp:
             num_tmem_cols_total *= 2
-        assert num_tmem_cols_total <= cute.arch.get_max_tmem_alloc_cols("sm_100")
+        assert num_tmem_cols_total <= SM100_TMEM_CAPACITY_COLUMNS
 
         return (
             tmem_intra1_acc_offset,
@@ -3012,26 +3060,41 @@ class SSDKernel:
 
         # SegSum
         # fadd2 + fsel + fmul2/mufu + fmul2
-        for subtile_idx in cutlass.range(
-            cute.size(tTR_rQ), unroll_full=True, vectorize=True
-        ):
-            tCompute[subtile_idx] = tCrDeltaA_Col[subtile_idx] + (
-                -tCrDeltaA_Row[subtile_idx]
+        for subtile_idx in cutlass.range(0, cute.size(tTR_rQ), 2, unroll_full=True):
+            (
+                tCompute[subtile_idx],
+                tCompute[subtile_idx + 1],
+            ) = cute.arch.add_packed_f32x2(
+                (tCrDeltaA_Col[subtile_idx], tCrDeltaA_Col[subtile_idx + 1]),
+                (-tCrDeltaA_Row[subtile_idx], -tCrDeltaA_Row[subtile_idx + 1]),
             )
         for subtile_idx in cutlass.range(cute.size(tTR_rQ), unroll_full=True):
             m, n = tCoord[subtile_idx]
             if m < n:
                 tCompute[subtile_idx] = cutlass.Float32(-float("inf"))
         LOG2_E = cutlass.Float32(1.4426950408889634)
-        for subtile_idx in cutlass.range(
-            cute.size(tTR_rQ), unroll_full=True, vectorize=True
-        ):
+        for subtile_idx in cutlass.range(0, cute.size(tTR_rQ), 2, unroll_full=True):
             # TODO: use math.exp directly
-            tCompute_log2e = tCompute[subtile_idx] * LOG2_E
-            tCompute[subtile_idx] = (
-                cute.math.exp2(tCompute_log2e, fastmath=True) * tCrDelta[subtile_idx]
+            tCompute_log2e = cute.arch.mul_packed_f32x2(
+                (tCompute[subtile_idx], tCompute[subtile_idx + 1]), (LOG2_E, LOG2_E)
             )
-            tCompute[subtile_idx] = tCompute[subtile_idx] * tTR_rQ[subtile_idx]
+            (
+                tCompute[subtile_idx],
+                tCompute[subtile_idx + 1],
+            ) = cute.arch.mul_packed_f32x2(
+                (
+                    cute.math.exp2(tCompute_log2e[0], fastmath=True),
+                    cute.math.exp2(tCompute_log2e[1], fastmath=True),
+                ),
+                (tCrDelta[subtile_idx], tCrDelta[subtile_idx + 1]),
+            )
+            (
+                tCompute[subtile_idx],
+                tCompute[subtile_idx + 1],
+            ) = cute.arch.mul_packed_f32x2(
+                (tCompute[subtile_idx], tCompute[subtile_idx + 1]),
+                (tTR_rQ[subtile_idx], tTR_rQ[subtile_idx + 1]),
+            )
 
         tRT_rQ.store(tCompute.load().to(self.io_dtype))
         return tRT_rQ
@@ -3172,7 +3235,6 @@ class SSDKernel:
         )
         return sDeltaA
 
-    @cute.jit
     def pre_inter_scale_bt_with_delta(
         self, tBrB_s2r, tBrDelta_s2r, tBrDeltaA_s2r, last_column
     ):
@@ -3185,15 +3247,22 @@ class SSDKernel:
         tBrDelta_Compute.store(tBrDelta_s2r.load().to(self.acc_dtype))
         tBrDeltaA_Compute.store(tBrDeltaA_s2r.load().to(self.acc_dtype))
 
-        for reg_idx in cutlass.range(
-            cute.size(tBrB_Compute), vectorize=True, unroll_full=True
-        ):
-            tCompute[reg_idx] = (
-                cute.math.exp((last_column - tBrDeltaA_Compute[reg_idx]), fastmath=True)
-                * tBrDelta_Compute[reg_idx]
+        for reg_idx in range(0, cute.size(tBrB_Compute), 2):
+            tCompute[reg_idx], tCompute[reg_idx + 1] = cute.arch.mul_packed_f32x2(
+                (
+                    cute.math.exp(
+                        (last_column - tBrDeltaA_Compute[reg_idx]), fastmath=True
+                    ),
+                    cute.math.exp(
+                        (last_column - tBrDeltaA_Compute[reg_idx + 1]), fastmath=True
+                    ),
+                ),
+                (tBrDelta_Compute[reg_idx], tBrDelta_Compute[reg_idx + 1]),
             )
-
-            tCompute[reg_idx] = tCompute[reg_idx] * tBrB_Compute[reg_idx]
+            tCompute[reg_idx], tCompute[reg_idx + 1] = cute.arch.mul_packed_f32x2(
+                (tCompute[reg_idx], tCompute[reg_idx + 1]),
+                (tBrB_Compute[reg_idx], tBrB_Compute[reg_idx + 1]),
+            )
         return tCompute
 
     def epilog_make_delta(self, smem_cumsum_delta):
@@ -3303,10 +3372,6 @@ def run(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-
-    import torch
-    import torch.nn.functional as F
-    import cutlass.torch as cutlass_torch
 
     # Unpack parameters
     G, B, E, H, C, D, L, N = gbehcdln

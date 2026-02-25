@@ -1,0 +1,71 @@
+[INFO] Run tag: rmsnorm
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running RMSNorm test with:
+  M: 2048, N: 4096
+  dtype: BFloat16
+  has_weight: True
+  eps: 1e-06
+  SM version: 90
+  cluster_n: 1
+  threads_per_row: 64
+  rows_per_block: 2
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_0_.mlir (1101 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_001_CuteRemoveStaticArgs.mlir (1102 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_002_MaterializeTmaMulticast.mlir (1102 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_003_SoftwarePipelinePass.mlir (1102 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_004_CuteDesugar.mlir (1408 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_005_CuteExpandOps.mlir (1944 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_006_CuteFoldStatic.mlir (1200 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_007_InsertRangeInformation.mlir (1200 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_008_Canonicalizer.mlir (752 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_009_CSE.mlir (652 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_010_LoopInvariantCodeMotion.mlir (652 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_011_LoopVectorizePass.mlir (652 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_012_EliminateUnnecessarySyncPass.mlir (652 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_013_StrengthReductionPass.mlir (652 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_014_ConvertVectorToSCF.mlir (652 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_015_ConvertCuteTypesInScfOps.mlir (652 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_016_SCFToControlFlow.mlir (663 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_017_ArithExpandOpsPass.mlir (755 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_018_ConvertMathToFuncs.mlir (755 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_019_GpuLaunchSinkIndexComputations.mlir (755 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_020_ConvertToLLVMPass.mlir (1294 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_021_ReconcileUnrealizedCasts.mlir (1174 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_022_GpuKernelOutlining.mlir (1174 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_023_SCFToControlFlow.mlir (1174 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_024_ReconcileUnrealizedCasts.mlir (1174 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_025_ConvertToLLVMPass.mlir (1174 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_026_Canonicalizer.mlir (665 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_027_CSE.mlir (641 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_028_ConvertVectorToLLVMPass.mlir (638 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_029_ConvertNVVMToLLVMPass.mlir (646 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_030_CudaComputeTargetPass.mlir (488 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_031_FinalizeMemRefToLLVMConversionPass.mlir (646 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_032_ExpandStridedMetadata.mlir (637 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_033_ArithToLLVMConversionPass.mlir (637 lines)
+[DUMP] 034_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_034_StripDebugInfo.mlir (479 lines)
+[DUMP] 035_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_035_ConvertFastmathOps.mlir (479 lines)
+[DUMP] 036_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_036_ConvertGpuOpsToNVVMOps.mlir (481 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_037_StoreGpuLaunchAttribute.mlir (639 lines)
+[DUMP] 038_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_038_GpuToLLVMConversionPass.mlir (639 lines)
+[DUMP] 039_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_039_StoreGpuLaunchAttribute.mlir (639 lines)
+[DUMP] 040_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_040_ConvertMathToLLVMPass.mlir (639 lines)
+[DUMP] 041_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_041_Canonicalizer.mlir (639 lines)
+[DUMP] 042_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_042_CSE.mlir (639 lines)
+[DUMP] 043_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_043_ReconcileUnrealizedCasts.mlir (639 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_044_CudaToBinaryPass.mlir (171 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_045_ConvertToLLVMPass.mlir (339 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_046_ReconcileUnrealizedCasts.mlir (337 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/rmsnorm/rmsnorm_047_CudaErrorHandlingPass.mlir (344 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.

@@ -1,0 +1,29 @@
+Traceback (most recent call last):
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0.py", line 447, in <module>
+    run_dense_gemm(
+  File "/home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0.py", line 403, in run_dense_gemm
+    host_function(
+  File "/usr/local/lib/python3.10/dist-packages/nvidia_cutlass_dsl/python_packages/cutlass/base_dsl/runtime/cuda.py", line 292, in checkCudaErrors
+    raise DSLCudaRuntimeError(error_code, error_name)
+cutlass.base_dsl.common.DSLCudaRuntimeError: DSLCudaRuntimeError: cudaErrorNoKernelImageForDevice (error code: 209) 
+ 
+
+[0m
+[1mError Code:[0m 209
+
+[94m🔍 Additional Context:[0m 
+- [1mError name: cudaErrorNoKernelImageForDevice
+- Error code: 209
+- CUDA_TOOLKIT_PATH: not set
+- Target SM ARCH: sm_100a[0m
+
+[94m📊 GPU Information:[0m
+[1m- CUDA devices available: 2 (current: <CUdevice 0>)
+- Architecture: [94mHopper[0m ([92msm_90a[0m)
+- Compatible SM archs: [92msm_90a[0m
+- Total Memory: [94m79.18 GB[0m
+
+[1mCompatibility Check:[0m
+[91m❌ Error: Target SM ARCH sm_100a is not compatible
+💡 Please use one of SM ARCHs: [92msm_90a[0m
+

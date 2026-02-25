@@ -1,0 +1,85 @@
+[INFO] Run tag: mixed_input_fmha_prefill
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+Running Blackwell SM100 Mixed Input FMHA Prefill test with:
+  q_shape: (1, 8, 256, 512)
+  k_shape: (1, 8, 256, 512)
+  q_dtype: BFloat16
+  kv_dtype: Int8
+  o_dtype: BFloat16
+  scale_dtype: BFloat16
+  scale_granularity: 512
+  qk_acc_dtype: Float32
+  pv_acc_dtype: Float32
+  cta_tiler_mn: (64, 256)
+  is_persistent: False
+  is_causal: False
+  scale_q: 1.0
+  scale_k: 1.0
+  scale_v: 1.0
+  inv_scale_o: 1.0
+  scale_softmax: 0.0
+  tolerance: 0.1
+  warmup_iterations: 0
+  iterations: 1
+  skip_ref_check: False
+  use_cold_l2: False
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_0_.mlir (17595 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_001_CuteRemoveStaticArgs.mlir (17613 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_002_MaterializeTmaMulticast.mlir (17613 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_003_SoftwarePipelinePass.mlir (17613 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_004_CuteDesugar.mlir (20921 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_005_CuteExpandOps.mlir (23781 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_006_CuteFoldStatic.mlir (12049 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_007_InsertRangeInformation.mlir (12049 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_008_Canonicalizer.mlir (7946 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_009_CSE.mlir (7028 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_010_LoopInvariantCodeMotion.mlir (7028 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_011_LoopVectorizePass.mlir (7028 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_012_EliminateUnnecessarySyncPass.mlir (7028 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_013_StrengthReductionPass.mlir (7028 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_014_ConvertVectorToSCF.mlir (7028 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_015_ConvertCuteTypesInScfOps.mlir (7058 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_016_SCFToControlFlow.mlir (7588 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_017_ArithExpandOpsPass.mlir (7954 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_018_ConvertMathToFuncs.mlir (7954 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_019_GpuLaunchSinkIndexComputations.mlir (7954 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_020_ConvertToLLVMPass.mlir (13809 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_021_ReconcileUnrealizedCasts.mlir (13278 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_022_GpuKernelOutlining.mlir (13278 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_023_SCFToControlFlow.mlir (13278 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_024_ReconcileUnrealizedCasts.mlir (13278 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_025_ConvertToLLVMPass.mlir (13278 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_026_Canonicalizer.mlir (8870 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_027_CSE.mlir (8337 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_028_ConvertVectorToLLVMPass.mlir (10543 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_029_ConvertNVVMToLLVMPass.mlir (10555 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_030_CudaComputeTargetPass.mlir (9783 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_031_FinalizeMemRefToLLVMConversionPass.mlir (10555 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_032_ExpandStridedMetadata.mlir (9146 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_033_ArithToLLVMConversionPass.mlir (9146 lines)
+[DUMP] 034_StripDebugInfo -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_034_StripDebugInfo.mlir (8374 lines)
+[DUMP] 035_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_035_ConvertFastmathOps.mlir (8374 lines)
+[DUMP] 036_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_036_ConvertGpuOpsToNVVMOps.mlir (8373 lines)
+[DUMP] 037_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_037_StoreGpuLaunchAttribute.mlir (9145 lines)
+[DUMP] 038_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_038_GpuToLLVMConversionPass.mlir (9145 lines)
+[DUMP] 039_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_039_StoreGpuLaunchAttribute.mlir (9145 lines)
+[DUMP] 040_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_040_ConvertMathToLLVMPass.mlir (9145 lines)
+[DUMP] 041_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_041_Canonicalizer.mlir (9145 lines)
+[DUMP] 042_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_042_CSE.mlir (8901 lines)
+[DUMP] 043_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_043_ReconcileUnrealizedCasts.mlir (8901 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_044_CudaToBinaryPass.mlir (777 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_045_ConvertToLLVMPass.mlir (1017 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_046_ReconcileUnrealizedCasts.mlir (1015 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/blackwell/mixed_input_fmha/mixed_input_fmha_prefill/mixed_input_fmha_prefill_047_CudaErrorHandlingPass.mlir (1022 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.

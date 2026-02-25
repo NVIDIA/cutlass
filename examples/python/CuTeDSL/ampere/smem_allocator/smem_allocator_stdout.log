@@ -1,0 +1,68 @@
+[INFO] Run tag: smem_allocator
+[INFO] Stdout mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_stdout.log
+[INFO] Stderr mirrored to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_stderr.log
+[INFO] Stdout IR slice saved to: /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_0_with_loc.mlir
+[INFO] Patched Compiler.compile -> compile_and_dump
+[INFO] Patched CUDA runtime for COMPILE-ONLY mode (skip arch compatibility check)
+[INFO] Patched HardwareInfo.get_max_active_clusters for COMPILE-ONLY mode
+[INFO] cute_ir_dump_patch installed.
+ptr<f32, smem, align<128>>
+ptr<i64, smem, align<128>>
+ptr<f32, smem, align<8>>
+ptr<i8, smem, align<128>>
+ptr<i64, smem, align<64>>
+tensor<ptr<f32, smem, align<32>> o (16,2):(1,16)>
+
+
+
+[PATCH] hit Compiler.compile
+[DUMP] 0_ -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_0_.mlir (293 lines)
+[DUMP] 001_CuteRemoveStaticArgs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_001_CuteRemoveStaticArgs.mlir (293 lines)
+[DUMP] 002_MaterializeTmaMulticast -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_002_MaterializeTmaMulticast.mlir (293 lines)
+[DUMP] 003_SoftwarePipelinePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_003_SoftwarePipelinePass.mlir (293 lines)
+[DUMP] 004_CuteDesugar -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_004_CuteDesugar.mlir (296 lines)
+[DUMP] 005_CuteExpandOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_005_CuteExpandOps.mlir (384 lines)
+[DUMP] 006_CuteFoldStatic -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_006_CuteFoldStatic.mlir (180 lines)
+[DUMP] 007_InsertRangeInformation -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_007_InsertRangeInformation.mlir (180 lines)
+[DUMP] 008_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_008_Canonicalizer.mlir (164 lines)
+[DUMP] 009_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_009_CSE.mlir (164 lines)
+[DUMP] 010_LoopInvariantCodeMotion -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_010_LoopInvariantCodeMotion.mlir (164 lines)
+[DUMP] 011_LoopVectorizePass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_011_LoopVectorizePass.mlir (164 lines)
+[DUMP] 012_EliminateUnnecessarySyncPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_012_EliminateUnnecessarySyncPass.mlir (164 lines)
+[DUMP] 013_StrengthReductionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_013_StrengthReductionPass.mlir (164 lines)
+[DUMP] 014_ConvertVectorToSCF -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_014_ConvertVectorToSCF.mlir (164 lines)
+[DUMP] 015_ConvertCuteTypesInScfOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_015_ConvertCuteTypesInScfOps.mlir (164 lines)
+[DUMP] 016_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_016_SCFToControlFlow.mlir (164 lines)
+[DUMP] 017_ArithExpandOpsPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_017_ArithExpandOpsPass.mlir (164 lines)
+[DUMP] 018_ConvertMathToFuncs -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_018_ConvertMathToFuncs.mlir (164 lines)
+[DUMP] 019_GpuLaunchSinkIndexComputations -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_019_GpuLaunchSinkIndexComputations.mlir (164 lines)
+[DUMP] 020_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_020_ConvertToLLVMPass.mlir (593 lines)
+[DUMP] 021_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_021_ReconcileUnrealizedCasts.mlir (587 lines)
+[DUMP] 022_GpuKernelOutlining -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_022_GpuKernelOutlining.mlir (587 lines)
+[DUMP] 023_SCFToControlFlow -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_023_SCFToControlFlow.mlir (587 lines)
+[DUMP] 024_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_024_ReconcileUnrealizedCasts.mlir (587 lines)
+[DUMP] 025_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_025_ConvertToLLVMPass.mlir (587 lines)
+[DUMP] 026_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_026_Canonicalizer.mlir (502 lines)
+[DUMP] 027_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_027_CSE.mlir (500 lines)
+[DUMP] 028_ConvertVectorToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_028_ConvertVectorToLLVMPass.mlir (569 lines)
+[DUMP] 029_ConvertNVVMToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_029_ConvertNVVMToLLVMPass.mlir (569 lines)
+[DUMP] 030_CudaComputeTargetPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_030_CudaComputeTargetPass.mlir (441 lines)
+[DUMP] 031_FinalizeMemRefToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_031_FinalizeMemRefToLLVMConversionPass.mlir (569 lines)
+[DUMP] 032_ExpandStridedMetadata -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_032_ExpandStridedMetadata.mlir (522 lines)
+[DUMP] 033_ArithToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_033_ArithToLLVMConversionPass.mlir (522 lines)
+[DUMP] 034_ConvertFastmathOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_034_ConvertFastmathOps.mlir (394 lines)
+[DUMP] 035_ConvertGpuOpsToNVVMOps -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_035_ConvertGpuOpsToNVVMOps.mlir (654 lines)
+[DUMP] 036_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_036_StoreGpuLaunchAttribute.mlir (782 lines)
+[DUMP] 037_GpuToLLVMConversionPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_037_GpuToLLVMConversionPass.mlir (780 lines)
+[DUMP] 038_StoreGpuLaunchAttribute -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_038_StoreGpuLaunchAttribute.mlir (780 lines)
+[DUMP] 039_ConvertMathToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_039_ConvertMathToLLVMPass.mlir (780 lines)
+[DUMP] 040_Canonicalizer -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_040_Canonicalizer.mlir (780 lines)
+[DUMP] 041_CSE -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_041_CSE.mlir (780 lines)
+[DUMP] 042_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_042_ReconcileUnrealizedCasts.mlir (780 lines)
+[DUMP] 043_DIScopeForLLVMFuncOpPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_043_DIScopeForLLVMFuncOpPass.mlir (780 lines)
+[DUMP] 044_CudaToBinaryPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_044_CudaToBinaryPass.mlir (143 lines)
+[DUMP] 045_ConvertToLLVMPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_045_ConvertToLLVMPass.mlir (306 lines)
+[DUMP] 046_ReconcileUnrealizedCasts -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_046_ReconcileUnrealizedCasts.mlir (304 lines)
+[DUMP] 047_CudaErrorHandlingPass -> /home/jayce.su/notes/dsl/cutlass_with_notes/examples/python/CuTeDSL/ampere/smem_allocator/smem_allocator_047_CudaErrorHandlingPass.mlir (311 lines)
+[DUMP] per-pass IR split -> 47 files
+[INFO] COMPILE-ONLY mode: skip JIT & execution completely.
