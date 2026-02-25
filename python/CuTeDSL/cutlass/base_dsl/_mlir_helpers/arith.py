@@ -360,7 +360,8 @@ def _dispatch_to_rhs_r_op(op):
 def _binary_op(op):
     """
     Decorator to check if the 'other' argument is an ArithValue.
-    If not, returns NotImplemented.
+    If 'other' is a Python scalar (int, float, bool), it is cast to a constant 
+    MLIR value matching the type and signedness of 'self'.
     """
 
     def wrapper(self, other, **kwargs):
