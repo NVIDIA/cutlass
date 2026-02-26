@@ -951,7 +951,7 @@ def load_module(file_path: str, *, enable_tvm_ffi: bool = False):
         # no need to load tvm_ffi library here since it will be loaded by tvm_ffi package.
         for path in find_runtime_libraries(enable_tvm_ffi=False):
             if Path(path).exists():
-                _LOAD_MODULE_LIBS_CACHE.append(ctypes.CDLL(path))
+                _LOAD_MODULE_LIBS_CACHE.append(ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL))
 
     if enable_tvm_ffi:
         import tvm_ffi
