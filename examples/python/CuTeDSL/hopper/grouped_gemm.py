@@ -27,10 +27,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-import functools
 import math
 from inspect import isclass
-from typing import List, Optional, Tuple, Type
+from typing import List, Tuple, Type
 
 import cuda.bindings.driver as cuda
 import torch
@@ -123,8 +122,6 @@ class HopperWgmmaGroupedGemmKernel:
     # Each TMA descriptor is 128 bytes; we manage one for A, B, and C.
     bytes_per_tensormap = 128
     num_tensormaps = 3
-    # Reserved SMEM for mbarriers and optional tensormap buffer.
-    reserved_smem_bytes = 1024
 
     def __init__(
         self,
@@ -340,7 +337,8 @@ class HopperWgmmaGroupedGemmKernel:
         )
 
         tile_sched_params, grid = HopperWgmmaGroupedGemmKernel._compute_grid(
-            total_num_clusters, self.cluster_shape_mn, max_active_clusters
+            total_num_clusters, self.cluster_shape_mn, max_active_clusters,
+            self.swizzle_size, self.raster_along_m,
         )
 
         # Tensormap SMEM buffer: 3 descriptors × 128 bytes each, stored as Int64 words.
@@ -1011,8 +1009,8 @@ class HopperWgmmaGroupedGemmKernel:
             cute.make_layout(2), strides_abc.element_type
         )
         cute.autovec_copy(strides_gmem, strides_reg)
-        stride_mn = strides_reg[0]
-        stride_k = strides_reg[1]
+        stride_row = strides_reg[0]
+        stride_col = strides_reg[1]
         c1 = cutlass.Int32(1)
         c0 = cutlass.Int32(0)
 
@@ -1020,19 +1018,19 @@ class HopperWgmmaGroupedGemmKernel:
             m, k = problem_shape_mnk[0], problem_shape_mnk[2]
             return cute.make_tensor(
                 tensor_gmem_ptr,
-                cute.make_layout((m, k, c1), stride=(stride_mn, stride_k, c0)),
+                cute.make_layout((m, k, c1), stride=(stride_row, stride_col, c0)),
             )
         elif cutlass.const_expr(tensor_index == 1):  # B: (N, K, 1)
             n, k = problem_shape_mnk[1], problem_shape_mnk[2]
             return cute.make_tensor(
                 tensor_gmem_ptr,
-                cute.make_layout((n, k, c1), stride=(stride_mn, stride_k, c0)),
+                cute.make_layout((n, k, c1), stride=(stride_row, stride_col, c0)),
             )
         else:  # C: (M, N, 1)
             m, n = problem_shape_mnk[0], problem_shape_mnk[1]
             return cute.make_tensor(
                 tensor_gmem_ptr,
-                cute.make_layout((m, n, c1), stride=(stride_mn, stride_k, c0)),
+                cute.make_layout((m, n, c1), stride=(stride_row, stride_col, c0)),
             )
 
     # ── Static helpers ────────────────────────────────────────────────────────
@@ -1126,6 +1124,8 @@ class HopperWgmmaGroupedGemmKernel:
         total_num_clusters: int,
         cluster_shape_mn: tuple,
         max_active_clusters,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ) -> tuple:
         problem_shape_ntile_mnl = (
             cluster_shape_mn[0],
@@ -1133,7 +1133,9 @@ class HopperWgmmaGroupedGemmKernel:
             cutlass.Int32(total_num_clusters),
         )
         tile_sched_params = utils.PersistentTileSchedulerParams(
-            problem_shape_ntile_mnl, (*cluster_shape_mn, 1)
+            problem_shape_ntile_mnl, (*cluster_shape_mn, 1),
+            swizzle_size=swizzle_size,
+            raster_along_m=raster_along_m,
         )
         grid = utils.StaticPersistentGroupTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
