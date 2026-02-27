@@ -129,13 +129,16 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
-            cuda_load_to_device_ptr = self.address_of(
-                "cuda_load_to_device", self.ptr_type
-            )
-            set_error_ptr = self.address_of(
-                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
-            )
+
+        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_init"
+        )
+        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "cuda_load_to_device"
+        )
+        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
+            current_block, "TVMFFIErrorSetRaisedFromCStr"
+        )
 
         with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value
@@ -530,7 +533,7 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
     """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments."""
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        TVMFFIJitCompiledFunctionBase.__init__(self, *args, **kwargs)
         # initialize the tvm_ffi.Function from the current execution engine
         if self.__chandle__() != 0:
             raise DSLRuntimeError("TVM FFI function is already initialized")
