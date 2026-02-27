@@ -170,10 +170,10 @@ class CtaNorm:
         print(f"[DSL INFO]   pred = {pred.type}")
         for i in range(cute.size(tXrX, mode=[1])):
             if pred[i]:
-                cute.autovec_copy(tXgX[None, i], tXrX[None, i])  # LDG.128
-                cute.autovec_copy(tWgW[None, i], tWrW[None, i])  # LDG.128
+                cute.autovec_copy(tXgX[None, i], tXrX[None, i])  # Global load
+                cute.autovec_copy(tWgW[None, i], tWrW[None, i])  # Global load
                 if cutlass.const_expr(self.norm_type == "layer"):
-                    cute.autovec_copy(tBgB[None, i], tBrB[None, i])  # LDG.128
+                    cute.autovec_copy(tBgB[None, i], tBrB[None, i])  # Global load
         if cutlass.const_expr(self.norm_type == "layer"):
             tYrY = self.apply_layernorm(tXrX, tWrW, tBrB, eps, tidx, pred)
         elif cutlass.const_expr(self.norm_type == "rms"):

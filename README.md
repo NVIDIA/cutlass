@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.4.0
+# CUTLASS 4.4.1
 
-_CUTLASS 4.4.0 - Feb 2026_
+_CUTLASS 4.4.1 - Feb 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -84,6 +84,7 @@ To get started quickly - please refer :
   - Fixed `cute.printf` with f-string
   - Fixed an indexing issue of scalar tensor
   - Fixed small K reference check error for cta_tile_n = 256 case with overlapping accumulator optimization in [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py).
+  - Fixed a segfault issue with tvm-ffi on aarch64
 
 * API changes
   - Deprecate get_num_tmem_alloc_cols from blackwell_helpers.py. Use the one from tmem_allocator.py instead.
