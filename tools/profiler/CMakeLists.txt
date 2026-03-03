@@ -85,13 +85,14 @@ target_include_directories(
 
 target_link_libraries(
   cutlass_profiler
-  PRIVATE 
+  PRIVATE
   cutlass_lib
   cutlass_tools_util_includes
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   $<$<BOOL:${CUTLASS_ENABLE_CUDNN}>:nvidia::cudnn>
   cudart
   cuda_driver
+  ${CMAKE_DL_LIBS}
   )
 
 install(

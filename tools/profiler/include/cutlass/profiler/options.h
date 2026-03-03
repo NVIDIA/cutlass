@@ -353,6 +353,8 @@ public:
   /// Vector of operation name substrings
   std::vector<std::string> excluded_operation_names;
 
+  /// Paths to dynamically-loaded kernel shared libraries
+  std::vector<std::string> kernel_libs;
 
   //
   // Detailed configuration options
