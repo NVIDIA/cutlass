@@ -1021,6 +1021,14 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             0 and 3 -> 0
             3 and 0 and ... -> 0
         """
+        # Fast path: Boolean & Boolean → single arith.andi i1 instruction.
+        # The general path promotes i1 operands to i32 via arith.extui, performs
+        # arith.select, then converts back to i1 via arith.cmpi ne — generating
+        # 6 unnecessary MLIR operations.  For Boolean inputs the semantics of
+        # `and` are identical to bitwise AND, so delegate directly to __and__.
+        if isinstance(self, Boolean) and isinstance(other, Boolean):
+            return self.__and__(other, loc=loc, ip=ip)
+
         is_true = self.__dsl_bool__(loc=loc, ip=ip)
 
         def and_op(lhs, rhs):
