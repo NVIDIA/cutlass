@@ -563,9 +563,9 @@ public:
     }
 
     operator_args.mainloop.ptr_SFA =
-      static_cast<const typename Operator::GemmKernel::ElementSF**>(arguments->SFA);
+      static_cast<const typename CollectiveMainloop::ElementSF**>(arguments->SFA);
     operator_args.mainloop.ptr_SFB =
-      static_cast<const typename Operator::GemmKernel::ElementSF**>(arguments->SFB);
+      static_cast<const typename CollectiveMainloop::ElementSF**>(arguments->SFB);
 
     operator_args.mainloop.layout_SFA =
       static_cast<typename CollectiveMainloop::InternalLayoutSFA*>(this->layout_SFA_device.data());
