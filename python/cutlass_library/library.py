@@ -615,6 +615,9 @@ class KernelScheduleType(enum.Enum):
   BlockwiseTmaWarpSpecializedCooperativeSm120 = enum_auto()
   BlockwiseTmaWarpSpecializedPingpongSm120 = enum_auto()
 
+  PtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120 = enum_auto()
+  PtrArrayTmaWarpSpecializedPingpongBlockScaledSm120 = enum_auto()
+
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
   KernelScheduleType.Multistage: 'cutlass::gemm::KernelMultistage',
@@ -730,6 +733,8 @@ KernelScheduleTag = {
 
   KernelScheduleType.BlockwiseTmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwiseCooperativeSm120',
   KernelScheduleType.BlockwiseTmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwisePingpongSm120',
+  KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120<3>',
+  KernelScheduleType.PtrArrayTmaWarpSpecializedPingpongBlockScaledSm120: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongBlockScaledSm120<3>',
   KernelScheduleType.SparseMxf8f6f4TmaWarpSpecializedSm120: 'cutlass::gemm::KernelSparseTmaWarpSpecializedMxf8f6f4Sm120',
   KernelScheduleType.SparseMxf8f6f4TmaWarpSpecializedAcc2x4Sm120: 'cutlass::gemm::KernelSparseTmaWarpSpecializedMxf8f6f4Acc2x4Sm120',
   KernelScheduleType.SparseNvf4TmaWarpSpecializedSm120: 'cutlass::gemm::KernelSparseTmaWarpSpecializedNvf4Sm120',
@@ -1040,6 +1045,13 @@ def to_grouped_schedule(schedule, grouped):
     KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs16Sm103TmaPrefetch: KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs16Sm103TmaPrefetch,
     KernelScheduleType.MxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch: KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch,
     KernelScheduleType.MxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch: KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch,
+    # SM120
+    KernelScheduleType.Mxf8f6f4TmaWarpSpecializedCooperativeSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative,
+    KernelScheduleType.Mxf8f6f4TmaWarpSpecializedPingpongSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong,
+    KernelScheduleType.Nvf4TmaWarpSpecializedCooperativeSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative,
+    KernelScheduleType.Nvf4TmaWarpSpecializedPingpongSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong,
+    KernelScheduleType.Mxf4TmaWarpSpecializedCooperativeSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative,
+    KernelScheduleType.Mxf4TmaWarpSpecializedPingpongSm120: KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong,
   }
 
   return group_schedule_map[schedule]
