@@ -18,6 +18,8 @@ __all__ = [
     # mma.py
     "Field",
     "MmaF16BF16Op",
+    "MmaI8Op",
+    "MmaIntOverflow",
     "MmaMXF4Op",
     "MmaMXF4NVF4Op",
     # copy.py
