@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
@@ -9,13 +9,11 @@
 # its affiliates is strictly prohibited.
 
 import argparse
-import torch
 from typing import Tuple
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.utils as utils
-import cutlass.torch as cutlass_torch
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
@@ -32,9 +30,8 @@ with optimizations for challenges that may arise with other problem sizes.
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_fp16_gemm_0.py  \
-      --mnk 8192,8192,8192                             \
-      --tolerance 1e-01
+    python examples/blackwell/tutorial_gemm/fp16_gemm_0.py  \
+      --mnk 8192,8192,8192
 
 Constraints for this example:
 * The problem size of m and n must be divisible by the tile size m & n (128, 256)
@@ -128,7 +125,8 @@ def kernel(
         num_stages=acc_stage,
         producer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),
         consumer_group=pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, threads_per_cta
+            pipeline.Agent.Thread,
+            threads_per_cta,
         ),
         barrier_storage=storage.acc_mbar_ptr.data_ptr(),
     ).make_participants()
@@ -141,15 +139,15 @@ def kernel(
     # (bM, bN)
     gC = cute.local_tile(mC_mnl, mma_tiler_mnk, mma_coord_mnk, proj=(1, 1, None))
     thr_mma = tiled_mma.get_slice(0)
-    # (MMA, MMA_M, MMA_K, RestK)
+    # (MMA, MMA_M, MMA_K)
     tCgA = thr_mma.partition_A(gA)
-    # (MMA, MMA_N, MMA_K, RestK)
+    # (MMA, MMA_N, MMA_K)
     tCgB = thr_mma.partition_B(gB)
     # (MMA, MMA_M, MMA_N)
     tCgC = thr_mma.partition_C(gC)
-    # (MMA, MMA_M, MMA_K, STAGE)
+    # (MMA, MMA_M, MMA_K)
     tCrA = tiled_mma.make_fragment_A(sA)
-    # (MMA, MMA_N, MMA_K, STAGE)
+    # (MMA, MMA_N, MMA_K)
     tCrB = tiled_mma.make_fragment_B(sB)
     # (MMA, MMA_M, MMA_N)
     acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
@@ -188,7 +186,7 @@ def kernel(
     # (EpiTile, NumTiles)
     gC_epi = cute.zipped_divide(tCgC, epi_tiler)
 
-    # Every thread loads 32x128 bits
+    # Every thread loads 64 x fp32
     tmem_atom = cute.make_copy_atom(
         tcgen05.Ld32x32bOp(tcgen05.Repetition.x64),
         cutlass.Float32,
@@ -273,11 +271,7 @@ def kernel(
 
 
 @cute.jit
-def host_function(
-    a: cute.Tensor,
-    b: cute.Tensor,
-    c: cute.Tensor,
-):
+def host_function(a: cute.Tensor, b: cute.Tensor, c: cute.Tensor):
     # Construct tiled MMA
     op = tcgen05.MmaF16BF16Op(
         io_dtype,
@@ -354,6 +348,10 @@ def run_dense_gemm(
     mnk: Tuple[int, int, int],
     tolerance: float,
 ):
+    global torch, cutlass_torch
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("===================================================================")
     print("Running Blackwell fp16 GEMM example 0 with:")
     print(f"  mnk:       {mnk}")
@@ -393,12 +391,7 @@ def run_dense_gemm(
     )
 
     # Entry point to the host JIT function
-    host_function(
-        a_tensor,
-        b_tensor,
-        c_tensor,
-        no_cache=True,
-    )
+    host_function(a_tensor, b_tensor, c_tensor, no_cache=True)
 
     # Compute reference result and verify
     ref = (torch.einsum("mk,nk->mn", a.to(torch.float32), b.to(torch.float32))).cpu()
@@ -418,7 +411,11 @@ if __name__ == "__main__":
                 "Invalid format. Expected comma-separated integers."
             )
 
-    if not torch.cuda.is_available():
+    from cuda.bindings import driver as cu_driver
+
+    cu_driver.cuInit(0)
+    err, device_count = cu_driver.cuDeviceGetCount()
+    if err != cu_driver.CUresult.CUDA_SUCCESS or device_count < 1:
         raise RuntimeError("A GPU is required to run this example")
 
     parser = argparse.ArgumentParser(description="Blackwell fp16 GEMM example 0")

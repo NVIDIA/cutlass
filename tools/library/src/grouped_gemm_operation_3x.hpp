@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -563,9 +563,9 @@ public:
     }
 
     operator_args.mainloop.ptr_SFA =
-      static_cast<const typename Operator::GemmKernel::ElementSF**>(arguments->SFA);
+      static_cast<const typename CollectiveMainloop::ElementSF**>(arguments->SFA);
     operator_args.mainloop.ptr_SFB =
-      static_cast<const typename Operator::GemmKernel::ElementSF**>(arguments->SFB);
+      static_cast<const typename CollectiveMainloop::ElementSF**>(arguments->SFB);
 
     operator_args.mainloop.layout_SFA =
       static_cast<typename CollectiveMainloop::InternalLayoutSFA*>(this->layout_SFA_device.data());

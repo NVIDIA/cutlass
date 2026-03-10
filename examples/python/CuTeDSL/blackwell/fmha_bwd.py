@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -166,8 +166,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         self.num_reduce_warps = 4
         self.num_compute_warps = 8
 
-        SM100_TMEM_CAPACITY_COLUMNS = 512
-        self.tmem_alloc_cols = SM100_TMEM_CAPACITY_COLUMNS
+        self.tmem_alloc_cols = cute.arch.get_max_tmem_alloc_cols("sm_100")
 
         self.threads_per_warp = 32
         self.threads_per_cta = self.threads_per_warp * (
@@ -1043,7 +1042,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             #  LOAD
             # ///////////////////////////////////////////////////////////////////////////////
             if warp_idx == self.load_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_load)
+                cute.arch.setmaxregister_decrease(self.num_regs_load)
 
                 self.load(
                     K_in,
@@ -1081,7 +1080,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             #  MMA
             # ///////////////////////////////////////////////////////////////////////////////
             elif warp_idx == self.mma_warp_id:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_mma)
+                cute.arch.setmaxregister_decrease(self.num_regs_mma)
 
                 self.mma(
                     KQ_tiled_mma,
@@ -1125,7 +1124,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 warp_idx >= self.compute_warp_id[0]
                 and warp_idx <= self.compute_warp_id[-1]
             ):
-                cute.arch.warpgroup_reg_alloc(self.num_regs_compute)
+                cute.arch.setmaxregister_increase(self.num_regs_compute)
 
                 self.compute(
                     tSTtST,
@@ -1176,7 +1175,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 warp_idx >= self.reduce_warp_id[0]
                 and warp_idx <= self.reduce_warp_id[-1]
             ):
-                cute.arch.warpgroup_reg_alloc(self.num_regs_reduce)
+                cute.arch.setmaxregister_increase(self.num_regs_reduce)
 
                 self.reduce(
                     dSK_tiled_mma,
@@ -1193,7 +1192,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 )
 
             else:
-                cute.arch.warpgroup_reg_dealloc(self.num_regs_empty)
+                cute.arch.setmaxregister_decrease(self.num_regs_empty)
 
     @cute.kernel
     def convert(
@@ -2093,7 +2092,6 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
             cute.arch.fence_view_async_tmem_load()
             self.compute_sync_barrier.arrive_and_wait()
-            cute.arch.fence_view_async_tmem_load()
 
             cute.copy(tiled_r2t, tRT_rST_reshaped, tRT_tP)
 
@@ -2162,8 +2160,8 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
             # Notify for dS
             cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
+                "async.shared",
+                space="cta",
             )
             compute_mma_dS_pipeline.producer_commit(compute_mma_dS_producer_state)
             compute_mma_dS_producer_state.advance()
@@ -2283,8 +2281,8 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
                 # Wait for the stores to all be visible to the TMA
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 self.reduce_sync_barrier.arrive_and_wait()
 
@@ -2495,11 +2493,13 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
         mma_compute_dKdV_pipeline.consumer_wait(mma_compute_dKdV_consumer_state)
 
+        # Load tdKtdK
         cute.copy(tiled_t2r_dK, tTR_tdK, tTR_rdK)
 
         for i in cutlass.range(cute.size(tTR_rdK), unroll_full=True):
             tTR_rdK[i] = scale_softmax * tTR_rdK[i]
 
+        # Store tdKgdK
         self.store(tTR_gdK, tTR_rdK, tTR_cdK, (K, D))
 
         cute.arch.fence_view_async_tmem_load()

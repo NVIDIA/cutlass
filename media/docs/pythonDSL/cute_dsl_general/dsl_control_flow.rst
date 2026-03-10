@@ -184,6 +184,46 @@ Standard Python ``while`` is supported.
             n += 1
 
 
+Summary of Control Flow behavior
+---------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 30 30
+
+   * - **Control Flow**
+     - **Run time evaluation**
+     - **Compile time evaluation**
+
+   * - if cutlass.const_expr()
+     - ❌
+     - ✅
+
+   * - if pred
+     - ✅
+     - ❌
+
+   * - while cutlass.const_expr()
+     - ❌
+     - ✅
+
+   * - while pred
+     - ✅
+     - ❌
+
+   * - for i in cutlass.range_constexpr()
+     - ❌
+     - ✅
+
+   * - for i in range()
+     - ✅
+     - ❌
+
+   * - for i in cutlass.range() (support advanced unrolling and pipelining)
+     - ✅
+     - ❌
+
+
 Compile-Time Metaprogramming
 ----------------------------
 

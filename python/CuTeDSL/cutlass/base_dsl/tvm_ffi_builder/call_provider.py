@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -113,15 +113,20 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                     if isinstance(stride, int) and stride == 1:
                         return i
                 raise ValueError("stride=1 index not found, needed for f4 tensor")
+
             stride_one_index = find_stride_one_index()
 
-            def map_shape_for_tensor_dtype_f4x2_to_f4(index: int, value: ir.Value) -> ir.Value:
+            def map_shape_for_tensor_dtype_f4x2_to_f4(
+                index: int, value: ir.Value
+            ) -> ir.Value:
                 if index == stride_one_index:
                     with ir.InsertionPoint(current_block):
                         return self.mul(value, self.integer_constant(value.type, 2))
                 return value
 
-            def map_stride_for_tensor_dtype_f4x2_to_f4(index, value: ir.Value) -> ir.Value:
+            def map_stride_for_tensor_dtype_f4x2_to_f4(
+                index, value: ir.Value
+            ) -> ir.Value:
                 if index != stride_one_index:
                     with ir.InsertionPoint(current_block):
                         return self.mul(value, self.integer_constant(value.type, 2))
@@ -141,7 +146,9 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
         if param.strides is not None:
             for index, dim in enumerate(param.strides):
                 if isinstance(dim, spec.Var):
-                    strides.append(map_stride_value(index, context.matched_var_binding[dim]))
+                    strides.append(
+                        map_stride_value(index, context.matched_var_binding[dim])
+                    )
         flatten_struct, alloca = self.pack_values_to_alloca(
             current_block, context.entry_block, [data, *shape, *strides]
         )

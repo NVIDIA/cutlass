@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -240,10 +240,11 @@ import os
 import subprocess
 import shutil
 import tempfile
-import torch
 
 
 def run_test(tmpdir=None, cmake_args="", cleanup=True):
+    import torch
+
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
 

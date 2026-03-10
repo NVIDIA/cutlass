@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import inspect
 from typing import Tuple
 
 from cutlass.cutlass_dsl import (
@@ -87,6 +88,7 @@ class PersistentTileSchedulerParams:
     :type problem_layout_ncluster_mnl: cute.Layout
     """
 
+    @dsl_user_op
     def __init__(
         self,
         problem_shape_ntile_mnl: cute.Shape,
@@ -124,7 +126,7 @@ class PersistentTileSchedulerParams:
         self._cluster_shape_mnk = cluster_shape_mnk
         self.cluster_shape_mn = cluster_shape_mnk[:2]
         self.swizzle_size = swizzle_size
-        self._raster_along_m = raster_along_m
+        self.raster_along_m = raster_along_m
         self._loc = loc
 
         # By default, we follow m major (col-major) raster order, so make a col-major layout
@@ -188,20 +190,27 @@ class PersistentTileSchedulerParams:
                 problem_layout_size, loc=loc, ip=ip
             )
 
-            # cluster_shape_m_fdd: Used to decode work_unit_id to cluster coordinates
-            self.cluster_shape_m_fdd = cute.fast_divmod_create_divisor(
-                cluster_count_m, loc=loc, ip=ip
+            if raster_along_m:
+                cluster_count_major = cluster_count_m
+                cluster_count_minor = cluster_count_n
+            else:
+                cluster_count_major = cluster_count_n
+                cluster_count_minor = cluster_count_m
+
+            # cluster_shape_major_fdd: Used to decode work_unit_id to cluster coordinates
+            self.cluster_shape_major_fdd = cute.fast_divmod_create_divisor(
+                cluster_count_major, loc=loc, ip=ip
             )
 
-            # cluster_shape_n_fdd: Used for the second level decomposition
-            self.cluster_shape_n_fdd = cute.fast_divmod_create_divisor(
-                cluster_count_n, loc=loc, ip=ip
+            # cluster_shape_minor_fdd: Used for the second level decomposition
+            self.cluster_shape_minor_fdd = cute.fast_divmod_create_divisor(
+                cluster_count_minor, loc=loc, ip=ip
             )
         else:
             # FastDivmod not applicable with swizzling, set to None
             self.batch_fdd = None
-            self.cluster_shape_m_fdd = None
-            self.cluster_shape_n_fdd = None
+            self.cluster_shape_major_fdd = None
+            self.cluster_shape_minor_fdd = None
 
     def __extract_mlir_values__(self):
         values, self._values_pos = [], []
@@ -209,7 +218,7 @@ class PersistentTileSchedulerParams:
             self.problem_shape_ntile_mnl,
             self._cluster_shape_mnk,
             self.swizzle_size,
-            self._raster_along_m,
+            self.raster_along_m,
         ]:
             obj_values = extract_mlir_values(obj)
             values += obj_values
@@ -223,8 +232,8 @@ class PersistentTileSchedulerParams:
         for i, (fdd_name, fdd_obj) in enumerate(
             [
                 ("batch_fdd", self.batch_fdd),
-                ("cluster_shape_m_fdd", self.cluster_shape_m_fdd),
-                ("cluster_shape_n_fdd", self.cluster_shape_n_fdd),
+                ("cluster_shape_major_fdd", self.cluster_shape_major_fdd),
+                ("cluster_shape_minor_fdd", self.cluster_shape_minor_fdd),
             ]
         ):
             if fdd_obj is not None:
@@ -251,7 +260,7 @@ class PersistentTileSchedulerParams:
                 self.problem_shape_ntile_mnl,
                 self._cluster_shape_mnk,
                 self.swizzle_size,
-                self._raster_along_m,
+                self.raster_along_m,
             ],
             self._values_pos[:-1],  # Exclude FastDivmod count
         ):
@@ -263,7 +272,7 @@ class PersistentTileSchedulerParams:
         new_params = PersistentTileSchedulerParams(*(tuple(obj_list)), loc=self._loc)
 
         # Restore FastDivmod divisors from remaining values
-        fdd_names = ["batch_fdd", "cluster_shape_m_fdd", "cluster_shape_n_fdd"]
+        fdd_names = ["batch_fdd", "cluster_shape_major_fdd", "cluster_shape_minor_fdd"]
 
         if hasattr(self, "_fastdivmod_indices") and len(self._fastdivmod_indices) > 0:
             # Override the FastDivmod divisors created by __init__ with reconstructed ones
@@ -315,6 +324,14 @@ class PersistentTileSchedulerParams:
         num_persistent_clusters = num_persistent_ctas // num_ctas_per_cluster
 
         return (*self.cluster_shape_mn, num_persistent_clusters)
+
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+PersistentTileSchedulerParams.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]
+)
 
 
 class StaticPersistentTileScheduler:
@@ -538,15 +555,24 @@ class StaticPersistentTileScheduler:
 
         # Step 2: Decode work_unit_id using FastDivmod objects
         # The layout structure is: problem_layout_ncluster_mnl has shape (cluster_count_m, cluster_count_n, batch_count)
-        # work_unit_id needs to be decomposed into (batch_l, cluster_n, cluster_m) in little-endian order
+        # work_unit_id needs to be decomposed into (batch_l, cluster_minor, cluster_major) in little-endian order
 
-        # First, get cluster_m using cluster_shape_m_fdd
-        cluster_n_batch, cluster_m = divmod(
-            work_unit_id, self.params.cluster_shape_m_fdd
+        # First, get cluster_major using cluster_shape_major_fdd
+        cluster_minor_batch, cluster_major = divmod(
+            work_unit_id, self.params.cluster_shape_major_fdd
         )
 
-        # Then decode cluster_n_batch to get cluster_n and batch_l using FastDivmod
-        batch_l, cluster_n = divmod(cluster_n_batch, self.params.cluster_shape_n_fdd)
+        # Then decode cluster_minor_batch to get cluster_minor and batch_l using FastDivmod
+        batch_l, cluster_minor = divmod(
+            cluster_minor_batch, self.params.cluster_shape_minor_fdd
+        )
+
+        if self.params.raster_along_m:
+            cluster_m = cluster_major
+            cluster_n = cluster_minor
+        else:
+            cluster_m = cluster_minor
+            cluster_n = cluster_major
 
         return (cluster_m, cluster_n, batch_l)
 

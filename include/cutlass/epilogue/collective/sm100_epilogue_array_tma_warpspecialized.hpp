@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1532,6 +1532,7 @@ public:
       ProblemShape problem_shape,
       int32_t next_batch
   ) {
+    __syncwarp();
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
       tensormaps_replace_global_address<IsLoad>(shared_tensormap, params, next_batch);

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -20,14 +20,24 @@ from typing import Type, Union, Callable, Optional, Dict, List, Any
 import cuda.bindings.driver as cuda_driver
 import cuda.bindings.runtime as cuda_runtime
 
-import cutlass
-import cutlass.base_dsl.jit_executor
-from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, dsl_user_op
+from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, dsl_user_op, const_expr
 
-from .typing import Numeric, Int8, Boolean
+from .typing import Numeric, Int8, Boolean, Tensor, Layout, Shape
 
-import cutlass.cute as cute
-from cutlass.cute import nvgpu
+from . import nvgpu
+from .core import recast_layout, make_layout, composition, get, rank, size
+from .tuple import elem_less
+from .tensor import (
+    make_rmem_tensor,
+    recast_tensor,
+    make_identity_tensor,
+    TensorSSA,
+    _Tensor,
+)
+from .atom import make_copy_atom
+from .algorithm import copy
+from .core import zipped_divide
+from .runtime import from_dlpack
 
 from cutlass._mlir.dialects import builtin, cf, nvvm, vector
 
@@ -37,14 +47,252 @@ def assert_(cond, msg=None, *, loc=None, ip=None):
     cf.assert_(Boolean(cond).ir_value(), msg if msg else "", loc=loc, ip=ip)
 
 
-def _maybe_recast_tensor_from_f4(src: cute.Tensor, tv_layout: cute.Layout):
+################################################
+# Runtime Assertion Helper Utilities For Testing
+################################################
+
+
+class AssertionError(RuntimeError):
+    """Custom assertion error for runtime assertions."""
+
+    pass
+
+
+class Assertion:
+    """Base class for runtime assertion."""
+
+    pass
+
+
+class _CompileTimeAssertion(Assertion):
+    """Compile-time assertion helper that tracks assertion results during execution.
+
+    This assertion is used internally when RuntimeAssertion is passed through
+    JIT compilation. It stores assertion results in a tensor and provides compile-time
+    tracking of assertion results.
+    """
+
+    def __init__(
+        self,
+        tensor: Tensor,
+        num_assertions: int = 1,
+        msgs=None,
+        device=None,
+        disable: bool = False,
+        init_value: bool = False,
+        used_indices: set = None,
+    ):
+        """Initialize _CompileTimeAssertion.
+
+        :param tensor: Tensor to store assertion results
+        :param num_assertions: Number of assertions to support
+        :param msgs: List of assertion messages
+        :param device: Device to run assertions on
+        :param disable: If True, assertions are disabled
+        :param init_value: Initial value for assertion tensor
+        :param used_indices: Set of used assertion indices
+        """
+        if msgs is None:
+            msgs = []
+        self._tensor = tensor
+        self._num_assertions = num_assertions
+        self._device = device
+        self._disable = disable
+        self._msgs = msgs
+        self._init_value = init_value
+        self._used_indices = used_indices
+
+    def __new_from_mlir_values__(self, values):
+        if self._disable:
+            return _CompileTimeAssertion(
+                None,
+                self._num_assertions,
+                self._msgs,
+                self._device,
+                self._disable,
+                self._init_value,
+                self._used_indices,
+            )
+        return _CompileTimeAssertion(
+            _Tensor(values[0], dtype=Boolean),
+            self._num_assertions,
+            self._msgs,
+            self._device,
+            self._disable,
+            self._init_value,
+            self._used_indices,
+        )
+
+    def __extract_mlir_values__(self):
+        if self._disable:
+            return []
+        return self._tensor.__extract_mlir_values__()
+
+    @dsl_user_op
+    @CuTeDSL.jit
+    def store(self, idx: Constexpr, pred: Boolean, msg: str = "", *, loc=None, ip=None):
+        """Assert a predicate condition.
+
+        :param idx: Assertion index
+        :type idx: int
+        :param pred: Predicate condition to assert
+        :type pred: Boolean
+        :param msg: Assertion message
+        :type msg: str, optional
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        """
+        if const_expr(self._disable):
+            return
+        if const_expr(not isinstance(idx, int)):
+            raise ValueError(f"expects idx to be 'int', but got {type(idx)}")
+        if const_expr(idx >= self._num_assertions):
+            raise ValueError(f"please increase the number of assertions!!!")
+        if const_expr(self._init_value is True):
+            self._tensor[idx] = pred and self._tensor[idx]
+        else:
+            self._tensor[idx] = pred
+        self._msgs[idx] = f"{msg}\nAt {loc}"
+        self._used_indices.add(idx)
+
+    def __enter__(self):
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager and verify assertions if no exception occurred."""
+        # Only verify if there was no exception in the with block
+        if exc_type is None and not self._disable:
+            # _CompileTimeAssertion doesn't have verify method as it's checked at compile time
+            pass
+        return False  # Don't suppress exceptions
+
+
+class RuntimeAssertion(Assertion):
+    """Runtime assertion helper that verifies conditions at runtime.
+    ```python
+    There are two modes to use RuntimeAssertion:
+    1. Manual mode - explicitly call verify():
+    ```python
+        @cute.jit
+        def jit_func(assertions: Assertion):
+            assertions.store(0, pred, "assertion failed")
+        assertions = cute.testing.RuntimeAssertion(num_assertions=1)
+        jit_func(assertions)
+        assertions.verify()
+    ```
+
+    2. Context manager mode - automatically verifies on exit:
+    ```python
+        with cute.testing.RuntimeAssertion(num_assertions=1) as assertions:
+            jit_func(assertions)
+        # verify() is called automatically after the with block
+    ```
+    """
+
+    def __init__(
+        self,
+        num_assertions: int = 1,
+        device=None,
+        disable: bool = False,
+        init_value: bool = False,
+    ):
+        """Initialize _RuntimeAssertion.
+
+        :param num_assertions: Number of assertions to support
+        :param device: Device to run assertions on (None for CPU, "cuda" for GPU)
+        :param disable: If True, assertions are disabled
+        :param init_value: Initial value for assertion tensor
+        """
+        self._num_assertions = num_assertions
+        self._device = device
+        self._disable = disable
+        self._msgs = [""] * num_assertions
+        self._init_value = init_value
+        self._used_indices = set()
+        if self._disable:
+            return
+        import torch
+
+        self._torch_tensor = torch.full(
+            (self._num_assertions,),
+            device=self._device,
+            dtype=torch.bool,
+            fill_value=init_value,
+        )
+        self._tensor = from_dlpack(self._torch_tensor)
+
+    def __c_pointers__(self):
+        """Get C pointers for passing to JIT functions."""
+        if self._disable:
+            return []
+        return self._tensor.__c_pointers__()
+
+    def __get_mlir_types__(self):
+        """Get MLIR types for code generation."""
+        if self._disable:
+            return []
+        return self._tensor.__get_mlir_types__()
+
+    def __new_from_mlir_values__(self, values):
+        """Create new instance from MLIR values (for JIT compilation)."""
+        if self._disable:
+            return _CompileTimeAssertion(
+                None,
+                self._num_assertions,
+                self._msgs,
+                self._device,
+                self._disable,
+                self._init_value,
+                self._used_indices,
+            )
+        return _CompileTimeAssertion(
+            _Tensor(values[0], dtype=Boolean),
+            self._num_assertions,
+            self._msgs,
+            self._device,
+            self._disable,
+            self._init_value,
+            self._used_indices,
+        )
+
+    def verify(self):
+        """Verify all assertions have passed."""
+        if self._disable:
+            return
+        import torch
+
+        if self._device is not None:
+            torch.cuda.synchronize()
+        false_indices = torch.where(self._torch_tensor == False)[0].tolist()
+        valid_indices = [idx for idx in false_indices if idx in self._used_indices]
+        if len(valid_indices) > 0:
+            # emit the first assertion error.
+            raise AssertionError(self._msgs[valid_indices[0]])
+
+    def __enter__(self):
+        """Enter the context manager, returns self for use in 'with' statement."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager, automatically calls verify()."""
+        if exc_type is None:
+            # Only verify if no exception occurred in the with block
+            self.verify()
+        # Return False to propagate any exception that occurred
+        return False
+
+
+def _maybe_recast_tensor_from_f4(src: Tensor, tv_layout: Layout):
     if src.element_type.width == 4:
-        tv_layout = cute.recast_layout(8, 4, tv_layout)
-        src = cute.recast_tensor(src, dtype=Int8)
+        tv_layout = recast_layout(8, 4, tv_layout)
+        src = recast_tensor(src, dtype=Int8)
     return src, tv_layout
 
 
-def _maybe_recast_to_f4(input: cute.TensorSSA, dtype: Type[Numeric]):
+def _maybe_recast_to_f4(input: TensorSSA, dtype: Type[Numeric]):
     """Conditionally recasts the tensor to 4-bit type if the destination type is 4-bit.
 
     :param input: The input tensor to recast.
@@ -56,18 +304,18 @@ def _maybe_recast_to_f4(input: cute.TensorSSA, dtype: Type[Numeric]):
         raise TypeError(f"dst_ty must be a type of Numeric, but got {dtype}")
 
     if dtype.width == 4:
-        recast_shape = cute.recast_layout(4, 8, cute.make_layout(input.shape)).shape
+        recast_shape = recast_layout(4, 8, make_layout(input.shape)).shape
         i4_vec = vector.bitcast(
             T.vector(input.type.shape[0] * 2, T.i(4)), input.maybe_downcast()
         )
         res_vect = builtin.unrealized_conversion_cast(
             [T.vector(i4_vec.type.shape[0], dtype.mlir_type)], [i4_vec]
         )
-        return cute.TensorSSA(res_vect, recast_shape, dtype)
+        return TensorSSA(res_vect, recast_shape, dtype)
     return input
 
 
-def _maybe_recast_from_f4(input: cute.TensorSSA, src_dtype: Type[Numeric]):
+def _maybe_recast_from_f4(input: TensorSSA, src_dtype: Type[Numeric]):
     """Conditionally recasts the tensor from 4-bit type if the source type is 4-bit.
 
     :param input: The input tensor to recast.
@@ -79,23 +327,23 @@ def _maybe_recast_from_f4(input: cute.TensorSSA, src_dtype: Type[Numeric]):
         raise TypeError(f"src_ty must be a type of Numeric, but got {src_dtype}")
 
     if src_dtype.width == 4:
-        recast_shape = cute.recast_layout(8, 4, cute.make_layout(input.shape)).shape
+        recast_shape = recast_layout(8, 4, make_layout(input.shape)).shape
         i4_vec = builtin.unrealized_conversion_cast(
             [T.vector(input.type.shape[0], T.i(4))], [input.maybe_downcast()]
         )
         res_vect = vector.bitcast(T.vector(i4_vec.type.shape[0] // 2, T.i8()), i4_vec)
-        return cute.TensorSSA(res_vect, recast_shape, Int8)
+        return TensorSSA(res_vect, recast_shape, Int8)
     return input
 
 
 @CuTeDSL.kernel
 def _convert_kernel(
-    gSrc: cute.Tensor,
-    gDst: cute.Tensor,
-    cSrc: cute.Tensor,
-    src_tv_layout: cute.Layout,
-    dst_tv_layout: cute.Layout,
-    src_shape: cute.Shape,
+    gSrc: Tensor,
+    gDst: Tensor,
+    cSrc: Tensor,
+    src_tv_layout: Layout,
+    dst_tv_layout: Layout,
+    src_shape: Shape,
     src_ty,
     dst_ty,
 ):
@@ -111,9 +359,9 @@ def _convert_kernel(
 
     # compose with CTA TV layout
     # tid, vid -> address
-    tidfrgSrc = cute.composition(ctaSrc, src_tv_layout)  # (T,V)
-    tidfrgDst = cute.composition(ctaDst, dst_tv_layout)  # (T,V)
-    tidfrgCSrc = cute.composition(ctaCSrc, src_tv_layout)  # (T,V)
+    tidfrgSrc = composition(ctaSrc, src_tv_layout)  # (T,V)
+    tidfrgDst = composition(ctaDst, dst_tv_layout)  # (T,V)
+    tidfrgCSrc = composition(ctaCSrc, src_tv_layout)  # (T,V)
     # print(f"tidfrgSrc = {tidfrgSrc.type}")
 
     # slice for threads
@@ -124,19 +372,19 @@ def _convert_kernel(
     # print(f"thrSrc = {thrSrc.type}")
 
     # predicate
-    if cute.elem_less(thrCSrc[0], src_shape):
+    if elem_less(thrCSrc[0], src_shape):
         # allocate fragments for gmem->rmem
-        frgSrc = cute.make_rmem_tensor(
-            cute.get(src_tv_layout, mode=[1]), gSrc.element_type
+        frgSrc = make_rmem_tensor(
+            get(src_tv_layout, mode=[1]), gSrc.element_type
         )  # (V)
-        frgDst = cute.make_rmem_tensor(
-            cute.get(dst_tv_layout, mode=[1]), gDst.element_type
+        frgDst = make_rmem_tensor(
+            get(dst_tv_layout, mode=[1]), gDst.element_type
         )  # (V)
         # print(f"frgSrc = {frgSrc.type}")
 
         # Move data to reg address space
-        copy_atom_load = cute.make_copy_atom(nvgpu.CopyUniversalOp(), gSrc.element_type)
-        cute.copy(copy_atom_load, thrSrc, frgSrc)
+        copy_atom_load = make_copy_atom(nvgpu.CopyUniversalOp(), gSrc.element_type)
+        copy(copy_atom_load, thrSrc, frgSrc)
 
         vec_src = frgSrc.load()
         vec_src = _maybe_recast_to_f4(vec_src, src_ty)
@@ -145,14 +393,14 @@ def _convert_kernel(
         frgDst.store(vec_dst)
 
         # Copy the results back to c
-        copy_atom_stg = cute.make_copy_atom(nvgpu.CopyUniversalOp(), gDst.element_type)
-        cute.copy(copy_atom_stg, frgDst, thrDst)
+        copy_atom_stg = make_copy_atom(nvgpu.CopyUniversalOp(), gDst.element_type)
+        copy(copy_atom_stg, frgDst, thrDst)
 
 
 @CuTeDSL.jit(preprocess=False)
 def _convert(
-    src: cute.Tensor,
-    dst: cute.Tensor,
+    src: Tensor,
+    dst: Tensor,
     leading_mode: Constexpr,
     elem_per_copy: Constexpr,
 ):
@@ -160,35 +408,29 @@ def _convert(
     src_ty = src.element_type
     dst_ty = dst.element_type
 
-    tv_layout = cute.make_layout((128, elem_per_copy), stride=(elem_per_copy, 1))
+    tv_layout = make_layout((128, elem_per_copy), stride=(elem_per_copy, 1))
 
     # Step 2. maybe recast from f4 tensor
     src, src_tv_layout = _maybe_recast_tensor_from_f4(src, tv_layout)
     dst, dst_tv_layout = _maybe_recast_tensor_from_f4(dst, tv_layout)
     src_shape = src.shape
     # predicate tensor
-    idA = cute.make_identity_tensor(src.shape)
+    idA = make_identity_tensor(src.shape)
 
     # Step 3. select a proper tiling pattern as (...,TileV, ...)
     src_cta_tiler = [
         1,
-    ] * cute.rank(src.layout)
-    src_cta_tiler[leading_mode] = cute.size(src_tv_layout)  # (...,TileV,...)
+    ] * rank(src.layout)
+    src_cta_tiler[leading_mode] = size(src_tv_layout)  # (...,TileV,...)
     dst_cta_tiler = [
         1,
-    ] * cute.rank(dst.layout)
-    dst_cta_tiler[leading_mode] = cute.size(dst_tv_layout)  # (...,TileV,...)
+    ] * rank(dst.layout)
+    dst_cta_tiler[leading_mode] = size(dst_tv_layout)  # (...,TileV,...)
 
     # Step 4. partition input and output tensor by cta tiler.
-    gS = cute.zipped_divide(
-        src, tuple(src_cta_tiler)
-    )  # ((...,TileV,...),(...,RestV,...))
-    cS = cute.zipped_divide(
-        idA, tuple(src_cta_tiler)
-    )  # ((...,TileV,...),(...,RestV,...))
-    gD = cute.zipped_divide(
-        dst, tuple(dst_cta_tiler)
-    )  # ((...,TileV,...),(...,RestV,...))
+    gS = zipped_divide(src, tuple(src_cta_tiler))  # ((...,TileV,...),(...,RestV,...))
+    cS = zipped_divide(idA, tuple(src_cta_tiler))  # ((...,TileV,...),(...,RestV,...))
+    gD = zipped_divide(dst, tuple(dst_cta_tiler))  # ((...,TileV,...),(...,RestV,...))
     # print(f"{gS.type=}")
 
     _convert_kernel(
@@ -201,8 +443,8 @@ def _convert(
         src_ty,
         dst_ty,
     ).launch(
-        grid=[cute.size(gS, mode=[1]), 1, 1],
-        block=[cute.size(src_tv_layout, mode=[0]), 1, 1],
+        grid=[size(gS, mode=[1]), 1, 1],
+        block=[size(src_tv_layout, mode=[0]), 1, 1],
     )
 
 
@@ -210,7 +452,7 @@ def _convert(
 # And when src or dst dtype is narrow precision(Float4E2M1FN/Float8E8M0FNU/Float8E4M3FN), the shape of
 # their leading dimension should be 4(fp8)/8(fp4) element align. (nvgpu.cvt_fptrunc/cvt_fpext
 # needs 32-bits aligned input/output)
-def convert(src: cute.Tensor, dst: cute.Tensor):
+def convert(src: Tensor, dst: Tensor):
     assert len(src.shape) == len(dst.shape), (
         "Shape of src and dst tensors should be the same rank."
     )
@@ -292,6 +534,14 @@ class JitArguments:
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
+        self.references = list()
+
+    def add_to_scope(self, references: Any) -> None:
+        """
+        Keeps references to external variables (e.g., Torch tensors when taking a view)
+        in the scope of the lifetime of the JitArguments object.
+        """
+        self.references.extend(references)
 
 
 def _cuda_success(
@@ -407,7 +657,7 @@ def benchmark(
     To use CUDA graphs, the callable must be a compiled @cute.jit annotated function.
     When using CUDA graphs, the kernel must be launched in a non-default stream.
 
-    :param callable: The function to benchmark
+    :param callable: The function to benchmark. For jit function, it must be compiled functions.
     :type callable: Callable
     :param warmup_iterations: Number of warmup iterations, defaults to 10
     :type warmup_iterations: int, optional
@@ -427,6 +677,9 @@ def benchmark(
     :return: The benchmark time in microseconds
     :rtype: float
     """
+
+    import cutlass.base_dsl.jit_executor as jit_executor
+    import cutlass.cutlass_dsl.cuda_jit_executor as cuda_jit_executor
 
     if stream is None:
         stream = cuda_driver.CUstream(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
@@ -475,15 +728,6 @@ def benchmark(
     elapsed_time = float("nan")
 
     if use_cuda_graphs:
-        # Check if the callable is a JitCompiledFunction or JitExecutor
-        # These are functions that can be called to launch kernels
-        compiled_types = (
-            cutlass.base_dsl.jit_executor.JitCompiledFunction,
-            cutlass.base_dsl.jit_executor.JitExecutor,
-        )
-        if not isinstance(callable, compiled_types):
-            raise TypeError("Function must be precompiled to be used with CUDA Graphs")
-
         # Check if the stream is a non-default stream
         if int(stream) == int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT):
             raise ValueError(
@@ -603,7 +847,9 @@ def get_workspace_count(
     :return: Number of workspaces needed
     :rtype: int
     """
-    num_l2_cache_bytes = cutlass.utils.HardwareInfo().get_l2_cache_size_in_bytes()
+    from cutlass.utils import HardwareInfo
+
+    num_l2_cache_bytes = HardwareInfo().get_l2_cache_size_in_bytes()
     num_workspaces = (num_l2_cache_bytes * 3) // one_workspace_bytes + 1
     num_iters = warmup_iterations + iterations
     return num_iters if num_iters < num_workspaces else num_workspaces
@@ -706,7 +952,7 @@ def _benchmark_for_autotune(
             _cuda_success(err, "Error on querying event")
             execution_time_ms.append(elapsed_time)
         # unit: us
-        time_us = sum(execution_time_ms) / len(execution_time_ms)
+        time_us = sum(execution_time_ms) * 1e3 / len(execution_time_ms)
     except Exception as e:
         print(f"This config execution error: {e}")
         time_us = float("inf")
@@ -784,6 +1030,7 @@ class autotune_jit:
         Returns:
             Decorated wrapper function
         """
+        from cutlass.cute import compile
 
         # Initialize autotune parameters
         if not hasattr(func, "_autotune_params"):
@@ -834,7 +1081,7 @@ class autotune_jit:
                         # For example, if current_config contains "cluster_shape_mn": (2, 1)
                         # It will override func's default parameter value
                         merged_kwargs = {**kwargs, **current_config}
-                        compiled_func = cute.compile(
+                        compiled_func = compile(
                             func._original_func, *args, **merged_kwargs
                         )
 

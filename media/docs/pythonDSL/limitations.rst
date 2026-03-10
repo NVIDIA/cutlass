@@ -17,12 +17,8 @@ the DSL.
 Notable unsupported features
 ----------------------------
 
-- Programmatic Dependent Launch (PDL)
 - convolutions
-- full support for ahead of time compilation
 - preferred clusters
-- CLC-based tile schedulers
-- EVT support
 - Windows support
 
 Programming Model
@@ -82,16 +78,30 @@ Programming Model
                 xs.append(Float32(1.0))
 
 **Python Function**
-    The DSL currently does not implement support for return values from Python functions,
-    although this capability is planned for future releases.
+    The DSL currently has **limited support for return values** from Python functions.  
+    At the moment, only ``constexpr`` values can be returned, while returning **dynamic values** is **not yet supported**.  
+    This capability is planned for a future release.
 
     Example:
 
-    .. code:: python
+    .. code-block:: python
 
         @cute.jit
-        def foo():
-            return 1  # Currently unsupported in CuTe DSL
+        def baz(a: cutlass.Constexpr):
+            return a + 1
+
+        @cute.jit
+        def foo(a: cutlass.Int32):
+            return a + 1
+
+        @cute.jit
+        def bar(a: cutlass.Int32):
+            val = foo(a)  # works
+
+        val = baz(10)   # works
+        val = bar(10)   # works
+        foo(10)         # currently unsupported in CuTe DSL
+        
 
 **Expression or Statement with Dependent Type**
     CuTe DSL implements static typing and does not support dependent types.

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -19,6 +19,7 @@ __all__ = [
     # copy.py
     #
     "Repetition",
+    "TmemLoadRedOp",
     "Pack",
     "Unpack",
     "Ld16x64bOp",
@@ -60,4 +61,5 @@ __all__ = [
     "make_tmem_copy",
     "make_s2t_copy",
     "get_s2t_smem_desc_tensor",
+    "make_umma_smem_desc",
 ]

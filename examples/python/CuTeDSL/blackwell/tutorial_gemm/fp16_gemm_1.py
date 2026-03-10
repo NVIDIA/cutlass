@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
@@ -13,15 +13,14 @@
 
 
 import argparse
-import torch
 from typing import Tuple
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.utils as utils
-import cutlass.torch as cutlass_torch
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
+import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
 
 """
@@ -78,7 +77,6 @@ acc_stage = 1
 
 @cute.struct
 class SharedStorage:
-    # each stage has 2 kinds of barrier, i.e. empty & full
     ab_mbar_ptr: cute.struct.MemRange[cutlass.Int64, ab_stages * 2]
     acc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, acc_stage * 2]
     tmem_dealloc_mbar_ptr: cutlass.Int64
@@ -174,15 +172,15 @@ def kernel(
     # (bM, bN)
     gC = cute.local_tile(mC_mnl, mma_tiler_mnk, mma_coord_mnk, proj=(1, 1, None))
     thr_mma = tiled_mma.get_slice(mma_coord_vmnk[0])
-    # (MMA, MMA_M, MMA_K, RestK)
+    # (MMA, MMA_M, MMA_K)
     tCgA = thr_mma.partition_A(gA)
-    # (MMA, MMA_N, MMA_K, RestK)
+    # (MMA, MMA_N, MMA_K)
     tCgB = thr_mma.partition_B(gB)
     # (MMA, MMA_M, MMA_N)
     tCgC = thr_mma.partition_C(gC)
-    # (MMA, MMA_M, MMA_K, STAGE)
+    # (MMA, MMA_M, MMA_K)
     tCrA = tiled_mma.make_fragment_A(sA)
-    # (MMA, MMA_N, MMA_K, STAGE)
+    # (MMA, MMA_N, MMA_K)
     tCrB = tiled_mma.make_fragment_B(sB)
     # (MMA, MMA_M, MMA_N)
     acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
@@ -256,9 +254,9 @@ def kernel(
     tDgC = tmem_thr_copy.partition_D(gC_epi)
 
     # (TmemCpy,NumTmemCpy)
-    tCrAcc = cute.make_rmem_tensor_like(tDgC[None, None, 0], acc_dtype)
+    tCrAcc = cute.make_rmem_tensor(tDgC[None, None, 0].shape, acc_dtype)
     # (TmemCpy,NumTmemCpy)
-    tCrC = cute.make_rmem_tensor_like(tDgC[None, None, 0], io_dtype)
+    tCrC = cute.make_rmem_tensor(tDgC[None, None, 0].shape, io_dtype)
 
     #
     # 2. Main loop
@@ -356,13 +354,13 @@ def host_function(
     tiled_mma = cute.make_tiled_mma(op)
 
     # Construct SMEM layouts for A and B
-    a_smem_layout = utils.sm100.make_smem_layout_a(
+    a_smem_layout = sm100_utils.make_smem_layout_a(
         tiled_mma,
         mma_tiler_mnk,
         a.element_type,
         ab_stages,
     )
-    b_smem_layout = utils.sm100.make_smem_layout_b(
+    b_smem_layout = sm100_utils.make_smem_layout_b(
         tiled_mma,
         mma_tiler_mnk,
         b.element_type,
@@ -383,7 +381,7 @@ def host_function(
         a_smem_layout_one_stage,
         mma_tiler_mnk,
         tiled_mma,
-        cta_layout_vmnk.shape,
+        cta_layout_vmnk.shape,  # take the layout and extract the shape internally
     )
     b_tma_atom, b_tma_tensor = cute.nvgpu.make_tiled_tma_atom_B(
         op,
@@ -438,6 +436,10 @@ def run_dense_gemm(
     mnk: Tuple[int, int, int],
     tolerance: float,
 ):
+    global torch, cutlass_torch
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("===================================================================")
     print("Running Blackwell fp16 GEMM example 1 with:")
     print(f"  mnk:       {mnk}")
@@ -501,7 +503,11 @@ if __name__ == "__main__":
                 "Invalid format. Expected comma-separated integers."
             )
 
-    if not torch.cuda.is_available():
+    from cuda.bindings import driver as cu_driver
+
+    cu_driver.cuInit(0)
+    err, device_count = cu_driver.cuDeviceGetCount()
+    if err != cu_driver.CUresult.CUDA_SUCCESS or device_count < 1:
         raise RuntimeError("A GPU is required to run this example")
 
     parser = argparse.ArgumentParser(description="Blackwell fp16 GEMM example 1")

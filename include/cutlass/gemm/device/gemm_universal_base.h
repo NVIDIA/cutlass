@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -166,6 +166,7 @@ protected:
       }
     }
 
+#ifndef __QNX__
     // Update SM occupancy member
     cudart_result = cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
       &sm_occupancy_,
@@ -177,6 +178,7 @@ protected:
       CUTLASS_TRACE_HOST("  cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags() returned error " << cudaGetErrorString(cudart_result));
       return Status::kErrorInternal;
     }
+#endif
 
     // Update device ordinal member on success
     device_ordinal_ = current_ordinal;

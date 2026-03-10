@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -16,15 +16,17 @@ from .static_persistent_tile_scheduler import (
     StaticPersistentRuntimeTileScheduler,
 )
 
-from .hardware_info import (
-    HardwareInfo,
+from .dynamic_persistent_tile_scheduler import (
+    ClcDynamicPersistentTileSchedulerParams,
+    ClcDynamicPersistentTileScheduler,
 )
+
+from .hardware_info import HardwareInfo
 
 from .blackwell_helpers import (
     compute_epilogue_tile_shape,
     get_smem_store_op,
     get_tmem_load_op,
-    get_num_tmem_alloc_cols,
     make_smem_layout_a,
     make_smem_layout_b,
     make_smem_layout_epi,
@@ -49,11 +51,13 @@ from .blockscaled_layout import (
     make_tmem_layout_sfb,
 )
 
-from .grouped_gemm_tile_scheduler_helper import (
+from .grouped_gemm_persistent_tile_scheduler import (
     GroupSearchResult,
     GroupedGemmGroupSearchState,
-    GroupedGemmTileSchedulerHelper,
     create_initial_search_state,
+    GroupedWorkTileInfo,
+    StaticPersistentGroupTileScheduler,
+    GroupedGemmTileSchedulerHelper,
 )
 
 from .tensormap_manager import (
@@ -62,7 +66,7 @@ from .tensormap_manager import (
 )
 
 from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
-from .tmem_allocator import TmemAllocator
+from .tmem_allocator import TmemAllocator, get_num_tmem_alloc_cols
 
 from .layout import LayoutEnum
 
@@ -73,6 +77,9 @@ from .mixed_input_helpers import (
     scale_tma_partition,
     transform_partition,
     scale_partition,
+    epilog_gmem_copy_and_partition,
+    epilog_smem_copy_and_partition,
+    epilog_tmem_copy_and_partition,
     get_gmem_layout_scale,
     get_smem_layout_scale,
     compute_smem_layout,
@@ -80,18 +87,33 @@ from .mixed_input_helpers import (
     get_tma_atom_kind,
     get_copy_atom_a_transform,
     is_valid_scale_granularity,
+    is_shuffle_a,
+    is_valid_tensor_alignment,
+    is_valid_mma_tiler_and_cluster_shape,
     get_divisibility,
+    create_initial_contiguous_group_search_state,
+    contiguous_group_search,
+    make_contiguous_group_work_tile_info,
+    cvt_tensor_a,
+    store_transformed_a,
 )
+
+from . import gemm
 
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
-
 from .print_latex import print_latex, print_latex_tv
+
+from .tensor_helpers import (
+    is_fp8_dtype,
+    create_cute_tensor_for_fp8,
+)
 
 __all__ = [
     "get_smem_capacity_in_bytes",
     "SmemAllocator",
     "TmemAllocator",
+    "get_num_tmem_alloc_cols",
     "LayoutEnum",
     "WorkTileInfo",
     "PersistentTileSchedulerParams",
@@ -116,10 +138,12 @@ __all__ = [
     "get_copy_atom_a_transform",
     "is_valid_scale_granularity",
     "get_divisibility",
+    "epilogue_tma_store",
+    "epilogue",
+    "create_tensor_a",
     "compute_epilogue_tile_shape",
     "get_smem_store_op",
     "get_tmem_load_op",
-    "get_num_tmem_alloc_cols",
     "make_smem_layout_a",
     "make_smem_layout_b",
     "make_smem_layout_epi",
@@ -127,7 +151,12 @@ __all__ = [
     "make_blockscaled_trivial_tiled_mma",
     "sm90",
     "sm100",
+    "gemm",
+    "ClcDynamicPersistentTileSchedulerParams",
+    "ClcDynamicPersistentTileScheduler",
     "print_latex",
     "print_latex_tv",
+    "is_fp8_dtype",
+    "create_cute_tensor_for_fp8",
     "distributed",
 ]

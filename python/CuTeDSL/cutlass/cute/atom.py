@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from abc import ABC, ABCMeta, abstractmethod
-from typing import Type, Union, Optional, Any, overload
+from typing import Type, Union, Optional, Any, List, Tuple, overload
 
 from .typing import Shape, Layout, Tile, Tensor, Numeric, Int32
 from .core import (
@@ -136,10 +136,15 @@ class Atom(ABC):
         self._trait = trait
 
     def __extract_mlir_values__(self):
-        return extract_mlir_values(self._trait)
+        return extract_mlir_values(self._trait) + extract_mlir_values(self._op)
 
     def __new_from_mlir_values__(self, values):
-        return self.__class__(self.op, new_from_mlir_values(self._trait, values))
+        traits_value = values[: len(extract_mlir_values(self._trait))]
+        op_value = values[len(extract_mlir_values(self._trait)) :]
+
+        new_trait = new_from_mlir_values(self._trait, traits_value)
+        new_op = new_from_mlir_values(self._op, op_value)
+        return self.__class__(new_op, new_trait)
 
     @property
     def op(self) -> Op:
@@ -280,6 +285,8 @@ class MmaAtom(Atom):
             if self.op is not None:
                 self.op._verify_fragment_B(input, loc=loc, ip=ip)
             input = input.value
+        if isinstance(input, tuple):
+            input = _pack_shape(input, loc=loc, ip=ip)
         return _cute_ir.mma_make_fragment(
             _cute_ir.MmaOperand.B, self._trait.value, input, loc=loc, ip=ip
         )
@@ -318,24 +325,29 @@ class TiledMma(MmaAtom):
     #
 
     @property
-    def tv_layout_A_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_a_tv_tiled)
+    @dsl_user_op
+    def tv_layout_A_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_a_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_B_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_b_tv_tiled)
+    @dsl_user_op
+    def tv_layout_B_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_b_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def tv_layout_C_tiled(self) -> Layout:
-        return static(self._trait.value.type.layout_c_tv_tiled)
+    @dsl_user_op
+    def tv_layout_C_tiled(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.layout_c_tv_tiled, loc=loc, ip=ip)
 
     @property
-    def permutation_mnk(self) -> Tile:
-        return _unpack_x_tuple(self._trait.value.type.permutation_mnk)
+    @dsl_user_op
+    def permutation_mnk(self, *, loc=None, ip=None) -> Tile:
+        return _unpack_x_tuple(self._trait.value.type.permutation_mnk, loc=loc, ip=ip)
 
     @property
-    def thr_layout_vmnk(self) -> Layout:
-        return static(self._trait.value.type.thr_layout_vmnk)
+    @dsl_user_op
+    def thr_layout_vmnk(self, *, loc=None, ip=None) -> Layout:
+        return static(self._trait.value.type.thr_layout_vmnk, loc=loc, ip=ip)
 
     @property
     def size(self) -> int:
@@ -597,6 +609,33 @@ class CopyAtom(Atom):
     @property
     def layout_dst_tv(self) -> Layout:
         return static(self._trait.value.type.layout_dst_tv)
+
+    @property
+    def smem_layout(self):
+        """
+        Convenience property to access the SMEM layout for TMA copy atoms.
+
+        This is a shortcut for ``atom.op.smem_layout`` that checks if the operation
+        is a TMA operation and provides a clearer error message if not.
+
+        :return: The SMEM layout
+        :rtype: Layout or ComposedLayout
+        :raises TypeError: If the operation is not a TMA operation
+        :raises ValueError: If the SMEM layout is not set
+
+        Example:
+            >>> layout = tma_atom.smem_layout  # Instead of tma_atom.op.smem_layout
+        """
+        # Import here to avoid circular dependency
+        from .nvgpu.cpasync.copy import TmaCopyOp
+
+        if not isinstance(self.op, TmaCopyOp):
+            raise TypeError(
+                f"smem_layout is only available for TMA copy operations, "
+                f"but this atom uses {type(self.op).__name__}"
+            )
+
+        return self.op.smem_layout
 
 
 class TiledCopy(CopyAtom):
@@ -1074,25 +1113,66 @@ def make_tiled_copy_C_atom(atom: CopyAtom, mma: TiledMma, *, loc=None, ip=None):
     return _make_tiled_copy(atom, layout_tv, tiler_mn, loc=loc, ip=ip)
 
 
+def _normalize_variadic_tensor_operand(
+    x: Union["Tensor", List["Tensor"], Tuple["Tensor", ...]], name: str
+) -> List["Tensor"]:
+    """Normalize a Tensor or sequence of Tensors to a list of Tensors.
+
+    Helper function for operations with variadic operands.
+    """
+    if isinstance(x, Tensor):
+        return [x]
+    if isinstance(x, (list, tuple)):
+        if len(x) == 0:
+            raise ValueError(f"`{name}` must contain at least one Tensor")
+        if not all(isinstance(t, Tensor) for t in x):
+            raise TypeError(f"All elements of `{name}` must be Tensor")
+        return list(x)  # type: ignore
+    raise TypeError(f"`{name}` must be a Tensor or a sequence of Tensors")
+
+
 @dsl_user_op
 def copy_atom_call(
     atom: CopyAtom,
-    src: Tensor,
-    dst: Tensor,
+    src: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    dst: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
     *,
     pred: Optional[Tensor] = None,
     loc=None,
     ip=None,
     **kwargs,
 ) -> None:
-    """Executes a single copy atom operation between two tensors.
+    """
+    Execute a single copy atom operation.
+
+    The copy_atom_call operation executes a copy atom with the given operands.
+    Source and destination tensors have layout profile ``(V)``.
+
+    The ``V-mode`` represents either:
+
+    - A singular mode directly consumable by the provided Copy Atom
+    - A composite mode requiring recursive decomposition, structured as ``(V, Rest...)``,
+
+    For src/dst layout like ``(V, Rest...)``, the layout profile of ``pred`` must match ``(Rest...)``.
+
+        - Certain Atoms may require additional operation-specific keyword arguments.
+        - Current implementation limits ``V-mode`` rank to 2 or less. Support for higher ranks is planned
+          for future releases.
+
+    Both ``src`` and ``dst`` operands are variadic, containing a variable number of tensors:
+
+    - For regular copy, ``src`` and ``dst`` each contain a single tensor.
+    - For copy with auxiliary operands, they contain the main tensor followed by
+      auxiliary tensors. For example:
 
     :param atom: Copy atom specifying the transfer operation
     :type atom: CopyAtom
-    :param src: Source tensor with layout profile ``(V)``
-    :type src: Tensor
-    :param dst: Destination tensor with layout profile ``(V)``
-    :type dst: Tensor
+    :param src: Source tensor(s) with layout profile ``(V)``. Can be a single Tensor
+        or a list/tuple of Tensors for operations with auxiliary source operands.
+    :type src: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
+    :param dst: Destination tensor(s) with layout profile ``(V)``. Can be a single Tensor
+        or a list/tuple of Tensors for operations with auxiliary destination operands.
+    :type dst: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
     :param pred: Optional predication tensor for conditional transfers, defaults to None
     :type pred: Optional[Tensor], optional
     :param loc: Source location information, defaults to None
@@ -1105,51 +1185,89 @@ def copy_atom_call(
     :return: None
     :rtype: None
 
-    The copy_atom_call operation executes a single copy atom with the given operands.
-    Source and destination tensors with layout profile like ``(V)``.
-
-    The ``V-mode`` represents either:
-
-    - A singular mode directly consumable by the provided Copy Atom
-    - A composite mode requiring recursive decomposition, structured as ``(V, Rest...)``,
-
-    For src/dst layout like ``(V, Rest...)``, the layout profile of ``pred`` must match ``(Rest...)``.
-
     **Examples**:
 
     .. code-block:: python
 
-        # Basic copy atom operation
+        # Regular copy atom operation
         cute.copy_atom_call(copy_atom, src, dst)
 
         # Predicated copy atom operation
         cute.copy_atom_call(copy_atom, src, dst, pred=pred)
 
-    .. note::
-
-        - Certain Atoms may require additional operation-specific keyword arguments.
-        - Current implementation limits ``V-mode`` rank to 2 or less. Support for higher ranks is planned
-          for future releases.
-
     """
-    if isinstance(src.type, _cute_ir.MemRefType) and isinstance(
-        dst.type, _cute_ir.MemRefType
+    # Normalize src/dst to lists for variadic IR operands, while keeping old API working.
+    src_list = _normalize_variadic_tensor_operand(src, "src")
+    dst_list = _normalize_variadic_tensor_operand(dst, "dst")
+
+    # Validate first src/dst for element type width check
+    if isinstance(src_list[0].type, _cute_ir.MemRefType) and isinstance(
+        dst_list[0].type, _cute_ir.MemRefType
     ):
-        if src.element_type.width != dst.element_type.width:
+        if src_list[0].element_type.width != dst_list[0].element_type.width:
             raise TypeError(
                 "`copy_atom_call` currently only supports equal source and destination "
                 "element type bit width"
             )
 
-    if rank(src, mode=[0]) > 2 or rank(dst, mode=[0]) > 2:
+    if rank(src_list[0], mode=[0]) > 2 or rank(dst_list[0], mode=[0]) > 2:
         raise NotImplementedError(
             "V-mode (mode-0) with rank > 2 is not supported yet, "
-            f"but got rank(src, mode=[0]) = {rank(src, mode=[0])} and rank(dst, mode=[0]) = {rank(dst, mode=[0])}"
+            f"but got rank(src, mode=[0]) = {rank(src_list[0], mode=[0])} and rank(dst, mode=[0]) = {rank(dst_list[0], mode=[0])}"
         )
 
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     if isinstance(pred, Tensor):
         pred = pred.value
-    return _cute_ir.copy_atom_call(
-        value, src.value, dst.value, pred=pred, loc=loc, ip=ip
+    src_vals = [t.value for t in src_list]
+    dst_vals = [t.value for t in dst_list]
+    return _cute_ir.copy_atom_call(value, src_vals, dst_vals, pred=pred, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def mma_atom_call(
+    atom: MmaAtom,
+    d: Tensor,
+    a: Tensor,
+    b: Tensor,
+    c: Tensor,
+    *,
+    loc=None,
+    ip=None,
+    **kwargs,
+) -> None:
+    """
+    Execute a single MMA atom operation.
+
+    The mma_atom_call operation executes an MMA atom with the given operands.
+    This performs a matrix multiplication and accumulation operation:
+    D = A * B + C
+
+    Note: The tensors 'd', 'a', 'b', and 'c' must only have a single fragment.
+
+    :param atom: The MMA atom to execute
+    :type atom: MmaAtom
+    :param d: Destination tensor (output accumulator)
+    :type d: Tensor
+    :param a: First source tensor (matrix A)
+    :type a: Tensor
+    :param b: Second source tensor (matrix B)
+    :type b: Tensor
+    :param c: Third source tensor (input accumulator C)
+    :type c: Tensor
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: Optional[Location], optional
+    :param ip: Insertion point, defaults to None
+    :type ip: Optional[InsertionPoint], optional
+
+    Examples:
+
+    .. code-block:: python
+
+        # Call an MMA atom operation
+        cute.mma_atom_call(mma_atom, d_tensor, a_tensor, b_tensor, c_tensor)
+    """
+    value = atom._unpack(loc=loc, ip=ip, **kwargs)
+    return _cute_ir.mma_atom_call(
+        value, d.value, a.value, b.value, c.value, loc=loc, ip=ip
     )

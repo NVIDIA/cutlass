@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -69,7 +69,7 @@ struct FmhaKernelBwdConvert {
 
   static const int MinBlocksPerMultiprocessor = 1;
   static const int MaxThreadsPerBlock = 128;
-  using ArchTag = cutlass::arch::Sm90;
+  using ArchTag = cutlass::arch::Sm100;
 
   static const int kBlockSeq = 8;
 

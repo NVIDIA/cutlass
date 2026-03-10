@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -832,6 +832,12 @@ public:
     mainloop_pipeline.init_masks(cluster_shape, block_id_in_cluster);
     accumulator_pipeline.init_masks(cluster_shape, block_id_in_cluster);
 
+    // Ensure that the prefetched kernel does not touch
+    // unflushed global memory prior to this instruction.
+    // For the static grouped scheduler, the problem shapes
+    // might be produced by a previous kernel in global memory.
+    cutlass::arch::wait_on_dependent_grids();
+
     // TileID scheduler
     TileScheduler scheduler(
       (!IsTensorMapUpdateAsync || is_participant.sched || is_participant.tensor_map_updater)
@@ -842,12 +848,6 @@ public:
     );
 
     auto work_tile_info = [&] () {
-      // Ensure that the prefetched kernel does not touch
-      // unflushed global memory prior to this instruction.
-      // For the static grouped scheduler, the problem shapes
-      // might be produced by a previous kernel in global memory.
-      cutlass::arch::wait_on_dependent_grids();
-
       if constexpr (IsTensorMapUpdateAsync) {
         return scheduler.initial_work_tile_info(cluster_shape, [] (typename TileScheduler::CLCResponse response) {
           CLCResponseWithAdditionalInformation response_with_additional_info = response;

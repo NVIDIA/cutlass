@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,14 +9,16 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import overload, Type, Tuple, Union
+from typing import overload, Type, Tuple, Union, Optional
 
 from cutlass.cutlass_dsl import dsl_user_op
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
-from cutlass._mlir.dialects import nvvm
+from cutlass._mlir.dialects import nvvm, builtin
 
 from ...typing import (
+    Pointer,
     Shape,
     IntTuple,
     Layout,
@@ -27,6 +29,7 @@ from ...typing import (
     NumericMeta,
     Int16,
     Int32,
+    Int64,
 )
 from ... import core
 from ...tensor import recast_tensor
@@ -200,12 +203,25 @@ def commit(
     mbar_ptr = mbar_ptr.llvm_ptr
     if mask is not None:
         mask = Int16(mask).ir_value(loc=loc, ip=ip)
-        nvvm.tcgen05_commit_arrive(
-            mbar_ptr, multicast_mask=mask, group=group, loc=loc, ip=ip
-        )
+        nvvm.tcgen05_commit(mbar_ptr, multicast_mask=mask, group=group, loc=loc, ip=ip)
     else:
-        nvvm.tcgen05_commit_arrive(mbar_ptr, group=group, loc=loc, ip=ip)
+        nvvm.tcgen05_commit(mbar_ptr, group=group, loc=loc, ip=ip)
     return
+
+
+@dsl_user_op
+def int_to_smem_descriptor(i, *, loc=None, ip=None) -> ir.Value:
+    desc_type = _cute_nvgpu_ir.SmemDescType.get()
+    return builtin.unrealized_conversion_cast(
+        [desc_type], [Int64(i).ir_value(loc=loc, ip=ip)], loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def smem_descriptor_to_int(desc: ir.Value, *, loc=None, ip=None) -> Int64:
+    return Int64(
+        builtin.unrealized_conversion_cast([Int64.mlir_type], [desc], loc=loc, ip=ip)
+    )
 
 
 ####################################################################################################
@@ -334,3 +350,55 @@ def get_s2t_smem_desc_tensor(
         atom._trait.value, smem_tensor.value, loc=loc, ip=ip
     )
     return smem_desc_tensor
+
+
+def make_umma_smem_desc(
+    src: Pointer,
+    layout: Layout,
+    major: str,
+    next_src: Optional[Pointer] = None,
+    *,
+    loc=None,
+    ip=None,
+):
+    """
+    Construct shared memory descriptor for UMMA.
+
+    The `make_umma_smem_desc` operation accepts an input cute.ptr (optionally a nextSrc
+    pointer for the second buffer in a circular buffer scheme), alongside a cute.layout
+    and a major attr, then constructs the shared memory descriptor and returns it.
+    The layout must be describing the buffer pointed to by the input pointer and the
+    iterator must carry valid swizzle information.
+
+    There are 5 supported swizzle variants:
+    - S<0, 4, 3> | SWIZZLE_NONE
+    - S<1, 4, 3> | SWIZZLE_32B
+    - S<2, 4, 3> | SWIZZLE_64B
+    - S<3, 4, 3> | SWIZZLE_128B
+    - S<2, 5, 2> | SWIZZLE_128B_BASE32B
+
+    The cute.ptr must carry shared address space and must be aligned to 16B.
+
+    :param src: The source pointer to shared memory
+    :type src: Pointer
+    :param layout: The layout describing the buffer
+    :type layout: Layout
+    :param major: The major mode attribute
+    :type major: str
+    :param next_src: Optional next source pointer for circular buffer scheme
+    :type next_src: Optional[Pointer]
+    :return: The shared memory descriptor
+    :rtype: SmemDescType
+    """
+    src = src.value
+    if next_src is not None:
+        next_src = next_src.value
+
+    return _cute_nvgpu_ir.make_umma_smem_desc(
+        src=src,
+        layout=layout.type.attribute,
+        major=major,
+        next_src=next_src,
+        loc=loc,
+        ip=ip,
+    )

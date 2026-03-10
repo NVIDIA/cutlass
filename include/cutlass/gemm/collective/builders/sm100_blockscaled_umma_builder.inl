@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,7 +73,7 @@ sm100_compute_stage_count_or_override_blockscaled(StageCountAutoCarveout<carveou
   // 1. smem for A and smem for B (CollectiveMma::SharedStorage::TensorStorage)
   // 2. one MainloopPipeline = PipelineTmaUmmaAsync (CollectiveMma::SharedStorage::SharedStorage)
   // 3. smem for SFB and smem for SFB (CollectiveMma::SharedStorage::TensorStorage, independent of input size b.c. sizeof(sf) is fixed)
-  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage);
+  constexpr auto mainloop_pipeline_bytes = cutlass::round_up(sizeof(typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage), 128);
   constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
   constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
   constexpr auto stage_sfa_bytes = size(filter_zeros(TileShapeSFA{}));

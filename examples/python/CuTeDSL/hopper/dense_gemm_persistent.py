@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -31,14 +31,11 @@ from typing import Optional, Tuple, Type
 import math
 import cuda.bindings.driver as cuda
 
-import torch
-
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.hopper_helpers as sm90_utils
 
@@ -723,7 +720,7 @@ class HopperWgmmaGemmPersistentKernel:
 
         is_dma_warp_group = warp_group_idx < self.num_dma_warp_groups
         if is_dma_warp_group:
-            cute.arch.warpgroup_reg_dealloc(self.load_register_requirement)
+            cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
         if warp_idx == self.load_warp_id:
             tile_sched = utils.StaticPersistentTileScheduler.create(
@@ -783,7 +780,7 @@ class HopperWgmmaGemmPersistentKernel:
 
         # MMA warp group
         if not is_dma_warp_group:
-            cute.arch.warpgroup_reg_alloc(self.mma_register_requirement)
+            cute.arch.setmaxregister_increase(self.mma_register_requirement)
             tile_sched = utils.StaticPersistentTileScheduler.create(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -953,8 +950,8 @@ class HopperWgmmaGemmPersistentKernel:
                     )
 
                     cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
+                        "async.shared",
+                        space="cta",
                     )
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -1468,6 +1465,8 @@ def run(
     :return: Execution time of the GEMM kernel in microseconds
     :rtype: float
     """
+    import torch
+    import cutlass.torch as cutlass_torch
 
     print("Running Hopper Persistent Dense GEMM with:")
     print(f"mnkl: {mnkl}")

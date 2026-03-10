@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -12,7 +12,6 @@
 from abc import ABC, abstractmethod
 import ctypes
 from typing import ForwardRef, Tuple, Union, Any, Type, List, Optional, Literal
-from functools import lru_cache
 
 from cutlass.base_dsl.typing import *
 
@@ -28,8 +27,12 @@ class SymInt:
     def __init__(self, width: Literal[32, 64] = 32, *, divisibility=1):
         if width not in [32, 64]:
             raise ValueError(f"Unsupported width: {width}")
+
         self._width = width
         self._divisibility = divisibility
+
+    def __hash__(self):
+        return hash((self._width, self._divisibility))
 
     @property
     def width(self):
@@ -52,6 +55,15 @@ class SymInt:
             [self._width == other._width, self._divisibility == other._divisibility]
         )
 
+    def __mod__(self, other: int) -> Union["SymInt", int]:
+        if self._divisibility % other != 0:
+            from math import gcd
+
+            div = gcd(self._divisibility, other)
+            return SymInt(self._width, divisibility=div)
+        else:
+            return 0
+
     def __c_pointers__(self):
         return [ctypes.c_void_p(0).value]
 
@@ -71,6 +83,7 @@ class SymInt:
         else:
             assert False, f"Unsupported width: {self.width}"
             return self
+
 def sym_int(width: Literal[32, 64] = 32, *, divisibility=1) -> SymInt:
     return SymInt(width, divisibility=divisibility)
 
@@ -381,15 +394,17 @@ __all__ = [
     "Float6E2M3FN",
     "Float6E3M2FN",
     "IntTuple",
-    "Layout",
+    "ScaledBasis",
     "Coord",
     "Shape",
     "Stride",
+    "Layout",
+    "ComposedLayout",
+    "Pointer",
+    "Tensor",
     "Tile",
     "Tiler",
     "XTuple",
     "is_integer",
     "is_int_tuple",
-    "Pointer",
-    "Tensor",
 ]

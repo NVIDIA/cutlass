@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -17,7 +17,6 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from .. import core, atom
 from ..typing import Shape, Layout, ComposedLayout, Tensor, Numeric, NumericMeta
-from ...impl_utils import check_type_in
 from .cpasync.copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SNonExecTrait,
@@ -25,6 +24,11 @@ from .cpasync.copy import (
     CopyBulkTensorTileG2SMulticastNonExecTrait,
 )
 
+
+__all__ = [
+    "make_tiled_tma_atom_A",
+    "make_tiled_tma_atom_B",
+]
 
 ####################################################################################################
 #
@@ -91,15 +95,11 @@ def make_tiled_tma_atom_A(
 
     """
 
-    if internal_type is not None:
-        if not isinstance(internal_type, NumericMeta):
-            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
-        internal_type = internal_type.mlir_type
-    check_type_in(
-        op,
-        [CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
-        "op",
-        "make_tiled_tma_atom_A",
+    # Set the smem_layout on the operation for later retrieval
+    op.smem_layout = (
+        smem_layout.value
+        if isinstance(smem_layout, core._ComposedLayout)
+        else smem_layout
     )
 
     ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
@@ -123,6 +123,25 @@ def make_tiled_tma_atom_A(
     if isinstance(smem_layout, core._ComposedLayout):
         smem_layout = smem_layout.value
 
+    tma_format = None
+    if internal_type is not None:
+        if not isinstance(internal_type, NumericMeta):
+            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
+
+        use_unpack = (
+            internal_type.width == 8
+            and isinstance(gmem_tensor.element_type, NumericMeta)
+            and gmem_tensor.element_type.width < 8
+        )
+        internal_mlir_type = (
+            gmem_tensor.element_type.mlir_type
+            if use_unpack
+            else internal_type.mlir_type
+        )
+        tma_format = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
+        )
+
     # res[0] = the IR Value for the non-executable atom instance
     # res[1] = the IR Value for the associated TMA tensor
     res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_load(
@@ -131,7 +150,7 @@ def make_tiled_tma_atom_A(
         cta_v_map,
         op._to_ir(),
         num_multicast=num_multicast,
-        internal_type=internal_type,
+        tma_format=tma_format,
         loc=loc,
         ip=ip,
     )
@@ -203,15 +222,11 @@ def make_tiled_tma_atom_B(
 
     """
 
-    if internal_type is not None:
-        if not isinstance(internal_type, NumericMeta):
-            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
-        internal_type = internal_type.mlir_type
-    check_type_in(
-        op,
-        [CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
-        "op",
-        "make_tiled_tma_atom_B",
+    # Set the smem_layout on the operation for later retrieval
+    op.smem_layout = (
+        smem_layout.value
+        if isinstance(smem_layout, core._ComposedLayout)
+        else smem_layout
     )
 
     ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
@@ -235,6 +250,25 @@ def make_tiled_tma_atom_B(
     if isinstance(smem_layout, core._ComposedLayout):
         smem_layout = smem_layout.value
 
+    tma_format = None
+    if internal_type is not None:
+        if not isinstance(internal_type, NumericMeta):
+            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
+
+        use_unpack = (
+            internal_type.width == 8
+            and isinstance(gmem_tensor.element_type, NumericMeta)
+            and gmem_tensor.element_type.width < 8
+        )
+        internal_mlir_type = (
+            gmem_tensor.element_type.mlir_type
+            if use_unpack
+            else internal_type.mlir_type
+        )
+        tma_format = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
+        )
+
     # res[0] = the IR Value for the non-executable atom instance
     # res[1] = the IR Value for the associated TMA tensor
     res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_load(
@@ -243,7 +277,7 @@ def make_tiled_tma_atom_B(
         cta_v_map,
         op._to_ir(),
         num_multicast=num_multicast,
-        internal_type=internal_type,
+        tma_format=tma_format,
         loc=loc,
         ip=ip,
     )
@@ -255,9 +289,3 @@ def make_tiled_tma_atom_B(
             atom.CopyAtom(op, CopyBulkTensorTileG2SMulticastNonExecTrait(res[0])),
             res[1],
         )
-
-
-__all__ = [
-    "make_tiled_tma_atom_A",
-    "make_tiled_tma_atom_B",
-]

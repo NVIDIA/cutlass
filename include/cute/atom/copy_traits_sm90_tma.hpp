@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,8 +51,12 @@ template <class GmemTmaBasisStrides_, class TmaGmemBasis_, class TmaSwizzle_>
 struct AuxTmaParams {
   using GmemStrides  = GmemTmaBasisStrides_;    // Strides for Gmem mode -> Tma coord mode, may be dynamic
   GmemStrides g_stride_;
-  using TmaGmemBasis = TmaGmemBasis_;           // Layout for Tma box shape -> Gmem mode(s), always static
-  static_assert(is_static<TmaGmemBasis>::value);
+  using TmaGmemBasis = TmaGmemBasis_;           // Layout for Tma box shape -> Gmem mode(s)
+  // By default, TmaGmemBasis produced by construct_tma_gbasis is fully static.
+  // The user may construct a dynamic gbasis manually (e.g. to represent smem box with dynamic shape).
+  // In that case they will need to pass it around via other means.
+  // We avoid passing it as a data member to avoid ABI impact.
+  // static_assert(is_static<TmaGmemBasis>::value);
   using TmaSwizzle   = TmaSwizzle_;             // Tma swizzle, always Swizzle<B,M,S>
   static_assert(is_static<TmaSwizzle>::value);
 };
@@ -70,7 +74,7 @@ struct TMA_LOAD_Unpack
   {
     static_assert(is_smem<TD>::value, "SM90_TMA_LOAD requires the destination be shared memory.");
 
-    auto src_coord = src.data().coord_;
+    auto src_coord = src(Int<0>{});
     void* dst_ptr = cute::raw_pointer_cast(dst.data());
 #if 0
     auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
@@ -237,7 +241,7 @@ struct Copy_Traits<SM90_TMA_LOAD::PREFETCH, NumBitsPerTMA, Args...>
               Tensor<TS,SLayout> const& src,
               Tensor<TD,DLayout>      & dst)
   {
-    auto src_coord = src.data().coord_;
+    auto src_coord = src(Int<0>{});
     return detail::explode_tuple(detail::CallCOPY<SM90_TMA_LOAD::PREFETCH>{},
                                  traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
                                  src_coord, tuple_seq<decltype(src_coord)>{});
@@ -405,7 +409,7 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
 
     void const* const desc_ptr = &(traits.tma_desc_);
     void const* const src_ptr  = cute::raw_pointer_cast(src.data());
-    auto dst_coord = dst.data().coord_;
+    auto dst_coord = dst(Int<0>{});
 #if 0
     auto [c0,c1,c2,c3,c4] = append<5>(dst_coord, 0);
     printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
@@ -446,7 +450,7 @@ struct Copy_Traits<SM90_TMA_STORE_PTR, NumBitsPerTMA>
 
     void const* const desc_ptr = traits.tma_desc_;
     void const* const src_ptr  = cute::raw_pointer_cast(src.data());
-    auto dst_coord = dst.data().coord_;
+    auto dst_coord = dst(Int<0>{});
 #if 0
     auto [c0,c1,c2,c3,c4] = append<5>(dst_coord, 0);
     printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
@@ -531,7 +535,8 @@ struct Copy_Traits<SM90_TMA_REDUCE_ADD, NumBitsPerTMA, AuxParams_>
     static_assert(is_smem<TS>::value, "Expected smem src for SM90_TMA_REDUCE_ADD");
     //static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_TMA_REDUCE_ADD");  // TMA spoofed src tensor
 
-    traits.copy_unpack_(cute::raw_pointer_cast(src.data()), dst.data().coord_, tuple_seq<decltype(dst.data().coord_)>{});
+    auto dst_coord = dst(Int<0>{});
+    traits.copy_unpack_(cute::raw_pointer_cast(src.data()), dst_coord, tuple_seq<decltype(dst_coord)>{});
   }
 };
 
@@ -1051,6 +1056,17 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
         smem_swizzle,
         tma_l2Promotion,
         tma_oobFill);
+   
+    int driver_version = 0;
+    cudaError_t driver_version_err = cudaDriverGetVersion(&driver_version);
+    assert(driver_version_err == cudaSuccess);
+    if (driver_version <= 13010) {      
+      if (cute::bits_to_bytes(
+            cute::cosize(gtensor.layout()) *
+            cute::sizeof_bits<typename GEngine::value_type>::value) < 131072) {
+        reinterpret_cast<uint64_t*>(&tma_desc)[1] &= ~(1llu << 21);
+      }
+    }
 
     if (result != CUDA_SUCCESS) {
       std::cerr << "TMA Desc Addr:   " << &tma_desc

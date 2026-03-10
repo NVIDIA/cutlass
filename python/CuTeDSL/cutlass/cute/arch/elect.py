@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -9,8 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import CuTeDSL, T, dsl_user_op
+from cutlass.cutlass_dsl import BaseDSL, T, dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import nvvm, scf
@@ -69,7 +68,9 @@ def elect_one(*, loc=None, ip=None) -> IfOpRegion:
             # Only one thread in the warp executes the code in this context
             pass
     """
-    CuTeDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
-    is_thread_leader = nvvm.elect_sync(T.bool())
+    from cutlass.base_dsl.arch import Arch
+
+    BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
+    is_thread_leader = nvvm.elect_sync()
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)

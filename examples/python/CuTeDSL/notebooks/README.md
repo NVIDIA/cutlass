@@ -1,6 +1,6 @@
 # Copyright
 
-Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

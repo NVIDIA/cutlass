@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -38,6 +38,7 @@ class ArgContext:
     :ivar tuple_indices: List of tuple indices for nested tuple access (e.g., [0, 1] for tuple[0][1]).
     :vartype tuple_indices: list[int]
     """
+
     param_name: str
     arg_index: int
     tuple_indices: list[int]
@@ -54,7 +55,10 @@ class ArgContext:
         else:
             # Nested tuple element: "on my_tuple[0][1] in argument #0"
             indices_str = "".join(f"[{i}]" for i in self.tuple_indices)
-            return [f"on {self.param_name}{indices_str} in argument ", f"#{self.arg_index}"]
+            return [
+                f"on {self.param_name}{indices_str} in argument ",
+                f"#{self.arg_index}",
+            ]
 
     def get_field_name(self, field_suffix: str) -> str:
         """Get the field name with tuple indices for shape/stride access.
@@ -289,7 +293,9 @@ class TVMFFIBuilder(MLIRBuilder):
             elem_type=self.tvm_ffi_object_type,
         )
 
-    def load_ffi_any_array_item_type_index(self, args: ir.Value, index: int) -> ir.Value:
+    def load_ffi_any_array_item_type_index(
+        self, args: ir.Value, index: int
+    ) -> ir.Value:
         """Get the type index from the index-th field of tvm_ffi_any_type struct.
 
         Semantics as follows:
@@ -321,11 +327,7 @@ class TVMFFIBuilder(MLIRBuilder):
         )
         return llvm.load(self.i32_type, type_index_ptr)
 
-    def load_ffi_any_array_item_v_int64(
-        self,
-        args: ir.Value,
-        index: int
-    ) -> ir.Value:
+    def load_ffi_any_array_item_v_int64(self, args: ir.Value, index: int) -> ir.Value:
         """Get the v_int64 from the index-th field of tvm_ffi_any_type struct.
 
         Semantics as follows:
@@ -362,10 +364,7 @@ class TVMFFIBuilder(MLIRBuilder):
         return llvm.load(self.f64_type, v_float64_ptr)
 
     def load_ffi_any_array_item_v_ptr(
-        self,
-        args: ir.Value,
-        index: int,
-        address_space: Optional[int] = None
+        self, args: ir.Value, index: int, address_space: Optional[int] = None
     ) -> ir.Value:
         """Get the v_ptr from the index-th field of tvm_ffi_any_type struct.
 
@@ -546,8 +545,10 @@ class TVMFFIBuilder(MLIRBuilder):
     ) -> ir.Value:
         """Downcast i64 to lower bits."""
         overflow_flags = llvm.IntegerOverflowFlags.none
-        if (hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL") and
-            target_dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL):
+        if (
+            hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL")
+            and target_dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL
+        ):
             # LLVM use i1 (boolean) for boolean
             return llvm.icmp(llvm.ICmpPredicate.ne, v_int64, self.i64(0))
         if target_dtype.bits == 64:
@@ -668,12 +669,14 @@ class TVMFFIBuilder(MLIRBuilder):
             param_types.append(self.ptr_type)  # p0, p1, ..., pN-1
 
         # Create the helper function
+        # Mark as noinline since error handling is a slow path and benefits from not inlining
         with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
             params, entry_block = self.function(
                 name=helper_name,
                 params_type=param_types,
                 ret_type=self.void_type,
                 internal=True,
+                llvm_func_attrs=["noinline"],
             )
 
             kind_param = params[0]
@@ -803,7 +806,7 @@ class TVMFFIBuilder(MLIRBuilder):
                 true_block=subsequent_block,
                 false_block=error_block,
                 # likely to be true
-                branch_weights=self.BRANCH_WEIGHTS_LIKELY
+                branch_weights=self.BRANCH_WEIGHTS_LIKELY,
             )
         with ir.InsertionPoint(error_block):
             self.raise_error_and_return(error_kind, error_message_parts)
@@ -867,7 +870,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the integer parameter at the given index."""
         # read the type index
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
             # Check if type is int or bool (both use v_int64, bool can be converted to int)
             is_int = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIInt))
             is_bool = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIBool))
@@ -913,7 +918,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the float parameter at the given index."""
         # read the type index
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
             # Check if type is float, int, or bool (int and bool can be converted to float)
             is_float = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIFloat))
             is_int = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIInt))
@@ -952,7 +959,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
 
         # Handle float type
         with ir.InsertionPoint(float_block):
-            v_float64: ir.Value = self.load_ffi_any_array_item_v_float64(args, arg_index)
+            v_float64: ir.Value = self.load_ffi_any_array_item_v_float64(
+                args, arg_index
+            )
             if param.dtype.bits == 64:
                 float_result = v_float64
             elif param.dtype.bits == 32:
@@ -1021,7 +1030,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the opaque handle parameter at the given index."""
         # read the type index
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
             # Check if type is opaque pointer
             is_opaque_ptr = self.equal(
                 type_index, self.i32(TVMFFITypeIndex.kTVMFFIOpaquePtr)
@@ -1073,7 +1084,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the opaque handle parameter at the given index."""
         # read the type index
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
             # Check if type is a nullptr
             is_nullptr = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFINone))
 
@@ -1106,6 +1119,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             return current_block
 
         from tvm_ffi._dtype import DataTypeCode
+
         is_uint = dtype.type_code == DataTypeCode.UINT
 
         # compute out the upper and lower bounds
@@ -1119,7 +1133,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         error_msg = [
             "Out of bound ",
             *error_msg_context,
-            f", expected to be in {str(dtype)} range [{lower_bound}, {upper_bound}]"
+            f", expected to be in {str(dtype)} range [{lower_bound}, {upper_bound}]",
         ]
 
         # Check bounds using appropriate comparison predicates
@@ -1127,19 +1141,24 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             lower_bound_value = self.i64(lower_bound)
             upper_bound_value = self.i64(upper_bound)
             if is_uint:
-                is_above_lower = llvm.icmp(llvm.ICmpPredicate.uge, value, lower_bound_value)
-                is_below_upper = llvm.icmp(llvm.ICmpPredicate.ule, value, upper_bound_value)
+                is_above_lower = llvm.icmp(
+                    llvm.ICmpPredicate.uge, value, lower_bound_value
+                )
+                is_below_upper = llvm.icmp(
+                    llvm.ICmpPredicate.ule, value, upper_bound_value
+                )
             else:
-                is_above_lower = llvm.icmp(llvm.ICmpPredicate.sge, value, lower_bound_value)
-                is_below_upper = llvm.icmp(llvm.ICmpPredicate.sle, value, upper_bound_value)
+                is_above_lower = llvm.icmp(
+                    llvm.ICmpPredicate.sge, value, lower_bound_value
+                )
+                is_below_upper = llvm.icmp(
+                    llvm.ICmpPredicate.sle, value, upper_bound_value
+                )
 
             in_bounds = self.and_(is_above_lower, is_below_upper)
 
         return self.check_condition(
-            current_block,
-            lambda: in_bounds,
-            "ValueError",
-            error_msg
+            current_block, lambda: in_bounds, "ValueError", error_msg
         )
 
     def check_int_value_divisibility(
@@ -1171,6 +1190,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         ir.Block
             The updated block after checks.
         """
+
         def check_divisibility() -> ir.Value:
             cond = self.i64_divisible_const(value, divisibility)
             if skip_check_predicate is not None:
@@ -1180,14 +1200,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         error_msg = [
             "Invalid ",
             *error_msg_context,
-            f", expected to be divisible by {divisibility}"
+            f", expected to be divisible by {divisibility}",
         ]
 
         return self.check_condition(
-            current_block,
-            check_divisibility,
-            "ValueError",
-            error_msg
+            current_block, check_divisibility, "ValueError", error_msg
         )
 
     def set_or_check_matched_var_binding(
@@ -1216,14 +1233,15 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     # check divisibility if specified
                     if var.divisibility is not None:
                         current_block = self.check_int_value_divisibility(
-                            current_block, value, var.divisibility, error_msg_context,
+                            current_block,
+                            value,
+                            var.divisibility,
+                            error_msg_context,
                             skip_check_predicate=skip_check_predicate,
                         )
                     # store the source value with parameter info
                     with ir.InsertionPoint(current_block):
-                        target_value = self.downcast_i64_to_lower_bits(
-                            value, var.dtype
-                        )
+                        target_value = self.downcast_i64_to_lower_bits(value, var.dtype)
                 else:
                     target_value = value
                 # store the source value
@@ -1244,17 +1262,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         else:
             assert isinstance(var, int)
             with ir.InsertionPoint(current_block):
-                if not skip_cast_and_check:
-                    expected_value = self.i64(var)
-                else:
-                    expected_value = self.downcast_i64_to_lower_bits(
-                        self.i64(var), var.dtype
-                    )
+                expected_value = self.i64(var)
 
             error_msg_mismatch = [
                 error_prefix_mismatch,
                 *error_msg_context,
-                f", expected to be {var}"
+                f", expected to be {var}",
             ]
 
         def check_value_mismatch() -> ir.Value:
@@ -1267,7 +1280,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             check_value_mismatch,
             error_kind,
-            error_msg_mismatch
+            error_msg_mismatch,
         )
 
     def set_or_check_matched_var_binding_from_shape(
@@ -1291,8 +1304,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             self._fn_call_context,
         ]
         return self.set_or_check_matched_var_binding(
-            current_block, var, value, error_msg, arg_field_name,
-            skip_check_predicate=skip_check_predicate
+            current_block,
+            var,
+            value,
+            error_msg,
+            arg_field_name,
+            skip_check_predicate=skip_check_predicate,
         )
 
     def decode_param_shape_from_ffi_array(
@@ -1328,9 +1345,13 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         ) -> tuple[ir.Block, ir.Value]:
             """Validate and load a single shape element from the array."""
             with ir.InsertionPoint(block):
-                type_index: ir.Value = self.load_ffi_any_array_item_type_index(array_data, index)
+                type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                    array_data, index
+                )
                 # Check if type is int or bool (both use v_int64, bool can be converted to int)
-                is_int_val = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIInt))
+                is_int_val = self.equal(
+                    type_index, self.i32(TVMFFITypeIndex.kTVMFFIInt)
+                )
 
             # Check that the element is an integer
             field_name = arg_context.get_field_name("")
@@ -1349,7 +1370,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
 
             with ir.InsertionPoint(block):
-                v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(array_data, index)
+                v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(
+                    array_data, index
+                )
 
             return block, v_int64
 
@@ -1385,7 +1408,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         )
 
         with ir.InsertionPoint(current_block):
-            load_shapes = [self.load_i64_array_item(shape_data, i) for i in range(len(param.shape))]
+            load_shapes = [
+                self.load_i64_array_item(shape_data, i) for i in range(len(param.shape))
+            ]
 
         return (current_block, load_shapes)
 
@@ -1399,10 +1424,16 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
     ) -> ir.Block:
         """Decode the shape parameter at the given index."""
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
             # Check if type is ffi.Shape or ffi.Array
-            is_ffi_shape = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIShape))
-            is_ffi_array = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIArray))
+            is_ffi_shape = self.equal(
+                type_index, self.i32(TVMFFITypeIndex.kTVMFFIShape)
+            )
+            is_ffi_array = self.equal(
+                type_index, self.i32(TVMFFITypeIndex.kTVMFFIArray)
+            )
 
         # Create error block and subsequent blocks
         error_block = current_block.create_after()
@@ -1410,7 +1441,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         ffi_array_check_block = ffi_shape_block.create_after()
         ffi_array_block = ffi_array_check_block.create_after()
         # Create subsequent_block with i64 arguments for each shape dimension
-        subsequent_block = ffi_array_block.create_after(*[self.i64_type] * len(param.shape))
+        subsequent_block = ffi_array_block.create_after(
+            *[self.i64_type] * len(param.shape)
+        )
 
         # Branch from current_block: check FFI shape first
         with ir.InsertionPoint(current_block):
@@ -1430,15 +1463,17 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # ffi array check block: verify it's actually an Array
         with ir.InsertionPoint(ffi_array_check_block):
             self.cond_br(
-                is_ffi_array, ffi_array_block, error_block,
-                branch_weights=self.BRANCH_WEIGHTS_LIKELY
+                is_ffi_array,
+                ffi_array_block,
+                error_block,
+                branch_weights=self.BRANCH_WEIGHTS_LIKELY,
             )
 
         # ffi array block
         with ir.InsertionPoint(ffi_array_block):
             array_cell_ptr = self.get_object_cell_ptr(
                 self.load_ffi_any_array_item_v_ptr(args, arg_index)
-                )
+            )
         ffi_array_block, load_shapes = self.decode_param_shape_from_ffi_array(
             ffi_array_block, param, arg_context, array_cell_ptr
         )
@@ -1479,9 +1514,15 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode tensor step0: check index and find out DLTensor*."""
         # read the type index
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
-            is_ffi_tensor = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFITensor))
-            is_dl_tensor = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIDLTensorPtr))
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
+            is_ffi_tensor = self.equal(
+                type_index, self.i32(TVMFFITypeIndex.kTVMFFITensor)
+            )
+            is_dl_tensor = self.equal(
+                type_index, self.i32(TVMFFITypeIndex.kTVMFFIDLTensorPtr)
+            )
 
         # Create error block and subsequent block
         error_block = current_block.create_after()
@@ -1496,15 +1537,19 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
 
         # ffi tensor block
         with ir.InsertionPoint(ffi_tensor_block):
-            ffi_tensor_ptr: ir.Value = self.load_ffi_any_array_item_v_ptr(args, arg_index)
+            ffi_tensor_ptr: ir.Value = self.load_ffi_any_array_item_v_ptr(
+                args, arg_index
+            )
             dl_tensor_ptr = self.get_object_cell_ptr(ffi_tensor_ptr)
             self.br(subsequent_block, args=[dl_tensor_ptr])
 
         # dltensor check block: verify it's actually a DLTensor
         with ir.InsertionPoint(dl_tensor_check_block):
             self.cond_br(
-                is_dl_tensor, dl_tensor_block, error_block,
-                branch_weights=self.BRANCH_WEIGHTS_LIKELY
+                is_dl_tensor,
+                dl_tensor_block,
+                error_block,
+                branch_weights=self.BRANCH_WEIGHTS_LIKELY,
             )
 
         # dltensor block
@@ -1555,6 +1600,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
 
         # check data alignment if specified
         if param.data_alignment is not None:
+
             def check_alignment() -> ir.Value:
                 # Convert pointer to integer
                 data_as_int = llvm.ptrtoint(self.i64_type, data)
@@ -1577,7 +1623,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # store the matched values, these do not need constraint checks
         self.matched_var_binding[param.data] = data
         self.matched_var_source[param.data] = param.data
-        self.matched_var_arg_field_name[param.data] = arg_context.get_field_name(".data")
+        self.matched_var_arg_field_name[param.data] = arg_context.get_field_name(
+            ".data"
+        )
 
         # check device_id constraint if user specifies a device_id variable
         current_block = self.set_or_check_matched_var_binding(
@@ -1721,8 +1769,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the stream parameter at the given index."""
         # stream is decoded as opaque handle
         return self.decode_param_opaque_handle(
-            current_block, param.var, args, arg_index, arg_context,
-            allow_int_as_ptr=True
+            current_block,
+            param.var,
+            args,
+            arg_index,
+            arg_context,
+            allow_int_as_ptr=True,
         )
 
     def decode_param_data_pointer(
@@ -1793,8 +1845,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """Decode the tuple parameter at the given index."""
         # Check if type is kTVMFFIArray
         with ir.InsertionPoint(current_block):
-            type_index: ir.Value = self.load_ffi_any_array_item_type_index(args, arg_index)
-            is_ffi_array = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFIArray))
+            type_index: ir.Value = self.load_ffi_any_array_item_type_index(
+                args, arg_index
+            )
+            is_ffi_array = self.equal(
+                type_index, self.i32(TVMFFITypeIndex.kTVMFFIArray)
+            )
 
         # Check that the type is an array
         current_block = self.check_condition(
@@ -1834,7 +1890,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         for i, tuple_param in enumerate(param.params):
             # Create nested context for the tuple element
             nested_context = arg_context.get_element_context(i)
-            current_block = self.decode_param(current_block, tuple_param, array_data, i, nested_context)
+            current_block = self.decode_param(
+                current_block, tuple_param, array_data, i, nested_context
+            )
 
         return current_block
 
@@ -1863,15 +1921,25 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         """
         if isinstance(param, spec.Var):
             if param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.INT:
-                return self.decode_param_int(current_block, param, args, arg_index, arg_context)
+                return self.decode_param_int(
+                    current_block, param, args, arg_index, arg_context
+                )
             elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.UINT:
                 # UINT uses the same logic as INT since both are stored in v_int64
-                return self.decode_param_int(current_block, param, args, arg_index, arg_context)
-            elif (hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL") and
-                  param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL):
-                return self.decode_param_int(current_block, param, args, arg_index, arg_context)
+                return self.decode_param_int(
+                    current_block, param, args, arg_index, arg_context
+                )
+            elif (
+                hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL")
+                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL
+            ):
+                return self.decode_param_int(
+                    current_block, param, args, arg_index, arg_context
+                )
             elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.FLOAT:
-                return self.decode_param_float(current_block, param, args, arg_index, arg_context)
+                return self.decode_param_float(
+                    current_block, param, args, arg_index, arg_context
+                )
             elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.HANDLE:
                 return self.decode_param_opaque_handle(
                     current_block, param, args, arg_index, arg_context
@@ -1879,20 +1947,32 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             else:
                 raise ValueError(f"Unsupported parameter type: {param.dtype.type_code}")
         elif isinstance(param, spec.Shape):
-            return self.decode_param_shape(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_shape(
+                current_block, param, args, arg_index, arg_context
+            )
         elif isinstance(param, spec.Tensor):
-            return self.decode_param_tensor(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_tensor(
+                current_block, param, args, arg_index, arg_context
+            )
         elif isinstance(param, spec.Stream):
-            return self.decode_param_stream(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_stream(
+                current_block, param, args, arg_index, arg_context
+            )
         elif isinstance(param, spec.EnvStream):
             # decode of env stream is deferred after we go through all parameters
             return current_block
         elif isinstance(param, spec.DataPointer):
-            return self.decode_param_data_pointer(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_data_pointer(
+                current_block, param, args, arg_index, arg_context
+            )
         elif isinstance(param, spec.ConstNone):
-            return self.decode_param_const_none(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_const_none(
+                current_block, param, args, arg_index, arg_context
+            )
         elif isinstance(param, spec.TupleParam):
-            return self.decode_param_tuple(current_block, param, args, arg_index, arg_context)
+            return self.decode_param_tuple(
+                current_block, param, args, arg_index, arg_context
+            )
         else:
             raise ValueError(f"Unsupported parameter type: {type(param)}")
 
@@ -1983,13 +2063,23 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
 
             # decode parameters to populate the matched var binding
-            for arg_index, param in enumerate(params_list):
+            # Track the actual FFI argument index separately from parameter index
+            # since some parameters (like EnvStream) are not passed as FFI arguments
+            ffi_arg_index = 0
+            for param in params_list:
+                # Skip EnvStream parameters as they are not in the FFI args array
+                if isinstance(param, spec.EnvStream):
+                    continue
+
                 arg_context = ArgContext(
                     param_name=param.name,
-                    arg_index=arg_index,
+                    arg_index=ffi_arg_index,
                     tuple_indices=[],
                 )
-                current_block = self.decode_param(current_block, param, args, arg_index, arg_context)
+                current_block = self.decode_param(
+                    current_block, param, args, ffi_arg_index, arg_context
+                )
+                ffi_arg_index += 1
 
             with ir.InsertionPoint(current_block):
                 env_stream = self.find_env_stream(params_list)
@@ -2047,7 +2137,11 @@ def attach_ffi_func(
     builder.attach_ffi_func(symbol_name, params, call_provider, fn_display_name)
 
 
-def rename_tvm_ffi_function(module: ir.Module, old_name: str, new_name: str) -> None:
+def rename_tvm_ffi_function(
+    module: ir.Module,
+    old_name: str,
+    new_name: str,
+) -> None:
     """Rename the TVM FFI function in the module.
 
     Parameters

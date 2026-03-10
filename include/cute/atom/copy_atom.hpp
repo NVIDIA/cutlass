@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -406,7 +406,7 @@ template <class... Args,
           class LayoutCopy_TV,
           class Tiler>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_impl(Copy_Atom<Args...> const& atom,
                      LayoutCopy_TV      const&,
                      Tiler              const&)
@@ -420,7 +420,7 @@ make_tiled_copy_impl(Copy_Atom<Args...> const& atom,
 
 template <class... CArgs, class... MArgs>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_A(Copy_Atom<CArgs...> const& copy_atom,
                   TiledMMA<MArgs...>  const& mma)
 {
@@ -429,7 +429,7 @@ make_tiled_copy_A(Copy_Atom<CArgs...> const& copy_atom,
 
 template <class... CArgs, class... MArgs>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy_B(Copy_Atom<CArgs...> const& copy_atom,
                   TiledMMA<MArgs...>  const& mma)
 {
@@ -491,7 +491,7 @@ template <class... Args,
           class ThrLayout,
           class ValLayout = Layout<_1>>
 CUTE_HOST_DEVICE
-auto
+auto constexpr
 make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
                 ValLayout          const& val_layout = {})     // (m,n) -> val_idx

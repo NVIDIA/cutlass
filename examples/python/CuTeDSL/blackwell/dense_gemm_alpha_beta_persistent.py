@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -29,13 +29,11 @@
 import argparse
 from typing import Optional, Tuple, Type, Union
 
-import torch
 import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
@@ -1177,8 +1175,8 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
                         tSR_rC,
                     )
                     cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
+                        "async.shared",
+                        space="cta",
                     )
                     c_pipeline.consumer_release(c_pipeline_consumer_state)
 
@@ -1207,8 +1205,8 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
                     cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
+                        "async.shared",
+                        space="cta",
                     )
                     epilog_sync_barrier.arrive_and_wait()
 
@@ -1881,6 +1879,9 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
 
 
 def create_tensors(l, m, n, k, a_major, b_major, cd_major, ab_dtype, c_dtype, d_dtype):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     torch.manual_seed(1111)
 
     a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
@@ -1997,6 +1998,9 @@ def compare(
     beta,
     tolerance,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     # Copy gpu result back
     kernel_result = d_torch_gpu.cpu()
 
@@ -2062,6 +2066,8 @@ def run_dense_gemm(
 
     # Unpack parameters
     m, n, k, l = mnkl
+
+    import torch
 
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")

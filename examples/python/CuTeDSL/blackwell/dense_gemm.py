@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,6 @@ import argparse
 from typing import Optional, Type, Tuple, Union
 import cuda.bindings.driver as cuda
 
-import torch
 
 import cutlass
 import cutlass.cute as cute
@@ -38,7 +37,6 @@ import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
-import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 
 import cutlass.cute.testing as testing
@@ -215,7 +213,6 @@ class DenseGemmKernel:
 
         self.occupancy = 1
         self.threads_per_cta = 128
-        self.smem_capacity = utils.get_smem_capacity_in_bytes()
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -277,6 +274,8 @@ class DenseGemmKernel:
             )
         else:
             self.epi_tile = self.cta_tile_shape_mnk[:2]
+
+        self.smem_capacity = utils.get_smem_capacity_in_bytes()
 
         # Setup A/B/C stage count in shared memory
         self.num_acc_stage, self.num_ab_stage, self.num_c_stage = self._compute_stages(
@@ -787,11 +786,13 @@ class DenseGemmKernel:
                     # Async arrive AB buffer empty
                     consumer_handle.release()
 
-                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
-                peek_ab_empty_status = ab_producer.try_acquire()
+                if k_tile_idx + 1 < k_tile_cnt - prefetch_k_tile_cnt:
+                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+                    peek_ab_empty_status = ab_producer.try_acquire()
 
-                # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
-                peek_ab_full_status = ab_consumer.try_wait()
+                if k_tile_idx + 1 < k_tile_cnt and is_leader_cta:
+                    # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
+                    peek_ab_full_status = ab_consumer.try_wait()
 
             # Async arrive accumulator buffer full
             if is_leader_cta:
@@ -1029,8 +1030,8 @@ class DenseGemmKernel:
             cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
             # Fence and barrier to make sure shared memory store is visible to TMA store
             cute.arch.fence_proxy(
-                cute.arch.ProxyKind.async_shared,
-                space=cute.arch.SharedSpace.shared_cta,
+                "async.shared",
+                space="cta",
             )
             pipeline.sync(barrier_id=1)
 
@@ -1262,7 +1263,7 @@ class DenseGemmKernel:
         """
         acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
         tCtAcc_fake = tiled_mma.make_fragment_C(acc_shape)
-        return sm100_utils.get_num_tmem_alloc_cols(tCtAcc_fake)
+        return utils.get_num_tmem_alloc_cols(tCtAcc_fake)
 
     def is_valid_dtypes(
         self, ab_dtype: Type[cutlass.Numeric], c_dtype: Type[cutlass.Numeric]
@@ -1495,6 +1496,9 @@ class DenseGemmKernel:
 
 
 def create_tensors(l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     torch.manual_seed(1111)
 
     a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
@@ -1523,6 +1527,9 @@ def create_tensors(l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype):
 
 
 def compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     # Copy gpu result back
     kernel_result = c_torch_gpu.cpu()
 
@@ -1616,6 +1623,7 @@ def run(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
+    import torch
 
     # Unpack parameters
     m, n, k, l = mnkl
@@ -1655,6 +1663,8 @@ def run(
         compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance)
 
     def generate_tensors():
+        import cutlass.torch as cutlass_torch
+
         a_tensor, _ = cutlass_torch.cute_tensor_like(
             a_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
         )

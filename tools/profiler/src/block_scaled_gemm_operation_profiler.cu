@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1137,37 +1137,31 @@ bool BlockScaledGemmOperationProfiler::verify_cutlass(
     }
     
 
-    bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B);
-
-    // Update disposition to worst case verification outcome among all
-    // verification providers which are supported
-    bool is_any_verification_run_passed = false;
-    for (auto &m : results_.back().verification_map) {
-      if (m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
-        results_.back().disposition = m.second;
-        return true;
-      }
-      if (!is_any_verification_run_passed && m.second == Disposition::kPassed) {
-        is_any_verification_run_passed = true;
-      }
+    if (!verify_with_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B)) {
+      return false;
     }
 
-    if (is_any_verification_run_passed) {
-      results_.back().disposition = Disposition::kPassed;
+    // Block-scaled GEMM only supports host verification - check it directly
+    switch (results_.back().verification_map[library::Provider::kReferenceHost]) {
+      case Disposition::kFailed:
+        results_.back().disposition = Disposition::kFailed;
+        return true;
+      case Disposition::kIncorrect:
+        results_.back().disposition = Disposition::kIncorrect;
+        return true;
+      case Disposition::kPassed:
+        results_.back().disposition = Disposition::kPassed;
+        return true;
+      default:
+        break;
     }
   }
 
-  // if verification.required is set, then return success iff at least one ref-check was run
-  if (options.verification.required) {
-    bool did_any_verification_run = false;
-    for (auto provider : options.verification.providers) {
-      did_any_verification_run |= (Disposition::kNotRun != results_.back().verification_map[provider]);
-    }
-
-    if (not did_any_verification_run) {
-      results_.back().status = Status::kErrorNotSupported;
-      return false;
-    }
+  // if verification.required is set, check if host verification ran (the only supported provider)
+  if (options.verification.required &&
+      results_.back().verification_map[library::Provider::kReferenceHost] == Disposition::kNotRun) {
+    results_.back().status = Status::kErrorNotSupported;
+    return false;
   }
 
   // Return true means continue profiling
@@ -1664,3 +1658,4 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+

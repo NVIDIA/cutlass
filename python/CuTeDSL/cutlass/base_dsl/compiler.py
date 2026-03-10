@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -332,27 +332,13 @@ class KeepPTX(BooleanBasedFileDumpOption):
     option_name = "dump-ptx-path"
 
 
+
 class LinkLibraries(StringCompileOption):
     option_name = "link-libraries"
 
 
 class GPUArch(StringCompileOption):
     option_name = "cubin-chip"
-
-    def __init__(self, val):
-        if isinstance(val, str) and val.startswith("sm_110"):
-            val = val.replace("sm_110", "sm_101")
-        super().__init__(val)
-
-    @property
-    def value(self) -> bool:
-        return self._value
-
-    @value.setter
-    def value(self, value: bool):
-        if isinstance(value, str) and value.startswith("sm_110"):
-            value = value.replace("sm_110", "sm_101")
-        self._value = value
 
 
 class EnableTVMFFI(EmptyCompileOption):
@@ -427,9 +413,7 @@ class CompileOptions:
             else self.options[DumpDir].value
         )
         if self.options[KeepPTX].value:
-            self.options[KeepPTX].dump_path = os.path.join(
-                dump_dir, f"{function_name}"
-            )
+            self.options[KeepPTX].dump_path = os.path.join(dump_dir, f"{function_name}")
             self.options[KeepPTX].full_ptx_path = os.path.join(
                 dump_dir, f"{function_name}.{arch}.ptx"
             )
@@ -440,7 +424,6 @@ class CompileOptions:
             self.options[KeepCUBIN].full_cubin_path = os.path.join(
                 dump_dir, f"{function_name}.{arch}.cubin"
             )
-
     @property
     def generate_line_info(self) -> bool:
         return self.options[GenerateLineInfo].value
@@ -501,6 +484,7 @@ class CompileOptions:
 def _parse_compile_options_from_str(options: str) -> CompileOptions:
     """
     Parse the compile options from a string.
+    Deprecated and will be removed in the future.
     """
 
     def _get_compile_option_from_str(option_str: str):
@@ -622,18 +606,22 @@ class CompileCallable:
                 func,
             )
 
-        # If it's a wrapped function created by jit decorator, get the original function
-        if hasattr(func, "__wrapped__"):
+        func_name_prefix = getattr(func, "_name_prefix", None)
+        if func_name_prefix:
+            kwargs["_name_prefix"] = func_name_prefix
+
+        # If it's a wrapped function created by decorators, get the original function
+        while hasattr(func, "__wrapped__"):
             func = func.__wrapped__
 
-        # Lazy initialization of DSL object if has not been initialized
-        # Use local import to avoid circular import
         from .dsl import BaseDSL
 
         BaseDSL._lazy_initialize_dsl(func)
 
         if not hasattr(func, "_dsl_object"):
-            raise DSLRuntimeError("Function is not decorated with jit decorator.")
+            raise DSLRuntimeError(
+                f"Function {func} is not decorated with jit decorator."
+            )
 
         # process compile options, extract the options and remove them from the kwargs
         options = kwargs.pop("options", None)
@@ -645,8 +633,9 @@ class CompileCallable:
         else:
             compile_options = self._compile_options
         func._dsl_object.compile_options = compile_options
-        fcn_ptr = func._dsl_object._preprocess_and_execute(func)
 
-        if hasattr(func, "_decorator_frame"):
-            kwargs["_decorator_frame"] = func._decorator_frame
-        return func._dsl_object._func(fcn_ptr, *args, **kwargs)
+        # Preprocess the function if not already preprocessed
+        func._dsl_object._preprocess_and_replace_code(func)
+
+        # Run the function
+        return func._dsl_object._func(func, *args, **kwargs)

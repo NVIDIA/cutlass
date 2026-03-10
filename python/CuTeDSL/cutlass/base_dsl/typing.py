@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import ctypes
+from itertools import chain
 import numpy as np
 import operator
 from typing_extensions import deprecated
@@ -229,7 +230,7 @@ def get_c_pointers(obj):
     if hasattr(obj, "__c_pointers__"):
         return obj.__c_pointers__()
     elif isinstance(obj, (tuple, list)):
-        return sum((get_c_pointers(x) for x in obj), [])
+        return list(chain.from_iterable(get_c_pointers(x) for x in obj))
     elif isinstance(obj, set):
         raise DSLRuntimeError(
             "Sets are not supported in get_c_pointers to ensure order preservation",
@@ -1020,6 +1021,14 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             0 and 3 -> 0
             3 and 0 and ... -> 0
         """
+        # Fast path: Boolean & Boolean → single arith.andi i1 instruction.
+        # The general path promotes i1 operands to i32 via arith.extui, performs
+        # arith.select, then converts back to i1 via arith.cmpi ne — generating
+        # 6 unnecessary MLIR operations.  For Boolean inputs the semantics of
+        # `and` are identical to bitwise AND, so delegate directly to __and__.
+        if isinstance(self, Boolean) and isinstance(other, Boolean):
+            return self.__and__(other, loc=loc, ip=ip)
+
         is_true = self.__dsl_bool__(loc=loc, ip=ip)
 
         def and_op(lhs, rhs):

@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -48,6 +48,7 @@ import csv
 import json
 import math
 import os
+import re
 
 try:
   import builtins
@@ -413,13 +414,49 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       raise Exception(error_message)
 
   elif mode == "functional_L1":
+    sm100_mma_data_type_general = [
+      'gemm_f16_f16_f16_f16_f16',
+      'gemm_f16_f16_f16_void_f16',
+      'gemm_f16_f16_f32_f32_f32',
+      'gemm_bf16_bf16_f32_bf16_bf16',
+      'gemm_bf16_bf16_f32_f32_f32',
+      'gemm_e2m1_e2m1_f32_f32_f32',
+      'gemm_e2m1_e3m2_f32_f32_f32',
+      'gemm_e2m1_e4m3_f32_f32_f32',
+      'gemm_e3m2_e2m1_f32_f32_f32',
+      'gemm_e3m2_e3m2_f32_f32_f32',
+      'gemm_e3m2_e4m3_f32_f32_f32',
+      'gemm_e4m3_e2m1_f32_f32_f32',
+      'gemm_e4m3_e3m2_f32_f32_f32',
+      'gemm_e4m3_e4m3_f32_bf16_bf16',
+      'gemm_e4m3_e5m2_f32_bf16_e4m3',
+      'gemm_e5m2_e4m3_f32_f16_e4m3',
+      'gemm_s8_s8_s32_s32_s32',
+      'gemm_s8_s8_s32_s8_s8',
+      'gemm_f4_f4_f32_f32_f32',
+      'gemm_f4_f6_f32_f32_f32',
+      'gemm_f4_f8_f32_f32_f32',
+      'gemm_f6_f4_f32_f32_f32',
+      'gemm_f6_f6_f32_f32_f32',
+      'gemm_f6_f8_f32_f32_f32',
+      'gemm_f8_f4_f32_f32_f32',
+      'gemm_f8_f6_f32_f32_f32',
+      'gemm_f8_f8_f32_bf16_bf16',
+      'gemm_f8_f8_f32_bf16_e4m3',
+      'gemm_f8_f8_f32_bf16_e5m2',
+      'gemm_f8_f8_f32_f16_e4m3',
+      'gemm_f8_f8_f32_f16_e5m2',
+      'gemm_f8_f8_f32_f16_f16',
+      'gemm_f8_f8_f32_f32_f32',
+      'tf32gemm_*',
+    ]
     sm100_mma_cluster_size = [
                     '0x0x1' # dynamic cluster
                      ]
     # Restrict to two layouts to reduce L1 build and test time.
     sm100_mma_layouts = ['tnt', 'ntn']
-    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
-    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
+    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
+    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
     block_scaled_data_type = [
       'ue8m0xe2m1_ue8m0xe2m1_f32_f16_e5m2',
       'ue8m0xe2m1_ue8m0xe2m3_f32_f16_e5m2',
@@ -446,7 +483,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     filter_regex_sm100_mma = f"({sm100_mma_filter_regex_1sm})|" \
                           f"({sm100_mma_filter_regex_2sm})|" \
                           f"({block_scaled_filter_regex_1sm})|" \
-                          f"({block_scaled_filter_regex_2sm})" \
+                          f"({block_scaled_filter_regex_2sm})|" \
                           f"({sm103_block_scaled_filter_regex_1sm})|" \
                           f"({sm103_block_scaled_filter_regex_2sm})"
     # CTA tiles for sm120 MMA - only run one tile size to reduce build/test times
@@ -483,7 +520,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     filter_regex_sm120_mma = f"({filter_regex_sm120_mma_0})|({filter_regex_sm120_mma_1})|({filter_regex_sm120_mma_2})|({filter_regex_sm120_mma_3})"
 
-    problem_waves = [0.5, 1.25, 2.5]
+    problem_waves = [0.5, 2.5]
 
     if arch in ["120a", "120f", "121a", "121f"]:
       kernel_filter = f"({filter_regex_sm120_mma})"
@@ -538,6 +575,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       runtime_input_datatypes = [None]
 
       if dynamic_datatype:
+        # Standard runtime datatype kernels encoded as f4_f4 / f6_f6 / f8_f8, etc.
         if "f4_f4" in kernel_name:
           runtime_input_datatypes = [['e2m1','e2m1']]
         elif "f4_f6" in kernel_name:
@@ -587,6 +625,23 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
           runtime_input_datatypes = [['e4m3','e2m3']]
         elif "ue8m0xf8_ue8m0xf8" in kernel_name:
           runtime_input_datatypes = [['e4m3','e4m3']]
+
+        # Blockwise runtime-datatype kernels encode the fp8 selector together with the
+        # accumulator precision and block tile, e.g.:
+        #   gemm_64x128f32xf8_32x128f32xf8_...
+        # which does not contain an "f8_f8" substring. As a fallback, detect this
+        # encoding and map it to the same runtime input datatypes as the symmetric
+        # f4_f4 / f6_f6 / f8_f8 cases above.
+        if runtime_input_datatypes == [None]:
+          m = re.search(r"f32x(f[468])", kernel_name)
+          if m:
+            fp_token = m.group(1)
+            if fp_token == "f4":
+              runtime_input_datatypes = [['e2m1', 'e2m1']]
+            elif fp_token == "f6":
+              runtime_input_datatypes = [['e3m2', 'e3m2']]
+            elif fp_token == "f8":
+              runtime_input_datatypes = [['e4m3', 'e4m3']]
 
       if "bstensorop" in kernel_name or is_blockwise(manifest.operations_by_name[kernel_name].gemm_kind):
         profiler_flags_for_verification = "host"

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,6 @@
 import argparse
 from typing import Tuple, Type
 
-import torch
 import cuda.bindings.driver as cuda
 
 import cutlass
@@ -37,7 +36,6 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
-import cutlass.torch as cutlass_torch
 import cutlass.utils.hopper_helpers as sm90_utils
 
 """
@@ -49,15 +47,15 @@ using CUTE DSL.
 
 This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
-    - Utilizes non-Tensor Core MMA for matrix multiply-accumulate (MMA) operations
+    - Utilizes Blackwell MMA for matrix multiply-accumulate (MMA) operations
     - Supports multi-stage pipeline to overlap computation and memory access
 
 This GEMM works as follows:
 1. Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. Perform matrix multiply-accumulate (MMA) operations using non-Tensor Core MMA instruction.
+2. Perform matrix multiply-accumulate (MMA) operations using Blackwell MMA instruction.
 3. Store results from registers (RMEM) to shared memory (SMEM), then to global memory (GMEM) with TMA operations.
 
-Non-Tensor Core MMA instructions operate as follows:
+Blackwell MMA instructions operate as follows:
 - Read matrix A from registers
 - Read matrix B from registers
 - Perform MMA operation and store the result in Accumulator(register)
@@ -114,9 +112,7 @@ def parse_comma_separated_ints(s: str):
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Example of MxNxKxL GEMM on Blackwell Geforce."
-    )
+    parser = argparse.ArgumentParser(description="Example of MxNxKxL GEMM on Blackwell Geforce.")
 
     parser.add_argument(
         "--mnkl",
@@ -649,7 +645,7 @@ class Sm120GemmKernel:
 
         # MMA warp group
         if warp_idx < self.num_mma_warps:
-            cute.arch.warpgroup_reg_alloc(self.mma_register_requirement)
+            cute.arch.setmaxregister_increase(self.mma_register_requirement)
 
             num_k_blocks = cute.size(tCrA, mode=[2])
 
@@ -874,8 +870,8 @@ class Sm120GemmKernel:
                     )
 
                     cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
+                        "async.shared",
+                        space="cta",
                     )
                     # barrier for sync
                     self.epilog_sync_barrier.arrive_and_wait()
@@ -901,7 +897,7 @@ class Sm120GemmKernel:
         # End of MMA warp group
         # Start of DMA warp group
         elif warp_idx == self.num_mma_warps:
-            cute.arch.warpgroup_reg_dealloc(self.load_register_requirement)
+            cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
             while work_tile.is_valid_tile:
                 tile_coord_mnl = work_tile.tile_idx
@@ -1179,6 +1175,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     print("Running Blackwell Geforce Dense GEMM with:")
     print(f"mnkl: {mnkl}")
     print(

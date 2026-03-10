@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -212,7 +212,8 @@ struct CollectiveMma<
 
   static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
-  using NumSplitsM = cute::C<get<0>(TileShape_{}) / 128>;
+  // For TileShapeM < 128, NumSplitsM should be 1
+  using NumSplitsM = cute::conditional_t<get<0>(TileShape_{}) < _128{}, _1, cute::C<get<0>(TileShape_{}) / 128>>;
   static_assert(NumSplitsM{} == 1 || NumSplitsM{} == 2);
 
   struct SharedStorage {

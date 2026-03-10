@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -79,34 +79,50 @@ class TensorMapManager:
     # init tensormap pointed by dst_ptr with the one inside copy_atom.
     # dst_ptr should be pointing to a global memory location or a smem location
     # warp_id specifies which warp to perform the initialization
+    @dsl_user_op
     @cute.jit
     def init_tensormap_from_atom(
-        self, copy_atom: cute.CopyAtom, dst_ptr: cute.Pointer, warp_id: int
+        self,
+        copy_atom: cute.CopyAtom,
+        dst_ptr: cute.Pointer,
+        warp_id: int,
+        *,
+        loc=None,
+        ip=None,
     ) -> None:
-        warp_idx = cute.arch.warp_idx()
-        warp_idx = cute.arch.make_warp_uniform(warp_idx)
+        warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
+        warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
         if warp_idx == warp_id:
-            with cute.arch.elect_one():
-                cute.nvgpu.cpasync.copy_tensormap(copy_atom, dst_ptr)
-        cute.arch.sync_warp()
+            with cute.arch.elect_one(loc=loc, ip=ip):
+                cute.nvgpu.cpasync.copy_tensormap(copy_atom, dst_ptr, loc=loc, ip=ip)
+        cute.arch.sync_warp(loc=loc, ip=ip)
         return
 
     # Perform a fence operation to ensure previous `init_tensormap_from_atom` calls have been completed
+    @dsl_user_op
     def fence_tensormap_initialization(
         self,
+        *,
+        loc=None,
+        ip=None,
     ) -> None:
         if self.tensormap_update_mode == TensorMapUpdateMode.GMEM:
-            cute.arch.fence_acq_rel_cta()
+            cute.arch.fence_acq_rel_cta(loc=loc, ip=ip)
         return
 
     # Perform a fence operation to ensure previous `update_tensormap` calls have been completed
+    @dsl_user_op
     def fence_tensormap_update(
         self,
         tensormap_ptr: cute.Pointer,
+        *,
+        loc=None,
+        ip=None,
     ) -> None:
-        cute.nvgpu.cpasync.fence_tma_desc_acquire(tensormap_ptr)
+        cute.nvgpu.cpasync.fence_tma_desc_acquire(tensormap_ptr, loc=loc, ip=ip)
         return
 
+    @dsl_user_op
     @cute.jit
     def update_tensormap(
         self,
@@ -115,8 +131,13 @@ class TensorMapManager:
         tensormap_gmem_ptr: Tuple[cute.Pointer, ...],
         warp_id: int,
         tensormap_smem_ptr: Tuple[cute.Pointer, ...],
+        *,
+        loc=None,
+        ip=None,
     ) -> None:
-        warp_idx = cute.arch.make_warp_uniform(cute.arch.warp_idx())
+        warp_idx = cute.arch.make_warp_uniform(
+            cute.arch.warp_idx(loc=loc, ip=ip), loc=loc, ip=ip
+        )
         # updates before touching tensormap in global memory
         if warp_idx == warp_id:
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
@@ -124,23 +145,25 @@ class TensorMapManager:
                     tma_copy_atom, tensor_gmem, tensormap_smem_ptr
                 ):
                     cute.nvgpu.cpasync.update_tma_descriptor(
-                        copy_atom, tensor, smem_ptr
+                        copy_atom, tensor, smem_ptr, loc=loc, ip=ip
                     )
             # wait until it's safe to update tensormap in global memory
-            with cute.arch.elect_one():
-                cute.arch.cp_async_bulk_commit_group()
-                cute.arch.cp_async_bulk_wait_group(0, read=True)
-            cute.arch.sync_warp()
+            with cute.arch.elect_one(loc=loc, ip=ip):
+                cute.arch.cp_async_bulk_commit_group(loc=loc, ip=ip)
+                cute.arch.cp_async_bulk_wait_group(0, read=True, loc=loc, ip=ip)
+            cute.arch.sync_warp(loc=loc, ip=ip)
             # updates to tensormap in global memory
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
                 for gmem_ptr, smem_ptr in zip(tensormap_gmem_ptr, tensormap_smem_ptr):
-                    cute.nvgpu.cpasync.cp_fence_tma_desc_release(gmem_ptr, smem_ptr)
+                    cute.nvgpu.cpasync.cp_fence_tma_desc_release(
+                        gmem_ptr, smem_ptr, loc=loc, ip=ip
+                    )
             else:
                 for copy_atom, tensor, gmem_ptr in zip(
                     tma_copy_atom, tensor_gmem, tensormap_gmem_ptr
                 ):
                     cute.nvgpu.cpasync.update_tma_descriptor(
-                        copy_atom, tensor, gmem_ptr
+                        copy_atom, tensor, gmem_ptr, loc=loc, ip=ip
                     )
-                cute.arch.sync_warp()
-                cute.nvgpu.cpasync.fence_tma_desc_release()
+                cute.arch.sync_warp(loc=loc, ip=ip)
+                cute.nvgpu.cpasync.fence_tma_desc_release(loc=loc, ip=ip)

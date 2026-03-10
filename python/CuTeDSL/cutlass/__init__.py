@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -12,6 +12,18 @@
 from ._mlir._mlir_libs import _cutlass_ir
 
 _cutlass_ir.populate(_cutlass_ir)
+
+__version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
+# Monkey patch CUDA version query function
+from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
+    get_cuda_version as _get_cuda_version,
+)
+from .base_dsl import common as _common
+
+_common._get_cuda_version = _get_cuda_version
+
+# Import CUDA version from base_dsl
+from .base_dsl.version_info import CUDA_VERSION
 
 from .cutlass_dsl import (
     Constexpr,
@@ -44,6 +56,8 @@ from .cutlass_dsl import (
     # Construction utilities for user-defined classes
     extract_mlir_values,
     new_from_mlir_values,
+    DSLCudaVersion,
+    target_version,
 )
 
 from .cute.typing import *
@@ -61,4 +75,5 @@ register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
 
-CACHE_FILE = "compiled_cache.db"
+# Jax Framework support
+from . import jax as jax

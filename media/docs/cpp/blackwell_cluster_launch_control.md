@@ -122,7 +122,7 @@ The CLC pipeline has a depth of 3 to overlap the CLC operations of multiple wave
 
 ### Copyright
 
-Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

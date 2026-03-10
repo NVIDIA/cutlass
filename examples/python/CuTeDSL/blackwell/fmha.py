@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -33,16 +33,14 @@ import sys
 import time
 from typing import Type, Tuple, Union, Optional
 
-import torch
-import torch.nn.functional as F
 import cuda.bindings.driver as cuda
+import torch
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.nvgpu.tcgen05 as tcgen05
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
-import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.cute.testing as testing
 from cutlass.cute.runtime import from_dlpack
@@ -174,8 +172,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         self.load_warp_id = 13
         self.epilogue_warp_id = 14
         self.empty_warp_id = 15
-        SM100_TMEM_CAPACITY_COLUMNS = 512
-        self.tmem_alloc_cols = SM100_TMEM_CAPACITY_COLUMNS
+        self.tmem_alloc_cols = cute.arch.get_max_tmem_alloc_cols("sm_100")
 
         self.threads_per_warp = 32
         self.threads_per_cta = self.threads_per_warp * len(
@@ -802,13 +799,13 @@ class BlackwellFusedMultiHeadAttentionForward:
         #  EMPTY
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.empty_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
 
         # ///////////////////////////////////////////////////////////////////////////////
         #  LOAD
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.load_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
 
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -997,7 +994,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         #  MMA
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
 
             # Alloc tmem buffer
             tmem_alloc_cols = Int32(self.tmem_alloc_cols)
@@ -1271,7 +1268,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         #  Epilogue
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx == self.epilogue_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_other)
+            cute.arch.setmaxregister_decrease(self.num_regs_other)
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -1354,7 +1351,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx < self.softmax1_warp_ids[0]:
             # increase register after decreasing
-            cute.arch.warpgroup_reg_alloc(self.num_regs_softmax)
+            cute.arch.setmaxregister_increase(self.num_regs_softmax)
 
             self.softmax(
                 stage=0,
@@ -1384,7 +1381,7 @@ class BlackwellFusedMultiHeadAttentionForward:
             and warp_idx >= self.softmax1_warp_ids[0]
         ):
             # increase register after decreasing
-            cute.arch.warpgroup_reg_alloc(self.num_regs_softmax)
+            cute.arch.setmaxregister_increase(self.num_regs_softmax)
 
             self.softmax(
                 stage=1,
@@ -1410,7 +1407,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         #  Correction
         # ///////////////////////////////////////////////////////////////////////////////
         if warp_idx >= self.correction_warp_ids[0] and warp_idx < self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_correction)
+            cute.arch.setmaxregister_decrease(self.num_regs_correction)
 
             cS = cute.make_identity_tensor((self.qk_mma_tiler[0], self.qk_mma_tiler[1]))
             tScS = qk_thr_mma.partition_C(cS)
@@ -1637,6 +1634,8 @@ class BlackwellFusedMultiHeadAttentionForward:
         :type atom_args: tuple
         :param tensor_args: Tuple containing softmax related tensors
         :type tensor_args: tuple
+        :param fused_mask: Compute trip counts and apply masking for attention blocks
+        :type fused_mask: fmha_utils.FusedMask
         :return: Updated state values (row_max, row_sum, and pipeline related arguments)
         :rtype: tuple
         """
@@ -1729,20 +1728,16 @@ class BlackwellFusedMultiHeadAttentionForward:
             tTMEM_STORErS_x4_e, cute.make_layout(frg_tile)
         )
         for j in range(frg_cnt):
-            for k in range(0, cute.size(tTMEM_LOADrS_frg, mode=[0]), 2):
-                tTMEM_LOADrS_frg[k, j], tTMEM_LOADrS_frg[k + 1, j] = (
-                    cute.arch.fma_packed_f32x2(
-                        (tTMEM_LOADrS_frg[k, j], tTMEM_LOADrS_frg[k + 1, j]),
-                        (scale, scale),
-                        (minus_row_max_scale, minus_row_max_scale),
-                    )
+            for k in cutlass.range(
+                cute.size(tTMEM_LOADrS_frg, mode=[0]), vectorize=True
+            ):
+                tTMEM_LOADrS_frg[k, j] = (
+                    tTMEM_LOADrS_frg[k, j] * scale + minus_row_max_scale
                 )
                 tTMEM_LOADrS_frg[k, j] = cute.math.exp2(
                     tTMEM_LOADrS_frg[k, j], fastmath=True
                 )
-                tTMEM_LOADrS_frg[k + 1, j] = cute.math.exp2(
-                    tTMEM_LOADrS_frg[k + 1, j], fastmath=True
-                )
+
             s_vec = tTMEM_LOADrS_frg[None, j].load()
             tTMEM_STORErS_x4_e_frg[None, j].store(s_vec.to(self.q_dtype))
         # Sequence barrier arrive
@@ -1859,6 +1854,8 @@ class BlackwellFusedMultiHeadAttentionForward:
         :type s0_s1_sequence_pipeline: pipeline.PipelineAsync
         :param tile_sched_params: Parameters for tile scheduling
         :type tile_sched_params: fmha_utils.FmhaStaticTileSchedulerParams
+        :param fused_mask: Compute trip counts and apply masking for attention blocks
+        :type fused_mask: fmha_utils.FusedMask
         """
         tidx, _, _ = cute.arch.thread_idx()
         thread_idx = tidx % (
@@ -2204,11 +2201,8 @@ class BlackwellFusedMultiHeadAttentionForward:
             )
 
             cute.copy(tiled_tmem_load, tTMEM_LOADtO_i, tTMrO_i)
-            for j in range(0, cute.size(tTMrO_i), 2):
-                tTMrO_i[j], tTMrO_i[j + 1] = cute.arch.mul_packed_f32x2(
-                    (tTMrO_i[j], tTMrO_i[j + 1]),
-                    (scale, scale),
-                )
+            for j in cutlass.range(cute.size(tTMrO_i), vectorize=True):
+                tTMrO_i[j] = tTMrO_i[j] * scale
             cute.copy(tiled_tmem_store, tTMrO_i, tTMEM_STOREtO_i)
 
     @cute.jit
@@ -2310,11 +2304,8 @@ class BlackwellFusedMultiHeadAttentionForward:
                 tTMEM_LOADoO[None, 0, 0, i].shape, self.pv_acc_dtype
             )
             cute.copy(tiled_tmem_load, tTMEM_LOADtO_i, tTMrO)
-            for j in range(0, cute.size(tTMrO), 2):
-                tTMrO[j], tTMrO[j + 1] = cute.arch.mul_packed_f32x2(
-                    (tTMrO[j], tTMrO[j + 1]),
-                    (scale, scale),
-                )
+            for j in range(cute.size(tTMrO), vectorize=True):
+                tTMrO[j] = tTMrO[j] * scale
             tSMrO = cute.make_rmem_tensor(tTMrO.shape, self.o_dtype)
             o_vec = tTMrO.load()
             tSMrO.store(o_vec.to(self.o_dtype))
@@ -2328,8 +2319,8 @@ class BlackwellFusedMultiHeadAttentionForward:
 
         # fence view async shared
         cute.arch.fence_proxy(
-            cute.arch.ProxyKind.async_shared,
-            space=cute.arch.SharedSpace.shared_cta,
+            "async.shared",
+            space="cta",
         )
 
 
@@ -2445,6 +2436,7 @@ def run(
     print(f"  iterations: {iterations}")
     print(f"  skip_ref_check: {skip_ref_check}")
     print(f"  use_cold_l2: {use_cold_l2}")
+    import cutlass.torch as cutlass_torch
 
     # Unpack parameters
     b, s_q, h_q, d = q_shape
@@ -2953,7 +2945,7 @@ def run(
         else:
             lse_tensor = None
 
-        return testing.JitArguments(
+        args = testing.JitArguments(
             q_tensor_workspace.iterator,
             k_tensor_workspace.iterator,
             v_tensor_workspace.iterator,
@@ -2973,6 +2965,15 @@ def run(
             ),
             current_stream,
         )
+        args.add_to_scope(
+            [
+                q_tensor_workspace,
+                k_tensor_workspace,
+                v_tensor_workspace,
+                o_tensor_workspace,
+            ]
+        )
+        return args
 
     workspace_count = 1
     if use_cold_l2:

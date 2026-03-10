@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 """Kernel specification classes for TVM-FFI function parameters."""
+
 from abc import ABC
 
 from collections.abc import Sequence
@@ -19,6 +20,7 @@ try:
     import tvm_ffi
 except ModuleNotFoundError:
     pass
+
 
 class DefaultConfig:
     """Default configuration with context manager support."""
@@ -105,7 +107,7 @@ class Var(Param):
         dtype: Union[str, "tvm_ffi.dtype"],
         *,
         divisibility: Optional[int] = None,
-    ) ->  None:
+    ) -> None:
         """Initialize a Var parameter.
 
         Parameters
@@ -138,7 +140,8 @@ class Shape(Param):
 
     def __init__(
         self,
-        name: str, shape: list[Union[int, Var]],
+        name: str,
+        shape: list[Union[int, Var]],
     ) -> None:
         """Initialize a Shape parameter.
 
@@ -220,7 +223,9 @@ class Tensor(Param):
         self.data = Var(name + ".data", tvm_ffi.dtype("handle"))
         self.shape: list[Union[int, Var]] = list(shape)
         self.dtype = tvm_ffi.dtype(dtype)
-        self.strides: Optional[list[Var]] = list(strides) if strides is not None else None
+        self.strides: Optional[list[Var]] = (
+            list(strides) if strides is not None else None
+        )
         self.data_alignment = data_alignment
 
         # Use default device type if none specified
@@ -319,6 +324,7 @@ class ConstNone(Param):
     name : str
         The parameter name.
     """
+
     name: str
 
     def __init__(self, name: str) -> None:
@@ -340,6 +346,7 @@ class TupleParam(Param):
     name : str
         The parameter name.
     """
+
     name: str
     params: list[Param]
 
@@ -471,6 +478,7 @@ def create_map_tensor_dtype_f4x2_to_f4_spec(f4_tensor_spec: Tensor) -> Tensor:
             if isinstance(stride, int) and stride == 1:
                 return i
         raise ValueError("Cannot find dimension with stride=1")
+
     stride_one_index = find_stride_one_index()
 
     def divisibility_divide_by_2(value: Var) -> Optional[int]:
@@ -487,7 +495,9 @@ def create_map_tensor_dtype_f4x2_to_f4_spec(f4_tensor_spec: Tensor) -> Tensor:
                     raise ValueError(f"Dimension {index} with stride=1 must be even")
                 return value // 2
             # create a new var with the same name and dtype
-            return Var(value.name, value.dtype, divisibility=divisibility_divide_by_2(value))
+            return Var(
+                value.name, value.dtype, divisibility=divisibility_divide_by_2(value)
+            )
         return value
 
     def map_stride(index: int, value: Union[int, Var]) -> Union[int, Var]:
@@ -497,7 +507,9 @@ def create_map_tensor_dtype_f4x2_to_f4_spec(f4_tensor_spec: Tensor) -> Tensor:
                     raise ValueError(f"Dimension {index} with stride != 1 must be even")
                 return value // 2
             # create a new var with the same name and dtype
-            return Var(value.name, value.dtype, divisibility=divisibility_divide_by_2(value))
+            return Var(
+                value.name, value.dtype, divisibility=divisibility_divide_by_2(value)
+            )
         return value
 
     new_shape = [map_shape(i, x) for i, x in enumerate(f4_tensor_spec.shape)]

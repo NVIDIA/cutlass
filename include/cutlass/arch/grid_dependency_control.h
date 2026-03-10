@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -62,6 +62,8 @@
         (defined(__CUDA_ARCH_FEAT_SM100_ALL) || CUDA_ARCH_FAMILY(1000))) || \
      (__CUDA_ARCH__ == 1010 &&\
         (defined(__CUDA_ARCH_FEAT_SM101_ALL) || CUDA_ARCH_FAMILY(1010))) || \
+     (__CUDA_ARCH__ == 1100 &&\
+        (defined(__CUDA_ARCH_FEAT_SM110_ALL) || CUDA_ARCH_FAMILY(1100))) || \
      (__CUDA_ARCH__ == 1030 &&\
         (defined(__CUDA_ARCH_FEAT_SM103_ALL) || CUDA_ARCH_FAMILY(1030))) || \
      (__CUDA_ARCH__ == 1200 &&\

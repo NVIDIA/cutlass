@@ -78,7 +78,7 @@ These classes help developers orchestrate a pipeline
 of asynchronous producer and consumer threads,
 without needing to worry about lower-level hardware details.
 These classes serve a similar function as the various
-[pipeline abstractions](https://nvidia.github.io/libcudacxx/extended_api/synchronization_primitives/pipeline.html)
+[pipeline abstractions](https://nvidia.github.io/cccl/libcudacxx/extended_api/synchronization_primitives/pipeline.html)
 in libcu++.
 
 #### Pipeline methods 
@@ -179,7 +179,7 @@ for more details.
 
 # Copyright
 
-Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

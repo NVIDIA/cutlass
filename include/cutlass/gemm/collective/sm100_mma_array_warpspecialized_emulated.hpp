@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -180,6 +180,11 @@ struct CollectiveMma<
   // Thread Counts
   static constexpr uint32_t NumTransformationThreads = 128;
   static constexpr uint32_t NumAccumThreads = 128;
+
+  // Register reconfiguration
+  static constexpr uint32_t GenericRegisterRequirement = 64;
+  static constexpr uint32_t TransformRegisterRequirement = 184;
+  static constexpr uint32_t AccumRegisterRequirement = 256;
 
   // Get the Algorithm parameters
   constexpr static int NumComputeMtxs = 3;

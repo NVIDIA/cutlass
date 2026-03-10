@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@ def main():
     a_jax = jnp.arange(10, dtype=jnp.float32)
     b_jax = jnp.zeros(10, dtype=jnp.float32)
     lib_path = "./build/add_one.so"
-    aot_mod = cute.runtime.load_module(lib_path)
+    aot_mod = cute.runtime.load_module(lib_path, enable_tvm_ffi=True)
     jax_tvm_ffi.register_ffi_target("add_one_cute", aot_mod.add_one, platform="gpu")
     b_jax = jax.ffi.ffi_call(
         "add_one_cute",

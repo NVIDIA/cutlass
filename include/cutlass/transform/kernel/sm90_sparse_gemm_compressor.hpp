@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -494,8 +494,7 @@ private:
 
     // * Output Cta Tensor S to G
     if (GemmM_within_Cta > 0 && GemmK_within_Cta > 0) {
-      constexpr int MaxVecBits = 128; // STG.128
-      cute::cooperative_copy<MaxThreadsPerBlock, MaxVecBits>(threadIdx_X, cEsE, cEgE);
+      cute::cooperative_copy<MaxThreadsPerBlock>(threadIdx_X, cEsE, cEgE);
     }
 
     if (GemmMAlignedAC_within_Cta == TensorEAtomM{} && GemmKAlignedAC_within_Cta == TensorEAtomK{}) {
@@ -577,9 +576,9 @@ private:
     // Row Major
     if constexpr (IsRowMajor) {
       CUTE_UNROLL
-      for (int iter_row_blk = 0; iter_row_blk < cutlass::ceil_div(shape<0>(dSrc), ThreadShapeRows * ValueShapeRows); ++iter_row_blk) {
+      for (int iter_row_blk = 0; iter_row_blk < cutlass::ceil_div(valid_rows, ThreadShapeRows * ValueShapeRows); ++iter_row_blk) {
         CUTE_UNROLL
-        for (int col_chunk_i = 0; col_chunk_i < cutlass::ceil_div(shape<1>(dSrc) , ThreadShapeCols * ValueShapeCols); ++col_chunk_i) {
+        for (int col_chunk_i = 0; col_chunk_i < cutlass::ceil_div(valid_cols, ThreadShapeCols * ValueShapeCols); ++col_chunk_i) {
           CUTE_UNROLL
           for (int iter_row_thr = 0; iter_row_thr < ValueShapeRows; ++iter_row_thr) {
             CUTE_UNROLL
@@ -587,7 +586,9 @@ private:
               const int row_i = (iter_row_blk * ThreadShapeRows + threadIdx_X_row) * ValueShapeRows + iter_row_thr;
               const int col_i = (col_chunk_i * ThreadShapeCols + threadIdx_X_col) * ValueShapeCols + iter_col_thr;
               if constexpr ( (not pred) and (not IsQmmaF6) ) {
-                dDst(row_i, col_i) = dSrc(row_i, col_i);
+                if (row_i < valid_rows && col_i < valid_cols) {
+                  dDst(row_i, col_i) = dSrc(row_i, col_i);
+                }
               }
               else {
                 if (row_i < valid_rows && col_i < valid_cols) {
@@ -602,9 +603,9 @@ private:
     // Col Major
     else {
       CUTE_UNROLL
-      for (int col_chunk_i = 0; col_chunk_i < cutlass::ceil_div(shape<1>(dSrc) , ThreadShapeCols * ValueShapeCols); ++col_chunk_i) {
+      for (int col_chunk_i = 0; col_chunk_i < cutlass::ceil_div(valid_cols, ThreadShapeCols * ValueShapeCols); ++col_chunk_i) {
         CUTE_UNROLL
-        for (int iter_row_blk = 0; iter_row_blk < cutlass::ceil_div(shape<0>(dSrc), ThreadShapeRows * ValueShapeRows); ++iter_row_blk) {
+        for (int iter_row_blk = 0; iter_row_blk < cutlass::ceil_div(valid_rows, ThreadShapeRows * ValueShapeRows); ++iter_row_blk) {
           CUTE_UNROLL
           for (int iter_col_thr = 0; iter_col_thr < ValueShapeCols; ++iter_col_thr) {
             CUTE_UNROLL
@@ -612,7 +613,9 @@ private:
               const int row_i = (iter_row_blk * ThreadShapeRows + threadIdx_X_row) * ValueShapeRows + iter_row_thr;
               const int col_i = (col_chunk_i * ThreadShapeCols + threadIdx_X_col) * ValueShapeCols + iter_col_thr;
               if constexpr ( (not pred) and (not IsQmmaF6) ) {
-                dDst(row_i, col_i) = dSrc(row_i, col_i);
+                if (row_i < valid_rows && col_i < valid_cols) {
+                  dDst(row_i, col_i) = dSrc(row_i, col_i);
+                }
               }
               else {
                 if (row_i < valid_rows && col_i < valid_cols) {

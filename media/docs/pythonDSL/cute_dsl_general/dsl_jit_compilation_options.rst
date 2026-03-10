@@ -73,7 +73,7 @@ You can use the following code to specify compilation options:
 
    jit_executor_with_opt_level_2 = cute.compile(add, 1, 2, options="--opt-level 2")
    jit_executor_with_opt_level_1 = cute.compile(add, 1, 2, options="--opt-level 1")
-   jit_executor_with_enable_device_assertions = cute.compile(add, 1, 2, options="--enable-assertions")
+   jit_executor_with_enable_assertions = cute.compile(add, 1, 2, options="--enable-assertions")
    jit_executor_with_keep_cubin = cute.compile(add, 1, 2, options="--keep-cubin")
    jit_executor_with_keep_ptx = cute.compile(add, 1, 2, options="--keep-ptx")
    jit_executor_with_ptxas_options = cute.compile(add, 1, 2, options="--ptxas-options '--opt-level=2'")
@@ -100,7 +100,7 @@ Notebly, boolean options are automatically converted to True instances of the op
 
    jit_executor_with_opt_level_2 = cute.compile[OptLevel(2)](add, 1, 2)
    jit_executor_with_opt_level_1 = cute.compile[OptLevel(1)](add, 1, 2)
-   jit_executor_with_enable_device_assertions = cute.compile[EnableAssertions](add, 1, 2)
+   jit_executor_with_enable_assertions = cute.compile[EnableAssertions](add, 1, 2)
    jit_executor_with_keep_cubin = cute.compile[KeepCUBIN](add, 1, 2)
    jit_executor_with_keep_ptx = cute.compile[KeepPTX](add, 1, 2)
    jit_executor_with_ptxas_options = cute.compile[PtxasOptions("--opt-level=2")](add, 1, 2)

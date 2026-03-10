@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -93,6 +93,14 @@ class TensorDescriptor:
         if self.is_in_device:
             return get_tensor_desc_device_id(self._capsule)
         return -1
+
+    @property
+    def pointer(self):
+        """
+        Returns the pointer to the tensor data. This is either the device pointer or the data pointer if the data is not
+        in a device.
+        """
+        return self.device_pointer if self.device_pointer is not None else self.data_ptr
 
     @property
     def element_type(self):

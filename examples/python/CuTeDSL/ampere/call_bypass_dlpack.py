@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,6 @@
 import sys
 import os
 from typing import Tuple
-import torch
 
 import cutlass
 import cutlass.cute as cute
@@ -125,6 +124,8 @@ def tensor_op_gemm_wrapper(
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
+    import torch
+
     print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
 

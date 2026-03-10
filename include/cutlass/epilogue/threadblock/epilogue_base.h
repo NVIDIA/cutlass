@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,9 @@
 #include <type_traits>
 #include <utility>
 #endif
+#ifndef __QNX__
 #include CUDA_STD_HEADER(cassert)
+#endif
 
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"

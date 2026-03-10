@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -972,10 +972,16 @@ int main_single(int argc, char const **args) {
     return -1;
   }
 
-  if (__CUDACC_VER_MAJOR__ < 12 || props.major != 10) {
-    std::cout
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)) {
+    std::cerr << "This example requires CUDA 12.8 or newer." << std::endl;
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    return 0;
+  }
+
+  if (props.major != 10) {
+    std::cerr
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
-      << "(compute capability major 10) and CUDA 12.8 or greater.\n";
+      << "(compute capability 100a)." << std::endl;
     return 0;
   }
 

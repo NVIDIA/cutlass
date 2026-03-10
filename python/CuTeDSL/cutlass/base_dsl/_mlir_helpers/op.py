@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -17,6 +17,7 @@ import inspect
 from functools import wraps
 
 from ..._mlir import ir
+from ..common import DSLRuntimeError
 
 
 def dsl_user_op(opFunc):
@@ -57,7 +58,26 @@ def dsl_user_op(opFunc):
                 ),
                 childLoc=file_loc,
             )
-        res_or_list = opFunc(*args, **kwargs, loc=loc)
+
+        try:
+            res_or_list = opFunc(*args, **kwargs, loc=loc)
+        except TypeError as e:
+            # Provide a helpful error message when function doesn't accept 'loc'
+            func_name = getattr(opFunc, "__name__", str(opFunc))
+            if "unexpected keyword argument 'loc'" in str(e):
+                raise DSLRuntimeError(
+                    f"Function '{func_name}' decorated with @dsl_user_op does not accept the required 'loc' parameter.",
+                    suggestion=[
+                        f"1. Add 'loc=None' as a keyword-only parameter to {func_name}:",
+                        f"  def {func_name}(..., *, loc=None):",
+                        "",
+                        f"2. Remove the @dsl_user_op decorator if location tracking is not needed",
+                    ],
+                    cause=e,
+                ) from e
+            else:
+                # Re-raise other TypeErrors as-is
+                raise
         return res_or_list
 
     return wrapper

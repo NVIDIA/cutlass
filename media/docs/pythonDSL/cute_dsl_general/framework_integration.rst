@@ -192,6 +192,11 @@ For example:
 - For a tensor with layout ``(2,2):(8,2)``, since no dimension has stride 1,
   all dimensions are marked as dynamic: ``(?,?):(?,?)``.
 
+The leading dimension accepts negative index which means the dimension is counted from the last dimension. For example,
+
+- For a tensor with layout ``(2,2,3,4):(2,1,4,12)``, if ``leading_dim`` is specified to be -1,
+  the layout will be marked as ``(?,?,?,?):(?,?,?,1)``.
+
 Code Example
 ~~~~~~~~~~~~
 

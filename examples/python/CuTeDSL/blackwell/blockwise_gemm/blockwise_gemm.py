@@ -1,4 +1,4 @@
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -30,13 +30,11 @@ import argparse
 from typing import Type, Tuple, Union
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
@@ -64,7 +62,7 @@ This GEMM kernel supports the following features:
 
 This GEMM works as follows:
 1. DMA warp: Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using non-TMA operations.
+2. SCALE warp: Load scaleA and scaleB matrices from global memory (GMEM) to shared memory (SMEM) using async copy operations.
 2. MMA warp: Perform matrix multiply-accumulate (MMA) operations using tcgen05.mma instruction.
 3. EPILOGUE warp:
     - Load completed accumulator from tensor memory (TMEM) to registers (RMEM) using tcgen05.ld.
@@ -218,8 +216,8 @@ class BlockwiseGemmKernel:
         )
         self.num_regs_uniform_warps = 64
         self.num_regs_sched_warps = 64
-        self.num_regs_epilogue_warps = 216
-        self.num_regs_acc_update_warps = 216
+        self.num_regs_epilogue_warps = 168
+        self.num_regs_acc_update_warps = 256
 
         # Set barrier for epilogue sync and tmem ptr sync
         self.epilog_sync_barrier = pipeline.NamedBarrier(
@@ -975,7 +973,7 @@ class BlockwiseGemmKernel:
         # Specialized Schedule warp
         #
         if warp_idx == self.sched_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_sched_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_sched_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1009,8 +1007,8 @@ class BlockwiseGemmKernel:
 
                 # fence view async shared
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 self.sched_sync_barrier.arrive_and_wait()
                 # commit tile info pipeline
@@ -1023,7 +1021,7 @@ class BlockwiseGemmKernel:
         # Specialized TMA load warp
         #
         if warp_idx == self.tma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1127,8 +1125,8 @@ class BlockwiseGemmKernel:
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
@@ -1142,7 +1140,7 @@ class BlockwiseGemmKernel:
         # Specialized Scale load warp
         #
         if warp_idx == self.scale_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Persistent tile scheduling loop
             #
@@ -1302,8 +1300,8 @@ class BlockwiseGemmKernel:
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
@@ -1317,7 +1315,7 @@ class BlockwiseGemmKernel:
         # Specialized MMA warp
         #
         if warp_idx == self.mma_warp_id:
-            cute.arch.warpgroup_reg_dealloc(self.num_regs_uniform_warps)
+            cute.arch.setmaxregister_decrease(self.num_regs_uniform_warps)
             #
             # Bar sync for retrieve tensor memory ptr from shared mem
             #
@@ -1460,8 +1458,8 @@ class BlockwiseGemmKernel:
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
@@ -1475,7 +1473,7 @@ class BlockwiseGemmKernel:
         # Specialized acc update warps
         #
         if warp_idx <= self.acc_update_warp_id[-1]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_acc_update_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_acc_update_warps)
             #
             # Bar sync for retrieve tensor memory ptr from shared memory
             #
@@ -1697,8 +1695,8 @@ class BlockwiseGemmKernel:
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
@@ -1707,7 +1705,7 @@ class BlockwiseGemmKernel:
         # Specialized epilogue warps
         #
         if warp_idx <= self.epilog_warp_id[-1] and warp_idx >= self.epilog_warp_id[0]:
-            cute.arch.warpgroup_reg_alloc(self.num_regs_epilogue_warps)
+            cute.arch.setmaxregister_increase(self.num_regs_epilogue_warps)
             #
             # Alloc tensor memory buffer
             #
@@ -1867,8 +1865,8 @@ class BlockwiseGemmKernel:
                     )
                     # Fence and barrier to make sure shared memory store is visible to TMA store
                     cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
+                        "async.shared",
+                        space="cta",
                     )
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -1900,8 +1898,8 @@ class BlockwiseGemmKernel:
                     tile_info[idx] = sInfo[(idx, tile_info_consumer_state.index)]
                 is_valid_tile = tile_info[3] == 1
                 cute.arch.fence_proxy(
-                    cute.arch.ProxyKind.async_shared,
-                    space=cute.arch.SharedSpace.shared_cta,
+                    "async.shared",
+                    space="cta",
                 )
                 tile_info_pipeline.consumer_release(tile_info_consumer_state)
                 tile_info_consumer_state.advance()
@@ -2574,6 +2572,9 @@ class BlockwiseGemmKernel:
 def create_tensors(
     l, m, n, k, a_major, b_major, cd_major, ab_dtype, c_dtype, scale_dtype
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     torch.manual_seed(1111)
 
     a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
@@ -2634,6 +2635,9 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
+    import torch
+    import cutlass.torch as cutlass_torch
+
     """
     Prepare A/B/C tensors, launch GPU kernel, and reference checking.
     """
@@ -2706,6 +2710,18 @@ def run(
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
+    # try to check CUDA version to decide the opt level
+    try:
+        from cutlass import CUDA_VERSION
+
+        opt_level = (
+            3
+            if CUDA_VERSION.major < 13
+            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
+            else 2
+        )
+    except ImportError:
+        opt_level = 3
     # Compile gemm kernel
     compiled_gemm = cute.compile(
         gemm,
@@ -2716,6 +2732,7 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
+        options=f"--opt-level {opt_level}",
     )
 
     # Execution
