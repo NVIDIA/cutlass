@@ -110,6 +110,9 @@ class Layout(ir.Value):
 
     def __str__(self) -> str: ...
 
+    def __repr__(self) -> str:
+        return str(self)
+
     def get_hier_coord(self, idx) -> Coord:
         """Return the (hierarchical) ND logical coordinate corresponding to the linear index"""
         ...
@@ -299,6 +302,9 @@ class Tensor(ABC):
 
     @abstractmethod
     def __str__(self) -> str: ...
+
+    def __repr__(self) -> str:
+        return str(self)
 
     @abstractmethod
     def __getitem__(self, idx) -> Union["Tensor", ir.Value, IntTuple]: ...

@@ -26,6 +26,8 @@ from typing import (
     overload,
     runtime_checkable,
     get_origin,
+    Annotated,
+    TYPE_CHECKING,
 )
 from types import FunctionType
 from dataclasses import dataclass
@@ -1808,11 +1810,13 @@ class TensorMeta(DslType):
 # Generic type
 TY = TypeVar("TY")
 
+if TYPE_CHECKING:
+    Constexpr = Annotated[TY, "Constexpr"]
+else:
+    class Constexpr(Generic[TY]):
+        """Value is passed and computed by python interpreter"""
 
-class Constexpr(Generic[TY]):
-    """Value is passed and computed by python interpreter"""
-
-    pass
+        pass
 
 
 class align:
