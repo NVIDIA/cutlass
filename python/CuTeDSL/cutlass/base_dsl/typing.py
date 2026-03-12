@@ -1987,7 +1987,6 @@ __all__ = [
     "Float8E4M3",
     "Float8E4M3FN",
     "Float8E4M3B11FNUZ",
-    "Float8E4M3",
     "Float8E8M0FNU",
     "Float4E2M1FN",
     "Float6E2M3FN",
