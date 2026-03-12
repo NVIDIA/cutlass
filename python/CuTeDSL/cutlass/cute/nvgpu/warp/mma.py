@@ -27,6 +27,9 @@ from ...typing import (
     Float16,
     BFloat16,
     Float32,
+    Int8,
+    Uint8,
+    Int32,
     Boolean,
     Numeric,
     Pointer,
@@ -115,6 +118,105 @@ class MmaF16BF16Op(WarpMmaOp):
 
 
 class MmaF16BF16Trait(Trait):
+    pass
+
+
+class MmaIntOverflow(enum.Enum):
+    """Integer overflow mode for warp-level INT8 MMA operations."""
+
+    SATURATE = "satfinite"
+    WRAP = "wrapped"
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+
+@dataclass(frozen=True)
+class MmaI8Op(WarpMmaOp):
+    """
+    INT8 warp-level MMA Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma>`__.
+    This Operation covers the instructions using the ``.s8`` or ``.u8`` qualifiers for the input operands,
+    with ``.s32`` accumulator.
+
+    Supported shapes: (16,8,16) and (16,8,32).
+    Supports mixed signedness (e.g. signed A x unsigned B).
+    """
+
+    a_dtype: Type[Numeric]
+    b_dtype: Type[Numeric]
+    acc_dtype: Type[Numeric]
+    shape_mnk: Shape
+    overflow: MmaIntOverflow = MmaIntOverflow.SATURATE
+
+    def __post_init__(self) -> None:
+        if self.a_dtype not in [Int8, Uint8]:
+            raise OpError(
+                self,
+                "expects the 'a_dtype' Op parameter to be one of Int8 or Uint8",
+            )
+        if self.b_dtype not in [Int8, Uint8]:
+            raise OpError(
+                self,
+                "expects the 'b_dtype' Op parameter to be one of Int8 or Uint8",
+            )
+        if self.acc_dtype != Int32:
+            raise OpError(
+                self,
+                "expects the 'acc_dtype' Op parameter to be Int32",
+            )
+        if self.shape_mnk not in [(16, 8, 16), (16, 8, 32)]:
+            raise OpError(
+                self,
+                "expects the 'shape_mnk' Op parameter to be one of (16,8,16) or (16,8,32)",
+            )
+
+    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaI8Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        overflow_attr = ir.Attribute.parse(
+            f"#cute_nvgpu.mma_int_overflow<{self.overflow.value}>"
+        )
+        a_mlir_type = (
+            ir.IntegerType.get_signed(8)
+            if self.a_dtype.signed
+            else ir.IntegerType.get_unsigned(8)
+        )
+        b_mlir_type = (
+            ir.IntegerType.get_signed(8)
+            if self.b_dtype.signed
+            else ir.IntegerType.get_unsigned(8)
+        )
+        ty = _cute_nvgpu_ir.MmaAtomSM80Type.get(
+            shape_mnk.type.attribute,
+            a_mlir_type,
+            b_mlir_type,
+            self.acc_dtype.mlir_type,
+            intOverflow=overflow_attr,
+        )
+        return MmaI8Trait(make_atom(ty, loc=loc, ip=ip))
+
+    def __str__(self) -> str:
+        return (
+            "warp-level INT8 MMA Operation"
+            + f"\n  A data type           = {self.a_dtype}"
+            + f"\n  B data type           = {self.b_dtype}"
+            + f"\n  Accumulator data type = {self.acc_dtype}"
+            + f"\n  Instruction shape MNK = {self.shape_mnk}"
+            + f"\n  Overflow mode         = {self.overflow}"
+        )
+
+    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
+        pass
+
+    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
+        pass
+
+
+class MmaI8Trait(Trait):
     pass
 
 
