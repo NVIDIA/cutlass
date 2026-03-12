@@ -131,10 +131,10 @@ class MmaOp(WarpGroupMmaOp):
     def __post_init__(self) -> None:
         # Verify arch
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch == Arch.sm_90a:
+        if not arch.is_family_of(Arch.sm_90a):
             raise OpError(
                 self,
-                f"expects arch to be {Arch.sm_90a}, but got {arch}",
+                f"expects arch to be in the SM90 family, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         # Verify that the user provided enum values
