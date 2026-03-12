@@ -67,7 +67,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/hopper/dense_gemm.py                                   \
+    python examples/python/CuTeDSL/hopper/dense_gemm.py                                   \
       --mnkl 8192,8192,8192,1 --tile_shape_mn 128,256                      \
       --cluster_shape_mn 1,1 --a_dtype Float16 --b_dtype Float16           \
       --c_dtype Float16 --acc_dtype Float32                                \
@@ -82,7 +82,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/hopper/dense_gemm.py                               \
+    ncu python examples/python/CuTeDSL/hopper/dense_gemm.py                               \
       --mnkl 8192,8192,8192,1 --tile_shape_mn 128,256                      \
       --cluster_shape_mn 1,1 --a_dtype Float16 --b_dtype Float16           \
       --c_dtype Float16 --acc_dtype Float32                                \

@@ -62,7 +62,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/tensorop_gemm.py                                  \
+    python examples/python/CuTeDSL/ampere/tensorop_gemm.py                                  \
       --mnkl 8192,8192,8192,1 --atom_layout_mnk 2,2,1                        \
       --ab_dtype Float16                                                     \
       --c_dtype Float16 --acc_dtype Float32                                  \
@@ -77,7 +77,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/ampere/tensorop_gemm.py                              \
+    ncu python examples/python/CuTeDSL/ampere/tensorop_gemm.py                              \
       --mnkl 8192,8192,8192,1 --atom_layout_mnk 2,2,1                        \
       --ab_dtype Float16                                                     \
       --c_dtype Float16 --acc_dtype Float32                                  \
