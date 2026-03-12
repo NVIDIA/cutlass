@@ -132,6 +132,15 @@ struct CollectiveMma<
   static constexpr int SFVecSize = TiledMma::Traits::SFVecSize;
   using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
 
+  // Blk_MN is the minimum block size for scale factors (128)
+  using Blk_MN = typename Sm1xxBlkScaledConfig::Blk_MN;
+
+  // Scale factor A tile shape - M dimension padded to at least 128 for TMA
+  // When TileShape has M < 128 (e.g., 64), we pad to 128 for TMA descriptor compatibility
+  static constexpr int TileM_SFA = (cute::size<0>(TileShape{}) + Blk_MN{} - cute::Int<1>{}) / Blk_MN{} * Blk_MN{};
+  using TileShape_SFA = decltype(cute::make_shape(cute::Int<TileM_SFA>{}, cute::size<2>(TileShape{})));
+  static constexpr bool IsCtaMSmall = cute::size<0>(TileShape{}) < 128;
+
   // Gmem copies
   using GmemTiledCopyPairA = GmemTiledCopyPairA_;
   using GmemTiledCopyPairB = GmemTiledCopyPairB_;
@@ -309,11 +318,12 @@ struct CollectiveMma<
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         _1{}));  // No programmatic multicast
 
+    // TMA for scale factor A - use padded tile shape (TileShape_SFA) for M < 128 compatibility
     using TMA_SFA = decltype(make_tma_copy<uint16_t>(
         GmemTiledCopySFA{},
         make_tensor(static_cast<ElementSF const*>(nullptr), InternalLayoutSFA{}),
         SmemLayoutSFA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
+        TileShape_SFA{},
         _1{}));  // No programmatic multicast
 
 
@@ -370,10 +380,40 @@ struct CollectiveMma<
 
     if constexpr (IsGroupedGemmKernel) {
       // Strides for Grouped Gemm will be replaced prior to the first access regardless.
-      stride_a = InternalStrideA{};
-      stride_b = InternalStrideB{};
+      // However, TMA descriptor encoding requires valid non-zero strides.
+      // Use tile dimensions as placeholder values for the runtime stride components.
+      // The compile-time components (Int<1>, Int<0>) are preserved from the type.
+      //
+      // For RowMajor A [M,K,L]: stride = (K, Int<1>, Int<0>) → runtime component at index 0
+      // For RowMajor B [N,K,L]: stride = (Int<1>, N, Int<0>) → runtime component at index 1
+      // 
+      // We detect which component is runtime by checking if get<i> returns a non-Int type.
+      stride_a = [&]() {
+        InternalStrideA s{};
+        // For A: stride pattern is typically (runtime, Int<1>, Int<0>) for RowMajor
+        // Set the runtime component to init_K (stride between M rows)
+        if constexpr (!cute::is_static_v<decltype(cute::get<0>(s))>) {
+          return InternalStrideA(init_K, cute::get<1>(s), cute::get<2>(s));
+        } else if constexpr (!cute::is_static_v<decltype(cute::get<1>(s))>) {
+          return InternalStrideA(cute::get<0>(s), init_M, cute::get<2>(s));
+        } else {
+          return s;  // All static, use as-is
+        }
+      }();
+      stride_b = [&]() {
+        InternalStrideB s{};
+        // For B: stride pattern is typically (Int<1>, runtime, Int<0>) for RowMajor
+        // Set the runtime component to init_N (stride between K columns)
+        if constexpr (!cute::is_static_v<decltype(cute::get<0>(s))>) {
+          return InternalStrideB(init_K, cute::get<1>(s), cute::get<2>(s));
+        } else if constexpr (!cute::is_static_v<decltype(cute::get<1>(s))>) {
+          return InternalStrideB(cute::get<0>(s), init_N, cute::get<2>(s));
+        } else {
+          return s;  // All static, use as-is
+        }
+      }();
       layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
-      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
+      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(init_M, init_N, init_K, 1));
     }
     else {
       // Tensor shapes for Ptr-Array are initialized correctly only here.
@@ -410,7 +450,7 @@ struct CollectiveMma<
         GmemTiledCopySFA{},
         tensor_sfa,
         SmemLayoutSFA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
+        TileShape_SFA{},
         _1{}); // No programmatic multicast
 
     typename Params::TMA_SFB tma_load_sfb = make_tma_copy<uint16_t>(
@@ -863,7 +903,9 @@ struct CollectiveMma<
 
     CUTE_STATIC_ASSERT_V(size<1>(tCsSFA) == size<1>(tCrSFA_copy_view));                    // CPY_M
     CUTE_STATIC_ASSERT_V(size<2>(tCsSFA) == size<2>(tCrSFA_copy_view));                    // CPY_K
-    CUTE_STATIC_ASSERT_V(size<1>(tCrSFA) == size<1>(accum));                               // MMA_M
+    // For small CTA M, SFA layout is padded to 128 but accumulator is smaller.
+    // Skip MMA_M size assertion only when M < 128.
+    if constexpr (!IsCtaMSmall) { CUTE_STATIC_ASSERT_V(size<1>(tCrSFA) == size<1>(accum)); }  // MMA_M
     CUTE_STATIC_ASSERT_V(size<1>(tCrSFB) == size<2>(accum));                               // MMA_N
     CUTE_STATIC_ASSERT_V(size<2>(tCsSFA) == size<2>(tCsSFB));                              // CPY_K
     CUTE_STATIC_ASSERT_V(size<3>(tCsSFA) == size<3>(tCsSFB));                              // PIPE
