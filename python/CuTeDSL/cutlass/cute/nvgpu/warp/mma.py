@@ -130,12 +130,13 @@ class MmaSM120BlockScaledOp(MmaOp):
 
     admissible_archs = [
         "sm_120a",
+        "sm_121a",
     ]
 
     def __post_init__(self) -> None:
-        # Verify arch
+        # Verify arch — use family check so all sm12x variants are accepted
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch == Arch.sm_120a:
+        if not arch.is_family_of(Arch.sm_120a):
             raise OpError(
                 self,
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
