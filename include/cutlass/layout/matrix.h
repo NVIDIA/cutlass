@@ -891,7 +891,7 @@ public:
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
   static AffineRank2RowMajor packed(MatrixCoord const &extent) {
-    return AffineRank2RowMajor(1, extent.row());
+    return AffineRank2RowMajor(extent.column(), 1);
   }
 
   /// Returns the offset of a coordinate in linear memory. 
