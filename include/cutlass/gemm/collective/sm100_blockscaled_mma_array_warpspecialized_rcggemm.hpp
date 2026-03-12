@@ -689,7 +689,7 @@ struct CollectiveMma<
     layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
 
     Tensor mSFA_mkl = observed_tma_load_sfa_->get_tma_tensor(shape(layout_SFA));
-    auto mSFB_nkl = [=](){
+    auto mSFB_nkl = [&](){
       if constexpr (IsCtaN192) {
         Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB));
         auto x = stride<0,1>(mSFB_tmp);

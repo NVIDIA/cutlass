@@ -713,7 +713,7 @@ struct CollectiveMma<
 
     // Represent the full tensor of Scale factors
     Tensor mSFA_mkl = observed_tma_load_sfa_->get_tma_tensor(shape(layout_SFA_));
-    auto mSFB_nkl = [=](){
+    auto mSFB_nkl = [&](){
       if constexpr (IsCtaN192) {
         Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB_));
         auto x = stride<0,1>(mSFB_tmp);
