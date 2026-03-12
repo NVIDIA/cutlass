@@ -905,6 +905,10 @@ Options::Options(cutlass::CommandLine const &cmdline):
     cmdline.get_cmd_line_arguments("ignore-kernels", excluded_operation_names);
   }
 
+  if (cmdline.check_cmd_line_flag("kernel-lib")) {
+    cmdline.get_cmd_line_arguments("kernel-lib", kernel_libs);
+  }
+
   profiling.error_on_no_match            = cmdline.check_cmd_line_flag("error-on-no-match");
   profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
 
@@ -951,6 +955,11 @@ void Options::print_usage(std::ostream &out) const {
 
     << "  --ignore-kernels=<string_list>               "
     << "    Excludes kernels whose names match anything in this list.\n\n"
+
+    << "  --kernel-lib=<path>,<path>,...               "
+    << "    Paths to dynamically-loaded kernel shared libraries (.so)." << end_of_line
+    << "      Each library is loaded via dlopen and its kernels are registered" << end_of_line
+    << "      with the profiler before profiling begins.\n\n"
 
     << "  --testlist-file=<filename>               "
     << "    A CSV, where each row is a problem, where the first column is the kernel name and the rest are the problem arguments" << end_of_line

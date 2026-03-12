@@ -40,6 +40,8 @@
 #include <list>
 #include <memory>
 #include <map>
+#include <string>
+#include <vector>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -71,14 +73,19 @@ using OperationVector = std::vector<std::unique_ptr<Operation>>;
 class Manifest {
 private:
 
-  /// Operation provider 
+  /// Operation provider
   Provider provider_;
 
   /// Global list of operations
   OperationVector operations_;
 
+  /// Handles to dynamically loaded kernel libraries
+  std::vector<void*> loaded_libraries_;
+
 public:
   Manifest (Provider provider = library::Provider::kCUTLASS) : provider_(provider) { }
+
+  ~Manifest();
 
   /// Top-level initialization
   Status initialize();
@@ -95,6 +102,9 @@ public:
     // without having to compile or link in manifest.cpp
     operations_.emplace_back(operation_ptr);
   }
+
+  /// Dynamically load a kernel shared library via dlopen
+  Status load_kernel_library(std::string const &path);
 
   /// Returns an iterator to the first operation
   OperationVector const &operations() const;
