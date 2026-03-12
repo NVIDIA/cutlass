@@ -472,8 +472,8 @@ struct CollectiveMma<
     Tensor tApA_SFA = make_tensor<bool>(shape(tAsA_SFA(_,_,0)));
     Tensor tBpB_SFB = make_tensor<bool>(shape(tBsB_SFB(_,_,0)));
 
-    auto scale_m_lim = std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
-    auto scale_n_lim = std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
+    auto scale_m_lim = cute::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
+    auto scale_n_lim = cute::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tApA_SFA); ++i)
