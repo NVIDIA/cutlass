@@ -28,6 +28,12 @@
 
 from blackwell.tutorial_gemm import fp16_gemm_0
 from blackwell.tutorial_gemm import fp16_gemm_1
+from blackwell.tutorial_gemm import fp16_gemm_2
+from blackwell.tutorial_gemm import fp16_gemm_3
+from blackwell.tutorial_gemm import fp16_gemm_3_1
+from blackwell.tutorial_gemm import fp16_gemm_4
+from blackwell.tutorial_gemm import fp16_gemm_5
+from blackwell.tutorial_gemm import fp16_gemm_6
 
 import pytest
 from typing import Tuple
@@ -55,3 +61,76 @@ def test_fp16_gemm_1(
     tolerance: float,
 ):
     fp16_gemm_1.run_dense_gemm(mnk, tolerance)
+
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_2(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_2.run_dense_gemm(mnk, tolerance)
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_3(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_3.run_dense_gemm(mnk, tolerance)
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_3_1(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_3_1.run_dense_gemm(mnk, tolerance)
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_4(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_4.run_dense_gemm(mnk, tolerance)
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_5(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_5.run_dense_gemm(mnk, tolerance)
+
+
+@pytest.mark.parametrize(
+    "mnk",
+    [(512, 512, 256)],
+)
+@pytest.mark.parametrize("tolerance", [1e-01])
+def test_fp16_gemm_6(
+    mnk: Tuple[int, int, int],
+    tolerance: float,
+):
+    fp16_gemm_6.run_dense_gemm(mnk, tolerance)
