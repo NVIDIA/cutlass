@@ -410,10 +410,10 @@ def host_function(
     # print(f"b_smem_layout   = {cute.pretty_str(b_smem_layout)}")
     # print(f"cta_layout_mnk  = {cute.pretty_str(cta_layout_mnk)}")
     # print(f"cta_layout_vmnk = {cute.pretty_str(cta_layout_vmnk)}")
-    # print(f"a_tma_atom   = {cute.pretty_str(tma_a.atom)}")
-    # print(f"b_tma_atom   = {cute.pretty_str(tma_b.atom)}")
-    # print(f"a_tma_tensor    = {cute.pretty_str(tma_a.tma_tensor)}")
-    # print(f"b_tma_tensor    = {cute.pretty_str(tma_b.tma_tensor)}")
+    # print(f"a_tma_atom   = {cute.pretty_str(a_tma_atom)}")
+    # print(f"b_tma_atom   = {cute.pretty_str(b_tma_atom)}")
+    # print(f"a_tma_tensor    = {cute.pretty_str(a_tma_tensor)}")
+    # print(f"b_tma_tensor    = {cute.pretty_str(b_tma_tensor)}")
     # cute.printf("grid_shape = {}", grid_shape)
 
     # Launch the kernel
