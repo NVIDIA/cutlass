@@ -1725,9 +1725,11 @@ def run(
             .to(dtype=torch_dtype(c_dtype))
             .to(dtype=torch.float32)
         )
-        # Read back the result from CuTe tensor (c_storage was updated in-place)
         torch.testing.assert_close(
-            c_storage.to(dtype=torch.float32), ref, atol=tolerance, rtol=1e-03
+            c_storage.view(torch_dtype(c_dtype)).to(dtype=torch.float32),
+            ref,
+            atol=tolerance,
+            rtol=1e-03,
         )
 
     if not benchmark:

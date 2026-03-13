@@ -96,7 +96,6 @@ __all__ = [
     "fma_packed_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
-    "sub_packed_f32x2",
     "fmax",
     "rcp_approx",
     "exp2",

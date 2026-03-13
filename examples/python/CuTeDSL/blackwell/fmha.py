@@ -2546,8 +2546,6 @@ def run(
         slices = tuple(slice(s, e) for s, e in zip(padding, shape_))
         torch_tensor = torch_tensor_full[slices].detach()
         f32_torch_tensor = f32_torch_tensor_full[slices].detach()
-        torch_tensor._keep_alive = torch_tensor_full
-        f32_torch_tensor._keep_alive = f32_torch_tensor_full
 
         # Create dtype cute tensor with offset (gpu)
         cute_tensor = from_dlpack(torch_tensor, assumed_align=16)

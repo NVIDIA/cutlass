@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 import ctypes
 from typing import ForwardRef, Tuple, Union, Any, Type, List, Optional, Literal
@@ -24,15 +26,18 @@ Int = Union[int, Integer]
 
 
 class SymInt:
-    def __init__(self, width: Literal[32, 64] = 32, *, divisibility=1):
+    def __init__(
+        self, width: Literal[32, 64] = 32, *, divisibility=1, symbol: str | None = None
+    ):
         if width not in [32, 64]:
             raise ValueError(f"Unsupported width: {width}")
 
         self._width = width
         self._divisibility = divisibility
+        self._symbol = symbol
 
     def __hash__(self):
-        return hash((self._width, self._divisibility))
+        return hash((self._width, self._divisibility, self._symbol))
 
     @property
     def width(self):
@@ -42,8 +47,16 @@ class SymInt:
     def divisibility(self):
         return self._divisibility
 
+    @property
+    def symbol(self):
+        return self._symbol
+
     def __str__(self) -> str:
-        return f"?{{i{self._width} div={self._divisibility}}}"
+        prefix = "" if self._symbol is None else self._symbol + " "
+        if self._width == 32:
+            return f"{prefix}?{{div={self._divisibility}}}"
+        else:
+            return f"{prefix}?{{i{self._width} div={self._divisibility}}}"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -51,18 +64,52 @@ class SymInt:
     def __eq__(self, other) -> bool:
         if not isinstance(other, SymInt):
             return False
+
         return all(
-            [self._width == other._width, self._divisibility == other._divisibility]
+            [
+                self._width == other._width,
+                self._divisibility == other._divisibility,
+                self._symbol == other._symbol,
+            ]
         )
 
-    def __mod__(self, other: int) -> Union["SymInt", int]:
-        if self._divisibility % other != 0:
+    def __mod__(self, other: int | SymInt) -> SymInt | int:
+        if isinstance(other, int):
+            other_div, result_width = other, self._width
+        elif isinstance(other, SymInt):
+            other_div, result_width = (
+                other._divisibility,
+                max(self._width, other._width),
+            )
+        else:
+            return NotImplemented
+
+        if self._divisibility % other_div == 0:
+            return 0
+        else:
             from math import gcd
 
-            div = gcd(self._divisibility, other)
-            return SymInt(self._width, divisibility=div)
+            return SymInt(result_width, divisibility=gcd(self._divisibility, other_div))
+
+    def __rmod__(self, other: int) -> int:
+        """int % SymInt: check if the int conforms to this SymInt's divisibility"""
+        if isinstance(other, int):
+            return other % self._divisibility
+        return NotImplemented
+
+    def __mul__(self, other: int | SymInt) -> SymInt:
+        if isinstance(other, int):
+            return SymInt(self._width, divisibility=self._divisibility * other)
+        elif isinstance(other, SymInt):
+            return SymInt(
+                width=max(self._width, other._width),
+                divisibility=self._divisibility * other._divisibility,
+            )
         else:
-            return 0
+            return NotImplemented
+
+    def __rmul__(self, other: int | SymInt) -> SymInt:
+        return self.__mul__(other)
 
     def __c_pointers__(self):
         return [ctypes.c_void_p(0).value]
@@ -73,7 +120,7 @@ class SymInt:
         )
         return [res_ty]
 
-    def __new_from_mlir_values__(self, values) -> "SymInt":
+    def __new_from_mlir_values__(self, values) -> SymInt:
         from .core import IntValue
 
         if self.width == 32:
@@ -84,16 +131,18 @@ class SymInt:
             assert False, f"Unsupported width: {self.width}"
             return self
 
-def sym_int(width: Literal[32, 64] = 32, *, divisibility=1) -> SymInt:
-    return SymInt(width, divisibility=divisibility)
+def sym_int(
+    width: Literal[32, 64] = 32, *, divisibility=1, symbol: str | None = None
+) -> SymInt:
+    return SymInt(width, divisibility=divisibility, symbol=symbol)
 
 
-def sym_int32(divisibility=1) -> SymInt:
-    return sym_int(32, divisibility=divisibility)
+def sym_int32(divisibility=1, symbol: str | None = None) -> SymInt:
+    return sym_int(32, divisibility=divisibility, symbol=symbol)
 
 
-def sym_int64(divisibility=1) -> SymInt:
-    return sym_int(64, divisibility=divisibility)
+def sym_int64(divisibility=1, symbol: str | None = None) -> SymInt:
+    return sym_int(64, divisibility=divisibility, symbol=symbol)
 
 
 ScaledBasis = ForwardRef("ScaledBasis")

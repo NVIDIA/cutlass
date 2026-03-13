@@ -202,6 +202,8 @@ from .math import *
 # Used as internal symbol
 from .. import cutlass_dsl as _dsl
 
+from .ffi import ffi
+
 # Aliases
 jit = _dsl.CuTeDSL.jit
 kernel = _dsl.CuTeDSL.kernel
@@ -312,4 +314,5 @@ __all__ = [
     "kernel",
     "register_jit_arg_adapter",
     "compile",
+    "ffi",
 ]

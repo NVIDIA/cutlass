@@ -23,7 +23,6 @@ from ..typing import Int32, Pointer, Int128
 def issue_clc_query(
     mbar_ptr: Pointer,
     clc_response_ptr: Pointer,
-    multicast: bool = True,
     loc=None,
     ip=None,
 ) -> None:
@@ -40,20 +39,12 @@ def issue_clc_query(
     """
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     clc_response_llvm_ptr = clc_response_ptr.llvm_ptr
-    if multicast:
-        nvvm.clusterlaunchcontrol_try_cancel_multicast(
-            clc_response_llvm_ptr,
-            mbar_llvm_ptr,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        nvvm.clusterlaunchcontrol_try_cancel(
-            clc_response_llvm_ptr,
-            mbar_llvm_ptr,
-            loc=loc,
-            ip=ip,
-        )
+    nvvm.clusterlaunchcontrol_try_cancel_multicast(
+        clc_response_llvm_ptr,
+        mbar_llvm_ptr,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op

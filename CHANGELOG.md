@@ -2,6 +2,20 @@
 
 # CUTLASS 4.x
 
+## [4.4.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.2) (2026-03-13)
+
+### CuTe DSL
+* New features
+  - CuTe DSL now supports Python 3.14 for both x86_64 and aarch64
+  - Runtime Pointer/Tensor/FakeTensor now supports __cache_key__, providing a stable, hashable representation that simplifies and improves compiled function caching.
+* Bug fixing and improvements
+  - Fixed Hopper FMHA causal attention performance regression on CUDA toolkit 13.1 by
+ optimizing mbarrier synchronization to avoid unnecessary convergence barriers.
+  - Fix kernel loading race condition when multiple GPU are present in the same process in JAX.
+
+### CUTLASS C++
+* Enable Blackwell SM120f compilation of examples and exposes NVFP4/MX Grouped GEMM in the CUTLASS Profiler.
+
 ## [4.4.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.1) (2026-02-27)
 
 ### CuTe DSL
@@ -148,8 +162,6 @@
 * Work around a driver TMA descriptor related bug which will cause occasional errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
 
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
-
-### CuTe DSL
 * New features
   - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi
   - Supported variadic tuples for JIT function argument in tvm-ffi
@@ -159,8 +171,6 @@
   - Clearer error message for the case of runtime error cudaErrorInsufficientDriver
 
 ## [4.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.2) (2025-12-05)
-
-### CuTe DSL
 * New features
   - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches
 

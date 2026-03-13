@@ -1199,7 +1199,6 @@ class KernelLauncher:
         return self.dsl._get_smem_usage()
 
     def launch(self, *args, **kwargs):
-        self.dsl.frame = inspect.currentframe().f_back
         self.dsl._preprocess_launch_config_args(args, kwargs)
         config = self.dsl.LaunchConfig(*args, **kwargs)
         kernel_attrs = _build_kernel_attrs(config)
@@ -1216,7 +1215,6 @@ class KernelLauncher:
 
         ret, name = kernel_generator(*self.func_args, **self.func_kwargs, config=config)
         self.dsl.kernel_info[name] = kernel_attrs
-        self.dsl.frame = None
         return ret.launch_op_ret
 
     def __call__(self, *args, **kwargs):

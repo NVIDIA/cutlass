@@ -35,7 +35,6 @@ if is_available():
     )
     from .compile import (
         release_compile_cache,
-        initialize_cutlass_dsl,
     )
     from .ffi import (
         get_export_disabled_safety_checks,
@@ -47,10 +46,6 @@ if is_available():
 
     # This is a legacy name for TensorSpec. It will be removed eventually.
     TensorMode = TensorSpec
-
-    # This explicit init method ensures that we avoid initialization at
-    # unexpected times in jax tracing.
-    initialize_cutlass_dsl()
 
     __all__ = [
         "cutlass_call",
