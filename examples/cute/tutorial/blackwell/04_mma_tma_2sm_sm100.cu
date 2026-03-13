@@ -461,7 +461,7 @@ void gemm_host_f16xf16_f32_f32_tnt(TypeA const* device_ptr_A, LayoutA layout_A,
   //   Shape_MNK:  (_256,_256,_16)                      // MmaM, MmaN, MmaK (MmaK is constant for each instr.)
   //   LayoutA_TV: (_2,(_128,_16)):(_128,(_1,_256))     // TV -> MmaCoordinate mapping for A matrix
   //   LayoutB_TV: (_2,(_128,_16)):(_128,(_1,_256))     // TV -> MmaCoordinate mapping for B matrix
-  //   LayoutC_TV: (_2,(_128,_256)):(_128,(_1,_256))    // TV -> MmaCoordinate mapping for B matrix
+  //   LayoutC_TV: (_2,(_128,_256)):(_128,(_1,_256))    // TV -> MmaCoordinate mapping for C matrix
 
   // Define MMA tiler sizes (static)
   auto bM = tile_size<0>(tiled_mma);             // MMA Tile M. We'll use 1 MMAs per MMA Tile M.

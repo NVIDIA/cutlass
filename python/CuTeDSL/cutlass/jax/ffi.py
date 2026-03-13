@@ -28,9 +28,13 @@ logger = logging.getLogger(__name__)
 _CUTE_DSL_RUNTIME_LIBRARY_NAME = "cute_dsl_runtime"
 
 _CUTLASS_CALL_TARGETS = {
-    "CuteDSLRT_NvJaxCutlassCall": {"execute": "CuteDSLRT_NvJaxCutlassCallExecute"},
+    "CuteDSLRT_NvJaxCutlassCall": {
+        "execute": "CuteDSLRT_NvJaxCutlassCallExecute",
+        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare",
+    },
     "CuteDSLRT_NvJaxCutlassCallNoCudaGraph": {
-        "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph"
+        "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph",
+        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare",
     },
 }
 

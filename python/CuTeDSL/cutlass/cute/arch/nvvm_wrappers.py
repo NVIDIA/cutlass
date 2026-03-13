@@ -604,7 +604,6 @@ def fence_proxy(
     ],
     *,
     space: Optional[Literal["cta", "cluster"]] = None,
-    use_intrinsic=None,
     loc=None,
     ip=None,
 ) -> None:
@@ -623,7 +622,6 @@ def fence_proxy(
         - "cta" : CTA (Cooperative Thread Array) scope
         - "cluster" : Cluster scope
     :type space: Optional[Literal["cta", "cluster"]]
-    :param use_intrinsic: Whether to use intrinsic version
     """
     from cutlass._mlir.dialects.nvvm import (
         SharedSpace,
@@ -640,7 +638,6 @@ def fence_proxy(
     nvvm.fence_proxy(
         kind=kind,
         space=space,
-        use_intrinsic=use_intrinsic,
         loc=loc,
         ip=ip,
     )
@@ -940,9 +937,6 @@ mul_packed_f32x2 = partial(
 add_packed_f32x2 = partial(
     calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
 )
-sub_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.sub_packed_f32x2
-)
 
 
 @dsl_user_op
@@ -951,20 +945,6 @@ def fmax(
 ) -> Float32:
     return Float32(
         nvvm.fmax(
-            Float32(a).ir_value(loc=loc, ip=ip),
-            Float32(b).ir_value(loc=loc, ip=ip),
-            loc=loc,
-            ip=ip,
-        )
-    )
-
-
-@dsl_user_op
-def fmin(
-    a: Union[float, Float32], b: Union[float, Float32], *, loc=None, ip=None
-) -> Float32:
-    return Float32(
-        nvvm.fmin(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
             loc=loc,

@@ -104,6 +104,67 @@ if __name__ == "__main__":
 
 from helpers import fmha_helpers as fmha_utils
 
+from cutlass.cutlass_dsl import (
+    Boolean, Int32, if_generate, while_generate, yield_out, not_, dsl_user_op,
+)
+from cutlass._mlir.dialects import nvvm
+from cutlass._mlir._mlir_libs._cutlass_ir._mlir.ir import IntegerType
+from contextlib import contextmanager
+
+
+import inspect as _inspect
+
+_timelimit_has_res = "res" in _inspect.signature(
+    nvvm.mbarrier_try_wait_parity_timelimit
+).parameters
+
+
+def _try_wait_timelimit(llvm_ptr, phase_val, timeout, *, loc=None, ip=None):
+    if _timelimit_has_res:
+        i1 = IntegerType.get_signless(1)
+        return nvvm.mbarrier_try_wait_parity_timelimit(
+            i1, llvm_ptr, phase_val, timeout, loc=loc, ip=ip,
+        )
+    return nvvm.mbarrier_try_wait_parity_timelimit(
+        llvm_ptr, phase_val, timeout, loc=loc, ip=ip,
+    )
+
+
+@dsl_user_op
+def _optimized_mbarrier_wait(mbar_ptr, phase, *, loc=None, ip=None):
+    llvm_ptr = mbar_ptr.llvm_ptr
+    phase_val = Int32(phase).ir_value(loc=loc, ip=ip)
+    _true = lambda: Boolean(True).ir_value(loc=loc, ip=ip)
+    timeout = Int32(10000000).ir_value(loc=loc, ip=ip)
+    d = Boolean(_try_wait_timelimit(llvm_ptr, phase_val, timeout, loc=loc, ip=ip))
+    d = if_generate(d, _true,
+        lambda: _try_wait_timelimit(llvm_ptr, phase_val, timeout, loc=loc, ip=ip),
+        None, [Boolean], loc=loc, ip=ip)
+    d = if_generate(d, _true,
+        lambda: _try_wait_timelimit(llvm_ptr, phase_val, timeout, loc=loc, ip=ip),
+        None, [Boolean], loc=loc, ip=ip)
+    def _fallback():
+        inner = Boolean(False).ir_value(loc=loc, ip=ip)
+        ctx = while_generate([inner], lambda x: not_(x, loc=loc, ip=ip), loc=loc, ip=ip)
+        with ctx as (_,):
+            r = Boolean(_try_wait_timelimit(
+                llvm_ptr, phase_val, timeout, loc=loc, ip=ip,
+            ))
+            yield_out([r], loc=loc, ip=ip)
+        return Boolean(True).ir_value(loc=loc, ip=ip)
+    if_generate(d, _true, _fallback, None, [Boolean], loc=loc, ip=ip)
+
+
+@contextmanager
+def _use_optimized_mbarrier_wait():
+    import cutlass.cute.arch as arch_mod
+    orig_wait = arch_mod.mbarrier_wait
+    arch_mod.mbarrier_wait = _optimized_mbarrier_wait
+    try:
+        yield
+    finally:
+        arch_mod.mbarrier_wait = orig_wait
+
 
 class HopperFusedMultiHeadAttentionForward:
     def __init__(
@@ -439,36 +500,37 @@ class HopperFusedMultiHeadAttentionForward:
         self.shared_storage = SharedStorage
 
         # Launch the kernel synchronously
-        self.kernel(
-            qk_tiled_mma,
-            pv_tiled_mma,
-            tma_atom_q,
-            tma_tensor_q,
-            tma_atom_k,
-            tma_tensor_k,
-            tma_atom_v,
-            tma_tensor_v,
-            tma_atom_o,
-            tma_tensor_o,
-            lse,
-            scale_softmax_log2,
-            scale_softmax,
-            scale_output,
-            window_size_left,
-            window_size_right,
-            q_smem_layout_staged,
-            k_smem_layout_staged,
-            v_smem_layout_staged,
-            o_smem_layout_staged,
-            self.tile_sched_params,
-        ).launch(
-            grid=grid,
-            block=[self.threads_per_cta, 1, 1],
-            cluster=self.cluster_shape_mnk,
-            smem=self.shared_storage.size_in_bytes(),
-            stream=stream,
-            min_blocks_per_mp=1,
-        )
+        with _use_optimized_mbarrier_wait():
+            self.kernel(
+                qk_tiled_mma,
+                pv_tiled_mma,
+                tma_atom_q,
+                tma_tensor_q,
+                tma_atom_k,
+                tma_tensor_k,
+                tma_atom_v,
+                tma_tensor_v,
+                tma_atom_o,
+                tma_tensor_o,
+                lse,
+                scale_softmax_log2,
+                scale_softmax,
+                scale_output,
+                window_size_left,
+                window_size_right,
+                q_smem_layout_staged,
+                k_smem_layout_staged,
+                v_smem_layout_staged,
+                o_smem_layout_staged,
+                self.tile_sched_params,
+            ).launch(
+                grid=grid,
+                block=[self.threads_per_cta, 1, 1],
+                cluster=self.cluster_shape_mnk,
+                smem=self.shared_storage.size_in_bytes(),
+                stream=stream,
+                min_blocks_per_mp=1,
+            )
 
     #  GPU device kernel
     @cute.kernel

@@ -175,22 +175,21 @@ stride is set to 1 unless inconsistent with the layout of the DLPack tensor. For
 The default value for ``leading_dim`` is ``None``.  In such case, the system
 automatically deduces it from the tensor's layout using the following logic:
 
-1. If a dimension's stride is 1, that dimension is marked as the leading dimension.
-2. If multiple dimensions satisfy condition 1, an error is thrown indicating deduction failure.
+1. If exactly one dimension has stride 1, that dimension is the leading dimension.
+2. If multiple dimensions have stride 1, deduction succeeds only when exactly one of them
+   has size > 1 (that dimension is used). If none or more than one has size > 1, an error is raised.
    Note that after converting a **PyTorch** tensor to the DLPack format, the stride for dimensions
-   with size 1 are canonicalized to 1. This canonicalization can increase the likelihood of
-   deduction failures. This behavior is specific to PyTorch and does not occur with NumPy for
-   example.
-3. If no dimension satisfies condition 1, all strides are marked as dynamic.
+   with size 1 are canonicalized to 1, which can produce multiple stride-1 dimensions.
+3. If no dimension has stride 1, all strides remain dynamic.
 
 For example:
 
 - For a tensor with layout ``(2,2,3,4):(2,1,4,12)``, the leading dimension is 1.
   The layout will be marked as ``(?,?,?,?):(?,1,?,?)``.
-- For a tensor with layout ``(1,5,1):(1,1,1)``, if ``leading_dim`` is not specified,
-  a deduction failure error is raised.
-- For a tensor with layout ``(2,2):(8,2)``, since no dimension has stride 1,
-  all dimensions are marked as dynamic: ``(?,?):(?,?)``.
+- For a tensor with layout ``(1,5,1):(1,1,1)``, multiple dimensions have stride 1 but exactly one
+  has size > 1 (dim 1). The leading dimension is deduced to be 1: ``(?,?,?):(?,1,?)``.
+- For a tensor with layout ``(2,2):(8,2)``, no dimension has stride 1, so all strides remain
+  dynamic: ``(?,?):(?,?)``.
 
 The leading dimension accepts negative index which means the dimension is counted from the last dimension. For example,
 
@@ -206,8 +205,9 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
 * ``t1`` & ``t2`` shows the usage of ``mark_layout_dynamic`` with specified ``leading_dim``.
 * ``t3`` shows the usage of ``mark_layout_dynamic`` with no leading dimension.
 * ``t4`` shows the usage of ``mark_layout_dynamic`` with broadcasted dimensions.
-* ``t5`` demonstrates the deduction failure when the there're more than one dimensions with stride equals to 1.
-* ``t6`` & ``t7`` demonstrates incorrect settings for ``leading_dim`` and expected errors.
+* ``t5`` shows automatic deduction for tensor ``b`` (multiple stride-1, exactly one has size > 1 → dim 1).
+* ``t5_fail`` demonstrates the deduction failure when multiple dimensions have stride 1 but none has size > 1.
+* ``t6`` & ``t7`` demonstrate incorrect settings for ``leading_dim`` and expected errors.
 
 .. code-block:: python
 
@@ -245,8 +245,14 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
     print(t4)
     # (?,?,?,?):(?,0,0,1)
 
+    # b has layout (1,4,1,32,1):(1,1,1,4,1); dim 1 has size > 1, so deduction succeeds to dim 1.
     t5 = from_dlpack(b).mark_layout_dynamic()
-    # Can't decude the leading dimension from layout, please specify the leading_dim explicitly.
+    print(t5)
+    # (?,?,?,?,?):(?{i64},1,?{i64},?{i64},?{i64})
+
+    # Rejected: multiple stride-1, none with size > 1 (e.g. torch.ones(1,1,1)).
+    t5_fail = from_dlpack(torch.ones(1, 1, 1)).mark_layout_dynamic()
+    # Can't deduce the leading dimension from layout (multiple dimensions have stride 1 but none has size > 1)...
 
     t6 = from_dlpack(a).mark_layout_dynamic(leading_dim=1)
     # Expected strides[leading_dim] == 1, but got 16

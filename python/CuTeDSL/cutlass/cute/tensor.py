@@ -139,6 +139,19 @@ class _Tensor(Tensor):
     def __init__(
         self, value, dtype: Optional[Type[Numeric]] = None, *, loc=None, ip=None
     ):
+        """Initialize a Tensor from an MLIR value.
+
+        :param value: The MLIR operation result value or another Tensor to initialize from
+        :type value: Union[ir.Value, _Tensor]
+        :param dtype: The user specified data type of the tensor elements, defaults to None
+        :type dtype: Optional[Type[Numeric]]
+        :param loc: The source location for the operation, defaults to None
+        :type loc: Optional[Location]
+        :param ip: The insertion point for the operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :raises TypeError: If value is not ir.Value or _Tensor
+        :raises TypeError: If iterator type is not supported
+        """
         self._dtype = dtype
         if isinstance(value, ir.Value):
             self.value = value
@@ -952,6 +965,37 @@ def make_fragment_like(src, dtype=None, *, loc=None, ip=None):
 def recast_tensor(
     src: Tensor, dtype: Type[Numeric], swizzle_=None, *, loc=None, ip=None
 ):
+    """Recast a tensor to a different data type by changing the element interpretation.
+
+    This function reinterprets the memory of a tensor with a different element type,
+    adjusting both the iterator pointer type and the layout to maintain consistency.
+
+    :param src: The source tensor to recast
+    :type src: Tensor
+    :param dtype: The target data type for tensor elements
+    :type dtype: Type[Numeric]
+    :param swizzle_: Optional swizzle parameter (reserved for future use), defaults to None
+    :type swizzle_: Optional, unused
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A new tensor with the same memory but reinterpreted as dtype
+    :rtype: Tensor
+    :raises TypeError: If dtype is not a subclass of Numeric
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a Float32 tensor
+        tensor_f32 = make_rmem_tensor((4, 8), Float32)
+
+        # Recast to Int32 to manipulate bits
+        tensor_i32 = recast_tensor(tensor_f32, Int32)
+
+        # Both tensors share the same memory, but interpret it differently
+    """
     if not isclass(dtype) or not issubclass(dtype, Numeric):
         raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
 
@@ -972,6 +1016,36 @@ def recast_tensor(
 
 @dsl_user_op
 def domain_offset(coord: Coord, tensor: Tensor, *, loc=None, ip=None) -> Tensor:
+    """Offset the tensor domain by the given coordinate.
+
+    This function creates a new tensor by offsetting the iterator/pointer of the input tensor
+    by the amount corresponding to the given coordinate in its layout.
+
+    :param coord: The coordinate offset to apply
+    :type coord: Coord
+    :param tensor: The source tensor to offset
+    :type tensor: Tensor
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A new tensor with the offset iterator
+    :rtype: Tensor
+    :raises ValueError: If the tensor type doesn't support domain offsetting
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a tensor with a row-major layout
+        ptr = make_ptr(Float32, base_ptr, AddressSpace.gmem)
+        layout = make_layout((64, 128), stride=(128, 1))
+        tensor = make_tensor(ptr, layout)
+
+        # Offset by coordinate (3, 5)
+        offset_tensor = domain_offset((3, 5), tensor)
+        # offset_tensor now points to element at (3, 5)
+    """
     offset = crd2idx(coord, tensor.layout, loc=loc, ip=ip)
     if isinstance(tensor.iterator, Pointer):
         return make_tensor(

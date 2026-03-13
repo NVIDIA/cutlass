@@ -279,13 +279,13 @@ struct CollectiveBuilder<
   // Basic storage block for new Scaling Factor Layouts
   using mnBasicBlockShape  =  Shape<_32,_4>;
   using mnBasicBlockStride = Stride<_16,_4>;
-  using kBasicBlockShape  = Shape<Int<SFVectorSize>, Int<MMA_NSF>>;
+  using kBasicBlockShape  = Shape<Int<(int)SFVectorSize>, Int<MMA_NSF>>;
   using kBasicBlockStride = Stride<_0, _1>;
   
   using sSFA_shapeM       = decltype(prepend(size<0>(TileShape_MNK{}) / Blk_MN{},   mnBasicBlockShape{}));
   using sSF_strideMN      = decltype(prepend(                        Blk_Elems{},  mnBasicBlockStride{}));
   using sSFA_strideM      = sSF_strideMN;
-  using sSF_shapeK        = decltype(prepend(make_shape( Blk_SF{}/Int<MMA_NSF>{},   size<2>(TileShape_MNK{}) / Int<SFVectorSize>{} / Blk_SF{}),  kBasicBlockShape{}));
+  using sSF_shapeK        = decltype(prepend(make_shape( Blk_SF{}/Int<MMA_NSF>{},   size<2>(TileShape_MNK{}) / Int<(int)SFVectorSize>{} / Blk_SF{}),  kBasicBlockShape{}));
   
   using sSFA_strideK      = decltype(prepend(make_stride(         Int<MMA_NSF>{},   size<0>(TileShape_MNK{}) / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
   using sSFA_shape        = decltype(make_shape(  sSFA_shapeM{},   sSF_shapeK{}));

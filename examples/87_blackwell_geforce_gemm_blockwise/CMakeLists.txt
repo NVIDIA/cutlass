@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES "120a|121a")
+if (CUTLASS_NVCC_ARCHS MATCHES "120a|120f|121a")
 cutlass_example_add_executable(
   87a_blackwell_geforce_fp8_bf16_gemm_blockwise
   87a_blackwell_geforce_fp8_bf16_gemm_blockwise.cu
