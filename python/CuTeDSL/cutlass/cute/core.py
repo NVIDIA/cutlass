@@ -3760,6 +3760,35 @@ def zipped_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor:
 
 @dsl_user_op
 def zipped_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    """
+    ``zipped_divide`` is ``logical_divide`` with Tiler modes and Rest modes gathered together: ``(Tiler,Rest)``
+
+    - When Tiler is Layout, this has no effect as ``logical_divide`` results in the same.
+    - When Tiler is ``Tile`` (nested tuple of ``Layout``) or ``Shape``, this zips modes into standard form
+      ``((BLK_A,BLK_B),(a,b,x,y))``
+
+    For example, if ``target`` has shape ``(s, t, r)`` and ``tiler`` has shape ``(BLK_A, BLK_B)``,
+    then the result will have shape ``((BLK_A, BLK_B), (ceil_div(s, BLK_A), ceil_div(t, BLK_B), r))``.
+
+    :param target: The layout or tensor to partition.
+    :type target: Layout or Tensor
+    :param tiler: The tiling specification (can be a Layout, Shape, Tile).
+    :type tiler: Tiler
+    :param loc: Optional MLIR IR location information.
+    :type loc: optional
+    :param ip: Optional MLIR IR insertion point.
+    :type ip: optional
+    :return: A zipped (partitioned) version of the target.
+    :rtype: Layout or Tensor
+
+    **Example:**
+
+    .. code-block:: python
+
+        layout = cute.make_layout((128, 64), stride=(64, 1))
+        tiler = (8, 8)
+        result = cute.zipped_divide(layout, tiler)  # result shape: ((8, 8), (16, 8))
+    """
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)  # type: ignore
     return _op_wrapper(
@@ -3902,6 +3931,73 @@ def local_tile(
     loc=None,
     ip=None,
 ) -> Tensor:
+    """
+    Partition a tensor into tiles using a tiler and extract a single tile at the provided coordinate.
+
+    The ``local_tile`` operation applies a ``zipped_divide`` to split the ``input`` tensor by the ``tiler``
+    and then slices out a single tile using the provided `coord`. This is commonly used for extracting block-,
+    thread-, or CTA-level tiles for parallel operations.
+
+    .. math::
+
+        \\text{local_tile}(input, tiler, coord) = \\text{zipped_divide}(input, tiler)[coord]
+
+    This function corresponds to the CUTE/C++ `local_tile` utility:
+    https://docs.nvidia.com/cutlass/media/docs/cpp/cute/03_tensor.html#local-tile
+
+    :param input: The input tensor to partition into tiles.
+    :type input: Tensor
+    :param tiler: The tiling specification (can be a Layout, Shape, Tile).
+    :type tiler: Tiler
+    :param coord: The coordinate to select within the remainder ("rest") modes after tiling.
+                 This selects which tile to extract.
+    :type coord: Coord
+    :param proj: (Optional) Projection onto tiling modes; specify to project out unused tiler modes,
+                 e.g., when working with projections of tilers in multi-mode partitioning.
+                 Default is None for no projection.
+    :type proj: XTuple, optional
+    :param loc: (Optional) MLIR location, for diagnostic/debugging.
+    :type loc: Any, optional
+    :param ip: (Optional) MLIR insertion point, used in IR building context.
+    :type ip: Any, optional
+
+    :return: A new tensor representing the local tile selected at the given coordinate.
+    :rtype: Tensor
+
+    **Examples**
+
+    1. Tiling a 2D tensor and extracting a tile:
+
+        .. code-block:: python
+
+            # input: (16, 24)
+            tensor : cute.Tensor
+            tiler = (2, 4)
+            coord = (1, 1)
+
+            # output: (8, 6)
+            # - zipped_divide(tensor, tiler)     -> ((2, 4), (8, 6))
+            # - local_tile(tensor, tiler, coord) -> (8, 6)
+            result = cute.local_tile(tensor, tiler=tiler, coord=coord)
+
+    2. Using a stride projection for specialized tiling:
+
+        .. code-block:: python
+
+            # input: (16, 24)
+            tensor : cute.Tensor
+            tiler = (2, 2, 4)
+            coord = (0, 1, 1)
+            proj = (1, None, 1)
+
+            # output: (8, 6)
+            # projected_tiler: (2, 4)
+            # projected_coord: (0, 1)
+            # - zipped_divide(tensor, projected_tiler)               -> ((2, 4), (8, 6))
+            # - local_tile(tensor, projected_tiler, projected_coord) -> (8, 6)
+            result = cute.local_tile(tensor, tiler=tiler, coord=coord, proj=proj)
+    """
+
     tiler_val = _pack_tile(tiler, loc=loc, ip=ip)
     coord_val = _pack_coord(coord, loc=loc, ip=ip)
     if proj is not None:

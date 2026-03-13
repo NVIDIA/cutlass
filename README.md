@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.4.1
+# CUTLASS 4.4.2
 
-_CUTLASS 4.4.1 - Feb 2026_
+_CUTLASS 4.4.2 - March 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -72,6 +72,8 @@ To get started quickly - please refer :
   - We allow grid carve-out without problem shapes being available on host.
   - Tma+LdMatrix features for loading+unpacking narrow-width types (refer to mixed_input_fmha_decode.py for example usage).
   - It is possible now to have customized epilogue fusion for persistent dense GEMM through a Python Epilogue Fusion Configuration (EFC) function, somewhat similar to CUTLASS C++ EVT. It also provides a PyTorch evaluator to compare the results.
+  - CuTe DSL now supports Python 3.14 for both x86_64 and aarch64
+  - Runtime Pointer/Tensor/FakeTensor now supports __cache_key__, providing a stable, hashable representation that simplifies and improves compiled function caching.
 
 * More examples of authorizing peak-performance kernels
   - [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
@@ -85,6 +87,9 @@ To get started quickly - please refer :
   - Fixed an indexing issue of scalar tensor
   - Fixed small K reference check error for cta_tile_n = 256 case with overlapping accumulator optimization in [Blackwell SM100 persistent dense blockscaled GEMM with static scheduling](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent.py).
   - Fixed a segfault issue with tvm-ffi on aarch64
+  - Fixed Hopper FMHA causal attention performance regression on CUDA toolkit 13.1 by
+ optimizing mbarrier synchronization to avoid unnecessary convergence barriers.
+  - Fix kernel loading race condition when multiple GPU are present in the same process in JAX.
 
 * API changes
   - Deprecate get_num_tmem_alloc_cols from blackwell_helpers.py. Use the one from tmem_allocator.py instead.
@@ -127,6 +132,7 @@ To get started quickly - please refer :
 * Add support for arbitrary application-provided strides for block-scale tensors.
     - Users and applications now must pass valid block-scale strides in all cases, even when the tensor is packed.
 * Support 4x blockscaled public ptx for CUDA 13.1.
+* Enable Blackwell SM120f compilation of examples and exposes NVFP4/MX Grouped GEMM in the CUTLASS Profiler.
 * Allow non-static `TmaGbasis` in `AuxTmaParams`.
     - Some cases in attention kernel may require non-static `tma_gbasis`.
     - Relax the restriction on `TmaGbasis` parameter of `AuxTmaParams` and users are allowed to manually construct a dynamic gbasis.

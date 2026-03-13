@@ -17,6 +17,7 @@ import itertools
 import operator
 from typing import Union, Optional, Type, List
 
+
 # MLIR modules imports
 from cutlass._mlir import ir
 from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
@@ -128,6 +129,10 @@ class _Pointer(Pointer):
     def __repr__(self):
         return self.__str__()
 
+    @property
+    def __cache_key__(self) -> tuple:
+        return (self.dtype, self._addr_space, self._assumed_align)
+
 
 class _Tensor(Tensor):
     def __init__(
@@ -144,7 +149,7 @@ class _Tensor(Tensor):
         elif enable_tvm_ffi:
             import tvm_ffi
 
-            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor, stream=-1)
+            self._tvm_ffi_tensor = tvm_ffi.from_dlpack(tensor)
             self._dlpack_data = self._tvm_ffi_tensor.__dlpack__()
         else:
             try:
@@ -185,9 +190,17 @@ class _Tensor(Tensor):
         :param leading_dim: The leading dimension of the layout, defaults to None
         :type leading_dim: int, optional
 
-        When ``leading_dim`` is None, automatically deduces the leading dimension from the tensor layout.
-        The layout can be deduced only when exactly one dimension has a stride of 1. Raises an error
-        if the layout cannot be automatically deduced.
+        When ``leading_dim`` is None, the leading dimension is deduced as follows.
+
+        (1) If exactly one dimension has stride 1, that dimension is used.
+
+        (2) If multiple dimensions have stride 1 but exactly one of them has size > 1,
+            that dimension is used.
+
+        (3) If multiple dimensions have stride 1 but none or more than one has size > 1,
+            an error is raised.
+
+        (4) If no dimension has stride 1, all strides remain dynamic.
 
         When ``leading_dim`` is explicitly specified, marks the layout as dynamic while setting the
         stride at ``leading_dim`` to 1. Also validates that the specified ``leading_dim`` is consistent
@@ -304,6 +317,13 @@ class _Tensor(Tensor):
     def __repr__(self):
         return self.__str__()
 
+    @property
+    def __cache_key__(self) -> tuple:
+        self.load_dltensor()
+        if self._dtype is None:
+            self._dtype = self._dltensor_wrapper.dtype
+        return (self._dtype, self._assumed_align, self._dltensor_wrapper.cache_key())
+
     def __setitem__(self, crd, value):
         raise TypeError("runtime._Tensor is not indexable")
 
@@ -417,42 +437,76 @@ def _get_cute_type_str(inp):
     return "(" + ",".join(elems) + ")"
 
 
-class _FakeCompactTensor(Tensor):
+class _FakeTensor(Tensor):
+    """Fake Tensor implementation as a placeholder.
+    It mimics the interface of Tensor, but does not hold real data or allow indexing.
+    Used for compilation or testing situations where only shape/type/layout information is needed.
+    All attempts to access or mutate data will raise errors.
+    """
+
+    """
+    Create a fake tensor with the given shape, type, and layout.
+
+    :param dtype: Data type of the tensor elements
+    :type dtype: Type[Numeric]
+    :param shape: Shape of the tensor, consists of int (static) or SymInt (dynamic)
+    :type shape: tuple[Union[int, SymInt], ...]
+    :param stride: Stride of the tensor, defaults to None, consists of int (static) or SymInt (dynamic)
+    :type stride: tuple[Union[int, SymInt], ...], optional
+    :param memspace: Memory space where the fake tensor resides. Defaults to AddressSpace.gmem.
+    :type memspace: AddressSpace, optional
+    :param assumed_align: Assumed alignment of the tensor (bytes), defaults to None. If None, uses the element size bytes as the assumed alignment.
+    :type assumed_align: int, optional
+    :param use_32bit_stride: Whether to use 32-bit stride. Defaults to False. When True, the dynamic stride bitwidth
+        will be set to 32 for small problem sizes (cosize(layout) <= Int32_max) for better performance. This is only applied
+        when the dimension is dynamic.
+    :type use_32bit_stride: bool, optional
+
+
+    """
+
     def __init__(
         self,
-        dtype,
-        shape,
-        stride_order,
-        memspace=None,
-        assumed_align=None,
-        use_32bit_stride=False,
+        dtype: Type[Numeric],
+        shape: tuple[Union[int, SymInt], ...],
+        *,
+        stride: tuple[Union[int, SymInt], ...],
+        memspace: AddressSpace = AddressSpace.gmem,
+        assumed_align: int | None = None,
+        use_32bit_stride: bool = False,
+        compact: bool = False,
     ):
         self._dtype = dtype
         self._shape = shape
-        self._stride_order = stride_order or tuple(range(len(shape)))
-        # cannot use memspace or AddressSpace.gmem because AddressSpace.generic is 0
-        self._memspace = memspace if memspace is not None else AddressSpace.gmem
-        self._assumed_align = assumed_align or -(-dtype.width // 8)
+        self._stride = stride
         self._use_32bit_stride = use_32bit_stride
+        self._compact = compact
 
-    def __str__(self) -> str:
-        return f"FakeTensorOrdered<{self._dtype}, {self._shape}, {self._stride_order}>"
+        if not isinstance(shape, (tuple, list)):
+            raise ValueError(f"Expected tuple or list but got {type(shape)}")
 
-    def __repr__(self):
-        return self.__str__()
+        if not all(isinstance(s, (int, SymInt)) for s in self._shape):
+            raise ValueError("All shape elements must be int or SymInt")
+
+        if stride is not None and not all(
+            isinstance(s, (int, SymInt)) for s in self._stride
+        ):
+            raise ValueError("All stride elements must be int or SymInt")
+        self._memspace = memspace
+        self._assumed_align = assumed_align
+        if assumed_align is None:
+            # use the bytes width of the element dtype. The alignment is at least one byte align.
+            self._assumed_align = (self._dtype.width + 7) // 8
 
     @property
     def mlir_type(self) -> ir.Type:
-        shape_ty = ir.Type.parse(
-            '!cute.shape<"' + _get_cute_type_str(self._shape) + '">'
-        )
-        layout_ty = _cute_ir.LayoutType.get_ordered(
-            shape_ty, self._stride_order, self._use_32bit_stride
-        )
-        self._stride = layout_ty.stride
-        ptr_ty = _cute_ir.PtrType.get(
-            self._dtype.mlir_type, self._memspace, self._assumed_align
-        )
+        shape_str = _get_cute_type_str(self._shape)
+        stride_str = _get_cute_type_str(self._stride)
+        layout_ty = ir.Type.parse(f'!cute.layout<"{shape_str}:{stride_str}">')
+
+        # Boolean types are stored as i8 in memory
+        elem_type = T.i8() if self._dtype.width == 1 else self._dtype.mlir_type
+        ptr_ty = _cute_ir.PtrType.get(elem_type, self._memspace, self._assumed_align)
         return _cute_ir.MemRefType.get(ptr_ty, layout_ty)
 
     def __get_mlir_types__(self):
@@ -463,11 +517,53 @@ class _FakeCompactTensor(Tensor):
         assert isinstance(values[0], CoreTensor)
         return CoreTensor(values[0].value, self._dtype)
 
+    def __str__(self) -> str:
+        return f"FakeTensor<{self._dtype}, {self._shape}, {self._stride}>"
+
+    @property
+    def __cache_key__(self) -> tuple:
+        # Check if any shape or stride element is a SymInt without a symbol
+        import warnings
+
+        has_unnamed_symint = False
+        for dim in self._shape:
+            if isinstance(dim, SymInt) and dim.symbol is None:
+                has_unnamed_symint = True
+                break
+        if not self._compact:
+            if not has_unnamed_symint:
+                for stride in self._stride:
+                    if isinstance(stride, SymInt) and stride.symbol is None:
+                        has_unnamed_symint = True
+                        break
+
+        if has_unnamed_symint:
+            warnings.warn(
+                "FakeTensor cache_key contains unnamed symbolic dimensions. "
+                "Different variables with the same shape/stride pattern will have "
+                "identical cache keys, which may cause incorrect cache hits. "
+                "Consider using 'symbol' parameter to distinguish variables: "
+                "cute.sym_int32(symbol='M'), cute.sym_int32(symbol='N')",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        return (
+            self._dtype,
+            self._memspace,
+            self._assumed_align,
+            self._shape,
+            self._stride,
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
     def __setitem__(self, crd, value):
-        raise DSLRuntimeError("runtime._FakeCompactTensor is not indexable")
+        raise DSLRuntimeError("runtime._FakeTensor is not indexable")
 
     def __getitem__(self, crd):
-        raise DSLRuntimeError("runtime._FakeCompactTensor is not indexable")
+        raise DSLRuntimeError("runtime._FakeTensor is not indexable")
 
     @property
     def element_type(self) -> Type[Numeric]:
@@ -491,118 +587,7 @@ class _FakeCompactTensor(Tensor):
 
     @property
     def leading_dim(self):
-        for dim, order in enumerate(self._stride_order):
-            if order == 0:
-                return dim
-
-    @property
-    def dynamic_shapes_mask(self):
-        return tuple(1 if isinstance(e, SymInt) else 0 for e in self._shape)
-
-    @property
-    def dynamic_strides_mask(self):
-        return tuple(1 if isinstance(e, SymInt) else 0 for e in self._stride)
-
-    def fill(self, value: Numeric):
-        raise DSLRuntimeError("runtime._FakeCompactTensor is not writable")
-
-
-class _FakeTensor(Tensor):
-    """Fake Tensor implementation as a placeholder.
-    It mimics the interface of Tensor, but does not hold real data or allow indexing.
-    Used for compilation or testing situations where only shape/type/layout information is needed.
-    All attempts to access or mutate data will raise errors.
-    """
-
-    """
-    Create a fake tensor with the given shape, type, and layout.
-
-    :param dtype: Data type of the tensor elements
-    :type dtype: Type[Numeric]
-    :param shape: Shape of the tensor, consists of int (static) or SymInt (dynamic)
-    :type shape: tuple[int, ...]
-    :param stride: Stride of the tensor, defaults to None, consists of int (static) or SymInt (dynamic)
-    :type stride: tuple[int, ...], optional
-    :param assumed_align: Assumed alignment of the tensor (bytes), defaults to None. If None, uses the element size bytes as the assumed alignment.
-    :type assumed_align: int, optional
-    :param use_32bit_stride: Whether to use 32-bit stride. Defaults to False. When True, the dynamic stride bitwidth
-        will be set to 32 for small problem sizes (cosize(layout) <= Int32_max) for better performance. This is only applied
-        when the dimension is dynamic.
-    :type use_32bit_stride: bool, optional
-
-
-    """
-
-    def __init__(self, dtype, shape, *, stride, memspace=None, assumed_align=None):
-        self._dtype = dtype
-        self._shape = shape
-        self._stride = stride
-        # cannot use memspace or AddressSpace.generic because AddressSpace.generic is 0
-        self._memspace = memspace if memspace is not None else AddressSpace.gmem
-        self._assumed_align = assumed_align
-        if assumed_align is None:
-            # use the bytes width of the element dtype. The alignment is at least one byte align.
-            self._assumed_align = (self._dtype.width + 7) // 8
-
-        if not isinstance(shape, (tuple, list)):
-            raise ValueError(f"Expected tuple or list but got {type(shape)}")
-
-        if not all(isinstance(s, (int, SymInt)) for s in self._shape):
-            raise ValueError("All shape elements must be int or SymInt")
-
-        if stride is not None and not all(
-            isinstance(s, (int, SymInt)) for s in self._stride
-        ):
-            raise ValueError("All stride elements must be int or SymInt")
-    @property
-    def mlir_type(self) -> ir.Type:
-        shape_str = _get_cute_type_str(self._shape)
-        stride_str = _get_cute_type_str(self._stride)
-        layout_ty = ir.Type.parse(f'!cute.layout<"{shape_str}:{stride_str}">')
-        ptr_ty = _cute_ir.PtrType.get(
-            self._dtype.mlir_type, self._memspace, self._assumed_align
-        )
-        return _cute_ir.MemRefType.get(ptr_ty, layout_ty)
-
-    def __get_mlir_types__(self):
-        return [self.mlir_type]
-
-    def __new_from_mlir_values__(self, values):
-        assert len(values) == 1
-        assert isinstance(values[0], CoreTensor)
-        return CoreTensor(values[0].value, self._dtype)
-
-    def __str__(self) -> str:
-        return f"FakeTensor<{self._dtype}, {self._shape}, {self._stride}>"
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __setitem__(self, crd, value):
-        raise DSLRuntimeError("runtime._FakeTensor is not indexable")
-
-    def __getitem__(self, crd):
-        raise DSLRuntimeError("runtime._FakeTensor is not indexable")
-
-    @property
-    def element_type(self) -> Type[Numeric]:
-        return self._dtype
-
-    @property
-    def memspace(self):
-        return self._memspace
-
-    @property
-    def iterator(self):
-        raise DSLRuntimeError("runtime._FakeTensor has dummy iterator")
-
-    @property
-    def shape(self):
-        return self._shape
-
-    @property
-    def stride(self):
-        return self._stride
+        return core.leading_dim(self._shape, self._stride)
 
     @property
     def dynamic_shapes_mask(self):
@@ -617,35 +602,36 @@ class _FakeTensor(Tensor):
 
 
 def make_fake_compact_tensor(
-    dtype,
-    shape,
+    dtype: Type[Numeric],
+    shape: tuple[Union[int, SymInt], ...],
     *,
-    stride_order=None,
-    memspace=None,
-    assumed_align=None,
-    use_32bit_stride=False,
+    stride_order: Optional[tuple[int, ...]] = None,
+    memspace: AddressSpace = AddressSpace.gmem,
+    assumed_align: Optional[int] = None,
+    use_32bit_stride: bool = False,
 ):
     """
     Create a fake tensor with the specified shape, element type, and a compact memory layout.
 
     :param dtype: Data type of the tensor elements.
     :type dtype: Type[Numeric]
-    :param shape: Shape of the tensor.
-    :type shape: tuple[int, ...]
+    :param shape: Shape of the tensor, consisting of static (int) or dynamic (SymInt) dimensions.
+    :type shape: tuple[Union[int, SymInt], ...]
     :param stride_order: Order in which strides (memory layout) are assigned to the tensor dimensions.
         If None, the default layout is left-to-right order (known as column-major order for flatten layout).
         Otherwise, it should be a permutation order of the dimension indices.
+        The mode with stride_order 0 is the fastest changing (leading) dimension, and N-1 is the slowest changing.
     :type stride_order: tuple[int, ...], optional
-    :param memspace: Memory space where the fake tensor resides. Optional.
-    :type memspace: str, optional
-    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is used.
+    :param memspace: Memory space where the fake tensor resides. Defaults to AddressSpace.gmem.
+    :type memspace: AddressSpace, optional
+    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is the dtype width, & at least 1 byte.
     :type assumed_align: int, optional
     :param use_32bit_stride: Whether to use 32-bit stride for dynamic dimensions. If True and the total size of the
         layout (cosize(layout)) fits within int32, then dynamic strides will use 32-bit integers for improved performance.
         Only applies when dimensions are dynamic. Defaults to False.
     :type use_32bit_stride: bool, optional
     :return: An instance of a fake tensor with the given properties and compact layout.
-    :rtype: _FakeCompactTensor
+    :rtype: _FakeTensor
 
     **Examples:**
 
@@ -663,31 +649,68 @@ def make_fake_compact_tensor(
         #   tensor<ptr<f32, generic> o (100,?{div=8}):(?{i32 div=8},1)>
         compiled_foo = cute.compile(foo, x)
 
-        # Default stride order is left-to-right order: (1, 8)
-        y = make_fake_compact_tensor(cutlass.Float32, (8, 3))
+        # Default stride order is left-to-right order (0, 1, ..., n-1)
+        y = make_fake_compact_tensor(cutlass.Float32, (8, 3, 2)) # y.stride == (1, 8, 24)
     """
 
-    return _FakeCompactTensor(
+    if stride_order is not None:
+        if len(stride_order) != len(shape):
+            raise ValueError(
+                f"stride_order ({stride_order}) must be empty or have same length as shape ({shape})."
+            )
+    else:
+        # Default stride order is left-to-right
+        stride_order = stride_order or tuple(range(len(shape)))
+
+    # Make compact strides (possibly symbolic) from shape & stride_order
+    stride = [None] * len(stride_order)
+    stride_product = 1
+    for order in range(len(stride_order)):
+        idx = stride_order.index(order)
+        stride[idx] = stride_product
+        stride_product *= shape[idx]
+
+    stride_width = 32 if use_32bit_stride else 64
+    stride = tuple(
+        (
+            SymInt(width=stride_width, divisibility=s.divisibility)
+            if isinstance(s, SymInt)
+            else s
+        )
+        for s in stride
+    )
+
+    return _FakeTensor(
         dtype,
         shape,
-        stride_order=stride_order,
+        stride=stride,
         memspace=memspace,
         assumed_align=assumed_align,
         use_32bit_stride=use_32bit_stride,
+        compact=True,
     )
 
 
-def make_fake_tensor(dtype, shape, stride, *, memspace=None, assumed_align=None):
+def make_fake_tensor(
+    dtype: Type[Numeric],
+    shape: tuple[Union[int, SymInt], ...],
+    stride: tuple[Union[int, SymInt], ...],
+    *,
+    memspace: AddressSpace = AddressSpace.gmem,
+    assumed_align: Optional[int] = None,
+):
     """
     Create a fake tensor with the specified element type, shape, and stride.
 
     :param dtype: Data type of the tensor elements.
     :type dtype: Type[Numeric]
-    :param shape: Shape of the tensor.
-    :type shape: tuple[int, ...]
-    :param stride: Stride of the tensor.
-    :type stride: tuple[int, ...]
-    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is used. Defaults to None.
+    :param shape: Shape of the tensor, consisting of static (int) or dynamic (SymInt) dimensions.
+    :type shape: tuple[Union[int, SymInt], ...]
+    :param stride: Stride of the tensor, consisting of static (int) or dynamic (SymInt) values.
+    :type stride: tuple[Union[int, SymInt], ...]
+    :param memspace: Memory space where the fake tensor resides. Defaults to AddressSpace.gmem.
+    :type memspace: AddressSpace, optional
+    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is the dtype width, & at least 1 byte.
     :type assumed_align: int, optional
     :return: An instance of a fake tensor with the given properties.
     :rtype: _FakeTensor
@@ -953,22 +976,7 @@ def load_module(file_path: str, *, enable_tvm_ffi: bool = False):
             if Path(path).exists():
                 _LOAD_MODULE_LIBS_CACHE.append(ctypes.CDLL(path))
 
-    if enable_tvm_ffi:
-        import tvm_ffi
-
-        try:
-            # keep_module_alive=False means the module will be unloaded
-            # after the returned module goes out of scope, this is useful
-            # for frequent loading and unloading of modules. The only requirement
-            # is that the module do not return object that have deleter in the module
-            # and the returned object lives longer than the module.
-            # DSL functions to not have such issue so it is desirable to set this to False.
-            return tvm_ffi.load_module(file_path, keep_module_alive=False)
-        except TypeError:
-            # compatible with tvm-ffi < 0.1.6
-            return tvm_ffi.load_module(file_path)
-    else:
-        return ExternalBinaryModule(file_path)
+    return ExternalBinaryModule(file_path, enable_tvm_ffi=enable_tvm_ffi)
 
 # -------------------------------------------------------------------------
 # Try to register_jit_arg_adapter for TensorAdapter
