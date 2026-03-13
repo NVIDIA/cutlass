@@ -68,7 +68,8 @@ class ExternalBinaryModule:
 
     load_provider: LoadProvider = None
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, enable_tvm_ffi: bool = False):
+        self.enable_tvm_ffi = enable_tvm_ffi
         assert self.load_provider is not None, (
             "Load provider is not set for ExternalBinaryModule."
         )
@@ -82,13 +83,28 @@ class ExternalBinaryModule:
                     object_file_content = f.read()
             except Exception as e:
                 raise DSLRuntimeError(f"Failed to read object file {file_path}: {e}")
+
+        useJitLink = not enable_tvm_ffi
         # Lifetime of the engine is same as the ExternalBinaryModule.
         self.engine = self.load_provider.execution_engine_constructor(
-            object_file_content, shared_libs
+            object_file_content, shared_libs, useJitLink
         )
 
     def __getattr__(self, function_prefix: str) -> "JitCompiledFunction":
         """Get the jit_function from the `function_prefix`. The `function_prefix` is specified when users dump the object file. When there is no function_prefix found in the module, the function will raise an error."""
+        if self.enable_tvm_ffi:
+            try:
+                import tvm_ffi
+
+                function_ptr = self.engine.lookup("__tvm_ffi_" + function_prefix)
+                return tvm_ffi.Function.__from_extern_c__(
+                    function_ptr, keep_alive_object=self.engine
+                )
+            except Exception as e:
+                raise DSLRuntimeError(
+                    f"Failed to load TVM FFI function {function_prefix}: {e}"
+                )
+
         try:
             args_spec, function_name, kernel_info, version_str = (
                 decode_metadata_from_execution_engine(
@@ -124,3 +140,7 @@ class ExternalBinaryModule:
             load_from_binary=True,
         )
         return jit_function
+
+    def __getitem__(self, function_prefix: str) -> "JitCompiledFunction":
+        """Get the jit_function from the `function_prefix`. The `function_prefix` is specified when users dump the object file. When there is no function_prefix found in the module, the function will raise an error."""
+        return self.__getattr__(function_prefix)

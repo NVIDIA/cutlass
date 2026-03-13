@@ -267,36 +267,4 @@ def release_compile_cache():
     _CUTLASS_COMPILE_CACHE.clear()
     dsl = CuTeDSL._get_dsl()
     dsl.jit_cache.clear()
-    # TODO: This is needed to release frames being held in the DSL
-    # We should avoid holding such references as they unexpectedly
-    # extend object lifetime.
-    dsl.frame = None
     gc.collect()
-
-
-class _DummyInitKernel:
-    @cute.kernel
-    def kernel(self):
-        pass
-
-    @cute.jit
-    def init(self):
-        pass
-
-
-_CUTLASS_DSL_INITIALIZED = False
-
-
-def initialize_cutlass_dsl():
-    """Initializes cutlass DSL."""
-    global _CUTLASS_DSL_INITIALIZED
-    if _CUTLASS_DSL_INITIALIZED:
-        return
-
-    # Call compiler to ensure we've pre-processed any kernels inside cutedsl.
-    kernel = _DummyInitKernel()
-    with _compile_lock:
-        logger.debug("Initializing cutlass dsl...")
-        _ = cutlass.cute.compile(kernel.init)
-
-    _CUTLASS_DSL_INITIALIZED = True
