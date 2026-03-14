@@ -495,7 +495,7 @@ def pytest_runtest_makereport(item, call):
                             report.longrepr = f"Expect exception '{xfail_info}', but got '{type(call.excinfo.value)}'"
 
 
-def pytest_report_collectionfinish(config, start_path, startdir, items):
+def pytest_report_collectionfinish(config, start_path, items):
     if not config.getoption("--collect-only"):
         return
 
