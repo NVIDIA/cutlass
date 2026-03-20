@@ -1383,7 +1383,7 @@ class PersistentDenseGemmKernel:
                         if lane_id == 0:
                             res = 0
                             while res < self.num_ranks:
-                                res = cute.arch.load(flag.llvm_ptr, cutlass.Int32, sem="relaxed", scope="gpu")
+                                res = cute.arch.load(flag.llvm_ptr, cutlass.Int32, sem="acquire", scope="gpu")
                     cute.arch.barrier(
                         barrier_id=self.reduce_scatter_sync_bar_id,
                         number_of_threads=32 * len(self.reduce_scatter_warp_id),
