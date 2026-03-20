@@ -44,15 +44,19 @@
 #define CUDA_FP4_ENABLED 1
 #endif
 
+// Note: SM12x (desktop Blackwell: RTX 5090/5080, DGX Spark GB10) is intentionally
+// excluded below. SM12x GPUs have mma.e2m1 tensor cores but lack the
+// cvt.rn.satfinite.e2m1x2.f32 PTX instruction required for native FP4/FP6
+// conversion — this instruction is SM100-family only. Including SM12x here causes
+// CUTLASS to emit invalid PTX, producing NaN during NVFP4 inference. SM12x falls
+// through to the existing software E2M1 conversion path instead.
 #if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121A_ENABLED))
+     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110A_ENABLED))
 #  define CUDA_PTX_FP4FP6_CVT_ENABLED 1
 #endif
 
 #if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM120F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121F_ENABLED))
+     defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED))
 #  define CUDA_PTX_FP4FP6_CVT_ENABLED 1
 #endif
 
