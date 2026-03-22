@@ -128,6 +128,7 @@ struct Array<T, N, false> {
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wuninitialized"
 #  pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#  pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
 
       Storage item = (reinterpret_cast<Storage const &>(x) & kMask);

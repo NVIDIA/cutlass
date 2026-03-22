@@ -84,9 +84,9 @@ struct TensorFuncBinaryOp {
     TensorView<ElementD, LayoutD> const & view_d_,
     TensorRef<ElementA, LayoutA> const & view_a_,
     TensorRef<ElementB, LayoutB> const & view_b_,
-    BinaryFunc func = BinaryFunc()
+    BinaryFunc func_ = BinaryFunc()
   ):
-    view_d(view_d_), view_a(view_a_), view_b(view_b_), func(func) { }
+    view_d(view_d_), view_a(view_a_), view_b(view_b_), func(func_) { }
 
   /// Equality check
   void operator()(Coord<LayoutD::kRank> const &coord) const {

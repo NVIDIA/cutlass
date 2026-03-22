@@ -147,13 +147,13 @@ struct Matrix<Element_, 1, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -171,13 +171,13 @@ struct Matrix<Element_, 1, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -195,13 +195,13 @@ struct Matrix<Element_, 1, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -209,8 +209,8 @@ struct Matrix<Element_, 1, 2> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
 
     return m;
   }
@@ -219,8 +219,8 @@ struct Matrix<Element_, 1, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -706,13 +706,13 @@ struct Matrix<Element_, 1, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -730,13 +730,13 @@ struct Matrix<Element_, 1, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -754,13 +754,13 @@ struct Matrix<Element_, 1, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -768,8 +768,8 @@ struct Matrix<Element_, 1, 3> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
 
     return m;
   }
@@ -778,8 +778,8 @@ struct Matrix<Element_, 1, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -789,9 +789,9 @@ struct Matrix<Element_, 1, 3> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
 
     return m;
   }
@@ -800,9 +800,9 @@ struct Matrix<Element_, 1, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -1335,13 +1335,13 @@ struct Matrix<Element_, 1, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[static_cast<size_t>(i * 1 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -1359,13 +1359,13 @@ struct Matrix<Element_, 1, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -1383,13 +1383,13 @@ struct Matrix<Element_, 1, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -1397,8 +1397,8 @@ struct Matrix<Element_, 1, 4> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
 
     return m;
   }
@@ -1407,8 +1407,8 @@ struct Matrix<Element_, 1, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -1418,9 +1418,9 @@ struct Matrix<Element_, 1, 4> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
 
     return m;
   }
@@ -1429,9 +1429,9 @@ struct Matrix<Element_, 1, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -1441,10 +1441,10 @@ struct Matrix<Element_, 1, 4> {
   Matrix<Element, 1, 4> slice_1x4(int i = 0, int j = 0) const {
     Matrix<Element, 1, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
 
     return m;
   }
@@ -1453,10 +1453,10 @@ struct Matrix<Element_, 1, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x4(Matrix<Element, 1, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -2012,13 +2012,13 @@ struct Matrix<Element_, 2, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -2036,13 +2036,13 @@ struct Matrix<Element_, 2, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -2060,13 +2060,13 @@ struct Matrix<Element_, 2, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -2074,8 +2074,8 @@ struct Matrix<Element_, 2, 1> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
 
     return m;
   }
@@ -2084,8 +2084,8 @@ struct Matrix<Element_, 2, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -2655,13 +2655,13 @@ struct Matrix<Element_, 2, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -2679,13 +2679,13 @@ struct Matrix<Element_, 2, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -2703,13 +2703,13 @@ struct Matrix<Element_, 2, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -2717,8 +2717,8 @@ struct Matrix<Element_, 2, 2> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
 
     return m;
   }
@@ -2727,8 +2727,8 @@ struct Matrix<Element_, 2, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -2748,8 +2748,8 @@ struct Matrix<Element_, 2, 2> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
 
     return m;
   }
@@ -2758,8 +2758,8 @@ struct Matrix<Element_, 2, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
 
     return *this;
   }
@@ -2779,10 +2779,10 @@ struct Matrix<Element_, 2, 2> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
 
     return m;
   }
@@ -2791,10 +2791,10 @@ struct Matrix<Element_, 2, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -3440,13 +3440,13 @@ struct Matrix<Element_, 2, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -3464,13 +3464,13 @@ struct Matrix<Element_, 2, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -3488,13 +3488,13 @@ struct Matrix<Element_, 2, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -3502,8 +3502,8 @@ struct Matrix<Element_, 2, 3> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
 
     return m;
   }
@@ -3512,8 +3512,8 @@ struct Matrix<Element_, 2, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -3523,9 +3523,9 @@ struct Matrix<Element_, 2, 3> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
 
     return m;
   }
@@ -3534,9 +3534,9 @@ struct Matrix<Element_, 2, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -3556,8 +3556,8 @@ struct Matrix<Element_, 2, 3> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
 
     return m;
   }
@@ -3566,8 +3566,8 @@ struct Matrix<Element_, 2, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
 
     return *this;
   }
@@ -3587,10 +3587,10 @@ struct Matrix<Element_, 2, 3> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
 
     return m;
   }
@@ -3599,10 +3599,10 @@ struct Matrix<Element_, 2, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
 
     return *this;
   }
@@ -3612,12 +3612,12 @@ struct Matrix<Element_, 2, 3> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
 
     return m;
   }
@@ -3626,12 +3626,12 @@ struct Matrix<Element_, 2, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
 
     return *this;
   }
@@ -4319,13 +4319,13 @@ struct Matrix<Element_, 2, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[static_cast<size_t>(i * 2 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -4343,13 +4343,13 @@ struct Matrix<Element_, 2, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -4367,13 +4367,13 @@ struct Matrix<Element_, 2, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -4381,8 +4381,8 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
 
     return m;
   }
@@ -4391,8 +4391,8 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -4402,9 +4402,9 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
 
     return m;
   }
@@ -4413,9 +4413,9 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -4425,10 +4425,10 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 1, 4> slice_1x4(int i = 0, int j = 0) const {
     Matrix<Element, 1, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
 
     return m;
   }
@@ -4437,10 +4437,10 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x4(Matrix<Element, 1, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -4460,8 +4460,8 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
 
     return m;
   }
@@ -4470,8 +4470,8 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
 
     return *this;
   }
@@ -4491,10 +4491,10 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
 
     return m;
   }
@@ -4503,10 +4503,10 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
 
     return *this;
   }
@@ -4516,12 +4516,12 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
 
     return m;
   }
@@ -4530,12 +4530,12 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
 
     return *this;
   }
@@ -4545,14 +4545,14 @@ struct Matrix<Element_, 2, 4> {
   Matrix<Element, 2, 4> slice_2x4(int i = 0, int j = 0) const {
     Matrix<Element, 2, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
 
     return m;
   }
@@ -4561,14 +4561,14 @@ struct Matrix<Element_, 2, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x4(Matrix<Element, 2, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
 
     return *this;
   }
@@ -5247,13 +5247,13 @@ struct Matrix<Element_, 3, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -5271,13 +5271,13 @@ struct Matrix<Element_, 3, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -5295,13 +5295,13 @@ struct Matrix<Element_, 3, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -5309,8 +5309,8 @@ struct Matrix<Element_, 3, 1> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
 
     return m;
   }
@@ -5319,8 +5319,8 @@ struct Matrix<Element_, 3, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -5330,9 +5330,9 @@ struct Matrix<Element_, 3, 1> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
-    m.data[2] = data[i * 1 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 1 + j + 2)];
 
     return m;
   }
@@ -5341,9 +5341,9 @@ struct Matrix<Element_, 3, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
-    data[i * 1 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -5969,13 +5969,13 @@ struct Matrix<Element_, 3, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -5993,13 +5993,13 @@ struct Matrix<Element_, 3, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -6017,13 +6017,13 @@ struct Matrix<Element_, 3, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -6031,8 +6031,8 @@ struct Matrix<Element_, 3, 2> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
 
     return m;
   }
@@ -6041,8 +6041,8 @@ struct Matrix<Element_, 3, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -6062,8 +6062,8 @@ struct Matrix<Element_, 3, 2> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
 
     return m;
   }
@@ -6072,8 +6072,8 @@ struct Matrix<Element_, 3, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
 
     return *this;
   }
@@ -6083,10 +6083,10 @@ struct Matrix<Element_, 3, 2> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
 
     return m;
   }
@@ -6095,10 +6095,10 @@ struct Matrix<Element_, 3, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -6108,9 +6108,9 @@ struct Matrix<Element_, 3, 2> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
-    m.data[2] = data[i * 2 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 4)];
 
     return m;
   }
@@ -6119,9 +6119,9 @@ struct Matrix<Element_, 3, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
-    data[i * 2 + j + 4] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[2];
 
     return *this;
   }
@@ -6141,12 +6141,12 @@ struct Matrix<Element_, 3, 2> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
-    m.data[4] = data[i * 2 + j + 4];
-    m.data[5] = data[i * 2 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 2 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 2 + j + 5)];
 
     return m;
   }
@@ -6155,12 +6155,12 @@ struct Matrix<Element_, 3, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
-    data[i * 2 + j + 4] = m.data[4];
-    data[i * 2 + j + 5] = m.data[5];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 2 + j + 5)] = m.data[5];
 
     return *this;
   }
@@ -6879,13 +6879,13 @@ struct Matrix<Element_, 3, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -6903,13 +6903,13 @@ struct Matrix<Element_, 3, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -6927,13 +6927,13 @@ struct Matrix<Element_, 3, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -6941,8 +6941,8 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
 
     return m;
   }
@@ -6951,8 +6951,8 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -6962,9 +6962,9 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
 
     return m;
   }
@@ -6973,9 +6973,9 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -6995,8 +6995,8 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
 
     return m;
   }
@@ -7005,8 +7005,8 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
 
     return *this;
   }
@@ -7016,10 +7016,10 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
 
     return m;
   }
@@ -7028,10 +7028,10 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
 
     return *this;
   }
@@ -7041,12 +7041,12 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
 
     return m;
   }
@@ -7055,12 +7055,12 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
 
     return *this;
   }
@@ -7070,9 +7070,9 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
-    m.data[2] = data[i * 3 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 6)];
 
     return m;
   }
@@ -7081,9 +7081,9 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
-    data[i * 3 + j + 6] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[2];
 
     return *this;
   }
@@ -7103,12 +7103,12 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
-    m.data[4] = data[i * 3 + j + 6];
-    m.data[5] = data[i * 3 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 7)];
 
     return m;
   }
@@ -7117,12 +7117,12 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
-    data[i * 3 + j + 6] = m.data[4];
-    data[i * 3 + j + 7] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[5];
 
     return *this;
   }
@@ -7132,15 +7132,15 @@ struct Matrix<Element_, 3, 3> {
   Matrix<Element, 3, 3> slice_3x3(int i = 0, int j = 0) const {
     Matrix<Element, 3, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
-    m.data[6] = data[i * 3 + j + 6];
-    m.data[7] = data[i * 3 + j + 7];
-    m.data[8] = data[i * 3 + j + 8];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 3 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 3 + j + 8)];
 
     return m;
   }
@@ -7149,15 +7149,15 @@ struct Matrix<Element_, 3, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x3(Matrix<Element, 3, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
-    data[i * 3 + j + 6] = m.data[6];
-    data[i * 3 + j + 7] = m.data[7];
-    data[i * 3 + j + 8] = m.data[8];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 3 + j + 8)] = m.data[8];
 
     return *this;
   }
@@ -8111,13 +8111,13 @@ struct Matrix<Element_, 3, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[static_cast<size_t>(i * 3 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -8135,13 +8135,13 @@ struct Matrix<Element_, 3, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -8159,13 +8159,13 @@ struct Matrix<Element_, 3, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -8173,8 +8173,8 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
 
     return m;
   }
@@ -8183,8 +8183,8 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -8194,9 +8194,9 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
 
     return m;
   }
@@ -8205,9 +8205,9 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -8217,10 +8217,10 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 1, 4> slice_1x4(int i = 0, int j = 0) const {
     Matrix<Element, 1, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
 
     return m;
   }
@@ -8229,10 +8229,10 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x4(Matrix<Element, 1, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -8252,8 +8252,8 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
 
     return m;
   }
@@ -8262,8 +8262,8 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
 
     return *this;
   }
@@ -8273,10 +8273,10 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
 
     return m;
   }
@@ -8285,10 +8285,10 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
 
     return *this;
   }
@@ -8298,12 +8298,12 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
 
     return m;
   }
@@ -8312,12 +8312,12 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
 
     return *this;
   }
@@ -8327,14 +8327,14 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 2, 4> slice_2x4(int i = 0, int j = 0) const {
     Matrix<Element, 2, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
 
     return m;
   }
@@ -8343,14 +8343,14 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x4(Matrix<Element, 2, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
 
     return *this;
   }
@@ -8360,9 +8360,9 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
-    m.data[2] = data[i * 4 + j + 8];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 8)];
 
     return m;
   }
@@ -8371,9 +8371,9 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
-    data[i * 4 + j + 8] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[2];
 
     return *this;
   }
@@ -8393,12 +8393,12 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
-    m.data[4] = data[i * 4 + j + 8];
-    m.data[5] = data[i * 4 + j + 9];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 9)];
 
     return m;
   }
@@ -8407,12 +8407,12 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
-    data[i * 4 + j + 8] = m.data[4];
-    data[i * 4 + j + 9] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[5];
 
     return *this;
   }
@@ -8422,15 +8422,15 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 3, 3> slice_3x3(int i = 0, int j = 0) const {
     Matrix<Element, 3, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
-    m.data[6] = data[i * 4 + j + 8];
-    m.data[7] = data[i * 4 + j + 9];
-    m.data[8] = data[i * 4 + j + 10];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 10)];
 
     return m;
   }
@@ -8439,15 +8439,15 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x3(Matrix<Element, 3, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
-    data[i * 4 + j + 8] = m.data[6];
-    data[i * 4 + j + 9] = m.data[7];
-    data[i * 4 + j + 10] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[8];
 
     return *this;
   }
@@ -8457,18 +8457,18 @@ struct Matrix<Element_, 3, 4> {
   Matrix<Element, 3, 4> slice_3x4(int i = 0, int j = 0) const {
     Matrix<Element, 3, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
-    m.data[8] = data[i * 4 + j + 8];
-    m.data[9] = data[i * 4 + j + 9];
-    m.data[10] = data[i * 4 + j + 10];
-    m.data[11] = data[i * 4 + j + 11];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[9] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[10] = data[static_cast<size_t>(i * 4 + j + 10)];
+    m.data[11] = data[static_cast<size_t>(i * 4 + j + 11)];
 
     return m;
   }
@@ -8477,18 +8477,18 @@ struct Matrix<Element_, 3, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x4(Matrix<Element, 3, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
-    data[i * 4 + j + 8] = m.data[8];
-    data[i * 4 + j + 9] = m.data[9];
-    data[i * 4 + j + 10] = m.data[10];
-    data[i * 4 + j + 11] = m.data[11];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[9];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[10];
+    data[static_cast<size_t>(i * 4 + j + 11)] = m.data[11];
 
     return *this;
   }
@@ -9327,13 +9327,13 @@ struct Matrix<Element_, 4, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -9351,13 +9351,13 @@ struct Matrix<Element_, 4, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -9375,13 +9375,13 @@ struct Matrix<Element_, 4, 1> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -9389,8 +9389,8 @@ struct Matrix<Element_, 4, 1> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
 
     return m;
   }
@@ -9399,8 +9399,8 @@ struct Matrix<Element_, 4, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -9410,9 +9410,9 @@ struct Matrix<Element_, 4, 1> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
-    m.data[2] = data[i * 1 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 1 + j + 2)];
 
     return m;
   }
@@ -9421,9 +9421,9 @@ struct Matrix<Element_, 4, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
-    data[i * 1 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -9433,10 +9433,10 @@ struct Matrix<Element_, 4, 1> {
   Matrix<Element, 4, 1> slice_4x1(int i = 0, int j = 0) const {
     Matrix<Element, 4, 1> m;
     
-    m.data[0] = data[i * 1 + j + 0];
-    m.data[1] = data[i * 1 + j + 1];
-    m.data[2] = data[i * 1 + j + 2];
-    m.data[3] = data[i * 1 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 1 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 1 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 1 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 1 + j + 3)];
 
     return m;
   }
@@ -9445,10 +9445,10 @@ struct Matrix<Element_, 4, 1> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x1(Matrix<Element, 4, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 1 + j + 0] = m.data[0];
-    data[i * 1 + j + 1] = m.data[1];
-    data[i * 1 + j + 2] = m.data[2];
-    data[i * 1 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 1 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 1 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 1 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 1 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -10123,13 +10123,13 @@ struct Matrix<Element_, 4, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -10147,13 +10147,13 @@ struct Matrix<Element_, 4, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -10171,13 +10171,13 @@ struct Matrix<Element_, 4, 2> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -10185,8 +10185,8 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
 
     return m;
   }
@@ -10195,8 +10195,8 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -10216,8 +10216,8 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
 
     return m;
   }
@@ -10226,8 +10226,8 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
 
     return *this;
   }
@@ -10237,10 +10237,10 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
 
     return m;
   }
@@ -10249,10 +10249,10 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -10262,9 +10262,9 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
-    m.data[2] = data[i * 2 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 4)];
 
     return m;
   }
@@ -10273,9 +10273,9 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
-    data[i * 2 + j + 4] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[2];
 
     return *this;
   }
@@ -10285,12 +10285,12 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
-    m.data[4] = data[i * 2 + j + 4];
-    m.data[5] = data[i * 2 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 2 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 2 + j + 5)];
 
     return m;
   }
@@ -10299,12 +10299,12 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
-    data[i * 2 + j + 4] = m.data[4];
-    data[i * 2 + j + 5] = m.data[5];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 2 + j + 5)] = m.data[5];
 
     return *this;
   }
@@ -10314,10 +10314,10 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 4, 1> slice_4x1(int i = 0, int j = 0) const {
     Matrix<Element, 4, 1> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 2];
-    m.data[2] = data[i * 2 + j + 4];
-    m.data[3] = data[i * 2 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 6)];
 
     return m;
   }
@@ -10326,10 +10326,10 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x1(Matrix<Element, 4, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 2] = m.data[1];
-    data[i * 2 + j + 4] = m.data[2];
-    data[i * 2 + j + 6] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 6)] = m.data[3];
 
     return *this;
   }
@@ -10349,14 +10349,14 @@ struct Matrix<Element_, 4, 2> {
   Matrix<Element, 4, 2> slice_4x2(int i = 0, int j = 0) const {
     Matrix<Element, 4, 2> m;
     
-    m.data[0] = data[i * 2 + j + 0];
-    m.data[1] = data[i * 2 + j + 1];
-    m.data[2] = data[i * 2 + j + 2];
-    m.data[3] = data[i * 2 + j + 3];
-    m.data[4] = data[i * 2 + j + 4];
-    m.data[5] = data[i * 2 + j + 5];
-    m.data[6] = data[i * 2 + j + 6];
-    m.data[7] = data[i * 2 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 2 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 2 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 2 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 2 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 2 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 2 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 2 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 2 + j + 7)];
 
     return m;
   }
@@ -10365,14 +10365,14 @@ struct Matrix<Element_, 4, 2> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x2(Matrix<Element, 4, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 2 + j + 0] = m.data[0];
-    data[i * 2 + j + 1] = m.data[1];
-    data[i * 2 + j + 2] = m.data[2];
-    data[i * 2 + j + 3] = m.data[3];
-    data[i * 2 + j + 4] = m.data[4];
-    data[i * 2 + j + 5] = m.data[5];
-    data[i * 2 + j + 6] = m.data[6];
-    data[i * 2 + j + 7] = m.data[7];
+    data[static_cast<size_t>(i * 2 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 2 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 2 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 2 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 2 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 2 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 2 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 2 + j + 7)] = m.data[7];
 
     return *this;
   }
@@ -11180,13 +11180,13 @@ struct Matrix<Element_, 4, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -11204,13 +11204,13 @@ struct Matrix<Element_, 4, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -11228,13 +11228,13 @@ struct Matrix<Element_, 4, 3> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -11242,8 +11242,8 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
 
     return m;
   }
@@ -11252,8 +11252,8 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -11263,9 +11263,9 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
 
     return m;
   }
@@ -11274,9 +11274,9 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -11296,8 +11296,8 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
 
     return m;
   }
@@ -11306,8 +11306,8 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
 
     return *this;
   }
@@ -11317,10 +11317,10 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
 
     return m;
   }
@@ -11329,10 +11329,10 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
 
     return *this;
   }
@@ -11342,12 +11342,12 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
 
     return m;
   }
@@ -11356,12 +11356,12 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
 
     return *this;
   }
@@ -11371,9 +11371,9 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
-    m.data[2] = data[i * 3 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 6)];
 
     return m;
   }
@@ -11382,9 +11382,9 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
-    data[i * 3 + j + 6] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[2];
 
     return *this;
   }
@@ -11394,12 +11394,12 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
-    m.data[4] = data[i * 3 + j + 6];
-    m.data[5] = data[i * 3 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 7)];
 
     return m;
   }
@@ -11408,12 +11408,12 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
-    data[i * 3 + j + 6] = m.data[4];
-    data[i * 3 + j + 7] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[5];
 
     return *this;
   }
@@ -11423,15 +11423,15 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 3, 3> slice_3x3(int i = 0, int j = 0) const {
     Matrix<Element, 3, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
-    m.data[6] = data[i * 3 + j + 6];
-    m.data[7] = data[i * 3 + j + 7];
-    m.data[8] = data[i * 3 + j + 8];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 3 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 3 + j + 8)];
 
     return m;
   }
@@ -11440,15 +11440,15 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x3(Matrix<Element, 3, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
-    data[i * 3 + j + 6] = m.data[6];
-    data[i * 3 + j + 7] = m.data[7];
-    data[i * 3 + j + 8] = m.data[8];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 3 + j + 8)] = m.data[8];
 
     return *this;
   }
@@ -11458,10 +11458,10 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 4, 1> slice_4x1(int i = 0, int j = 0) const {
     Matrix<Element, 4, 1> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 3];
-    m.data[2] = data[i * 3 + j + 6];
-    m.data[3] = data[i * 3 + j + 9];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 9)];
 
     return m;
   }
@@ -11470,10 +11470,10 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x1(Matrix<Element, 4, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 3] = m.data[1];
-    data[i * 3 + j + 6] = m.data[2];
-    data[i * 3 + j + 9] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 9)] = m.data[3];
 
     return *this;
   }
@@ -11493,14 +11493,14 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 4, 2> slice_4x2(int i = 0, int j = 0) const {
     Matrix<Element, 4, 2> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 3];
-    m.data[3] = data[i * 3 + j + 4];
-    m.data[4] = data[i * 3 + j + 6];
-    m.data[5] = data[i * 3 + j + 7];
-    m.data[6] = data[i * 3 + j + 9];
-    m.data[7] = data[i * 3 + j + 10];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 7)];
+    m.data[6] = data[static_cast<size_t>(i * 3 + j + 9)];
+    m.data[7] = data[static_cast<size_t>(i * 3 + j + 10)];
 
     return m;
   }
@@ -11509,14 +11509,14 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x2(Matrix<Element, 4, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 3] = m.data[2];
-    data[i * 3 + j + 4] = m.data[3];
-    data[i * 3 + j + 6] = m.data[4];
-    data[i * 3 + j + 7] = m.data[5];
-    data[i * 3 + j + 9] = m.data[6];
-    data[i * 3 + j + 10] = m.data[7];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 9)] = m.data[6];
+    data[static_cast<size_t>(i * 3 + j + 10)] = m.data[7];
 
     return *this;
   }
@@ -11526,18 +11526,18 @@ struct Matrix<Element_, 4, 3> {
   Matrix<Element, 4, 3> slice_4x3(int i = 0, int j = 0) const {
     Matrix<Element, 4, 3> m;
     
-    m.data[0] = data[i * 3 + j + 0];
-    m.data[1] = data[i * 3 + j + 1];
-    m.data[2] = data[i * 3 + j + 2];
-    m.data[3] = data[i * 3 + j + 3];
-    m.data[4] = data[i * 3 + j + 4];
-    m.data[5] = data[i * 3 + j + 5];
-    m.data[6] = data[i * 3 + j + 6];
-    m.data[7] = data[i * 3 + j + 7];
-    m.data[8] = data[i * 3 + j + 8];
-    m.data[9] = data[i * 3 + j + 9];
-    m.data[10] = data[i * 3 + j + 10];
-    m.data[11] = data[i * 3 + j + 11];
+    m.data[0] = data[static_cast<size_t>(i * 3 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 3 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 3 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 3 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 3 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 3 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 3 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 3 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 3 + j + 8)];
+    m.data[9] = data[static_cast<size_t>(i * 3 + j + 9)];
+    m.data[10] = data[static_cast<size_t>(i * 3 + j + 10)];
+    m.data[11] = data[static_cast<size_t>(i * 3 + j + 11)];
 
     return m;
   }
@@ -11546,18 +11546,18 @@ struct Matrix<Element_, 4, 3> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x3(Matrix<Element, 4, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 3 + j + 0] = m.data[0];
-    data[i * 3 + j + 1] = m.data[1];
-    data[i * 3 + j + 2] = m.data[2];
-    data[i * 3 + j + 3] = m.data[3];
-    data[i * 3 + j + 4] = m.data[4];
-    data[i * 3 + j + 5] = m.data[5];
-    data[i * 3 + j + 6] = m.data[6];
-    data[i * 3 + j + 7] = m.data[7];
-    data[i * 3 + j + 8] = m.data[8];
-    data[i * 3 + j + 9] = m.data[9];
-    data[i * 3 + j + 10] = m.data[10];
-    data[i * 3 + j + 11] = m.data[11];
+    data[static_cast<size_t>(i * 3 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 3 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 3 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 3 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 3 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 3 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 3 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 3 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 3 + j + 8)] = m.data[8];
+    data[static_cast<size_t>(i * 3 + j + 9)] = m.data[9];
+    data[static_cast<size_t>(i * 3 + j + 10)] = m.data[10];
+    data[static_cast<size_t>(i * 3 + j + 11)] = m.data[11];
 
     return *this;
   }
@@ -12543,13 +12543,13 @@ struct Matrix<Element_, 4, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[static_cast<size_t>(i * 4 + j)];
   }
 
   /// Accesses an element by coordinate
@@ -12567,13 +12567,13 @@ struct Matrix<Element_, 4, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element &at(int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element at(int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by coordinate
@@ -12591,13 +12591,13 @@ struct Matrix<Element_, 4, 4> {
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element & operator[](int offset) {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
 
   /// Accesses an element by offset
   CUTLASS_HOST_DEVICE
   Element operator[](int offset) const {
-    return data[offset];
+    return data[static_cast<size_t>(offset)];
   }
   
   /// Gets a submatrix with optional offset
@@ -12605,8 +12605,8 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 1, 2> slice_1x2(int i = 0, int j = 0) const {
     Matrix<Element, 1, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
 
     return m;
   }
@@ -12615,8 +12615,8 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x2(Matrix<Element, 1, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
 
     return *this;
   }
@@ -12626,9 +12626,9 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 1, 3> slice_1x3(int i = 0, int j = 0) const {
     Matrix<Element, 1, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
 
     return m;
   }
@@ -12637,9 +12637,9 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x3(Matrix<Element, 1, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
 
     return *this;
   }
@@ -12649,10 +12649,10 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 1, 4> slice_1x4(int i = 0, int j = 0) const {
     Matrix<Element, 1, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
 
     return m;
   }
@@ -12661,10 +12661,10 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_1x4(Matrix<Element, 1, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
 
     return *this;
   }
@@ -12684,8 +12684,8 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 2, 1> slice_2x1(int i = 0, int j = 0) const {
     Matrix<Element, 2, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
 
     return m;
   }
@@ -12694,8 +12694,8 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x1(Matrix<Element, 2, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
 
     return *this;
   }
@@ -12705,10 +12705,10 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 2, 2> slice_2x2(int i = 0, int j = 0) const {
     Matrix<Element, 2, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
 
     return m;
   }
@@ -12717,10 +12717,10 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x2(Matrix<Element, 2, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
 
     return *this;
   }
@@ -12730,12 +12730,12 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 2, 3> slice_2x3(int i = 0, int j = 0) const {
     Matrix<Element, 2, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
 
     return m;
   }
@@ -12744,12 +12744,12 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x3(Matrix<Element, 2, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
 
     return *this;
   }
@@ -12759,14 +12759,14 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 2, 4> slice_2x4(int i = 0, int j = 0) const {
     Matrix<Element, 2, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
 
     return m;
   }
@@ -12775,14 +12775,14 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_2x4(Matrix<Element, 2, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
 
     return *this;
   }
@@ -12792,9 +12792,9 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 3, 1> slice_3x1(int i = 0, int j = 0) const {
     Matrix<Element, 3, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
-    m.data[2] = data[i * 4 + j + 8];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 8)];
 
     return m;
   }
@@ -12803,9 +12803,9 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x1(Matrix<Element, 3, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
-    data[i * 4 + j + 8] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[2];
 
     return *this;
   }
@@ -12815,12 +12815,12 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 3, 2> slice_3x2(int i = 0, int j = 0) const {
     Matrix<Element, 3, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
-    m.data[4] = data[i * 4 + j + 8];
-    m.data[5] = data[i * 4 + j + 9];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 9)];
 
     return m;
   }
@@ -12829,12 +12829,12 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x2(Matrix<Element, 3, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
-    data[i * 4 + j + 8] = m.data[4];
-    data[i * 4 + j + 9] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[5];
 
     return *this;
   }
@@ -12844,15 +12844,15 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 3, 3> slice_3x3(int i = 0, int j = 0) const {
     Matrix<Element, 3, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
-    m.data[6] = data[i * 4 + j + 8];
-    m.data[7] = data[i * 4 + j + 9];
-    m.data[8] = data[i * 4 + j + 10];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 10)];
 
     return m;
   }
@@ -12861,15 +12861,15 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x3(Matrix<Element, 3, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
-    data[i * 4 + j + 8] = m.data[6];
-    data[i * 4 + j + 9] = m.data[7];
-    data[i * 4 + j + 10] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[8];
 
     return *this;
   }
@@ -12879,18 +12879,18 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 3, 4> slice_3x4(int i = 0, int j = 0) const {
     Matrix<Element, 3, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
-    m.data[8] = data[i * 4 + j + 8];
-    m.data[9] = data[i * 4 + j + 9];
-    m.data[10] = data[i * 4 + j + 10];
-    m.data[11] = data[i * 4 + j + 11];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[9] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[10] = data[static_cast<size_t>(i * 4 + j + 10)];
+    m.data[11] = data[static_cast<size_t>(i * 4 + j + 11)];
 
     return m;
   }
@@ -12899,18 +12899,18 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_3x4(Matrix<Element, 3, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
-    data[i * 4 + j + 8] = m.data[8];
-    data[i * 4 + j + 9] = m.data[9];
-    data[i * 4 + j + 10] = m.data[10];
-    data[i * 4 + j + 11] = m.data[11];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[9];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[10];
+    data[static_cast<size_t>(i * 4 + j + 11)] = m.data[11];
 
     return *this;
   }
@@ -12920,10 +12920,10 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 4, 1> slice_4x1(int i = 0, int j = 0) const {
     Matrix<Element, 4, 1> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 4];
-    m.data[2] = data[i * 4 + j + 8];
-    m.data[3] = data[i * 4 + j + 12];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 12)];
 
     return m;
   }
@@ -12932,10 +12932,10 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x1(Matrix<Element, 4, 1> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 4] = m.data[1];
-    data[i * 4 + j + 8] = m.data[2];
-    data[i * 4 + j + 12] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 12)] = m.data[3];
 
     return *this;
   }
@@ -12955,14 +12955,14 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 4, 2> slice_4x2(int i = 0, int j = 0) const {
     Matrix<Element, 4, 2> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 4];
-    m.data[3] = data[i * 4 + j + 5];
-    m.data[4] = data[i * 4 + j + 8];
-    m.data[5] = data[i * 4 + j + 9];
-    m.data[6] = data[i * 4 + j + 12];
-    m.data[7] = data[i * 4 + j + 13];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 12)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 13)];
 
     return m;
   }
@@ -12971,14 +12971,14 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x2(Matrix<Element, 4, 2> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 4] = m.data[2];
-    data[i * 4 + j + 5] = m.data[3];
-    data[i * 4 + j + 8] = m.data[4];
-    data[i * 4 + j + 9] = m.data[5];
-    data[i * 4 + j + 12] = m.data[6];
-    data[i * 4 + j + 13] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 12)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 13)] = m.data[7];
 
     return *this;
   }
@@ -12988,18 +12988,18 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 4, 3> slice_4x3(int i = 0, int j = 0) const {
     Matrix<Element, 4, 3> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 4];
-    m.data[4] = data[i * 4 + j + 5];
-    m.data[5] = data[i * 4 + j + 6];
-    m.data[6] = data[i * 4 + j + 8];
-    m.data[7] = data[i * 4 + j + 9];
-    m.data[8] = data[i * 4 + j + 10];
-    m.data[9] = data[i * 4 + j + 12];
-    m.data[10] = data[i * 4 + j + 13];
-    m.data[11] = data[i * 4 + j + 14];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 10)];
+    m.data[9] = data[static_cast<size_t>(i * 4 + j + 12)];
+    m.data[10] = data[static_cast<size_t>(i * 4 + j + 13)];
+    m.data[11] = data[static_cast<size_t>(i * 4 + j + 14)];
 
     return m;
   }
@@ -13008,18 +13008,18 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x3(Matrix<Element, 4, 3> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 4] = m.data[3];
-    data[i * 4 + j + 5] = m.data[4];
-    data[i * 4 + j + 6] = m.data[5];
-    data[i * 4 + j + 8] = m.data[6];
-    data[i * 4 + j + 9] = m.data[7];
-    data[i * 4 + j + 10] = m.data[8];
-    data[i * 4 + j + 12] = m.data[9];
-    data[i * 4 + j + 13] = m.data[10];
-    data[i * 4 + j + 14] = m.data[11];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 12)] = m.data[9];
+    data[static_cast<size_t>(i * 4 + j + 13)] = m.data[10];
+    data[static_cast<size_t>(i * 4 + j + 14)] = m.data[11];
 
     return *this;
   }
@@ -13029,22 +13029,22 @@ struct Matrix<Element_, 4, 4> {
   Matrix<Element, 4, 4> slice_4x4(int i = 0, int j = 0) const {
     Matrix<Element, 4, 4> m;
     
-    m.data[0] = data[i * 4 + j + 0];
-    m.data[1] = data[i * 4 + j + 1];
-    m.data[2] = data[i * 4 + j + 2];
-    m.data[3] = data[i * 4 + j + 3];
-    m.data[4] = data[i * 4 + j + 4];
-    m.data[5] = data[i * 4 + j + 5];
-    m.data[6] = data[i * 4 + j + 6];
-    m.data[7] = data[i * 4 + j + 7];
-    m.data[8] = data[i * 4 + j + 8];
-    m.data[9] = data[i * 4 + j + 9];
-    m.data[10] = data[i * 4 + j + 10];
-    m.data[11] = data[i * 4 + j + 11];
-    m.data[12] = data[i * 4 + j + 12];
-    m.data[13] = data[i * 4 + j + 13];
-    m.data[14] = data[i * 4 + j + 14];
-    m.data[15] = data[i * 4 + j + 15];
+    m.data[0] = data[static_cast<size_t>(i * 4 + j + 0)];
+    m.data[1] = data[static_cast<size_t>(i * 4 + j + 1)];
+    m.data[2] = data[static_cast<size_t>(i * 4 + j + 2)];
+    m.data[3] = data[static_cast<size_t>(i * 4 + j + 3)];
+    m.data[4] = data[static_cast<size_t>(i * 4 + j + 4)];
+    m.data[5] = data[static_cast<size_t>(i * 4 + j + 5)];
+    m.data[6] = data[static_cast<size_t>(i * 4 + j + 6)];
+    m.data[7] = data[static_cast<size_t>(i * 4 + j + 7)];
+    m.data[8] = data[static_cast<size_t>(i * 4 + j + 8)];
+    m.data[9] = data[static_cast<size_t>(i * 4 + j + 9)];
+    m.data[10] = data[static_cast<size_t>(i * 4 + j + 10)];
+    m.data[11] = data[static_cast<size_t>(i * 4 + j + 11)];
+    m.data[12] = data[static_cast<size_t>(i * 4 + j + 12)];
+    m.data[13] = data[static_cast<size_t>(i * 4 + j + 13)];
+    m.data[14] = data[static_cast<size_t>(i * 4 + j + 14)];
+    m.data[15] = data[static_cast<size_t>(i * 4 + j + 15)];
 
     return m;
   }
@@ -13053,22 +13053,22 @@ struct Matrix<Element_, 4, 4> {
   CUTLASS_HOST_DEVICE
   Matrix & set_slice_4x4(Matrix<Element, 4, 4> const &m, int i = 0, int j = 0) {
     
-    data[i * 4 + j + 0] = m.data[0];
-    data[i * 4 + j + 1] = m.data[1];
-    data[i * 4 + j + 2] = m.data[2];
-    data[i * 4 + j + 3] = m.data[3];
-    data[i * 4 + j + 4] = m.data[4];
-    data[i * 4 + j + 5] = m.data[5];
-    data[i * 4 + j + 6] = m.data[6];
-    data[i * 4 + j + 7] = m.data[7];
-    data[i * 4 + j + 8] = m.data[8];
-    data[i * 4 + j + 9] = m.data[9];
-    data[i * 4 + j + 10] = m.data[10];
-    data[i * 4 + j + 11] = m.data[11];
-    data[i * 4 + j + 12] = m.data[12];
-    data[i * 4 + j + 13] = m.data[13];
-    data[i * 4 + j + 14] = m.data[14];
-    data[i * 4 + j + 15] = m.data[15];
+    data[static_cast<size_t>(i * 4 + j + 0)] = m.data[0];
+    data[static_cast<size_t>(i * 4 + j + 1)] = m.data[1];
+    data[static_cast<size_t>(i * 4 + j + 2)] = m.data[2];
+    data[static_cast<size_t>(i * 4 + j + 3)] = m.data[3];
+    data[static_cast<size_t>(i * 4 + j + 4)] = m.data[4];
+    data[static_cast<size_t>(i * 4 + j + 5)] = m.data[5];
+    data[static_cast<size_t>(i * 4 + j + 6)] = m.data[6];
+    data[static_cast<size_t>(i * 4 + j + 7)] = m.data[7];
+    data[static_cast<size_t>(i * 4 + j + 8)] = m.data[8];
+    data[static_cast<size_t>(i * 4 + j + 9)] = m.data[9];
+    data[static_cast<size_t>(i * 4 + j + 10)] = m.data[10];
+    data[static_cast<size_t>(i * 4 + j + 11)] = m.data[11];
+    data[static_cast<size_t>(i * 4 + j + 12)] = m.data[12];
+    data[static_cast<size_t>(i * 4 + j + 13)] = m.data[13];
+    data[static_cast<size_t>(i * 4 + j + 14)] = m.data[14];
+    data[static_cast<size_t>(i * 4 + j + 15)] = m.data[15];
 
     return *this;
   }

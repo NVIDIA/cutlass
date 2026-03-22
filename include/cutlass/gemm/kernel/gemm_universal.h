@@ -156,76 +156,76 @@ public:
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      typename LayoutA::Stride stride_a,
-      typename LayoutB::Stride stride_b,
-      typename LayoutC::Stride stride_c,
-      typename LayoutC::Stride stride_d,
-      int const *ptr_gather_A_indices = nullptr,
-      int const *ptr_gather_B_indices = nullptr,
-      int const *ptr_scatter_D_indices = nullptr)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      typename LayoutA::Stride stride_a_,
+      typename LayoutB::Stride stride_b_,
+      typename LayoutC::Stride stride_c_,
+      typename LayoutC::Stride stride_d_,
+      int const *ptr_gather_A_indices_ = nullptr,
+      int const *ptr_gather_B_indices_ = nullptr,
+      int const *ptr_scatter_D_indices_ = nullptr)
     :
-      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
-      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C),
-      stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d),
-      ptr_gather_A_indices(ptr_gather_A_indices), ptr_gather_B_indices(ptr_gather_B_indices),
-      ptr_scatter_D_indices(ptr_scatter_D_indices)
+      UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      batch_stride_A(batch_stride_A_), batch_stride_B(batch_stride_B_), batch_stride_C(batch_stride_C_),
+      stride_a(stride_a_), stride_b(stride_b_), stride_c(stride_c_), stride_d(stride_d_),
+      ptr_gather_A_indices(ptr_gather_A_indices_), ptr_gather_B_indices(ptr_gather_B_indices_),
+      ptr_scatter_D_indices(ptr_scatter_D_indices_)
     {
       lda = 0;
       ldb = 0;
       ldc = 0;
       ldd = 0;
-      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
+      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size_);
     }
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      typename LayoutA::Stride::LongIndex lda,
-      typename LayoutB::Stride::LongIndex ldb,
-      typename LayoutC::Stride::LongIndex ldc,
-      typename LayoutC::Stride::LongIndex ldd,
-      int const *ptr_gather_A_indices = nullptr,
-      int const *ptr_gather_B_indices = nullptr,
-      int const *ptr_scatter_D_indices = nullptr
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      typename LayoutA::Stride::LongIndex lda_,
+      typename LayoutB::Stride::LongIndex ldb_,
+      typename LayoutC::Stride::LongIndex ldc_,
+      typename LayoutC::Stride::LongIndex ldd_,
+      int const *ptr_gather_A_indices_ = nullptr,
+      int const *ptr_gather_B_indices_ = nullptr,
+      int const *ptr_scatter_D_indices_ = nullptr
     ):
-      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
-      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd),
-      ptr_gather_A_indices(ptr_gather_A_indices), ptr_gather_B_indices(ptr_gather_B_indices),
-      ptr_scatter_D_indices(ptr_scatter_D_indices)
+      UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      batch_stride_A(batch_stride_A_), batch_stride_B(batch_stride_B_), batch_stride_C(batch_stride_C_),
+      lda(lda_), ldb(ldb_), ldc(ldc_), ldd(ldd_),
+      ptr_gather_A_indices(ptr_gather_A_indices_), ptr_gather_B_indices(ptr_gather_B_indices_),
+      ptr_scatter_D_indices(ptr_scatter_D_indices_)
     {
-      stride_a = make_Coord(lda);
-      stride_b = make_Coord(ldb);
-      stride_c = make_Coord(ldc);
-      stride_d = make_Coord(ldd);
-      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
+      stride_a = make_Coord(lda_);
+      stride_b = make_Coord(ldb_);
+      stride_c = make_Coord(ldc_);
+      stride_d = make_Coord(ldd_);
+      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size_);
     }
 
     /// Returns arguments for the transposed problem

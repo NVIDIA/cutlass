@@ -714,7 +714,7 @@ class VectorArrayConverterTest : public testing::Test {
   template <int N>
   static void emit_test() { 
     const int range = 1 << cutlass::sizeof_bits<Source>::value;
-    const int offset = cutlass::platform::numeric_limits<Source>::lowest();
+    const int offset = static_cast<int>(cutlass::platform::numeric_limits<Source>::lowest());
     test::core::kernel::run_test<Result, Source, N>(GetName<Result>::name, GetName<Source>::name, range, offset);
   }
 };

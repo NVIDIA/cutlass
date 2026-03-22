@@ -159,7 +159,7 @@ struct RandomGaussianFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  RandomGaussianFunc(Params const &params): params(params) {
+  RandomGaussianFunc(Params const &params_): params(params_) {
 
     uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -225,14 +225,14 @@ struct RandomGaussianFunc<complex<Real>> {
     /// Construction of Gaussian RNG functor.
     Params(
       uint64_t seed_ = 0,
-      Real mean_ = 0, 
+      Real mean_ = 0,
       Real stddev_ = 1,
       int int_scale_ = -1,
       int exclude_zero_ = -1
     ):
-      seed(seed_), 
-      mean(static_cast<FloatType>(mean_)), 
-      stddev(static_cast<FloatType>(stddev_)), 
+      seed(seed_),
+      mean(static_cast<FloatType>(mean_)),
+      stddev(static_cast<FloatType>(stddev_)),
       int_scale(int_scale_),
       exclude_zero(exclude_zero_) {
 
@@ -257,7 +257,7 @@ struct RandomGaussianFunc<complex<Real>> {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  RandomGaussianFunc(Params const &params): params(params) {
+  RandomGaussianFunc(Params const &params_): params(params_) {
 
     uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -357,7 +357,7 @@ struct TensorFillRandomGaussianFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorFillRandomGaussianFunc(Params const &params): params(params), random(params.random) {
+  TensorFillRandomGaussianFunc(Params const &params_): params(params_), random(params_.random) {
 
   }
 
@@ -508,7 +508,7 @@ struct RandomUniformFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  RandomUniformFunc(Params const &params): params(params) {
+  RandomUniformFunc(Params const &params_): params(params_) {
 
     uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -637,7 +637,7 @@ struct RandomUniformFunc<complex<Real>> {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  RandomUniformFunc(Params const &params): params(params) {
+  RandomUniformFunc(Params const &params_): params(params_) {
 
     uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -752,7 +752,7 @@ struct TensorFillRandomUniformFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorFillRandomUniformFunc(Params const &params): params(params), random(params.random) {
+  TensorFillRandomUniformFunc(Params const &params_): params(params_), random(params_.random) {
   }
 
   /// Compute random value and update RNG state
@@ -887,7 +887,7 @@ struct RandomSparseMetaFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  RandomSparseMetaFunc(Params const &params): params(params) {
+  RandomSparseMetaFunc(Params const &params_): params(params_) {
 
     uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -976,7 +976,7 @@ struct TensorFillRandomSparseMetaFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorFillRandomSparseMetaFunc(Params const &params): params(params), random(params.random) {
+  TensorFillRandomSparseMetaFunc(Params const &params_): params(params_), random(params_.random) {
   }
 
   /// Compute random value and update RNG state
@@ -1095,7 +1095,7 @@ struct TensorFillDiagonalFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorFillDiagonalFunc(Params const &params): params(params) {
+  TensorFillDiagonalFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1174,7 +1174,7 @@ struct TensorFillPartialFunc {
   //
 
   CUTLASS_DEVICE
-  TensorFillPartialFunc(Params const &params): params(params) {
+  TensorFillPartialFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1270,7 +1270,7 @@ struct TensorClearPartialFunc {
   //
 
   CUTLASS_DEVICE
-  TensorClearPartialFunc(Params const &params): params(params) {
+  TensorClearPartialFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1468,7 +1468,7 @@ struct TensorUpdateDiagonalFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorUpdateDiagonalFunc(Params const &params): params(params) {
+  TensorUpdateDiagonalFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1577,7 +1577,7 @@ struct TensorUpdateOffDiagonalFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorUpdateOffDiagonalFunc(Params const &params): params(params) {
+  TensorUpdateOffDiagonalFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1688,7 +1688,7 @@ struct TensorFillLinearFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorFillLinearFunc(Params const &params): params(params) {
+  TensorFillLinearFunc(Params const &params_): params(params_) {
 
   }
 
@@ -1915,7 +1915,7 @@ struct TensorCopyDiagonalInFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorCopyDiagonalInFunc(Params const &params): params(params) {
+  TensorCopyDiagonalInFunc(Params const &params_): params(params_) {
 
   }
 
@@ -2022,7 +2022,7 @@ struct TensorCopyDiagonalOutFunc {
 
   /// Device-side initialization of RNG
   CUTLASS_DEVICE
-  TensorCopyDiagonalOutFunc(Params const &params): params(params) {
+  TensorCopyDiagonalOutFunc(Params const &params_): params(params_) {
 
   }
 

@@ -162,7 +162,7 @@ public:
   void initialize_tensor(
     cutlass::TensorView<Element, Layout> view, 
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
@@ -185,7 +185,7 @@ public:
       }
       
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope, -scope, 0);
+        view, seed_, scope, -scope, 0);
     } 
     else if (dist_kind == cutlass::Distribution::Identity) {
 
@@ -193,7 +193,7 @@ public:
     } 
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
@@ -204,7 +204,7 @@ public:
   }
 
   void initialize(
-    cutlass::conv::Conv3dProblemSize const &problem_size, bool non_packed_test = false, uint64_t seed = 2019) {
+    cutlass::conv::Conv3dProblemSize const &problem_size, bool non_packed_test = false, uint64_t seed_ = 2019) {
         
     // to make the layout of tensors a little bit bigger than the problem size
     cutlass::Tensor5DCoord stride_increment = cutlass::Tensor5DCoord(8, 16, 32, 32, 64);
@@ -235,10 +235,10 @@ public:
       implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size).c(),
     });
 
-    initialize_tensor(tensor_A.host_view(), init_A, seed); 
-    initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
-    initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
-    initialize_tensor(tensor_Broadcast.host_view(), init_C, seed * 39);
+    initialize_tensor(tensor_A.host_view(), init_A, seed_);
+    initialize_tensor(tensor_B.host_view(), init_B, seed_ * 17);
+    initialize_tensor(tensor_C.host_view(), init_C, seed_ * 39);
+    initialize_tensor(tensor_Broadcast.host_view(), init_C, seed_ * 39);
     for (int n = 0; n < tensor_C_reference.extent().n(); ++n) {
       for (int o = 0; o < tensor_C_reference.extent().d(); ++o) {
         for (int p = 0; p < tensor_C_reference.extent().h(); ++p) {

@@ -180,33 +180,33 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta,
+      ElementCompute alpha_,
+      ElementCompute beta_,
       ElementwiseArguments  elementwise_ = ElementwiseArguments{}
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr), elementwise(elementwise_) {
+    ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr), elementwise(elementwise_) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha
-    ): alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_
+    ): alpha(alpha_), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_,
       ElementwiseArguments  elementwise_ = ElementwiseArguments{}
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), elementwise(elementwise_) {
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_), elementwise(elementwise_) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {
+      ElementCompute const *alpha_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr) {
 
     }
   };
@@ -585,17 +585,17 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_,
       ElementwiseArguments  elementwise_ = ElementwiseArguments{}
-    ): beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), elementwise(elementwise_) {
+    ): beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_), elementwise(elementwise_) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
-    ): beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {
+      ElementCompute const *alpha_ptr_
+    ): beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr) {
 
     }
   };

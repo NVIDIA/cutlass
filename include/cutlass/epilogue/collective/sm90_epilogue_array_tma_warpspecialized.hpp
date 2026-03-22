@@ -478,13 +478,13 @@ public:
 
   CUTLASS_DEVICE auto
   load_init(
-      Params const& params,
+      Params const& params_,
       TensorMapStorage& shared_tensormaps,
       int32_t sm_count,
       int32_t sm_idx) {
     // Initialize tma for loading
     constexpr bool IsLoad = true;
-    auto load_tensormaps = tensormaps_init<IsLoad>(params, shared_tensormaps, sm_count, sm_idx, 0);
+    auto load_tensormaps = tensormaps_init<IsLoad>(params_, shared_tensormaps, sm_count, sm_idx, 0);
     return load_tensormaps;
   }
 
@@ -1022,7 +1022,7 @@ public:
 
   CUTLASS_DEVICE auto
   store_init(
-      Params const& params,
+      Params const& params_,
       TensorMapStorage& shared_tensormaps,
       int32_t sm_count,
       int32_t sm_idx,
@@ -1032,7 +1032,7 @@ public:
     if (warp_idx_in_warp_group == 0) {
       // Initialize tma
       constexpr bool IsLoad = false;
-      auto store_tensormaps = tensormaps_init<IsLoad>(params, shared_tensormaps, sm_count, sm_idx, warp_group_idx);
+      auto store_tensormaps = tensormaps_init<IsLoad>(params_, shared_tensormaps, sm_count, sm_idx, warp_group_idx);
       return store_tensormaps;
     }
     TmaDescriptor* null_tma_desc = nullptr;
@@ -1046,7 +1046,7 @@ public:
   template <bool IsLoad>
   CUTLASS_DEVICE auto
   tensormaps_init(
-      Params const& params,
+      Params const& params_,
       TensorMapStorage& shared_tensormaps,
       int32_t sm_count,
       int32_t sm_idx,
@@ -1055,12 +1055,12 @@ public:
     constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
     Layout desc_layout = make_layout(make_shape(sm_count, Int<NumInputTensors>{}));
 
-    Tensor gmem_tensormap = make_tensor(params.tensormaps, desc_layout);                      // (SMs, NumInputTensors)
+    Tensor gmem_tensormap = make_tensor(params_.tensormaps, desc_layout);                      // (SMs, NumInputTensors)
 
     if constexpr (IsLoad) {
       if (is_source_supported) {
         constexpr int C_tensormap_index = NumEpilogueWarpGroups;
-        Tensor pC_tensormap = make_tensor(params.tma_load_c.get_tma_descriptor(), Int<1>{}, Int<1>{});
+        Tensor pC_tensormap = make_tensor(params_.tma_load_c.get_tma_descriptor(), Int<1>{}, Int<1>{});
         Tensor sC_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_C), Int<1>{}, Int<1>{});
 
         if (cute::elect_one_sync()) {
@@ -1075,7 +1075,7 @@ public:
       return cute::make_tuple(null_tma_desc);
     }
     else {
-      Tensor pD_tensormap = make_tensor(params.tma_store_d.get_tma_descriptor(), Int<1>{}, Int<1>{});
+      Tensor pD_tensormap = make_tensor(params_.tma_store_d.get_tma_descriptor(), Int<1>{}, Int<1>{});
       Tensor sD_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_D[warp_group_idx]), Int<1>{}, Int<1>{});
 
       if (cute::elect_one_sync()) {
@@ -1093,21 +1093,21 @@ public:
   void
   tensormaps_replace_global_address(
       TensorMapStorage& shared_tensormaps,
-      Params const& params,
+      Params const& params_,
       int32_t next_batch,
       int32_t warp_group_idx) {
     // Replacing global_address for the next batch
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
-        if (params.ptr_C != nullptr) {
+        if (params_.ptr_C != nullptr) {
           cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_C,
-                                                          params.ptr_C[next_batch]);
+                                                          params_.ptr_C[next_batch]);
         }
       }
     }
     else if constexpr (is_destination_supported) {
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_D[warp_group_idx],
-                                                      params.ptr_D[next_batch]);
+                                                      params_.ptr_D[next_batch]);
     }
   }
 
@@ -1117,7 +1117,7 @@ public:
   void
   tensormaps_replace_global_tensor_properties(
       TensorMapStorage& shared_tensormaps,
-      Params const& params,
+      Params const& params_,
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t warp_group_idx) {
@@ -1130,11 +1130,11 @@ public:
 
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
-        if (params.dC != nullptr) {
+        if (params_.dC != nullptr) {
           ElementC const* ptr_C = nullptr;
-          Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
+          Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params_.dC[next_group]));
 
-          cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
+          cute::detail::fill_tma_gmem_shape_stride(params_.tma_load_c, tensor_c,
                                                   prob_shape, prob_stride);
           // Convert strides to byte strides
           for (uint64_t& stride : prob_stride) {
@@ -1148,9 +1148,9 @@ public:
     }
     else if constexpr (is_destination_supported) {
       ElementD const* ptr_D = nullptr;
-      Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
+      Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params_.dD[next_group]));
 
-      cute::detail::fill_tma_gmem_shape_stride(params.tma_store_d, tensor_d, 
+      cute::detail::fill_tma_gmem_shape_stride(params_.tma_store_d, tensor_d,
                                                prob_shape, prob_stride);
       // Convert strides to byte strides
       for (uint64_t& stride : prob_stride) {
@@ -1168,19 +1168,19 @@ public:
   void
   tensormaps_perform_update(
       TensorMapStorage& shared_tensormaps,
-      Params const& params,
+      Params const& params_,
       cute::TmaDescriptor const* tensormap,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch,
       int32_t warp_group_idx) {
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
-      tensormaps_replace_global_address<IsLoad>(shared_tensormaps, params, next_batch, warp_group_idx);
+      tensormaps_replace_global_address<IsLoad>(shared_tensormaps, params_, next_batch, warp_group_idx);
 
       if constexpr (IsGroupedGemmKernel) {
         // Replacing global dims and strides for the next batch
         tensormaps_replace_global_tensor_properties<IsLoad>(
-            shared_tensormaps, params, next_batch, problem_shape_mnkl, warp_group_idx);
+            shared_tensormaps, params_, next_batch, problem_shape_mnkl, warp_group_idx);
       }
 
     }

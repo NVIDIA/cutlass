@@ -48,7 +48,7 @@ namespace cutlass {
 class cuda_exception : public std::exception {
  public:
   /// Constructor
-  cuda_exception(const char* msg = "", cudaError_t err = cudaErrorUnknown) : msg(msg), err(err) {}
+  cuda_exception(const char* msg_ = "", cudaError_t err_ = cudaErrorUnknown) : msg(msg_), err(err_) {}
 
   /// Returns the underlying CUDA \p cudaError_t
   cudaError_t cudaError() const { return err; }

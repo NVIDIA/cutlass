@@ -149,7 +149,7 @@ public:
 
   CUTLASS_HOST_DEVICE
   Conv2dDgradOutputGradientTileAccessIteratorAnalytic(
-    Params const &params, 
+    Params const &params,
     Conv2dProblemSize const &problem_size,
     Element const *ptr,
     int thread_idx,
@@ -157,9 +157,9 @@ public:
     int start_r, int start_s,
     MatrixCoord const &threadblock_offset = MatrixCoord()     // threadblock offset - units are whole CTA tiles
   ):
-    params_(params), 
-    problem_size_(problem_size), 
-    pointer_(reinterpret_cast<char const *>(ptr)), 
+    params_(params),
+    problem_size_(problem_size),
+    pointer_(reinterpret_cast<char const *>(ptr)),
     filter_k_(0),
     filter_r_(start_r),
     filter_s_(start_s),
@@ -411,9 +411,9 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      Conv2dProblemSize const &problem_size, 
-      Layout const &layout
-    ): layout(layout) {
+      Conv2dProblemSize const &problem_size,
+      Layout const &layout_
+    ): layout(layout_) {
 
     }
   };

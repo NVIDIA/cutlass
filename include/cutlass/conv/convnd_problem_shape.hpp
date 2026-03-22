@@ -100,22 +100,22 @@ struct ConvProblemShape {
 
   // Constructor accepts user facing arguments and computes to stores the corners as its internal state
   ConvProblemShape(
-      conv::Mode mode,                                                     // convolution/cross-correlation
+      conv::Mode mode_,                                                    // convolution/cross-correlation
       TensorExtent shape_act,                                              // [n,d,h,w,c]
       TensorStride stride_act,                                             // [n,d,h,w,c]
       TensorExtent shape_flt,                                              // [k,t,r,s,c]
       TensorStride stride_flt,                                             // [k,t,r,s,c]
-      ShapePadding lower_padding,                                          // [pad_d, pad_h, pad_w]
-      ShapePadding upper_padding,                                          // [pad_d, pad_h, pad_w]
+      ShapePadding lower_padding_,                                         // [pad_d, pad_h, pad_w]
+      ShapePadding upper_padding_,                                         // [pad_d, pad_h, pad_w]
       TraversalStride tstride,                                             // [stride_d, stride_h, stride_w]
-      ShapeDilation dilation,                                              // [dilation_d, dilation_h, dilation_w]
-      int groups)
-      : mode(mode)
-      , lower_padding(lower_padding)
-      , upper_padding(upper_padding)
+      ShapeDilation dilation_,                                             // [dilation_d, dilation_h, dilation_w]
+      int groups_)
+      : mode(mode_)
+      , lower_padding(lower_padding_)
+      , upper_padding(upper_padding_)
       , traversal_stride(tstride)
-      , dilation(dilation)
-      , groups(groups) {
+      , dilation(dilation_)
+      , groups(groups_) {
 
     auto [shape_xformed_act, stride_xformed_act] = calculate_xformed_act(shape_act, shape_flt);
     set_shape_stride_ABC(shape_act, stride_act, shape_flt, stride_flt, shape_xformed_act, stride_xformed_act);
@@ -123,23 +123,23 @@ struct ConvProblemShape {
 
   // Allow user input of xformed activation stride to support non-packed strides.
   ConvProblemShape(
-      conv::Mode mode,                                                     // convolution/cross-correlation
+      conv::Mode mode_,                                                    // convolution/cross-correlation
       TensorExtent shape_act,                                              // [n,d,h,w,c]
       TensorStride stride_act,                                             // [n,d,h,w,c]
       TensorExtent shape_flt,                                              // [k,t,r,s,c]
       TensorStride stride_flt,                                             // [k,t,r,s,c]
       TensorStride stride_xformed_act,                                     // [n,z,p,q,k]
-      ShapePadding lower_padding,                                          // [pad_d, pad_h, pad_w]
-      ShapePadding upper_padding,                                          // [pad_d, pad_h, pad_w]
+      ShapePadding lower_padding_,                                         // [pad_d, pad_h, pad_w]
+      ShapePadding upper_padding_,                                         // [pad_d, pad_h, pad_w]
       TraversalStride tstride,                                             // [stride_d, stride_h, stride_w]
-      ShapeDilation dilation,                                              // [dilation_d, dilation_h, dilation_w]
-      int groups)
-      : mode(mode)
-      , lower_padding(lower_padding)
-      , upper_padding(upper_padding)
+      ShapeDilation dilation_,                                             // [dilation_d, dilation_h, dilation_w]
+      int groups_)
+      : mode(mode_)
+      , lower_padding(lower_padding_)
+      , upper_padding(upper_padding_)
       , traversal_stride(tstride)
-      , dilation(dilation)
-      , groups(groups) {
+      , dilation(dilation_)
+      , groups(groups_) {
 
     CUTLASS_ASSERT(stride_act[RankT - 1] == 1);
     CUTLASS_ASSERT(stride_flt[RankT - 1] == 1);
@@ -161,31 +161,31 @@ struct ConvProblemShape {
 
   // Constructor accepts user facing arguments and presume packed tensor strides in canonical (CWHDN) order.
   ConvProblemShape(
-      conv::Mode mode,
+      conv::Mode mode_,
       TensorExtent shape_act,
       TensorExtent shape_flt,
-      ShapePadding lower_padding,
-      ShapePadding upper_padding,
+      ShapePadding lower_padding_,
+      ShapePadding upper_padding_,
       TraversalStride tstride,
-      ShapeDilation dilation,
-      int groups)
+      ShapeDilation dilation_,
+      int groups_)
       : ConvProblemShape(
-        mode,
+        mode_,
         shape_act,
         packed_stride_right_major(shape_act),
         shape_flt,
         packed_stride_right_major(shape_flt),
-        lower_padding,
-        upper_padding,
+        lower_padding_,
+        upper_padding_,
         tstride,
-        dilation,
-        groups) {
+        dilation_,
+        groups_) {
     }
 
 #if ! defined(__CUDACC_RTC__)
   // Constructor accepts user facing arguments and computes to stores the corners as its internal state
   ConvProblemShape(
-      conv::Mode                     mode,
+      conv::Mode                     mode_,
       std::initializer_list<int>     shape_act_,
       std::initializer_list<int64_t> stride_act_,
       std::initializer_list<int>     shape_flt_,
@@ -194,9 +194,9 @@ struct ConvProblemShape {
       std::initializer_list<int>     upper_padding_,
       std::initializer_list<int>     traversal_stride_,
       std::initializer_list<int>     dilation_,
-      int groups)
-      : mode(mode)
-      , groups(groups) {
+      int groups_)
+      : mode(mode_)
+      , groups(groups_) {
 
     TensorExtent shape_act{};
     TensorStride stride_act{};
@@ -227,7 +227,7 @@ struct ConvProblemShape {
 
   // Allow user input of xformed activation stride to support non-packed strides.
   ConvProblemShape(
-      conv::Mode                     mode,
+      conv::Mode                     mode_,
       std::initializer_list<int>     shape_act_,
       std::initializer_list<int64_t> stride_act_,
       std::initializer_list<int>     shape_flt_,
@@ -237,9 +237,9 @@ struct ConvProblemShape {
       std::initializer_list<int>     upper_padding_,
       std::initializer_list<int>     traversal_stride_,
       std::initializer_list<int>     dilation_,
-      int groups)
-      : mode(mode)
-      , groups(groups) {
+      int groups_)
+      : mode(mode_)
+      , groups(groups_) {
     TensorExtent shape_act{};
     TensorStride stride_act{};
     TensorExtent shape_flt{};
@@ -276,16 +276,16 @@ struct ConvProblemShape {
 
   // Constructor accepts user facing arguments and computes to stores the corners as its internal state
   ConvProblemShape(
-      conv::Mode                     mode,
+      conv::Mode                     mode_,
       std::initializer_list<int>     shape_act_,
       std::initializer_list<int>     shape_flt_,
       std::initializer_list<int>     lower_padding_,
       std::initializer_list<int>     upper_padding_,
       std::initializer_list<int>     traversal_stride_,
       std::initializer_list<int>     dilation_,
-      int groups)
-      : mode(mode)
-      , groups(groups) {
+      int groups_)
+      : mode(mode_)
+      , groups(groups_) {
     TensorExtent shape_act{};
     TensorStride stride_act{};
     TensorExtent shape_flt{};
@@ -490,11 +490,11 @@ struct ConvProblemShape {
   CUTLASS_HOST_DEVICE
   static constexpr size_t
   size(TensorExtent const& extents) {
-    size_t size = 1;
+    size_t result = 1;
     cute::for_each(cute::make_seq<RankT>{}, [&](auto i) {
-      size *= extents[i];
+      result *= extents[i];
     });
-    return size;
+    return result;
   }
 
   CUTLASS_HOST_DEVICE
@@ -555,8 +555,8 @@ private:
     TensorExtent shape_xformed_act{};
     // calculate n,z,p,q,k.
     // a helper lambda to compute a single spatial extent of the nzpqk tensor
-    auto nzpqk_extent = [](int act_ext, int filter_ext, int pad_total, int dilation, int tstride) {
-      return 1 + (act_ext + pad_total - ((filter_ext -1) * dilation + 1)) / tstride;
+    auto nzpqk_extent = [](int act_ext, int filter_ext, int pad_total, int dilation_, int tstride) {
+      return 1 + (act_ext + pad_total - ((filter_ext -1) * dilation_ + 1)) / tstride;
     };
 
     shape_xformed_act[0] = shape_act[0]; // Activation N extent

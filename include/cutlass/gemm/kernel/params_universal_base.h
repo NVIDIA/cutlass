@@ -82,17 +82,17 @@ struct UniversalArgumentsBase
 
   /// constructs an arguments structure
   UniversalArgumentsBase(
-    GemmUniversalMode mode,
-    GemmCoord problem_size,
-    int batch_count,
-    int64_t batch_stride_D)
+    GemmUniversalMode mode_,
+    GemmCoord problem_size_,
+    int batch_count_,
+    int64_t batch_stride_D_)
   :
-    mode(mode),
-    problem_size(problem_size),
-    batch_count(batch_count),
-    batch_stride_D(batch_stride_D)
+    mode(mode_),
+    problem_size(problem_size_),
+    batch_count(batch_count_),
+    batch_stride_D(batch_stride_D_)
   {
-    CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
+    CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size_);
   }
 };
 

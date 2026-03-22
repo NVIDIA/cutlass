@@ -83,27 +83,27 @@ public:
 
   /// Ctor
   ReduceSplitKTestbed(
-    cutlass::Distribution::Kind distribution_workspace = cutlass::Distribution::Uniform,
-    cutlass::Distribution::Kind distribution_source = cutlass::Distribution::Uniform,
-    uint64_t seed = 2019
+    cutlass::Distribution::Kind distribution_workspace_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind distribution_source_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = 2019
   ):
-    distribution_workspace(distribution_workspace),
-    distribution_source(distribution_source),
-    seed(seed) {
+    distribution_workspace(distribution_workspace_),
+    distribution_source(distribution_source_),
+    seed(seed_) {
 
   }
 
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(cutlass::TensorView<Element, Layout> view,
-                         cutlass::Distribution::Kind dist_kind, 
-                         uint64_t seed) {
+                         cutlass::Distribution::Kind dist_kind,
+                         uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
-      cutlass::reference::host::TensorFillRandomUniform(view, seed, 8, -8, 0);
+      cutlass::reference::host::TensorFillRandomUniform(view, seed_, 8, -8, 0);
     }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5, -1);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5, -1);
     } else if (dist_kind == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(view);
     } else if (dist_kind == cutlass::Distribution::Sequential) {

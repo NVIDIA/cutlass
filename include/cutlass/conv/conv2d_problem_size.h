@@ -88,49 +88,49 @@ public:
   /// Constructor for default padding, stride, dilation, and split-K
   CUTLASS_HOST_DEVICE
   Conv2dProblemSize(
-    int N,
-    int H,
-    int W,
-    int C,
-    int P,
-    int Q,
-    int K,
-    int R,
-    int S,
-    Mode mode
-  ): 
-    N(N), H(H), W(W), C(C), P(P), Q(Q), K(K), R(R), S(S),
-    pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1), dilation_h(1), dilation_w(1),
-    mode(mode), split_k_slices(1), groups (1) { }
+    int N_,
+    int H_,
+    int W_,
+    int C_,
+    int P_,
+    int Q_,
+    int K_,
+    int R_,
+    int S_,
+    Mode mode_
+  ):
+    N(N_), H(H_), W(W_), C(C_), P(P_), Q(Q_), K(K_), R(R_), S(S_),
+    pad_h(R_ / 2), pad_w(S_ / 2), stride_h(1), stride_w(1), dilation_h(1), dilation_w(1),
+    mode(mode_), split_k_slices(1), groups (1) { }
   
   /// Constructor
   CUTLASS_HOST_DEVICE
   Conv2dProblemSize(
-    int N,
-    int H,
-    int W,
-    int C,
-    int K,
-    int R,
-    int S,
-    int P,
-    int Q,
-    int pad_h,
-    int pad_w,
-    int stride_h,
-    int stride_w,
-    int dilation_h,
-    int dilation_w,
-    Mode mode,
-    int split_k_slices = 1,
-    int groups = 1
+    int N_,
+    int H_,
+    int W_,
+    int C_,
+    int K_,
+    int R_,
+    int S_,
+    int P_,
+    int Q_,
+    int pad_h_,
+    int pad_w_,
+    int stride_h_,
+    int stride_w_,
+    int dilation_h_,
+    int dilation_w_,
+    Mode mode_,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
-    N(N), H(H), W(W), C(C), P(P), Q(Q), K(K), R(R), S(S),
-    pad_h(pad_h), pad_w(pad_w), stride_h(stride_h), stride_w(stride_w),
-    dilation_h(dilation_h), dilation_w(dilation_w), 
-    mode(mode), split_k_slices(split_k_slices), groups (groups) { }
+    N(N_), H(H_), W(W_), C(C_), P(P_), Q(Q_), K(K_), R(R_), S(S_),
+    pad_h(pad_h_), pad_w(pad_w_), stride_h(stride_h_), stride_w(stride_w_),
+    dilation_h(dilation_h_), dilation_w(dilation_w_),
+    mode(mode_), split_k_slices(split_k_slices_), groups (groups_) { }
 
-  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
+  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord
   // set user-defined output size and sets P and Q (include all data members in ctor)
   CUTLASS_HOST_DEVICE
   Conv2dProblemSize(
@@ -140,9 +140,9 @@ public:
     cutlass::MatrixCoord stride,          // stride_h, stride_w
     cutlass::MatrixCoord dilation,        // dilation_h, dilation_w
     cutlass::Tensor4DCoord output_size,   // NPQK
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     P(output_size.h()), Q(output_size.w()),
@@ -150,49 +150,49 @@ public:
     pad_h(padding[0]), pad_w(padding[2]),
     stride_h(stride.row()), stride_w(stride.column()),
     dilation_h(dilation.row()), dilation_w(dilation.column()),
-    mode(mode), split_k_slices(split_k_slices), groups(groups) {}
+    mode(mode_), split_k_slices(split_k_slices_), groups(groups_) {}
 
-  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
+  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord
   // computes output size and sets P and Q (skip output from ctor arguments)
-  CUTLASS_HOST_DEVICE  
+  CUTLASS_HOST_DEVICE
   Conv2dProblemSize(
     cutlass::Tensor4DCoord input_size,   // NHWC
     cutlass::Tensor4DCoord filter_size,  // KRSC
     cutlass::Tensor4DCoord padding,      // pad_h, upper_pad_h, pad_w, upper_pad_w
     cutlass::MatrixCoord stride,         // stride_h, stride_w
     cutlass::MatrixCoord dilation,       // dilation_h, dilation_w
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
     pad_h(padding[0]), pad_w(padding[2]),
     stride_h(stride.row()), stride_w(stride.column()),
     dilation_h(dilation.row()), dilation_w(dilation.column()),
-    mode(mode), split_k_slices(split_k_slices), groups(groups) {
+    mode(mode_), split_k_slices(split_k_slices_), groups(groups_) {
       // set output P and Q
       P = ((H + pad_h + padding[1] - R * dilation_h) / stride_h) + 1;
       Q = ((W + pad_w + padding[3] - S * dilation_w) / stride_w) + 1;
     }
 
-  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
+  /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord
   // set user-defined output size and sets P and Q (skip padding, striding, and dilation)
   CUTLASS_HOST_DEVICE
   Conv2dProblemSize(
     cutlass::Tensor4DCoord input_size,    // NHWC
     cutlass::Tensor4DCoord filter_size,   // KRSC
     cutlass::Tensor4DCoord output_size,   // NPQK
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     P(output_size.h()), Q(output_size.w()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
     pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1),
     dilation_h(1), dilation_w(1),
-    mode(mode), split_k_slices(split_k_slices), groups(groups) {}
+    mode(mode_), split_k_slices(split_k_slices_), groups(groups_) {}
 
   // Reset covolution mode in the problem
   CUTLASS_HOST_DEVICE

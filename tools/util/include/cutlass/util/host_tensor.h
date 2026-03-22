@@ -252,7 +252,7 @@ public:
 
   /// Returns the logical number of elements stored in the host tensor
   size_t size() const {
-    return layout_.capacity(extent_);
+    return static_cast<size_t>(layout_.capacity(extent_));
   }
 
   /// Returns the logical capacity in terms of number of elements. May be larger than the size().

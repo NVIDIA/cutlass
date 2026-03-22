@@ -88,8 +88,8 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
   // Construct a zfill variant with a given predicate value
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
+  with(bool pred_) const {
+    return {pred_};
   }
 
   // Overload copy_unpack for zfill variant to pass the predicate into the op
@@ -136,8 +136,8 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
   // Construct a zfill variant with a given predicate value
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
+  with(bool pred_) const {
+    return {pred_};
   }
 
   // Overload copy_unpack for zfill variant to pass the predicate into the op

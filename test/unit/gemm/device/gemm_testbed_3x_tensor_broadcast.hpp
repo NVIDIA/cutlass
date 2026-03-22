@@ -472,14 +472,14 @@ bool TestAllTensorBroadcast(bool use_bias=true) {
           problem_size = ProblemShapeType{m, n, k};
         }
 
-        for (bool use_bias : {true, false}) {
+        for (bool use_bias_ : {true, false}) {
           passed = testbed.run(
             problem_size,
             cutlass::from_real<ElementScalar>(1),
             cutlass::from_real<ElementScalar>(1),
             false,  // profiling
             20,     // iterations
-            use_bias
+            use_bias_
           );
 
           if (!passed) {

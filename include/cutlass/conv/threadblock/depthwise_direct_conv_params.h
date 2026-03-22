@@ -104,14 +104,14 @@ struct Depthwise2dFpropDirectConvParams<layout::TensorNHWC> {
   CUTLASS_HOST_DEVICE
   Depthwise2dFpropDirectConvParams(
       Conv2dProblemSize const &problem_size,
-      Layout const &layout,             ///< layout object
+      Layout const &layout_,             ///< layout object
       MatrixCoord threadblock_shape,    ///< CTA threadblock Shape
       Layout::TensorCoord threadblock_output_shape,  ///< Output tile Shape per threadblock
       const int element_size_bits,      ///< bits of activation element
       const int thread_count,           ///< threads per threadblock
       const int thread_count_contiguous, ///< number of threads for continuous dimension
       const int element_per_load)       ///< element per each load
-      : layout(layout) {
+      : layout(layout_) {
           
     filter[0] = problem_size.S;
     filter[1] = problem_size.R;
@@ -175,12 +175,12 @@ struct Depthwise2dFpropDirectConvActivationIteratorFixedStrideDilationParams<lay
   CUTLASS_HOST_DEVICE
   Depthwise2dFpropDirectConvActivationIteratorFixedStrideDilationParams(
       Conv2dProblemSize const &problem_size,
-      Layout const &layout,                          ///< Layout object
+      Layout const &layout_,                         ///< Layout object
       MatrixCoord threadblock_shape,                 ///< Threadblock Shape
       Layout::TensorCoord threadblock_output_shape,  ///< Output tile Shape per threadblock
       const int activation_size_                     ///< Activation size loaded by iterator
       )
-      : layout(layout),
+      : layout(layout_),
         activation_size(activation_size_) {
     // Fastdivmod for output P, Q
     int tiles_p =
@@ -215,10 +215,10 @@ struct Depthwise2dFpropDirectConvFilterIteratorParams<layout::TensorNHWC> {
   CUTLASS_HOST_DEVICE
   Depthwise2dFpropDirectConvFilterIteratorParams(
       Conv2dProblemSize const &problem_size,
-      Layout const &layout,           ///< Layout object
+      Layout const &layout_,          ///< Layout object
       MatrixCoord threadblock_shape,  ///< Threadblock Shape
       const int filter_size_)         ///< Filter size loaded by iterator
-      : layout(layout),
+      : layout(layout_),
         filter_size(filter_size_),
         is_convolution(problem_size.mode == Mode::kConvolution){}
 };

@@ -97,9 +97,9 @@ struct TestbedSymmUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -123,21 +123,21 @@ struct TestbedSymmUniversal {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5, mantissa_in_bits);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5, mantissa_in_bits);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
     else {
 
       EXPECT_TRUE(false) << "Input distribution not implemented";
@@ -151,9 +151,9 @@ struct TestbedSymmUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_symmetric_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -177,12 +177,12 @@ struct TestbedSymmUniversal {
       }
 
       cutlass::reference::host::TensorFillSymmetricRandomUniform(
-        view, seed, Symm::kFillModeA, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, Symm::kFillModeA, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       cutlass::reference::host::TensorFillSymmetricRandomGaussian(
-        view, seed, Symm::kFillModeA, 0, 0.5, mantissa_in_bits);
+        view, seed_, Symm::kFillModeA, 0, 0.5, mantissa_in_bits);
     }
     else {
 
@@ -362,10 +362,10 @@ struct TestbedSymmUniversal {
     // Initialize the Symm operator
     //
 
-    int batch_stride_A;
+    int batch_stride_A = 0;
     if (Symm::kSideModeA == cutlass::SideMode::kLeft)
       batch_stride_A = problem_size.m()*problem_size.m();
-    if (Symm::kSideModeA == cutlass::SideMode::kRight)
+    else if (Symm::kSideModeA == cutlass::SideMode::kRight)
       batch_stride_A = problem_size.n()*problem_size.n();
 
     typename Symm::Arguments arguments{

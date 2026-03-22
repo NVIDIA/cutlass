@@ -115,31 +115,31 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_
+    ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha
-    ): alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_
+    ): alpha(alpha_), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {
+      ElementCompute const *alpha_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr) {
 
     }
   };
@@ -186,7 +186,7 @@ public:
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
-    FragmentAccumulator const &accumulator, 
+    FragmentAccumulator const &accumulator,
     FragmentOutput const &source,
     ElementCompute uniform = ElementCompute(0)) const {
 
@@ -333,31 +333,31 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_
+    ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha
-    ): alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_
+    ): alpha(alpha_), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {
+      ElementCompute const *alpha_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr) {
 
     }
   };
@@ -400,11 +400,11 @@ public:
       beta_ = ElementCompute(1);
     }
   }
-  
+
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
-    FragmentAccumulator const &accumulator, 
+    FragmentAccumulator const &accumulator,
     FragmentOutput const &source,
     ElementCompute uniform = ElementCompute(0)) const {
 
@@ -534,20 +534,20 @@ class FastLinearCombinationClamp {
           beta_ptr(nullptr) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute alpha, ElementCompute beta)
-        : alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {}
+    Params(ElementCompute alpha_, ElementCompute beta_)
+        : alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute alpha)
-        : alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {}
+    Params(ElementCompute alpha_)
+        : alpha(alpha_), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute const *alpha_ptr, ElementCompute const *beta_ptr)
-        : alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {}
+    Params(ElementCompute const *alpha_ptr_, ElementCompute const *beta_ptr_)
+        : alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute const *alpha_ptr)
-        : alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {}
+    Params(ElementCompute const *alpha_ptr_)
+        : alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr) {}
   };
 
  private:

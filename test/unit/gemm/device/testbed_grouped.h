@@ -138,9 +138,9 @@ struct TestbedGrouped {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint32_t seed) {
+    uint32_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
@@ -169,15 +169,15 @@ struct TestbedGrouped {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, 0);
-    } 
+        view, seed_, scope_max, scope_min, 0);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
@@ -419,11 +419,11 @@ struct TestbedGrouped {
 
   /// Executes one test
   bool run(
-    int problem_count,
-    ElementCompute alpha = ElementCompute(1), 
+    int problem_count_,
+    ElementCompute alpha = ElementCompute(1),
     ElementCompute beta = ElementCompute(0)) {
 
-    this->problem_count = problem_count;
+    this->problem_count = problem_count_;
 
     // Initialize the problem
     initialize();

@@ -93,8 +93,8 @@ public:
 
   StructuredSparseCompressorUtility() = default;
 
-  StructuredSparseCompressorUtility(ProblemShape problem, StrideA dA) {
-    set_problem_size(problem, dA);
+  StructuredSparseCompressorUtility(ProblemShape problem, StrideA dA_) {
+    set_problem_size(problem, dA_);
   }
 
   void set_problem_size(ProblemShape problem, StrideA dA_) {

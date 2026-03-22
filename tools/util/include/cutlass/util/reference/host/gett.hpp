@@ -239,20 +239,20 @@ struct GettEpilogueParams {
   bool beta_per_channel_scaling = false;
   GettEpilogueParams() {}
 
-  GettEpilogueParams(ElementScalar alpha, ElementScalar beta, TensorC tensor_C, TensorD tensor_D)
-   : alpha(alpha), beta(beta), C(tensor_C), D(tensor_D) {}
+  GettEpilogueParams(ElementScalar alpha_, ElementScalar beta_, TensorC tensor_C, TensorD tensor_D)
+   : alpha(alpha_), beta(beta_), C(tensor_C), D(tensor_D) {}
 
-  
-  GettEpilogueParams(ElementScalar alpha, ElementScalar beta, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD, ElementCompute epilogue_st)
-   : alpha(alpha), beta(beta), C(tensor_C), D(tensor_D), SfD(tensor_SfD), st(epilogue_st) {}
-  
+
+  GettEpilogueParams(ElementScalar alpha_, ElementScalar beta_, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD, ElementCompute epilogue_st)
+   : alpha(alpha_), beta(beta_), C(tensor_C), D(tensor_D), SfD(tensor_SfD), st(epilogue_st) {}
+
 
   GettEpilogueParams(
-    ElementScalar alpha, ElementScalar beta,
+    ElementScalar alpha_, ElementScalar beta_,
     TensorC tensor_C, TensorD tensor_D,
     VectorBias bias, TensorAux tensor_aux,
     VectorAlpha vector_alpha, VectorBeta vector_beta)
-    : alpha(alpha), beta(beta),
+    : alpha(alpha_), beta(beta_),
       C(tensor_C), D(tensor_D),
       Bias(bias), Aux(tensor_aux),
       Valpha(vector_alpha), Vbeta(vector_beta) {}
@@ -338,14 +338,14 @@ struct GettBlockScalingEpilogueParams : public GettEpilogueParams<
 
   GettBlockScalingEpilogueParams() {}
 
-  GettBlockScalingEpilogueParams(ElementScalar alpha, ElementScalar beta, TensorC tensor_C, TensorD tensor_D)
-   : Base(alpha, beta, tensor_C, tensor_D) {}
+  GettBlockScalingEpilogueParams(ElementScalar alpha_, ElementScalar beta_, TensorC tensor_C, TensorD tensor_D)
+   : Base(alpha_, beta_, tensor_C, tensor_D) {}
 
-  GettBlockScalingEpilogueParams(ElementScalar alpha, ElementScalar beta, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD)
-   : Base(alpha, beta, tensor_C, tensor_D, tensor_SfD, ElementCompute{0}) {}
+  GettBlockScalingEpilogueParams(ElementScalar alpha_, ElementScalar beta_, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD)
+   : Base(alpha_, beta_, tensor_C, tensor_D, tensor_SfD, ElementCompute{0}) {}
 
-  GettBlockScalingEpilogueParams(ElementScalar alpha, ElementScalar beta, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD, ElementCompute epilogue_st)
-   : Base(alpha, beta, tensor_C, tensor_D, tensor_SfD, epilogue_st) {}
+  GettBlockScalingEpilogueParams(ElementScalar alpha_, ElementScalar beta_, TensorC tensor_C, TensorD tensor_D, TensorSFD tensor_SfD, ElementCompute epilogue_st)
+   : Base(alpha_, beta_, tensor_C, tensor_D, tensor_SfD, epilogue_st) {}
 };
 
 

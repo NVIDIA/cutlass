@@ -114,7 +114,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   using TileShape_MNK = Shape<_256,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
+  [[maybe_unused]] static constexpr bool StoreT = true;
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedCooperativeBiasElementwise<
         cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::plus, StoreT, float>;
 

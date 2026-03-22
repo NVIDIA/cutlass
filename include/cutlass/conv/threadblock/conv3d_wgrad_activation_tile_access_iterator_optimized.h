@@ -105,10 +105,10 @@ public:
           : Conv3dWgradActivationIteratorOptimizedParams(base) {}
 
     CUTLASS_HOST_DEVICE
-    Params(Conv3dProblemSize const &problem_size, Layout const &layout)
+    Params(Conv3dProblemSize const &problem_size, Layout const &layout_)
           : Conv3dWgradActivationIteratorOptimizedParams(
           problem_size,
-          layout,
+          layout_,
           sizeof_bits<Element>::value,
           {Shape::kRow, Shape::kColumn},
           ThreadMap::kThreads,

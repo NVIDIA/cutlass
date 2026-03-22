@@ -111,25 +111,25 @@ public:
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
+    Params():
+      alpha(ElementCompute(1)),
       beta(ElementCompute(0)),
-      alpha_ptr(nullptr), 
+      alpha_ptr(nullptr),
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0)
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_ = ElementCompute(0)
+    ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_ = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
   };
@@ -170,11 +170,11 @@ public:
   void set_k_partition(int k_partition, int k_partition_count) {
     assert(k_partition == 0);
   }
-  
+
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
-    FragmentAccumulator const &accumulator, 
+    FragmentAccumulator const &accumulator,
     FragmentOutput const &source) const {
 
     // Convert source to interal compute numeric type
@@ -325,25 +325,25 @@ public:
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
+    Params():
+      alpha(ElementCompute(1)),
       beta(ElementCompute(0)),
-      alpha_ptr(nullptr), 
+      alpha_ptr(nullptr),
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0)
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_ = ElementCompute(0)
+    ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_ = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
   };

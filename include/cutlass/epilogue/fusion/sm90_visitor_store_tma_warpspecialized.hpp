@@ -180,18 +180,18 @@ struct Sm90AuxStore {
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
-          RTensor&& tC_rAux,
-          TiledR2S tiled_r2s,
-          STensorR2S&& tRS_sAux,
-          STensorS2G&& bSG_sAux,
-          GTensorS2G&& bSG_gAux,
-          Params const* params_ptr)
-      : tiled_r2s(tiled_r2s),
-        tC_rAux(cute::forward<RTensor>(tC_rAux)),
-        tRS_sAux(cute::forward<STensorR2S>(tRS_sAux)),
-        bSG_sAux(cute::forward<STensorS2G>(bSG_sAux)),
-        bSG_gAux(cute::forward<GTensorS2G>(bSG_gAux)),
-        params_ptr(params_ptr) {}
+          RTensor&& tC_rAux_,
+          TiledR2S tiled_r2s_,
+          STensorR2S&& tRS_sAux_,
+          STensorS2G&& bSG_sAux_,
+          GTensorS2G&& bSG_gAux_,
+          Params const* params_ptr_)
+      : tiled_r2s(tiled_r2s_),
+        tC_rAux(cute::forward<RTensor>(tC_rAux_)),
+        tRS_sAux(cute::forward<STensorR2S>(tRS_sAux_)),
+        bSG_sAux(cute::forward<STensorS2G>(bSG_sAux_)),
+        bSG_gAux(cute::forward<GTensorS2G>(bSG_gAux_)),
+        params_ptr(params_ptr_) {}
 
     TiledR2S tiled_r2s;
     RTensor tC_rAux;                                                                   // (CPY,CPY_M,CPY_N)
@@ -371,16 +371,16 @@ struct Sm90AuxStore<
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
-        GTensorR2G&& tC_gAux,
-        RTensor&& tC_rAux,
-        CTensorR2G&& tC_cAux,
-        ProblemShapeMNL problem_shape_mnl,
-        Params const* params_ptr)
-      : tC_gAux(cute::forward<GTensorR2G>(tC_gAux)),
-        tC_rAux(cute::forward<RTensor>(tC_rAux)),
-        tC_cAux(cute::forward<CTensorR2G>(tC_cAux)),
-        problem_shape_mnl(problem_shape_mnl),
-        params_ptr(params_ptr) {}
+        GTensorR2G&& tC_gAux_,
+        RTensor&& tC_rAux_,
+        CTensorR2G&& tC_cAux_,
+        ProblemShapeMNL problem_shape_mnl_,
+        Params const* params_ptr_)
+      : tC_gAux(cute::forward<GTensorR2G>(tC_gAux_)),
+        tC_rAux(cute::forward<RTensor>(tC_rAux_)),
+        tC_cAux(cute::forward<CTensorR2G>(tC_cAux_)),
+        problem_shape_mnl(problem_shape_mnl_),
+        params_ptr(params_ptr_) {}
 
     GTensorR2G tC_gAux;
     RTensor tC_rAux;
@@ -545,8 +545,8 @@ public:
   Sm90ScalarReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ScalarReduction(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+  Sm90ScalarReduction(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_) { }
 
   Params const params;
 
@@ -560,15 +560,15 @@ public:
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
-        int l_coord,
-        CTensor tCcScalar,
-        ThrResidue residue_tCcScalar,
-        Params const& params)
-      : scalar(params.reduction_identity),
-        l_coord(l_coord),
-        tCcScalar(tCcScalar),
-        residue_tCcScalar(residue_tCcScalar),
-        params(params) {}
+        int l_coord_,
+        CTensor tCcScalar_,
+        ThrResidue residue_tCcScalar_,
+        Params const& params_)
+      : scalar(params_.reduction_identity),
+        l_coord(l_coord_),
+        tCcScalar(tCcScalar_),
+        residue_tCcScalar(residue_tCcScalar_),
+        params(params_) {}
 
     ElementCompute scalar;
     int l_coord;
@@ -787,8 +787,8 @@ public:
   Sm90RowReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90RowReduction(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+  Sm90RowReduction(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_) { }
 
   Params params;
 
@@ -801,9 +801,9 @@ public:
   template<class ArgsTuple>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(ArgsTuple&& args_tuple, Params const& params)
-      : args_tuple(cute::forward<ArgsTuple>(args_tuple)),
-        params(params) {}
+    ConsumerStoreCallbacks(ArgsTuple&& args_tuple_, Params const& params_)
+      : args_tuple(cute::forward<ArgsTuple>(args_tuple_)),
+        params(params_) {}
 
     ArgsTuple args_tuple;
     Params const& params;
@@ -1377,8 +1377,8 @@ public:
   Sm90ColReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ColReduction(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+  Sm90ColReduction(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_) { }
 
   Params params;
 
@@ -1391,9 +1391,9 @@ public:
   template<class ArgsTuple>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(ArgsTuple&& args_tuple, Params const& params)
-      : args_tuple(cute::forward<ArgsTuple>(args_tuple)),
-        params(params) {}
+    ConsumerStoreCallbacks(ArgsTuple&& args_tuple_, Params const& params_)
+      : args_tuple(cute::forward<ArgsTuple>(args_tuple_)),
+        params(params_) {}
 
     ArgsTuple args_tuple;
     Params const& params;

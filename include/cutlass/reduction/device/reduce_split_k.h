@@ -90,11 +90,11 @@ public:
     /// Default ctor
     Arguments() = default;
    
-    CUTLASS_HOST_DEVICE 
+    CUTLASS_HOST_DEVICE
     Arguments(
-      MatrixCoord const & problem_size
+      MatrixCoord const & problem_size_
     ):
-      problem_size(problem_size) { }
+      problem_size(problem_size_) { }
 
     CUTLASS_HOST_DEVICE
     Arguments(

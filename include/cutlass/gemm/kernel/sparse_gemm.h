@@ -111,23 +111,23 @@ struct SparseGemm {
 
     CUTLASS_HOST_DEVICE
     Params(
-      cutlass::gemm::GemmCoord const & problem_size,
-      cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      TensorRefA ref_A,
-      TensorRefB ref_B,
-      typename Epilogue::OutputTileIterator::TensorRef ref_C,
-      typename Epilogue::OutputTileIterator::TensorRef ref_D,
-      TensorRefE ref_E,
-      typename OutputOp::Params output_op = typename OutputOp::Params(),
-      int *workspace = nullptr
+      cutlass::gemm::GemmCoord const & problem_size_,
+      cutlass::gemm::GemmCoord const & grid_tiled_shape_,
+      TensorRefA ref_A_,
+      TensorRefB ref_B_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_C_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_D_,
+      TensorRefE ref_E_,
+      typename OutputOp::Params output_op_ = typename OutputOp::Params(),
+      int *workspace_ = nullptr
     ):
-      Base(problem_size, grid_tiled_shape, ref_A, ref_B, ref_E, Mma::Shape::kK),
-      params_C(ref_C.layout()),
-      ref_C(ref_C),
-      params_D(ref_D.layout()),
-      ref_D(ref_D),
-      output_op(output_op) {
-    semaphore = workspace;
+      Base(problem_size_, grid_tiled_shape_, ref_A_, ref_B_, ref_E_, Mma::Shape::kK),
+      params_C(ref_C_.layout()),
+      ref_C(ref_C_),
+      params_D(ref_D_.layout()),
+      ref_D(ref_D_),
+      output_op(output_op_) {
+    semaphore = workspace_;
     }
   };
 

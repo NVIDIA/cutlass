@@ -325,9 +325,9 @@ class Gemm {
       TensorRef<ElementB const, LayoutB> ref_B_,
       TensorRef<ElementC const, LayoutC> ref_C_,
       TensorRef<ElementC, LayoutC> ref_D_,
-      typename EpilogueOutputOp::Params epilogue_ = 
+      typename EpilogueOutputOp::Params epilogue_ =
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1,
+      int split_k_slices_ = 1,
       int const *gather_A_indices_ = nullptr,
       int const *gather_B_indices_ = nullptr,
       int const *scatter_D_indices_ = nullptr
@@ -338,7 +338,7 @@ class Gemm {
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices),
+      split_k_slices(split_k_slices_),
       gather_A_indices(gather_A_indices_),
       gather_B_indices(gather_B_indices_),
       scatter_D_indices(scatter_D_indices_) {
@@ -668,9 +668,9 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       TensorRef<ElementB const, LayoutB> ref_B_,
       TensorRef<ElementC const, LayoutC> ref_C_,
       TensorRef<ElementC, LayoutC> ref_D_,
-      typename EpilogueOutputOp::Params epilogue_ = 
+      typename EpilogueOutputOp::Params epilogue_ =
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1,
+      int split_k_slices_ = 1,
       int *gather_A_indices_ = nullptr,
       int *gather_B_indices_ = nullptr,
       int *scatter_D_indices_ = nullptr
@@ -681,7 +681,7 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices),
+      split_k_slices(split_k_slices_),
       gather_A_indices(gather_A_indices_),
       gather_B_indices(gather_B_indices_),
       scatter_D_indices(scatter_D_indices_) { }

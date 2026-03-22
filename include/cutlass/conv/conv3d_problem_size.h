@@ -89,108 +89,108 @@ public:
   /// Constructor for default padding, stride, dilation, and split-K
   CUTLASS_HOST_DEVICE
   Conv3dProblemSize(
-    int N,
-    int D,
-    int H,
-    int W,
-    int C,
-    int Z,
-    int P,
-    int Q,
-    int K,
-    int T,
-    int R,
-    int S,
-    Mode mode
+    int N_,
+    int D_,
+    int H_,
+    int W_,
+    int C_,
+    int Z_,
+    int P_,
+    int Q_,
+    int K_,
+    int T_,
+    int R_,
+    int S_,
+    Mode mode_
   ):
-    Conv2dProblemSize(N, H, W, C, P, Q, K, R, S, mode),
-    D(D), T(T), Z(Z), 
-    pad_d(T / 2), stride_d(1), dilation_d(1) { }
+    Conv2dProblemSize(N_, H_, W_, C_, P_, Q_, K_, R_, S_, mode_),
+    D(D_), T(T_), Z(Z_),
+    pad_d(T_ / 2), stride_d(1), dilation_d(1) { }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
   Conv3dProblemSize(
-    int N,
-    int D,
-    int H,
-    int W,
-    int C,
-    int K,
-    int T,
-    int R,
-    int S,
-    int Z,
-    int P,
-    int Q,
-    int pad_d,
-    int pad_h,
-    int pad_w,
-    int stride_d,
-    int stride_h,
-    int stride_w,
-    int dilation_d,
-    int dilation_h,
-    int dilation_w,
-    Mode mode,
-    int split_k_slices = 1,
-    int groups = 1
+    int N_,
+    int D_,
+    int H_,
+    int W_,
+    int C_,
+    int K_,
+    int T_,
+    int R_,
+    int S_,
+    int Z_,
+    int P_,
+    int Q_,
+    int pad_d_,
+    int pad_h_,
+    int pad_w_,
+    int stride_d_,
+    int stride_h_,
+    int stride_w_,
+    int dilation_d_,
+    int dilation_h_,
+    int dilation_w_,
+    Mode mode_,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     Conv2dProblemSize(
-    N, H, W, C, K, R, S, P, Q, 
-    pad_h, pad_w, 
-    stride_h, stride_w, 
-    dilation_h, dilation_w,
-    mode, split_k_slices, groups),
-    D(D), T(T), Z(Z), 
-    pad_d(pad_d), stride_d(stride_d), dilation_d(dilation_d) { }
+    N_, H_, W_, C_, K_, R_, S_, P_, Q_,
+    pad_h_, pad_w_,
+    stride_h_, stride_w_,
+    dilation_h_, dilation_w_,
+    mode_, split_k_slices_, groups_),
+    D(D_), T(T_), Z(Z_),
+    pad_d(pad_d_), stride_d(stride_d_), dilation_d(dilation_d_) { }
 
-  /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D 
+  /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D
   // set *user-defined* output size and sets Z, P, and Q (include all data members in ctor)
   CUTLASS_HOST_DEVICE
   Conv3dProblemSize(
     cutlass::Tensor5DCoord input_size,    // NDHWC
     cutlass::Tensor5DCoord filter_size,   // KTRSC
-    Coord3D padding,                      // pad_d, pad_h, pad_w
-    Coord3D stride,                       // stride_d, stride_h, stride_w
-    Coord3D dilation,                     // dilation_d, dilation_h, dilation_w
+    Coord3D padding_,                     // pad_d, pad_h, pad_w
+    Coord3D stride_,                      // stride_d, stride_h, stride_w
+    Coord3D dilation_,                    // dilation_d, dilation_h, dilation_w
     cutlass::Tensor5DCoord output_size,   // NZPQK
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     Conv2dProblemSize(
       {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
       {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
-      {padding[1], padding[1], padding[2], padding[2]},
-      {stride[1], stride[2]},
-      {dilation[1], dilation[2]},
+      {padding_[1], padding_[1], padding_[2], padding_[2]},
+      {stride_[1], stride_[2]},
+      {dilation_[1], dilation_[2]},
       {output_size.n(), output_size.h(), output_size.w(), output_size.c()},
-      mode, split_k_slices, groups),
+      mode_, split_k_slices_, groups_),
     D(input_size.d()), T(filter_size.d()), Z(output_size.d()),
-    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0]) { }
+    pad_d(padding_[0]), stride_d(stride_[0]), dilation_d(dilation_[0]) { }
 
-  /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D 
+  /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D
   // *computes* output size and sets Z, P and Q (include all data members in ctor)
   CUTLASS_HOST_DEVICE
   Conv3dProblemSize(
     cutlass::Tensor5DCoord input_size,    // NDHWC
     cutlass::Tensor5DCoord filter_size,   // KTRSC
-    Coord3D padding,                      // pad_d, pad_h, pad_w
-    Coord3D stride,                       // stride_d, stride_h, stride_w
-    Coord3D dilation,                     // dilation_d, dilation_h, dilation_w
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    Coord3D padding_,                     // pad_d, pad_h, pad_w
+    Coord3D stride_,                      // stride_d, stride_h, stride_w
+    Coord3D dilation_,                    // dilation_d, dilation_h, dilation_w
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     Conv2dProblemSize(
       {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
       {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
-      {padding[1], padding[1], padding[2], padding[2]},
-      {stride[1], stride[2]},
-      {dilation[1], dilation[2]},
-      mode, split_k_slices, groups),
+      {padding_[1], padding_[1], padding_[2], padding_[2]},
+      {stride_[1], stride_[2]},
+      {dilation_[1], dilation_[2]},
+      mode_, split_k_slices_, groups_),
     D(input_size.d()), T(filter_size.d()),
-    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0])
+    pad_d(padding_[0]), stride_d(stride_[0]), dilation_d(dilation_[0])
     {
       // set output Z
       Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;
@@ -202,26 +202,26 @@ public:
   Conv3dProblemSize(
     cutlass::Tensor5DCoord input_size,    // NDHWC
     cutlass::Tensor5DCoord filter_size,   // KTRSC
-    CUTLASS_STL_NAMESPACE::tuple<Coord3D, Coord3D> padding, // Coord3D {pad_d, pad_h, pad_w} & Coord3D {far pad_d, pad_h, pad_w} to calculate o/p/q
-    Coord3D stride,                       // stride_d, stride_h, stride_w
-    Coord3D dilation,                     // dilation_d, dilation_h, dilation_w
-    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
-    int split_k_slices = 1,
-    int groups = 1
+    CUTLASS_STL_NAMESPACE::tuple<Coord3D, Coord3D> padding_, // Coord3D {pad_d, pad_h, pad_w} & Coord3D {far pad_d, pad_h, pad_w} to calculate o/p/q
+    Coord3D stride_,                      // stride_d, stride_h, stride_w
+    Coord3D dilation_,                    // dilation_d, dilation_h, dilation_w
+    cutlass::conv::Mode mode_ = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices_ = 1,
+    int groups_ = 1
   ):
     Conv2dProblemSize(
       {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
       {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
-      {CUTLASS_STL_NAMESPACE::get<0>(padding)[1], CUTLASS_STL_NAMESPACE::get<1>(padding)[1],
-       CUTLASS_STL_NAMESPACE::get<0>(padding)[2], CUTLASS_STL_NAMESPACE::get<1>(padding)[2]},
-      {stride[1], stride[2]},
-      {dilation[1], dilation[2]},
-      mode, split_k_slices, groups),
+      {CUTLASS_STL_NAMESPACE::get<0>(padding_)[1], CUTLASS_STL_NAMESPACE::get<1>(padding_)[1],
+       CUTLASS_STL_NAMESPACE::get<0>(padding_)[2], CUTLASS_STL_NAMESPACE::get<1>(padding_)[2]},
+      {stride_[1], stride_[2]},
+      {dilation_[1], dilation_[2]},
+      mode_, split_k_slices_, groups_),
     D(input_size.d()), T(filter_size.d()),
-    pad_d(CUTLASS_STL_NAMESPACE::get<0>(padding)[0]), stride_d(stride[0]), dilation_d(dilation[0])
+    pad_d(CUTLASS_STL_NAMESPACE::get<0>(padding_)[0]), stride_d(stride_[0]), dilation_d(dilation_[0])
     {
       // set output Z
-      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding_)[0] - T * dilation_d) / stride_d) + 1;
     }
 
   /// Equality operator (ignores mode and split_k_slice)

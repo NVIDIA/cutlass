@@ -162,34 +162,34 @@ public:
 
     /// Ctor
     CUTLASS_HOST_DEVICE
-    Arguments(    
-      GemmCoord *problem_sizes,
-      int problem_count,
-      int threadblock_count,
-      typename EpilogueOutputOp::Params output_op,
-      ElementA ** ptr_A,
-      ElementB ** ptr_B,
-      ElementC ** ptr_C,
-      ElementC ** ptr_D,
-      typename LayoutA::Stride::LongIndex *lda,
-      typename LayoutB::Stride::LongIndex *ldb,
-      typename LayoutC::Stride::LongIndex *ldc,
-      typename LayoutC::Stride::LongIndex *ldd,
-      GemmCoord *host_problem_sizes=nullptr
-    ): 
-      problem_sizes(problem_sizes),
-      problem_count(problem_count),
-      threadblock_count(threadblock_count),
-      output_op(output_op),
-      ptr_A(ptr_A),
-      ptr_B(ptr_B),
-      ptr_C(ptr_C),
-      ptr_D(ptr_D),
-      lda(lda),
-      ldb(ldb),
-      ldc(ldc),
-      ldd(ldd),
-      host_problem_sizes(host_problem_sizes)
+    Arguments(
+      GemmCoord *problem_sizes_,
+      int problem_count_,
+      int threadblock_count_,
+      typename EpilogueOutputOp::Params output_op_,
+      ElementA ** ptr_A_,
+      ElementB ** ptr_B_,
+      ElementC ** ptr_C_,
+      ElementC ** ptr_D_,
+      typename LayoutA::Stride::LongIndex *lda_,
+      typename LayoutB::Stride::LongIndex *ldb_,
+      typename LayoutC::Stride::LongIndex *ldc_,
+      typename LayoutC::Stride::LongIndex *ldd_,
+      GemmCoord *host_problem_sizes_=nullptr
+    ):
+      problem_sizes(problem_sizes_),
+      problem_count(problem_count_),
+      threadblock_count(threadblock_count_),
+      output_op(output_op_),
+      ptr_A(ptr_A_),
+      ptr_B(ptr_B_),
+      ptr_C(ptr_C_),
+      ptr_D(ptr_D_),
+      lda(lda_),
+      ldb(ldb_),
+      ldc(ldc_),
+      ldd(ldd_),
+      host_problem_sizes(host_problem_sizes_)
     {
 
     }

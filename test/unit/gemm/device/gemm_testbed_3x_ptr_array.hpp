@@ -370,16 +370,16 @@ struct HostCollectiveMainloop {
     L = cutlass::platform::max(problem_shapes.groups(), L);
 
     for(int32_t i = 0; i < L; ++i) {
-      auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+      auto [Mi, Ni, Ki, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
 
-      stride_a_host.push_back(cutlass::make_cute_packed_stride(InternalStrideA{}, {M, K, 1}));
-      stride_b_host.push_back(cutlass::make_cute_packed_stride(InternalStrideB{}, {N, K, 1}));
+      stride_a_host.push_back(cutlass::make_cute_packed_stride(InternalStrideA{}, {Mi, Ki, 1}));
+      stride_b_host.push_back(cutlass::make_cute_packed_stride(InternalStrideB{}, {Ni, Ki, 1}));
 
       // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
-      auto a_coord = cutlass::make_Coord(M, K);
+      auto a_coord = cutlass::make_Coord(Mi, Ki);
       // Cutlass has Row/Col major refers to MxK times KxN matrix product,
       // so the HostTensorB should be treated as KxN in "coord"'s view
-      auto b_coord = cutlass::make_Coord(K, N);
+      auto b_coord = cutlass::make_Coord(Ki, Ni);
 
       tensors_A.push_back(cutlass::HostTensor<ElementA, LayoutTagA>(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A)));
       tensors_B.push_back(cutlass::HostTensor<ElementB, LayoutTagB>(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B)));
@@ -626,16 +626,16 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlo
     L = std::max(problem_shapes.groups(), L);
 
     for (int32_t i = 0; i < L; ++i) {
-      auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+      auto [Mi, Ni, Ki, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
 
-      stride_a_host.push_back(cutlass::make_cute_packed_stride(InternalStrideA{}, {M, K, 1}));
-      stride_b_host.push_back(cutlass::make_cute_packed_stride(InternalStrideB{}, {N, K, 1}));
+      stride_a_host.push_back(cutlass::make_cute_packed_stride(InternalStrideA{}, {Mi, Ki, 1}));
+      stride_b_host.push_back(cutlass::make_cute_packed_stride(InternalStrideB{}, {Ni, Ki, 1}));
 
       // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
-      auto a_coord = cutlass::make_Coord(M, K);
+      auto a_coord = cutlass::make_Coord(Mi, Ki);
       // Cutlass has Row/Col major refers to MxK times KxN matrix product,
       // so the HostTensorB should be treated as KxN in "coord"'s view
-      auto b_coord = cutlass::make_Coord(K, N);
+      auto b_coord = cutlass::make_Coord(Ki, Ni);
 
       tensors_A.push_back(cutlass::HostTensor<ElementA, LayoutTagA>(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A)));
       tensors_B.push_back(cutlass::HostTensor<ElementB, LayoutTagB>(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B)));
@@ -653,11 +653,11 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlo
 
       using namespace cute;
 
-      auto k_blks = cutlass::ceil_div(K, size<1>(shape(SfAtom{})));
-      auto m_blks = cutlass::ceil_div(M, Blk_MN{});
-      auto n_blks = cutlass::ceil_div(N, Blk_MN{});
-      layout_sfa_host.push_back(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1)));
-      layout_sfb_host.push_back(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1)));
+      auto k_blks = cutlass::ceil_div(Ki, size<1>(shape(SfAtom{})));
+      auto m_blks = cutlass::ceil_div(Mi, Blk_MN{});
+      auto n_blks = cutlass::ceil_div(Ni, Blk_MN{});
+      layout_sfa_host.push_back(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(Mi, Ni, Ki, 1)));
+      layout_sfb_host.push_back(Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(Mi, Ni, Ki, 1)));
 
       // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
       auto sfa_coord   = cutlass::make_Coord(m_blks * Blk_MN{}, k_blks * Blk_SF{});
@@ -959,13 +959,13 @@ struct HostCollectiveDefaultEpilogue {
     L = cutlass::platform::max(problem_shapes.groups(), L);
 
     for (int32_t i = 0; i < L; ++i) {
-      auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+      auto [Mi, Ni, Ki, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
 
-      stride_c_host.push_back(cutlass::make_cute_packed_stride(InternalStrideC{}, {M, N, 1}));
-      stride_d_host.push_back(cutlass::make_cute_packed_stride(InternalStrideD{}, {M, N, 1}));
+      stride_c_host.push_back(cutlass::make_cute_packed_stride(InternalStrideC{}, {Mi, Ni, 1}));
+      stride_d_host.push_back(cutlass::make_cute_packed_stride(InternalStrideD{}, {Mi, Ni, 1}));
 
       // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
-      auto c_coord = cutlass::make_Coord(M, N);
+      auto c_coord = cutlass::make_Coord(Mi, Ni);
 
       tensors_C.push_back(cutlass::HostTensor<ElementC, LayoutTagC>(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagC>::layout_factory(c_coord, stride_factor_C)));
       tensors_D.push_back(cutlass::HostTensor<ElementD, LayoutTagD>(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, stride_factor_D)));
@@ -1014,8 +1014,8 @@ struct HostCollectiveDefaultEpilogue {
 
   bool compare_reference(
       ProblemShapeType problem_shapes,
-      ElementScalar alpha,
-      ElementScalar beta,
+      ElementScalar alpha_,
+      ElementScalar beta_,
       int batch) {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
     L = cutlass::platform::max(problem_shapes.groups(), L);
@@ -1096,7 +1096,7 @@ struct HostCollectiveDefaultEpilogue {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(batch), 1);
     L = std::max(problem_shapes.groups(), L);
 
-    auto coord_0 = cutlass::make_Coord(0);
+    [[maybe_unused]] auto coord_0 = cutlass::make_Coord(0);
     auto C = cute::make_tensor(detail::make_iterator(tensors_C[batch].host_data()),
         cute::make_layout(cute::make_shape(M, N, 1), stride_c_host[batch]));
     auto D = cute::make_tensor(detail::make_iterator(references_D[batch].host_data()),
@@ -1300,12 +1300,12 @@ struct HostCollectiveEpilogue {
     L = std::max(problem_shapes.groups(), L);
 
     for (int32_t i = 0; i < L; ++i) {
-      auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+      auto [Mi, Ni, Ki, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
 
-      stride_c_host.push_back(cutlass::make_cute_packed_stride(InternalStrideC{}, {M, N, 1}));
-      stride_d_host.push_back(cutlass::make_cute_packed_stride(InternalStrideD{}, {M, N, 1}));
+      stride_c_host.push_back(cutlass::make_cute_packed_stride(InternalStrideC{}, {Mi, Ni, 1}));
+      stride_d_host.push_back(cutlass::make_cute_packed_stride(InternalStrideD{}, {Mi, Ni, 1}));
 
-      auto c_coord = cutlass::make_Coord(M, N);
+      auto c_coord = cutlass::make_Coord(Mi, Ni);
       tensors_C.push_back(cutlass::HostTensor<ElementC, LayoutTagC>(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagC>::layout_factory(c_coord, stride_factor_C)));
       tensors_D.push_back(cutlass::HostTensor<ElementD, LayoutTagD>(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, stride_factor_D)));
       references_D.push_back(cutlass::HostTensor<ElementD, LayoutTagD>(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, stride_factor_D), false));
@@ -1399,8 +1399,8 @@ struct HostCollectiveEpilogue {
 
     if constexpr (IsAuxOutEnabled) {
       for (int32_t i = 0; i < L; ++i) {
-        auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
-        auto aux_coord = cutlass::make_Coord(M, N);
+        auto [Mi, Ni, Ki, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+        auto aux_coord = cutlass::make_Coord(Mi, Ni);
         auto aux_layout = cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(aux_coord, typename LayoutTagAux::Stride{});
         tensors_Aux.push_back(cutlass::HostTensor<ElementAux , LayoutTagAux>(aux_coord, aux_layout));
         references_Aux.push_back(cutlass::HostTensor<ElementAux , LayoutTagAux>(aux_coord, aux_layout, false));
@@ -1429,10 +1429,10 @@ struct HostCollectiveEpilogue {
 
     if constexpr (IsBlockScaleSupported) {
       for (int32_t i = 0; i < L; ++i) {
-        auto [M, N, K, _] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
+        auto [Mi, Ni, Ki, unused_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
         // If block scaled output is supported we always have at least 1 SFD
-        auto m_blks = cutlass::ceil_div(M, cute::size<0>(cute::shape(OutputSFAtom{})));
-        auto n_blks = cutlass::ceil_div(N, cute::size<1>(cute::shape(OutputSFAtom{})));
+        auto m_blks = cutlass::ceil_div(Mi, cute::size<0>(cute::shape(OutputSFAtom{})));
+        auto n_blks = cutlass::ceil_div(Ni, cute::size<1>(cute::shape(OutputSFAtom{})));
         auto sfd_coord = [&] () {
             return cutlass::make_Coord(m_blks * Blk_MN{}, n_blks * Blk_SF{});
         }();
@@ -1480,8 +1480,8 @@ struct HostCollectiveEpilogue {
 
   bool compare_reference(
       ProblemShapeType problem_shapes,
-      ElementScalar alpha,
-      ElementScalar beta,
+      ElementScalar alpha_,
+      ElementScalar beta_,
       int batch) {
     tensors_D[batch].sync_host();
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_C[batch].host_view()), 0);

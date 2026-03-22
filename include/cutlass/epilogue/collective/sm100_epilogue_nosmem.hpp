@@ -203,7 +203,7 @@ public:
   // Constructor and Data Members
   //
   CUTLASS_DEVICE
-  CollectiveEpilogue(Params const& params, SharedStorage&) : params(params) { };
+  CollectiveEpilogue(Params const& params_, SharedStorage&) : params(params_) { };
 
 protected:
   Params const& params;

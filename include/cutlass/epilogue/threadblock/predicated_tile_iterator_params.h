@@ -237,13 +237,13 @@ struct PredicatedTileIteratorParams {
   }
 
   CUTLASS_HOST_DEVICE
-  PredicatedTileIteratorParams(Index stride, OutputTileThreadMapDesc thread_map) {
-    initialize(stride, thread_map);
+  PredicatedTileIteratorParams(Index stride_, OutputTileThreadMapDesc thread_map_) {
+    initialize(stride_, thread_map_);
   }
 
   CUTLASS_HOST_DEVICE
-  PredicatedTileIteratorParams(LongIndex stride, OutputTileThreadMapDesc thread_map) {
-    initialize(stride, thread_map);
+  PredicatedTileIteratorParams(LongIndex stride_, OutputTileThreadMapDesc thread_map_) {
+    initialize(stride_, thread_map_);
   }
 };
 
@@ -323,17 +323,17 @@ struct PredicatedTileIteratorDirect2dConvParams{
   PredicatedTileIteratorDirect2dConvParams() { initialize(LongIndex(0)); }
 
   CUTLASS_HOST_DEVICE
-  PredicatedTileIteratorDirect2dConvParams(Index stride,
-                               cutlass::conv::Conv2dProblemSize const &problem_size,
-                               MatrixCoord threadblock_output_shape) {
-    initialize(stride, problem_size, threadblock_output_shape);
+  PredicatedTileIteratorDirect2dConvParams(Index stride_,
+                               cutlass::conv::Conv2dProblemSize const &problem_size_,
+                               MatrixCoord threadblock_output_shape_) {
+    initialize(stride_, problem_size_, threadblock_output_shape_);
   }
 
   CUTLASS_HOST_DEVICE
-  PredicatedTileIteratorDirect2dConvParams(LongIndex stride,
-                               cutlass::conv::Conv2dProblemSize const &problem_size,
-                               MatrixCoord threadblock_output_shape) {
-    initialize(stride, problem_size, threadblock_output_shape);
+  PredicatedTileIteratorDirect2dConvParams(LongIndex stride_,
+                               cutlass::conv::Conv2dProblemSize const &problem_size_,
+                               MatrixCoord threadblock_output_shape_) {
+    initialize(stride_, problem_size_, threadblock_output_shape_);
   }
 };
 
@@ -415,13 +415,13 @@ struct InterleavedPredicatedTileIteratorParams {
   }
 
   CUTLASS_HOST_DEVICE
-  InterleavedPredicatedTileIteratorParams(Index stride, InterleavedPredicatedTileIteratorDesc desc) {
-    initialize(stride, desc);
+  InterleavedPredicatedTileIteratorParams(Index stride_, InterleavedPredicatedTileIteratorDesc desc_) {
+    initialize(stride_, desc_);
   }
 
   CUTLASS_HOST_DEVICE
-  InterleavedPredicatedTileIteratorParams(LongIndex stride, InterleavedPredicatedTileIteratorDesc desc) {
-    initialize(stride, desc);
+  InterleavedPredicatedTileIteratorParams(LongIndex stride_, InterleavedPredicatedTileIteratorDesc desc_) {
+    initialize(stride_, desc_);
   }
 };
 

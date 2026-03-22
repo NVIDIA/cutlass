@@ -155,7 +155,7 @@ public:
   };
 private:
   ElementCompute scalar_{};
-  StrideMNL dScalar{};
+  StrideMNL dScalar_{};
   ElementCompute scalar_reduced_{};
 public:
   HostScalarBroadcast(){}
@@ -169,12 +169,12 @@ public:
       scalar_reduced_ = ReductionFn<ElementCompute>{}(scalar_reduced_, ElementCompute(Value));
     }
   }
-  
+
   template <class ElementAccumulator>
   ElementCompute visit(
     int64_t m, int64_t n, int64_t l, int m_b, int n_b,
     ElementAccumulator acc) {
-    
+
     return scalar_reduced_;
   }
 
@@ -185,13 +185,13 @@ public:
 
   Arguments get_arguments() {
     if constexpr (BroadcastCount == 1)
-      return Arguments{{scalar_}, {nullptr}, {dScalar}};
+      return Arguments{{scalar_}, {nullptr}, {dScalar_}};
     else if constexpr (BroadcastCount == 2)
-      return Arguments{{scalar_, scalar_}, {nullptr, nullptr}, {dScalar,  dScalar}};
+      return Arguments{{scalar_, scalar_}, {nullptr, nullptr}, {dScalar_,  dScalar_}};
     else if constexpr (BroadcastCount == 3)
-      return Arguments{{scalar_, scalar_, scalar_}, {nullptr, nullptr, nullptr}, {dScalar, dScalar, dScalar}};
+      return Arguments{{scalar_, scalar_, scalar_}, {nullptr, nullptr, nullptr}, {dScalar_, dScalar_, dScalar_}};
     else
-      return Arguments{{scalar_}, {nullptr}, {dScalar}};
+      return Arguments{{scalar_}, {nullptr}, {dScalar_}};
   }
 
   auto get_flatten_arguments() {
@@ -383,18 +383,20 @@ public:
   HostAuxLoad(ProblemShapeType problem_size, bool check_relative_equality = false, int64_t seed = 2024)
     : Base(check_relative_equality) {
     auto problem_shape_NMKL = cute::append<4>(problem_size, 1);
-    auto [M_, N_, K, L_] = problem_shape_NMKL;
+    auto [M_val, N_val, K_val, L_val] = problem_shape_NMKL;
+    (void)K_val;
+    M_ = M_val; N_ = N_val; L_ = L_val;
     auto aux_coord = cutlass::make_Coord(M_ * L_, N_);
     tensor_aux_load_.resize(
-      aux_coord, 
+      aux_coord,
       cutlass::layout::Affine2Layout_Factory<LayoutTagAux>::layout_factory(
         aux_coord, typename LayoutTagAux::Stride()
       )
     );
     EXPECT_TRUE(
       detail::initialize_tensor(
-        tensor_aux_load_.host_view(), 
-        cutlass::Distribution::Uniform, 
+        tensor_aux_load_.host_view(),
+        cutlass::Distribution::Uniform,
         seed
       )
     );
@@ -539,10 +541,12 @@ public:
   HostAuxStore(ProblemShapeType problem_size, bool check_relative_equality = false, int64_t seed = 2024):
     Base(check_relative_equality) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-    auto [M_, N_, K, L_] = problem_shape_MNKL;
+    auto [M_val, N_val, K_val, L_val] = problem_shape_MNKL;
+    (void)K_val;
+    M_ = M_val; N_ = N_val; L_ = L_val;
     auto aux_coord = cutlass::make_Coord(M_ * L_, N_);
     tensor_aux_store_.resize(
-      aux_coord, 
+      aux_coord,
       cutlass::layout::Affine2Layout_Factory<LayoutTagAux>::layout_factory(
         aux_coord, typename LayoutTagAux::Stride()
       )
@@ -804,17 +808,16 @@ public:
       cute::make_layout(cute::make_shape(M_, cute::_1{})));
     if constexpr (FinalReduction) {
       TensorColReduce(m + m_b, 1) = reduce_fn_(TensorColReduce(m + m_b, 1), child_0_result);
-    } 
+    }
     else {
-      auto shape = reduce_buffer_.extent();
-      auto TensorColReduce = cute::make_tensor(
+      auto TensorColReduce3D = cute::make_tensor(
         reduce_buffer_.host_data(),
         cute::make_layout(
           cute::make_shape(extent_m_, extent_n_, extent_l_),
           cute::make_stride(1, extent_m_, extent_m_ * extent_l_)
         )
       );
-      TensorColReduce(m+m_b, (n+n_b)/TileN, l) = reduce_fn_(TensorColReduce(m+m_b, (n+n_b)/TileN, l), child_0_result);
+      TensorColReduce3D(m+m_b, (n+n_b)/TileN, l) = reduce_fn_(TensorColReduce3D(m+m_b, (n+n_b)/TileN, l), child_0_result);
     }
     return child_0_result;
   }

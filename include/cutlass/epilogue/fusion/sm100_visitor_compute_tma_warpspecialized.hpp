@@ -201,17 +201,17 @@ struct Sm100BatchNormApply {
   template <int EpiTiles, class GTensor, class STensor>
   struct ProducerLoadCallbacks : EmptyProducerLoadCallbacks {
     CUTLASS_DEVICE
-    ProducerLoadCallbacks(GTensor&& gAlpha, GTensor&& gBias, GTensor&& gMean, GTensor&& gInvStddev,
-      STensor&& sAlpha, STensor&& sBias, STensor&& sMean, STensor&& sInvStddev, Params const* params_ptr)
-      : gAlpha(cute::forward<GTensor>(gAlpha)),
-        gBias(cute::forward<GTensor>(gBias)),
-        gMean(cute::forward<GTensor>(gMean)),
-        gInvStddev(cute::forward<GTensor>(gInvStddev)),
-        sAlpha(cute::forward<STensor>(sAlpha)),
-        sBias(cute::forward<STensor>(sBias)),
-        sMean(cute::forward<STensor>(sMean)),
-        sInvStddev(cute::forward<STensor>(sInvStddev)),
-        params_ptr(params_ptr) {}
+    ProducerLoadCallbacks(GTensor&& gAlpha_, GTensor&& gBias_, GTensor&& gMean_, GTensor&& gInvStddev_,
+      STensor&& sAlpha_, STensor&& sBias_, STensor&& sMean_, STensor&& sInvStddev_, Params const* params_ptr_)
+      : gAlpha(cute::forward<GTensor>(gAlpha_)),
+        gBias(cute::forward<GTensor>(gBias_)),
+        gMean(cute::forward<GTensor>(gMean_)),
+        gInvStddev(cute::forward<GTensor>(gInvStddev_)),
+        sAlpha(cute::forward<STensor>(sAlpha_)),
+        sBias(cute::forward<STensor>(sBias_)),
+        sMean(cute::forward<STensor>(sMean_)),
+        sInvStddev(cute::forward<STensor>(sInvStddev_)),
+        params_ptr(params_ptr_) {}
 
     GTensor gAlpha;
     GTensor gBias;
@@ -278,27 +278,27 @@ struct Sm100BatchNormApply {
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
-      SR_RTensor&& tSR_rAlpha, SR_RTensor&& tSR_rBias,
-      SR_RTensor&& tSR_rMean, SR_RTensor&& tSR_rInvStddev,
-      SR_STensor&& tSR_sAlpha, SR_STensor&& tSR_sBias,
-      SR_STensor&& tSR_sMean, SR_STensor&& tSR_sInvStddev,
-      SR_CTensor&& tSR_cAlpha,
-      SR_SCTensor&& tSR_sColAlpha, SR_SCTensor&& tSR_sColBias,
-      RTensor&& tCrAlpha, RTensor&& tCrBias,
-      STensor&& tCsAlpha, STensor&& tCsBias,
-      ThrNum thr_num,
-      Params const* params_ptr)
+      SR_RTensor&& tSR_rAlpha_, SR_RTensor&& tSR_rBias_,
+      SR_RTensor&& tSR_rMean_, SR_RTensor&& tSR_rInvStddev_,
+      SR_STensor&& tSR_sAlpha_, SR_STensor&& tSR_sBias_,
+      SR_STensor&& tSR_sMean_, SR_STensor&& tSR_sInvStddev_,
+      SR_CTensor&& tSR_cAlpha_,
+      SR_SCTensor&& tSR_sColAlpha_, SR_SCTensor&& tSR_sColBias_,
+      RTensor&& tCrAlpha_, RTensor&& tCrBias_,
+      STensor&& tCsAlpha_, STensor&& tCsBias_,
+      ThrNum thr_num_,
+      Params const* params_ptr_)
       :
-        tSR_rAlpha(cute::forward<SR_RTensor>(tSR_rAlpha)), tSR_rBias(cute::forward<SR_RTensor>(tSR_rBias)),
-        tSR_rMean(cute::forward<SR_RTensor>(tSR_rMean)), tSR_rInvStddev(cute::forward<SR_RTensor>(tSR_rInvStddev)),
-        tSR_sAlpha(cute::forward<SR_STensor>(tSR_sAlpha)), tSR_sBias(cute::forward<SR_STensor>(tSR_sBias)),
-        tSR_sMean(cute::forward<SR_STensor>(tSR_sMean)), tSR_sInvStddev(cute::forward<SR_STensor>(tSR_sInvStddev)),
-        tSR_cAlpha(cute::forward<SR_CTensor>(tSR_cAlpha)),
-        tSR_sColAlpha(cute::forward<SR_SCTensor>(tSR_sColAlpha)), tSR_sColBias(cute::forward<SR_SCTensor>(tSR_sColBias)),
-        tCrAlpha(cute::forward<RTensor>(tCrAlpha)), tCrBias(cute::forward<RTensor>(tCrBias)),
-        tCsAlpha(cute::forward<STensor>(tCsAlpha)), tCsBias(cute::forward<STensor>(tCsBias)),
-        thr_num(thr_num),
-        params_ptr(params_ptr) {}
+        tSR_rAlpha(cute::forward<SR_RTensor>(tSR_rAlpha_)), tSR_rBias(cute::forward<SR_RTensor>(tSR_rBias_)),
+        tSR_rMean(cute::forward<SR_RTensor>(tSR_rMean_)), tSR_rInvStddev(cute::forward<SR_RTensor>(tSR_rInvStddev_)),
+        tSR_sAlpha(cute::forward<SR_STensor>(tSR_sAlpha_)), tSR_sBias(cute::forward<SR_STensor>(tSR_sBias_)),
+        tSR_sMean(cute::forward<SR_STensor>(tSR_sMean_)), tSR_sInvStddev(cute::forward<SR_STensor>(tSR_sInvStddev_)),
+        tSR_cAlpha(cute::forward<SR_CTensor>(tSR_cAlpha_)),
+        tSR_sColAlpha(cute::forward<SR_SCTensor>(tSR_sColAlpha_)), tSR_sColBias(cute::forward<SR_SCTensor>(tSR_sColBias_)),
+        tCrAlpha(cute::forward<RTensor>(tCrAlpha_)), tCrBias(cute::forward<RTensor>(tCrBias_)),
+        tCsAlpha(cute::forward<STensor>(tCsAlpha_)), tCsBias(cute::forward<STensor>(tCsBias_)),
+        thr_num(thr_num_),
+        params_ptr(params_ptr_) {}
 
     SR_RTensor tSR_rAlpha;
     SR_RTensor tSR_rBias;

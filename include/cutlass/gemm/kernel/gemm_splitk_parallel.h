@@ -89,28 +89,28 @@ struct GemmSplitKParallel {
 
     CUTLASS_HOST_DEVICE
     Params(
-      cutlass::gemm::GemmCoord const & problem_size,
-      cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
-      typename Epilogue::OutputTileIterator::TensorRef ref_D,
-      typename OutputOp::Params output_op,
-      int64_t splitk_slice_stride
+      cutlass::gemm::GemmCoord const & problem_size_,
+      cutlass::gemm::GemmCoord const & grid_tiled_shape_,
+      typename Mma::IteratorA::TensorRef ref_A_,
+      typename Mma::IteratorB::TensorRef ref_B_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_D_,
+      typename OutputOp::Params output_op_,
+      int64_t splitk_slice_stride_
     ):
-      problem_size(problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
-      params_A(ref_A.layout()),
-      ref_A(ref_A),
-      params_B(ref_B.layout()),
-      ref_B(ref_B),
-      params_D(ref_D.layout()),
-      ref_D(ref_D),
-      output_op(output_op),
-      splitk_slice_stride(splitk_slice_stride) {
+      problem_size(problem_size_),
+      grid_tiled_shape(grid_tiled_shape_),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape_)),
+      params_A(ref_A_.layout()),
+      ref_A(ref_A_),
+      params_B(ref_B_.layout()),
+      ref_B(ref_B_),
+      params_D(ref_D_.layout()),
+      ref_D(ref_D_),
+      output_op(output_op_),
+      splitk_slice_stride(splitk_slice_stride_) {
 
-      int full_gemm_k_iterations = problem_size.k() / Mma::Shape::kK;
-      int gemm_k_iterations = full_gemm_k_iterations / grid_tiled_shape.k();
+      int full_gemm_k_iterations = problem_size_.k() / Mma::Shape::kK;
+      int gemm_k_iterations = full_gemm_k_iterations / grid_tiled_shape_.k();
 
       gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
     }

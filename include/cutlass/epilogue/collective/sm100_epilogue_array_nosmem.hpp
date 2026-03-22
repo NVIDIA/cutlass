@@ -165,7 +165,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  CollectiveEpilogue(Params const& params, SharedStorage&) : params(params) { };
+  CollectiveEpilogue(Params const& params_, SharedStorage&) : params(params_) { };
 
   template<
     bool ReuseTmem = false,

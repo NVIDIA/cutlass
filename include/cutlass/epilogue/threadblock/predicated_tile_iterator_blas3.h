@@ -217,9 +217,9 @@ public:
     TensorCoord extent,
     int thread_idx,
     TensorCoord threadblock_offset
-    , cutlass::FillMode fill_mode
-  ): 
-    params_(params), fill_mode(fill_mode)
+    , cutlass::FillMode fill_mode_
+  ):
+    params_(params), fill_mode(fill_mode_)
   {
 
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;

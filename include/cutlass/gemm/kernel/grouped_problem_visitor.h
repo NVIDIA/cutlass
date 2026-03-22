@@ -91,15 +91,15 @@ struct BaseGroupedProblemVisitor {
     /// Ctor
     CUTLASS_HOST_DEVICE
     Params(
-      cutlass::gemm::GemmCoord const *problem_sizes,
-      int32_t                         problem_count,
-      void const                     *workspace = nullptr,
-      int32_t                         tile_count = 0
+      cutlass::gemm::GemmCoord const *problem_sizes_,
+      int32_t                         problem_count_,
+      void const                     *workspace_ = nullptr,
+      int32_t                         tile_count_ = 0
     ):
-      problem_sizes(problem_sizes),
-      problem_count(problem_count),
-      workspace(workspace),
-      tile_count(tile_count)
+      problem_sizes(problem_sizes_),
+      problem_count(problem_count_),
+      workspace(workspace_),
+      tile_count(tile_count_)
     {}
 
   };

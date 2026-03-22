@@ -1061,52 +1061,52 @@ composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_st
                    //auto [result_shape, result_stride, rest_shape, rest_stride] = init;
                    //auto [curr_shape, curr_stride] = curr;
                    // Unpack inputs
-                   auto result_shape  = get<0>(init);
-                   auto result_stride = get<1>(init);
-                   auto rest_shape    = get<2>(init);
-                   auto rest_stride   = get<3>(init);
+                   auto rs  = get<0>(init);
+                   auto rt  = get<1>(init);
+                   auto rss = get<2>(init);
+                   auto rst = get<3>(init);
 
                    auto curr_shape  = get<curr_i>(lhs_shape);
                    [[maybe_unused]] auto curr_stride = get<curr_i>(lhs_stride);
 
                    // Strong divisibility condition -- requires composition to be statically verifiable.
-                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   //CUTE_STATIC_ASSERT_V(((rst % curr_shape) == Int<0>{}) or (rst < curr_shape), "Stride Divisibility Condition");
 
                    // Weak divisibility condition -- verify the divisibility condition whenever possible
-                   if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rest_stride)>::value) {
-                     CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rst)>::value) {
+                     CUTE_STATIC_ASSERT_V(((rst % curr_shape) == Int<0>{}) or (rst < curr_shape), "Stride Divisibility Condition");
                    } else {
                      // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
-                     //assert((((rest_stride % curr_shape) == 0) or (rest_stride < curr_shape)) && "Stride Divisibility Condition");
+                     //assert((((rst % curr_shape) == 0) or (rst < curr_shape)) && "Stride Divisibility Condition");
                    }
 
                    // next_shape:  ceil(exclusive_prefix_product<r>(lhs_shape) / rhs_stride)
-                   [[maybe_unused]] auto next_shape  = cute::ceil_div(curr_shape, abs(rest_stride));
+                   [[maybe_unused]] auto next_shape  = cute::ceil_div(curr_shape, abs(rst));
                    // next_stride: ceil(rhs_stride / exclusive_prefix_product<r>(lhs_shape))
-                   [[maybe_unused]] auto next_stride = cute::ceil_div(abs(rest_stride), curr_shape) * signum(rest_stride);
+                   [[maybe_unused]] auto next_stride = cute::ceil_div(abs(rst), curr_shape) * signum(rst);
 
-                   if constexpr (is_constant<1, decltype(next_shape)>::value or is_constant<1, decltype(rest_shape)>::value) {
-                     return cute::make_tuple(result_shape,
-                                             result_stride,
-                                             rest_shape,
+                   if constexpr (is_constant<1, decltype(next_shape)>::value or is_constant<1, decltype(rss)>::value) {
+                     return cute::make_tuple(rs,
+                                             rt,
+                                             rss,
                                              next_stride);
                    } else {
-                     auto new_shape = cute::min(next_shape, rest_shape);
+                     auto new_shape = cute::min(next_shape, rss);
 
                      // Strong divisibility condition
-                     //CUTE_STATIC_ASSERT_V(((rest_shape % new_shape) == Int<0>{}), "Shape Divisibility Condition");
+                     //CUTE_STATIC_ASSERT_V(((rss % new_shape) == Int<0>{}), "Shape Divisibility Condition");
 
                      // Weak divisibility condition
-                     if constexpr (is_static<decltype(new_shape)>::value and is_static<decltype(rest_shape)>::value) {
-                       CUTE_STATIC_ASSERT_V(((rest_shape % new_shape) == Int<0>{}), "Shape Divisibility Condition");
+                     if constexpr (is_static<decltype(new_shape)>::value and is_static<decltype(rss)>::value) {
+                       CUTE_STATIC_ASSERT_V(((rss % new_shape) == Int<0>{}), "Shape Divisibility Condition");
                      } else {
                        // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
-                       //assert(((rest_shape % new_shape) == 0) && "Shape Divisibility Condition");
+                       //assert(((rss % new_shape) == 0) && "Shape Divisibility Condition");
                      }
 
-                     return cute::make_tuple(append(result_shape,  new_shape),
-                                             append(result_stride, rest_stride * curr_stride),
-                                             rest_shape / new_shape,
+                     return cute::make_tuple(append(rs,  new_shape),
+                                             append(rt, rst * curr_stride),
+                                             rss / new_shape,
                                              next_stride);
                    }
 
@@ -1195,17 +1195,17 @@ complement(Shape const& shape, Stride const& stride, CoTarget const& cotarget)
            cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
            [](auto const& init, auto i)
            {
-              auto [shape, stride, result_shape, result_stride] = init;
-              auto min_stride = cute::min(stride);
-              auto min_idx    = cute::find(stride, min_stride);
-              auto new_shape  = min_stride / get<i>(result_stride);
-              auto new_stride = min_stride * get<min_idx>(shape);
+              auto [s_, d_, rs_, rd_] = init;
+              auto min_stride = cute::min(d_);
+              auto min_idx    = cute::find(d_, min_stride);
+              auto new_shape  = min_stride / get<i>(rd_);
+              auto new_stride = min_stride * get<min_idx>(s_);
               static_assert(not is_constant<0, decltype(new_shape)>::value, "Non-injective Layout detected in complement.");
 
-              return cute::make_tuple(remove<min_idx>(shape),              // Remove the min_idx from shape
-                                      remove<min_idx>(stride),             // Remove the min_idx from stride
-                                      append(result_shape , new_shape ),   // new shape  = min_stride / last_stride
-                                      append(result_stride, new_stride));  // new stride = min_stride * curr_shape
+              return cute::make_tuple(remove<min_idx>(s_),              // Remove the min_idx from shape
+                                      remove<min_idx>(d_),              // Remove the min_idx from stride
+                                      append(rs_ , new_shape ),        // new shape  = min_stride / last_stride
+                                      append(rd_, new_stride));         // new stride = min_stride * curr_shape
             });
 
     // Append the last shape mode
@@ -1304,9 +1304,9 @@ right_inverse(Layout<Shape,Stride> const& layout)
 
 CUTE_HOST_DEVICE constexpr
 auto
-right_inverse(Underscore const& _)
+right_inverse(Underscore const&)
 {
-  return _;
+  return Underscore{};
 }
 
 //
@@ -1344,13 +1344,13 @@ left_inverse(Layout<Shape,Stride> const& layout)
       if constexpr (is_constant<0, decltype(istride)>::value) {
         return init;
       } else {
-        auto result_shape  = get<0>(init);
-        auto result_stride = get<1>(init);
+        auto rs_ = get<0>(init);
+        auto rt_ = get<1>(init);
 
-        CUTE_STATIC_ASSERT_V((istride % size(result_shape)) == Int<0>{}, "Left inverse divisibility condition");
+        CUTE_STATIC_ASSERT_V((istride % size(rs_)) == Int<0>{}, "Left inverse divisibility condition");
 
-        return make_tuple(append(result_shape,  istride / size(result_shape)),
-                          append(result_stride, get<i>(preprod_shape)));
+        return make_tuple(append(rs_,  istride / size(rs_)),
+                          append(rt_, get<i>(preprod_shape)));
       }
 
       CUTE_GCC_UNREACHABLE;
@@ -1362,9 +1362,9 @@ left_inverse(Layout<Shape,Stride> const& layout)
 
 CUTE_HOST_DEVICE constexpr
 auto
-left_inverse(Underscore const& _)
+left_inverse(Underscore const&)
 {
-  return _;
+  return Underscore{};
 }
 
 //

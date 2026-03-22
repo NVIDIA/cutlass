@@ -45,14 +45,14 @@ void run_test() {
   dst.clear();
 
   cutlass::Array<SrcValueType, NumElements> src;
-  for (int k = 0; k < NumElements; ++k) {
-    src[k] = SrcValueType(k+1);
+  for (size_t k = 0; k < NumElements; ++k) {
+    src[k] = SrcValueType(static_cast<int>(k) + 1);
   }
 
   cutlass::NumericArrayConverter<DstValueType, SrcValueType, NumElements> converter;
   dst = converter(src);
 
-  for (int k = 0; k < NumElements; ++k) {
+  for (size_t k = 0; k < NumElements; ++k) {
     EXPECT_TRUE(static_cast<int>(src[k]) == static_cast<int>(dst[k]));
   }
 }

@@ -129,21 +129,21 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(ActivationParams activation_params,
-           ElementScalingFactor const* scale_a_ptr,
-           ElementScalingFactor const* scale_b_ptr,
-           ElementScalingFactor const* scale_c_ptr,
-           ElementScalingFactor const* scale_d_ptr,
-           ElementScalingFactor const* scale_aux_ptr,
-           ElementAbsmax * abs_max_aux_ptr,
-           ElementAbsmax * abs_max_D_ptr) :
+           ElementScalingFactor const* scale_a_ptr_,
+           ElementScalingFactor const* scale_b_ptr_,
+           ElementScalingFactor const* scale_c_ptr_,
+           ElementScalingFactor const* scale_d_ptr_,
+           ElementScalingFactor const* scale_aux_ptr_,
+           ElementAbsmax * abs_max_aux_ptr_,
+           ElementAbsmax * abs_max_D_ptr_) :
            activation(activation_params),
-           scale_a_ptr(scale_a_ptr),
-           scale_b_ptr(scale_b_ptr),
-           scale_c_ptr(scale_c_ptr),
-           scale_d_ptr(scale_d_ptr),
-           scale_aux_ptr(scale_aux_ptr),
-           abs_max_aux_ptr(abs_max_aux_ptr),
-           abs_max_D_ptr(abs_max_D_ptr) {}
+           scale_a_ptr(scale_a_ptr_),
+           scale_b_ptr(scale_b_ptr_),
+           scale_c_ptr(scale_c_ptr_),
+           scale_d_ptr(scale_d_ptr_),
+           scale_aux_ptr(scale_aux_ptr_),
+           abs_max_aux_ptr(abs_max_aux_ptr_),
+           abs_max_D_ptr(abs_max_D_ptr_) {}
   };
 
 private:

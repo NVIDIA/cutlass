@@ -170,37 +170,37 @@ struct ImplicitGemmConvolutionWithFusedEpilogue {
     CUTLASS_HOST_DEVICE
     Arguments() { }
    
-    CUTLASS_HOST_DEVICE 
+    CUTLASS_HOST_DEVICE
     Arguments(
-      ConvProblemSize const & problem_size
+      ConvProblemSize const & problem_size_
     ):
-      problem_size(problem_size) { }
+      problem_size(problem_size_) { }
 
     CUTLASS_HOST_DEVICE
     Arguments(
-      ConvProblemSize const & problem_size,
-      TensorRefA const & ref_A,
-      TensorRefB const & ref_B,
-      TensorRefC const & ref_C,
-      TensorRefC const & ref_D,
-      typename EpilogueOutputOp::Params const & output_op,
-      SplitKMode const & split_k_mode = SplitKMode::kSerial,
-      void * ptr_Vector = nullptr,
-      void * ptr_Tensor = nullptr,
-      typename LayoutC::Stride::Index ldr = 0,
-      typename LayoutC::Stride::Index ldt = 0
+      ConvProblemSize const & problem_size_,
+      TensorRefA const & ref_A_,
+      TensorRefB const & ref_B_,
+      TensorRefC const & ref_C_,
+      TensorRefC const & ref_D_,
+      typename EpilogueOutputOp::Params const & output_op_,
+      SplitKMode const & split_k_mode_ = SplitKMode::kSerial,
+      void * ptr_Vector_ = nullptr,
+      void * ptr_Tensor_ = nullptr,
+      typename LayoutC::Stride::Index ldr_ = 0,
+      typename LayoutC::Stride::Index ldt_ = 0
     ):
-      problem_size(problem_size),
-      ref_A(ref_A),
-      ref_B(ref_B),
-      ref_C(ref_C),
-      ref_D(ref_D),
-      output_op(output_op),
-      split_k_mode(split_k_mode),
-      ptr_Vector(ptr_Vector),
-      ptr_Tensor(ptr_Tensor),
-      ldr(ldr),
-      ldt(ldt)
+      problem_size(problem_size_),
+      ref_A(ref_A_),
+      ref_B(ref_B_),
+      ref_C(ref_C_),
+      ref_D(ref_D_),
+      output_op(output_op_),
+      split_k_mode(split_k_mode_),
+      ptr_Vector(ptr_Vector_),
+      ptr_Tensor(ptr_Tensor_),
+      ldr(ldr_),
+      ldt(ldt_)
     {
 
     }
@@ -249,7 +249,7 @@ struct ImplicitGemmConvolutionWithFusedEpilogue {
     CUTLASS_HOST_DEVICE
     Params(
       Arguments const &args,
-      int *semaphore = nullptr
+      int *semaphore_ = nullptr
     ):
       problem_size(args.problem_size),
       implicit_gemm_problem_size(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size)),
@@ -262,10 +262,10 @@ struct ImplicitGemmConvolutionWithFusedEpilogue {
       iterator_D(ConvOutputIteratorParameter::layout(args.ref_D), implicit_gemm_tensor_c_extent(kConvolutionalOperator, args.problem_size)),
       ptr_D(args.ref_D.data()),
       output_op(args.output_op),
-      semaphore(semaphore),
+      semaphore(semaphore_),
       split_k_mode(args.split_k_mode),
       params_Tensor(args.ldt),
-      ptr_Vector(args.ptr_Vector), 
+      ptr_Vector(args.ptr_Vector),
       ldr(args.ldr),
       ptr_Tensor(args.ptr_Tensor)
 

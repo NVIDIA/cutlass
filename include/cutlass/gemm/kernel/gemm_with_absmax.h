@@ -150,66 +150,66 @@ public:
 
     /// Constructs an arguments structure with ldaux
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      void * ptr_Aux,
-      void * ptr_Vector,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      int64_t batch_stride_Vector,
-      typename LayoutA::Stride::Index lda,
-      typename LayoutB::Stride::Index ldb,
-      typename LayoutC::Stride::Index ldc,
-      typename LayoutC::Stride::Index ldd,
-      typename LayoutC::Stride::Index ldr,
-      typename LayoutC::Stride::Index ldaux)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      void * ptr_Aux_,
+      void * ptr_Vector_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      int64_t batch_stride_Vector_,
+      typename LayoutA::Stride::Index lda_,
+      typename LayoutB::Stride::Index ldb_,
+      typename LayoutC::Stride::Index ldc_,
+      typename LayoutC::Stride::Index ldd_,
+      typename LayoutC::Stride::Index ldr_,
+      typename LayoutC::Stride::Index ldaux_)
     :
-      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), ptr_Aux(ptr_Aux),
-      ptr_Vector(ptr_Vector),
-      batch_stride_A(batch_stride_A),
-      batch_stride_B(batch_stride_B),
-      batch_stride_C(batch_stride_C),
-      batch_stride_Vector(batch_stride_Vector),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ldaux(ldaux), ldr(ldr)
+      UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_), ptr_Aux(ptr_Aux_),
+      ptr_Vector(ptr_Vector_),
+      batch_stride_A(batch_stride_A_),
+      batch_stride_B(batch_stride_B_),
+      batch_stride_C(batch_stride_C_),
+      batch_stride_Vector(batch_stride_Vector_),
+      lda(lda_), ldb(ldb_), ldc(ldc_), ldd(ldd_), ldaux(ldaux_), ldr(ldr_)
     {
     }
 
     /// Constructs an Arguments structure without ldaux.
     /// These parameters are overridden with D batch stride and ldd.
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      void * ptr_Aux,
-      void * ptr_Vector,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      int64_t batch_stride_Vector,
-      typename LayoutA::Stride::Index lda,
-      typename LayoutB::Stride::Index ldb,
-      typename LayoutC::Stride::Index ldc,
-      typename LayoutC::Stride::Index ldd,
-      typename LayoutC::Stride::Index ldr)
-    : Arguments(mode, problem_size, batch_count, epilogue, ptr_A, ptr_B, ptr_C, ptr_D, ptr_Aux, ptr_Vector,
-               batch_stride_A, batch_stride_B, batch_stride_C, batch_stride_D, batch_stride_Vector,
-               lda, ldb, ldc, ldd, ldr, ldd)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      void * ptr_Aux_,
+      void * ptr_Vector_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      int64_t batch_stride_Vector_,
+      typename LayoutA::Stride::Index lda_,
+      typename LayoutB::Stride::Index ldb_,
+      typename LayoutC::Stride::Index ldc_,
+      typename LayoutC::Stride::Index ldd_,
+      typename LayoutC::Stride::Index ldr_)
+    : Arguments(mode_, problem_size_, batch_count_, epilogue_, ptr_A_, ptr_B_, ptr_C_, ptr_D_, ptr_Aux_, ptr_Vector_,
+               batch_stride_A_, batch_stride_B_, batch_stride_C_, batch_stride_D_, batch_stride_Vector_,
+               lda_, ldb_, ldc_, ldd_, ldr_, ldd_)
     {
     }
 
@@ -350,10 +350,6 @@ public:
   /// Determines whether kernel satisfies alignment
   static Status can_implement(
     cutlass::gemm::GemmCoord const & problem_size) {
-
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     bool isAMisaligned = false;
     bool isBMisaligned = false;

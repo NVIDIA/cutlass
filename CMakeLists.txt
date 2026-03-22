@@ -261,8 +261,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCUTLASS_VERSIONS_GENERATED")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DCUTLASS_VERSIONS_GENERATED")
 
 if (WIN32)
-  # Enable more warnings.  Add "-Xcompiler=/WX" to enable warnings as errors.
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/W3)
+  # Enable strict warnings and treat them as errors (MSVC).
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/W4)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/WX)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 
   # Disable warning on Unicode characters
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/wd4819)
@@ -493,12 +495,14 @@ endif()
 # Warnings-as-error exceptions and warning suppressions for Clang builds
 if (CUTLASS_CLANG_HOST_COMPILE)
 
+  # Clang-specific: downgrade these to warnings (not errors) since they are
+  # Clang-only diagnostics or have high false-positive rates under Clang.
   set(FLAGS_TO_ADD
     "-Wno-error=implicit-int-conversion"
     "-Wno-error=pass-failed"
     "-Wno-error=inconsistent-missing-override"
-    "-Wno-sign-conversion"
-    "-Wno-unused-parameter"
+    "-Wno-error=sign-conversion"
+    "-Wno-error=unused-parameter"
   )
 
   foreach(FLAG ${FLAGS_TO_ADD})
@@ -536,7 +540,48 @@ if (CUTLASS_ENABLE_OPENMP_TESTS)
 endif()
 
 if(UNIX)
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wconversion)
+  # Strict warnings for host code (GCC/Clang).
+  # Applied per-target via cutlass_apply_standard_compile_options(), NOT globally,
+  # so third-party code (e.g. Google Test) is not affected.
+  #
+  # Note: -Wconversion, -Wsign-conversion, and -Wdouble-promotion are omitted because
+  # the CuTe template-heavy architecture produces thousands of false positives from
+  # template instantiations with implicit numeric conversions. -Wunused-parameter is
+  # suppressed for the same reason (template dispatch functions intentionally leave
+  # parameters unused in many overloads).
+  set(CUTLASS_HOST_WARNING_FLAGS
+    -Wall
+    -Wextra
+    -Wshadow
+    -Wnon-virtual-dtor
+    -Wcast-align
+    -Woverloaded-virtual
+    -Wmisleading-indentation
+    -Wnull-dereference
+    -Wformat=2
+    -Wimplicit-fallthrough
+    -Wno-unknown-pragmas
+    -Wno-unused-parameter
+    -Wno-unused-local-typedefs
+    -Wno-class-memaccess
+    -Wno-comment
+    -Wno-deprecated-declarations
+    -Werror
+  )
+
+  # GCC-only flags — check compiler before adding.
+  if (CUTLASS_GNU_HOST_COMPILE)
+    list(APPEND CUTLASS_HOST_WARNING_FLAGS
+      -Wduplicated-cond
+      -Wlogical-op
+    )
+  endif()
+
+  # Apply to NVCC host pass via -Xcompiler.
+  foreach(_flag ${CUTLASS_HOST_WARNING_FLAGS})
+    list(APPEND CUTLASS_CUDA_NVCC_FLAGS "-Xcompiler=${_flag}")
+  endforeach()
+
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-fno-strict-aliasing)
 endif()
 
@@ -679,6 +724,7 @@ set(__CUTLASS_CUDA_NVCC_FLAGS ${CUTLASS_CUDA_NVCC_FLAGS} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_RELEASE ${CUTLASS_CUDA_NVCC_FLAGS_RELEASE} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_RELWITHDEBINFO ${CUTLASS_CUDA_NVCC_FLAGS_RELWITHDEBINFO} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_DEBUG ${CUTLASS_CUDA_NVCC_FLAGS_DEBUG} CACHE INTERNAL "")
+set(__CUTLASS_HOST_WARNING_FLAGS "${CUTLASS_HOST_WARNING_FLAGS}" CACHE INTERNAL "Host compiler warning flags for CUTLASS targets")
 
 function(cutlass_apply_standard_compile_options TARGET)
 
@@ -698,9 +744,12 @@ function(cutlass_apply_standard_compile_options TARGET)
 
   target_link_libraries(${TARGET} PRIVATE CUTLASS)
 
+  # Apply strict warning flags to host (CXX) compilation for CUTLASS targets only.
+  # This does NOT affect third-party code (e.g. Google Test).
   target_compile_options(
     ${TARGET}
     PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:${__CUTLASS_HOST_WARNING_FLAGS}>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:${_FLAGS}>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:$<$<CONFIG:RELEASE>:${_FLAGS_RELEASE}>>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:$<$<CONFIG:RELWITHDEBINFO>:${_FLAGS_RELWITHDEBINFO}>>

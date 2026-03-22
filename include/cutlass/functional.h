@@ -71,9 +71,9 @@ namespace detail {
     #if defined(__CUDA_ARCH__)
     return __popc(x);
     #elif defined(__GNUC__) || defined(__clang__)
-    return __builtin_popcount(x);
+    return static_cast<int32_t>(__builtin_popcount(static_cast<uint32_t>(x)));
     #elif (defined(_MSC_VER) && !defined(_M_ARM64))
-    return __popcnt(x);
+    return static_cast<int32_t>(__popcnt(static_cast<uint32_t>(x)));
     #else
     int32_t count = 0;
     while (x) {
@@ -88,9 +88,9 @@ namespace detail {
     #if defined(__CUDA_ARCH__)
     return __popcll(x);
     #elif defined(__GNUC__) || defined(__clang__)
-    return __builtin_popcountll(x);
+    return static_cast<int64_t>(__builtin_popcountll(static_cast<uint64_t>(x)));
     #elif (defined(_MSC_VER) && !defined(_M_ARM64))
-    return __popcnt64(x);
+    return static_cast<int64_t>(__popcnt64(static_cast<uint64_t>(x)));
     #else
     int64_t count = 0;
     while (x) {
@@ -853,12 +853,12 @@ struct conjugate {
 template <typename T>
 struct first {
   CUTLASS_HOST_DEVICE
-  T operator()(T const & first, T const &...) const {
-    return first;
+  T operator()(T const & lhs, T const &...) const {
+    return lhs;
   }
   CUTLASS_HOST_DEVICE
-  T operator()(T const & first) const {
-    return first;
+  T operator()(T const & lhs) const {
+    return lhs;
   }
 };
 
@@ -960,9 +960,9 @@ struct atomic_add<double>
     unsigned long long int assumed_int;
 
     do {
-      double update = data + __longlong_as_double(old_int);
+      double update = data + __longlong_as_double(static_cast<long long int>(old_int));
       assumed_int = old_int;
-      old_int = atomicCAS(ptr_int, assumed_int, __double_as_longlong(update));
+      old_int = atomicCAS(ptr_int, assumed_int, static_cast<unsigned long long int>(__double_as_longlong(update)));
     } while (assumed_int != old_int);
 #endif // (__CUDA_ARCH__ >= 600)
   }
@@ -1055,7 +1055,7 @@ struct redux_abs_max_nan_propagation_sync_warp <float>{
     float abs_max = cutlass::absolute_value_op<float>{}(lhs);
     CUTLASS_PRAGMA_UNROLL
     for(int offset = shuffle_width / 2; offset > 0; offset /= 2) {
-      float value = __shfl_down_sync(0xffffffff, abs_max, offset, shuffle_width);
+      float value = __shfl_down_sync(0xffffffff, abs_max, static_cast<unsigned>(offset), shuffle_width);
       abs_max = max_op(abs_max,value);
     }
     // Broadcast the maximum to all threads participating in the reduction.
@@ -1077,7 +1077,7 @@ struct redux_abs_max_nan_propagation_sync_warp_t0t15_t16t31<float>{
   CUTLASS_DEVICE
   float operator()(float const &max) const {
 #if defined(CUTLASS_ARCH_CREDUX_ENABLED)
-    int half_warp_idx = threadIdx.x / (NumThreadsPerWarp / 2);
+    unsigned int half_warp_idx = threadIdx.x / static_cast<unsigned int>(NumThreadsPerWarp / 2);
     bool first_half_threads = (half_warp_idx % 2) == 0;
     float value0 =  first_half_threads ? max : 0;
     float v0 = cutlass::redux_abs_max_nan_propagation_sync_warp<float>{}(value0);
@@ -1092,7 +1092,7 @@ struct redux_abs_max_nan_propagation_sync_warp_t0t15_t16t31<float>{
     constexpr int shuffle_width = 16;
     CUTLASS_PRAGMA_UNROLL
     for(int offset = shuffle_width/2; offset > 0; offset /= 2) {
-      float value = __shfl_down_sync(0xffffffff, abs_max, offset, shuffle_width);
+      float value = __shfl_down_sync(0xffffffff, abs_max, static_cast<unsigned>(offset), shuffle_width);
         abs_max  = max_op(abs_max,value);
     }
     // Broadcast the maximum to all threads participating in the reduction.

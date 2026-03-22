@@ -106,54 +106,54 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta
+      ElementCompute alpha_,
+      ElementCompute beta_
     ):
-      alpha(alpha), beta(beta),
+      alpha(alpha_), beta(beta_),
       alpha_ptr(nullptr), beta_ptr(nullptr),
       alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha
+      ElementCompute alpha_
     ):
-      alpha(alpha), beta(0),
+      alpha(alpha_), beta(0),
       alpha_ptr(nullptr), beta_ptr(nullptr),
       alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_
     ):
       alpha(0), beta(0),
-      alpha_ptr(alpha_ptr), beta_ptr(beta_ptr),
+      alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_),
       alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
+      ElementCompute const *alpha_ptr_
     ):
       alpha(0), beta(0),
-      alpha_ptr(alpha_ptr), beta_ptr(nullptr),
+      alpha_ptr(alpha_ptr_), beta_ptr(nullptr),
       alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const* const* alpha_ptr_array,
-      ElementCompute const* const* beta_ptr_array
+      ElementCompute const* const* alpha_ptr_array_,
+      ElementCompute const* const* beta_ptr_array_
     ):
       alpha(0), beta(0),
       alpha_ptr(nullptr), beta_ptr(nullptr),
-      alpha_ptr_array(alpha_ptr_array), beta_ptr_array(beta_ptr_array) { }
+      alpha_ptr_array(alpha_ptr_array_), beta_ptr_array(beta_ptr_array_) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const* const* alpha_ptr_array
+      ElementCompute const* const* alpha_ptr_array_
     ):
       alpha(0), beta(0),
       alpha_ptr(nullptr), beta_ptr(nullptr),
-      alpha_ptr_array(alpha_ptr_array), beta_ptr_array(nullptr) { }
+      alpha_ptr_array(alpha_ptr_array_), beta_ptr_array(nullptr) { }
   };
 
 private:
@@ -382,23 +382,23 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_
     ):
-      alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), beta(ElementCompute(0)) { }
+      alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_), beta(ElementCompute(0)) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
+      ElementCompute const *alpha_ptr_
     ):
-      alpha_ptr(alpha_ptr), beta_ptr(nullptr), beta(ElementCompute(0)) { }
+      alpha_ptr(alpha_ptr_), beta_ptr(nullptr), beta(ElementCompute(0)) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute beta
+      ElementCompute const *alpha_ptr_,
+      ElementCompute beta_
     ):
-      alpha_ptr(alpha_ptr), beta_ptr(nullptr), beta(beta) { }
+      alpha_ptr(alpha_ptr_), beta_ptr(nullptr), beta(beta_) { }
 
   };
 

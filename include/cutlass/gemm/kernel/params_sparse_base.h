@@ -82,27 +82,27 @@ struct SparseParamsBase
   /// Constructor
   CUTLASS_HOST_DEVICE
   SparseParamsBase(
-    cutlass::gemm::GemmCoord const & problem_size,
-    cutlass::gemm::GemmCoord const & grid_tiled_shape,
-    TensorRefA ref_A,
-    TensorRefB ref_B,
-    TensorRefE ref_E,
+    cutlass::gemm::GemmCoord const & problem_size_,
+    cutlass::gemm::GemmCoord const & grid_tiled_shape_,
+    TensorRefA ref_A_,
+    TensorRefB ref_B_,
+    TensorRefE ref_E_,
     int const mma_shape_k)
   :
-    problem_size(problem_size),
-    grid_tiled_shape(grid_tiled_shape),
-    swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
-    params_A(ref_A.layout()),
-    ref_A(ref_A),
-    params_B(ref_B.layout()),
-    ref_B(ref_B),
-    params_E(ref_E.layout()),
-    ref_E(ref_E)
+    problem_size(problem_size_),
+    grid_tiled_shape(grid_tiled_shape_),
+    swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape_)),
+    params_A(ref_A_.layout()),
+    ref_A(ref_A_),
+    params_B(ref_B_.layout()),
+    ref_B(ref_B_),
+    params_E(ref_E_.layout()),
+    ref_E(ref_E_)
   {
-    int total_gemm_k_iterations = (problem_size.k() + mma_shape_k - 1) / mma_shape_k;
-    int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
+    int total_gemm_k_iterations = (problem_size_.k() + mma_shape_k - 1) / mma_shape_k;
+    int gemm_k_iterations_ = (total_gemm_k_iterations + grid_tiled_shape_.k() - 1) / grid_tiled_shape_.k();
 
-    gemm_k_size = gemm_k_iterations * mma_shape_k;
+    gemm_k_size = gemm_k_iterations_ * mma_shape_k;
   }
 };
 

@@ -75,8 +75,8 @@ struct Conv2dAnalyticParams {
   CUTLASS_HOST_DEVICE
   Conv2dAnalyticParams(
     Conv2dProblemSize const &,  // unused; placeholder to match other Params interfaces.
-    Layout const &layout
-  ): layout(layout) {
+    Layout const &layout_
+  ): layout(layout_) {
 
   }
 };
@@ -109,11 +109,11 @@ struct Conv2dFewChannelsParams {
   CUTLASS_HOST_DEVICE
   Conv2dFewChannelsParams(
     Conv2dProblemSize const &problem_size,  // unused; placeholder to match other Params interfaces.
-    Layout const &layout
+    Layout const &layout_
   ):
-    stride_w(int32_t(layout.stride()[0])),
-    stride_h(int32_t(layout.stride()[1])),
-    stride_n(int32_t(layout.stride()[2])),
+    stride_w(int32_t(layout_.stride()[0])),
+    stride_h(int32_t(layout_.stride()[1])),
+    stride_n(int32_t(layout_.stride()[2])),
     divmod_P(problem_size.P),
     divmod_Q(problem_size.Q),
     divmod_S(problem_size.S),
@@ -143,10 +143,10 @@ struct Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams {
   CUTLASS_HOST_DEVICE
   Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,                            ///< layout object
+    Layout const &layout_,                           ///< layout object
     int element_size_bits,                           ///< size of each element in bits
     MatrixCoord threadblock_shape
-  ): layout(layout) {
+  ): layout(layout_) {
     
     int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
   
@@ -240,20 +240,20 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
   CUTLASS_HOST_DEVICE
   Conv2dFpropActivationIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,                             ///< layout object
+    Layout const &layout_,                            ///< layout object
     int element_size_bits,                            ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), 
-    PQ(problem_size.P * problem_size.Q), 
-    pq_divmod(PQ), 
+  ):
+    layout(layout_),
+    PQ(problem_size.P * problem_size.Q),
+    pq_divmod(PQ),
     q_divmod(problem_size.Q) {
 
-    TRACE_CONV_INITIALIZERS("conv2d_fprop", "activation", 
+    TRACE_CONV_INITIALIZERS("conv2d_fprop", "activation",
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
     int conv_sign = (problem_size.mode == Mode::kConvolution ? -1 : 1);
@@ -333,17 +333,17 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNCxHWx<Interle
   CUTLASS_HOST_DEVICE
   Conv2dFpropActivationIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,                             ///< layout object
+    Layout const &layout_,                            ///< layout object
     int element_size_bits,                            ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), PQ(problem_size.P * problem_size.Q), pq_divmod(PQ), q_divmod(problem_size.Q) {
+  ):
+    layout(layout_), PQ(problem_size.P * problem_size.Q), pq_divmod(PQ), q_divmod(problem_size.Q) {
 
-    TRACE_CONV_INITIALIZERS("conv2d_fprop", "activation", 
+    TRACE_CONV_INITIALIZERS("conv2d_fprop", "activation",
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
     int conv_sign = (problem_size.mode == Mode::kConvolution ? -1 : 1);
@@ -399,17 +399,17 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorNHWC>
   CUTLASS_HOST_DEVICE
   Conv2dFpropFilterIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout) {
-    
-    TRACE_CONV_INITIALIZERS("conv2d_fprop", "filter", 
+  ):
+    layout(layout_) {
+
+    TRACE_CONV_INITIALIZERS("conv2d_fprop", "filter",
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
     RS = problem_size.R * problem_size.S;
@@ -472,17 +472,17 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorCxRSKx<Interleaved
   CUTLASS_HOST_DEVICE
   Conv2dFpropFilterIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout) {
-    
-    TRACE_CONV_INITIALIZERS("conv2d_fprop", "filter", 
+  ):
+    layout(layout_) {
+
+    TRACE_CONV_INITIALIZERS("conv2d_fprop", "filter",
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
     RS = problem_size.R * problem_size.S;
@@ -498,7 +498,7 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorCxRSKx<Interleaved
       (
         threadblock_shape.row() * problem_size.split_k_slices / kInterleaved * int64_t(layout.stride()[2])
         - int64_t(RS - 1) * layout.stride()[0]
-        - int64_t(threadmap_iterations.strided() - 1) * threadmap_delta.strided() * kInterleaved 
+        - int64_t(threadmap_iterations.strided() - 1) * threadmap_delta.strided() * kInterleaved
       ) * element_size_bits / 8;
 
     filter_c_delta = threadblock_shape.row() * problem_size.split_k_slices;
@@ -534,17 +534,17 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dDgradOutputGradientIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), 
-    HW(problem_size.H *problem_size.W), 
-    hw_divmod(HW), 
+  ):
+    layout(layout_),
+    HW(problem_size.H *problem_size.W),
+    hw_divmod(HW),
     w_divmod(problem_size.W) {
     
     TRACE_CONV_INITIALIZERS("conv2d_dgrad", "output_gradient", 
@@ -601,10 +601,10 @@ struct Conv2dStridedDgradOutputGradientIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dStridedDgradOutputGradientIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,                            ///< layout object
+    Layout const &layout_,                           ///< layout object
     int element_size_bits,                           ///< size of each element in bits
     MatrixCoord threadblock_shape
-  ): layout(layout) {
+  ): layout(layout_) {
     
     int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
   
@@ -657,15 +657,15 @@ struct Conv2dDgradFilterIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dDgradFilterIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
-    int access_size, 
+    int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), RS(problem_size.R * problem_size.S) {
+  ):
+    layout(layout_), RS(problem_size.R * problem_size.S) {
 
     TRACE_CONV_INITIALIZERS("conv2d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -713,15 +713,15 @@ struct Conv2dStridedDgradFilterIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dStridedDgradFilterIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
-    int access_size, 
+    int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), RS(problem_size.R * problem_size.S) {
+  ):
+    layout(layout_), RS(problem_size.R * problem_size.S) {
 
     TRACE_CONV_INITIALIZERS("conv2d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -783,7 +783,7 @@ struct Conv2dWgradOutputGradientIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dWgradOutputGradientIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
@@ -791,7 +791,7 @@ struct Conv2dWgradOutputGradientIteratorOptimizedParams {
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
   ):
-    layout(layout),
+    layout(layout_),
     NPQ(problem_size.N * problem_size.P * problem_size.Q),
     pq_divmod(problem_size.P * problem_size.Q),
     q_divmod(problem_size.Q) {
@@ -833,9 +833,9 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dWgradActivationIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout
+    Layout const &layout_
   ):
-    layout(layout),
+    layout(layout_),
     sc_divmod(problem_size.S * problem_size.C),
     pq_divmod(problem_size.P * problem_size.Q),
     q_divmod(problem_size.Q),
@@ -847,7 +847,7 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv2dWgradActivationIteratorOptimizedParams(
     Conv2dProblemSize const &problem_size,
-    Layout const &layout,
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
@@ -857,10 +857,10 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
   ):
     Conv2dWgradActivationIteratorOptimizedParams(
       problem_size,
-      layout
-    ) { 
-    
-      TRACE_CONV_INITIALIZERS("conv2d_wgrad", "activation", 
+      layout_
+    ) {
+
+      TRACE_CONV_INITIALIZERS("conv2d_wgrad", "activation",
         element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
     }
 };

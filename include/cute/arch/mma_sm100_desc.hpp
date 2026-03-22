@@ -337,10 +337,10 @@ make_column_zero_mask(ShapeType conv_q, int32_t cta_coord_q, int32_t num_pixels_
       int32_t skip_span_ = num_pixels_skip_left - shift;
       int32_t index{0};
       if (skip_span_ > 0) {
-        auto [_, index_mod] = divmod(cta_q, conv_q);
+        auto [_1, index_mod] = divmod(cta_q, conv_q);
         index = index_mod;
       } else if (skip_span_ < 0) {
-        auto [_, index_mod] = divmod((cta_q - skip_span_), conv_q);
+        auto [_2, index_mod] = divmod((cta_q - skip_span_), conv_q);
         index = index_mod;
       } else {
         nzm = 0;
