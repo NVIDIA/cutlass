@@ -30,7 +30,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-import cutlass
 import cutlass.cute as cute
 import cutlass.jax as cjax
 import cuda.bindings.driver as cuda
@@ -140,12 +139,12 @@ if __name__ == "__main__":
     def run_cutlass_kernel(a, b, x, y):
         call = cjax.cutlass_call(
             launch_jax_wrapper,
-            # Jax requires output shapes/dtype information for each output
+            # Describe the shape and dtype of each output buffer.
             output_shape_dtype=(
                 jax.ShapeDtypeStruct(a.shape, a.dtype),
                 jax.ShapeDtypeStruct(b.shape, a.dtype),
             ),
-            # Static jit arguments are passed via additional keyword arguments
+            # Static jit arguments are passed via additional keyword arguments.
             x=x,
             y=y,
         )
@@ -165,12 +164,11 @@ if __name__ == "__main__":
             # to the kernel. Alternatively you can wrap using another separate cute.jit
             # function.
             lambda stream, a, b, c, d, *, x, y: launch(a, b, x, y, c, d, stream),
-            # Jax requires output shapes/dtype information for each output
             output_shape_dtype=(
                 jax.ShapeDtypeStruct(a.shape, a.dtype),
                 jax.ShapeDtypeStruct(b.shape, a.dtype),
             ),
-            # Static jit arguments are passed via additional keyword arguments
+            # Static jit arguments are passed via additional keyword arguments.
             x=x,
             y=y,
         )
@@ -191,11 +189,12 @@ if __name__ == "__main__":
                 jax.ShapeDtypeStruct(a.shape, a.dtype),
                 jax.ShapeDtypeStruct(b.shape, a.dtype),
             ),
-            # By default cutlass_call will treat all tensors as dynamic shape.
+            # By default cutlass_call treats all tensors as dynamic shape.
             # Dynamic shapes are often expected for kernels so this default ensures
             # the broadest support. If you know that a kernel can accept fully static
-            # tensors then you can enable this flag to pass all tensors shapes and
-            # layouts known at compile time.
+            # tensors then you can enable this flag to compile all tensor shapes and
+            # layouts as constexpr values known at compile time.
+            # Individual tensors may opt out via .mark_layout_dynamic().
             use_static_tensors=True,
             x=x,
             y=y,
@@ -209,19 +208,15 @@ if __name__ == "__main__":
 
     @partial(jax.jit, static_argnums=[2, 3])
     def run_cutlass_kernel_with_modes(a, b, x, y):
+        # input_spec and output_spec accept TensorSpec values to attach layout
+        # metadata to tensors.  mode remaps the logical dimension order seen by
+        # the kernel.  static=True compiles that tensor's layout as constexpr.
         call = cjax.cutlass_call(
             lambda stream, a, b, c, d, *, x, y: launch(a, b, x, y, c, d, stream),
             output_shape_dtype=(
                 jax.ShapeDtypeStruct(a.shape, a.dtype),
                 jax.ShapeDtypeStruct(b.shape, a.dtype),
             ),
-            # The modes of the layout for each tensor can be specified using the
-            # TensorSpec. By default modes will align with the physical layout
-            # but can be mapped to specific index position. If None is passed
-            # then the default mode is assumed for that tensor.
-            #
-            # Individual static/dynamic settings may also be applied. For example
-            # a specific tensor can be marked to have static shape.
             input_spec=(
                 cjax.TensorSpec(mode=(1, 0, 2), static=True),
                 cjax.TensorSpec(mode=(3, 1, 2, 0)),
@@ -245,9 +240,8 @@ if __name__ == "__main__":
                 jax.ShapeDtypeStruct(a.shape, a.dtype),
                 jax.ShapeDtypeStruct(b.shape, b.dtype),
             ),
-            # Can specify the input tensors that are aliasing outputs of this call.
-            # To avoid allocating separate output buffers. This is useful for kernels
-            # that update a tensor.
+            # Map input indices to output indices so XLA can reuse the input
+            # buffers for the outputs, avoiding extra allocations.
             input_output_aliases={0: 0, 1: 1},
             x=x,
             y=y,

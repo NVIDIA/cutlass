@@ -70,6 +70,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,
   class TileShape_,   // Static cluster shape or dynamic (int, int, _1)
   class ElementA_,    // (MmaAtomShapeM, MmaAtomShapeN, TileK)
@@ -90,7 +91,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -122,7 +124,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   using TileShape = TileShape_;
 
   CUTE_STATIC_ASSERT_V(evenly_divides(TileShape{}, tile_shape(TiledMma{})),

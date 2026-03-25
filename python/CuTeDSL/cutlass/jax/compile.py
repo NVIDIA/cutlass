@@ -3,20 +3,16 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import os
 import gc
-import ctypes
-import inspect
-from typing import Any, Callable, Optional, Sequence
+from typing import Any
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 
 import time
 import logging
@@ -27,17 +23,13 @@ import cuda.bindings.driver as cuda
 
 import jax
 import jax.numpy as jnp
-import jaxlib
 
 from .types import (
     jax_to_cutlass_dtype,
-    from_dlpack,
-    JaxArray,
     JaxArrayList,
     TensorSpec,
     JaxTracedArray,
     DEFAULT_CUTLASS_DEVICE_MEMSPACE,
-    DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT,
 )
 
 import cutlass
@@ -90,6 +82,7 @@ class FunctionSpec:
                 leaf.spec.layout,
                 leaf.spec.mode,
                 leaf.get_static_flag(self.use_static_tensors),
+                leaf.spec.divisibility,
             )
             for leaf in self.in_args
         ]
@@ -102,6 +95,7 @@ class FunctionSpec:
                 leaf.spec.layout,
                 leaf.spec.mode,
                 leaf.get_static_flag(self.use_static_tensors),
+                leaf.spec.divisibility,
             )
             for leaf in self.out_args
         ]

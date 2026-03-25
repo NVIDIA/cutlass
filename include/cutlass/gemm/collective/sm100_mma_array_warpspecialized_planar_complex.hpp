@@ -64,6 +64,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,
   class TileShape_,   // Static cluster shape or dynamic (int, int, _1)
   class ElementA_,    // (MmaAtomShapeM, MmaAtomShapeN, TileK)
@@ -84,7 +85,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -116,7 +118,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   using TileShape = TileShape_;
 
   CUTE_STATIC_ASSERT_V(evenly_divides(TileShape{}, tile_shape(TiledMma{})),
@@ -128,15 +131,17 @@ struct CollectiveMma<
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
 
-  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
-  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
-  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
-  constexpr static uint32_t NumTmaDescriptorsPerSm = SchedulerPipelineStageCount + Stages + 2;
-
   using ElementA = ElementA_;
   using ElementAMma = typename TiledMma::ValTypeA;
   using StrideA = StrideA_;
   using InternalStrideA  = cute::remove_pointer_t<StrideA>;
+
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = IsGroupedGemmKernel ? (SchedulerPipelineStageCount + Stages + 2) : 1;
   using ElementB = ElementB_;
   using ElementBMma = typename TiledMma::ValTypeB;
   using StrideB = StrideB_;

@@ -661,7 +661,7 @@ class BlackwellMultiHeadLatentAttentionForwardFP8:
             ]
 
             # Tmem dealloc cluster barrier
-            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_dealloc_mbar: cutlass.Int64
 
             # Tmem holding buffer
             tmem_holding_buf: cutlass.Int32
@@ -707,7 +707,6 @@ class BlackwellMultiHeadLatentAttentionForwardFP8:
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=self.cluster_shape_mnk,
-            smem=SplitKVKernelSharedStorage.size_in_bytes(),
             stream=stream,
             min_blocks_per_mp=1,
         )
@@ -723,7 +722,6 @@ class BlackwellMultiHeadLatentAttentionForwardFP8:
             ).launch(
                 grid=(q_latent.shape[0], q_latent.shape[2], q_latent.shape[3]),
                 block=[self.threads_per_warp * self.num_compute_warps, 1, 1],
-                smem=MAX_SPLITS * self.acc_dtype.width // 8,
                 stream=stream,
                 min_blocks_per_mp=1,
             )
@@ -904,11 +902,11 @@ class BlackwellMultiHeadLatentAttentionForwardFP8:
 
         # Tensor memory dealloc barrier init
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_ptr_sync_bar,
             allocator_warp_id=self.mma_warp_id,
             is_two_cta=self.use_2cta_instrs,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
         )
 
         load_q_pipeline = self.make_and_init_load_qkv_pipeline(

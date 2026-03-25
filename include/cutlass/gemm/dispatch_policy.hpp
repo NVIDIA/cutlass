@@ -976,12 +976,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100UmmaCpAsyncWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
 
@@ -989,12 +990,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1003,12 +1005,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1018,12 +1021,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1033,12 +1037,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockwiseScaling {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedMmaTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1048,12 +1053,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockwiseScaling {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelPtrArrayTmaWarpSpecializedMmaTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1063,12 +1069,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1077,13 +1084,14 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedSparse {
   constexpr static int Stages = Stages_;
   constexpr static int MetadataS2TStages = 4;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelSparseTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1092,13 +1100,14 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockScaledSparse {
   constexpr static int Stages = Stages_;
   constexpr static int MetadataS2TStages = 4;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelSparseTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1132,7 +1141,8 @@ template<
   class ClusterShape_ = Shape<_1,_1,_1>,
   // The TMEM_LOAD atom to be used for loading local accumulator
   // from TMEM to registers
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedFastF32 {
   constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
@@ -1143,7 +1153,7 @@ struct MainloopSm100TmaUmmaWarpSpecializedFastF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::FastF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1163,7 +1173,8 @@ template<
   // Transformation <-> MMA
   int TransformationPipelineStageCount_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedInterleavedComplexTF32 {
   constexpr static int ComputationPipelineStageCount = ComputationPipelineStageCount_;
@@ -1171,7 +1182,7 @@ struct MainloopSm100TmaUmmaWarpSpecializedInterleavedComplexTF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::InterleavedComplexTF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1191,7 +1202,8 @@ template<
   // Accmulator pipeline depth
   int AccumulatorPipelineStageCount_,
   // ClusterShape for the kernel
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedMixedInput {
   constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
@@ -1199,7 +1211,7 @@ struct MainloopSm100TmaUmmaWarpSpecializedMixedInput {
   constexpr static int Transform2MmaPipelineStageCount = Transform2MmaPipelineStageCount_;
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::MixedInput;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedMixedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1214,12 +1226,13 @@ template<
   int SchedulerPipelineStageCount_,
   // Accmulator pipeline depth
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedPlanarComplex {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -1229,12 +1242,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = false;
   using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1244,12 +1258,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100RCGroupGemmTmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = false;
   using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1259,12 +1274,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100RCGroupGemmTmaUmmaWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1274,12 +1290,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1291,12 +1308,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedPlanarComplex {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = false;
   using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1331,7 +1349,8 @@ template<
   class ClusterShape_ = Shape<_1,_1,_1>,
   // The TMEM_LOAD atom to be used for loading local accumulator
   // from TMEM to registers
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
   constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
@@ -1342,7 +1361,7 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::FastF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelPtrArrayTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1362,7 +1381,8 @@ template<
   // Transformation <-> MMA
   int TransformationPipelineStageCount_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedInterleavedComplexTF32 {
   constexpr static int ComputationPipelineStageCount = ComputationPipelineStageCount_;
@@ -1370,7 +1390,7 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedInterleavedComplexTF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::InterleavedComplexTF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelPtrArrayTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1385,13 +1405,14 @@ template<
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch
+  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch,
+  class ArchTag_ = arch::Sm103
 >
 struct MainloopSm103TmaUmmaWarpSpecializedBlockScaled {
   constexpr static int LoadABPipelineStageCount = LoadABPipelineStageCount_;
   constexpr static int LoadSFPipelineStageCount = LoadSFPipelineStageCount_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm103;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1407,13 +1428,14 @@ template<
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch
+  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch,
+  class ArchTag_ = arch::Sm103
 >
 struct MainloopSm103ArrayTmaUmmaWarpSpecializedBlockScaled {
   constexpr static int LoadABPipelineStageCount = LoadABPipelineStageCount_;
   constexpr static int LoadSFPipelineStageCount = LoadSFPipelineStageCount_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm103;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   // For backwards compatibility with GemmUniversalAdapter.

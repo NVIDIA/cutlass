@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -248,6 +248,26 @@ def block_idx_in_cluster(*, loc=None, ip=None) -> Int32:
     Returns the linearized identifier of the CTA within the cluster.
     """
     return Int32(nvvm.read_ptx_sreg_cluster_ctarank(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def dynamic_smem_size(*, loc=None, ip=None) -> Int32:
+    """
+    Returns the launch dynamic smem size.
+    """
+    return Int32(
+        llvm.inline_asm(
+            Int32.mlir_type,
+            [],
+            "mov.u32 $0, %dynamic_smem_size;\n",
+            "=r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
 
 
 @dsl_user_op

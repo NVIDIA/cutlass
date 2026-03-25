@@ -44,6 +44,7 @@ using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   conv::Operator ConvOp,
   class ElementA,
   class GmemLayoutA,
@@ -58,7 +59,7 @@ template <
   class KernelScheduleType
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     ConvOp,
     ElementA,
@@ -73,6 +74,9 @@ struct CollectiveBuilder<
     StageCountType,
     KernelScheduleType,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm103>
+      ) &&
       (cute::is_same_v<KernelScheduleType, KernelImplicitTmaWarpSpecialized1SmSm100> ||
        cute::is_same_v<KernelScheduleType, KernelImplicitTmaWarpSpecialized2SmSm100> ||
        cute::is_same_v<KernelScheduleType, KernelStridedDgradTmaWs1SmSm100> ||
@@ -191,12 +195,12 @@ private:
                                                                CLCResponseStorage +
                                                                TmemBasePtrsStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
 
   static constexpr int PipelineStages = detail::compute_stage_count_or_override<
-      Sm100ReducedSmemCapacityBytes, ElementAMma, ElementBMma, SmemTileShape>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma, ElementBMma, SmemTileShape>(StageCountType{});
 
   constexpr static int NumSpatialDimensions = detail::gmem_layout_tags_to_spatial_dims<GmemLayoutA, GmemLayoutB>();
 
@@ -206,7 +210,8 @@ private:
       NumSpatialDimensions,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape_MNK>;
+      ClusterShape_MNK,
+      ArchTag>;
 
 public:
   using CollectiveOp = cutlass::conv::collective::CollectiveConv<

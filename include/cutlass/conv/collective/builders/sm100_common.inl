@@ -186,6 +186,18 @@ sm100_make_tiled_mma() {
   }
 }
 
+template <class ArchTag, int KernelSmemCarveout>
+constexpr int sm100_reduced_smem_capacity_bytes() {
+  if constexpr (cute::is_same_v<ArchTag, arch::Sm100>) { 
+    return cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  }
+  else if constexpr (cute::is_same_v<ArchTag, arch::Sm103>) { 
+    return cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<ArchTag>, "Invalid ArchTag, only Sm10x are supported.");
+  }
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::conv::collective::detail

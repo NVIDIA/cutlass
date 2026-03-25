@@ -62,6 +62,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, _1)
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
   class ElementPairA_,
@@ -82,7 +83,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementPairA_,
     StridePairA_,
@@ -108,7 +110,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   using TileShape = TileShape_;
   // Due to an MSVC bug, we can't use decltype(make_tiled_mma()) interface.
   using TiledMMA_SF = TiledMMA<MMA_Atom<typename TiledMma::MMA_ScaleFactor>,
@@ -142,11 +145,6 @@ struct CollectiveMma<
   // Define A and B block shapes for reduced size TMA_LOADs
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
-
-  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
-  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
-  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
-  constexpr static uint32_t NumTmaDescriptorsPerSm = SchedulerPipelineStageCount + Stages + 2;
 
   using ElementPairA = ElementPairA_;
   using ElementPairB = ElementPairB_;
@@ -263,6 +261,11 @@ struct CollectiveMma<
 
   static constexpr bool IsF8F6F4 = detail::is_sm100_mma_f8f6f4<TiledMma, ElementA, ElementB>();
   static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = IsGroupedGemmKernel ? (SchedulerPipelineStageCount + Stages + 2) : 1;
 
   using TmaInternalElementA = cute::conditional_t<IsF8F6F4, ElementAMma, ElementA>;
   using TmaInternalElementB = cute::conditional_t<IsF8F6F4, ElementBMma, ElementB>;

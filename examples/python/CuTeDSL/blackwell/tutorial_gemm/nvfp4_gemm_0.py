@@ -500,7 +500,7 @@ class Sm100BlockScaledDenseGemmKernel:
             num_threads=self.threads_per_cta,
         )
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
         )
         tmem.allocate(self.num_tmem_alloc_cols)

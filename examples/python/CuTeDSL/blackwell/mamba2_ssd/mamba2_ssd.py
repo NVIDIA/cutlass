@@ -820,7 +820,7 @@ class SSDKernel:
             num_threads=self.threads_per_cta,
         )
         tmem = utils.TmemAllocator(
-            smem_storage.tmem_holding_buf,
+            smem_storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
         )

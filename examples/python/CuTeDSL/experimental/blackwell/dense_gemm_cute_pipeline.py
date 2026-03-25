@@ -581,7 +581,7 @@ class PersistentDenseGemmKernel:
             acc_full_mbar_ptr: cute.struct.MemRange[
                 cutlass.Int64, self.num_acc_stage * 2
             ]
-            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
 
         smem = utils.SmemAllocator()
@@ -632,11 +632,11 @@ class PersistentDenseGemmKernel:
             )
         # Tensor memory dealloc barrier init
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
             is_two_cta=use_2cta_instrs,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
         )
 
         # Cluster arrive after barrier init

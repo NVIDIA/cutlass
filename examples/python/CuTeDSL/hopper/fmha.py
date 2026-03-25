@@ -527,7 +527,6 @@ class HopperFusedMultiHeadAttentionForward:
                 grid=grid,
                 block=[self.threads_per_cta, 1, 1],
                 cluster=self.cluster_shape_mnk,
-                smem=self.shared_storage.size_in_bytes(),
                 stream=stream,
                 min_blocks_per_mp=1,
             )

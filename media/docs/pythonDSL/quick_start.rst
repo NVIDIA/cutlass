@@ -3,7 +3,7 @@
 Quick Start Guide
 =======================
 
-The CUTLASS DSL 4.4 release currently supports **Linux** and **Python 3.10 - 3.13** only. To install CUTLASS DSLs (limited to CuTe DSL for now), use the following command
+The CUTLASS DSL 4.4 release currently supports **Linux** and **Python 3.10 - 3.14** only. To install CUTLASS DSLs (limited to CuTe DSL for now), use the following command
 
 Installation
 -----------------------

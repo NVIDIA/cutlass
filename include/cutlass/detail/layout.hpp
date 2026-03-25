@@ -310,6 +310,9 @@ constexpr bool is_tma_copy_engine() {
                   || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_2D_GATHER4,            GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_MULTICAST_2D_GATHER4,  GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_STORE_2D_SCATTER4,          GmemTiledCopy>
                   ) {
       return true;
     }

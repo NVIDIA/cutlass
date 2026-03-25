@@ -26,8 +26,10 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
 import cutlass.cute as cute
 import cutlass
+
 
 """
 Example of automatic shared memory size computation for configuring kernel launch
@@ -51,11 +53,15 @@ class SharedData:
 
 
 @cute.kernel
-def kernel():
+def kernel_static():
     """
     Example kernel that allocates shared memory.
     The total allocation will be automatically calculated when smem=None.
     """
+    tidx, _, _ = cute.arch.block_idx()
+    if tidx == 0:
+        cute.printf("Running kernel_static")
+
     allocator = cutlass.utils.SmemAllocator()
 
     # Allocate various types of shared memory
@@ -68,6 +74,8 @@ def kernel():
         byte_alignment=16,
         swizzle=None,
     )
+
+    cute.printf("Kernel launch smem size: {}", cute.arch.dynamic_smem_size())
     return
 
 
@@ -79,7 +87,7 @@ def kernel_no_smem():
     """
     tidx, _, _ = cute.arch.block_idx()
     if tidx == 0:
-        cute.printf("Hello world")
+        cute.printf("Running kernel_no_smem")
     return
 
 
@@ -89,26 +97,49 @@ if __name__ == "__main__":
 
     print("Launching kernel with auto smem size. (launch config `smem=None`)")
 
-    # Compile the example
+    # Compile the static example
     @cute.jit
-    def launch_kernel1():
-        k = kernel()
-        k.launch(
+    def launch_kernelno_smem():
+        kernel_no_smem().launch(
             grid=(1, 1, 1),
             block=(1, 1, 1),
         )
-        print(f"Kernel recorded internal smem usage: {k.smem_usage()}")
+
+    # --------
+    print(f" > Run {kernel_no_smem.__name__}")
+    func = cute.compile(launch_kernelno_smem)
+    func()
+    cutlass.cuda.stream_sync(cutlass.cuda.default_stream())
 
     @cute.jit
-    def launch_kernel2():
-        k = kernel_no_smem()
-        k.launch(
+    def launch_kernel_static():
+        kernel_static().launch(
             grid=(1, 1, 1),
             block=(1, 1, 1),
+            # smem=None
+            # auto infer launch kernel static smem usage
         )
-        print(f"Kernel recorded internal smem usage: {k.smem_usage()}")
 
-    cute.compile(launch_kernel1)
-    cute.compile(launch_kernel2)
+    # --------
+    print(f" > Run {kernel_static.__name__} with sufficient smem")
+    func = cute.compile(launch_kernel_static)
+    func()
+    cutlass.cuda.stream_sync(cutlass.cuda.default_stream())
+
+    @cute.jit
+    def launch_kernel_static_insufficient():
+        kernel_static().launch(
+            grid=(1, 1, 1),
+            block=(1, 1, 1),
+            # launch kernel with static smem usage exceeds cfg
+            # show warning
+            smem=16,
+        )
+
+    # --------
+    print(f" > Run {kernel_static.__name__} with insufficient smem, show warning:")
+    func = cute.compile(launch_kernel_static_insufficient)
+    func()
+    cutlass.cuda.stream_sync(cutlass.cuda.default_stream())
 
     print("PASS")

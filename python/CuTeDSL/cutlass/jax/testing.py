@@ -3,19 +3,19 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from functools import partial
 
 import jax
 import jax.numpy as jnp
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import dsl_user_op
+
 
 def reorder_modes(src: str, target: str) -> tuple[int, ...]:
     """Computes the mode given a source and target order."""
@@ -87,6 +87,7 @@ def get_gemm_shape_from_tensors(
     m, k, l = a.shape[:]
     n = b.shape[0]
     return (m, n, k, l)
+
 
 def create_tensor(
     shape, dtype, key, *, minval=-2.0, maxval=2.0, fill_value=None, fill_arange=False

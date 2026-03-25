@@ -65,8 +65,7 @@ Constraints for this example:
 
 io_dtype = cutlass.Float16
 acc_dtype = cutlass.Float32
-use_2cta_instrs = True
-cluster_shape_mnk = (2, 1, 1) if use_2cta_instrs else (1, 1, 1)
+cluster_shape_mnk = (2, 1, 1)
 mma_inst_shape_mnk = (256, 256, 16)
 mma_tiler_mnk = (256, 256, 64)
 threads_per_cta = 128
@@ -96,7 +95,6 @@ def kernel(
     b_smem_layout: cute.ComposedLayout,
     cta_layout_vmnk: cute.Layout,
 ):
-
     # Current thread/warp/block coordinates
     tidx, _, _ = cute.arch.thread_idx()
     warp_idx = cute.arch.warp_idx()
@@ -174,15 +172,15 @@ def kernel(
     # (bM, bN)
     gC = cute.local_tile(mC_mnl, mma_tiler_mnk, mma_coord_mnk, proj=(1, 1, None))
     thr_mma = tiled_mma.get_slice(mma_coord_vmnk[0])
-    # (MMA, MMA_M, MMA_K, RestK)
+    # (MMA, MMA_M, MMA_K)
     tCgA = thr_mma.partition_A(gA)
-    # (MMA, MMA_N, MMA_K, RestK)
+    # (MMA, MMA_N, MMA_K)
     tCgB = thr_mma.partition_B(gB)
     # (MMA, MMA_M, MMA_N)
     tCgC = thr_mma.partition_C(gC)
-    # (MMA, MMA_M, MMA_K, STAGE)
+    # (MMA, MMA_M, MMA_K)
     tCrA = tiled_mma.make_fragment_A(sA)
-    # (MMA, MMA_N, MMA_K, STAGE)
+    # (MMA, MMA_N, MMA_K)
     tCrB = tiled_mma.make_fragment_B(sB)
     # (MMA, MMA_M, MMA_N)
     acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
@@ -217,10 +215,10 @@ def kernel(
         num_threads=threads_per_cta,
     )
     tmem = utils.TmemAllocator(
-        storage.tmem_holding_buf,
+        storage.tmem_holding_buf.ptr,
         barrier_for_retrieve=tmem_alloc_barrier,
         is_two_cta=cute.size(cta_layout_vmnk, mode=[0]) > 1,
-        two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar,
+        two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
     )
     num_tmem_cols = 512
     tmem.allocate(num_tmem_cols)
@@ -232,7 +230,7 @@ def kernel(
     # Swap the pointer in tCtAcc
     tCtAcc = cute.make_tensor(tmem_ptr, tCtAcc.layout)
 
-    subtile_cnt = 1 if mma_tiler_mnk[0] == 64 else 4
+    subtile_cnt = 4
     # (EpiTile)
     epi_tiler = (
         (cute.size(tCtAcc, mode=[0, 0]), cute.size(tCtAcc, mode=[0, 1]) // subtile_cnt),
@@ -244,24 +242,21 @@ def kernel(
 
     # Every thread loads 64 x fp32
     tmem_atom = cute.make_copy_atom(
-        tcgen05.Ld16x256bOp(tcgen05.Repetition.x8)
-        if mma_tiler_mnk[0] == 64
-        else tcgen05.Ld32x32bOp(tcgen05.Repetition.x64),
+        tcgen05.Ld32x32bOp(tcgen05.Repetition.x64),
         cutlass.Float32,
     )
-
     tmem_tiled_copy = tcgen05.make_tmem_copy(tmem_atom, tCtAcc_epi[None, 0])
     tmem_thr_copy = tmem_tiled_copy.get_slice(tidx)
 
     # (TmemCpy,NumTmemCpy,NumTiles)
-    tCtC = tmem_thr_copy.partition_S(tCtAcc_epi)
+    tDtC = tmem_thr_copy.partition_S(tCtAcc_epi)
     # (TmemCpy,NumTmemCpy,NumTiles)
-    tCgC = tmem_thr_copy.partition_D(gC_epi)
+    tDgC = tmem_thr_copy.partition_D(gC_epi)
 
     # (TmemCpy,NumTmemCpy)
-    tCrAcc = cute.make_rmem_tensor(tCgC[None, None, 0].shape, acc_dtype)
+    tCrAcc = cute.make_rmem_tensor(tDgC[None, None, 0].shape, acc_dtype)
     # (TmemCpy,NumTmemCpy)
-    tCrC = cute.make_rmem_tensor(tCgC[None, None, 0].shape, io_dtype)
+    tCrC = cute.make_rmem_tensor(tDgC[None, None, 0].shape, io_dtype)
 
     #
     # 2. Main loop
@@ -271,8 +266,8 @@ def kernel(
     if warp_idx == 0:
         # Wait for a empty accumulator buffer
         if is_leader_cta:
-            acc_producer.acquire()
-        for k_tile in cutlass.range(num_k_tiles, prefetch_stages=ab_stages - 2):
+            acc_producer.acquire_and_advance()
+        for _ in cutlass.range(num_k_tiles, prefetch_stages=ab_stages - 2):
             # Issue TMA loads
             ab_empty = ab_producer.acquire_and_advance()
             cute.copy(
@@ -310,7 +305,6 @@ def kernel(
         # Signal that the accumulator is fully computed
         if is_leader_cta:
             acc_producer.commit()
-            acc_producer.advance()
 
     #
     # 3. Epilogue
@@ -321,13 +315,12 @@ def kernel(
 
     # Wait for the accumulator buffer to be full
     acc_full = acc_consumer.wait_and_advance()
-
     # TMEM -> RMEM -> GEMM
     # Sub-tiling for better instruction-level parallelism
-    for i in cutlass.range(cute.size(tCtC, mode=[2])):
-        cute.copy(tmem_tiled_copy, tCtC[None, None, i], tCrAcc)
+    for i in cutlass.range(cute.size(tDtC, mode=[2])):
+        cute.copy(tmem_tiled_copy, tDtC[None, None, i], tCrAcc)
         tCrC.store(tCrAcc.load().to(io_dtype))
-        cute.autovec_copy(tCrC, tCgC[None, None, i])
+        cute.autovec_copy(tCrC, tDgC[None, None, i])
     acc_full.release()
 
     # Ensure used buffers are properly synchronized before producer exit.
@@ -353,7 +346,7 @@ def host_function(
         io_dtype,
         acc_dtype,
         mma_inst_shape_mnk,
-        tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE,
+        tcgen05.CtaGroup.TWO,
         tcgen05.OperandSource.SMEM,
         tcgen05.OperandMajorMode.K,
         tcgen05.OperandMajorMode.K,
@@ -381,16 +374,14 @@ def host_function(
     cta_layout_vmnk = cute.tiled_divide(cta_layout_mnk, (tiled_mma.thr_id,))
 
     # Construct TMA load atoms
-    op = cute.nvgpu.cpasync.CopyBulkTensorTileG2SMulticastOp(
-        tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
-    )
+    op = cute.nvgpu.cpasync.CopyBulkTensorTileG2SMulticastOp(tcgen05.CtaGroup.TWO)
     a_tma_atom, a_tma_tensor = cute.nvgpu.make_tiled_tma_atom_A(
         op,
         a,
         a_smem_layout_one_stage,
         mma_tiler_mnk,
         tiled_mma,
-        cta_layout_vmnk.shape,
+        cta_layout_vmnk.shape,  # take the layout and extract the shape internally
     )
     b_tma_atom, b_tma_tensor = cute.nvgpu.make_tiled_tma_atom_B(
         op,
@@ -403,8 +394,7 @@ def host_function(
 
     grid_shape = cute.round_up(
         cute.ceil_div(
-            (*c.layout.shape, 1),
-            (mma_tiler_mnk[0] // (2 if use_2cta_instrs else 1), *mma_tiler_mnk[1:]),
+            (*c.layout.shape, 1), (mma_tiler_mnk[0] // 2, *mma_tiler_mnk[1:])
         ),
         cluster_shape_mnk,
     )

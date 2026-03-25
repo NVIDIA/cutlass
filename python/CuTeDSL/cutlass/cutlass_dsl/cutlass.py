@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -16,6 +16,7 @@ regarding to that dialect.
 
 # Local module imports
 from types import GenericAlias, SimpleNamespace, UnionType
+from typing_extensions import deprecated
 from typing import (
     Callable,
     Union,
@@ -102,6 +103,25 @@ from .cutlass_ast_decorators import (
 )
 
 from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
+
+# =============================================================================
+# Cutlass DSL Device Info
+# =============================================================================
+
+# Contains a map of SM architecture to shared memory capacity in bytes
+SMEM_CAPACITY_MAP = {
+    "sm_121": (100 - 1) * 1024,
+    "sm_120": (100 - 1) * 1024,
+    "sm_110": (228 - 1) * 1024,
+    "sm_103": (228 - 1) * 1024,
+    "sm_101": (228 - 1) * 1024,
+    "sm_100": (228 - 1) * 1024,
+    "sm_90": (228 - 1) * 1024,
+    "sm_89": (100 - 1) * 1024,
+    "sm_86": (100 - 1) * 1024,
+    "sm_87": (164 - 1) * 1024,
+    "sm_80": (164 - 1) * 1024,
+}
 
 # =============================================================================
 # Cutlass DSL Base Abstract Class
@@ -812,6 +832,27 @@ class CutlassBaseDSL(BaseDSL):
                     )
                 cfg.smem = const(cfg.smem)
 
+                # Warn user if shared memory exceed arch max
+                # Currently runtime only show 'CUDA_ERROR_INVALID_VALUE' error which is not useful
+                arch = self.dsl.get_arch_enum()
+                arch_str = f"sm_{arch.major}{arch.minor}"
+                if arch_str in SMEM_CAPACITY_MAP:
+                    arch_smem = SMEM_CAPACITY_MAP[arch_str]
+                    smem_msg = (
+                        f"\nError: kernel '{kernelSym}' launch shared memory "
+                        f"exceeds current GPU arch {arch} allowed. "
+                        f"Allocated: {{}} bytes. Max: {arch_smem} bytes.\n\n"
+                    )
+                    if_generate(
+                        arch_smem < cfg.smem,
+                        lambda: cute.print_([cfg.smem], fmt=smem_msg),
+                        loc=loc,
+                    )
+                else:
+                    raise DSLRuntimeError(
+                        f"Lack smem capacity info for GPU arch {arch}."
+                    )
+
                 async_deps = cfg.async_deps
                 if not isinstance(cfg.async_deps, (list, tuple)):
                     async_deps = [cfg.async_deps]
@@ -1175,6 +1216,7 @@ class KernelLauncher:
         self.func_kwargs = func_kwargs
 
         self._name_prefix = func_kwargs.pop("_name_prefix", None)
+        self._launch_name = None
 
         self._check_func_args(funcBody, *func_args, **func_kwargs)
 
@@ -1192,7 +1234,10 @@ class KernelLauncher:
                 cause=e,
             )
 
-    def smem_usage(self) -> int:
+    @deprecated(
+        "`smem_usage()` is deprecated, use public API `arch.dynamic_smem_size()` instead."
+    )
+    def smem_usage(self) -> Int32:
         """
         Check smem usage for this kernel, only available after `launch`
         """
@@ -1215,6 +1260,7 @@ class KernelLauncher:
 
         ret, name = kernel_generator(*self.func_args, **self.func_kwargs, config=config)
         self.dsl.kernel_info[name] = kernel_attrs
+        self._launch_name = name
         return ret.launch_op_ret
 
     def __call__(self, *args, **kwargs):
@@ -1443,7 +1489,7 @@ def _minmax(op, *args, loc=None, ip=None):
         for x in xs:
             emitter = getattr(cutlass_arith, f"_{op.__name__}")
             if not (is_dynamic_expression(res) or is_dynamic_expression(x)):
-                res = emitter(op(res), op(x))
+                res = emitter(op(res), op(x), loc=loc, ip=ip)
             elif (
                 hasattr(res, "type")
                 and hasattr(x, "type")
@@ -1473,7 +1519,7 @@ def _minmax(op, *args, loc=None, ip=None):
                     rhs_val = rhs.value.with_signedness(rhs.signed)
                 else:
                     rhs_val = rhs.value
-                res = res_type(emitter(lhs_val, rhs_val), loc=loc, ip=ip)
+                res = res_type(emitter(lhs_val, rhs_val, loc=loc, ip=ip), loc=loc, ip=ip)
         x = res
     else:
         raise DSLNotImplemented(f"{type(args)} is not supported")

@@ -63,6 +63,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, _1)
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
   class ElementPairA_,
@@ -83,7 +84,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementPairA_,
     StridePairA_,
@@ -111,7 +113,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   // TileShape refers to MmaTileShape to adapt for runtime cluster
   using TileShape = TileShape_;
   using TiledMma_SF = TiledMMA<MMA_Atom<typename TiledMma::MMA_ScaleFactor>,

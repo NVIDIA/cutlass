@@ -436,7 +436,7 @@ class Sm100BlockScaledDenseGemmKernel:
         class SharedStorage:
             ab_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage * 2]
             acc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage * 2]
-            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
 
         smem = utils.SmemAllocator()
@@ -638,10 +638,10 @@ class Sm100BlockScaledDenseGemmKernel:
             num_threads=self.threads_per_cta,
         )
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             is_two_cta=cute.size(cta_layout_vmnk, mode=[0]) > 1,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
         )
         tmem.allocate(self.num_tmem_alloc_cols)
         tmem.wait_for_alloc()

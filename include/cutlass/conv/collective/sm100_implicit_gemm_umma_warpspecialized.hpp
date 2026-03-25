@@ -65,6 +65,7 @@ template <
   int NumSpatialDims,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,    // Static cluster shape or dynamic (int, int, _1)
   class TileShapeMNKL_,  // (MmaAtomShapeM, MmaAtomShapeN, TileK, optional: TileL)
   class ElementA_,
@@ -79,7 +80,8 @@ struct CollectiveConv<
       NumSpatialDims,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShapeMNKL_,
     ElementA_,
     ElementB_,
@@ -96,7 +98,8 @@ struct CollectiveConv<
                            NumSpatialDims,
                            SchedulerPipelineStageCount,
                            AccumulatorPipelineStageCount,
-                           ClusterShape>;
+                           ClusterShape,
+                           ArchTag_>;
   using TileShape = decltype(cute::take<0,3>(TileShapeMNKL_{})); // (MmaAtomShapeM, MmaAtomShapeN, TileK)
   using ElementA = ElementA_;
   using ElementB = ElementB_;

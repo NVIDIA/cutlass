@@ -175,15 +175,6 @@ class TensorOpGemm:
             (self.cta_tiler[0], self.cta_tiler[1]),
         )
 
-        # Shared memory allocated for operations with A, B will be
-        # overwritten for operations on C. This is to improve performance
-        # by reducing the size of shared memory requested by each block
-        smem_size = max(
-            cute.size_in_bytes(mC.element_type, sC_layout),
-            cute.size_in_bytes(mA.element_type, sA_layout)
-            + cute.size_in_bytes(mB.element_type, sB_layout),
-        )
-
         # ///////////////////////////////////////////////////////////////////////////////
         # Tiled copy:
         # The majorness of tA/tB/tC follows the majorness of gA/gB/gC,
@@ -282,7 +273,6 @@ class TensorOpGemm:
         ).launch(
             grid=rasterization_remap_grid_dim,
             block=[self.num_threads, 1, 1],
-            smem=smem_size,
         )
 
     @cute.kernel
@@ -382,14 +372,36 @@ class TensorOpGemm:
             # tAgA: (CPY, CPY_M, CPY_K, k)     , tBgB: (CPY, CPY_N, CPY_K, k)
             # tAsA: (CPY, CPY_M, CPY_K, PIPE)  , tBsB: (CPY, CPY_N, CPY_K, PIPE)
             # ///////////////////////////////////////////////////////////////////////////////
+            @cute.struct
+            class SharedStorageAB:
+                a: cute.struct.Align[
+                    cute.struct.MemRange[mA.element_type, cute.cosize(sA_layout)],
+                    16,
+                ]
+                b: cute.struct.Align[
+                    cute.struct.MemRange[mB.element_type, cute.cosize(sB_layout)],
+                    16,
+                ]
+
+            @cute.struct
+            class SharedStorageC:
+                c: cute.struct.Align[
+                    cute.struct.MemRange[mC.element_type, cute.cosize(sC_layout)],
+                    16,
+                ]
+
             # Shared memory buffer
             smem = cutlass.utils.SmemAllocator()
-
-            sA = smem.allocate_tensor(mA.element_type, sA_layout, 16)
-            sB = smem.allocate_tensor(mB.element_type, sB_layout, 16)
-            sC = cute.make_tensor(
-                cute.recast_ptr(sA.iterator, dtype=self.c_dtype), sC_layout
+            # Shared memory allocated for operations with A, B will be
+            # overwritten for operations on C. This is to improve performance
+            # by reducing the size of shared memory requested by each block
+            storage = smem.allocate(
+                max(SharedStorageAB.size_in_bytes(), SharedStorageC.size_in_bytes()),
+                byte_alignment=16,
             )
+            sA = SharedStorageAB(storage).a.get_tensor(sA_layout)
+            sB = SharedStorageAB(storage).b.get_tensor(sB_layout)
+            sC = SharedStorageC(storage).c.get_tensor(sC_layout)
 
             thr_copy_A = tiled_copy_A.get_slice(tidx)
             thr_copy_B = tiled_copy_B.get_slice(tidx)

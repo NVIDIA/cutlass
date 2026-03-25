@@ -129,14 +129,25 @@ def kernel(
     # ptr<i64, smem, align<128>>
     # ptr<f32, smem, align<8>>
     print(struct_in_smem.a.data_ptr())
-    print(struct_in_smem.b)
-    print(struct_in_smem.c.real)
+    print(struct_in_smem.b.ptr)
+    print(struct_in_smem.c.real.ptr)
     # ptr<i8, smem, align<512>>
     print(section_in_smem)
     # ptr<i64, smem, align<64>>
     print(array_in_smem)
     # tensor<ptr<f16, smem, align<32>> o (16,4):(1,16)>
     print(tensor_in_smem)
+
+    # assign struct member array element
+    cute.printf("struct_in_smem.a[0] = {}", struct_in_smem.a[0])
+    struct_in_smem.a[0] = 2
+    cute.printf("struct_in_smem.a[0] = {}", struct_in_smem.a[0])
+
+    # assign struct member scalar
+    cute.printf("struct_in_smem.b.ptr = {}", struct_in_smem.b.ptr)
+    cute.printf("struct_in_smem.b: value = {}", struct_in_smem.b.ptr.load())
+    struct_in_smem.b = 16
+    cute.printf("struct_in_smem.b: value = {}", struct_in_smem.b.ptr.load())
 
     # fill MemRange tensor in struct and copy to dst
     a_tensor = struct_in_smem.a.get_tensor(cute.make_layout((8, 4)))
@@ -169,7 +180,9 @@ def host(
 ):
     # Note: Shared Memory size is automatically calculated now
     kernel(const_a, dst_a, const_b, dst_b, const_c, dst_c).launch(
-        grid=(1, 1, 1), block=(1, 1, 1)
+        grid=(1, 1, 1),
+        block=(1, 1, 1),
+        # Automatically calculate the launch kernel shared memory usage when `smem=None`
     )
 
 

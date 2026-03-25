@@ -78,6 +78,7 @@ template <
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
   int TransformationPipelineStageCount_,
+  class ArchTag_,
   class AccumulatorCopyAtom_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, _1)
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
@@ -99,7 +100,8 @@ struct CollectiveMma<
       AccumulatorPipelineStageCount_,
       TransformationPipelineStageCount_,
       ClusterShape,
-      AccumulatorCopyAtom_>,
+      AccumulatorCopyAtom_,
+      ArchTag_>,
     TileShape_,
     complex<float>,
     StrideA_,
@@ -155,7 +157,8 @@ public:
                           AccumulatorPipelineStageCount_,
                           TransformationPipelineStageCount_,
                           ClusterShape,
-                          AccumulatorCopyAtom_>;
+                          AccumulatorCopyAtom_,
+                          ArchTag_>;
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
 

@@ -708,7 +708,6 @@ class BlackwellFusedMultiHeadAttentionBackward:
             grid=bwd_grid,
             block=[self.threads_per_cta, 1, 1],
             cluster=[1, 1, 1],
-            smem=self.shared_storage.size_in_bytes(),
             stream=stream,
             min_blocks_per_mp=1,
         )
@@ -913,7 +912,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         )
         sLSE = storage.sLSE.get_tensor(LSE_smem_layout)
         sSum_OdO = storage.sSum_OdO.get_tensor(sum_OdO_smem_layout)
-        tmem_holding_buf = storage.tmem_holding_buf
+        tmem_holding_buf = storage.tmem_holding_buf.ptr
 
         sQT_ptr = cute.recast_ptr(sQ.iterator, QT_smem_layout_staged.inner)
         sQT = cute.make_tensor(sQT_ptr, QT_smem_layout_staged.outer)

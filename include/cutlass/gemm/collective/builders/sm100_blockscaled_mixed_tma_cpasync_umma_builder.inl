@@ -93,6 +93,7 @@ sm100_compute_stage_count_or_override_blockscaled_mixed_tma_cpasync(StageCountAu
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementPairA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -106,7 +107,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassBlockScaledTensorOp,
     ElementPairA,
     GmemLayoutATag,
@@ -119,7 +120,11 @@ struct CollectiveBuilder<
     ClusterShape_MNK, // Static cluster shape (_1, _1, _1)
     StageCountType,
     BuilderScheduleTag,
-    cute::enable_if_t<cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100, BuilderScheduleTag> >
+    cute::enable_if_t<
+      cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100, BuilderScheduleTag> &&
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      )
+    >
 >
 {
   using ElementSFA = typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::sf_type;
@@ -238,12 +243,12 @@ struct CollectiveBuilder<
                                                                CLCPipelineStorage +
                                                                CLCResponseStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
 
   using SmemTileShape = cute::Shape<SmemShapeA_M, BlockTileB_N, SmemShapeA_K>;
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockscaled_mixed_tma_cpasync<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, B, SFA, and SFB.");
 
   using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
@@ -251,7 +256,8 @@ struct CollectiveBuilder<
         PipelineStages,
         SchedulerPipelineStageCount,
         AccumulatorPipelineStageCount,
-        ClusterShape_MNK>,
+        ClusterShape_MNK,
+        ArchTag>,
       TileShape_MNK,
       cute::tuple<ElementA, ElementSF>,
       StridePairA,

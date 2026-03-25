@@ -43,9 +43,9 @@ from cutlass.cute.runtime import from_dlpack
 from dataclasses import dataclass, field
 
 """
-This example provides an experimental implementation of the SM103 batched 3xFP4 blockscaled GEMM kernel, please note that the APIs and implementation details related to this kernel may change in future releases.
+This example provides an experimental implementation of the SM103 batched FP4 Ultra blockscaled GEMM kernel, please note that the APIs and implementation details related to this kernel may change in future releases.
 
-A high-performance persistent batched 3xFP4 blockscaled GEMM example for the NVIDIA Blackwell SM103 architecture
+A high-performance persistent batched FP4 Ultra blockscaled GEMM example for the NVIDIA Blackwell SM103 architecture
 using CUTE DSL.
     - Matrix A is MxKxL, L is batch dimension, A can only be row-major("K") for MXF4/NVF4 input type
     - Matrix B is NxKxL, L is batch dimension, B can only be row-major("K") for MXF4/NVF4 input type
@@ -166,7 +166,7 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
         cluster_shape_mn: Tuple[int, int],
         use_tma_store: bool,
     ):
-        """Initializes the configuration for a Blackwell SM103 3xFP4 GEMM kernel.
+        """Initializes the configuration for a Blackwell SM103 FP4 Ultra GEMM kernel.
 
         This configuration includes several key aspects:
 
@@ -603,7 +603,7 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
             sf_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_sf_stage]
             acc_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
             acc_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
-            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
             # (MMA, MMA_M, MMA_K, STAGE)
             sA: cute.struct.Align[
@@ -800,11 +800,11 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
             )
         # Tensor memory dealloc barrier init
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
             is_two_cta=use_2cta_instrs,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
         )
 
         # Cluster arrive after barrier init
@@ -1810,7 +1810,7 @@ class Sm103BlockScaledPersistentDenseGemmKernel:
         mma_tiler_mn: Tuple[int, int],
         a_source: tcgen05.OperandSource = tcgen05.OperandSource.SMEM,
     ) -> cute.TiledMma:
-        """Create a blockscaled trivial tiled MMA for SM103 (3xFP4), K fixed to 96.
+        """Create a blockscaled trivial tiled MMA for SM103 (FP4 Ultra), K fixed to 96.
 
         Returns a tcgen05 MMA configured for the given (M, N) tiler and CTA group.
 
@@ -2653,7 +2653,7 @@ def run(
     :return: Execution time of the GEMM kernel
     :rtype: float
     """
-    print(f"Running Sm103 Persistent 3xfp4 Dense BlockScaled GEMM test with:")
+    print(f"Running Sm103 Persistent FP4 Ultra Dense BlockScaled GEMM test with:")
     print(f"mnkl: {mnkl}")
     print(f"AB dtype: {ab_dtype}, SF dtype: {sf_dtype}, SF Vec size: {sf_vec_size}")
     print(f"C dtype: {c_dtype}")
@@ -2954,7 +2954,7 @@ if __name__ == "__main__":
             )
 
     parser = argparse.ArgumentParser(
-        description="Example of Sm103 3xfp4 Dense Persistent BlockScaled GEMM."
+        description="Example of Sm103 FP4 Ultra Dense Persistent BlockScaled GEMM."
     )
 
     parser.add_argument(

@@ -998,7 +998,7 @@ class BlackwellFusedMultiHeadAttentionForward:
 
             # Alloc tmem buffer
             tmem_alloc_cols = Int32(self.tmem_alloc_cols)
-            cute.arch.alloc_tmem(tmem_alloc_cols, storage.tmem_holding_buf)
+            cute.arch.alloc_tmem(tmem_alloc_cols, storage.tmem_holding_buf.ptr)
             self.tmem_alloc_barrier.arrive_and_wait()
             tile_sched = fmha_utils.create_fmha_static_tile_scheduler(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
@@ -1260,7 +1260,7 @@ class BlackwellFusedMultiHeadAttentionForward:
             tmem_ptr = cute.arch.retrieve_tmem_ptr(
                 Float32,
                 alignment=16,
-                ptr_to_buffer_holding_addr=storage.tmem_holding_buf,
+                ptr_to_buffer_holding_addr=storage.tmem_holding_buf.ptr,
             )
             cute.arch.dealloc_tmem(tmem_ptr, tmem_alloc_cols)
 

@@ -138,10 +138,12 @@ private:
   constexpr static bool is_m_major_C = detail::is_m_major<StrideC>();
   constexpr static bool is_m_major_D = detail::is_m_major<StrideD>();
 
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideD, StrideD>;
+
   // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
   // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
   // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
-  constexpr static uint32_t NumTmaDescriptorsPerSm = NumMaxSchedulerPipelineStageCount + std::max(StagesC, (ReuseSmemC ? StagesC : StagesD)) + 2;
+  constexpr static uint32_t NumTmaDescriptorsPerSm = IsGroupedGemmKernel ? (NumMaxSchedulerPipelineStageCount + std::max(StagesC, (ReuseSmemC ? StagesC : StagesD)) + 2) : 1;
 
   using SmemLayoutC = decltype(tile_to_shape(
       SmemLayoutAtomC{},

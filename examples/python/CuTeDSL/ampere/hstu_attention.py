@@ -265,7 +265,6 @@ class HSTUAttentionForwardAmpere(object):
         ).launch(
             grid=grid_dim,
             block=[self._num_threads, 1, 1],
-            smem=SharedStorage.size_in_bytes(),
             stream=stream,
         )
 

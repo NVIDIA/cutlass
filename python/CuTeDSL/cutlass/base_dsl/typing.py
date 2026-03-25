@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -35,6 +35,7 @@ from .common import *
 from .ast_helpers import const_expr
 from ._mlir_helpers import arith as arith_helper, lru_cache_ir
 from ._mlir_helpers.arith import ArithValue
+from ._mlir_helpers.op import dsl_user_op
 
 from .._mlir import ir
 from .._mlir.extras import types as T
@@ -843,7 +844,6 @@ def _binary_op(op, promote_operand=True, promote_bool=False, flip=False):
         if flip:
             lhs_val, rhs_val = rhs_val, lhs_val
 
-        # Check if the operation is supported by the operands
         res_val = op(lhs_val, rhs_val)
         return res_type(res_val, loc=loc, ip=ip)
 
@@ -1152,72 +1152,91 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             )
         return res_type(value)
 
+    @dsl_user_op
     def __add__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.add, promote_bool=True)(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __sub__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.sub, promote_bool=True)(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __mul__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.mul, promote_bool=True)(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __floordiv__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.floordiv, promote_bool=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __truediv__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.truediv, promote_bool=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __mod__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.mod, promote_bool=True)(self, other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __radd__(self, other, *, loc=None, ip=None) -> "Numeric":
         return self.__add__(other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __rsub__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.sub, promote_bool=True, flip=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __rmul__(self, other, *, loc=None, ip=None) -> "Numeric":
         return self.__mul__(other, loc=loc, ip=ip)
 
+    @dsl_user_op
     def __rfloordiv__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.floordiv, promote_bool=True, flip=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __rtruediv__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.truediv, promote_bool=True, flip=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __rmod__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.mod, promote_bool=True, flip=True)(
             self, other, loc=loc, ip=ip
         )
 
+    @dsl_user_op
     def __eq__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.eq)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __ne__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.ne)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __lt__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.lt)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __le__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.le)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __gt__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.gt)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __ge__(self, other, *, loc=None, ip=None) -> "Boolean":
         return _binary_op(operator.ge)(self, other, loc=loc, ip=ip)  # type: ignore
 
+    @dsl_user_op
     def __pow__(self, other, *, loc=None, ip=None) -> "Numeric":
         return _binary_op(operator.pow)(self, other, loc=loc, ip=ip)  # type: ignore
 

@@ -498,9 +498,7 @@ struct CollectiveBuilder<
                                                                TensorMapStorage +
                                                                TmaPrefetchStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int ReducedSmemCapacityBytes = 
-    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
-
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
   using SmemTileShape = cute::Shape<Int<MMA_M>, Int<MMA_N/cute::size(AtomThrID{})>, _128>; // SmemAllocTypes are uint8_t. We always allocate 128bytes
   static constexpr auto PipelineStages = cutlass::gemm::collective::detail::sm103_compute_stage_count_or_override_blockscaled<
       ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
@@ -512,7 +510,8 @@ struct CollectiveBuilder<
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
       ClusterShape_MNK,
-      PrefetchType
+      PrefetchType,
+      ArchTag
     >,
     cutlass::gemm::MainloopSm103TmaUmmaWarpSpecializedBlockScaled<
       get<0>(PipelineStages),
@@ -520,7 +519,8 @@ struct CollectiveBuilder<
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
       ClusterShape_MNK,
-      PrefetchType
+      PrefetchType,
+      ArchTag
     >
   >;
 

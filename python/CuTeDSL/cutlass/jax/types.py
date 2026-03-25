@@ -3,24 +3,15 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type, Optional, Sequence, Union, Callable, Any, TypeVar
-import sys
-import ctypes
-import math
-import inspect
+from typing import Sequence
 from dataclasses import dataclass, field
-from functools import partial, reduce
-from operator import mul
-from itertools import chain
-from typing import Annotated
 
-import cuda.bindings.driver as cuda
 
 import jax
 import jax.numpy as jnp
@@ -28,13 +19,13 @@ import jax.numpy as jnp
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack as _from_dlpack
-from cutlass.cute import AddressSpace, Numeric, IntTuple
+from cutlass.cute import AddressSpace
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm, arith
-import cutlass._mlir.dialects.cute as _cute_ir
 
 JAX_DTYPE_TO_CUTLASS_DTYPE = {
     jnp.bool.dtype: cutlass.Boolean,
+    jnp.int4.dtype: cutlass.Int4,
     jnp.int8.dtype: cutlass.Int8,
     jnp.int16.dtype: cutlass.Int16,
     jnp.int32.dtype: cutlass.Int32,
@@ -65,38 +56,69 @@ DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT = 256
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class TensorSpec:
-    """Provides a specification of cute.Tensor modes and additional metadata about
-    dynamic/static shapes for compilation.
+    """Specifies the layout and metadata for a JAX array passed to a CuTe kernel.
 
-    Arguments:
-        layout : Specifies the position of stries as they relate to the framework
-                 tensor (S0, S1, ... SN)
-        mode : Specifies the position of each mode in the tensor (M0, M1, ... MN)
-        static : Specifies the tensor shape is represented as static constexpr.
-        ptr_assumed_align: Specifies the pointer alignment.
+    TensorSpec controls how a JAX array's dimensions are mapped to a cute.Tensor
+    during jit lowering, including stride ordering, mode permutation, and whether
+    shapes/strides are compiled as static constants.
+
+    Attributes:
+        layout: A minor-to-major stride ordering in CuTeDSL convention. ``layout[i]``
+            gives the stride rank of dimension ``i``, where rank 0 means the smallest
+            (innermost) stride. For example, row-major order for a 3-D tensor is
+            ``(2, 1, 0)``. If ``None``, row-major is assumed. Use
+            :func:`jax_to_cutlass_layout_order` to convert from JAX's major-to-minor
+            convention.
+        mode: A permutation that maps the stride-ordered dimensions to the mode
+            positions of the resulting ``cute.Layout``. For example, ``mode=(2, 0, 1)``
+            reorders an ``(M, K, L)`` layout into ``(K, L, M)`` mode order inside the
+            kernel. If ``None``, modes match the natural dimension order ``(0, 1, ..., N-1)``.
+        static: If ``True``, shapes and strides are compiled as static ``constexpr``
+            values, which may enable additional compiler optimisations. Kernels that
+            do not support static shapes will raise a compile error. Must be ``False``
+            when any dimension is symbolic (e.g. under ``jax.export``).
+        ptr_assumed_align: Assumed byte alignment of the tensor's data pointer.
+            Overrides the default of 256 bytes. Rarely needs to change.
+        divisibility: Optional per-mode divisibility hints. If a single int is passed
+            divisibility will be applied to the leading (stride=1) dimension only.
     """
 
-    # Specifies the layout of the Jax array. If not it will be assumed that the layout
-    # is row major.
+    # Minor-to-major stride ordering in CuTeDSL convention (layout[i] = stride rank
+    # of dimension i, 0 = innermost). Defaults to row-major if None.
     layout: tuple[int, ...] | None = field(metadata=dict(static=True), default=None)
-    # Indicates the order of modes. If unspecified the modes will match exactly with
-    # the layout of the Jax tensor (e.g. row-major). Typically used to map from the
-    # input layout to kernel layouts (e.g. MKL/NKL/MNL).
+    # Permutation from stride-ordered dimensions to cute.Layout mode positions.
+    # Defaults to identity (0, 1, ..., N-1) if None.
     mode: tuple[int, ...] | None = field(metadata=dict(static=True), default=None)
-    # Indicates the shape and strides will be defined statically. Setting True ay enable
-    # additional optimization. Kernels that do not support static shapes will generate
-    # compile errors if this is enabled so we leave it off by default.
+    # If True, shapes and strides are embedded as compile-time constants.
+    # Must be False for symbolic/dynamic shapes (e.g. jax.export).
     static: bool = field(metadata=dict(static=True), default=None)
-    # Overrides the default pointer alignment. Generally this should not be changed
-    # but is left here to provide a hook.
+    # Assumed alignment (bytes) of the data pointer. Default matches XLA's 256-byte alignment.
     ptr_assumed_align: int = field(
         metadata=dict(static=True), default=DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT
     )
+    # Per-mode divisibility hints.
+    divisibility: tuple[int | None, ...] | int | None = field(
+        metadata=dict(static=True), default=None
+    )
+
 
 def row_major_layout(shaped):
-    """Returns a row major layout given a shaped value.
+    """Returns the CuTeDSL minor-to-major stride ordering for a row-major (C-contiguous) tensor.
 
-    Row major layout is (N-1, N-2, ... 1, 0) for an N-dimensional tensor.
+    In CuTeDSL convention, ``layout[i]`` is the stride rank of dimension ``i``,
+    where rank 0 denotes the innermost (stride-1) dimension.  Row-major means the
+    last dimension is innermost, so the result is ``(N-1, N-2, ..., 1, 0)`` for an
+    N-dimensional tensor.
+
+    Example::
+
+        row_major_layout((M, K, N))  # → (2, 1, 0)
+
+    Args:
+        shaped: An object with a ``.shape`` attribute, or a shape tuple/sequence.
+
+    Returns:
+        A tuple of length N representing the minor-to-major ordering.
     """
     if hasattr(shaped, "shape"):
         shaped = shaped.shape
@@ -104,9 +126,17 @@ def row_major_layout(shaped):
 
 
 def default_tensor_mode(shaped):
-    """Returns a default tensor mode given a shaped value.
+    """Returns the identity mode permutation for an N-dimensional tensor.
 
-    Default mode is (0, 1, ... N-2, N-1) for an N_dimensional tensor.
+    The mode permutation maps stride-ordered dimensions to ``cute.Layout`` mode
+    positions.  The default identity ``(0, 1, ..., N-1)`` leaves the mode order
+    unchanged relative to the dimension order.
+
+    Args:
+        shaped: An object with a ``.shape`` attribute, or a shape tuple/sequence.
+
+    Returns:
+        A tuple ``(0, 1, ..., N-1)`` of length N.
     """
     if hasattr(shaped, "shape"):
         shaped = shaped.shape
@@ -114,14 +144,108 @@ def default_tensor_mode(shaped):
 
 
 def default_tensor_spec(shaped) -> TensorSpec:
-    """Returns a default tensor spec given a shaped value.
+    """Returns a :class:`TensorSpec` with row-major layout and identity mode ordering.
 
-    Default layout is (N-1, N-2, ... 1, 0) for an N-dimensional tensor.
-    Default mode is (0, 1, ... N-2, N-1) for an N_dimensional tensor.
+    Equivalent to::
+
+        TensorSpec(layout=(N-1, ..., 1, 0), mode=(0, 1, ..., N-1), divisibility=(D0, D1, ... DN-1))
+
+    This is appropriate for standard row-major (C-contiguous) JAX arrays that
+    do not require dimension reordering inside the kernel.
+
+    Divisibility hints are inferred only for concrete integer dimensions. 
+    Symbolic dimensions always produce ``None`` for their slot; pass an
+    explicit ``TensorSpec`` with ``divisibility`` set if you need alignment
+    hints for symbolic shapes.
+
+    Args:
+        shaped: An object with a ``.shape`` attribute, or a shape tuple/sequence.
+
+    Returns:
+        A :class:`TensorSpec` with ``layout`` set to row-major minor-to-major order
+        and ``mode`` set to the identity permutation.
     """
     if hasattr(shaped, "shape"):
         shaped = shaped.shape
-    return TensorSpec(layout=row_major_layout(shaped), mode=default_tensor_mode(shaped))
+    inferred = tuple(d if isinstance(d, int) else None for d in shaped)
+    divisibility = inferred if any(d is not None for d in inferred) else None
+    return TensorSpec(
+        layout=row_major_layout(shaped),
+        mode=default_tensor_mode(shaped),
+        divisibility=divisibility,
+    )
+
+
+def _expand_divisibility(
+    divisibility, order: tuple[int, ...], ndim: int
+) -> tuple[int | None, ...] | None:
+    """Expand a divisibility spec to a full per-dimension tuple.
+
+    A bare ``int`` is placed at the leading-dimension slot (where
+    ``order[i] == 0``, i.e. stride == 1) and ``None`` everywhere else.
+    A tuple is returned unchanged.  ``None`` returns ``None``.
+    """
+    if divisibility is None or isinstance(divisibility, tuple):
+        return divisibility
+    leading = order.index(0)
+    result = [None] * ndim
+    result[leading] = divisibility
+    return tuple(result)
+
+
+def cutlass_to_jax_layout_order(
+    layout: Sequence[int] | None,
+) -> Sequence[int] | None:
+    """Converts a CuTeDSL layout order (minor-to-major) to JAX layout order (major-to-minor).
+
+    CuTeDSL uses minor-to-major ordering: ``layout[i]`` is the stride rank of
+    dimension ``i`` (0 = innermost).  JAX uses major-to-minor ordering: position
+    ``j`` in the result is the dimension index of the ``j``-th outermost axis.
+
+    Example::
+
+        cutlass_to_jax_layout_order((2, 1, 0))  # row-major → (0, 1, 2)
+        cutlass_to_jax_layout_order((0, 1, 2))  # col-major → (2, 1, 0)
+
+    Args:
+        layout: Minor-to-major stride permutation, or ``None`` (returned unchanged).
+
+    Returns:
+        Major-to-minor axis permutation compatible with ``jax.Array.layout``, or ``None``.
+    """
+    if layout is None:
+        return None
+    return tuple(sorted(range(len(layout)), key=lambda i: layout[i], reverse=True))
+
+
+def jax_to_cutlass_layout_order(
+    layout: Sequence[int] | None,
+) -> Sequence[int] | None:
+    """Converts a JAX layout order (major-to-minor) to CuTeDSL layout order (minor-to-major).
+
+    JAX uses major-to-minor ordering: position ``j`` is the dimension index of the
+    ``j``-th outermost axis.  CuTeDSL uses minor-to-major ordering: ``layout[i]``
+    is the stride rank of dimension ``i`` (0 = innermost).
+
+    This is the inverse of :func:`cutlass_to_jax_layout_order`.
+
+    Example::
+
+        jax_to_cutlass_layout_order((0, 1, 2))  # row-major → (2, 1, 0)
+        jax_to_cutlass_layout_order((2, 1, 0))  # col-major → (0, 1, 2)
+
+    Args:
+        layout: Major-to-minor axis permutation, or ``None`` (returned unchanged).
+
+    Returns:
+        Minor-to-major stride permutation for use as :attr:`TensorSpec.layout`, or ``None``.
+    """
+    if layout is None:
+        return None
+    inv = [0] * len(layout)
+    for i, p in enumerate(layout):
+        inv[p] = len(layout) - 1 - i
+    return tuple(inv)
 
 
 def jax_to_cutlass_dtype(dtype):
@@ -142,6 +266,16 @@ def cutlass_to_jax_dtype(dtype):
 def from_dlpack(array, assumed_align: int = DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT):
     """Convert jax.Array to a DL pack tensor."""
     return _from_dlpack(array, assumed_align=assumed_align)
+
+
+def _validate_permutation(name: str, perm, shape):
+    if len(perm) != len(shape):
+        raise ValueError(f"{name} must be same length as shape", perm, shape)
+    for s in perm:
+        if s < 0 or s >= len(shape):
+            raise ValueError(f"Invalid index {s} in {name}", perm, shape)
+    if len(set(perm)) != len(perm):
+        raise ValueError(f"{name} has duplicate indices", perm)
 
 
 class JaxArray:
@@ -172,32 +306,21 @@ class JaxArray:
         order=None,
         mode=None,
         static=False,
+        divisibility=None,
     ):
         self.dtype = dtype
         self.shape = tuple(shape)
         self.ndim = len(self.shape)
         self.mem_space = mem_space
         self.assumed_align = assumed_align
+
         if order is None:
             order = row_major_layout(shape)
         if mode is None:
             mode = default_tensor_mode(shape)
 
-        if len(order) != len(shape):
-            raise ValueError(f"layout must be same length as shape", order, shape)
-        for s in order:
-            if s < 0 or s >= len(shape):
-                raise ValueError(f"Invalid index {s} in stride order", order, shape)
-        if len(tuple(set(order))) != len(order):
-            raise ValueError(f"layout has duplicate indices", order)
-
-        if len(mode) != len(shape):
-            raise ValueError(f"mode must be same length as shape", mode, shape)
-        for s in mode:
-            if s < 0 or s >= len(shape):
-                raise ValueError(f"Invalid index {s} in stride order", mode, shape)
-        if len(tuple(set(mode))) != len(mode):
-            raise ValueError(f"mode has duplicate indices", mode)
+        _validate_permutation("order", order, shape)
+        _validate_permutation("mode", mode, shape)
 
         self.order = tuple(order)
         self.mode = tuple(mode)
@@ -207,6 +330,20 @@ class JaxArray:
                 f"{self.shape} contains one or more symbolic dimensions requires static=False"
             )
         self.static = static
+
+        if divisibility is not None:
+            divisibility = _expand_divisibility(divisibility, self.order, self.ndim)
+            divisibility = tuple(divisibility)
+            if len(divisibility) != len(shape):
+                raise ValueError(
+                    "divisibility must be same length as shape", divisibility, shape
+                )
+            for d in divisibility:
+                if not (d is None or isinstance(d, int)):
+                    raise ValueError(
+                        f"divisibility entries must be None or integer, got {d!r}"
+                    )
+        self.divisibility = divisibility
 
 
 class JaxArrayValue(JaxArray):
@@ -222,12 +359,15 @@ class JaxArrayValue(JaxArray):
         order,
         mode,
         static,
+        divisibility=None,
     ):
-        super().__init__(dtype, shape, mem_space, assumed_align, order, mode, static)
+        super().__init__(
+            dtype, shape, mem_space, assumed_align, order, mode, static, divisibility
+        )
         self.value = ir_value
 
     def __str__(self):
-        return f"JaxArrayValue<{self.value}:{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}>"
+        return f"JaxArrayValue<{self.value}:{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
 
     def __repr__(self):
         return str(self)
@@ -236,38 +376,44 @@ class JaxArrayValue(JaxArray):
         self, shape, order: tuple[int, ...], *, loc=None, ip=None
     ):
         i32 = ir.IntegerType.get_signless(32)
-        i64 = ir.IntegerType.get_signless(64)
-        one = arith.constant(i64, 1)
-        zero = arith.constant(i64, 0)
         pairs = sorted(zip(shape, order), key=lambda x: x[1])
 
         # Compute strides for each element in order.
         strides = [1]  # static 1 for leading
         if len(shape) > 1:
             strides.append(pairs[0][0])
-        for i, idx in enumerate(range(len(pairs[:-2]))):
-            strides.append(arith.muli(pairs[i][0], strides[-1]))
+        for i in range(len(pairs) - 2):
+            strides.append(arith.muli(pairs[i + 1][0], strides[-1]))
 
         # Apply the order to strides
         strides_ordered = []
         for i in range(len(shape)):
             strides_ordered.append(strides[order[i]])
 
-        # zero out any stride for a shape of size 1 to align with make_ordered_layout
-        # We ignore the leading dimension of 1
-        final_stride = []
-        for i in range(len(shape)):
-            x = arith.cmpi(0, one, shape[i])
-            s = strides_ordered[i]
-            if isinstance(s, int) and s == 1:
-                final_stride.append(s)
-            else:
-                final_stride.append(arith.select(x, zero, s))
-
         # Shapes are expected to be int32 so truncate to that before creating layout
-        shape = tuple([arith.trunci(i32, s) for s in shape])
+        shape_i32 = tuple(arith.trunci(i32, s) for s in shape)
 
-        return cute.make_layout(shape, stride=tuple(final_stride))
+        # Apply per-mode divisibility assumptions so the compiler can exploit alignment.
+        if self.divisibility is not None:
+            assumed = []
+            for s32, div_spec, static_s in zip(
+                shape_i32, self.divisibility, self.shape
+            ):
+                if isinstance(static_s, int):
+                    # Pure static shape is known even though a dynamic shape is
+                    # used. We can assume the exact shape here. We keep the shape
+                    # as a dynamic value to avoid breaking code that may expect
+                    # a dynamic value.
+                    assumed.append(cute.assume(s32, divby=static_s))
+                elif div_spec is not None:
+                    # Using a dynamic value so apply the div_spec if its provided.
+                    assumed.append(cute.assume(s32, divby=div_spec))
+                else:
+                    # No divisibility specification for this shape
+                    assumed.append(s32)
+            shape_i32 = tuple(assumed)
+
+        return cute.make_layout(shape_i32, stride=tuple(strides_ordered))
 
     def _load_dynamic_shapes(self, ffi_buffer, *, loc=None, ip=None):
         i64 = ir.IntegerType.get_signless(64)
@@ -325,7 +471,9 @@ class JaxArrayValue(JaxArray):
             layout = cute.make_ordered_layout(shape, order=self.order, loc=loc, ip=ip)
         else:
             shape = self._load_dynamic_shapes(ffi_buffer)
-            layout = self._make_ordered_layout_dynamic_strides(shape, self.order)
+            layout = self._make_ordered_layout_dynamic_strides(
+                shape, self.order, loc=loc, ip=ip
+            )
 
         # Apply mode order
         if self.mode is not None:
@@ -346,6 +494,7 @@ class JaxArrayValue(JaxArray):
             self.order,
             self.mode,
             self.static,
+            self.divisibility,
         )
 
 
@@ -355,20 +504,8 @@ class JaxTracedArray(JaxArray):
     Traced values are not real tensors or allocated on the device.
     """
 
-    def __init__(
-        self,
-        dtype,
-        shape,
-        mem_space,
-        assumed_align,
-        order,
-        mode,
-        static,
-    ):
-        super().__init__(dtype, shape, mem_space, assumed_align, order, mode, static)
-
     def __str__(self):
-        return f"JaxTracedArray<{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}>"
+        return f"JaxTracedArray<{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
 
     def __repr__(self):
         return str(self)
@@ -387,6 +524,7 @@ class JaxTracedArray(JaxArray):
             self.order,
             self.mode,
             self.static,
+            self.divisibility,
         )
 
     def __c_pointers__(self):

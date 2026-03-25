@@ -144,7 +144,7 @@ public:
   using TileSchedulerParams = typename TileScheduler::Params;
 
   static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
-  static constexpr bool IsTensorMapUpdateAsync = not IsSchedDynamicPersistent;
+  static constexpr bool IsTensorMapUpdateAsync = IsGroupedGemmKernel && not IsSchedDynamicPersistent;
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
   static constexpr uint32_t MinTensorMapWorkspaceAlignment = 64;
 

@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -426,9 +426,10 @@ class _Tensor(Tensor):
         return _cute_ir.get_layout(self.value, loc=loc, ip=ip)
 
     @property
+    @dsl_user_op
     @lru_cache_ir()
-    def shape(self) -> Shape:
-        return self.layout.shape
+    def shape(self, *, loc=None, ip=None) -> Shape:
+        return self.layout.shape_method(loc=loc, ip=ip)
 
     @property
     @lru_cache_ir()
@@ -1011,7 +1012,9 @@ def recast_tensor(
 
     src_iter = recast_ptr(src.iterator, dtype=dtype, loc=loc, ip=ip)
     src_layout = recast_layout(dst_width, src_width, src.layout, loc=loc, ip=ip)
-    return make_tensor(src_iter, src_layout, loc=loc, ip=ip)
+    return type(src)(
+        make_tensor(src_iter, src_layout, loc=loc, ip=ip), dtype=dtype, loc=loc, ip=ip
+    )
 
 
 @dsl_user_op
@@ -1344,7 +1347,23 @@ class TensorSSA(cutlass_arith.ArithValue):
             if issubclass(rhs.dtype, Integer):
                 rhs_val = rhs_val.with_signedness(rhs.dtype.signed)
 
-            res_vect = op(lhs_val, rhs_val)
+            # Use ArithValue's operator method directly to avoid recursion
+            # through TensorSSA's __add__/__sub__/etc. when op() dispatches
+            # back to the subclass method
+            if op.__name__ == "_min":
+                arith_op = cutlass_arith._min
+            elif op.__name__ == "_max":
+                arith_op = cutlass_arith._max
+            elif op in (operator.and_, operator.or_):
+                arith_op_name = f"__{op.__name__}_"
+                arith_op = getattr(cutlass_arith.ArithValue, arith_op_name)
+            else:
+                arith_op_name = f"__{op.__name__}__"
+                arith_op = getattr(cutlass_arith.ArithValue, arith_op_name, None)
+            if arith_op:
+                res_vect = arith_op(lhs_val, rhs_val, loc=loc, ip=ip)
+            else:
+                res_vect = op(lhs_val, rhs_val)
             res = TensorSSA(res_vect, lhs._shape, res_type)
 
         return res

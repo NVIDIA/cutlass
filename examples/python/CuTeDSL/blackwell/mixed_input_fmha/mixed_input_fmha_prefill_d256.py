@@ -403,7 +403,7 @@ class MixedInputFusedMultiHeadAttentionPrefillD256:
             s_corr_mbar_ptr: cute.struct.MemRange[Int64, self.qk_acc_stage * 2]
             sum_mbar_ptr: cute.struct.MemRange[Int64, 2]
             mma_o_mbar_ptr: cute.struct.MemRange[Int64, self.pv_acc_stage * 2]
-            tmem_dealloc_mbar_ptr: Int64
+            tmem_dealloc_mbar: Int64
             tmem_holding_buf: Int32
 
         self.shared_storage = SharedStorage
@@ -654,11 +654,11 @@ class MixedInputFusedMultiHeadAttentionPrefillD256:
         )
         # Tensor memory dealloc barrier init
         tmem = utils.TmemAllocator(
-            storage.tmem_holding_buf,
+            storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.correction_warp_ids[0],
             is_two_cta=True,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar_ptr,
+            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
         )
         # Cluster arrive after barrier init
         pipeline_init_arrive(cluster_shape_mn=cluster_layout_vmnk, is_relaxed=True)

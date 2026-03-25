@@ -107,7 +107,7 @@ Constraints (same as dense_gemm_persistent.py plus):
 * Cluster shape M/N: power of 2, total <= 4
 * Contiguous dim must be 16-byte aligned
 
-Debug environment knobs:
+Debug environment options:
 * `GROUPED_GEMM_FORCE_CUTE_COPY=1`
     Disable the non-mcast NVVM TMA load path and always use `cute.copy`.
 """

@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -1341,7 +1341,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         location=None,
     ):
         """Generate MLIR module and compile iself.T_provider."""
-        with ir.Context(), self.get_ir_location(location):
+        with ir.Context() as ctx, self.get_ir_location(location):
+            # If threading is enabled, each MLIR context will keep alive a thread pool.
+            # When we cache MLIR compilation results, we also cache its context thus accumulating #(compilations) * thread_pool_size threads.
+            # Disable threading to avoid such excessive number of threads.
+            ctx.enable_multithreading(False)
             try:
                 # Convert input arguments to MLIR arguments
                 exe_args, func_types, adapted_args = self.generate_mlir_function_types(
@@ -1491,6 +1495,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         # Check if all non-default arguments are provided
         for param in sig.parameters.values():
+            if param.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
             if (
                 param.default is inspect.Parameter.empty
                 and param.name not in bound_args.arguments
@@ -1500,6 +1509,95 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 )
 
         return sig
+
+    def _get_full_arg_spec(self, funcBody):
+        """
+        Returns the full argument specification for a given function, handling PEP-563
+        (postponed evaluation of type annotations) if necessary.
+
+        If the function's annotations are provided as strings (which occurs when PEP-563
+        is enabled), this method evaluates those annotations so they are returned as objects
+        instead of strings.
+
+        Parameters
+        ----------
+        funcBody : function
+            The function whose argument specification is to be retrieved.
+
+        Returns
+        -------
+        inspect.FullArgSpec
+            The complete argument specification of the function, with its annotations
+            properly evaluated and resolved where relevant.
+        """
+        args_spec = inspect.getfullargspec(funcBody)
+        # Set `eval_str = True` to make it work when PEP-563 is enabled
+        if args_spec.annotations and all(
+            type(arg_type) is str for arg_type in args_spec.annotations.values()
+        ):
+            eval_annotations = inspect.get_annotations(funcBody, eval_str=True)
+            args_spec = inspect.FullArgSpec(
+                args_spec.args,
+                args_spec.varargs,
+                args_spec.varkw,
+                args_spec.defaults,
+                args_spec.kwonlyargs,
+                args_spec.kwonlydefaults,
+                eval_annotations,
+            )
+        return args_spec
+
+    @staticmethod
+    def _expand_varargs_varkw(
+        canonicalized_args: tuple,
+        canonicalized_kwargs: dict,
+        args_spec: inspect.FullArgSpec,
+    ) -> inspect.FullArgSpec:
+        """Expand *args and **kwargs into concrete named parameters in the FullArgSpec.
+
+        When a JIT function uses *args or **kwargs, the concrete call-site values
+        are known. This method synthesizes named parameters for them so the rest
+        of the pipeline (which expects fixed-arity signatures) works unchanged.
+
+        For *args: extra positional arguments beyond ``args_spec.args`` get
+        synthetic names ``_vararg_0``, ``_vararg_1``, etc.
+
+        For **kwargs: extra keyword arguments beyond ``args_spec.kwonlyargs``
+        are appended as keyword-only parameters.
+        """
+        if not args_spec.varargs and not args_spec.varkw:
+            return args_spec
+
+        expanded_args = list(args_spec.args)
+        expanded_annotations = dict(args_spec.annotations)
+        expanded_defaults = list(args_spec.defaults) if args_spec.defaults else []
+
+        if args_spec.varargs:
+            n_regular = len(args_spec.args)
+            n_extra = len(canonicalized_args) - n_regular
+            for i in range(n_extra):
+                expanded_args.append(f"varargs_{i}")
+
+        expanded_kwonlyargs = list(args_spec.kwonlyargs)
+        expanded_kwonlydefaults = (
+            dict(args_spec.kwonlydefaults) if args_spec.kwonlydefaults else {}
+        )
+
+        if args_spec.varkw:
+            existing_kwonly = set(args_spec.kwonlyargs)
+            for key in canonicalized_kwargs:
+                if key not in existing_kwonly:
+                    expanded_kwonlyargs.append(key)
+
+        return inspect.FullArgSpec(
+            args=expanded_args,
+            varargs=None,
+            varkw=None,
+            defaults=tuple(expanded_defaults) if expanded_defaults else None,
+            kwonlyargs=expanded_kwonlyargs,
+            kwonlydefaults=expanded_kwonlydefaults if expanded_kwonlydefaults else None,
+            annotations=expanded_annotations,
+        )
 
     def _func(self, funcBody, *args, **kwargs):
         """Decorator for MLIR functions.
@@ -1552,6 +1650,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Canonicalize the input arguments
         canonicalized_args, canonicalized_kwargs = self._canonicalize_args(
             sig, *args, **kwargs
+        )
+        # Expand *args/**kwargs into concrete named parameters
+        args_spec = self._expand_varargs_varkw(
+            canonicalized_args, canonicalized_kwargs, args_spec
         )
         # Simple name mangling
         function_name = self.mangle_name(function_name, canonicalized_args, args_spec)

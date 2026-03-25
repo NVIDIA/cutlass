@@ -30,7 +30,7 @@
 import argparse
 import operator
 from functools import partial
-from typing import List, Type
+from typing import List
 
 import cuda.bindings.driver as cuda
 import cutlass

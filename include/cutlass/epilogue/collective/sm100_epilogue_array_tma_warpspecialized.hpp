@@ -181,11 +181,6 @@ private:
   // TMA store delay only benefits with loop unrolling
   constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
 
-  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
-  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
-  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
-  constexpr static uint32_t NumTmaDescriptorsPerSm = NumMaxSchedulerPipelineStageCount + std::max(StagesC, (ReuseSmemC ? StagesC : StagesD)) + 2;
-
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
     alignas(SmemAlignmentD) ArrayEngine<SmemElementD, cosize_v<SmemLayoutD>> smem_D;
@@ -240,6 +235,11 @@ public:
   constexpr static int NumAccumulatorMtxs = 1;
 
   static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideD, StrideD>;
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = IsGroupedGemmKernel ? (NumMaxSchedulerPipelineStageCount + std::max(StagesC, (ReuseSmemC ? StagesC : StagesD)) + 2) : 1;
 
   // Host side epilogue arguments
   struct Arguments {

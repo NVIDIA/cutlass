@@ -603,8 +603,6 @@ class MixedInputFusedMultiHeadAttentionDecode:
         p_pipeline_ptr = smem.allocate_array(Int64, self.sp_stages * 2)
         o_pipeline_ptr = smem.allocate_array(Int64, self.o_stages * 2)
 
-        assert smem._allocated_bytes <= self.mbarrier_reserved_bytes
-
         # Declare named barriers
         softmax_nbar_id = 1
         mma_kq_nbar_id = 2

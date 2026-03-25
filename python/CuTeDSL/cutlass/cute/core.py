@@ -3,15 +3,17 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
 from functools import partial, reduce
+import inspect
 from inspect import isclass
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, overload
+from types import MethodType
 
 from cutlass import const_expr
 from typing_extensions import deprecated
@@ -31,6 +33,8 @@ from cutlass._mlir.dialects.cute import (
 from cutlass.cutlass_dsl import (
     T,
     const,
+    and_,
+    as_numeric,
     cutlass_arith,
     dsl_user_op,
     extract_mlir_values,
@@ -704,7 +708,7 @@ class ScaledBasis:
 
     def __eq__(self, other):
         if isinstance(other, ScaledBasis):
-            return self.value == other.value and self.mode == other.mode
+            return and_(self.mode == other.mode, self.value == other.value)
         else:
             return False
 
@@ -1212,6 +1216,10 @@ class _ComposedLayout(ComposedLayout):
     @property
     @dsl_user_op
     def shape(self, *, loc=None, ip=None) -> Shape:
+        return self.shape_method(loc=loc, ip=ip)
+
+    @dsl_user_op
+    def shape_method(self, *, loc=None, ip=None) -> Shape:
         return _unpack_x_tuple(
             _cute_ir.get_shape(self.value, loc=loc, ip=ip), loc=loc, ip=ip
         )
@@ -1352,6 +1360,60 @@ class _Pointer(Pointer):
     def type(self) -> ir.Type:
         return self.value.type
 
+    @dsl_user_op
+    def load(self, *, loc=None, ip=None) -> Numeric:
+        # LLVM doesn't support load/store narrow precision per element
+        tmp_ty = self.dtype.mlir_type
+        if self.dtype is Boolean or self.dtype.width == 8:
+            tmp_ty = T.i8()
+        elif self.dtype.width < 8:
+            raise ValueError(
+                f"Loading narrow precision type {self.dtype} is not supported"
+            )
+
+        llvm_ptr = self.to_llvm_ptr(loc=loc, ip=ip)
+        tmp_val = llvm.load(tmp_ty, llvm_ptr, loc=loc, ip=ip)
+        if self.dtype.width == 8:
+            tmp_val = arith.bitcast(self.dtype.mlir_type, tmp_val, loc=loc, ip=ip)
+
+        return self.dtype(tmp_val, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def store(
+        self,
+        value: Union[Numeric, cutlass_arith.ArithValue, int, float, bool],
+        *,
+        loc=None,
+        ip=None,
+    ):
+        if isinstance(value, (int, float, bool, cutlass_arith.ArithValue)):
+            value = self.dtype(value, loc=loc, ip=ip)
+        elif isinstance(value, Numeric):
+            if value.dtype is not self.dtype:
+                value = value.to(self.dtype, loc=loc, ip=ip)
+        else:
+            raise ValueError(f"Unsupported value type: {type(value)}")
+        # LLVM doesn't support load/store narrow precision per element
+        tmp_val = value.ir_value(loc=loc, ip=ip)
+        if self.dtype.width == 8:
+            tmp_val = arith.bitcast(T.i8(), tmp_val, loc=loc, ip=ip)
+        elif self.dtype is not Boolean and self.dtype.width < 8:
+            raise ValueError(
+                f"Storing narrow precision type {self.dtype} is not supported"
+            )
+
+        llvm_ptr = self.to_llvm_ptr(loc=loc, ip=ip)
+        return llvm.store(tmp_val, llvm_ptr, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __getitem__(self, idx: Int, *, loc=None, ip=None) -> Pointer:
+        return (self + idx).load()
+
+    @dsl_user_op
+    def __setitem__(self, idx: Int, value: Numeric, *, loc=None, ip=None) -> Pointer:
+        (self + idx).store(value, loc=loc, ip=ip)
+        return value
+
     # Only use if you absolutely need to get the LLVM pointer Value
     @property
     @dsl_user_op
@@ -1360,6 +1422,25 @@ class _Pointer(Pointer):
         """
         Get the LLVM pointer representation of this pointer.
 
+        :param loc: Source location for MLIR, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :return: The LLVM pointer representation
+        :rtype: ir.Value
+        """
+        return self.to_llvm_ptr(loc=loc, ip=ip)
+
+    @dsl_user_op
+    @lru_cache_ir()
+    def to_llvm_ptr(self, *, loc=None, ip=None) -> ir.Value:
+        """
+        Get the LLVM pointer representation of this pointer. (Used by internal API to propagate loc and ip)
+
+        :param loc: Source location for MLIR, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR, defaults to None
+        :type ip: Optional[InsertionPoint]
         :return: The LLVM pointer representation
         :rtype: ir.Value
         """
@@ -1587,7 +1668,7 @@ def pretty_str(arg) -> str:
 
 
 @dsl_user_op
-def printf(*args, loc=None, ip=None) -> None:
+def printf(*args, loc=None, ip=None, end="\n") -> None:
     """
     Print one or more values with optional formatting.
 
@@ -1607,6 +1688,8 @@ def printf(*args, loc=None, ip=None) -> None:
     :type loc: Optional[Location]
     :param ip: Insertion point for code generation, defaults to None
     :type ip: Optional[InsertionPoint]
+    :param end: Suffix for the printed value, defaults to newline
+    :type end: Optional[str]
     :raises ValueError: If no arguments are provided
     :raises TypeError: If an unsupported argument type is passed
 
@@ -1636,10 +1719,10 @@ def printf(*args, loc=None, ip=None) -> None:
         raise ValueError("expects at least one argument to print")
 
     if isinstance(args[0], str):
-        fmt = args[0] + "\n"
+        fmt = args[0] + end
         args = args[1:]
     else:
-        fmt = "{}" + ", {}" * (len(args) - 1) + "\n"
+        fmt = "{}" + ", {}" * (len(args) - 1) + end
 
     def process_arg(arg):
         arg0 = arg.value if isinstance(arg, Numeric) else arg
@@ -3384,7 +3467,7 @@ def recast_ptr(
         if cvt_type is None:
             if not isclass(dtype) or not issubclass(dtype, Numeric):
                 raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
-            cvt_type = dtype.mlir_type
+            cvt_type = T.i8() if dtype is Boolean else dtype.mlir_type
 
     dtype = cvt_type
     value_type = ptr.type.value_type if dtype is None else dtype
@@ -4287,8 +4370,8 @@ class struct:
         storage = allocator.allocate(StorageB)
 
         storage.a[0] ...
-        storage.x ...
-        storage.compA.real ...
+        storage.x.ptr ...
+        storage.compA.real.ptr ...
 
     :param cls: The struct class with annotations.
     :return: The decorated struct class.
@@ -4306,8 +4389,8 @@ class struct:
         :ivar _size: The size of the MemRange.
         """
 
-        _dtype = None
-        _size = None
+        _dtype: Optional[Numeric] = None
+        _size: Optional[int] = None
 
         def __new__(cls, name, bases, dct):
             new_cls = super().__new__(cls, name, bases, dct)
@@ -4337,7 +4420,7 @@ class struct:
 
         @property
         def elem_width(cls):
-            return cls._dtype.width
+            return cls._dtype.width if cls._dtype is not Boolean else 8
 
         @property
         def size_in_bytes(cls):
@@ -4368,12 +4451,15 @@ class struct:
                          case the range can only be used for its address (e.g. as a partition marker).
             :param base: The base address of the memory range.
             """
-            self._dtype = dtype
-            self._size = size
-            self._base = base
+            self._dtype: Optional[Numeric] = dtype
+            self._size: Optional[int] = size
+            self._base: Optional[Pointer] = base
+
+        def __repr__(self):
+            return f"{object.__repr__(self)} <struct.MemRange[{self._dtype}, {self._size}]> <data_ptr = {self.data_ptr()}>"
 
         @dsl_user_op
-        def data_ptr(self, *, loc=None, ip=None):
+        def data_ptr(self, *, loc=None, ip=None) -> Pointer:
             """
             Returns start pointer to the data in this memory range.
 
@@ -4384,7 +4470,9 @@ class struct:
             return recast_ptr(self._base, dtype=self._dtype, loc=loc, ip=ip)
 
         @dsl_user_op
-        def get_tensor(self, layout, swizzle=None, dtype=None, *, loc=None, ip=None):
+        def get_tensor(
+            self, layout, swizzle=None, dtype=None, *, loc=None, ip=None
+        ) -> Tensor:
             """
             Creates a tensor from the memory range.
 
@@ -4404,9 +4492,10 @@ class struct:
             elem_type = self._dtype if dtype is None else dtype
             ptr = recast_ptr(self._base, swizzle, dtype=elem_type, loc=loc, ip=ip)
             res = make_tensor(ptr, layout, loc=loc, ip=ip)
-            return res
+            return type(res)(res, dtype=elem_type, loc=loc, ip=ip)
 
-        def __getitem__(self, index: int) -> Any:
+        @dsl_user_op
+        def __getitem__(self, index: int, *, loc=None, ip=None) -> Any:
             """
             Returns the element at the specified index in the memory range.
 
@@ -4415,7 +4504,21 @@ class struct:
             :raises AssertionError: If the index is out of range.
             """
             assert (index >= 0) and (index < self._size)
-            return self.data_ptr() + index
+            ptr = self.data_ptr() + index
+            return ptr.load(loc=loc, ip=ip)
+
+        @dsl_user_op
+        def __setitem__(self, index: int, val, *, loc=None, ip=None):
+            """
+            Set element value at the specified index in the memory range.
+
+            :param index: The index of the element to retrieve.
+            :val: The element value at the specified index.
+            :raises AssertionError: If the index is out of range.
+            """
+            assert (index >= 0) and (index < self._size)
+            ptr = self.data_ptr() + index
+            ptr.store(as_numeric(val).to(self._dtype), loc=loc, ip=ip)
 
     # inner class for aligning a member type
     class _AlignMeta(type):
@@ -4430,8 +4533,8 @@ class struct:
         :ivar _align: The alignment of the data type.
         """
 
-        _dtype = None
-        _align = None
+        _dtype: Optional[Any] = None
+        _align: Optional[int] = None
 
         def __new__(cls, name, bases, dct):
             return super().__new__(cls, name, bases, dct)
@@ -4473,6 +4576,88 @@ class struct:
 
         pass
 
+    class _ScalarData(_Pointer):
+        """
+        Represents a scalar value at a given pointer location in memory.
+
+        This class provides utility methods to get a scalar pointer.
+        It wraps a pointer to a scalar element and enables element-wise memory operations.
+
+        :ivar _ptr: The underlying pointer to the scalar value.
+        """
+
+        def __init__(self, ptr):
+            self._ptr: Optional[_Pointer] = ptr
+
+        def __repr__(self):
+            return f"{object.__repr__(self)} <{self.dtype}> <ptr = {self._ptr}>"
+
+        def __get_mlir_types__(self) -> List[ir.Type]:
+            return [self.value.type]
+
+        def __extract_mlir_values__(self) -> List[ir.Value]:
+            return [self.value]
+
+        def __new_from_mlir_values__(self, values) -> Pointer:
+            ptr = _Pointer(
+                values[0] if isinstance(values[0], ir.Value) else values[0].value
+            )
+            return self.__class__(ptr)
+
+        @dsl_user_op
+        def to_llvm_ptr(self, *, loc=None, ip=None) -> ir.Value:
+            llvm_ptr_ty = llvm.PointerType.get(
+                self._ptr.memspace.value
+                if self._ptr.memspace != AddressSpace.rmem
+                else 0
+            )
+            return builtin.unrealized_conversion_cast(
+                [llvm_ptr_ty], [self.value], loc=loc, ip=ip
+            )
+
+        @property
+        def ptr(self) -> Pointer:
+            """
+            Get the underlying pointer.
+
+            :return: The pointer to the scalar value.
+            :rtype: Pointer
+            """
+            return self._ptr
+
+        @property
+        def dtype(self) -> Numeric:
+            """
+            Get the data type of the scalar value.
+
+            :return: The numeric data type of the underlying pointer.
+            :rtype: Numeric
+            """
+            return self._ptr.dtype
+
+        @property
+        @deprecated("Using `struct.scalar` as pointer is deprecated.")
+        def value(self):
+            """
+            Get the raw MLIR value of the underlying pointer.
+
+            .. deprecated::
+                Using ``struct.scalar`` as pointer is deprecated.
+                Use explicit ``struct.scalar.ptr`` for pointer instead.
+
+            :return: The MLIR value of the underlying pointer.
+            :rtype: ir.Value
+            """
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("always")
+                warnings.warn(
+                    "Use explicit `struct.scalar.ptr` for pointer instead.",
+                    DeprecationWarning,
+                )
+            return self._ptr.value
+
     # util func for base dsl scalar types
     @staticmethod
     def _is_scalar_type(dtype):
@@ -4493,55 +4678,72 @@ class struct:
         :raises TypeError: If the struct is empty.
         """
         self._cls = cls
-        self.__name__ = f"struct::{cls.__name__}"
+        self.__name__ = f"cute.struct::{cls.__name__}"
         # Get the class annotations
         self._annotations = getattr(cls, "__annotations__", {})
         # Create a dictionary to store the offsets
         self._offsets: Dict[str, int] = {}
+
+        # Override `setattr` function for struct to assign scalar properly
+        def struct_setattr(self, name, value):
+            attr = getattr(self, name, None)
+            if isinstance(attr, struct._ScalarData):
+                value = as_numeric(value).to(attr.dtype)
+                attr.ptr.store(value)
+            else:
+                raise ValueError(f"cannot assign value to `{name}` in {self.__name__}")
+
+        type.__setattr__(self._cls, "__setattr__", struct_setattr)
+
+        # Override `__repr__` function for struct info
+        def struct_repr(self):
+            return f"{object.__repr__(self)} <{self.__name__}> <base = {self.base}>"
+
+        self._cls.__repr__ = struct_repr
 
         # Calculate the offsets and alignment
         offset = 0
         alignment = 1
         if len(self._annotations) == 0:
             raise TypeError("Empty struct is not supported!")
-        for name, object in self._annotations.items():
-            # get alignment of object
+        for name, member in self._annotations.items():
+            # get alignment of member
             sub_align = 1
-            if isinstance(object, struct._AlignMeta):
-                sub_align = object.align
-                object = object.dtype
+            if isinstance(member, struct._AlignMeta):
+                sub_align = member.align
+                member = member.dtype
 
             # switch addition order to support dynamic size
             def add_offset(val):
                 return val + offset if isinstance(val, ir.Value) else offset + val
 
             # size of scalar
-            if struct._is_scalar_type(object):
-                dtype_size = max(1, object.width // 8)
+            if struct._is_scalar_type(member):
+                dtype_size = max(1, member.width // 8)
                 sub_align = max(dtype_size, sub_align)
                 offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
                 offset = add_offset(dtype_size)
             # size of array is size_in_bytes, alignment is elem_size
-            elif isinstance(object, struct._MemRangeMeta):
+            elif isinstance(member, struct._MemRangeMeta):
                 # Allow empty array as a free marker-only struct member.
                 # Use max(sub_align, ) because we might have in the future some
-                # object.elem_width less than 8, such as fp4, bit and others,
+                # member.elem_width less than 8, such as fp4, bit and others,
                 # and align_offset() does not support an alignment of 0.
-                sub_align = max(object.elem_width // 8, sub_align)
+                sub_align = max(member.elem_width // 8, sub_align)
                 offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
-                offset = add_offset(object.size_in_bytes)
+                offset = add_offset(member.size_in_bytes)
             # size of struct
-            elif isinstance(object, struct):
-                sub_align = max(object.__alignof__(), sub_align)
+            elif isinstance(member, struct):
+                sub_align = max(member.__alignof__(), sub_align)
                 offset = self.align_offset(offset, sub_align)
                 self._offsets[name] = offset
-                offset = add_offset(object.__sizeof__())
+                offset = add_offset(member.__sizeof__())
             else:
                 raise TypeError(
                     f"Struct element only support struct/array/base_dsl scalar, "
-                    f"but got {object}"
+                    f"but got {member}"
                 )
             # Total alignment determined by the strictest requirement
             alignment = max(alignment, sub_align)
@@ -4564,20 +4766,22 @@ class struct:
         # make an new object of user-defined decorated struct
         # otherwise it will override same self._cls when new instance created
         cls = self._cls()
-        setattr(cls, "_base", base)
+        object.__setattr__(cls, "base", base)
+        object.__setattr__(cls, "__name__", self.__name__)
         for name, off in self._offsets.items():
             obj = self._annotations[name]
             if isinstance(obj, struct._AlignMeta):
                 obj = obj.dtype
             if struct._is_scalar_type(obj):
-                new_obj = recast_ptr(base + off, dtype=obj, loc=loc, ip=ip)
-                setattr(cls, name, new_obj)
+                ptr = recast_ptr(base + off, dtype=obj, loc=loc, ip=ip)
+                new_obj = struct._ScalarData(ptr)
+                object.__setattr__(cls, name, new_obj)
             elif isinstance(obj, struct._MemRangeMeta):
                 new_obj = struct._MemRangeData(obj._dtype, obj._size, base + off)
-                setattr(cls, name, new_obj)
+                object.__setattr__(cls, name, new_obj)
             elif isinstance(obj, struct):
                 new_obj = obj(base + off)
-                setattr(cls, name, new_obj)
+                object.__setattr__(cls, name, new_obj)
             else:
                 raise TypeError(
                     f"Struct element only support struct/array/base_dsl scalar, "
@@ -4612,6 +4816,196 @@ class struct:
             "align should be a strictly positive power of 2."
         )
         return (offset + (align - 1)) & ~(align - 1)
+
+
+##############################################################################
+# User defined struct
+##############################################################################
+
+
+class union(struct):
+    """
+    Decorator to abstract C union in Python DSL.
+
+    Similar to cute.struct, but lays out objects as a union:
+    - All objects start at offset 0
+    - The alignment is the maximum alignment of all objects
+    - The size is the maximum size of all objects
+
+    **Usage:**Expand commentComment on line R4131
+
+    .. code-block:: python
+
+        # Define a union with scalar int/float elements:
+        @cute.union
+        class value_union:
+            as_int : cutlass.Int32
+            as_float : cutlass.Float32
+
+
+        @cute.union
+        class data_union:
+            small : cutlass.Int16
+            medium : cutlass.Int32
+            large : cutlass.Int64
+
+
+        # Supports alignment for its elements:
+        @cute.union
+        class aligned_union:
+            a: cute.struct.Align[cutlass.Float32, 16]
+            b: cute.struct.Align[cutlass.Int32, 8]
+
+
+        # Statically get size and alignment:
+        size = data_union.__sizeof__()
+        align = data_union.__alignof__()
+
+        # Allocate and reference elements:
+        allocator = cutlass.utils.SmemAllocator()
+        value = allocator.allocate(data_union)
+
+        # Access union members (all at the same offset):
+        value.small.ptr ...
+        value.medium.ptr ...
+        value.large.ptr ...
+
+    :param cls: The union class with annotations.
+    :return: The decorated union class.
+    """
+
+    def __init__(self, cls):
+        """
+        Initializes a new cute.union decorator instance.
+
+        :param cls: The class representing the union data type.
+        :raises TypeError: If the union is empty.
+        """
+        object.__setattr__(self, "_cls", cls)
+        object.__setattr__(self, "__name__", f"cute.union::{cls.__name__}")
+        # Get the class annotations
+        object.__setattr__(self, "_annotations", getattr(cls, "__annotations__", {}))
+        # Create a dictionary to store the offsets (all zeros for union)
+        object.__setattr__(self, "_offsets", {})
+
+        # Override `setattr` function for struct to assign scalar properly
+        def union_setattr(self, name, value):
+            attr = getattr(self, name, None)
+            if isinstance(attr, struct._ScalarData):
+                value = as_numeric(value).to(attr.dtype)
+                attr.ptr.store(value)
+            else:
+                raise ValueError(f"cannot assign value to `{name}` in {self.__name__}")
+
+        type.__setattr__(self._cls, "__setattr__", union_setattr)
+
+        # Override `__repr__` function for struct info
+        def union_repr(self):
+            return f"{object.__repr__(self)} <{self.__name__}> <base = {self.base}>"
+
+        type.__setattr__(self._cls, "__repr__", union_repr)
+
+        # Calculate the maximum size and alignment
+        max_size = 0
+        max_alignment = 1
+        if len(self._annotations) == 0:
+            raise TypeError("Empty union is not supported!")
+        for name, item in self._annotations.items():
+            # All offsets are 0 for a union
+            self._offsets[name] = 0
+
+            # Get alignment of object
+            sub_align = 1
+            if isinstance(item, struct._AlignMeta):
+                sub_align = item.align
+                item = item.dtype
+
+            # Calculate size and alignment based on object type
+            if struct._is_scalar_type(item):
+                dtype_size = max(1, item.width // 8)
+                sub_align = max(dtype_size, sub_align)
+                max_size = max(max_size, dtype_size)
+            elif isinstance(item, struct._MemRangeMeta):
+                sub_align = max(item.elem_width // 8, sub_align)
+                max_size = max(max_size, item.size_in_bytes)
+            elif isinstance(item, struct):
+                sub_align = max(item.__alignof__(), sub_align)
+                max_size = max(max_size, item.__sizeof__())
+            else:
+                raise TypeError(
+                    f"Union element only support struct/array/DSL scalar, "
+                    f"but got `{item.__qualname__}`"
+                )
+            # Union alignment is the maximum alignment of all members
+            max_alignment = max(max_alignment, sub_align)
+
+        # Union size is the maximum size, aligned to the maximum alignment
+        object.__setattr__(self, "_align_of", max_alignment)
+        object.__setattr__(
+            self, "_size_of", struct.align_offset(max_size, max_alignment)
+        )
+
+    @dsl_user_op
+    def __call__(self, base: Any, *, loc=None, ip=None) -> None:
+        """
+        Creates a new instance of the decorated union.
+
+        :param base: The base address of the union.
+        :return: An instance of the decorated union.
+        :raises TypeError: If the base pointer is not byte-sized.
+        """
+        if base.type.value_type.width != 8:
+            raise TypeError("union base ptr value type must be byte sized.")
+        # Make a new object of user-defined decorated union
+        cls = self._cls()
+        object.__setattr__(cls, "base", base)
+        object.__setattr__(cls, "__name__", self.__name__)
+        for name, off in self._offsets.items():
+            obj = self._annotations[name]
+            if isinstance(obj, struct._AlignMeta):
+                obj = obj.dtype
+            if struct._is_scalar_type(obj):
+                ptr = recast_ptr(base + off, dtype=obj, loc=loc, ip=ip)
+                new_obj = struct._ScalarData(ptr)
+                object.__setattr__(cls, name, new_obj)
+            elif isinstance(obj, struct._MemRangeMeta):
+                new_obj = struct._MemRangeData(obj._dtype, obj._size, base + off)
+                object.__setattr__(cls, name, new_obj)
+            elif isinstance(obj, struct):
+                new_obj = obj(base + off)
+                object.__setattr__(cls, name, new_obj)
+            else:
+                raise TypeError(
+                    f"Union element only support struct/array/DSL scalar, "
+                    f"but got `{obj.__qualname__}`"
+                )
+        return cls
+
+    def __setattr__(self, name, value):
+        raise TypeError("Cannot add a new field after initialization")
+    def size_in_bytes(self) -> int:
+        """
+        Returns the size of the union in bytes.
+
+        :return: The size of the union.
+        """
+        return self._size_of
+
+    def __sizeof__(self) -> int:
+        """
+        Returns the size of the union in bytes.
+
+        :return: The size of the union.
+        """
+        return self._size_of
+
+    def __alignof__(self) -> int:
+        """
+        Returns the alignment of the union in bytes.
+
+        :return: The alignment of the union.
+        """
+        return self._align_of
 
 
 # Deprecated usage but keep them to avoid breaking some examples uses `cute.core.ThrMma`
@@ -4750,6 +5144,23 @@ class FastDivmodDivisor:
 
     def __repr__(self):
         return f"FastDivmodDivisor({self._divisor.type})"
+
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+FastDivmodDivisor.__init__.__signature__ = inspect.Signature(
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter(
+            "divisor", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Integer
+        ),
+        inspect.Parameter(
+            "is_power_of_2",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=bool,
+        ),
+    ]
+)
 
 
 @dsl_user_op

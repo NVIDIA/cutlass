@@ -2,6 +2,30 @@
 
 # CUTLASS 4.x
 
+## [4.5.0](https://github.com/NVIDIA/cutlass/tree/main) (2026-03-27)
+
+### CuTe DSL
+* New features
+  - Auto-deduced smem size for launching kernels
+  - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
+  - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
+  - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
+  - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
+
+* Bug fixing and improvements
+  - Improved source code correlation for profiling/debugging
+
+### CUTLASS C++
+* Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
+  - Enables launching GEMM on stream with partial SM allocation.
+* Fix some kernel issues:
+  - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
+  - Fix CUTLASS clang build issues
+* Fix some profiler issues:
+  - Add missing reference kernels for blockwise GEMM profiler
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.2.
+
 ## [4.4.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.2) (2026-03-13)
 
 ### CuTe DSL
@@ -30,7 +54,7 @@
     + Set up with cutlass/python/CuTeDSL/setup.sh --cu13
     + Refer to https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html for more details
   - GB300 is now supported in CuTe DSL with CTK 13.1
-    + Refer to [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py) for example kernel
+    + Refer to [SM103 batched FP4 Ultra blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py) for example kernel
   - cute.experimental: introduce a higher-level, composable layer on top of existing CuTe DSL APIs (not a separate abstraction), which can be mixed with existing Cute DSL building blocks.
     + Fragment-free programming model: copy/dot APIs take memrefs directly instead of descriptors/fragments.
     + Automatic TMA descriptor generation and update insertion.
@@ -53,7 +77,7 @@
   - It is possible now to have customized epilogue fusion for persistent dense GEMM through a Python Epilogue Fusion Configuration (EFC) function, somewhat similar to CUTLASS C++ EVT. It also provides a PyTorch evaluator to compare the results.
 
 * More examples of authorizing peak-performance kernels
-  - [SM103 batched 3xFP4 blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
+  - [SM103 batched FP4 Ultra blockscaled GEMM kernel](https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/sm103_dense_blockscaled_gemm_persistent.py)
   - Mixed input FMHA decode example with support for int4 KV (int8 KV supported in 4.3)
   - New acc_scale grouped mixed input gemm kernel variant is introduced to deliver better performance for decoding cases.
   - All mixed_input_gemm examples are moved into a separate folder `mixed_input_gemm`. Common utility functions are also extracted into mixed_input_host_utils.py under the same folder.

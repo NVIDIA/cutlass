@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -195,7 +195,7 @@ typedef struct {{
                 packed_args.append("&" + arg_name)
             else:
                 raise DSLRuntimeError(
-                    f"Unsupported argument for c function argument generation: {arg} with type {arg_type}"
+                    f"Unsupported argument for c function argument generation: {arg_name} = {arg} with type annotation {arg_type}"
                 )
 
         return arguments, packed_args, declarations

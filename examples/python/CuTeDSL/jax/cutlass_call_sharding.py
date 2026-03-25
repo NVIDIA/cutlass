@@ -27,14 +27,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from functools import partial
-import argparse
 
 import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P, AxisType
 from jax.experimental.custom_partitioning import custom_partitioning
 
-import cutlass
 import cutlass.cute as cute
 import cutlass.jax as cjax
 from cutlass.jax.testing import create_tensor

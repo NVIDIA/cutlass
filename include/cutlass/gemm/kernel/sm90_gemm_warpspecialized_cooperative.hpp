@@ -193,8 +193,10 @@ public:
       CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid cluster count to " << max_active_clusters);
     }
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count, max_active_clusters};
-
+    KernelHardwareInfo hw_info = args.hw_info;
+    hw_info.sm_count = sm_count;
+    hw_info.max_active_clusters = max_active_clusters;
+  
     TileSchedulerParams scheduler = TileScheduler::to_underlying_arguments(
       problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, workspace);
 

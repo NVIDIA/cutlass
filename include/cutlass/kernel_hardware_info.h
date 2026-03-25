@@ -81,21 +81,26 @@ struct KernelHardwareInfo {
   }
 
   // Query maximum number of active clusters that could co-exist on the target device
-  // based on kernel properties such as cluster dims and threadblock dims
+  // based on kernel properties such as cluster dims and threadblock dims.
+  // When a green context stream is provided, the occupancy query is scoped to the
+  // green context's SM partition, returning the max active clusters for that partition.
   static inline int
   query_device_max_active_clusters(
       dim3 cluster_dims,
       uint32_t threads_per_block,
-      void const* kernel_ptr) {
+      void const* kernel_ptr,
+      cudaStream_t stream = nullptr) {
     int max_active_clusters = 0;
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
     ClusterLauncher::LaunchConfig cluster_launch_config = ClusterLauncher::make_cluster_launch_config(
-                                                            cluster_dims /* minimum grid dim */, cluster_dims, {threads_per_block, 1, 1});
+                                                            cluster_dims /* minimum grid dim */, cluster_dims, {threads_per_block, 1, 1},
+                                                            0 /* smem_size */, stream /* green ctx stream or nullptr */);
     // Given the kernel function and launch configuration, return the maximum number of clusters that could co-exist on the target device.
+    // When stream is a green context stream, this returns the max active clusters for that partition.
     cudaError_t result = cudaOccupancyMaxActiveClusters(&max_active_clusters, kernel_ptr, &cluster_launch_config.launch_config);
     if (result != cudaSuccess) {
       CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
+        "  cudaOccupancyMaxActiveClusters() returned error "
         << cudaGetErrorString(result));
       return 0;
     }
@@ -108,26 +113,31 @@ struct KernelHardwareInfo {
 #endif
   }
 
-  // Simpler version of the above query function that fetches relevant information from the Kernel 
+  // Simpler version of the above query function that fetches relevant information from the Kernel.
+  // When a green context stream is provided, the occupancy query is scoped to that partition.
   template <typename Kernel>
   static inline int
-  query_device_max_active_clusters() {
+  query_device_max_active_clusters(cudaStream_t stream = nullptr) {
     dim3 cluster_dims(cute::size<0>(typename Kernel::ClusterShape{}),
                       cute::size<1>(typename Kernel::ClusterShape{}),
                       cute::size<2>(typename Kernel::ClusterShape{}));
     uint32_t threads_per_block = Kernel::MaxThreadsPerBlock;
     void const* kernel_ptr = (void*)(device_kernel<Kernel>);
-    return query_device_max_active_clusters(cluster_dims, threads_per_block, kernel_ptr);
+    return query_device_max_active_clusters(cluster_dims, threads_per_block, kernel_ptr, stream);
   }
 
+  // Create a KernelHardwareInfo by querying device properties.
+  // When a green context stream is provided, max_active_clusters is queried
+  // against that stream's green context partition instead of the full device.
   template <typename Kernel>
   static inline KernelHardwareInfo
-  make_kernel_hardware_info(int const device_id = 0, int sm_count = 0, int max_active_clusters = 0) {
+  make_kernel_hardware_info(int const device_id = 0, int sm_count = 0, int max_active_clusters = 0,
+                            cudaStream_t stream = nullptr) {
     if (sm_count == 0) {
       sm_count = query_device_multiprocessor_count(device_id);
     }
     if (max_active_clusters == 0) {
-      max_active_clusters = query_device_max_active_clusters<Kernel>();
+      max_active_clusters = query_device_max_active_clusters<Kernel>(stream);
     }
     return {device_id, sm_count, max_active_clusters};
   }

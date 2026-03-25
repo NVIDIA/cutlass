@@ -8,13 +8,10 @@
 # without an express license agreement from NVIDIA CORPORATION or
 # its affiliates is strictly prohibited.
 
-
 import argparse
-from typing import Tuple, Type, Callable
-from functools import partial, lru_cache
+from typing import Tuple
 
 import cutlass
-from cutlass import Numeric
 import cutlass.cute as cute
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
@@ -69,7 +66,6 @@ def kernel(
     a_smem_layout: cute.ComposedLayout,
     b_smem_layout: cute.ComposedLayout,
 ):
-
     # Current thread/warp/block coordinates
     tidx, _, _ = cute.arch.thread_idx()
     warp_idx = cute.arch.warp_idx()
@@ -103,7 +99,7 @@ def kernel(
         num_threads=threads_per_cta,
     )
     tmem = utils.TmemAllocator(
-        storage.tmem_holding_buf,
+        storage.tmem_holding_buf.ptr,
         barrier_for_retrieve=tmem_alloc_barrier,
     )
     num_tmem_cols = 512
@@ -143,15 +139,15 @@ def kernel(
     # (bM, bN)
     gC = cute.local_tile(mC_mnl, mma_tiler_mnk, mma_coord_mnk, proj=(1, 1, None))
     thr_mma = tiled_mma.get_slice(0)
-    # (MMA, MMA_M, MMA_K, RestK)
+    # (MMA, MMA_M, MMA_K)
     tCgA = thr_mma.partition_A(gA)
-    # (MMA, MMA_N, MMA_K, RestK)
+    # (MMA, MMA_N, MMA_K)
     tCgB = thr_mma.partition_B(gB)
     # (MMA, MMA_M, MMA_N)
     tCgC = thr_mma.partition_C(gC)
-    # (MMA, MMA_M, MMA_K, STAGE)
+    # (MMA, MMA_M, MMA_K)
     tCrA = tiled_mma.make_fragment_A(sA)
-    # (MMA, MMA_N, MMA_K, STAGE)
+    # (MMA, MMA_N, MMA_K)
     tCrB = tiled_mma.make_fragment_B(sB)
     # (MMA, MMA_M, MMA_N)
     acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
@@ -199,14 +195,14 @@ def kernel(
     tmem_thr_copy = tmem_tiled_copy.get_slice(tidx)
 
     # (TmemCpy,NumTmemCpy,NumTiles)
-    tCtC = tmem_thr_copy.partition_S(tCtAcc_epi)
+    tDtC = tmem_thr_copy.partition_S(tCtAcc_epi)
     # (TmemCpy,NumTmemCpy,NumTiles)
-    tCgC = tmem_thr_copy.partition_D(gC_epi)
+    tDgC = tmem_thr_copy.partition_D(gC_epi)
 
     # (TmemCpy,NumTmemCpy)
-    tCrAcc = cute.make_rmem_tensor(tCgC[None, None, 0].shape, acc_dtype)
+    tCrAcc = cute.make_rmem_tensor(tDgC[None, None, 0].shape, acc_dtype)
     # (TmemCpy,NumTmemCpy)
-    tCrC = cute.make_rmem_tensor(tCgC[None, None, 0].shape, io_dtype)
+    tCrC = cute.make_rmem_tensor(tDgC[None, None, 0].shape, io_dtype)
 
     #
     # 2. Main loop
@@ -233,8 +229,6 @@ def kernel(
 
             # Execute one K-block worth of MMA instructions
             ab_full = ab_consumer.wait_and_advance()
-
-            # tCtAcc += tCrA * tCrB
             num_k_blocks = cute.size(tCrA, mode=[2])
             for k_block_idx in cutlass.range_constexpr(num_k_blocks):
                 k_block_coord = (None, None, k_block_idx, ab_full.index)
@@ -265,10 +259,10 @@ def kernel(
 
     # TMEM -> RMEM -> GEMM
     # Sub-tiling for better instruction-level parallelism
-    for i in cutlass.range(cute.size(tCtC, mode=[2])):
-        cute.copy(tmem_tiled_copy, tCtC[None, None, i], tCrAcc)
+    for i in cutlass.range(cute.size(tDtC, mode=[2])):
+        cute.copy(tmem_tiled_copy, tDtC[None, None, i], tCrAcc)
         tCrC.store(tCrAcc.load().to(io_dtype))
-        cute.autovec_copy(tCrC, tCgC[None, None, i])
+        cute.autovec_copy(tCrC, tDgC[None, None, i])
     acc_full.release()
 
     # Deallocate TMEM
@@ -350,44 +344,10 @@ def host_function(a: cute.Tensor, b: cute.Tensor, c: cute.Tensor):
     )
 
 
-@lru_cache(maxsize=1)
-def prepare_run(
-    callable: Callable,
-    m: int,
-    n: int,
-    k: int,
-    a_dtype: Type[Numeric],
-    b_dtype: Type[Numeric],
-    c_dtype: Type[Numeric],
-) -> tuple[Callable, tuple]:
-    import cutlass.torch as cutlass_torch
-
-    a, b, c = cutlass_torch.prepare_tensors_for_gemm(
-        (m, n, k), a_dtype, b_dtype, c_dtype
-    )
-    a_ = (
-        from_dlpack(a, assumed_align=32)
-        .mark_layout_dynamic(leading_dim=1)
-        .mark_compact_shape_dynamic(mode=1, divisibility=k)
-    )
-    b_ = (
-        from_dlpack(b, assumed_align=32)
-        .mark_layout_dynamic(leading_dim=1)
-        .mark_compact_shape_dynamic(mode=1, divisibility=k)
-    )
-    c_ = (
-        from_dlpack(c, assumed_align=32)
-        .mark_layout_dynamic(leading_dim=1)
-        .mark_compact_shape_dynamic(mode=1, divisibility=n)
-    )
-    compiled_fn = cute.compile(callable, a_, b_, c_, options="--generate-line-info")
-    return partial(compiled_fn, a_, b_, c_), (a, b, c)
-
-
 def run_dense_gemm(
     mnk: Tuple[int, int, int],
     tolerance: float,
-) -> None:
+):
     global torch, cutlass_torch
     import torch
     import cutlass.torch as cutlass_torch
@@ -402,23 +362,48 @@ def run_dense_gemm(
     m, n, k = mnk
     torch.manual_seed(1111)
 
-    run_fn, (a, b, c) = prepare_run(
-        host_function, m, n, k, io_dtype, io_dtype, io_dtype
+    # Make K-major tensors (torch tensors are row-major)
+    def make_tensors(mn, k, dtype):
+        shape = (mn, k)
+        return (
+            torch.empty(*shape, dtype=torch.int32)
+            .random_(-2, 2)
+            .to(dtype=dtype, device="cuda")
+        )
+
+    a = make_tensors(m, k, cutlass_torch.dtype(io_dtype))
+    b = make_tensors(n, k, cutlass_torch.dtype(io_dtype))
+    c = make_tensors(m, n, cutlass_torch.dtype(io_dtype))
+    a_tensor = (
+        from_dlpack(a, assumed_align=32)
+        .mark_layout_dynamic(leading_dim=1)
+        .mark_compact_shape_dynamic(mode=1, divisibility=k)
     )
+    b_tensor = (
+        from_dlpack(b, assumed_align=32)
+        .mark_layout_dynamic(leading_dim=1)
+        .mark_compact_shape_dynamic(mode=1, divisibility=k)
+    )
+    c_tensor = (
+        from_dlpack(c, assumed_align=32)
+        .mark_layout_dynamic(leading_dim=1)
+        .mark_compact_shape_dynamic(mode=1, divisibility=n)
+    )
+
     # Entry point to the host JIT function
-    run_fn()
+    host_function(a_tensor, b_tensor, c_tensor, no_cache=True)
 
     # Compute reference result and verify
-    ref = torch.einsum("mk,nk->mn", a.to(torch.float32), b.to(torch.float32))
+    ref = (torch.einsum("mk,nk->mn", a.to(torch.float32), b.to(torch.float32))).cpu()
 
     torch.testing.assert_close(
-        c, ref.to(cutlass_torch.dtype(io_dtype)), atol=tolerance, rtol=1e-05
+        c.cpu(), ref.to(cutlass_torch.dtype(io_dtype)), atol=tolerance, rtol=1e-05
     )
 
 
 if __name__ == "__main__":
 
-    def parse_comma_separated_ints(s: str) -> list[int]:
+    def parse_comma_separated_ints(s: str):
         try:
             return [int(x.strip()) for x in s.split(",")]
         except ValueError:
@@ -443,14 +428,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tolerance", type=float, default=1e-01, help="Tolerance for validation"
     )
-
     args = parser.parse_args()
-
     if len(args.mnk) != 3:
         parser.error("--mnk must contain exactly 3 values")
     if args.mnk[0] % mma_tiler_mnk[0] != 0 or args.mnk[1] % mma_tiler_mnk[1] != 0:
         parser.error("m n must be divisible by mma_tiler_mn")
 
-    run_dense_gemm(args.mnk, args.tolerance)
+    run_dense_gemm(
+        args.mnk,
+        args.tolerance,
+    )
     print("PASS")
-

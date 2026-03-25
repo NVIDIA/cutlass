@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -19,8 +19,6 @@ from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute
 from cutlass import const_expr
-from cutlass.cute.core import AddressSpace as _CuteAddressSpace
-from cutlass.cute.core import make_ptr as _cute_make_ptr
 
 
 class TensorMapUpdateMode(Enum):
@@ -140,25 +138,11 @@ class TensorMapManager:
         warp_idx = cute.arch.make_warp_uniform(
             cute.arch.warp_idx(loc=loc, ip=ip), loc=loc, ip=ip
         )
-        if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
-            # Hoist SMEM pointer integer values into warp-uniform registers before
-            # entering predicated blocks. This avoids predicated R2UR lowering on sm_90a.
-            uniform_smem_ptrs = tuple(
-                _cute_make_ptr(
-                    p.dtype,
-                    cute.arch.make_warp_uniform(p.toint(), loc=loc, ip=ip),
-                    mem_space=_CuteAddressSpace.smem,
-                    assumed_align=p.alignment,
-                )
-                for p in tensormap_smem_ptr
-            )
-        else:
-            uniform_smem_ptrs = tensormap_smem_ptr
         # updates before touching tensormap in global memory
         if warp_idx == warp_id:
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
                 for copy_atom, tensor, smem_ptr in zip(
-                    tma_copy_atom, tensor_gmem, uniform_smem_ptrs
+                    tma_copy_atom, tensor_gmem, tensormap_smem_ptr
                 ):
                     cute.nvgpu.cpasync.update_tma_descriptor(
                         copy_atom, tensor, smem_ptr, loc=loc, ip=ip
@@ -170,7 +154,7 @@ class TensorMapManager:
             cute.arch.sync_warp(loc=loc, ip=ip)
             # updates to tensormap in global memory
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
-                for gmem_ptr, smem_ptr in zip(tensormap_gmem_ptr, uniform_smem_ptrs):
+                for gmem_ptr, smem_ptr in zip(tensormap_gmem_ptr, tensormap_smem_ptr):
                     cute.nvgpu.cpasync.cp_fence_tma_desc_release(
                         gmem_ptr, smem_ptr, loc=loc, ip=ip
                     )
