@@ -106,6 +106,7 @@ from helpers import fmha_helpers as fmha_utils
 
 from cutlass.cutlass_dsl import (
     Boolean, Int32, if_generate, while_generate, yield_out, not_, dsl_user_op,
+    target_version,
 )
 from cutlass._mlir.dialects import nvvm
 from cutlass._mlir._mlir_libs._cutlass_ir._mlir.ir import IntegerType
@@ -157,6 +158,9 @@ def _optimized_mbarrier_wait(mbar_ptr, phase, *, loc=None, ip=None):
 
 @contextmanager
 def _use_optimized_mbarrier_wait():
+    if not target_version(min_version="13.1"):
+        yield
+        return
     import cutlass.cute.arch as arch_mod
     orig_wait = arch_mod.mbarrier_wait
     arch_mod.mbarrier_wait = _optimized_mbarrier_wait
