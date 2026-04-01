@@ -874,8 +874,14 @@ fill_tma_gmem_shape_stride(Tensor<GEngine,GLayout>   const& gtensor,           /
     if constexpr (tma_i_rank == 1) {
       // Trivial contribution of this gmem mode to this tma mode
       auto ej = unwrap(get<i>(tma_gbasis_stride));
-      gmem_prob_shape[i]  = basis_get(ej, gmem_shape);
-      gmem_prob_stride[i] = basis_get(ej, gmem_stride);
+      if constexpr (cute::is_constant<0, decltype(ej)>::value) {
+        // Zero-stride basis: broadcast dimension — no unique contribution to this TMA mode
+        gmem_prob_shape[i]  = 1;
+        gmem_prob_stride[i] = 0;
+      } else {
+        gmem_prob_shape[i]  = basis_get(ej, gmem_shape);
+        gmem_prob_stride[i] = basis_get(ej, gmem_stride);
+      }
     } else {
       // Apply a recurrence to each gmem mode that contributes to this tma mode
       for_each(get<i>(tma_gbasis_stride), [&](auto ej) {
