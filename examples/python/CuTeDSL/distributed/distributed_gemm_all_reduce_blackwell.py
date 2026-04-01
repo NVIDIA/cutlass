@@ -2247,6 +2247,8 @@ def run(
         barrier_flag, barrier_flag_mc, barrier_flag_torch_gpu, barrier_flag_torch_gpu_mc = create_mc_tensor(
             barrier_flag_torch_cpu, cutlass.Int32, 0, is_dynamic_layout=True
         )
+        torch.cuda.synchronize()
+        dist.barrier()
 
         ja = testing.JitArguments(
             a_tensor, 
