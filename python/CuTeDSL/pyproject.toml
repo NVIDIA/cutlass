@@ -29,4 +29,4 @@ include-package-data = true
 version = {file = "VERSION.EDITABLE"}
 
 [tool.setuptools.package-data]
-nvidia_cutlass_dsl = ["lib/**/*"]
+cutlass = ["../lib/**/*"]
