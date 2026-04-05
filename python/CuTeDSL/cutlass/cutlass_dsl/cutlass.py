@@ -410,7 +410,7 @@ class CutlassBaseDSL(BaseDSL):
         per_file_chunks = {}
         # 16 threads max to avoid context switching overhead
         # To avoid oversubscription, we use half of cpu_count()
-        max_workers = min(16, (os.cpu_count() or 8) // 2)
+        max_workers = max(1, min(16, (os.cpu_count() or 8) // 2))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = [ex.submit(_hash_chunk, *job) for job in _iter_jobs()]
             for fut in as_completed(futures):
