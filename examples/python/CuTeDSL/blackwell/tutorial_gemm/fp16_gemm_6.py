@@ -57,7 +57,7 @@ For --mnk 256,8192,128, the speedup pdl v.s. no pdl can be up to 1.16x.
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_6.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_6.py  \
       --mnk 256,8192,128
 
 Constraints for this example:

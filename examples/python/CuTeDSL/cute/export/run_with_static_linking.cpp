@@ -18,8 +18,8 @@
  * .. code-block:: bash
  *
  *    # prerequesites: export the compiled functions to object files and compile
- * them into a shared library python examples/cute/export/export_to_c.py # run
- * the example bash ./examples/cute/export/run_with_static_linking.sh
+ * them into a shared library python examples/python/CuTeDSL/cute/export/export_to_c.py # run
+ * the example bash ./examples/python/CuTeDSL/cute/export/run_with_static_linking.sh
  */
 
 #include "add_one_example.h"

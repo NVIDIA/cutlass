@@ -37,13 +37,13 @@ To run this example:
 
 .. code-block:: bash
 
-    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_export.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/aot_export.py
     # run example to use in torch
-    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_torch.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/aot_use_in_torch.py
     # run example to use in jax
-    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_jax.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/aot_use_in_jax.py
     # run example to use in c++ bundle
-    bash cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
+    bash examples/python/CuTeDSL/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
 """
 
 from pathlib import Path

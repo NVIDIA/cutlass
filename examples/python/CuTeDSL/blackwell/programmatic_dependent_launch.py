@@ -102,15 +102,15 @@ We could run this example with and without PDL:
 
 .. code-block:: bash
 
-    python examples/blackwell/programmatic_dependent_launch.py --benchmark
-    python examples/blackwell/programmatic_dependent_launch.py --benchmark --use_pdl
+    python examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py --benchmark
+    python examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py --benchmark --use_pdl
 
 From the benchmark results, you can see some speedups for the PDL version in most cases, benefiting from
 the overlapping execution of consecutive kernels. Moreover, you can use nsys to observe the overlapping execution.
 
 .. code-block:: bash
 
-    nsys profile python examples/blackwell/programmatic_dependent_launch.py --benchmark --use_pdl
+    nsys profile python examples/python/CuTeDSL/blackwell/programmatic_dependent_launch.py --benchmark --use_pdl
 
 Note, PDL feature is supported on Hopper and later GPUs.
 

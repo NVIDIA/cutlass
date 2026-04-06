@@ -82,7 +82,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/mla_fp16.py                                \
+    python examples/python/CuTeDSL/blackwell/mla_fp16.py                                \
       --batch_size 4 --latent_dim 512 --rope_dim 64                      \
       --num_heads 128 --seq_len_q 1 --seq_len_k 1024                     \
       --in_dtype Float16 --out_dtype Float16                             \
@@ -106,7 +106,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/mla_fp16.py                            \
+    ncu python examples/python/CuTeDSL/blackwell/mla_fp16.py                            \
       --batch_size 4 --latent_dim 512 --rope_dim 64                      \
       --num_heads 128 --seq_len_q 1 --seq_len_k 1024                     \
       --in_dtype Float16 --out_dtype Float16                             \

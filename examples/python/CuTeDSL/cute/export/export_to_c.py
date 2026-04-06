@@ -45,7 +45,7 @@ To run this example:
 .. code-block:: bash
 
     # export the compiled function to a object file and a C header file
-    python cutlass_ir/compiler/python/examples/cute/export/export_to_c.py
+    python examples/python/CuTeDSL/cute/export/export_to_c.py
 """
 
 

@@ -101,7 +101,7 @@ Both could be tried when the workload is latency-bound or limited by memory thro
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_gemm/nvfp4_gemm_1.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/nvfp4_gemm_1.py  \
       --mnkl 8192,8192,8192,1 --do_benchmark
 
 Constraints for this example:

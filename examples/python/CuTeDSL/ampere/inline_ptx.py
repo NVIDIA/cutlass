@@ -57,7 +57,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/inline_ptx.py
+    python examples/python/CuTeDSL/ampere/inline_ptx.py
 
 The example will run the vote kernel with inline ptx and nvvm dialect separately.
 The results from inline ptx and nvvm dialect will be verified correspondingly.

@@ -41,7 +41,7 @@ in which case the performance gains become even more significant.
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_3.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_3.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

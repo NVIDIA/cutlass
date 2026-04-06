@@ -36,7 +36,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/jit_and_use_in_torch.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/jit_and_use_in_torch.py
 """
 
 import cutlass.cute as cute

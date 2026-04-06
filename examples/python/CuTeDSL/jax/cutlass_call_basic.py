@@ -51,7 +51,7 @@ To run this example:
 .. code-block:: bash
 
     # Run with addition operation
-    python examples/jax/cutlass_call_basic.py
+    python examples/python/CuTeDSL/jax/cutlass_call_basic.py
 """
 
 

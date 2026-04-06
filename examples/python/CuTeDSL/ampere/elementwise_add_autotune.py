@@ -42,9 +42,9 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/elementwise_add_autotune.py --M 3 --N 12
-    python examples/ampere/elementwise_add_autotune.py --M 1024 --N 512
-    python examples/ampere/elementwise_add_autotune.py --M 1024 --N 1024 --benchmark --warmup_iterations 2 --iterations 1000
+    python examples/python/CuTeDSL/ampere/elementwise_add_autotune.py --M 3 --N 12
+    python examples/python/CuTeDSL/ampere/elementwise_add_autotune.py --M 1024 --N 512
+    python examples/python/CuTeDSL/ampere/elementwise_add_autotune.py --M 1024 --N 1024 --benchmark --warmup_iterations 2 --iterations 1000
 
 """
 
