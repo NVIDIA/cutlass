@@ -105,7 +105,7 @@ Input arguments to this example is same as dense_gemm_persistent.py.
 
 .. code-block:: bash
 
-    torchrun --nproc_per_node=8 examples/distributed/distributed_all_gather_gemm_blackwell.py                          \
+    torchrun --nproc_per_node=8 examples/python/CuTeDSL/distributed/distributed_all_gather_gemm_blackwell.py                          \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                  \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                             \
       --mnkl 8192,8192,8192,1                                                   \
@@ -115,7 +115,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu torchrun --nproc_per_node=8 examples/distributed/distributed_all_gather_gemm_blackwell.py                     \
+    ncu torchrun --nproc_per_node=8 examples/python/CuTeDSL/distributed/distributed_all_gather_gemm_blackwell.py                     \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                 \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
       --mnkl 8192,8192,8192,1                                                  \

@@ -78,7 +78,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/mixed_input_gemm/grouped_mixed_input_gemm_acc_scale.py      \
+    python examples/python/CuTeDSL/blackwell/mixed_input_gemm/grouped_mixed_input_gemm_acc_scale.py      \
       --a_dtype Int4 --b_dtype BFloat16                                  \
       --scale_granularity_m 1 --scale_granularity_k 256                  \
       --c_dtype BFloat16 --acc_dtype Float32                             \
@@ -89,7 +89,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/mixed_input_gemm/grouped_mixed_input_gemm_acc_scale.py  \
+    ncu python examples/python/CuTeDSL/blackwell/mixed_input_gemm/grouped_mixed_input_gemm_acc_scale.py  \
       --a_dtype Int4 --b_dtype BFloat16                                  \
       --scale_granularity_m 1 --scale_granularity_k 256                  \
       --c_dtype BFloat16 --acc_dtype Float32                             \

@@ -98,7 +98,7 @@ Input arguments to this example is shown below:
 
 .. code-block:: bash
 
-    python examples/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
+    python examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
       --ab_dtype Float4E2M1FN --sf_dtype Float8E8M0FNU --sf_vec_size 16        \
       --c_dtype Float16                                                        \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
@@ -108,7 +108,7 @@ To run with explicit prefetch distance:
 
 .. code-block:: bash
 
-    python examples/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
+    python examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
       --ab_dtype Float4E2M1FN --sf_dtype Float8E8M0FNU --sf_vec_size 16        \
       --c_dtype Float16                                                        \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
@@ -119,7 +119,7 @@ To run with prefetch disabled:
 
 .. code-block:: bash
 
-    python examples/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
+    python examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent_prefetch.py    \
       --ab_dtype Float4E2M1FN --sf_dtype Float8E8M0FNU --sf_vec_size 16        \
       --c_dtype Float16                                                        \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
@@ -130,7 +130,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/dense_blockscaled_gemm_persistent_prefetch.py \
+    ncu python examples/python/CuTeDSL/blackwell/dense_blockscaled_gemm_persistent_prefetch.py \
       --ab_dtype Float4E2M1FN --sf_dtype Float8E8M0FNU --sf_vec_size 16         \
       --c_dtype Float16                                                         \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                             \

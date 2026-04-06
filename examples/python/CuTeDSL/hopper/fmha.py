@@ -46,7 +46,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/hopper/fmha.py                                        \
+    python examples/python/CuTeDSL/hopper/fmha.py                                        \
       --qk_acc_dtype Float32 --pv_acc_dtype Float32                       \
       --mma_tiler_mn 64,128                                              \
       --q_shape 4,1024,8,64 --k_shape 4,1024,8,64                         \
@@ -60,7 +60,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/hopper/fmha.py                                    \
+    ncu python examples/python/CuTeDSL/hopper/fmha.py                                    \
       --qk_acc_dtype Float32 --pv_acc_dtype Float32                       \
       --mma_tiler_mn 64,128                                              \
       --q_shape 4,1024,8,64 --k_shape 4,1024,8,64                         \

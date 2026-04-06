@@ -54,7 +54,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/cute/torch_fake_tensor.py
+    python examples/python/CuTeDSL/cute/torch_fake_tensor.py
 """
 
 

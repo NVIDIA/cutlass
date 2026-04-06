@@ -55,7 +55,7 @@ CuTe DSL Blackwell SM100 kernels. Users can specify preferred and fallback clust
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_4.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_4.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

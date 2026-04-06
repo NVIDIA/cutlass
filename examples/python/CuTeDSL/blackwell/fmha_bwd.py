@@ -74,7 +74,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/fmha_bwd.py \\
+    python examples/python/CuTeDSL/blackwell/fmha_bwd.py \\
         --s_q_max 1024 --s_k_max 1024 \\
         --h_q 8 --h_k 8 --d 128 --b 1 \\
         --element_dtype float16 --acc_dtype float32 \\

@@ -56,7 +56,7 @@ These two factors should be considered for latency/memory throughput bound cases
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_gemm/fp16_gemm_1.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_1.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

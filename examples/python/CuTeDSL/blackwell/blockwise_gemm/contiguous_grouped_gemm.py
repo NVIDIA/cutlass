@@ -94,7 +94,7 @@ The accumulator in TMEM must then be loaded to registers before writing back to 
 
 .. code-block:: bash
 
-    python examples/blackwell/blockwise_gemm/contiguous_grouped_gemm.py         \
+    python examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm.py         \
       --ab_dtype Float8E4M3FN --c_dtype BFloat16 --acc_dtype Float32            \
       --scale_dtype Float32                                                     \
       --mma_tiler_mn 128,128 --cluster_shape_mn 1,2                             \
@@ -104,7 +104,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/blockwise_gemm/contiguous_grouped_gemm.py     \
+    ncu python examples/python/CuTeDSL/blackwell/blockwise_gemm/contiguous_grouped_gemm.py     \
       --ab_dtype Float8E4M3FN --c_dtype BFloat16 --acc_dtype Float32            \
       --scale_dtype Float32                                                     \
       --mma_tiler_mn 128,128 --cluster_shape_mn 1,2                             \

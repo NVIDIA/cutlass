@@ -42,9 +42,9 @@ To run this example:
 .. code-block:: bash
 
     # prerequesites: export the compiled functions to object files and compile them into a shared library
-    python examples/cute/export/export_to_c.py
+    python examples/python/CuTeDSL/cute/export/export_to_c.py
     # load the module from a object file or a shared library
-    python examples/cute/export/load_in_python.py
+    python examples/python/CuTeDSL/cute/export/load_in_python.py
 """
 
 

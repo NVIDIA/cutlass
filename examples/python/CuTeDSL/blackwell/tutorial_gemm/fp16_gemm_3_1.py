@@ -32,7 +32,7 @@ The dynamic scheduler is more flexible than the static scheduler, as it can hand
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_3_1.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_3_1.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

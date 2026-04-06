@@ -112,10 +112,10 @@ Input arguments to this example is same as dense_gemm.py.
 
 .. code-block:: bash
 
-    torchrun --nproc-per-node 8 examples/distributed/distributed_dense_gemm_persistent_all_reduce.py  \
-      --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
-      --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
-      --mnkl 1024,1000,1024,1 --warmup_iterations 3 --iterations 10                                   \
+    torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/distributed_gemm_all_reduce_blackwell.py  \
+      --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                              \
+      --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                         \
+      --mnkl 1024,1000,1024,1 --warmup_iterations 3 --iterations 10                                         \
       --use_tma_store --use_2cta_instrs --all_reduce LDMCxSTMC
 
 To collect performance with NSYS profiler:
@@ -123,7 +123,7 @@ To collect performance with NSYS profiler:
 .. code-block:: bash
 
     nsys profile  --gpu-metrics-devices=cuda-visible                                                    \
-      torchrun --nproc-per-node 8 examples/distributed/distributed_dense_gemm_persistent_all_reduce.py  \
+      torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/distributed_gemm_all_reduce_blackwell.py  \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                          \
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                     \
       --mnkl 8192,8192,8192,1                                                                           \

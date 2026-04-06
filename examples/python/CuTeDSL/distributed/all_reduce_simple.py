@@ -88,8 +88,8 @@ To run this example:
 
 .. code-block:: bash
 
-    torchrun --nproc-per-node 8  examples/distributed/all_reduce_simple.py --M 1024 --N 512
-    torchrun --nproc-per-node 8  examples/distributed/all_reduce_simple.py \
+    torchrun --nproc-per-node 8  examples/python/CuTeDSL/distributed/all_reduce_simple.py --M 1024 --N 512
+    torchrun --nproc-per-node 8  examples/python/CuTeDSL/distributed/all_reduce_simple.py \
         --M 1024 --N 1024 --benchmark --warmup_iterations 2 --iterations 100
 """
 

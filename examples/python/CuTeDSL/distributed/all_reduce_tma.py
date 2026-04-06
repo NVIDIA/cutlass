@@ -62,8 +62,8 @@ To run this example:
 
 .. code-block:: bash
 
-    torchrun --nproc-per-node 8 examples/distributed/all_reduce_tma.py --shape 1024,1024
-    torchrun --nproc-per-node 8 examples/distributed/all_reduce_tma.py --shape 4,6,8,10,12
+    torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/all_reduce_tma.py --shape 1024,1024
+    torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/all_reduce_tma.py --shape 4,6,8,10,12
 """
 
 import cutlass

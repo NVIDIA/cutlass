@@ -33,7 +33,7 @@ with optimizations for challenges that may arise with other problem sizes.
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_gemm/fp16_gemm_0.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_0.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

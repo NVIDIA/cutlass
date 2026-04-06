@@ -39,7 +39,7 @@ import cutlass.cute as cute
 """
 An Elementwise Apply Example using CuTe DSL with cutlass.jax.cutlass_call
 
-This example is similar to examples/ampere/elementwise_apply.py but demonstrates
+This example is similar to examples/python/CuTeDSL/ampere/elementwise_apply.py but demonstrates
 how to run the code in a jax specific way using the cutlass_call primitive. It assumes
 familiarity with basic CuTe DSL concepts as well as the cutlass_call primitive.
 
@@ -48,13 +48,13 @@ To run this example:
 .. code-block:: bash
 
     # Run with addition operation
-    python examples/jax/elementwise_apply_example.py --M 1024 --N 512 --op add
+    python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op add
 
     # Run with multiplication operation
-    python examples/ampere/elementwise_apply_example.py --M 1024 --N 512 --op mul
+    python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op mul
 
     # Run with subtraction operation
-    python examples/ampere/elementwise_apply_example.py --M 1024 --N 512 --op sub
+    python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op sub
 """
 
 

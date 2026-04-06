@@ -113,7 +113,7 @@ Input arguments to this example is same as dense_gemm.py.
 
 .. code-block:: bash
 
-    torchrun --nproc-per-node 8 examples/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
+    torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
       --ab_dtype Float8E4M3FN --c_dtype Float16 --acc_dtype Float32                                                 \
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                            \
       --mnkl 16384,4080,4096,1 --warmup_iterations 3 --iterations 10                                                                               \
@@ -124,7 +124,7 @@ To collect performance with NSYS profiler:
 .. code-block:: bash
 
     nsys profile  --gpu-metrics-devices=cuda-visible                                                             \
-      torchrun --nproc-per-node 8 examples/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
+      torchrun --nproc-per-node 8 examples/python/CuTeDSL/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
       --ab_dtype Float8E5M2 --c_dtype Float16 --acc_dtype Float32                                                   \
       --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                              \
       --mnkl 16384,4096,4096,1                                                                                    \

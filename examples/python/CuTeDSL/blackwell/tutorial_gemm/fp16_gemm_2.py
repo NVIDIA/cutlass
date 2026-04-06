@@ -61,7 +61,7 @@ so less ALU instructions are issued in MMA warp, and mma instructions can be iss
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_2.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/fp16_gemm_2.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:

@@ -55,7 +55,7 @@ and an expected failure when exceeding the grid size limit.
 Usage:
 
 Run directly:
-    $ python cooperative_launch.py
+    $ python examples/python/CuTeDSL/ampere/cooperative_launch.py
 
 This will:
     1. Demonstrate expected failure with too many thread blocks

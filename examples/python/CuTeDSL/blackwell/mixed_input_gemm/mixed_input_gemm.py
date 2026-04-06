@@ -85,7 +85,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
+    python examples/python/CuTeDSL/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
       --a_dtype Int8 --b_dtype BFloat16                               \
       --scale_granularity_m 0 --scale_granularity_k 0                 \
       --c_dtype BFloat16 --acc_dtype Float32                          \
@@ -101,7 +101,7 @@ Here is an example of running convert-scale mode:
 
 .. code-block:: bash
 
-    python examples/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
+    python examples/python/CuTeDSL/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
       --a_dtype Int4 --b_dtype BFloat16                               \
       --scale_granularity_m 1 --scale_granularity_k 256               \
       --c_dtype BFloat16 --acc_dtype Float32                          \
@@ -122,7 +122,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
+    ncu python examples/python/CuTeDSL/blackwell/mixed_input_gemm/mixed_input_gemm.py    \
       --a_dtype Int8 --b_dtype BFloat16                                   \
       --scale_granularity_m 0 --scale_granularity_k 0                     \
       --c_dtype BFloat16 --acc_dtype Float32                              \

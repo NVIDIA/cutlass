@@ -71,7 +71,7 @@ challenges that may arise with other problem sizes.
 To run this example:
 .. code-block:: bash
 
-    python examples/blackwell/tutorial_gemm/nvfp4_gemm_0.py  \
+    python examples/python/CuTeDSL/blackwell/tutorial_gemm/nvfp4_gemm_0.py  \
       --mnkl 8192,8192,8192,1 --do_benchmark
 
 Constraints for this example:

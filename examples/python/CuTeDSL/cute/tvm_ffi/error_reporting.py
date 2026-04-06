@@ -36,7 +36,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python cutlass_ir/compiler/python/examples/cute/tvm_ffi/error_reporting.py
+    python examples/python/CuTeDSL/cute/tvm_ffi/error_reporting.py
 """
 
 import torch

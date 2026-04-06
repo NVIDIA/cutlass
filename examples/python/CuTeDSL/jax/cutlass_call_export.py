@@ -55,13 +55,13 @@ To run this example:
 .. code-block:: bash
 
     # Run with defaults
-    python examples/jax/cutlass_call_export.py
+    python examples/python/CuTeDSL/jax/cutlass_call_export.py
 
     # Run with shape (1024, 512)
-    python examples/jax/cutlass_call_export.py --M 1024 --N 512
+    python examples/python/CuTeDSL/jax/cutlass_call_export.py --M 1024 --N 512
 
     # Export with symbolic shapes.
-    python examples/jax/cutlass_call_export.py --export_symbolic
+    python examples/python/CuTeDSL/jax/cutlass_call_export.py --export_symbolic
 """
 
 

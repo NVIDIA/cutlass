@@ -15,7 +15,7 @@
 // This example shows how to interface with an AOT compiled function in a C++
 // bundle. to build and run the example, run the following command in project
 // root bash
-// cutlass_ir/compiler/python/examples/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
+// examples/python/CuTeDSL/cute/tvm_ffi/aot_use_in_cpp_bundle.sh
 
 #include <cuda_runtime.h>
 #include <tvm/ffi/container/tensor.h>
