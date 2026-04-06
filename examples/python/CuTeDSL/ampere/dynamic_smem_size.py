@@ -37,7 +37,7 @@ This example demonstrates how to let the DSL automatically set shared memory
   provided that developers are using `SmemAllocator` for all allocations.
 
 Usage:
-    python dynamic_smem_size.py         # Show auto inference
+    python examples/python/CuTeDSL/ampere/dynamic_smem_size.py         # Show auto inference
 """
 
 

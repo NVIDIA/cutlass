@@ -92,7 +92,7 @@ To run:
 
 .. code-block:: bash
 
-    python hopper/grouped_gemm.py                                             \\
+    python examples/python/CuTeDSL/hopper/grouped_gemm.py                     \\
       --num_groups 4                                                           \\
       --problem_sizes_mnkl "(8192,1280,32,1),(16,384,1536,1),(640,1280,16,1),(640,160,16,1)" \\
       --tile_shape_mn 128,256 --cluster_shape_mn 1,1                          \\

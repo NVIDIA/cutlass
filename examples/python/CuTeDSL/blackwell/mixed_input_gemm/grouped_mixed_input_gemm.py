@@ -102,7 +102,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/python/CuTeDSL/blackwell/grouped_mixed_input_gemm.py      \
+    python examples/python/CuTeDSL/blackwell/mixed_input_gemm/grouped_mixed_input_gemm.py      \
       --a_dtype Int8 --b_dtype BFloat16                        \
       --scale_granularity_m 0 --scale_granularity_k 0          \
       --c_dtype BFloat16 --acc_dtype Float32                   \

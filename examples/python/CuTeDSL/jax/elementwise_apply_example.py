@@ -51,10 +51,10 @@ To run this example:
     python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op add
 
     # Run with multiplication operation
-    python examples/python/CuTeDSL/ampere/elementwise_apply_example.py --M 1024 --N 512 --op mul
+    python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op mul
 
     # Run with subtraction operation
-    python examples/python/CuTeDSL/ampere/elementwise_apply_example.py --M 1024 --N 512 --op sub
+    python examples/python/CuTeDSL/jax/elementwise_apply_example.py --M 1024 --N 512 --op sub
 """
 
 
