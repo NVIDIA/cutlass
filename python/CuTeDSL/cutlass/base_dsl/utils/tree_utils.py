@@ -192,7 +192,7 @@ class Leaf:
 # =============================================================================
 
 
-def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any]]:
+def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[Any]]:
     """
     Extract non-method, non-function attributes from a dataclass instance.
 
@@ -200,7 +200,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any]]:
         x: A dataclass instance
 
     Returns:
-        tuple: (field_names, field_values) lists
+        tuple: (field_names, field_values, constexpr_fields) lists
     """
     fields = [field.name for field in dataclasses.fields(x)]
 
@@ -213,7 +213,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any]]:
             )
 
     if not fields:
-        return [], []
+        return [], [], []
 
     # record constexpr fields
     members = []
