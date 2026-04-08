@@ -49,6 +49,33 @@ def _math_op(func: Callable, fastmath: bool, *args, **kwargs):
 
 
 @dsl_user_op
+def absf(
+    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+) -> Union[TensorSSA, Numeric]:
+    """Compute element-wise absolute value of the input tensor.
+
+    :param a: Input tensor
+    :type a: Union[TensorSSA, Numeric]
+    :param fastmath: Enable fast math optimizations, defaults to False
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: Tensor containing the absolute value of each element in input tensor
+    :rtype: Union[TensorSSA, Numeric]
+
+    Example:
+
+    .. code-block::
+
+        x = cute.make_rmem_tensor(layout)  # Create tensor
+        y = x.load()  # Load values
+        z = absf(y)  # Compute absolute value
+    """
+    return _math_op(math.absf, fastmath, a, loc=loc, ip=ip)
+
+
 def acos(
     a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
 ) -> Union[TensorSSA, Numeric]:
@@ -167,6 +194,43 @@ def atan2(
 
 
 @dsl_user_op
+def copysign(
+    a: Union[TensorSSA, Numeric],
+    b: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc=None,
+    ip=None,
+) -> Union[TensorSSA, Numeric]:
+    """Compute element-wise copysign of two tensors.
+
+    Returns a value with the magnitude of ``a`` and the sign of ``b``.
+
+    :param a: Input tensor providing magnitude
+    :type a: Union[TensorSSA, Numeric]
+    :param b: Input tensor providing sign
+    :type b: Union[TensorSSA, Numeric]
+    :param fastmath: Enable fast math optimizations, defaults to False
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: Tensor where each element has the magnitude of ``a`` and the sign of ``b``
+    :rtype: Union[TensorSSA, Numeric]
+
+    Example:
+
+    .. code-block::
+
+        mag = cute.make_rmem_tensor(ptr1, layout).load()  # magnitudes
+        sgn = cute.make_rmem_tensor(ptr2, layout).load()  # signs
+        result = copysign(mag, sgn)  # Combine magnitude and sign
+    """
+    return _math_op(math.copysign, fastmath, a, b, loc=loc, ip=ip)
+
+
+@dsl_user_op
 def cos(
     a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
 ) -> Union[TensorSSA, Numeric]:
@@ -282,6 +346,33 @@ def exp2(
 
 
 @dsl_user_op
+def floor(
+    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+) -> Union[TensorSSA, Numeric]:
+    """Compute element-wise floor of the input tensor.
+
+    :param a: Input tensor
+    :type a: Union[TensorSSA, Numeric]
+    :param fastmath: Enable fast math optimizations, defaults to False
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: Tensor containing the largest integer less than or equal to each element in input tensor
+    :rtype: Union[TensorSSA, Numeric]
+
+    Example:
+
+    .. code-block::
+
+        x = cute.make_rmem_tensor(layout)  # Create tensor
+        y = x.load()  # Load values
+        z = floor(y)  # Compute floor
+    """
+    return _math_op(math.floor, fastmath, a, loc=loc, ip=ip)
+
+
 def log(
     a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
 ) -> Union[TensorSSA, Numeric]:
@@ -508,14 +599,17 @@ def tanh(
 
 
 __all__ = [
+    "absf",
     "acos",
     "asin",
     "atan",
     "atan2",
+    "copysign",
     "cos",
     "erf",
     "exp",
     "exp2",
+    "floor",
     "log",
     "log10",
     "log2",
