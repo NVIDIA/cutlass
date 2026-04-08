@@ -1423,9 +1423,8 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
 
                     # Global atomic max (accumulates across all tiles for final tensor amax)
                     # Since we compute absolute values, all values are non-negative
-                    # Use wrapper function for atomic max operation
-                    _ = cute.arch.atomic_max_float32(
-                        ptr=mAmax.iterator.llvm_ptr, value=block_amax
+                    _ = cute.arch.atomic_fmax(
+                        mAmax.iterator, block_amax, sign_bit=False
                     )
                 #
                 # Async arrive accumulator buffer empty
