@@ -11,6 +11,7 @@
 
 import io
 import os
+import struct
 
 import ctypes
 from typing import Callable
@@ -61,6 +62,47 @@ class LoadProvider:
         self.jit_function_constructor = jit_function_constructor
 
 
+def _fix_elf_dup_text_flags(data: bytes) -> bytes:
+    """Harmonize flags on duplicate ``.text`` ELF sections.
+
+    The CUTLASS MLIR code-gen can emit ``.o`` files with two ``.text``
+    sections: one for executable code (``ALLOC|EXECINSTR``) and one for a
+    small writable-data trampoline (``WRITE|ALLOC``).  LLVM's MCJIT
+    backend (``BinaryExecutionEngine`` with ``UseJitLink=False``) merges
+    same-named sections and misapplies page protections, causing
+    non-deterministic segfaults in multi-process ``torchrun`` workloads.
+    JitLink (``UseJitLink=True``) rejects the file outright.
+
+    Fix: set all duplicate ``.text`` sections' flags to ``ALLOC|EXECINSTR``
+    so that JitLink accepts them and maps pages correctly.
+    Relocations are applied before page protection, so the trampoline
+    section does not need ``WRITE`` at load time.
+    """
+    if len(data) < 64 or data[4] != 2 or data[5] != 1:  # ELF64 LE only
+        return data
+    e_shoff = struct.unpack_from("<Q", data, 40)[0]
+    e_shentsize = struct.unpack_from("<H", data, 58)[0]
+    e_shnum = struct.unpack_from("<H", data, 60)[0]
+    e_shstrndx = struct.unpack_from("<H", data, 62)[0]
+    if not e_shoff or not e_shnum or e_shstrndx >= e_shnum:
+        return data
+    shstr_hdr = e_shoff + e_shstrndx * e_shentsize
+    shstr_off = struct.unpack_from("<Q", data, shstr_hdr + 24)[0]
+    text_secs: list[tuple[int, int]] = []
+    for i in range(e_shnum):
+        sh = e_shoff + i * e_shentsize
+        ni = struct.unpack_from("<I", data, sh)[0]
+        ns = shstr_off + ni
+        if ns + 6 <= len(data) and data[ns : ns + 6] == b".text\x00":
+            text_secs.append((i, sh))
+    if len(text_secs) <= 1:
+        return data
+    result = bytearray(data)
+    for _, sh in text_secs[1:]:
+        struct.pack_into("<Q", result, sh + 8, 0x6)  # SHF_ALLOC | SHF_EXECINSTR
+    return bytes(result)
+
+
 class ExternalBinaryModule:
     """The exported binary module is a wrapper of the previous exported object files. It is used to load a object file
     or a library in memory, allow function lookup and return the corresponding `JitCompiledFunction`.
@@ -85,6 +127,14 @@ class ExternalBinaryModule:
                 raise DSLRuntimeError(f"Failed to read object file {file_path}: {e}")
 
         useJitLink = not enable_tvm_ffi
+        if not useJitLink and object_file_content:
+            # Work around duplicate .text sections from CUTLASS MLIR codegen:
+            # the compiler can emit two .text sections with different flags
+            # (R-X for code, RW- for a destructor trampoline).  MCJIT merges
+            # them incorrectly, causing segfaults in multi-process torchrun.
+            # Fix the flags so JitLink accepts the .o, then use JitLink.
+            object_file_content = _fix_elf_dup_text_flags(object_file_content)
+            useJitLink = True
         # Lifetime of the engine is same as the ExternalBinaryModule.
         self.engine = self.load_provider.execution_engine_constructor(
             object_file_content, shared_libs, useJitLink
