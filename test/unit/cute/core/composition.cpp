@@ -456,21 +456,22 @@ TEST(CuTe_core, Composition)
     test_composition(a, b);
   }
 
-  {
-    auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
-    auto b = make_layout(_2{}, _3{});
-
-    test_composition(a, b);
-  }
-
-  {
-    auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
-    auto b = make_layout(_3{}, _3{});
-
-    test_composition(a, b);
-  }
-
-  // Should fail to a static divisibility condition
+  // Should fail the strong stride-divisibility condition: rhs stride 3 neither
+  // divides nor is divided by lhs mode-0 shape 8.  The previous "weak" check
+  // (rest_stride < curr_shape) accepted these cases; for these particular
+  // rhs sizes they happen to produce the right answer because the rhs
+  // coordinates never reach the mode boundary, but the same algorithm produces
+  // wrong answers for compositions that do cross it (see NVIDIA/cutlass#3177).
+  // {
+  //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
+  //   auto b = make_layout(_2{}, _3{});
+  //   test_composition(a, b);
+  // }
+  // {
+  //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
+  //   auto b = make_layout(_3{}, _3{});
+  //   test_composition(a, b);
+  // }
   // {
   //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
   //   auto b = make_layout(_4{}, _3{});
