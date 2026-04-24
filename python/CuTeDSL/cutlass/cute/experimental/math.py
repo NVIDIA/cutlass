@@ -41,6 +41,11 @@ def dot_block_scaled(
     :param c: Result tensor
     :type c: cute.Tensor
     """
+    from cutlass.cute.nvgpu.warp.mma import MmaSM120BlockScaledOp, mma_unpack
+
+    if isinstance(getattr(mma_atom, "op", None), MmaSM120BlockScaledOp):
+        return mma_unpack(mma_atom, c, (a, sfa), (b, sfb), c, loc=loc, ip=ip)
+
     cutlass_lir.DotBlockScaledOp(
         mma_atom._unpack(),
         a.value,

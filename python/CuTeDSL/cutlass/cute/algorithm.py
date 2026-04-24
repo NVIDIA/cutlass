@@ -131,6 +131,16 @@ def gemm(
         if c_rank != 3:
             raise ValueError("`c` must have rank 3 when `a` has rank 3")
 
+    if len(a_list) == 2 or len(b_list) == 2:
+        from .nvgpu.warp.mma import MmaSM120BlockScaledOp, mma_unpack
+
+        if (
+            len(a_list) == 2
+            and len(b_list) == 2
+            and isinstance(getattr(atom, "op", None), MmaSM120BlockScaledOp)
+        ):
+            return mma_unpack(atom, d, a_list, b_list, c, loc=loc, ip=ip)
+
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     a_vals = [t.value for t in a_list]
     b_vals = [t.value for t in b_list]
