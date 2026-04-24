@@ -10,11 +10,12 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Type, Any
+from typing import Type, Any, List, Tuple, Union
 
 import enum
 from cutlass import cute
 from cutlass.base_dsl.arch import Arch
+from cutlass.cutlass_dsl import dsl_user_op
 from cutlass.cutlass_dsl import BaseDSL
 
 
@@ -36,6 +37,7 @@ from ...typing import Tensor
 from ...atom import MmaOp, Trait, make_atom
 
 from cutlass._mlir import ir
+import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 
@@ -348,3 +350,161 @@ class MmaMXF4NVF4Op(MmaSM120BlockScaledOp):
 
 class MmaMXF4NVF4Trait(MmaBlockScaledTrait):
     pass
+
+
+def _normalize_scaled_operand(
+    operand: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    name: str,
+) -> Tuple[Tensor, Tensor]:
+    if not isinstance(operand, (list, tuple)) or len(operand) != 2:
+        raise TypeError(f"`{name}` must be a two-tensor sequence `(fragment, scale)`")
+    fragment, scale = operand
+    if not isinstance(fragment, Tensor) or not isinstance(scale, Tensor):
+        raise TypeError(f"`{name}` must contain only Tensor operands")
+    return fragment, scale
+
+
+def _require_rmem(tensor: Tensor, name: str) -> None:
+    if tensor.memspace != cute.AddressSpace.rmem:
+        raise ValueError(f"`{name}` must be register-resident")
+
+
+def _require_static_size(actual, expected: int, name: str) -> None:
+    if actual != expected:
+        raise ValueError(f"`{name}` must have static size {expected}, but got {actual}")
+
+
+def _validate_scale_fragment(
+    scale: Tensor,
+    name: str,
+    dtype: Type[Numeric],
+    logical_k: int,
+    physical_count: int,
+    *,
+    loc=None,
+    ip=None,
+) -> Tensor:
+    _require_rmem(scale, name)
+    if scale.element_type != dtype:
+        raise TypeError(f"`{name}` must have element type {dtype}")
+    _require_static_size(cute.size(scale, loc=loc, ip=ip), logical_k, name)
+
+    compact = cute.filter_zeros(scale, loc=loc, ip=ip)
+    _require_static_size(
+        cute.cosize(compact.layout, loc=loc, ip=ip),
+        physical_count,
+        f"compact `{name}`",
+    )
+    return compact
+
+
+def _validate_sm120_block_scaled_atom(atom: cute.MmaAtom) -> MmaSM120BlockScaledOp:
+    op = getattr(atom, "op", None)
+    if not isinstance(op, MmaSM120BlockScaledOp):
+        raise TypeError("`mma_unpack` expects an SM120 warp block-scaled MMA atom")
+
+    if op.shape_mnk != (16, 8, 64):
+        raise ValueError(
+            f"SM120 block-scaled MMA shape must be (16, 8, 64), got {op.shape_mnk}"
+        )
+
+    if op.sf_vec_size == 16 and op.sf_type != Float8E4M3FN:
+        raise ValueError("NVFP4 scale vector size 16 requires Float8E4M3FN scales")
+    if op.sf_vec_size == 32 and op.sf_type != Float8E8M0FNU:
+        raise ValueError("MXF4 scale vector size 32 requires Float8E8M0FNU scales")
+
+    return op
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_layout(*, loc=None, ip=None) -> cute.Layout:
+    """
+    Return the per-thread SM120 MXF4NVF4 SFA register-fragment layout.
+
+    The layout models 64 logical K scale entries and compacts them to four
+    physical E4M3 scale elements with zero strides, matching vector size 16.
+    """
+    return cute.make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_layout(*, loc=None, ip=None) -> cute.Layout:
+    """
+    Return the per-thread SM120 MXF4NVF4 SFB register-fragment layout.
+
+    The layout models 64 logical K scale entries and compacts them to four
+    physical E4M3 scale elements with zero strides, matching vector size 16.
+    """
+    return cute.make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN, *, loc=None, ip=None
+) -> Tensor:
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFA fragments require Float8E4M3FN")
+    return cute.make_rmem_tensor(
+        make_mxf4nvf4_sfa_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN, *, loc=None, ip=None
+) -> Tensor:
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFB fragments require Float8E4M3FN")
+    return cute.make_rmem_tensor(
+        make_mxf4nvf4_sfb_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def mma_unpack(
+    atom: cute.MmaAtom,
+    d: Tensor,
+    a: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    b: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    c: Tensor,
+    *,
+    loc=None,
+    ip=None,
+) -> None:
+    """
+    SM120 warp block-scaled MMA helper mirroring C++ ``mma_unpack``.
+
+    ``a`` and ``b`` must be ``(fragment, scale_fragment)`` pairs. Scale
+    fragments are logical K-size tensors in register memory whose zero-stride
+    filtered layouts compact to ``K / sf_vec_size`` physical scale elements.
+    """
+    op = _validate_sm120_block_scaled_atom(atom)
+    a_fragment, sfa = _normalize_scaled_operand(a, "a")
+    b_fragment, sfb = _normalize_scaled_operand(b, "b")
+
+    _require_rmem(d, "d")
+    _require_rmem(a_fragment, "a fragment")
+    _require_rmem(b_fragment, "b fragment")
+    _require_rmem(c, "c")
+
+    logical_k = op.shape_mnk[2]
+    physical_count = logical_k // op.sf_vec_size
+    compact_sfa = _validate_scale_fragment(
+        sfa, "sfa", op.sf_type, logical_k, physical_count, loc=loc, ip=ip
+    )
+    compact_sfb = _validate_scale_fragment(
+        sfb, "sfb", op.sf_type, logical_k, physical_count, loc=loc, ip=ip
+    )
+
+    atom.set(Field.SFA, compact_sfa.iterator, loc=loc, ip=ip)
+    atom.set(Field.SFB, compact_sfb.iterator, loc=loc, ip=ip)
+
+    return _cute_ir.gemm(
+        atom._unpack(loc=loc, ip=ip),
+        d.value,
+        [a_fragment.value],
+        [b_fragment.value],
+        c.value,
+        loc=loc,
+        ip=ip,
+    )
