@@ -90,6 +90,10 @@ class LdMatrix8x16x8bOp(BaseOp):
     Packed source container is 16x4b elements with 64b padding
     or 16x6b elements with 32b padding (total 128b per 16 elements)
 
+    For SM120 NVFP4 packed tiles, use ``unpack_bits=4``. This selects the
+    ``.m8n16.shared.b8x16.b4x16_p64`` ldmatrix variant used to unpack two
+    E2M1 values per byte from shared memory into native MMA fragments.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-load-instruction-ldmatrix>`__.
     This operation corresponds to the ``.m8n16`` and the ``.b4x16_p64``, ``.b6x16_p32`` qualifiers.
     """
