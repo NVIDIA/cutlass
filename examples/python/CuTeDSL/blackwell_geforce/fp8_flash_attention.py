@@ -887,16 +887,19 @@ def run_test(B, Sq, Sk, H, D, is_causal=False, desc="", use_opt=False):
     k = (torch.randn(B, Sk, H, D, device='cuda') * 0.1).to(torch.float8_e4m3fn)
     v = (torch.randn(B, Sk, H, D, device='cuda') * 0.1).to(torch.float8_e4m3fn)
 
-    # Reference
-    qf = q.float().view(B * H, Sq, D)
-    kf = k.float().view(B * H, Sk, D)
-    vf = v.float().view(B * H, Sk, D)
+    # Reference: must permute (B, S, H, D) -> (B, H, S, D) before flattening to
+    # (B*H, S, D); a plain view would interleave seq and head, scrambling per-head
+    # data for H >= 2 and silently failing the comparison even when the kernel is
+    # correct.
+    qf = q.float().permute(0, 2, 1, 3).contiguous().view(B * H, Sq, D)
+    kf = k.float().permute(0, 2, 1, 3).contiguous().view(B * H, Sk, D)
+    vf = v.float().permute(0, 2, 1, 3).contiguous().view(B * H, Sk, D)
     s = torch.bmm(qf, kf.transpose(1, 2)) * scale
     if is_causal:
         mask = torch.triu(torch.ones(Sq, Sk, device='cuda'), diagonal=1).bool()
         s.masked_fill_(mask.unsqueeze(0), float('-inf'))
     p = torch.softmax(s, dim=-1)
-    ref = torch.bmm(p, vf).view(B, Sq, H, D)
+    ref = torch.bmm(p, vf).view(B, H, Sq, D).permute(0, 2, 1, 3).contiguous()
 
     stream = cuda.CUstream(torch.cuda.current_stream().cuda_stream)
     o_f32 = torch.zeros(B, Sq, H, D, dtype=torch.float32, device='cuda')
@@ -964,16 +967,19 @@ def run_benchmark(
     if not skip_ref_check:
         compiled(q, k, v, o, softmax_scale, stream)
         torch.cuda.synchronize()
-        qf = q_torch.float().view(batch_size * num_head, seqlen_q, head_dim)
-        kf = k_torch.float().view(batch_size * num_head, seqlen_k, head_dim)
-        vf = v_torch.float().view(batch_size * num_head, seqlen_k, head_dim)
+        # See note in run_test: must permute (B, S, H, D) -> (B, H, S, D) before
+        # flattening; plain view interleaves seq and head and gives a wrong
+        # reference for H >= 2.
+        qf = q_torch.float().permute(0, 2, 1, 3).contiguous().view(batch_size * num_head, seqlen_q, head_dim)
+        kf = k_torch.float().permute(0, 2, 1, 3).contiguous().view(batch_size * num_head, seqlen_k, head_dim)
+        vf = v_torch.float().permute(0, 2, 1, 3).contiguous().view(batch_size * num_head, seqlen_k, head_dim)
         s = torch.bmm(qf, kf.transpose(1, 2)) * softmax_scale
         if is_causal:
             mask = torch.triu(torch.ones(seqlen_q, seqlen_k, device='cuda'),
                               diagonal=1).bool()
             s.masked_fill_(mask.unsqueeze(0), float('-inf'))
         p = torch.softmax(s, dim=-1)
-        ref = torch.bmm(p, vf).view(batch_size, seqlen_q, num_head, head_dim)
+        ref = torch.bmm(p, vf).view(batch_size, num_head, seqlen_q, head_dim).permute(0, 2, 1, 3).contiguous()
         diff = (o_torch - ref).abs().max().item()
         assert diff < 0.1, f"Reference check failed: max_diff={diff}"
         print(f"  Reference check passed (max_diff={diff:.6f})")
