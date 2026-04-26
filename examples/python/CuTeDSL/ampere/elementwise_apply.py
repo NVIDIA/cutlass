@@ -147,8 +147,13 @@ def elementwise_apply_kernel(
 
     # Load data before use. The compiler will optimize the copy and load
     # operations to convert some memory ld/st into register uses.
-    result = op(*[thrInput.load() for thrInput in thrInputs])
-    thrC.store(result)
+    regThrInputs = [cute.make_fragment_like(thrInput) for thrInput in thrInputs]
+    for i in cutlass.range_constexpr(len(regThrInputs)):
+        cute.basic_copy_if(frgPred, thrInputs[i], regThrInputs[i])
+    result = op(*[regThrInput.load() for regThrInput in regThrInputs])
+    regThrC = cute.make_fragment_like(thrC)
+    regThrC.store(result)
+    cute.basic_copy_if(frgPred, regThrC, thrC)
 
 
 @cute.jit
@@ -254,6 +259,7 @@ def elementwise_apply(
 
     idC = cute.make_identity_tensor(result.shape)
     cC = cute.zipped_divide(idC, tiler=tiler_mn)
+    cC = cute.composition(cC, (None, remap_block))
     print(f"[DSL INFO]   coord tensor = {cC}")
 
     # Launch the kernel asynchronously
@@ -332,7 +338,7 @@ def run_and_verify(
         inputs[1] = torch.where(inputs[1] == 0, torch.tensor(epsilon), inputs[1])
 
     inputs_ = [from_dlpack(t, assumed_align=16) for t in inputs]
-    c_ = from_dlpack(c, assumed_align=16).mark_layout_dynamic()
+    c_ = from_dlpack(c, assumed_align=16)
 
     print("Compiling kernel with cute.compile ...")
     start_time = time.time()
