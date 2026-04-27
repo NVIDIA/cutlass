@@ -59,7 +59,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/grouped_gemm.py                                                 \
+    python examples/python/CuTeDSL/blackwell/grouped_gemm.py                                                 \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                \
       --mma_tiler_mn 128,64 --cluster_shape_mn 1,1                                            \
       --problem_sizes_mnkl "(8192,1280,32,1),(16,384,1536,1),(640,1280,16,1),(640,160,16,1)"  \
@@ -73,7 +73,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/grouped_gemm.py                                             \
+    ncu python examples/python/CuTeDSL/blackwell/grouped_gemm.py                                             \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                \
       --mma_tiler_mn 128,64 --cluster_shape_mn 1,1                                            \
       --problem_sizes_mnkl "(8192,1280,32,1),(16,384,1536,1),(640,1280,16,1),(640,160,16,1)"  \
