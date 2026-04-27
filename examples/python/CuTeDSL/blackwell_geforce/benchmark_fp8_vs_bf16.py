@@ -28,7 +28,10 @@
 
 """Benchmark FP8 vs BF16 Flash Attention on SM120 (DGX Spark / GB10).
 
-Runs both kernels across a sweep of configs and prints a comparison table.
+Compares three kernels across a sweep of configs:
+  - FP8FlashAttentionSm120Opt (CpAsync, M=64 N=32)
+  - FP8FlashAttentionSm120Tma (TMA + warp specialization, M=128 N=64)
+  - FlashAttentionForwardSm120 (BF16 CpAsync, M=128 N=64)
 """
 import argparse
 import sys
@@ -63,6 +66,21 @@ def run_fp8(B, Sq, Sk, H, D, is_causal, warmup, iters, skip_ref):
         )
     except Exception as e:
         print(f"  FP8 failed: {e}")
+        return None
+
+
+def run_fp8_tma(B, Sq, Sk, H, D, is_causal, warmup, iters, skip_ref):
+    from fp8_flash_attention_tma import run_benchmark as run_fp8_tma_impl
+    try:
+        return run_fp8_tma_impl(
+            B, Sq, Sk, H, D,
+            is_causal=is_causal,
+            warmup_iterations=warmup,
+            iterations=iters,
+            skip_ref_check=skip_ref,
+        )
+    except Exception as e:
+        print(f"  FP8 TMA failed: {e}")
         return None
 
 
@@ -131,55 +149,74 @@ def main():
         print(f"{'='*60}")
 
         fp8_us = run_fp8(B, S, S, H, D, causal, args.warmup, args.iters, args.skip_ref)
+        fp8_tma_us = run_fp8_tma(B, S, S, H, D, causal, args.warmup, args.iters, args.skip_ref)
         bf16_us = run_bf16(B, S, S, H, D, causal, args.warmup, args.iters, args.skip_ref)
 
         flops = compute_flops(B, H, S, S, D, causal)
         fp8_tflops = flops / (fp8_us * 1e-6) / 1e12 if fp8_us else None
+        fp8_tma_tflops = flops / (fp8_tma_us * 1e-6) / 1e12 if fp8_tma_us else None
         bf16_tflops = flops / (bf16_us * 1e-6) / 1e12 if bf16_us else None
-        speedup = bf16_us / fp8_us if (fp8_us and bf16_us) else None
+        # Speedup of FP8 TMA over the next-best of {FP8 Opt, BF16}
+        speedup_vs_fp8 = fp8_us / fp8_tma_us if (fp8_us and fp8_tma_us) else None
+        speedup_vs_bf16 = bf16_us / fp8_tma_us if (bf16_us and fp8_tma_us) else None
 
-        results.append((B, S, D, causal, fp8_us, bf16_us, fp8_tflops, bf16_tflops, speedup))
+        results.append((
+            B, S, D, causal, fp8_us, fp8_tma_us, bf16_us,
+            fp8_tflops, fp8_tma_tflops, bf16_tflops,
+            speedup_vs_fp8, speedup_vs_bf16,
+        ))
 
     # Print summary table
-    print(f"\n\n{'='*120}")
+    print(f"\n\n{'='*140}")
     print("BENCHMARK RESULTS: FP8 (kind::f8f6f4.m16n8k32) vs BF16 (mma.sync.m16n8k16)")
-    print(f"FP8 kernel: FP8FlashAttentionSm120Opt (CpAsync, bank-conflict-free, 4 warps, M=64, N=32)")
-    print(f"BF16 kernel: FlashAttentionForwardSm120 (CpAsync, tiled MMA, M=128, N=64)")
+    print(f"FP8 Opt:   FP8FlashAttentionSm120Opt   (CpAsync, 4 warps, M=64, N=32)")
+    print(f"FP8 TMA:   FP8FlashAttentionSm120Tma   (TMA + warp specialization, M=128, N=64)")
+    print(f"BF16:      FlashAttentionForwardSm120  (CpAsync, tiled MMA, M=128, N=64)")
     print(f"Device: {torch.cuda.get_device_name(0)}")
     print(f"Heads: {H}, Warmup: {args.warmup}, Iterations: {args.iters}")
-    print(f"{'='*120}")
-    print(f"| {'Batch':>5} | {'SeqLen':>6} | {'HeadDim':>7} | {'Causal':>6} | "
-          f"{'FP8 (μs)':>10} | {'BF16 (μs)':>10} | "
-          f"{'FP8 TFLOPS':>10} | {'BF16 TFLOPS':>11} | {'Ratio':>8} |")
-    print(f"|{'-'*7}|{'-'*8}|{'-'*9}|{'-'*8}|"
-          f"{'-'*12}|{'-'*12}|{'-'*12}|{'-'*13}|{'-'*10}|")
+    print(f"{'='*140}")
+    print(f"| {'B':>3} | {'S':>5} | {'D':>3} | {'Cau':>3} | "
+          f"{'FP8 Opt μs':>10} | {'FP8 TMA μs':>10} | {'BF16 μs':>9} | "
+          f"{'TMA TFLOPS':>10} | {'TMA/Opt':>7} | {'TMA/BF16':>8} |")
+    print(f"|{'-'*5}|{'-'*7}|{'-'*5}|{'-'*5}|"
+          f"{'-'*12}|{'-'*12}|{'-'*11}|{'-'*12}|{'-'*9}|{'-'*10}|")
 
-    for B, S, D, causal, fp8_us, bf16_us, fp8_tf, bf16_tf, spd in results:
-        fp8_str = f"{fp8_us:10.1f}" if fp8_us else "     FAIL"
-        bf16_str = f"{bf16_us:10.1f}" if bf16_us else "     FAIL"
-        fp8_tf_str = f"{fp8_tf:10.2f}" if fp8_tf else "       N/A"
-        bf16_tf_str = f"{bf16_tf:11.2f}" if bf16_tf else "        N/A"
-        if spd is not None:
-            spd_str = f"{spd:.2f}x"
-        else:
-            spd_str = "     N/A"
-        print(f"| {B:>5} | {S:>6} | {D:>7} | {'yes' if causal else 'no':>6} | "
-              f"{fp8_str} | {bf16_str} | {fp8_tf_str} | {bf16_tf_str} | {spd_str:>8} |")
+    sum_opt = sum_tma = sum_bf16 = 0.0
+    n_done = 0
+    for (B, S, D, causal, fp8_us, fp8_tma_us, bf16_us,
+         fp8_tf, fp8_tma_tf, bf16_tf, spd_opt, spd_bf16) in results:
+        opt_s = f"{fp8_us:10.1f}" if fp8_us else "     FAIL"
+        tma_s = f"{fp8_tma_us:10.1f}" if fp8_tma_us else "     FAIL"
+        bf16_s = f"{bf16_us:9.1f}" if bf16_us else "    FAIL"
+        tma_tf_s = f"{fp8_tma_tf:10.2f}" if fp8_tma_tf else "       N/A"
+        spd_o_s = f"{spd_opt:.2f}x" if spd_opt is not None else "  N/A"
+        spd_b_s = f"{spd_bf16:.2f}x" if spd_bf16 is not None else "   N/A"
+        if fp8_us and fp8_tma_us and bf16_us:
+            sum_opt += fp8_us; sum_tma += fp8_tma_us; sum_bf16 += bf16_us
+            n_done += 1
+        print(f"| {B:>3} | {S:>5} | {D:>3} | {'y' if causal else 'n':>3} | "
+              f"{opt_s} | {tma_s} | {bf16_s} | {tma_tf_s} | "
+              f"{spd_o_s:>7} | {spd_b_s:>8} |")
+    if n_done:
+        print(f"\nSum-time speedup (FP8 TMA vs FP8 Opt): {sum_opt/sum_tma:.2f}x")
+        print(f"Sum-time speedup (FP8 TMA vs BF16):    {sum_bf16/sum_tma:.2f}x")
 
     # Print markdown table for PR comment
     print(f"\n\n### Markdown table for PR:")
-    print(f"| Batch | SeqLen | HeadDim | Causal | FP8 (μs) | BF16 (μs) | "
-          f"FP8 TFLOPS | BF16 TFLOPS | Ratio |")
-    print(f"|:-----:|:------:|:-------:|:------:|----------:|----------:|"
-          f"-----------:|------------:|:-----:|")
-    for B, S, D, causal, fp8_us, bf16_us, fp8_tf, bf16_tf, spd in results:
-        fp8_str = f"{fp8_us:.1f}" if fp8_us else "FAIL"
-        bf16_str = f"{bf16_us:.1f}" if bf16_us else "FAIL"
-        fp8_tf_str = f"{fp8_tf:.2f}" if fp8_tf else "N/A"
-        bf16_tf_str = f"{bf16_tf:.2f}" if bf16_tf else "N/A"
-        spd_str = f"{spd:.2f}x" if spd is not None else "N/A"
+    print(f"| Batch | SeqLen | HeadDim | Causal | FP8 Opt (μs) | FP8 TMA (μs) | BF16 (μs) | "
+          f"TMA TFLOPS | TMA/Opt | TMA/BF16 |")
+    print(f"|:-----:|:------:|:-------:|:------:|------------:|------------:|----------:|"
+          f"-----------:|--------:|---------:|")
+    for (B, S, D, causal, fp8_us, fp8_tma_us, bf16_us,
+         fp8_tf, fp8_tma_tf, bf16_tf, spd_opt, spd_bf16) in results:
+        opt_s = f"{fp8_us:.1f}" if fp8_us else "FAIL"
+        tma_s = f"{fp8_tma_us:.1f}" if fp8_tma_us else "FAIL"
+        bf16_s = f"{bf16_us:.1f}" if bf16_us else "FAIL"
+        tma_tf_s = f"{fp8_tma_tf:.2f}" if fp8_tma_tf else "N/A"
+        spd_o_s = f"{spd_opt:.2f}x" if spd_opt is not None else "N/A"
+        spd_b_s = f"{spd_bf16:.2f}x" if spd_bf16 is not None else "N/A"
         print(f"| {B} | {S} | {D} | {'yes' if causal else 'no'} | "
-              f"{fp8_str} | {bf16_str} | {fp8_tf_str} | {bf16_tf_str} | {spd_str} |")
+              f"{opt_s} | {tma_s} | {bf16_s} | {tma_tf_s} | {spd_o_s} | {spd_b_s} |")
 
 
 if __name__ == "__main__":
