@@ -37,22 +37,35 @@ Key differences from FP8FlashAttentionSm120Opt (CpAsync):
   - 1 dedicated DMA warp + 4 MMA warps (warp specialization)
   - kv_stages=2 double-buffered K/V SMEM via PipelineTmaAsync
   - mbarrier-based producer/consumer sync
-  - Default tile sizing M=128, N=64 (canonical for SM120 TMA), vs M=64, N=32
+  - Default tile sizing M=128, N=32 (canonical for SM120 TMA + FP8), vs M=64, N=32
 
 Key differences from BF16 TMA (FlashAttentionForwardSm120Tma):
   - FP8 e4m3 MMA via inline PTX kind::f8f6f4.m16n8k32 (no atom in cutlass-dsl 4.4.2)
-  - Per-thread SMEM arithmetic for register fragment load (no ldmatrix path —
-    deferred until LdMatrix8x8x16bOp is wired for FP8)
-  - 4×4 byte register transpose for V (no LdMatrix(transpose=True) path)
-  - sP staged in F32 SMEM (not in registers) — same as FP8 Opt
+  - All Q/K/V via inline-PTX ldmatrix.x4(.trans) on swizzled SMEM (manual
+    swizzle bit-math: addr ^ (((addr >> 7) & ((1<<B)-1)) << 4))
+  - Register-resident P via warp-shuffle redistribution (no sP_f32 SMEM)
+  - Per-thread bridge required: gid/tip swap in f8f6f4 B operand layout means
+    ldmatrix output doesn't directly produce B-operand register layout (Q: 4
+    shuffles/call; K: 8 shuffles + 4 prmt; V: 16 shuffles + 8 selp + 4 prmt)
 
-Perf (DGX Spark / SM121a, sum-time over the 16-config Aneureka matrix):
-  - 1.02x vs FP8FlashAttentionSm120Opt   (roughly tied)
-  - 0.84x vs FlashAttentionForwardSm120Tma (BF16 TMA)  (slower)
-  - Wins on the bigger D=128 shapes (B=4 S=1024 D=128: 1.35x of FP8 Opt;
-    B=1 S=512 D=128 causal: 1.24x), loses on small D=64 shapes.
-  Path A (FP8 ldmatrix.trans) and register-resident P remain the levers needed
-  to beat the BF16 TMA kernel.
+Output dtype:
+  - FP32 (default): pass torch.float32 output tensor (use make_cute_f32)
+  - BF16:           pass torch.bfloat16 output (use make_cute_bf16) — single-
+    instruction cvt.rn.bf16x2.f32 + packed Int32 store. Matches the production
+    FP8 attention pattern (FP8 in, BF16 out).
+
+Perf (DGX Spark / SM121a, sum-time over the 16-config Aneureka matrix,
+median of 50 iters per config, F32 output, N=32 default):
+  - 1.10x vs FP8FlashAttentionSm120Opt
+  - 0.91x vs FlashAttentionForwardSm120Tma (BF16 TMA, BF16 output)
+  - With per-shape N picked by `benchmark_fp8_vs_bf16.py` (N=64 only on
+    non-causal D=128 high-CTA shapes): 0.93x of BF16 TMA sum-time, with
+    multiple configs ≥1.0x of BF16 (e.g. B=1 S=512 D=64: 1.04x; B=1 S=2048
+    D=64: 1.06x; B=4 S=512 D=64: 1.03x).
+  - Decisive peak on B=4 S=1024 D=128 non-causal: 1.47x of FP8 Opt at N=64.
+  - Remaining gap to BF16 TMA is structural — the f8f6f4 layout's bridge
+    cost (esp. PV's V bridge: 16 shuffles + 8 selp + 4 prmt per ldmatrix call)
+    can't be eliminated without an FP8 m16n8k32 TiledMma atom (CUTLASS #3044).
 """
 
 import argparse
@@ -227,6 +240,21 @@ def ldmatrix_x4_b16(smem_addr, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def cvt_f32x2_to_bf16x2(v0, v1, *, loc=None, ip=None):
+    """Pack 2 FP32 → 2 BF16 in a 32-bit register (low: v0, high: v1).
+
+    Uses cvt.rn.bf16x2.f32 — single PTX instruction, no rounding penalty.
+    """
+    args = [Float32(x).ir_value(loc=loc, ip=ip) for x in [v0, v1]]
+    return Int32(llvm.inline_asm(
+        T.i32(), args,
+        "cvt.rn.bf16x2.f32 $0, $2, $1;",
+        "=r,f,f",
+        has_side_effects=False, asm_dialect=0, loc=loc, ip=ip,
+    ))
+
+
+@dsl_user_op
 def cvt_f32_to_fp8x4(v0, v1, v2, v3, *, loc=None, ip=None):
     """Pack 4 FP32 → 4 FP8 e4m3 bytes in uint32."""
     args = [Float32(x).ir_value(loc=loc, ip=ip) for x in [v0, v1, v2, v3]]
@@ -261,25 +289,31 @@ class FP8FlashAttentionSm120Tma:
 
     Tile config (defaults — `can_implement` checks alternates):
       - m_block_size=128 (4 MMA warps × 32 rows/warp = 2 m16 row groups)
-      - n_block_size=64
+      - n_block_size=32 (default; N=64 wins on B*H≥64 D=128 non-causal)
       - kv_stages=2 (K/V double-buffered via PipelineTmaAsync)
       - 1 DMA warp + 4 MMA warps = 160 threads/block
+
+    Per-shape N choice: empirically, N=32 wins on causal cases (smaller per-K-
+    iter overhead matters when causal halves the work) and small/medium D=64
+    shapes. N=64 wins on big-batch non-causal D=128 (more work per iter
+    amortizes the bridge cost). The kernel exposes n_block_size; the bench
+    `benchmark_fp8_vs_bf16.py` picks per shape automatically.
 
     SMEM budget at M=128, N=64, D=128, kv_stages=2:
       - sQ FP8: 128*128 = 16 KB
       - sK FP8: 64*128*2 = 16 KB
       - sV FP8: 64*128*2 = 16 KB
-      - sVt FP8: 128*80 = 10 KB (single stage; +16 byte row pad)
-      - sP: NONE (P held in registers via warp shuffles — `_compute_pa_quad`)
+      - sP / sVt: NONE — P is held in registers via warp shuffles, V is loaded
+        directly from sV via ldmatrix.x4.trans (no transpose-staging buffer).
       - mbar arrays + 1024-byte alignments: ~5 KB
-      - Total: ~63 KB (well under 99 KB SM120 budget; allows kv_stages=3)
+      - Total: ~53 KB (well under 99 KB SM120 budget)
     """
 
     def __init__(
         self,
         head_dim: int,
         m_block_size: int = 128,
-        n_block_size: int = 64,
+        n_block_size: int = 32,
         num_mma_warps: int = 4,
         kv_stages: int = 2,
         is_causal: bool = False,
@@ -321,14 +355,14 @@ class FP8FlashAttentionSm120Tma:
             # Per-warp masking + transpose work split currently assume 4 MMA warps.
             return False
         head_dim_padded = (head_dim + 31) // 32 * 32
-        # SMEM bytes: sQ + sK + sV + sVt + mbar arrays.  sP is no longer
-        # allocated since P is held in registers via warp shuffles.
+        # SMEM bytes: sQ + sK + sV + mbar arrays.  sP and sVt are not
+        # allocated: P is held in registers via warp shuffles; V is loaded
+        # directly via ldmatrix.x4.trans from sV (no transpose staging).
         smem_q = m_block_size * head_dim_padded
         smem_kv = n_block_size * head_dim_padded * kv_stages
-        smem_vt = head_dim_padded * (n_block_size + 16)
         smem_mbar = (1 + 2 * kv_stages * 2) * 8
-        align_pad = 1024 * 3 + 1024
-        smem_total = smem_q + smem_kv * 2 + smem_vt + smem_mbar + align_pad
+        align_pad = 1024 * 3
+        smem_total = smem_q + smem_kv * 2 + smem_mbar + align_pad
         smem_capacity = utils.get_smem_capacity_in_bytes("sm_120")
         if smem_total > smem_capacity:
             return False
@@ -372,10 +406,6 @@ class FP8FlashAttentionSm120Tma:
         sKV_one_layout = cute.slice_(sKV_layout_staged, (None, None, 0))
         sV_layout_staged = sKV_layout_staged
         sV_one_layout = sKV_one_layout
-        # sVt does NOT use TMA — keep row padding for bank conflicts.
-        # sP is no longer needed (P is held in registers via warp shuffles).
-        N_pad_vt = N + 16       # FP8 row stride for sVt
-        sVt_one_layout = cute.make_layout((D, N), stride=(N_pad_vt, 1))
 
         # /////////////////////////////////////////////////////////////////////
         # Reshape tensors for TMA: (batch, seq, head, dim) → (seq, dim, head, batch)
@@ -437,9 +467,6 @@ class FP8FlashAttentionSm120Tma:
             sV: cute.struct.Align[
                 cute.struct.MemRange[fp8, cute.cosize(sV_layout_staged)], 1024
             ]
-            sVt: cute.struct.Align[
-                cute.struct.MemRange[fp8, cute.cosize(sVt_one_layout)], 128
-            ]
 
         # Grid: (m_blocks, head*batch, 1)
         num_heads = cute.size(mQ.shape[2])
@@ -463,7 +490,6 @@ class FP8FlashAttentionSm120Tma:
             sQ_layout_staged,
             sKV_layout_staged,
             sV_layout_staged,
-            sVt_one_layout,
             SharedStorage,
             num_heads,
         ).launch(
@@ -493,7 +519,6 @@ class FP8FlashAttentionSm120Tma:
         sQ_layout_staged: cute.ComposedLayout,
         sKV_layout_staged: cute.ComposedLayout,
         sV_layout_staged: cute.ComposedLayout,
-        sVt_one_layout: cute.Layout,
         SharedStorage: cutlass.Constexpr,
         num_heads: cutlass.Int32,
     ):
@@ -528,7 +553,6 @@ class FP8FlashAttentionSm120Tma:
         sV = storage.sV.get_tensor(
             sV_layout_staged.outer, swizzle=sV_layout_staged.inner
         )
-        sVt = storage.sVt.get_tensor(sVt_one_layout)
 
         # /////////////////////////////////////////////////////////////////////
         # TMA partition: GMEM tile mapping
@@ -1092,16 +1116,34 @@ class FP8FlashAttentionSm120Tma:
                 inv_l = cutlass.Float32(1.0) / rsl if rsl != cutlass.Float32(0.0) else cutlass.Float32(1.0)
 
                 rg = m_warp_base + g * 16
-                for dt in cutlass.range_constexpr(n_d_tiles):
-                    db = dt * 8
-                    row_u = m_base + rg + gid
-                    row_l = m_base + rg + gid + 8
-                    if row_u < seq_lim:
-                        mO[batch_idx, row_u, head_idx, db + tip*2]     = o_regs[g][dt][0] * inv_u
-                        mO[batch_idx, row_u, head_idx, db + tip*2 + 1] = o_regs[g][dt][1] * inv_u
-                    if row_l < seq_lim:
-                        mO[batch_idx, row_l, head_idx, db + tip*2]     = o_regs[g][dt][2] * inv_l
-                        mO[batch_idx, row_l, head_idx, db + tip*2 + 1] = o_regs[g][dt][3] * inv_l
+                row_u = m_base + rg + gid
+                row_l = m_base + rg + gid + 8
+                if cutlass.const_expr(mO.element_type == cutlass.BFloat16):
+                    # BF16 output: pack 2 BF16 (= 4 bytes) per st via Int32 recast.
+                    # Halves bytes vs F32 and halves store instruction count.
+                    mO_i32 = cute.recast_tensor(mO, cutlass.Int32)
+                    for dt in cutlass.range_constexpr(n_d_tiles):
+                        if row_u < seq_lim:
+                            packed_u = cvt_f32x2_to_bf16x2(
+                                o_regs[g][dt][0] * inv_u,
+                                o_regs[g][dt][1] * inv_u,
+                            )
+                            mO_i32[batch_idx, row_u, head_idx, dt*4 + tip] = packed_u
+                        if row_l < seq_lim:
+                            packed_l = cvt_f32x2_to_bf16x2(
+                                o_regs[g][dt][2] * inv_l,
+                                o_regs[g][dt][3] * inv_l,
+                            )
+                            mO_i32[batch_idx, row_l, head_idx, dt*4 + tip] = packed_l
+                else:
+                    for dt in cutlass.range_constexpr(n_d_tiles):
+                        db = dt * 8
+                        if row_u < seq_lim:
+                            mO[batch_idx, row_u, head_idx, db + tip*2]     = o_regs[g][dt][0] * inv_u
+                            mO[batch_idx, row_u, head_idx, db + tip*2 + 1] = o_regs[g][dt][1] * inv_u
+                        if row_l < seq_lim:
+                            mO[batch_idx, row_l, head_idx, db + tip*2]     = o_regs[g][dt][2] * inv_l
+                            mO[batch_idx, row_l, head_idx, db + tip*2 + 1] = o_regs[g][dt][3] * inv_l
 
         elif warp_idx == self._num_mma_warps:
             # === DMA warp (producer) ===
@@ -1164,8 +1206,16 @@ def make_cute_f32(t):
         mode=3, stride_order=t.dim_order(), divisibility=4)
 
 
+def make_cute_bf16(t):
+    """Wrap a torch.bfloat16 tensor for BF16 output mode (2-byte elements,
+    matches BF16 TMA's output bandwidth)."""
+    return from_dlpack(t, assumed_align=16).mark_layout_dynamic(
+        leading_dim=3).mark_compact_shape_dynamic(
+        mode=3, stride_order=t.dim_order(), divisibility=8)
+
+
 def run_test(B, Sq, Sk, H, D, is_causal=False, desc="",
-             m_block_size=128, n_block_size=64, kv_stages=2):
+             m_block_size=128, n_block_size=32, kv_stages=2):
     """Correctness test against an FP32 reference.
 
     Returns True on PASS (max_diff < 0.1).
@@ -1221,7 +1271,7 @@ def run_test(B, Sq, Sk, H, D, is_causal=False, desc="",
 def run_benchmark(
     batch_size, seqlen_q, seqlen_k, num_head, head_dim,
     softmax_scale=None, is_causal=False,
-    m_block_size=128, n_block_size=64, kv_stages=2,
+    m_block_size=128, n_block_size=32, kv_stages=2,
     warmup_iterations=10, iterations=50,
     skip_ref_check=False,
 ):
@@ -1320,7 +1370,7 @@ if __name__ == "__main__":
     parser.add_argument("--head_dim", type=int, default=128)
     parser.add_argument("--is_causal", action="store_true")
     parser.add_argument("--m_block_size", type=int, default=128)
-    parser.add_argument("--n_block_size", type=int, default=64)
+    parser.add_argument("--n_block_size", type=int, default=32)
     parser.add_argument("--kv_stages", type=int, default=2)
     parser.add_argument("--warmup_iterations", type=int, default=10)
     parser.add_argument("--iterations", type=int, default=50)

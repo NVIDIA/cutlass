@@ -30,7 +30,7 @@
 
 Compares three kernels across a sweep of configs:
   - FP8FlashAttentionSm120Opt (CpAsync, M=64 N=32)
-  - FP8FlashAttentionSm120Tma (TMA + warp specialization, M=128 N=64)
+  - FP8FlashAttentionSm120Tma (TMA + warp specialization, M=128, per-shape N)
   - FlashAttentionForwardSm120 (BF16 CpAsync, M=128 N=64)
 """
 import argparse
@@ -69,12 +69,26 @@ def run_fp8(B, Sq, Sk, H, D, is_causal, warmup, iters, skip_ref):
         return None
 
 
+def _pick_n_block(B, Sq, D, is_causal):
+    """Per-shape N tile selection.
+
+    Empirical: N=64 beats N=32 only for non-causal D=128 with high CTA count
+    (B≥4 and S in the medium range, or single-batch S=2048). Everywhere else
+    N=32 wins because the smaller tile reduces fixed per-K-iter overhead and
+    helps causal cases (which halve the work per CTA).
+    """
+    if (not is_causal) and D >= 128 and (B >= 4 or Sq >= 2048):
+        return 64
+    return 32
+
+
 def run_fp8_tma(B, Sq, Sk, H, D, is_causal, warmup, iters, skip_ref):
     from fp8_flash_attention_tma import run_benchmark as run_fp8_tma_impl
     try:
         return run_fp8_tma_impl(
             B, Sq, Sk, H, D,
             is_causal=is_causal,
+            n_block_size=_pick_n_block(B, Sq, D, is_causal),
             warmup_iterations=warmup,
             iterations=iters,
             skip_ref_check=skip_ref,
@@ -170,7 +184,7 @@ def main():
     print(f"\n\n{'='*140}")
     print("BENCHMARK RESULTS: FP8 (kind::f8f6f4.m16n8k32) vs BF16 (mma.sync.m16n8k16)")
     print(f"FP8 Opt:   FP8FlashAttentionSm120Opt   (CpAsync, 4 warps, M=64, N=32)")
-    print(f"FP8 TMA:   FP8FlashAttentionSm120Tma   (TMA + warp specialization, M=128, N=64)")
+    print(f"FP8 TMA:   FP8FlashAttentionSm120Tma   (TMA + warp specialization, M=128, N picked per shape: 64 if non-causal & D=128 & high-CTA, else 32)")
     print(f"BF16:      FlashAttentionForwardSm120  (CpAsync, tiled MMA, M=128, N=64)")
     print(f"Device: {torch.cuda.get_device_name(0)}")
     print(f"Heads: {H}, Warmup: {args.warmup}, Iterations: {args.iters}")
