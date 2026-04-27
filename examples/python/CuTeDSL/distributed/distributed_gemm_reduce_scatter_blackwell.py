@@ -2408,6 +2408,8 @@ def run(
             is_dynamic_layout=True,
         )
         barrier_flag_torch, barrier_flag_torch_mc, barrier_flag, barrier_flag_mc = create_barrier_flags()
+        torch.cuda.synchronize()
+        dist.barrier()
         add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu_mc)
         add_free_func_and_tensor(nvshmem.core.free_tensor, c_torch_gpu)
         for i in range(len(c_peer_torch_tensors)):
