@@ -124,4 +124,97 @@ void warpgroup_reg_set() {
   }
 }
 
-}  // namespace cutlass::fmha::collective
+} // namespace cutlass::fmha::collective
+
+/*
+ * The following utility type_traits allow mapping constexpr variable to type at
+ * compile time.
+ * The default return type defined for each map would be returned if queried key
+ * does not exist in the map.
+ *
+ * Example 1: constexpr -> type mapping
+ * ```
+ * using Bits2Int = kValTyMap<
+ *     void, // default, error
+ *     kValTyPair<64, int64_t>,
+ *     kValTyPair<32, int32_t>,
+ *     kValTyPair<16, int16_t>
+ * >;
+ * using IntType = Bits2Int::query<16>;
+ * ```
+ *
+ * Example 2: constexpr -> constexpr mapping
+ * ```
+ * using TileSize2Stages = kValValMap<
+ *     65536, // default, error
+ *     kValValPair<64, 10>,
+ *     kValValPair<128, 4>
+ * >;
+ * using TileM = decltype(get<0>(TileShape{}));
+ * constexpr int PipelineStages = TileSize2Stages::template query<TileM::value>;
+ * ```
+ */
+namespace constexpr_type_map {
+
+template <auto keyVal, typename _valueT>
+struct kValTyPair {
+  static constexpr auto key = keyVal;
+  using valueT = _valueT;
+};
+
+template <typename Default, typename FirstMapping, typename... OtherMapping>
+struct kValTyMap {
+  template <auto QueryKey>
+  using query = std::conditional_t<
+      QueryKey == FirstMapping::key,
+      typename FirstMapping::valueT,
+      typename kValTyMap<Default, OtherMapping...>::template query<QueryKey>>;
+};
+
+template <typename Default, typename LastMapping>
+struct kValTyMap<Default, LastMapping> {
+  template <auto QueryKey>
+  using query = std::conditional_t<
+      QueryKey == LastMapping::key,
+      typename LastMapping::valueT,
+      Default>;
+};
+
+} // namespace constexpr_type_map
+
+namespace constexpr_constexpr_map {
+
+template <auto keyVal, auto valueVal>
+struct kValValPair {
+  static constexpr auto key = keyVal;
+  static constexpr auto value = valueVal;
+};
+
+template <auto Default, typename FirstMapping, typename... OtherMapping>
+struct kValValMap {
+  using ValType = std::add_const_t<decltype(Default)>;
+  static_assert(
+      std::is_same_v<ValType, decltype(FirstMapping::value)>,
+      "Map value type mismatch");
+  static_assert(
+      (std::is_same_v<ValType, decltype(OtherMapping::value)> && ...),
+      "Map value type mismatch");
+  template <decltype(FirstMapping::key) QueryKey>
+  static constexpr decltype(FirstMapping::value) query =
+      (QueryKey == FirstMapping::key)
+      ? FirstMapping::value
+      : kValValMap<Default, OtherMapping...>::template query<QueryKey>;
+};
+
+template <auto Default, typename LastMapping>
+struct kValValMap<Default, LastMapping> {
+  using ValType = std::add_const_t<decltype(Default)>;
+  static_assert(
+      std::is_same_v<ValType, decltype(LastMapping::value)>,
+      "Map value type mismatch");
+  template <decltype(LastMapping::key) QueryKey>
+  static constexpr decltype(LastMapping::value) query =
+      (QueryKey == LastMapping::key) ? LastMapping::value : Default;
+};
+
+} // namespace constexpr_constexpr_map

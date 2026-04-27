@@ -38,7 +38,7 @@
 // common
 #include "cutlass/cutlass.h"
 #include "cutlass/device_kernel.h"
-
+#include "cutlass/arch/arch.h"
 #if !defined(__CUDACC_RTC__)
 #include "cutlass/cluster_launch.hpp"
 #include "cutlass/trace.h"
@@ -56,7 +56,7 @@ template <class Kernel_>
 class FMHA {
 public:
   using Kernel = Kernel_;
-
+  static_assert(Kernel::SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
   static int const kThreadCount = Kernel::MaxThreadsPerBlock;
 
   /// Argument structure: User API
