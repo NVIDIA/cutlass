@@ -36,13 +36,23 @@ def _direct_basis_tma_kernel(
     seq_tile: cutlass.Constexpr,
     use_cache_hint: cutlass.Constexpr,
     tile_mode: cutlass.Constexpr,
+    use_swizzle: cutlass.Constexpr,
 ):
     smem = cutlass.utils.SmemAllocator()
-    s_tile = smem.allocate_tensor(
-        dtype,
-        cute.make_layout((d_tile, seq_tile), stride=(1, d_tile)),
-        byte_alignment=128,
-    )
+    smem_layout = cute.make_layout((d_tile, seq_tile), stride=(1, d_tile))
+    if cutlass.const_expr(use_swizzle):
+        s_tile = smem.allocate_tensor(
+            dtype,
+            smem_layout,
+            byte_alignment=128,
+            swizzle=cute.make_swizzle(3, 4, 3),
+        )
+    else:
+        s_tile = smem.allocate_tensor(
+            dtype,
+            smem_layout,
+            byte_alignment=128,
+        )
     s_mbar = smem.allocate_tensor(
         cutlass.Int64, cute.make_layout(2), byte_alignment=8
     )
@@ -121,14 +131,22 @@ def _launch_direct_basis_tma(
     seq_tile: cutlass.Constexpr,
     use_cache_hint: cutlass.Constexpr,
     tile_mode: cutlass.Constexpr,
+    use_swizzle: cutlass.Constexpr,
 ):
     gmem_tma = cute.make_tensor(
         src.iterator,
         cute.make_layout((d_total, seq_total), stride=(1, d_total)),
     )
+    smem_layout = cute.make_layout((d_tile, seq_tile), stride=(1, d_tile))
+    if cutlass.const_expr(use_swizzle):
+        smem_layout = cute.make_composed_layout(
+            cute.make_swizzle(3, 4, 3),
+            0,
+            smem_layout,
+        )
     tma_atom, _, _ = cpasync.make_sm120_tma_load_2d_atom(
         gmem_tma,
-        cute.make_layout((d_tile, seq_tile), stride=(1, d_tile)),
+        smem_layout,
         (d_tile, seq_tile),
     )
     smem_bytes = d_tile * seq_tile * dtype.width // 8 + 16
@@ -142,6 +160,7 @@ def _launch_direct_basis_tma(
         seq_tile,
         use_cache_hint,
         tile_mode,
+        use_swizzle,
     ).launch(grid=[1, 1, 1], block=[64, 1, 1], smem=smem_bytes)
 
 
@@ -165,6 +184,7 @@ def _run_direct_basis_case(
     coord1=32,
     use_cache_hint=False,
     tile_mode=False,
+    use_swizzle=False,
 ):
     src = _make_source(seq_total, d_total, torch_dtype)
     dst = torch.zeros(64, device="cuda", dtype=torch.float32)
@@ -183,6 +203,7 @@ def _run_direct_basis_case(
         seq_tile,
         use_cache_hint,
         tile_mode,
+        use_swizzle,
     )
     cute.compile(_launch_direct_basis_tma, *args)(*runtime_args)
     torch.cuda.synchronize()
@@ -208,6 +229,21 @@ def _run_fa_like_kv_direct_basis_smoke(torch_dtype, dtype, d_tile, seq_tile):
         seq_tile=seq_tile,
         coord0=0,
         coord1=32,
+    )
+
+
+def _run_fa_like_kv_swizzled_smoke(torch_dtype, dtype, d_tile, seq_tile):
+    _require_sm120()
+    _run_direct_basis_case(
+        dtype,
+        torch_dtype,
+        d_total=128,
+        seq_total=192,
+        d_tile=d_tile,
+        seq_tile=seq_tile,
+        coord0=16,
+        coord1=32,
+        use_swizzle=True,
     )
 
 
@@ -240,4 +276,9 @@ if __name__ == "__main__":
                 _run_fa_like_kv_direct_basis_smoke(
                     torch_dtype, dtype, d_tile, seq_tile
                 )
+    for torch_dtype, dtype in [
+        (torch.float16, cutlass.Float16),
+        (torch.bfloat16, cutlass.BFloat16),
+    ]:
+        _run_fa_like_kv_swizzled_smoke(torch_dtype, dtype, 64, 64)
     print("SM120 direct TMA smoke passed")

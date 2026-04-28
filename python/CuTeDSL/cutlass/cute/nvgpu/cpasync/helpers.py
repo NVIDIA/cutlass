@@ -225,6 +225,12 @@ def make_sm120_tma_load_2d_atom(
     The returned descriptor pointer is intended for ``sm120_tma_load_2d``.
     Generic ``cute.copy`` executable TMA lowering remains a separate backend
     path and is not used by this helper.
+
+    ``smem_layout_`` may be a composed swizzled layout. When it is swizzled,
+    the destination pointer passed to ``sm120_tma_load_2d`` must carry the same
+    swizzle, for example from ``MemRange.get_tensor(layout.outer,
+    swizzle=layout.inner)`` or ``SmemAllocator.allocate_tensor(...,
+    layout.outer, swizzle=layout.inner)``.
     """
     _check_sm120_tma_load_supported()
 
