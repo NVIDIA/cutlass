@@ -11,8 +11,11 @@
 
 from typing import Optional, Tuple, Type, Union
 
-from cutlass.cutlass_dsl import dsl_user_op
+from cutlass import const_expr
+from cutlass.base_dsl.arch import Arch
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
 
+import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import llvm
 
@@ -24,10 +27,12 @@ from ...typing import (
     Tiler,
     Pointer,
     Int16,
+    Int32,
+    Int64,
     Numeric,
     NumericMeta,
 )
-from ... import core, atom
+from ... import core, atom, arch as cute_arch
 from .copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SMulticastOp,
@@ -45,6 +50,242 @@ TMAOp = Union[
     CopyBulkTensorTileS2GOp,
     CopyReduceBulkTensorTileS2GOp,
 ]
+
+
+def _check_sm120_tma_load_supported() -> None:
+    BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_120)
+
+
+@dsl_user_op
+def get_tma_desc_addr(
+    tma_atom: atom.CopyAtom,
+    *,
+    loc=None,
+    ip=None,
+) -> Pointer:
+    """
+    Return the address of the tiled TMA descriptor associated with a TMA copy atom.
+
+    This is primarily useful for low-level TMA issue paths that need to bypass
+    the generic executable ``cute.copy`` lowering while still using the CuTe DSL
+    TMA descriptor builder.
+    """
+    exec_tma_atom = _cute_nvgpu_ir.atom_make_exec_tma(
+        tma_atom._trait.value,
+        loc=loc,
+        ip=ip,
+    )
+    tma_desc_ptr_ty = _cute_ir.PtrType.get(
+        _cute_nvgpu_ir.TmaDescriptorTiledType.get(),
+        _cute_ir.AddressSpace.generic,
+        128,
+    )
+    return _cute_nvgpu_ir.get_tma_desc_addr(
+        tma_desc_ptr_ty,
+        exec_tma_atom,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def _sm120_issue_tma_load_2d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    tile_mode: bool = False,
+    loc=None,
+    ip=None,
+) -> None:
+    """
+    Unsafe raw SM120 CTA-local rank-2 TMA issuer.
+
+    Callers must ensure only one elected thread issues this instruction for a
+    given mbarrier transaction count. Prefer ``sm120_tma_load_2d`` unless the
+    caller has already performed election.
+    """
+    _check_sm120_tma_load_supported()
+
+    dst_smem_i32 = dst_smem_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    tma_desc_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    coord0_i32 = Int32(coord0).ir_value(loc=loc, ip=ip)
+    coord1_i32 = Int32(coord1).ir_value(loc=loc, ip=ip)
+    tma_bar_i32 = tma_bar_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+
+    tile_qualifier = ".tile" if const_expr(tile_mode) else ""
+    if cache_policy is None:
+        llvm.inline_asm(
+            None,
+            [dst_smem_i32, tma_desc_i64, coord0_i32, coord1_i32, tma_bar_i32],
+            f"cp.async.bulk.tensor.2d.shared::cta.global{tile_qualifier}.mbarrier::complete_tx::bytes [$0], [$1, {{$2, $3}}], [$4];",
+            "r,l,r,r,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        cache_policy_i64 = Int64(cache_policy).ir_value(loc=loc, ip=ip)
+        llvm.inline_asm(
+            None,
+            [
+                dst_smem_i32,
+                tma_desc_i64,
+                coord0_i32,
+                coord1_i32,
+                tma_bar_i32,
+                cache_policy_i64,
+            ],
+            f"cp.async.bulk.tensor.2d.shared::cta.global{tile_qualifier}.mbarrier::complete_tx::bytes.L2::cache_hint [$0], [$1, {{$2, $3}}], [$4], $5;",
+            "r,l,r,r,r,l",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+
+
+@dsl_user_op
+def sm120_tma_load_2d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    already_elected: bool = False,
+    tile_mode: bool = False,
+    loc=None,
+    ip=None,
+) -> None:
+    """
+    Issue a rank-2 SM120 CTA-local TMA load from one elected thread.
+
+    The descriptor must use direct TMA basis: coordinate 0 is the contiguous
+    dimension and coordinate 1 is the next slower dimension. For FlashAttention
+    ``(seq, d)`` memory this means constructing the descriptor as ``(d, seq)``
+    and passing coordinates ``{d_coord, seq_coord}``.
+
+    ``already_elected=True`` is only for callers that have already wrapped this
+    call in ``cute.arch.elect_one()`` or an equivalent single-issuer guard.
+    """
+    if const_expr(already_elected):
+        _sm120_issue_tma_load_2d(
+            dst_smem_ptr,
+            tma_desc_ptr,
+            tma_bar_ptr,
+            coord0,
+            coord1,
+            cache_policy=cache_policy,
+            tile_mode=tile_mode,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        with cute_arch.elect_one(loc=loc, ip=ip):
+            _sm120_issue_tma_load_2d(
+                dst_smem_ptr,
+                tma_desc_ptr,
+                tma_bar_ptr,
+                coord0,
+                coord1,
+                cache_policy=cache_policy,
+                tile_mode=tile_mode,
+                loc=loc,
+                ip=ip,
+            )
+
+
+@dsl_user_op
+def make_sm120_tma_load_2d_atom(
+    gmem_tensor: Tensor,
+    smem_layout_: Union[Layout, ComposedLayout],
+    cta_tiler: Tiler,
+    *,
+    internal_type: Optional[Type[Numeric]] = None,
+    loc=None,
+    ip=None,
+) -> Tuple[atom.CopyAtom, Tensor, Pointer]:
+    """
+    Build a narrow SM120 direct-basis rank-2 TMA load atom.
+
+    This helper deliberately does not canonicalize or logicalize tensor modes.
+    The caller must present the tensor in the descriptor basis consumed by TMA:
+    mode 0 is the contiguous physical mode and mode 1 is the next slower mode.
+    For FlashAttention ``(seq, d)`` GMEM, create a separate direct-basis view
+    shaped ``(d, seq)`` with stride ``(1, D)`` before calling this helper.
+
+    The returned descriptor pointer is intended for ``sm120_tma_load_2d``.
+    Generic ``cute.copy`` executable TMA lowering remains a separate backend
+    path and is not used by this helper.
+    """
+    _check_sm120_tma_load_supported()
+
+    if core.rank(gmem_tensor) != 2:
+        raise ValueError(
+            f"SM120 direct TMA load helper expects a rank-2 GMEM tensor, "
+            f"but got rank {core.rank(gmem_tensor)}"
+        )
+
+    if not isinstance(gmem_tensor.element_type, NumericMeta):
+        raise TypeError(
+            "SM120 direct TMA load helper expects a numeric GMEM element type"
+        )
+    if gmem_tensor.element_type.width < 8:
+        raise ValueError(
+            "SM120 direct TMA load helper requires element width >= 8 bits"
+        )
+
+    stride0 = core.get(gmem_tensor.stride, mode=[0], loc=loc, ip=ip)
+    if not core.is_static(stride0) or stride0 != 1:
+        raise ValueError(
+            "SM120 direct TMA load helper expects GMEM mode 0 to be statically "
+            f"contiguous with stride 1, but got stride {stride0}"
+        )
+
+    tile_shape = core.shape(cta_tiler, loc=loc, ip=ip)
+    if core.rank(tile_shape) != 2:
+        raise ValueError(
+            f"SM120 direct TMA load helper expects a rank-2 CTA tiler, "
+            f"but got rank {core.rank(tile_shape)}"
+        )
+
+    tile0 = core.get(tile_shape, mode=[0], loc=loc, ip=ip)
+    if not core.is_static(tile0):
+        raise ValueError(
+            "SM120 direct TMA load helper requires a static mode-0 tile extent"
+        )
+    if tile0 > 256:
+        raise ValueError(
+            f"SM120 direct TMA load helper requires tile extent 0 <= 256, "
+            f"but got {tile0}"
+        )
+
+    element_bytes = gmem_tensor.element_type.width // 8
+    if (tile0 * element_bytes) % 16 != 0:
+        raise ValueError(
+            "SM120 direct TMA load helper requires mode-0 tile bytes to be a "
+            f"multiple of 16, but got {tile0 * element_bytes}"
+        )
+
+    tma_atom, tma_tensor = make_tiled_tma_atom(
+        CopyBulkTensorTileG2SOp(),
+        gmem_tensor,
+        smem_layout_,
+        cta_tiler,
+        num_multicast=1,
+        internal_type=internal_type,
+        loc=loc,
+        ip=ip,
+    )
+    return tma_atom, tma_tensor, get_tma_desc_addr(tma_atom, loc=loc, ip=ip)
 
 
 @dsl_user_op

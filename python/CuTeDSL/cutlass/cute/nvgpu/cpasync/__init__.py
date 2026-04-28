@@ -29,6 +29,9 @@ __all__ = [
     # helpers.py
     #
     "make_tiled_tma_atom",
+    "make_sm120_tma_load_2d_atom",
+    "get_tma_desc_addr",
+    "sm120_tma_load_2d",
     "tma_partition",
     "create_tma_multicast_mask",
     "prefetch_descriptor",
