@@ -57,6 +57,7 @@ cutlass_test_unit_gemm_device_add_executable(
   sm120_bs_gemm_nvf4_nvf4_f32_bf16.cu
   sm120_bs_gemm_nvf4_nvf4_f32_f16.cu
   sm120_bs_gemm_nvf4_nvf4_f32_f32.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f32_small_tiles.cu
   sm120_bs_gemm_nvf4_nvf4_f32_f32_narrow_output.cu
   sm120_bs_gemm_nvf4_nvf4_f32_epilogue.cu
   sm120_bs_gemm_mxf4_mxf4_f32_f32.cu

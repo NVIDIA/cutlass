@@ -370,8 +370,9 @@ public:
 
     // Preconditions
     static_assert(NumMMAThreads == 256, "Cooperative kernel must have TiledMMA operating using 256 threads.");
-    static_assert(size<0>(TileShape{}) >= 128,
-        "Cooperative kernel requires Tile Size to be greater than or equal to 128 along the M-dimension.");
+    static_assert(size<0>(TileShape{}) >= 128 ||
+        (IsSm120BlockScaled<DispatchPolicy>::value && size<0>(TileShape{}) == 64),
+        "Cooperative kernel requires Tile Size to be greater than or equal to 128 along the M-dimension, except SM120 block-scaled kernels also support M=64.");
 
     static_assert(cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");

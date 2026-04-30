@@ -198,7 +198,7 @@ struct CollectiveMma<
 
   // SmemLayoutAtomSFA and SmemLayoutAtomSFB are for whole CTA tiles. We add the number of pipeline stages here.
   // The number of pipeline stages is the same as the number of pipeline stages from AB Load <-> MainLoop
-  using SmemLayoutSFA = decltype(make_layout(
+  using SmemLayoutSFA_ = decltype(make_layout(
     append(shape(SmemLayoutAtomSFA{}), Int<DispatchPolicy::Stages>{}),
     append(stride(SmemLayoutAtomSFA{}), size(filter_zeros(SmemLayoutAtomSFA{})))
   ));
@@ -208,16 +208,33 @@ struct CollectiveMma<
     append(stride(SmemLayoutAtomSFB{}), size(filter_zeros(SmemLayoutAtomSFB{})))
   ));
 
-  using TileShapeSFB = cute::conditional_t<size<1>(TileShape{}) < 128,
+  static constexpr bool PadSFA_M = size<0>(TileShape{}) < 128;
+  static constexpr bool PadSFB_N = size<1>(TileShape{}) < 128;
+
+  using TileShapeSFA = cute::conditional_t<PadSFA_M,
+    decltype(cute::make_shape(
+      Int<128>{},
+      shape<1>(TileShape{}),
+      shape<2>(TileShape{}))),
+    TileShape>;
+
+  using TileShapeSFB = cute::conditional_t<PadSFB_N,
     decltype(cute::make_shape(
       shape<0>(TileShape{}),
       Int<128>{},
       shape<2>(TileShape{}))),
     TileShape>;
 
-  using SmemLayoutSFB = cute::conditional_t<size<1>(TileShape{}) < 128,
+  using SmemLayoutSFA = cute::conditional_t<PadSFA_M,
+    decltype(cute::logical_divide(SmemLayoutSFA_{}, select<0,2>(TileShape{}))),
+    SmemLayoutSFA_>;
+
+  using SmemLayoutSFB = cute::conditional_t<PadSFB_N,
     decltype(cute::logical_divide(SmemLayoutSFB_{}, select<1,2>(TileShape{}))),
     SmemLayoutSFB_>;
+
+  static constexpr int SFA_M_Ratio = size<0>(TileShapeSFA{}) / size<0>(TileShape{});
+  static constexpr int SFB_N_Ratio = size<1>(TileShapeSFB{}) / size<1>(TileShape{});
 
   static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
   static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
@@ -324,7 +341,7 @@ struct CollectiveMma<
         GmemTiledCopySFA{},
         make_tensor(static_cast<ElementSF const*>(nullptr), InternalLayoutSFA{}),
         SmemLayoutSFA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
+        make_shape(shape<0>(TileShapeSFA{}), shape<2>(TileShapeSFA{})),
         _1{}));  // No programmatic multicast
 
 
@@ -384,7 +401,7 @@ struct CollectiveMma<
       stride_a = InternalStrideA{};
       stride_b = InternalStrideB{};
       layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
-      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
+      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(init_M, init_N, init_K, 1));
     }
     else {
       // Tensor shapes for Ptr-Array are initialized correctly only here.
@@ -421,7 +438,7 @@ struct CollectiveMma<
         GmemTiledCopySFA{},
         tensor_sfa,
         SmemLayoutSFA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
+        make_shape(shape<0>(TileShapeSFA{}), shape<2>(TileShapeSFA{})),
         _1{}); // No programmatic multicast
 
     typename Params::TMA_SFB tma_load_sfb = make_tma_copy<uint16_t>(
@@ -705,14 +722,15 @@ struct CollectiveMma<
 
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
       Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
-      Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_M,BLK_K,PIPE)
-      Tensor sSFB = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_N,BLK_K,PIPE)
 
       //
       // Prepare the TMA loads for A, B, SFA and SFB
       //
 
-      auto [gA_mkl, gB_nkl, gSFA_mkl, gSFB_nkl] = load_inputs;
+      auto gA_mkl = get<0>(load_inputs);
+      auto gB_nkl = get<1>(load_inputs);
+      auto gSFA_mkl = get<2>(load_inputs);
+      auto gSFB_nkl = get<3>(load_inputs);
 
       auto block_tma_a = params.tma_load_a.get_slice(0);
       auto block_tma_b = params.tma_load_b.get_slice(0);
@@ -721,16 +739,23 @@ struct CollectiveMma<
       auto block_tma_sfb = params.tma_load_sfb.get_slice(0);
 
       // Partition the inputs based on the current block coordinates.
-      auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
+      auto m_coord = get<0>(blk_coord);
+      auto n_coord = get<1>(blk_coord);
+      auto l_coord = get<3>(blk_coord);
 
+      Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_M,BLK_K,PIPE)
+      Tensor sSFB = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_N,BLK_K,PIPE)
+
+      auto broadcast_m = make_layout(
+        make_shape(Int<SFA_M_Ratio>{}, Int<cute::numeric_limits<int>::max()>{}),
+        make_stride(_0{}, SFA_M_Ratio));
       auto broadcast_n = make_layout(
-        make_shape(Int<size<1>(TileShapeSFB{}) / size<1>(TileShape{})>{},
-                   Int<cute::numeric_limits<int>::max()>{}),
-        make_stride(_0{}, size<1>(TileShapeSFB{}) / size<1>(TileShape{})));
+        make_shape(Int<SFB_N_Ratio>{}, Int<cute::numeric_limits<int>::max()>{}),
+        make_stride(_0{}, SFB_N_Ratio));
 
       Tensor gA =   gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
       Tensor gB =   gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
-      Tensor gSFA = gSFA_mkl(_,_,m_coord,_,l_coord);                                                   // (BLK_M,BLK_K,k)
+      Tensor gSFA = gSFA_mkl(_,_,broadcast_m(m_coord),_,l_coord);                                      // (BLK_M,BLK_K,k)
       Tensor gSFB = gSFB_nkl(_,_,broadcast_n(n_coord),_,l_coord);                                      // (BLK_N,BLK_K,k)
 
       // Partition source and destination tensors for tma copies
@@ -814,15 +839,24 @@ struct CollectiveMma<
 
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
-    Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});   // (BLK_M,BLK_K,PIPE)
+    Tensor sSFA = [&]() {
+      if constexpr (!PadSFA_M) {
+        return make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});      // (BLK_M,BLK_K,PIPE)
+      }
+      else {
+        Tensor temp = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_SFA_M,BLK_K,PIPE)
+        auto m = get<0>(blk_coord);
+        return temp(make_coord(_,m % SFA_M_Ratio), _, _);
+      }
+    }();
     Tensor sSFB = [&]() {
-      if constexpr (size<1>(TileShape{}) >= 128) {
+      if constexpr (!PadSFB_N) {
         return make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});      // (BLK_N,BLK_K,PIPE)
       }
       else {
         Tensor temp = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_SFB_N,BLK_K,PIPE)
         auto n = get<1>(blk_coord);
-        return temp(make_coord(_,n % (size<1>(TileShapeSFB{}) / size<1>(TileShape{}))), _, _);
+        return temp(make_coord(_,n % SFB_N_Ratio), _, _);
       }
     }();
 
@@ -902,7 +936,9 @@ struct CollectiveMma<
     //
 
     // Size of the register pipeline
-    auto K_BLOCK_MAX = size<2>(tCrA);
+    constexpr auto K_BLOCK_MAX = size<2>(tCrA);
+    constexpr bool SingleCtaKBlock =
+      decltype(size<2>(TileShape{}) == Int<64>{})::value;
 
     int read_stage = smem_pipe_read.index();
     auto tCsA_stage   = tCsA(_,_,_,read_stage);
@@ -939,6 +975,62 @@ struct CollectiveMma<
       //
       // Compute on k_tile
       //
+      if constexpr (SingleCtaKBlock) {
+        gemm_kblock(_0{});
+
+        cutlass::arch::NamedBarrier::sync(
+        thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+        // UNLOCK smem_pipe_read, done _computing_ on it
+        pipeline.consumer_release(smem_pipe_read);
+        ++smem_pipe_read;
+
+        read_stage = smem_pipe_read.index();
+        tCsA_stage   = tCsA(_,_,_,read_stage);
+        tCsB_stage   = tCsB(_,_,_,read_stage);
+        tCsSFA_stage = tCsSFA(_,_,_,read_stage);
+        tCsSFB_stage = tCsSFB(_,_,_,read_stage);
+        pipeline.consumer_wait(smem_pipe_read);
+        copy_kblock(_0{});
+      }
+      else {
+        for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
+
+          auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
+
+          if (k_block == K_BLOCK_MAX - 1) {
+            cutlass::arch::NamedBarrier::sync(
+            thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+            // UNLOCK smem_pipe_read, done _computing_ on it
+            pipeline.consumer_release(smem_pipe_read);
+            ++smem_pipe_read;
+            read_stage = smem_pipe_read.index();
+            tCsA_stage   = tCsA(_,_,_,read_stage);
+            tCsB_stage   = tCsB(_,_,_,read_stage);
+            tCsSFA_stage = tCsSFA(_,_,_,read_stage);
+            tCsSFB_stage = tCsSFB(_,_,_,read_stage);
+            pipeline.consumer_wait(smem_pipe_read);
+          }
+
+          copy_kblock(k_block_next);
+          gemm_kblock(k_block);
+
+        });
+      }
+    } // k_tile_count
+
+    //
+    // Hoist out last k_tile
+    //
+    if constexpr (SingleCtaKBlock) {
+      gemm_kblock(_0{});
+
+      cutlass::arch::NamedBarrier::sync(
+      thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      // UNLOCK smem_pipe_read, done _computing_ on it
+      pipeline.consumer_release(smem_pipe_read);
+      ++smem_pipe_read;
+    }
+    else {
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
@@ -949,41 +1041,15 @@ struct CollectiveMma<
           // UNLOCK smem_pipe_read, done _computing_ on it
           pipeline.consumer_release(smem_pipe_read);
           ++smem_pipe_read;
-          read_stage = smem_pipe_read.index();
-          tCsA_stage   = tCsA(_,_,_,read_stage);
-          tCsB_stage   = tCsB(_,_,_,read_stage);
-          tCsSFA_stage = tCsSFA(_,_,_,read_stage);
-          tCsSFB_stage = tCsSFB(_,_,_,read_stage);
-          pipeline.consumer_wait(smem_pipe_read);
         }
 
-        copy_kblock(k_block_next);
+        if (k_block_next > 0) {
+          copy_kblock(k_block_next);
+        }
         gemm_kblock(k_block);
 
       });
-    } // k_tile_count
-
-    //
-    // Hoist out last k_tile
-    //
-    for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
-
-      auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-
-      if (k_block == K_BLOCK_MAX - 1) {
-        cutlass::arch::NamedBarrier::sync(
-        thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
-        // UNLOCK smem_pipe_read, done _computing_ on it
-        pipeline.consumer_release(smem_pipe_read);
-        ++smem_pipe_read;
-      }
-
-      if (k_block_next > 0) {
-        copy_kblock(k_block_next);
-      }
-      gemm_kblock(k_block);
-
-    });
+    }
 }
 
   /// Perform a Consumer Epilogue to release all buffers
