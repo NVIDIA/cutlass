@@ -456,25 +456,56 @@ TEST(CuTe_core, Composition)
     test_composition(a, b);
   }
 
-  // Should fail the strong stride-divisibility condition: rhs stride 3 neither
-  // divides nor is divided by lhs mode-0 shape 8.  The previous "weak" check
-  // (rest_stride < curr_shape) accepted these cases; for these particular
-  // rhs sizes they happen to produce the right answer because the rhs
-  // coordinates never reach the mode boundary, but the same algorithm produces
-  // wrong answers for compositions that do cross it (see NVIDIA/cutlass#3177).
-  // {
-  //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
-  //   auto b = make_layout(_2{}, _3{});
-  //   test_composition(a, b);
-  // }
-  // {
-  //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
-  //   auto b = make_layout(_3{}, _3{});
-  //   test_composition(a, b);
-  // }
+  // Safe truncation: rhs stride 3 neither divides nor is divided by lhs
+  // mode-0 shape 8, but the rhs image stays inside that mode so higher modes
+  // are unreachable.  Accepted via the safe-truncation disjunct
+  // ((rest_shape - 1) * rest_stride < curr_shape).
+  {
+    auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
+    auto b = make_layout(_2{}, _3{});
+    test_composition(a, b);
+  }
+  {
+    auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
+    auto b = make_layout(_3{}, _3{});
+    test_composition(a, b);
+  }
+
+  // Paper §3.3.3 "apparent violation": (4,2,8):(3,12,97) coalesces to
+  // (8,8):(3,97), then o 3:3 truncates safely to 3:9.
+  // arXiv:2603.02298 §3.3.3.
+  {
+    auto a = make_layout(Shape<_4,_2,_8>{}, Stride<_3,_12,Int<97>>{});
+    auto b = make_layout(_3{}, _3{});
+    test_composition(a, b);
+  }
+
+  // Should fail the divisibility condition: rhs image crosses the mode
+  // boundary (every disjunct of the predicate fails).
   // {
   //   auto a = make_layout(Shape<_8,_8>{}, Stride<_8,_1>{});
   //   auto b = make_layout(_4{}, _3{});
+  //   test_composition(a, b);
+  // }
+  // Paper §3.3.3 fail-left: same A as above but B=4:3 doesn't truncate
+  // (after coalesce, (4-1)*3 = 9 >= 8).
+  // {
+  //   auto a = make_layout(Shape<_4,_2,_8>{}, Stride<_3,_12,Int<97>>{});
+  //   auto b = make_layout(_4{}, _3{});
+  //   test_composition(a, b);
+  // }
+  // Paper §3.3.3 fail-right: A's middle stride 15 prevents the coalesce
+  // that would otherwise expose a safe truncation.
+  // {
+  //   auto a = make_layout(Shape<_4,_2,_8>{}, Stride<_3,Int<15>,Int<97>>{});
+  //   auto b = make_layout(_3{}, _3{});
+  //   test_composition(a, b);
+  // }
+  // Wrong-answer case from #3177: the previous weak check accepted this and
+  // returned (_2,_3):(_6,_3), but C(2) = 3 != A(B(2)) = 7.
+  // {
+  //   auto a = make_layout(Shape<_4,_6,_8>{}, Stride<_2,_3,_5>{});
+  //   auto b = make_layout(_6{}, _3{});
   //   test_composition(a, b);
   // }
 
