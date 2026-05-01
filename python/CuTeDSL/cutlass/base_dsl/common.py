@@ -9,7 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import inspect
 import os
+import subprocess
+import sys
+import types
 from typing import Any, Dict, Optional, Union
 from functools import total_ordering
 from dataclasses import dataclass
@@ -17,6 +21,55 @@ from dataclasses import dataclass
 """
 This module provides a Exception classes DSL class for any Dialect.
 """
+
+
+# Store the original exception hook
+_original_excepthook = sys.excepthook
+
+# Store registered environment manager (set by DSL singleton)
+_registered_env_manager = None
+
+
+def register_env_manager(env_manager: Any) -> None:
+    """Register an EnvironmentVarManager instance for use by exception handling.
+
+    Called by DSL singleton when it initializes.
+    """
+    global _registered_env_manager
+    _registered_env_manager = env_manager
+
+
+def _dsl_excepthook(
+    exc_type: type,
+    exc_value: BaseException,
+    exc_traceback: Optional[types.TracebackType],
+) -> None:
+    """
+    Custom exception hook that shows clean error messages for DSL exceptions.
+    For DSLOperationError, shows only the formatted message without traceback.
+    For other exceptions, uses the default Python traceback.
+    """
+    # Check if show_stacktrace is enabled via registered env manager
+    show_stacktrace = False
+    if _registered_env_manager is not None:
+        show_stacktrace = getattr(_registered_env_manager, "show_stacktrace", False)
+
+    # Check if it's a DSL operation error (by name to avoid circular import issues)
+    if exc_type.__name__ in ("DSLOperationError", "DSLOperationBuildError"):
+        if show_stacktrace:
+            # Show full traceback in verbose mode
+            _original_excepthook(exc_type, exc_value, exc_traceback)
+        else:
+            # Just print the formatted message (which is in __str__)
+            print(str(exc_value), file=sys.stderr)
+        sys.exit(1)
+    else:
+        # Use the original exception hook for other exceptions
+        _original_excepthook(exc_type, exc_value, exc_traceback)
+
+
+# Install the custom exception hook
+sys.excepthook = _dsl_excepthook
 
 
 # Add color codes at the top of the file after imports
@@ -50,7 +103,7 @@ class DSLBaseError(Exception):
         filename: Optional[str] = None,
         error_code: Optional[Union[str, int]] = None,
         context: Optional[Union[Dict[str, Any], str]] = None,
-        suggestion: Optional[str] = None,
+        suggestion: Union[str, list[str], tuple[str, ...], None] = None,
         cause: Optional[BaseException] = None,
     ) -> None:
         self.message = message
@@ -64,7 +117,15 @@ class DSLBaseError(Exception):
 
         super().__init__(self._format_message())
 
-    def _format_message(self):
+    def _generate_cause(self) -> str:
+        """
+        Generates a string representation of the cause of the error, if available.
+        """
+        if self.cause:
+            return f"Caused exception: {self.cause}"
+        return ""
+
+    def _format_message(self) -> str:
         """
         Formats the complete error message with available metadata.
         Override this in subclasses if you want to change formatting logic.
@@ -84,8 +145,9 @@ class DSLBaseError(Exception):
             # Optionally truncate long snippets for readability
             parts.append(f"  Snippet: \n {self.snippet}")
 
-        if self.cause:
-            parts.append(f"  Caused exception: {self.cause}")
+        cause = self._generate_cause()
+        if cause:
+            parts.append(cause)
 
         if self.context:
             if isinstance(self.context, dict):
@@ -108,6 +170,26 @@ class DSLBaseError(Exception):
         return "\n".join(parts)
 
 
+class DSLSubprocessCallError(DSLBaseError):
+    """
+    Raised when an error occurs during a subprocess call in the DSL.
+    """
+
+    def _generate_cause(self) -> str:
+        assert isinstance(self.cause, subprocess.CalledProcessError), (
+            "cause must be a subprocess.CalledProcessError"
+        )
+        cause = []
+        cause.append(f"  Caused exception: {self.cause}")
+        cause.append(
+            f"    Command: \033[93m{' '.join(str(item) for item in self.cause.cmd)}\033[0m"
+        )
+        cause.append(f"    Return code: {self.cause.returncode}")
+        cause.append(f"    stdout: {self.cause.stdout}")
+        cause.append(f"    stderr: {Colors.BOLD}{self.cause.stderr}{Colors.RESET}")
+        return "\n".join(cause)
+
+
 class DSLRuntimeError(DSLBaseError):
     """
     Raised when an error occurs during JIT-time code generation in the DSL.
@@ -118,7 +200,9 @@ class DSLRuntimeError(DSLBaseError):
     pass
 
 
-def _get_friendly_cuda_error_message(error_code, error_name):
+def _get_friendly_cuda_error_message(
+    error_code: int, error_name: Union[str, bytes]
+) -> tuple[str, str, Union[str, tuple[str, ...]]]:
     # Avoid circular dependency
     from .runtime.cuda import get_device_info
 
@@ -166,40 +250,40 @@ def _get_friendly_cuda_error_message(error_code, error_name):
 
     error_suggestions = {
         "CUDA_ERROR_INVALID_CONTEXT": (
-            f"1. Check if CUDA context is properly initialized under your environment",
-            f"2. Initialize CUDA context with `cuda.cuInit(0)` or `cutlass.cuda.initialize_cuda_context()`",
+            "1. Check if CUDA context is properly initialized under your environment",
+            "2. Initialize CUDA context with `cuda.cuInit(0)` or `cutlass.cuda.initialize_cuda_context()`",
         ),
         "CUDA_ERROR_INVALID_SOURCE": (
-            f"1. Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            f"2. Clear the compilation cache and regenerate the kernel",
-            f"3. Check CUDA toolkit installation",
+            "1. Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            "2. Clear the compilation cache and regenerate the kernel",
+            "3. Check CUDA toolkit installation",
         ),
         "CUDA_ERROR_NO_BINARY_FOR_GPU": (
-            f"Set env CUTE_DSL_ARCH to match your GPU architecture",
+            "Set env CUTE_DSL_ARCH to match your GPU architecture",
         ),
         "CUDA_ERROR_OUT_OF_MEMORY": (
-            f"1. Reduce batch size",
-            f"2. Reduce model size",
-            f"3. Free unused GPU memory",
+            "1. Reduce batch size",
+            "2. Reduce model size",
+            "3. Free unused GPU memory",
         ),
         "CUDA_ERROR_INVALID_DEVICE": (
-            f"1. Check if CUDA device is properly initialized",
-            f"2. Verify GPU is detected: nvidia-smi",
-            f"3. Check CUDA_VISIBLE_DEVICES environment variable",
+            "1. Check if CUDA device is properly initialized",
+            "2. Verify GPU is detected: nvidia-smi",
+            "3. Check CUDA_VISIBLE_DEVICES environment variable",
         ),
         "CUDA_ERROR_NOT_INITIALIZED": (
-            f"1. Check CUDA driver installation",
-            f"2. call `cuda.cuInit(0)` before any other CUDA operation",
-            f"3. Run nvidia-smi to confirm GPU status",
+            "1. Check CUDA driver installation",
+            "2. call `cuda.cuInit(0)` before any other CUDA operation",
+            "3. Run nvidia-smi to confirm GPU status",
         ),
         "CUDA_ERROR_INVALID_VALUE": (
-            f"1. Your GPU model",
-            f"2. SM ARCH setting",
-            f"3. Steps to reproduce",
+            "1. Your GPU model",
+            "2. SM ARCH setting",
+            "3. Steps to reproduce",
         ),
         "cudaErrorInsufficientDriver": (
-            f"1. Run nvidia-smi to confirm CUDA driver version",
-            f"2. Ensure the CUDA driver version meets the requirement of the installed cuda-python package",
+            "1. Run nvidia-smi to confirm CUDA driver version",
+            "2. Ensure the CUDA driver version meets the requirement of the installed cuda-python package",
         ),
     }
 
@@ -255,7 +339,7 @@ class DSLCudaRuntimeError(DSLBaseError):
 
     # Inherits all logic from DSLRuntimeError; override methods if you need
     # specialized behavior or formatting for runtime errors.
-    def __init__(self, error_code, error_name) -> None:
+    def __init__(self, error_code: int, error_name: Union[str, bytes]) -> None:
         self._error_code = error_code
         self._error_name = error_name
         message, debug_info, suggestion = _get_friendly_cuda_error_message(
@@ -286,45 +370,297 @@ class DSLNotImplemented(DSLBaseError):
     pass
 
 
-class CudaDriverDependencyError(DSLRuntimeError):
-    """Custom error class for CUDA driver dependency issues"""
+def translate_mlir_nanobind_error(exc: BaseException) -> str:
+    """
+    Translate nanobind/MLIR exceptions into user-friendly messages.
+
+    Nanobind exceptions from MLIR C++ bindings:
+    - nb::value_error -> ValueError
+    - nb::type_error -> TypeError
+    - nb::cast_error -> RuntimeError (usually)
+    - nb::python_error -> Various Python exceptions
+
+    Returns:
+        tuple of (translated_message, None, original_message)
+        Note: suggestions are None - only show if explicitly provided
+    """
+    exc_type = type(exc).__name__
+    error_msg = str(exc).lower()
+    original = str(exc)
+
+    # Type casting errors (nb::cast_error, std::bad_cast)
+    if "std::bad_cast" in error_msg or "cast" in exc_type.lower():
+        if "must be a type" in error_msg:
+            return "Type mismatch: The operation expected a different type than what was provided"
+
+        return "Type casting failed: Cannot convert between incompatible types"
+
+    # Value errors (nb::value_error)
+    if exc_type == "ValueError":
+        if "verification" in error_msg or "failed to verify" in error_msg:
+            return "MLIR operation verification failed: The operation constraints are not satisfied"
+
+        if "result" in error_msg and "operation" in error_msg:
+            return "Invalid operation result type: The operation produced an unexpected type"
+
+        if "attribute" in error_msg:
+            return "Invalid attribute: Attribute value or type is incorrect"
+
+    # Type errors (nb::type_error)
+    if exc_type == "TypeError":
+        if "argument" in error_msg or "parameter" in error_msg:
+            return "Wrong argument type: Function received an incompatible type"
+
+    # Runtime errors (often from nb::cast_error)
+    if exc_type == "RuntimeError":
+        if "operand" in error_msg:
+            return (
+                "Invalid operand: Operation received wrong number or type of operands"
+            )
+
+        if "not registered" in error_msg or "unknown" in error_msg:
+            return "Operation or dialect not found"
+
+    # Generic fallback
+    return f"{exc_type}: {original}"
+
+
+class DSLUserCodeError(DSLBaseError):
+    """Raised when an error is detected in user DSL code.
+
+    Covers mutation violations, scope errors, type mismatches, and similar
+    user-facing diagnostics.  Takes explicit ``filename`` and ``lineno`` --
+    no ``inspect.stack()`` magic inside the class.
+
+    Usage::
+
+        raise DSLUserCodeError(
+            "Scope Error: variable `a` escapes its scope",
+            filename="/path/to/user.py",
+            lineno=42,
+            suggestion="Define the variable before the loop.",
+        )
+    """
 
     def __init__(
         self,
         message: str,
-    ):
-        # Create a detailed error message with instructions
-        detailed_message = f"""CUDA Driver Dependency Error
+        filename: Optional[str] = None,
+        lineno: Optional[int] = None,
+        col_offset: Optional[int] = None,
+        cause: Optional[BaseException] = None,
+        suggestion: Optional[Union[str, list]] = None,
+        context: Optional[Union[Dict[str, Any], str]] = None,
+    ) -> None:
+        snippet = None
+        if filename and lineno:
+            snippet = self._read_source_snippet(filename, lineno, col_offset)
 
-{message}
-
-This error typically occurs when:
-• NVIDIA GPU drivers are not installed on your system
-• The installed drivers are incompatible with CUDA Toolkit 12.9 or latest version
-• The libcuda.so.1 library is not accessible"""
-
-        # Use DSLRuntimeError's structured approach
         super().__init__(
-            detailed_message,
-            suggestion=[
-                "Install or update NVIDIA GPU drivers:",
-                "  • Visit: https://www.nvidia.com/Download/index.aspx",
-                "  • Download drivers compatible with CUDA Toolkit 12.9 or latest version",
-                "  • Follow the installation instructions for your OS",
-                "",
-                "Verify driver installation:",
-                "  • Run: nvidia-smi",
-                "  • This should display GPU information without errors",
-                "",
-                "Check CUDA library availability:",
-                "  • Run: ldconfig -p | grep libcuda",
-                "  • This should show libcuda.so.1 in the output",
-                "",
-                "For more information, see:",
-                "  • CUDA Toolkit documentation: https://docs.nvidia.com/cuda/",
-                "  • CUTLASS DSL requirements: nvidia-cutlass-dsl documentation",
-            ],
+            message,
+            line=lineno,
+            filename=filename,
+            snippet=snippet,
+            cause=cause,
+            suggestion=suggestion,
+            context=context,
         )
+
+    @staticmethod
+    def _read_source_snippet(
+        filename: str,
+        lineno: int,
+        col_offset: Optional[int] = None,
+    ) -> Optional[str]:
+        """Read a single source line and format it as a snippet."""
+        try:
+            import linecache
+
+            code_line = linecache.getline(filename, lineno).rstrip()
+            if not code_line:
+                return None
+            snippet = f"   {lineno:4d} | {code_line}"
+            if col_offset is not None:
+                snippet += f"\n        | {' ' * col_offset}^"
+            return snippet
+        except Exception:  # noqa: BLE001 — best-effort snippet
+            return None
+
+    def _format_message(self) -> str:
+        """Format a rich error message with code snippet and suggestions."""
+        parts = []
+
+        parts.append(
+            f"\n{Colors.RED}{Colors.BOLD}[Error] {self.message}{Colors.RESET}\n"
+        )
+
+        if self.snippet and self.filename:
+            loc = f"{self.filename}:{self.line}" if self.line else self.filename
+            parts.append(f"{Colors.BLUE}Code:{Colors.RESET}")
+            parts.append(f"--> {Colors.BLUE}{loc}{Colors.RESET}")
+            parts.append(self.snippet)
+            parts.append("")
+
+        if self.cause:
+            parts.append(f"{Colors.BLUE}Cause:{Colors.RESET} {self.cause}")
+            parts.append("")
+
+        if self.context:
+            if isinstance(self.context, dict):
+                parts.append(f"{Colors.BLUE}Additional Context:{Colors.RESET}")
+                for key, value in self.context.items():
+                    parts.append(f"    {key}: {value}")
+            else:
+                parts.append(
+                    f"{Colors.BLUE}Additional Context:{Colors.RESET} {self.context}"
+                )
+            parts.append("")
+
+        if self.suggestion:
+            parts.append(f"{Colors.GREEN}Suggestion:{Colors.RESET}")
+            if isinstance(self.suggestion, (list, tuple)):
+                for s in self.suggestion:
+                    parts.append(f"  {Colors.GREEN}{s}{Colors.RESET}")
+            else:
+                parts.append(f"  {self.suggestion}")
+            parts.append("")
+
+        parts.append("=" * 100)
+        return "\n".join(parts)
+
+
+class DSLOperationBuildError(DSLBaseError):
+    """
+    Raised when an error occurs during a DSL operation with formatted source location.
+    This exception provides a nicely formatted error message showing the exact line
+    of user code that caused the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        cause: Optional[BaseException] = None,
+        frameInfo: Optional[inspect.Traceback] = None,
+        auto_translate: bool = True,
+    ) -> None:
+        """
+        Args:
+            message: The error message to display
+            cause: The underlying exception that caused this error
+            frameInfo: Optional frame info from inspect.getframeinfo() - if not provided,
+                      automatically captures the caller's frame
+            auto_translate: If True, attempt to translate MLIR/nanobind errors
+        """
+        import inspect
+
+        # If frameInfo not provided, capture the caller's frame information
+        if frameInfo is None:
+            current_frame = inspect.currentframe()
+            frame = current_frame.f_back if current_frame else None
+            frameInfo = inspect.getframeinfo(frame) if frame else None
+
+        # Try to translate MLIR/nanobind errors if no custom message provided
+        self.original_error = str(message)
+        if auto_translate and cause:
+            translated_msg = translate_mlir_nanobind_error(cause)
+            if translated_msg != str(cause):
+                message = translated_msg
+
+        self.frameInfo = frameInfo
+
+        # Extract line and filename from frameInfo
+        line = frameInfo.lineno if frameInfo else None
+        filename = frameInfo.filename if frameInfo else None
+        snippet = None
+        if frameInfo and frameInfo.code_context:
+            lineno = frameInfo.lineno
+            code_line = frameInfo.code_context[0].rstrip()
+            snippet = f"   {lineno:4d} | {code_line}"
+
+            # Add column pointer if available (Python 3.11+)
+            if (
+                hasattr(frameInfo, "positions")
+                and frameInfo.positions.col_offset is not None  # type: ignore[attr-defined]
+            ):
+                col = frameInfo.positions.col_offset  # type: ignore[attr-defined]
+                snippet += f"\n        | {' ' * col}^"
+
+        super().__init__(
+            message,
+            line=line,
+            filename=filename,
+            snippet=snippet,
+            cause=cause,
+        )
+
+    def _collect_dsl_errors(
+        self,
+    ) -> tuple[
+        list[tuple["DSLOperationBuildError", str, str]], Optional[BaseException]
+    ]:
+        """
+        Recursively collect all DSLOperationErrors in the exception chain.
+        Returns a tuple of (list of unique errors with snippets, final non-DSLOperationError cause).
+        Deduplicates by (filename, lineno) to avoid redundant output.
+        """
+        errors_with_snippets = []
+        seen_locations = set()
+        current = self
+
+        while current:
+            # Add error if it has a snippet to show and location is unique
+            if current.snippet and current.filename and current.line:
+                location_key = (current.filename, current.line)
+                if location_key not in seen_locations:
+                    seen_locations.add(location_key)
+                    errors_with_snippets.append(
+                        (current, current.snippet, current.filename)
+                    )
+            # Check if cause is also a DSLOperationError
+            if current.cause and isinstance(current.cause, DSLOperationBuildError):
+                current = current.cause
+            else:
+                # Found the final cause (not a DSLOperationError)
+                break
+
+        return errors_with_snippets, current.cause if current else None
+
+    def _format_message(self) -> str:
+        """Formats the error message with nice visual presentation."""
+        parts = []
+
+        # Collect all DSLOperationErrors in the chain recursively
+        dsl_errors, final_cause = self._collect_dsl_errors()
+
+        # Show error header with the root cause message
+        error_msg = self.message
+        if final_cause:
+            error_msg = f"{type(final_cause).__name__}: {final_cause}"
+        parts.append(f"\n{Colors.RED}{Colors.BOLD}[Error] {error_msg}{Colors.RESET}\n")
+
+        # Show the actual traceback first (where the error originated)
+        if final_cause:
+            import traceback
+
+            tb = final_cause.__traceback__
+            if tb:
+                parts.append(f"{Colors.BLUE}📍 Exception Origin:{Colors.RESET}")
+                # Format the traceback from the original exception
+                tb_lines = traceback.format_tb(tb)
+                for line in tb_lines:
+                    parts.append(line.rstrip())
+                parts.append("")
+
+        # Show unique code snippets from DSL call chain (user code locations)
+        if dsl_errors:
+            parts.append(f"{Colors.BLUE}📋 DSL Call Stack:{Colors.RESET}")
+            for error, snippet, filename in dsl_errors:
+                parts.append(f"--> {Colors.BLUE}{filename}{Colors.RESET}")
+                parts.append(snippet)
+                parts.append("")
+
+        parts.append("=" * 100)
+        return "\n".join(parts)
 
 
 def _get_cuda_version() -> str:
@@ -356,10 +692,12 @@ class DSLCudaVersion:
         object.__setattr__(self, "major", int(parts[0]))
         object.__setattr__(self, "minor", int(parts[1]))
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DSLCudaVersion):
+            return NotImplemented
         return self.major == other.major and self.minor == other.minor
 
-    def __lt__(self, other):
+    def __lt__(self, other: "DSLCudaVersion") -> bool:
         return [self.major, self.minor] < [other.major, other.minor]
 
 

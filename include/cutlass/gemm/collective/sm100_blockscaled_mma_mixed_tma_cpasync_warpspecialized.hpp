@@ -103,11 +103,6 @@ struct CollectiveMma<
   using TiledMma = TiledMma_;
   using AtomThrShapeMNK = Shape<decltype(shape<0>(typename TiledMma::ThrLayoutVMNK{})), _1, _1>;
 
-  // Statically asserting to ensure only 1x1x1 cluster shape & 1sm setup is received
-  static_assert(size(AtomThrShapeMNK{}) == 1, "Lower alignment SM100 GEMM only supports 1SM MMA");
-  static_assert(size(ClusterShape{}) == 1, "CPASYNC does not support multicast so the cluster shape is restricted to 1, 1, 1");
-
-  static_assert(size(typename TiledMma::AtomThrID{}) == 1);
 
   using DispatchPolicy = MainloopSm100UmmaMixedTmaCpAsyncWarpSpecializedBlockScaled<
                           Stages,
@@ -132,10 +127,13 @@ struct CollectiveMma<
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
   // using LoadShapeA_MK = decltype(select<0,2>(TileShape{}));
-  using LoadShapeB_NK = decltype(select<1,2>(TileShape{}));
+  using LoadShapeB_NK = decltype(make_shape(
+        get<1>(TileShape{}) / size(AtomThrShapeMNK{}), get<2>(TileShape{})
+  ));
 
   // CtaShape_MNK is queried from collective in all kernel layers
-  using CtaShape_MNK = TileShape;
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
+
   static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or
       shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
       "Cta N should be one of 64/128/192/256");
@@ -320,6 +318,7 @@ struct CollectiveMma<
 
   // Device side kernel params
   struct Params {
+    static_assert(cute::is_static_v<ClusterShape>, "`ClusterShape` must be static in mixed TMA cpasync kernel.");
     using ClusterLayout_VMNK = decltype(tiled_divide(make_layout(ClusterShape{}),
                                                      make_tile(typename TiledMma::AtomThrID{})));
     using ClusterLayoutSfb_VMNK = decltype(tiled_divide(make_layout(ClusterShape{}),
@@ -451,6 +450,25 @@ struct CollectiveMma<
 
     bool implementable = true;
 
+    static constexpr bool IsDynamicCluster = !cute::is_static_v<ClusterShape>;
+
+    constexpr bool IsBlockscaled = !cute::is_void_v<ElementSF>;
+    if constexpr (IsBlockscaled) {
+      if constexpr (IsDynamicCluster) {
+        implementable &= cutlass::detail::preferred_cluster_can_implement<AtomThrShapeMNK>(args.hw_info.cluster_shape, args.hw_info.cluster_shape_fallback);
+        // Special cluster shape check for scale factor multicasts. Due to limited size of scale factors, we can't multicast among
+        // more than 4 CTAs
+        implementable &= (args.hw_info.cluster_shape.x <= 4 && args.hw_info.cluster_shape.y <= 4 &&
+                          args.hw_info.cluster_shape_fallback.x <= 4 && args.hw_info.cluster_shape_fallback.y <= 4);
+      }
+      else {
+        // Special cluster shape check for scale factor multicasts. Due to limited size of scale factors, we can't multicast among
+        // more than 4 CTAs
+        implementable &= ((size<0>(ClusterShape{}) <= 4) && (size<1>(ClusterShape{}) <= 4));
+      }
+    }
+
+
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
@@ -567,7 +585,7 @@ struct CollectiveMma<
     Tensor gSFB_nkl = local_tile(mSFB_nkl, TileShape_SF{}, make_coord(_,_,_), Step< X,_1,_1>{});  // (TILE_N,TILE_K,n,k,l)
 
 
-    ThrMMA cta_mma = TiledMma{}.get_slice(0);
+    ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
     Tensor tCgA_mkl = cta_mma.partition_A(gA_mkl);          // (MMA, MMA_M, MMA_K, m, k, l)
 
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});  // (MMA,MMA_M,MMA_K,PIPE)
@@ -582,9 +600,10 @@ struct CollectiveMma<
     // Define the CTA-in-cluster Layout and Coord
     Layout cta_layout_mnk  = make_layout(ClusterShape{});
     Layout cta_layout_vmnk = tiled_divide(cta_layout_mnk, make_tile(typename TiledMma::AtomThrID{}));
-    auto cta_coord_vmnk  = cta_layout_vmnk.get_flat_coord(0);
+    uint32_t cta_rank_in_cluster = static_cast<uint32_t>(cute::block_rank_in_cluster());
+    auto cta_coord_vmnk  = cta_layout_vmnk.get_flat_coord(cta_rank_in_cluster);
     Layout cta_layout_sfb_vmnk = tiled_divide(cta_layout_mnk, make_tile(typename TiledMma_SF::AtomThrID{}));
-    auto cta_coord_sfb_vmnk  = cta_layout_sfb_vmnk.get_flat_coord(0);
+    auto cta_coord_sfb_vmnk  = cta_layout_sfb_vmnk.get_flat_coord(cta_rank_in_cluster);
 
     // Project the cta_layout for tma_a along the n-modes
     auto [tAgA_mkl, tAsA] = tma_partition(*observed_tma_load_a_,
@@ -599,10 +618,15 @@ struct CollectiveMma<
                                       get<1>(cta_coord_sfb_vmnk), make_layout(size<1>(cta_layout_sfb_vmnk)),
                                       group_modes<0,3>(sSFB), group_modes<0,3>(tCgSFB_nkl));
                                       
+    uint16_t mcast_mask_a = create_tma_multicast_mask<2>(cta_layout_vmnk, cta_coord_vmnk);
+    uint16_t mcast_mask_sfa = create_tma_multicast_mask<2>(cta_layout_vmnk, cta_coord_vmnk);
+    uint16_t mcast_mask_sfb = create_tma_multicast_mask<1>(cta_layout_sfb_vmnk, cta_coord_sfb_vmnk);
+
     return cute::make_tuple(
       shape<3>(gA_mkl),      // for scheduler
       tAgA_mkl, tAsA,        // for input tensor values
-      tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB // for input scale factor tensor values
+      tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB, // for input scale factor tensor values
+      mcast_mask_a, mcast_mask_sfa, mcast_mask_sfb
     );
   }
 
@@ -628,11 +652,13 @@ struct CollectiveMma<
     Tensor mB_nkl = make_tensor(make_gmem_ptr(ptr_B), shape_b, stride_b); //(n,k,l)
     // Partition for cpasync
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{}); // (BLK_N,BLK_K,n,k,l)
+    Tensor tBgB_nkl = flatten(flat_divide(gB_nkl, make_shape(safe_div(size(get<1>(TileShape{})), size(AtomThrShapeMNK{})))));
 
     // Build the coordinate tensors with the same shape as input matrices
     Tensor cB_nk  = make_identity_tensor(make_shape(N,K));
     // Slice the coordinate tensors in the same way as A/B tensor partitioning
     Tensor cgB_nk = local_tile(cB_nk, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{}); // (BLK_N,BLK_K,n,k)
+    Tensor ctBgB_nk = flatten(flat_divide(cgB_nk, make_shape(safe_div(size(get<1>(TileShape{})), size(AtomThrShapeMNK{})))));
 
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), LoadSmemLayoutB{});
 
@@ -642,7 +668,7 @@ struct CollectiveMma<
     auto thr_copy_b = gmem_to_smem_b_tiled_copy.get_slice(thread_idx);
 
     return cute::make_tuple(
-      gB_nkl, cgB_nk, sB, 
+      tBgB_nkl, ctBgB_nk, sB, 
       // problem_shape_MNKL, 
       gmem_to_smem_b_tiled_copy, thr_copy_b);
   }
@@ -687,13 +713,13 @@ struct CollectiveMma<
     auto tiled_copy_s2t_SFA = make_utccp_copy(UtccpOp{}, tCtSFA_compact);
     auto tiled_copy_s2t_SFB = make_utccp_copy(UtccpOp{}, tCtSFB_compact);
 
-    auto thr_copy_s2t_SFA = tiled_copy_s2t_SFA.get_slice(0);
+    auto thr_copy_s2t_SFA = tiled_copy_s2t_SFA.get_slice(blockIdx.x % size(AtomThrID{}));
     auto thr_tCsSFA_compact_s2t_ = thr_copy_s2t_SFA.partition_S(tCsSFA_compact);
     // SMEM to TMEM copy operation requires source SMEM operand to be an SMEM descriptor
     auto thr_tCsSFA_compact_s2t = get_utccp_smem_desc_tensor<UtccpOp>(thr_tCsSFA_compact_s2t_);
     auto thr_tCtSFA_compact_s2t = thr_copy_s2t_SFA.partition_D(tCtSFA_compact);
 
-    auto thr_copy_s2t_SFB = tiled_copy_s2t_SFB.get_slice(0);
+    auto thr_copy_s2t_SFB = tiled_copy_s2t_SFB.get_slice(blockIdx.x % size(AtomThrID{}));
     auto thr_tCsSFB_compact_s2t_ = thr_copy_s2t_SFB.partition_S(tCsSFB_compact);
     // SMEM to TMEM copy operation requires source SMEM operand to be an SMEM descriptor
     auto thr_tCsSFB_compact_s2t = get_utccp_smem_desc_tensor<UtccpOp>(thr_tCsSFB_compact_s2t_);
@@ -745,7 +771,9 @@ struct CollectiveMma<
 
     auto [k_tiles,
           tAgA_mkl, tAsA,
-          tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB] = load_inputs;
+          tAgSFA_mkl, tBgSFB_nkl,
+          tAsSFA, tBsSFB,
+          mcast_mask_a, mcast_mask_sfa, mcast_mask_sfb] = load_inputs;
 
     // slice out the work coord from partitioned tensors
     Tensor tAgA = tAgA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
@@ -768,9 +796,9 @@ struct CollectiveMma<
       barrier_token = mainloop_pipeline.producer_try_acquire(mainloop_pipe_producer_state);
 
       if (cute::elect_one_sync()) {
-        copy(observed_tma_load_a_->with(*tma_barrier), tAgA(_,*k_tile_iter), tAsA(_,write_stage));
-        copy(observed_tma_load_sfa_->with(*tma_barrier), tAgSFA(_,*k_tile_iter), tAsSFA(_,write_stage));
-        copy(observed_tma_load_sfb_->with(*tma_barrier), tBgSFB(_,*k_tile_iter), tBsSFB(_,write_stage));
+        copy(observed_tma_load_a_->with(*tma_barrier, mcast_mask_a), tAgA(_,*k_tile_iter), tAsA(_,write_stage));
+        copy(observed_tma_load_sfa_->with(*tma_barrier, mcast_mask_sfa), tAgSFA(_,*k_tile_iter), tAsSFA(_,write_stage));
+        copy(observed_tma_load_sfb_->with(*tma_barrier, mcast_mask_sfb), tBgSFB(_,*k_tile_iter), tBsSFB(_,write_stage));
       }
 
       --k_tile_count;
@@ -821,10 +849,12 @@ struct CollectiveMma<
 
     auto [M,N,K,L] = effective_shape;
 
+    auto peer_cta_idx = get<0>(cta_coord_mnkl) % size(AtomThrShapeMNK{});
+
     // Slice out the work coord from partitioned tensors
-    Tensor gB_in = tBgB_nkl(_, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+    Tensor gB_in = tBgB_nkl(_, peer_cta_idx, _, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
     // Repeat slicing out coordinate tensor exactly the same as input tensor does
-    Tensor cgB_nk_in = cgB_nk(_, _, get<1>(cta_coord_mnkl), _);
+    Tensor cgB_nk_in = cgB_nk(_, peer_cta_idx, _, get<1>(cta_coord_mnkl), _);
 
     auto k_residue    = K - size<1>(gB_in) * size<2>(gB_in);  // K - BLK_K * k is negative
 
@@ -865,7 +895,7 @@ struct CollectiveMma<
 
       copy_if(gmem_to_smem_b_tiled_copy, tBpB, tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
 
-      mainloop_pipeline.producer_commit(mainloop_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive);
+      mainloop_pipeline.producer_commit_local(mainloop_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive);
       --k_tile_count;
       ++k_tile_iter;
       ++mainloop_pipe_producer_state;
@@ -892,7 +922,7 @@ struct CollectiveMma<
       --k_tile_count;
 
       // UNLOCK mainloop_pipe_producer_state
-      mainloop_pipeline.producer_commit(mainloop_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive);
+      mainloop_pipeline.producer_commit_local(mainloop_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive);
 
       // Advance mainloop_pipe_producer_state
       ++mainloop_pipe_producer_state;
@@ -935,7 +965,11 @@ struct CollectiveMma<
       cute::tuple<cute::Tensor<FrgEngine, FrgLayout>> const& accumulators_pair,
       cute::tuple<TMmaParams...> const& mma_inputs,
       CtaTileCoord cta_tile_coord,
-      int k_tile_count
+      int k_tile_count,
+      bool is_mma_leader_cta,
+      uint32_t mma_peer_cta_rank,
+      arch::ClusterBarrier& mma_trampoline_barrier,
+      uint32_t mma_trampoline_barrier_phase
   ) {
     static_assert(is_tmem<FrgEngine>::value, "Accumulator must be tmem resident.");
     static_assert(rank(FrgLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA, MMA_M, MMA_N)");
@@ -951,6 +985,8 @@ struct CollectiveMma<
 
     auto [mainloop_pipeline_tma, mainloop_pipeline_cpasync, accumulator_pipeline] = pipelines;
     auto [mainloop_pipe_tma_consumer_state, mainloop_pipe_cpasync_consumer_state, accumulator_pipe_producer_state] = pipeline_states;
+
+    constexpr bool is_2sm = size(AtomThrShapeMNK{}) > 1;
 
     auto tCtSFB_mma = [tCtSFB = tCtSFB, cta_tile_coord]() {
       if constexpr (IsCtaN192) {
@@ -973,15 +1009,18 @@ struct CollectiveMma<
     }();
 
     // Wait for tmem accumulator buffer to become empty with a flipped phase
-    accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
-
+    if (is_mma_leader_cta) {
+      accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+    }
     //
     // PIPELINED MAIN LOOP
     //
     tiled_mma.accumulate_ = UMMA::ScaleOut::Zero;
     CUTLASS_PRAGMA_NO_UNROLL
     while (k_tile_count > 0) {
-      mainloop_pipeline_tma.consumer_wait(mainloop_pipe_tma_consumer_state);
+      if (is_mma_leader_cta) {
+        mainloop_pipeline_tma.consumer_wait(mainloop_pipe_tma_consumer_state);
+      }
       mainloop_pipeline_cpasync.consumer_wait(mainloop_pipe_cpasync_consumer_state);
 
       int read_stage_tma = mainloop_pipe_tma_consumer_state.index();
@@ -992,26 +1031,47 @@ struct CollectiveMma<
         copy(tiled_copy_s2t_SFB, thr_tCsSFB_s2t(_,_,_,_,read_stage_tma), thr_tCtSFB_s2t);
       }
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M) x (V,N) => (V,M,N)
-        cute::gemm(tiled_mma.with(tiled_mma.accumulate_,
-                                  tCtSFA(_,_,k_block),
-                                  tCtSFB_mma(_,_,k_block)), 
-            tCrA(_,_,k_block,read_stage_tma), 
-            tCrB(_,_,k_block,read_stage_cpasync), 
-            accumulators);
-        tiled_mma.accumulate_ = UMMA::ScaleOut::One;
+      if (is_mma_leader_cta) {
+        if constexpr (is_2sm) {
+          mma_trampoline_barrier.wait(mma_trampoline_barrier_phase);
+        }
+        CUTLASS_PRAGMA_UNROLL
+        for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+          // (V,M) x (V,N) => (V,M,N)
+          cute::gemm(tiled_mma.with(tiled_mma.accumulate_,
+                                    tCtSFA(_,_,k_block),
+                                    tCtSFB_mma(_,_,k_block)),
+              tCrA(_,_,k_block,read_stage_tma),
+              tCrB(_,_,k_block,read_stage_cpasync),
+              accumulators);
+          tiled_mma.accumulate_ = UMMA::ScaleOut::One;
+        }
+      } else {
+        if constexpr (is_2sm) {
+          mma_trampoline_barrier.arrive(mma_peer_cta_rank);
+        }
       }
 
-      mainloop_pipeline_tma.consumer_release(mainloop_pipe_tma_consumer_state);
-      mainloop_pipeline_cpasync.consumer_release(mainloop_pipe_cpasync_consumer_state);
+      if constexpr (is_2sm) {
+        if (is_mma_leader_cta) {
+          mma_trampoline_barrier.arrive(mma_peer_cta_rank);
+        } else {
+          mma_trampoline_barrier.wait(mma_trampoline_barrier_phase);
+        }
+      }
+
+      if (is_mma_leader_cta) {
+        mainloop_pipeline_tma.consumer_release(mainloop_pipe_tma_consumer_state);
+        mainloop_pipeline_cpasync.consumer_release(mainloop_pipe_cpasync_consumer_state);
+      }
       --k_tile_count;
       ++mainloop_pipe_tma_consumer_state;
       ++mainloop_pipe_cpasync_consumer_state;
+
+      mma_trampoline_barrier_phase ^= 1;
     }
 
-    return cute::make_tuple(mainloop_pipe_tma_consumer_state, mainloop_pipe_cpasync_consumer_state);
+    return cute::make_tuple(mainloop_pipe_tma_consumer_state, mainloop_pipe_cpasync_consumer_state, mma_trampoline_barrier_phase);
   }
 
 protected:

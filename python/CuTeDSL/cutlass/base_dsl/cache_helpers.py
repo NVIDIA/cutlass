@@ -21,7 +21,8 @@ import uuid
 import random
 import tempfile
 import time
-from typing import Any, Optional
+from typing import Any
+from collections.abc import Callable
 from pathlib import Path
 import hashlib
 from functools import lru_cache
@@ -40,7 +41,7 @@ from .._mlir import ir
 
 
 
-def get_current_user():
+def get_current_user() -> str:
     """
     Get the current user. This is used to determine the path to the cache directory.
     """
@@ -56,34 +57,43 @@ def get_current_user():
         raise
 
 
-def normalize_path(path):
+def normalize_path(path: str | Path) -> Path:
     """
     Normalize a path to its full long form.
     """
     return Path(path).resolve()
 
 
-# default_generated_ir_path is the path to the cache directory.
-# If `CUTE_DSL_CACHE_DIR` is set, it is used as the cache directory.
-# Otherwise, it is set to a directory controled by TMPDIR defaulting
-# to /tmp/${USER}/cutlass_python_cache.
-if not (default_generated_ir_path := os.getenv("CUTE_DSL_CACHE_DIR", None)):
+def get_default_generated_ir_path(dsl_name: str = "CUTE_DSL") -> str:
+    """
+    Return the cache directory path.
+    """
+    if path := os.getenv(f"{dsl_name}_CACHE_DIR", None):
+        return path
     tmp_dir = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
 
-    def get_reusable_temp_dir(name):
-        path = tmp_dir / f"{get_current_user()}/{name}"
-        path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+    def get_reusable_temp_dir(name: str) -> str:
+        p = tmp_dir / f"{get_current_user()}/{name}"
+        p.mkdir(parents=True, exist_ok=True)
+        return str(p)
 
     try:
         default_generated_ir_path = get_reusable_temp_dir("cutlass_python_cache")
     except Exception as e:
-        default_generated_ir_path = str(tmp_dir / "cutlass_python_cache")
-        print(f"Could not determine user, using default path. Error: {e}")
+        fallback = str(tmp_dir / "cutlass_python_cache")
+        log().warning(
+            f"Could not determine user or create cache directory, using fallback path {fallback}. Error: {e}"
+        )
+        return fallback
+
+    return default_generated_ir_path
+
+
+default_generated_ir_path = get_default_generated_ir_path()
 
 
 @lru_cache(maxsize=1)
-def get_default_file_dump_root():
+def get_default_file_dump_root() -> Path:
     """
     Get the default file dump root.
     """
@@ -91,7 +101,7 @@ def get_default_file_dump_root():
     return dump_root
 
 
-def write_bytecode_with_crc32(f, module):
+def write_bytecode_with_crc32(f: io.BufferedIOBase, module: ir.Module) -> None:
     """Write the bytecode to the file and calculate the crc32 checksum.
 
     :param f: The file to write the bytecode to.
@@ -108,7 +118,7 @@ def write_bytecode_with_crc32(f, module):
     return
 
 
-def read_bytecode_and_check_crc32(f):
+def read_bytecode_and_check_crc32(f: io.BufferedReader) -> ir.Module:
     """
     Read the bytecode from the file and check the crc32 checksum.
 
@@ -134,7 +144,11 @@ def read_bytecode_and_check_crc32(f):
     return ir.Module.parse(bytecode)
 
 
-def load_ir(file, asBytecode=False, bytecode_reader=None):
+def load_ir(
+    file: str,
+    asBytecode: bool = False,
+    bytecode_reader: Callable[..., Any] | None = None,
+) -> tuple[str, ir.Module]:
     """Load generated IR from a file.
 
     :param file: The path to the file to load.
@@ -157,7 +171,7 @@ def load_ir(file, asBytecode=False, bytecode_reader=None):
     return func_name, module
 
 
-def make_unique_filename(fpath: Path, new_ext: str = None) -> Path:
+def make_unique_filename(fpath: Path, new_ext: str | None = None) -> Path:
     """
     Generate a unique filename with an optional new extension.
 
@@ -178,12 +192,13 @@ def make_unique_filename(fpath: Path, new_ext: str = None) -> Path:
 
 def save_ir(
     dsl_name: str,
-    module: object,
+    module: ir.Module,
     fname: str,
     output_dir: str | None = None,
     as_bytecode: bool = False,
-    bytecode_writer: callable = None,
-) -> str:
+    bytecode_writer: Callable[..., Any] | None = None,
+    enable_debug_info: bool = True,
+) -> Path:
     """Save generated IR to a file.
 
     :param dsl_name: The name of the DSL.
@@ -198,6 +213,8 @@ def save_ir(
     :type as_bytecode: bool, optional
     :param bytecode_writer: The bytecode writer to use, defaults to None
     :type bytecode_writer: callable, optional
+    :param enable_debug_info: Whether to include location info in the IR, defaults to True
+    :type enable_debug_info: bool, optional
     :return: The path to the saved file
     :rtype: str
     """
@@ -221,9 +238,7 @@ def save_ir(
                 module.operation.write_bytecode(f)
     else:
         with open(temp_fname, "w") as f:
-            # Always save with the locations in the MLIR assembly textual
-            # representation.
-            print(module.operation.get_asm(enable_debug_info=True), file=f)
+            print(module.operation.get_asm(enable_debug_info=enable_debug_info), file=f)
     # os.replace is guaranteed to be atomic on POSIX systems if it succeeds
     # so filepath cannot see a partial write
     os.replace(temp_fname, save_fname)
@@ -233,8 +248,11 @@ def save_ir(
 
 
 def load_cache_from_path(
-    dsl_name, file, path=default_generated_ir_path, bytecode_reader=None
-):
+    dsl_name: str,
+    file: str,
+    path: str | None = None,
+    bytecode_reader: Callable[..., Any] | None = None,
+) -> JitCompiledFunction | None:
     """Load cache from a directory path.
 
     :param dsl_name: The name of the DSL.
@@ -248,6 +266,8 @@ def load_cache_from_path(
     :return: The cache
     :rtype: dict
     """
+    if path is None:
+        path = get_default_generated_ir_path(dsl_name)
     if not os.path.exists(path):
         return None
     ret = None
@@ -259,7 +279,7 @@ def load_cache_from_path(
                 asBytecode=True,
                 bytecode_reader=bytecode_reader,
             )
-            ret = JitCompiledFunction(module, None, None, None, None, [], False, None)
+            ret = JitCompiledFunction(module, None, None, None, None, [], False, None)  # type: ignore[arg-type]
     except Exception as e:
         log().warning(
             f"{dsl_name} failed with loading generated IR cache for {file}.", e
@@ -268,12 +288,12 @@ def load_cache_from_path(
 
 
 def dump_cache_to_path(
-    dsl_name,
-    jit_function,
-    file,
-    path=default_generated_ir_path,
-    bytecode_writer=None,
-):
+    dsl_name: str,
+    jit_function: JitCompiledFunction,
+    file: str,
+    path: str | None = None,
+    bytecode_writer: Callable[..., Any] | None = None,
+) -> None:
     """Dump the cache to a directory path.
 
     :param dsl_name: The name of the DSL.
@@ -288,8 +308,8 @@ def dump_cache_to_path(
     :type bytecode_writer: callable, optional
     """
     log().info("JIT cache : dumping [%s] file=[%s]", dsl_name, file)
-    if not path:
-        path = default_generated_ir_path
+    if path is None:
+        path = get_default_generated_ir_path(dsl_name)
     os.makedirs(path, exist_ok=True)
     try:
         save_ir(
@@ -320,7 +340,9 @@ class JitCacheDict:
         If None, the cache is unlimited. Default is None.
         :type max_elems: int | None
         """
-        self._dict = OrderedDict() if max_elems is not None else dict()
+        self._dict: OrderedDict[Any, tuple[Any, weakref.finalize | None]] = (
+            OrderedDict() if max_elems is not None else dict()  # type: ignore[assignment]
+        )
         self.max_elems = max_elems
 
     def get(self, key: Any) -> Any | None:
@@ -398,7 +420,9 @@ class JitCacheDict:
             if old_finalize is not None:
                 old_finalize.detach()
 
-        def _remove_entry(k: Any, self_ref=weakref.ref(self)) -> None:
+        def _remove_entry(
+            k: Any, self_ref: weakref.ref[JitCacheDict] = weakref.ref(self)
+        ) -> None:
             # Called from GC/finalizer; be defensive and avoid raising.
             self_obj = self_ref()
             if self_obj is not None:

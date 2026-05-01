@@ -17,14 +17,23 @@ import inspect
 import os
 import types
 from functools import wraps
+from typing import Any, Callable
 
 from ..._mlir import ir
-from ..common import DSLRuntimeError
+from ..common import DSLRuntimeError, DSLOperationBuildError
 from ..utils.stacktrace import walk_to_top_module
 
-
 # The DSL package root is empty by default.
-_DSL_PACKAGE_ROOT = ""
+_DSL_PACKAGE_ROOT: str | None = ""
+
+# Whether location tracking is enabled.
+_ENABLE_FRAME_FILTERING: bool = False
+
+
+def _set_enable_frame_filtering(enable: bool) -> None:
+    """Set whether location tracking is enabled."""
+    global _ENABLE_FRAME_FILTERING
+    _ENABLE_FRAME_FILTERING = enable
 
 
 def _is_framework_frame(filename: str) -> bool:
@@ -58,7 +67,7 @@ def _find_user_frame(start_frame: types.FrameType | None) -> types.FrameType | N
     return start_frame
 
 
-def dsl_user_op(opFunc):
+def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
     """
     This is a decorator that needs to be used in each user-facing API to
     manage source location for toolchain.
@@ -70,14 +79,16 @@ def dsl_user_op(opFunc):
     """
 
     @wraps(opFunc)
-    def wrapper(*args, **kwargs):
-        loc = kwargs.pop("loc", None)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # Pop loc= from kwargs so callers that still pass it don't break.
+        # We no longer forward it — LOC_TRACEBACKS captures full stacks automatically.
+        loc: Any = kwargs.pop("loc", None)
         frameInfo = None
         verifier_error = False
 
         if loc is None and ir.Context.current is not None:
-            frame = _find_user_frame(inspect.currentframe().f_back)
-            frameInfo = inspect.getframeinfo(frame)
+            frame = _find_user_frame(inspect.currentframe().f_back)  # type: ignore[union-attr]
+            frameInfo = inspect.getframeinfo(frame)  # type: ignore[arg-type]
             try:
                 # In Python < 3.11, getframeinfo returns a NamedTuple without positions
                 if not hasattr(frameInfo, "positions"):
@@ -89,8 +100,8 @@ def dsl_user_op(opFunc):
                 else:
                     file_loc = ir.Location.file(
                         frameInfo.filename,
-                        frameInfo.positions.lineno,
-                        frameInfo.positions.col_offset or 0,
+                        frameInfo.positions.lineno,  # type: ignore[attr-defined]
+                        frameInfo.positions.col_offset or 0,  # type: ignore[attr-defined]
                     )
                 loc = ir.Location.name(
                     (
@@ -108,8 +119,18 @@ def dsl_user_op(opFunc):
 
         try:
             res_or_list = opFunc(*args, **kwargs, loc=loc)
-        except TypeError as e:
-            # Provide a helpful error message when function doesn't accept 'loc'
+            verifier_error = True
+            # Verify the operation
+            if hasattr(res_or_list, "verify"):
+                res_or_list.verify()
+
+        except DSLOperationBuildError as e:
+            # Nested DSLOperationError
+            raise DSLOperationBuildError(
+                message=e.message, cause=e, frameInfo=frameInfo
+            )
+        except Exception as e:
+            # Check if it's a decorator config error first
             func_name = getattr(opFunc, "__name__", str(opFunc))
             if "unexpected keyword argument 'loc'" in str(e):
                 raise DSLRuntimeError(
@@ -118,13 +139,20 @@ def dsl_user_op(opFunc):
                         f"1. Add 'loc=None' as a keyword-only parameter to {func_name}:",
                         f"  def {func_name}(..., *, loc=None):",
                         "",
-                        f"2. Remove the @dsl_user_op decorator if location tracking is not needed",
+                        "2. Remove the @dsl_user_op decorator if location tracking is not needed",
                     ],
                     cause=e,
                 ) from e
-            else:
-                # Re-raise other TypeErrors as-is
-                raise
+            if verifier_error:
+                raise DSLOperationBuildError(
+                    message="Operation verification failed",
+                    cause=e,
+                    frameInfo=frameInfo,
+                    auto_translate=False,
+                )
+
+            raise e
+
         return res_or_list
 
     return wrapper

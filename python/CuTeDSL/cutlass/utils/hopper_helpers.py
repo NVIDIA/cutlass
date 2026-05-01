@@ -11,6 +11,7 @@
 
 from typing import Type, Union, Tuple, Optional
 
+from cutlass._mlir import ir
 from cutlass.utils.layout import LayoutEnum
 from cutlass.cutlass_dsl import (
     Float16,
@@ -25,13 +26,12 @@ from cutlass.cutlass_dsl import (
 )
 
 import cutlass.cute as cute
-from cutlass.cute.nvgpu.common import CopyUniversalOp
+from cutlass.cute.nvgpu.common import CopyUniversalOp, OperandMajorMode
 from cutlass.cute.nvgpu.warp import StMatrix8x8x16bOp
 from cutlass.cute.nvgpu.warpgroup import (
     MmaF16BF16Op,
     MmaF8Op,
     MmaI8Op,
-    OperandMajorMode,
     OperandSource as WarpgroupOperandSource,
     make_smem_layout_atom,
 )
@@ -46,8 +46,8 @@ def get_smem_store_op(
     elem_ty_d: Type[Numeric],
     elem_ty_acc: Type[Numeric],
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.CopyAtom:
     """
     Selects the largest vectorized smem store atom available subject to constraint of gmem layout.
@@ -68,7 +68,7 @@ def get_smem_store_op(
     Either SmemStoreMatrix or SimtSyncCopy, based on the input parameters.
     """
 
-    def validate_type(ty, ty_name):
+    def validate_type(ty: Type[Numeric], ty_name: str) -> None:
         if not isinstance(ty, NumericMeta):
             raise TypeError(f"{ty_name} must be a Numeric, but got {ty}")
 
@@ -99,8 +99,8 @@ def make_trivial_tiled_mma(
     tiler_mn: Tuple[int, int],
     a_source: OperandSource = OperandSource.SMEM,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.TiledMma:
     """Make a tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
     By default, the MMA atom is created with SMEM operand source for A.
@@ -110,9 +110,9 @@ def make_trivial_tiled_mma(
     :param b_dtype: Data type of operand B.
     :type b_dtype: type[Numeric]
     :param a_leading_mode: Leading dimension of operand A (1 for K, 0 for M/N).
-    :type a_leading_mode: warpgroup.OperandMajorMode
+    :type a_leading_mode: cutlass.cute.nvgpu.OperandMajorMode
     :param b_leading_mode: Leading dimension of operand B (1 for K, 0 for M/N).
-    :type b_leading_mode: warpgroup.OperandMajorMode
+    :type b_leading_mode: cutlass.cute.nvgpu.OperandMajorMode
     :param acc_dtype: Data type of the accumulator.
     :type acc_dtype: type[Numeric]
     :param atom_layout_mnk: A integer tuple describing the tiling of Atom across threads.
@@ -144,7 +144,7 @@ def make_trivial_tiled_mma(
         Float8E4M3FN,
         Float8E5M2,
     }:
-        mma_op = MmaF8Op(
+        mma_op = MmaF8Op(  # type: ignore[assignment]
             a_dtype,
             b_dtype,
             acc_dtype,
@@ -154,7 +154,7 @@ def make_trivial_tiled_mma(
             b_leading_mode,
         )
     elif a_dtype in {Int8, Uint8} and b_dtype in {Int8, Uint8}:
-        mma_op = MmaI8Op(
+        mma_op = MmaI8Op(  # type: ignore[assignment]
             a_dtype,
             b_dtype,
             acc_dtype,
@@ -175,9 +175,9 @@ def get_smem_layout_atom(
     element_type: Type[Numeric],
     major_mode_size: int,
     *,
-    loc=None,
-    ip=None,
-):
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "cute.nvgpu.warpgroup.SmemLayoutAtomKind":
     """Select the optimal shared memory layout atom based on parameters.
 
     :param layout: Layout enum of the tensor
@@ -188,7 +188,7 @@ def get_smem_layout_atom(
     :type major_mode_size: int
 
     :return: Selected shared memory layout atom kind
-    :rtype: cute.nvgpu.warpgroup.SmemLayoutAtomKind
+    :rtype: cutlass.cute.nvgpu.warpgroup.SmemLayoutAtomKind
     """
     assert major_mode_size % 8 == 0
     sw128_num_contiguous_bits = 1024
@@ -219,8 +219,8 @@ def make_smem_layout_a(
     a_dtype: Type[Numeric],
     num_stages: int,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps with:
 
@@ -247,7 +247,7 @@ def make_smem_layout_a(
 
     # Determine if K is the major mode and get the major mode size
     is_k_major = a_layout.is_k_major_a()
-    a_major_mode_size = a_tile_shape_mnk[2] if is_k_major else a_tile_shape_mnk[0]
+    a_major_mode_size = a_tile_shape_mnk[2] if is_k_major else a_tile_shape_mnk[0]  # type: ignore[index]
 
     # Create SMEM layout atom for A tensor based on major mode and data type
     a_smem_layout_atom = make_smem_layout_atom(
@@ -276,8 +276,8 @@ def make_smem_layout_b(
     b_dtype: Type[Numeric],
     num_stages: int,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps with:
 
@@ -303,7 +303,7 @@ def make_smem_layout_b(
 
     # Determine if K is the major mode and get the major mode size
     is_k_major = b_layout.is_k_major_b()
-    b_major_mode_size = mma_tiler_mnk[2] if is_k_major else mma_tiler_mnk[1]
+    b_major_mode_size = mma_tiler_mnk[2] if is_k_major else mma_tiler_mnk[1]  # type: ignore[index]
 
     # Create SMEM layout atom for B tensor based on major mode and data type
     b_smem_layout_atom = make_smem_layout_atom(
@@ -334,8 +334,8 @@ def make_smem_layout_epi(
     smem_trg_shape: Optional[cute.Layout] = None,
     smem_order: Optional[tuple] = None,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
     """This function helps:
 
@@ -364,7 +364,7 @@ def make_smem_layout_epi(
     o_smem_shape = epi_tile
 
     # Determine major mode size based on layout (M or N major)
-    o_major_mode_size = epi_tile[1] if epi_layout.is_n_major_c() else epi_tile[0]
+    o_major_mode_size = epi_tile[1] if epi_layout.is_n_major_c() else epi_tile[0]  # type: ignore[index]
 
     # Create SMEM layout atom for output tensor based on layout and data type
     o_smem_layout_atom = make_smem_layout_atom(

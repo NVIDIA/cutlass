@@ -14,10 +14,11 @@ This module provides MLIR Dialect helper functions
 """
 
 from . import arith
+from .dialect_proxy import DialectAutoConvertProxy
 from .lru_cache_ir import lru_cache_ir
 from .op import dsl_user_op
 
-__all__ = ["arith", "lru_cache_ir", "dsl_user_op"]
+__all__ = ["arith", "DialectAutoConvertProxy", "lru_cache_ir", "dsl_user_op"]
 
 try:
     from . import gpu

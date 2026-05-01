@@ -13,7 +13,7 @@ import ctypes
 from math import prod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Type, Union, Tuple, Literal
+from typing import Any, Optional, Type, Union, Tuple
 
 from cutlass.cute.typing import (
     Numeric,
@@ -23,6 +23,8 @@ from cutlass.cute.typing import (
     Float8E4M3FN,
     Float8E5M2,
     Float8E8M0FNU,
+    Float6E3M2FN,
+    Float6E2M3FN,
     Float4E2M1FN,
     Int4,
     Tensor,
@@ -33,7 +35,7 @@ import torch
 import cuda.bindings.driver as cuda
 
 
-def dtype(ty: Type[Numeric]):
+def dtype(ty: Type[Numeric]) -> "torch.dtype":
     """
     Return the corresponding torch.dtype per the given DSL type
     """
@@ -60,10 +62,10 @@ def dtype(ty: Type[Numeric]):
     return torch_dtype
 
 
-def as_tensor(pointer, shape, torch_type):
+def as_tensor(pointer: Any, shape: Any, torch_type: "torch.dtype") -> "torch.Tensor":
     """Convert a pointer to a torch tensor"""
     if torch_type.itemsize == 1:
-        cytype = ctypes.c_uint8
+        cytype: type = ctypes.c_uint8
     elif torch_type.itemsize == 2:
         cytype = ctypes.c_uint16
     elif torch_type.itemsize == 4:
@@ -72,7 +74,7 @@ def as_tensor(pointer, shape, torch_type):
         cytype = ctypes.c_uint64
     else:
         raise ValueError(f"Unsupported torch dtype: {torch_type}")
-    cpointer = ctypes.cast(pointer, ctypes.POINTER(cytype))
+    cpointer: Any = ctypes.cast(pointer, ctypes.POINTER(cytype))
     arr = (cpointer._type_ * prod(shape)).from_address(
         ctypes.addressof(cpointer.contents)
     )
@@ -113,9 +115,9 @@ class TensorInitType(Enum):
 
 
 def create_and_permute_torch_tensor(
-    shape,
+    shape: Tuple[int, ...],
     dtype: "torch.dtype",
-    permute_order=None,
+    permute_order: Optional[Tuple[int, ...]] = None,
     init_type: TensorInitType = TensorInitType.RANDOM,
     init_config: Optional[
         Union[RandomInitConfig, ScalarInitConfig, GaussianInitConfig]
@@ -155,7 +157,7 @@ def create_and_permute_torch_tensor(
         f32_torch_tensor = init_torch_tensor.normal_(init_config.mean, init_config.std)
         f32_torch_tensor = f32_torch_tensor * init_config.scale
     else:
-        raise ValueError(f"Invalid init type: {init_type}")
+        raise ValueError(f"Invalid init type: {init_type} ({type(init_type)})")
 
     if permute_order is not None:
         f32_torch_tensor = f32_torch_tensor.permute(permute_order)
@@ -172,7 +174,7 @@ def get_leading_dim(torch_tensor: torch.Tensor) -> int:
     for i, stride in enumerate(torch_tensor.stride()):
         if stride == 1:
             return i
-    return None
+    return None  # type: ignore[return-value]
 
 
 def convert_cute_tensor(
@@ -195,6 +197,8 @@ def convert_cute_tensor(
         Float8E5M2,
         Float8E4M3FN,
         Float8E8M0FNU,
+        Float6E3M2FN,
+        Float6E2M3FN,
         Float4E2M1FN,
     }:
         fp32_cute_tensor = from_dlpack(f32_torch_tensor)

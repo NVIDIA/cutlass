@@ -15,7 +15,8 @@ This module provides CUDA Python helper functions
 
 from functools import lru_cache
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any
+from enum import IntEnum
 import numpy as np
 import os
 import ctypes
@@ -29,11 +30,17 @@ from ..utils.logger import log as _log
 from ..common import *
 
 # =============================================================================
+# Enums
+# =============================================================================
+
+
+
+# =============================================================================
 # Utils
 # =============================================================================
 
 
-def _cudaGetErrorEnum(error):
+def _cudaGetErrorEnum(error: Any) -> Any:
     """
     Get the error name of a CUDA error.
     :param error: The CUDA error.
@@ -53,7 +60,7 @@ def _cudaGetErrorEnum(error):
         raise DSLRuntimeError("Unknown error type: {}".format(error))
 
 
-def _get_gpu_arch_info(major, minor):
+def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
     """
     Get GPU architecture information and compatibility details.
     Return [Unknown, f"sm_{major}{minor}", [f"sm_{major}{minor}"]] if the major and minor version is not in the map.
@@ -75,13 +82,21 @@ def _get_gpu_arch_info(major, minor):
         (8, 7): ("Ampere", "sm_87", ["sm_87", "sm_86", "sm_80"]),  # A10, A40
         (9, 0): ("Hopper", "sm_90a", ["sm_90a"]),  # H100
         (10, 0): ("Blackwell", "sm_100a", ["sm_100a"]),  # B200
+        (10, 3): ("Blackwell", "sm_103a", ["sm_103a"]),
+        (12, 0): (
+            "Blackwell",
+            "sm_120a",
+            ["sm_120a"],
+        ),  # RTX PRO 6000 / RTX 50 Series
     }
     return gpu_arch_map.get(
         (major, minor), ("Unknown", f"sm_{major}{minor}", [f"sm_{major}{minor}"])
     )
 
 
-def get_compute_capability_major_minor(device_id: int = 0):
+def get_compute_capability_major_minor(
+    device_id: int = 0,
+) -> tuple[int | None, int | None]:
     """
     Get the compute capability of the CUDA device.
     :param device_id: The ID of the CUDA device.
@@ -146,15 +161,15 @@ class DeviceInfo:
 
     device_count: int = 0
     current_device: int = 0
-    device_name: Optional[str] = None
-    major_version: Optional[int] = None
-    minor_version: Optional[int] = None
-    arch_name: Optional[str] = None
-    sm_arch: Optional[str] = None
-    compatible_archs: Optional[List[str]] = None
-    memory_gb: Optional[float] = None
-    target_arch: Optional[str] = None
-    error_message: Optional[str] = None
+    device_name: str | None = None
+    major_version: int | None = None
+    minor_version: int | None = None
+    arch_name: str | None = None
+    sm_arch: str | None = None
+    compatible_archs: list[str] | None = None
+    memory_gb: float | None = None
+    target_arch: str | None = None
+    error_message: str | None = None
     initialization_failed: bool = False
 
     def pretty_str(self) -> str:
@@ -277,7 +292,7 @@ def get_device_info() -> DeviceInfo:
     return device_info
 
 
-def checkCudaErrors(result):
+def checkCudaErrors(result: Any) -> Any:
     """Check CUDA errors and provide detailed error messages.
     :param result: The result of the CUDA operation.
     :type result: tuple(CUresult, ...)
@@ -304,7 +319,7 @@ def checkCudaErrors(result):
 # =============================================================================
 
 
-def get_current_device():
+def get_current_device() -> Any:
     """
     Gets the current device on the active context.
     :return: The current device.
@@ -317,7 +332,7 @@ def get_current_device():
     return dev
 
 
-def get_device(device_id: int):
+def get_device(device_id: int) -> Any:
     """
     Gets a device given its ordinal.
     :param device_id: The ID of the device.
@@ -332,8 +347,25 @@ def get_device(device_id: int):
     return dev
 
 
+
 @lru_cache(maxsize=1)
-def initialize_cuda_context(device_id: int = 0, flags: int = 0):
+def _create_cuda_context(device_id: int = 0, flags: int = 0) -> Any:
+    """Creates and caches a new CUDA context. Cached to prevent duplicate
+    context creation, which would cause CUDA_ERROR_OUT_OF_MEMORY."""
+    cuDevice = get_device(device_id)
+    _log().info(f"cuCtxCreate {0} {cuDevice}")
+    if cuda.CUDA_VERSION >= 13000:
+        # Use cuCtxCreate_v4 API with explicit CUctxCreateParams None, since v2
+        # and v3 API has been removed from CTK 13.
+        # See https://github.com/NVIDIA/cuda-python/pull/792
+        context = checkCudaErrors(cuda.cuCtxCreate(None, 0, cuDevice))
+    else:
+        context = checkCudaErrors(cuda.cuCtxCreate(0, cuDevice))
+    _log().info(f"{context} <-- cuCtxCreate")
+    return context
+
+
+def initialize_cuda_context(device_id: int = 0, flags: int = 0) -> Any:
     """
     Initializes the CUDA context for a specified device.
     :param device_id: The ID of the device.
@@ -347,7 +379,7 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0):
     # Initialize CUDA Driver API
     _log().info(f"cuInit {flags}")
     checkCudaErrors(cuda.cuInit(flags))
-    
+
     driver_version = get_driver_version()
 
     # Check the CUDA driver version works for the installed cuda-python package
@@ -357,23 +389,33 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0):
             suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-python package with version 12.9 or below.",
         )
 
-    # Retrieve handle for device
-    cuDevice = get_device(device_id)
-    # Create context
-    _log().info(f"cuCtxCreate {0} {cuDevice}")
-    if cuda.CUDA_VERSION >= 13000:
-        # Use cuCtxCreate_v4 API with explicit CUctxCreateParams None, since v2
-        # and v3 API has been removed from CTK 13.
-        # See https://github.com/NVIDIA/cuda-python/pull/792
-        context = checkCudaErrors(cuda.cuCtxCreate(None, 0, cuDevice))
-    else:
-        context = checkCudaErrors(cuda.cuCtxCreate(0, cuDevice))
-    _log().info(f"{context} <-- cuCtxCreate")
+    # Check if a valid CUDA context already exists (e.g., created by PyTorch or
+    # another framework). Reusing it avoids creating redundant contexts, which can
+    # cause CUDA_ERROR_OUT_OF_MEMORY in multi-process setups (e.g., pytest-xdist
+    # with many workers sharing a single GPU). This check is intentionally not
+    # cached so that it always reflects the current state of the CUDA context
+    # stack — an external framework may destroy or replace its context at any time.
+    try:
+        result = cuda.cuCtxGetCurrent()
+        if not result[0].value and result[1] is not None:
+            # Validate that the context is usable by querying its device
+            dev_result = cuda.cuCtxGetDevice()
+            if not dev_result[0].value:
+                # Only reuse if the context's device matches the requested one
+                if int(dev_result[1]) == device_id:
+                    _log().info(
+                        f"Reusing existing CUDA context: {result[1]} "
+                        f"(device: {dev_result[1]})"
+                    )
+                    return result[1]
+    except Exception:
+        pass
 
-    return context
+    # No usable external context — create one (cached to prevent duplicates).
+    return _create_cuda_context(device_id, flags)
 
 
-def device_primary_context_retain(device):
+def device_primary_context_retain(device: Any) -> Any:
     """
     Retains the primary context on the device.
     :param device: The device.
@@ -386,7 +428,7 @@ def device_primary_context_retain(device):
     return checkCudaErrors(cuda.cuDevicePrimaryCtxRetain(device))
 
 
-def device_primary_context_release(device):
+def device_primary_context_release(device: Any) -> None:
     """
     Releases the primary context on the device.
     :param device: The device.
@@ -403,15 +445,15 @@ class DevicePrimaryContext:
     the object is no longer alive.
     """
 
-    def __init__(self, device):
+    def __init__(self, device: Any) -> None:
         self.device = device
         self.context = device_primary_context_retain(self.device)
 
-    def __del__(self):
+    def __del__(self) -> None:
         device_primary_context_release(self.device)
 
 
-def load_cubin_module(cubin_file):
+def load_cubin_module(cubin_file: str) -> Any:
     """
     Loads a CUBIN file and returns the module.
     :param cubin_file: The path to the CUBIN file.
@@ -432,7 +474,7 @@ def load_cubin_module(cubin_file):
     return module
 
 
-def unload_cubin_module(module):
+def unload_cubin_module(module: Any) -> None:
     """
     Unloads a CUBIN module.
     :param module: The module.
@@ -443,7 +485,7 @@ def unload_cubin_module(module):
     checkCudaErrors(cuda.cuModuleUnload(module))
 
 
-def load_cubin_module_data(cubin_data):
+def load_cubin_module_data(cubin_data: bytes) -> Any:
     """
     Loads a CUBIN from data and returns the module.
     :param cubin_data: The binary data of the CUBIN.
@@ -460,7 +502,7 @@ def load_cubin_module_data(cubin_data):
     return module
 
 
-def get_kernel_function(module, kernel_name):
+def get_kernel_function(module: Any, kernel_name: str) -> Any:
     """
     Retrieves the kernel function from the module.
     :param module: The module.
@@ -479,7 +521,7 @@ def get_kernel_function(module, kernel_name):
     return kernel
 
 
-def load_library(cubin_file):
+def load_library(cubin_file: str) -> Any:
     """
     Loads a CUBIN file and returns the library.
     :param cubin_file: The path to the CUBIN file.
@@ -495,7 +537,7 @@ def load_library(cubin_file):
     return load_library_data(cubin_data)
 
 
-def unload_library(library):
+def unload_library(library: Any) -> None:
     """
     Unloads a CUBIN library.
     :param library: The library.
@@ -507,7 +549,7 @@ def unload_library(library):
     _log().info(f"cuLibraryUnload done {library}")
 
 
-def load_library_data(cubin_data):
+def load_library_data(cubin_data: bytes | int) -> Any:
     """
     Loads a CUBIN from data and returns the library.
     :param cubin_data: The binary data of the CUBIN.
@@ -527,7 +569,7 @@ def load_library_data(cubin_data):
     return library
 
 
-def get_library_kernel(library, kernel_name):
+def get_library_kernel(library: Any, kernel_name: str) -> Any:
     """
     Retrieves the kernel from the library.
     :param library: The library.
@@ -546,7 +588,7 @@ def get_library_kernel(library, kernel_name):
     return kernel
 
 
-def get_function_from_kernel(kernel):
+def get_function_from_kernel(kernel: Any) -> Any:
     """
     Retrieves the kernel function from the kernel.
     :param kernel: The kernel.
@@ -562,7 +604,39 @@ def get_function_from_kernel(kernel):
     return kernel_fn
 
 
-def launch_kernel(kernel, grid_dims, block_dims, stream, smem_size, kernel_args=None):
+def load_library_from_file(file_path: str | os.PathLike[str]) -> Any:
+    """
+    Loads a file, e.g., cubin, and returns the library
+    :param file_path: The path to the file.
+    :type file_path: str or Path
+    :return: The library.
+    :rtype: cuda.CUlibrary
+    :raise DSLRuntimeError: If the CUDA operation fails.
+    """
+    _log().info(f"cuLibraryLoadFromFile {file_path}")
+    library = checkCudaErrors(
+        cuda.cuLibraryLoadFromFile(
+            fileName=str(file_path).encode(),
+            jitOptions=None,
+            jitOptionsValues=None,
+            numJitOptions=0,
+            libraryOptions=None,
+            libraryOptionValues=None,
+            numLibraryOptions=0,
+        )
+    )
+    _log().info(f"{library} <-- cuLibraryLoadFromFile")
+    return library
+
+
+def launch_kernel(
+    kernel: Any,
+    grid_dims: tuple[int, int, int],
+    block_dims: tuple[int, int, int],
+    stream: Any,
+    smem_size: int,
+    kernel_args: Any | None = None,
+) -> None:
     """
     Launches the CUDA kernel.
     :param kernel: The kernel.
@@ -603,7 +677,7 @@ def launch_kernel(kernel, grid_dims, block_dims, stream, smem_size, kernel_args=
     )
 
 
-def stream_sync(stream):
+def stream_sync(stream: Any) -> None:
     """
     Synchronizes the CUDA stream.
     :param stream: The stream.
@@ -614,7 +688,7 @@ def stream_sync(stream):
     checkCudaErrors(cuda.cuStreamSynchronize(stream))
 
 
-def stream_create(id=0):
+def stream_create(id: int = 0) -> Any:
     """
     Creates the CUDA stream.
     :param id: The ID of the stream.
@@ -629,7 +703,7 @@ def stream_create(id=0):
     return stream
 
 
-def stream_destroy(stream):
+def stream_destroy(stream: Any) -> None:
     """
     Destroys the CUDA stream.
     :param stream: The stream.
@@ -640,7 +714,7 @@ def stream_destroy(stream):
     checkCudaErrors(cuda.cuStreamDestroy(stream))
 
 
-def context_destroy(context):
+def context_destroy(context: Any) -> None:
     """
     Destroys the CUDA context.
     :param context: The context.
@@ -651,7 +725,7 @@ def context_destroy(context):
     checkCudaErrors(cuda.cuCtxDestroy(context))
 
 
-def allocate(size_in_bytes: int, stream=None):
+def allocate(size_in_bytes: int, stream: Any | None = None) -> Any:
     """
     Allocate device memory based on numpy host array size.
     :param size_in_bytes: The size of the memory to allocate.
@@ -671,7 +745,7 @@ def allocate(size_in_bytes: int, stream=None):
     return device_memory
 
 
-def deallocate(device_pointer, stream=None):
+def deallocate(device_pointer: Any, stream: Any | None = None) -> None:
     """
     Deallocate the specified device memory pointer.
     :param device_pointer: The device memory pointer.
@@ -689,7 +763,12 @@ def deallocate(device_pointer, stream=None):
         checkCudaErrors(cuda.cuMemFreeAsync(device_pointer, stream))
 
 
-def memcpy_h2d(host_pointer, device_pointer, size_in_bytes, stream=None):
+def memcpy_h2d(
+    host_pointer: int,
+    device_pointer: Any,
+    size_in_bytes: int,
+    stream: Any | None = None,
+) -> None:
     """
     Copy data from host to device memory
     if stream is None, the copy is synchronous otherwise it is asynchronous.
@@ -718,7 +797,12 @@ def memcpy_h2d(host_pointer, device_pointer, size_in_bytes, stream=None):
         )
 
 
-def memcpy_d2h(host_pointer, device_pointer, size_in_bytes, stream=None):
+def memcpy_d2h(
+    host_pointer: int,
+    device_pointer: Any,
+    size_in_bytes: int,
+    stream: Any | None = None,
+) -> None:
     """
     Copy data from device to host memory
     if stream is None, the copy is synchronous otherwise it is asynchronous.
@@ -747,7 +831,7 @@ def memcpy_d2h(host_pointer, device_pointer, size_in_bytes, stream=None):
         )
 
 
-def default_stream():
+def default_stream() -> Any:
     """
     Returns the default stream.
     :return: The default stream.
@@ -757,7 +841,7 @@ def default_stream():
 
 
 @lru_cache(maxsize=1)
-def get_driver_version():
+def get_driver_version() -> Any:
     """
     Returns the CUDA driver version.
     Note: the value is cached after the first call.
@@ -771,7 +855,12 @@ def get_driver_version():
     return checkCudaErrors(cuda.cuDriverGetVersion())
 
 
-def set_kernel_attribute(kernel, attribute, value, device=None):
+def set_kernel_attribute(
+    kernel: Any,
+    attribute: Any,
+    value: int,
+    device: Any | None = None,
+) -> Any:
     """
     Sets a CUDA kernel attribute.
     If the device is not provided, the attribute is set for the current device.
@@ -797,7 +886,7 @@ def set_kernel_attribute(kernel, attribute, value, device=None):
         )
 
 
-def get_device_attribute(attribute, device_id: int = 0):
+def get_device_attribute(attribute: Any, device_id: int = 0) -> Any:
     """
     Gets a CUDA device attribute.
     :param attribute: The attribute.

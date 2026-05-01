@@ -9,18 +9,19 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Tuple
+import inspect
+from typing import Optional, Tuple
 
+import cutlass
 from cutlass.cutlass_dsl import (
     Boolean,
     Integer,
     Int32,
-    min,
     extract_mlir_values,
     new_from_mlir_values,
     dsl_user_op,
-    T,
 )
+
 from cutlass._mlir import ir
 from cutlass.utils.static_persistent_tile_scheduler import (
     WorkTileInfo,
@@ -38,14 +39,17 @@ class ClcDynamicPersistentTileSchedulerParams:
     :type cluster_shape_mn: tuple
     """
 
+    @dsl_user_op
     def __init__(
         self,
         problem_shape_ntile_mnl: cute.Shape,
         cluster_shape_mnk: cute.Shape,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Initializes the ClcDynamicPersistentTileSchedulerParams with the given parameters.
 
@@ -54,40 +58,177 @@ class ClcDynamicPersistentTileSchedulerParams:
         :type problem_shape_ntile_mnl: cute.Shape
         :param cluster_shape_mnk: The shape of the cluster in (m, n) dimensions.
         :type cluster_shape_mnk: cute.Shape
+        :param swizzle_size: Swizzling size in the unit of cluster. 1 means no swizzle
+        :type swizzle_size: int
+        :param raster_along_m: Rasterization order of clusters. Only used when swizzle_size > 1.
+            True means along M, false means along N.
+        :type raster_along_m: bool
 
         :raises ValueError: If cluster_shape_k is not 1.
         """
 
-        if cluster_shape_mnk[2] != 1:
-            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")
+        if cluster_shape_mnk[2] != 1:  # type: ignore[index]
+            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")  # type: ignore[index]
+        if swizzle_size < 1:
+            raise ValueError(f"expect swizzle_size >= 1, but get {swizzle_size}")
 
         self.problem_shape_ntile_mnl = problem_shape_ntile_mnl
         # cluster_shape_mnk is kept for reconstruction
         self._cluster_shape_mnk = cluster_shape_mnk
-        self.cluster_shape_mn = cluster_shape_mnk[:2]
+        self.cluster_shape_mn = cluster_shape_mnk[:2]  # type: ignore[index]
+        self.swizzle_size = swizzle_size
+        self._raster_along_m = raster_along_m
+        self.cluster_shape_major_fdd = None
+        self.cluster_shape_minor_fdd = None
         self._loc = loc
 
-    def __extract_mlir_values__(self):
+        # By default, we follow m major (col-major) raster order, so make a col-major layout
+        self.problem_layout_ncluster_mnl = cute.make_layout(
+            cute.ceil_div(
+                self.problem_shape_ntile_mnl,
+                cluster_shape_mnk[:2],  # type: ignore[index]
+                loc=loc,
+                ip=ip,
+            ),
+            loc=loc,
+            ip=ip,
+        )
+
+        # Apply swizzle if swizzle_size > 1
+        if swizzle_size > 1:
+            problem_shape_ncluster_mnl = cute.round_up(
+                self.problem_layout_ncluster_mnl.shape,
+                (1, swizzle_size, 1) if raster_along_m else (swizzle_size, 1, 1),
+            )
+
+            if raster_along_m:
+                self.problem_layout_ncluster_mnl = cute.make_layout(
+                    (
+                        problem_shape_ncluster_mnl[0],  # type: ignore[index]
+                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),  # type: ignore[index, operator]
+                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                    ),
+                    stride=(
+                        swizzle_size,
+                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),  # type: ignore[index]
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                    ),
+                    loc=loc,
+                    ip=ip,
+                )
+            else:
+                self.problem_layout_ncluster_mnl = cute.make_layout(
+                    (
+                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),  # type: ignore[index, operator]
+                        problem_shape_ncluster_mnl[1],  # type: ignore[index]
+                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                    ),
+                    stride=(
+                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),  # type: ignore[index]
+                        swizzle_size,
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                    ),
+                    loc=loc,
+                    ip=ip,
+                )
+        elif not raster_along_m:
+            cluster_count_major = self.problem_layout_ncluster_mnl.shape[1]
+            cluster_count_minor = self.problem_layout_ncluster_mnl.shape[0]
+            self.cluster_shape_major_fdd = cute.fast_divmod_create_divisor(
+                cluster_count_major, loc=loc, ip=ip
+            )
+            self.cluster_shape_minor_fdd = cute.fast_divmod_create_divisor(
+                cluster_count_minor, loc=loc, ip=ip
+            )
+
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         values, self._values_pos = [], []
-        for obj in [self.problem_shape_ntile_mnl, self._cluster_shape_mnk]:
+        for obj in [
+            self.problem_shape_ntile_mnl,
+            self._cluster_shape_mnk,
+            self.swizzle_size,
+            self._raster_along_m,
+        ]:
             obj_values = extract_mlir_values(obj)
             values += obj_values
             self._values_pos.append(len(obj_values))
+
+        # Add FastDivmod divisors to MLIR values for Host->Device transfer
+        # Only add non-None values to avoid MLIR type errors
+        fastdivmod_values = []
+        fastdivmod_indices = []  # Track which FastDivmod objects are present
+
+        for i, (fdd_name, fdd_obj) in enumerate(
+            [
+                ("cluster_shape_major_fdd", self.cluster_shape_major_fdd),
+                ("cluster_shape_minor_fdd", self.cluster_shape_minor_fdd),
+            ]
+        ):
+            if fdd_obj is not None:
+                # Extract MLIR values from FastDivmodDivisor objects
+                fdd_values = extract_mlir_values(fdd_obj)
+                fastdivmod_values.extend(fdd_values)
+                fastdivmod_indices.append(i)
+
+        values += fastdivmod_values
+        self._values_pos.append(
+            len(fastdivmod_indices)
+        )  # Store count of FastDivmod objects, not values
+        self._fastdivmod_indices = fastdivmod_indices  # Store for reconstruction
+
         return values
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(
+        self, values: list[ir.Value]
+    ) -> "ClcDynamicPersistentTileSchedulerParams":
         obj_list = []
+        values_copy = list(values)  # Make a copy to avoid modifying original
+
+        # Reconstruct original objects from MLIR values
         for obj, n_items in zip(
-            [self.problem_shape_ntile_mnl, self._cluster_shape_mnk], self._values_pos
+            [
+                self.problem_shape_ntile_mnl,
+                self._cluster_shape_mnk,
+                self.swizzle_size,
+                self._raster_along_m,
+            ],
+            self._values_pos[:-1],  # Exclude FastDivmod count
         ):
-            obj_list.append(new_from_mlir_values(obj, values[:n_items]))
-            values = values[n_items:]
-        return ClcDynamicPersistentTileSchedulerParams(
+            obj_list.append(new_from_mlir_values(obj, values_copy[:n_items]))
+            values_copy = values_copy[n_items:]
+
+        new_params = ClcDynamicPersistentTileSchedulerParams(
             *(tuple(obj_list)), loc=self._loc
         )
 
+        # Restore FastDivmod divisors from remaining values
+        fdd_names = [
+            "cluster_shape_major_fdd",
+            "cluster_shape_minor_fdd",
+        ]
+
+        if hasattr(self, "_fastdivmod_indices") and len(self._fastdivmod_indices) > 0:
+            # Override the FastDivmod divisors created by __init__ with reconstructed ones
+            for j, original_index in enumerate(self._fastdivmod_indices):
+                fdd_name = fdd_names[original_index]
+                # Get the original FastDivmodDivisor object
+                original_fdd = getattr(self, fdd_name)
+                if original_fdd is not None and j < len(values_copy):
+                    # Each FastDivmodDivisor has 1 MLIR value
+                    reconstructed_fdd = new_from_mlir_values(
+                        original_fdd, [values_copy[j]]
+                    )
+                    setattr(new_params, fdd_name, reconstructed_fdd)
+
+        return new_params
+
     @dsl_user_op
-    def get_grid_shape(self, *, loc=None, ip=None) -> Tuple[Integer, Integer, Integer]:
+    def get_grid_shape(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tuple[Integer, Integer, Integer]:
         """
         Computes the grid shape based on the problem shape and cluster shape.
 
@@ -97,7 +238,26 @@ class ClcDynamicPersistentTileSchedulerParams:
         problem_ceiling_cta_mnl = cute.round_up(
             self.problem_shape_ntile_mnl, self._cluster_shape_mnk
         )
-        return problem_ceiling_cta_mnl
+
+        if self.swizzle_size == 1 and self._raster_along_m:
+            return problem_ceiling_cta_mnl  # type: ignore[return-value]
+        else:
+            # If swizzling is enabled or raster_along_n,
+            # we are going to map from a linear idx to tile id manually.
+            num_problem_cta_count = cute.size(problem_ceiling_cta_mnl, loc=loc, ip=ip)
+            num_ctas_per_cluster = cute.size(self.cluster_shape_mn, loc=loc, ip=ip)
+            return (
+                *self.cluster_shape_mn,
+                num_problem_cta_count // num_ctas_per_cluster,
+            )
+
+
+# Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
+ClcDynamicPersistentTileSchedulerParams.__init__.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+    [
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]
+)
 
 
 class ClcDynamicPersistentTileScheduler:
@@ -174,9 +334,9 @@ class ClcDynamicPersistentTileScheduler:
         grid_dim: Tuple[Integer, Integer, Integer],
         clc_response_ptr: cute.Pointer,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "ClcDynamicPersistentTileScheduler":
         """Initialize the dynamic persistent tile scheduler.
 
         :param params: Parameters for the persistent
@@ -221,8 +381,8 @@ class ClcDynamicPersistentTileScheduler:
     def get_grid_shape(
         params: ClcDynamicPersistentTileSchedulerParams,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> Tuple[Integer, Integer, Integer]:
         """Calculates the grid shape to be launched on GPU using problem shape,
         threadblock shape, and active cluster size.
@@ -236,9 +396,58 @@ class ClcDynamicPersistentTileScheduler:
 
         return params.get_grid_shape(loc=loc, ip=ip)
 
+    @cute.jit
+    def _swizzle_and_rasterize(
+        self,
+        x_idx: Int32,
+        y_idx: Int32,
+        z_idx: Int32,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tuple[Int32, Int32, Int32]:
+        """Swizzle and rasterize the given coordinates for leader CTA of the cluster.
+        x_idx, y_idx, and z_idx must be divisible by cluster shape x, y, and z respectively. They should not be offset
+        by the ID of the CTA in the cluster.
+        """
+        if cutlass.const_expr(self.params.swizzle_size == 1):
+            if cutlass.const_expr(self.params._raster_along_m):
+                return x_idx, y_idx, z_idx
+            else:
+                # Decode linear index using FastDivmod objects.
+                # First, get cluster_major using cluster_shape_major_fdd
+                cluster_minor_batch, cluster_major = divmod(  # type: ignore[operator]
+                    z_idx, self.params.cluster_shape_major_fdd
+                )
+                # Then decode cluster_minor_batch to get cluster_minor and batch_l using FastDivmod
+                batch_l, cluster_minor = divmod(
+                    cluster_minor_batch, self.params.cluster_shape_minor_fdd
+                )
+                cluster_m = cluster_minor
+                cluster_n = cluster_major
+
+                return (
+                    cluster_m * self.params.cluster_shape_mn[0],
+                    cluster_n * self.params.cluster_shape_mn[1],
+                    batch_l,
+                )
+        else:
+            cluster_coord = self.params.problem_layout_ncluster_mnl.get_flat_coord(
+                z_idx, loc=loc, ip=ip
+            )
+            return (
+                cluster_coord[0] * self.params.cluster_shape_mn[0],
+                cluster_coord[1] * self.params.cluster_shape_mn[1],
+                cluster_coord[2],
+            )
+
     @dsl_user_op
     def work_tile_info_from_clc_response(
-        self, result_addr: cute.Pointer, *, loc=None, ip=None
+        self,
+        result_addr: cute.Pointer,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> WorkTileInfo:
         """
         Simulates parsing CLC response data in Python.
@@ -249,23 +458,53 @@ class ClcDynamicPersistentTileScheduler:
             "async.shared",
             space="cta",
         )
-        cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster
+        m_idx, n_idx, l_idx = self._swizzle_and_rasterize(
+            m_idx, n_idx, l_idx, loc=loc, ip=ip
+        )
+        cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster  # type: ignore[misc]
         cur_tile_coord = (m_idx + cta_idx_in_cluster, n_idx + cta_idy_in_cluster, l_idx)
+
         return WorkTileInfo(cur_tile_coord, vld)
 
     @dsl_user_op
-    def get_current_work(self, *, loc=None, ip=None) -> WorkTileInfo:
+    def get_current_work(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> WorkTileInfo:
         smem_addr = self._clc_response_ptr
         work_tile = self.work_tile_info_from_clc_response(smem_addr)
         return work_tile
 
     @dsl_user_op
-    def initial_work_tile_info(self, *, loc=None, ip=None) -> WorkTileInfo:
+    def initial_work_tile_info(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> WorkTileInfo:
         bidx, bidy, bidz = self._block_idx
-        return WorkTileInfo((bidx, bidy, bidz), True)
+        # Subtract cta_id_in_cluster from block_idx because swizzle_and_rasterize expects coordinates to be
+        # those of the leader CTA in the cluster.
+        cta_idx_in_cluster, cta_idy_in_cluster, _ = self.cta_id_in_cluster  # type: ignore[misc]
+        m_idx = bidx - cta_idx_in_cluster
+        n_idx = bidy - cta_idy_in_cluster
+        l_idx = bidz
+        m_idx, n_idx, l_idx = self._swizzle_and_rasterize(
+            m_idx, n_idx, l_idx, loc=loc, ip=ip
+        )
+        cur_tile_coord = (m_idx + cta_idx_in_cluster, n_idx + cta_idy_in_cluster, l_idx)
+        return WorkTileInfo(cur_tile_coord, Boolean(True))
 
     @dsl_user_op
-    def advance_to_next_work(self, mbarrier_addr, loc=None, ip=None):
+    def advance_to_next_work(
+        self,
+        mbarrier_addr: cute.Pointer,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         # Query new work tile
         with cute.arch.elect_one():
             cute.arch.issue_clc_query(

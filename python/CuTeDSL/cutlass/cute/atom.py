@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from abc import ABC, ABCMeta, abstractmethod
-from typing import Type, Union, Optional, Any, List, Tuple, overload
+from typing import Type, Union, Optional, Any, overload, List, Tuple
 
 from .typing import Shape, Layout, Tile, Tensor, Numeric, Int32
 from .core import (
@@ -53,7 +53,13 @@ class MmaOp(Op, metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def _make_trait(self, *, loc=None, ip=None, **kwargs):
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Trait":
         pass
 
 
@@ -64,8 +70,13 @@ class CopyOp(Op, metaclass=ABCMeta):
 
     @abstractmethod
     def _make_trait(
-        self, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
-    ):
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Trait":
         pass
 
 
@@ -80,30 +91,61 @@ class Trait(ABC):
     def __init__(self, value: ir.Value) -> None:
         self.value = value
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> List[ir.Value]:
         return [self.value]
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "Trait":
         return self.__class__(values[0])
 
-    def set(self, field, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        field: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         raise NotImplementedError(
             "set not implemented, the requesting Atom has likely no runtime state"
         )
 
-    def get(self, field, *, loc=None, ip=None) -> Any:
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         raise NotImplementedError(
             "get not implemented, the requesting Atom has likely no runtime state"
         )
 
-    def unpack(self, *, loc=None, ip=None, **kwargs) -> ir.Value:
+    def unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
         return self.value
 
-    def with_(self, *, loc=None, ip=None, **kwargs) -> "Trait":
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Trait":
         return self.__class__(self.unpack(loc=loc, ip=ip, **kwargs))
 
 
-def make_atom(ty, values=None, *, loc=None, ip=None):
+def make_atom(
+    ty: ir.Type,
+    values: Optional[List[ir.Value]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.OpResult:
     """
     This is a wrapper around the _cute_ir.make_atom operation, providing default value for the values argument.
     """
@@ -135,10 +177,10 @@ class Atom(ABC):
         self._op = op
         self._trait = trait
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> List[ir.Value]:
         return extract_mlir_values(self._trait) + extract_mlir_values(self._op)
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "Atom":
         traits_value = values[: len(extract_mlir_values(self._trait))]
         op_value = values[len(extract_mlir_values(self._trait)) :]
 
@@ -151,11 +193,18 @@ class Atom(ABC):
         return self._op
 
     @property
-    def type(self):
+    def type(self) -> ir.Type:
         return self._trait.value.type
 
     @dsl_user_op
-    def set(self, modifier, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        modifier: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Sets runtime fields of the Atom.
 
@@ -175,7 +224,13 @@ class Atom(ABC):
         self._trait.set(modifier, value, loc=loc, ip=ip)
 
     @dsl_user_op
-    def get(self, field, *, loc=None, ip=None) -> Any:
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         """
         Gets runtime fields of the Atom.
 
@@ -193,7 +248,13 @@ class Atom(ABC):
         """
         return self._trait.get(field, loc=loc, ip=ip)
 
-    def with_(self, *, loc=None, ip=None, **kwargs) -> "Atom":
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Atom":
         """
         Returns a new Atom with the new Operation and Trait with the given runtime state. The runtime state
         is provided as keyword arguments and it is Atom-specific.
@@ -208,7 +269,13 @@ class Atom(ABC):
         """
         return self.__class__(self.op, self._trait.with_(loc=loc, ip=ip, **kwargs))
 
-    def _unpack(self, *, loc=None, ip=None, **kwargs) -> ir.Value:
+    def _unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
         return self._trait.unpack(loc=loc, ip=ip, **kwargs)
 
 
@@ -239,27 +306,52 @@ class MmaAtom(Atom):
 
     @property
     @dsl_user_op
-    def thr_id(self, *, loc=None, ip=None) -> Layout:
+    def thr_id(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.thr_id, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def shape_mnk(self, *, loc=None, ip=None) -> Shape:
+    def shape_mnk(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Shape:
         return _unpack_x_tuple(self._trait.value.type.shape_mnk, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def tv_layout_A(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_A(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_a_tv, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def tv_layout_B(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_B(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_b_tv, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def tv_layout_C(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_C(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_c_tv)
 
     #
@@ -267,11 +359,17 @@ class MmaAtom(Atom):
     #
 
     @dsl_user_op
-    def make_fragment_A(self, input, *, loc=None, ip=None):
+    def make_fragment_A(
+        self,
+        input: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.OpResult:
         # input could be memref/shape/layout for tmem based fragment
         if isinstance(input, _Tensor):
             if self.op is not None:
-                self.op._verify_fragment_A(input, loc=loc, ip=ip)
+                self.op._verify_fragment_A(input, loc=loc, ip=ip)  # type: ignore[attr-defined]
             input = input.value
         if isinstance(input, tuple):
             input = _pack_shape(input, loc=loc, ip=ip)
@@ -280,10 +378,16 @@ class MmaAtom(Atom):
         )
 
     @dsl_user_op
-    def make_fragment_B(self, input, *, loc=None, ip=None):
+    def make_fragment_B(
+        self,
+        input: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.OpResult:
         if isinstance(input, _Tensor):
             if self.op is not None:
-                self.op._verify_fragment_B(input, loc=loc, ip=ip)
+                self.op._verify_fragment_B(input, loc=loc, ip=ip)  # type: ignore[attr-defined]
             input = input.value
         if isinstance(input, tuple):
             input = _pack_shape(input, loc=loc, ip=ip)
@@ -292,7 +396,13 @@ class MmaAtom(Atom):
         )
 
     @dsl_user_op
-    def make_fragment_C(self, input, *, loc=None, ip=None):
+    def make_fragment_C(
+        self,
+        input: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.OpResult:
         # input could be memref/shape/layout for tmem based fragment
         if isinstance(input, _Tensor):
             input = input.value
@@ -326,27 +436,52 @@ class TiledMma(MmaAtom):
 
     @property
     @dsl_user_op
-    def tv_layout_A_tiled(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_A_tiled(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_a_tv_tiled, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def tv_layout_B_tiled(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_B_tiled(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_b_tv_tiled, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def tv_layout_C_tiled(self, *, loc=None, ip=None) -> Layout:
+    def tv_layout_C_tiled(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.layout_c_tv_tiled, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def permutation_mnk(self, *, loc=None, ip=None) -> Tile:
+    def permutation_mnk(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tile:
         return _unpack_x_tuple(self._trait.value.type.permutation_mnk, loc=loc, ip=ip)
 
     @property
     @dsl_user_op
-    def thr_layout_vmnk(self, *, loc=None, ip=None) -> Layout:
+    def thr_layout_vmnk(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
         return static(self._trait.value.type.thr_layout_vmnk, loc=loc, ip=ip)
 
     @property
@@ -380,7 +515,14 @@ class TiledMma(MmaAtom):
     # partition_shape
     #
 
-    def _partition_shape(self, operand_id, shape, *, loc=None, ip=None):
+    def _partition_shape(
+        self,
+        operand_id: Any,
+        shape: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         shape = _pack_shape(shape, loc=loc, ip=ip)
         return _unpack_x_tuple(
             _cute_ir.tiled_mma_partition_shape(
@@ -391,15 +533,33 @@ class TiledMma(MmaAtom):
         )
 
     @dsl_user_op
-    def partition_shape_A(self, shape_mk, *, loc=None, ip=None):
+    def partition_shape_A(
+        self,
+        shape_mk: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         return self._partition_shape(_cute_ir.MmaOperand.A, shape_mk, loc=loc, ip=ip)
 
     @dsl_user_op
-    def partition_shape_B(self, shape_nk, *, loc=None, ip=None):
+    def partition_shape_B(
+        self,
+        shape_nk: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         return self._partition_shape(_cute_ir.MmaOperand.B, shape_nk, loc=loc, ip=ip)
 
     @dsl_user_op
-    def partition_shape_C(self, shape_mn, *, loc=None, ip=None):
+    def partition_shape_C(
+        self,
+        shape_mn: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         return self._partition_shape(_cute_ir.MmaOperand.C, shape_mn, loc=loc, ip=ip)
 
     #
@@ -407,16 +567,37 @@ class TiledMma(MmaAtom):
     #
 
     @overload
-    def _thrfrg(self, operand_id, input: Layout, *, loc=None, ip=None) -> Layout: ...
+    def _thrfrg(
+        self,
+        operand_id: Any,
+        input: Layout,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout: ...
 
     @overload
-    def _thrfrg(self, operand_id, input: Tensor, *, loc=None, ip=None) -> Tensor: ...
+    def _thrfrg(
+        self,
+        operand_id: Any,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor: ...
 
-    def _thrfrg(self, operand_id, input, *, loc=None, ip=None) -> Union[Tensor, Layout]:
+    def _thrfrg(
+        self,
+        operand_id: Any,
+        input: Union[Layout, Tensor],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Union[Tensor, Layout]:
         if isinstance(input, Tensor):
             return make_tensor(
                 input.iterator,
-                self._thrfrg(operand_id, input.layout, loc=loc, ip=ip),
+                self._thrfrg(operand_id, input.layout, loc=loc, ip=ip),  # type: ignore[arg-type]
                 loc=loc,
                 ip=ip,
             )
@@ -432,17 +613,29 @@ class TiledMma(MmaAtom):
         )
 
     def _thrfrg_A(
-        self, input: Union[Layout, Tensor], *, loc=None, ip=None
+        self,
+        input: Union[Layout, Tensor],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> Union[Layout, Tensor]:
         return self._thrfrg(_cute_ir.MmaOperand.A, input, loc=loc, ip=ip)
 
     def _thrfrg_B(
-        self, input: Union[Layout, Tensor], *, loc=None, ip=None
+        self,
+        input: Union[Layout, Tensor],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> Union[Layout, Tensor]:
         return self._thrfrg(_cute_ir.MmaOperand.B, input, loc=loc, ip=ip)
 
     def _thrfrg_C(
-        self, input: Union[Layout, Tensor], *, loc=None, ip=None
+        self,
+        input: Union[Layout, Tensor],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> Union[Layout, Tensor]:
         return self._thrfrg(_cute_ir.MmaOperand.C, input, loc=loc, ip=ip)
 
@@ -456,17 +649,23 @@ class ThrMma(TiledMma):
         super().__init__(op, trait)
         self._thr_idx = thr_idx
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "ThrMma":
         return self.__class__(
             self.op, new_from_mlir_values(self._trait, values), self.thr_idx
         )
 
     @property
-    def thr_idx(self):
+    def thr_idx(self) -> Union[int, Int32]:
         return self._thr_idx
 
     @dsl_user_op
-    def partition_A(self, input_mk: Tensor, *, loc=None, ip=None) -> Tensor:
+    def partition_A(
+        self,
+        input_mk: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor:
         thr_idx = _pack_coord(self.thr_idx, loc=loc, ip=ip)
         return _cute_ir.tiled_mma_partition(
             _cute_ir.MmaOperand.A,
@@ -478,7 +677,13 @@ class ThrMma(TiledMma):
         )
 
     @dsl_user_op
-    def partition_B(self, input_nk: Tensor, *, loc=None, ip=None) -> Tensor:
+    def partition_B(
+        self,
+        input_nk: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor:
         thr_idx = _pack_coord(self.thr_idx, loc=loc, ip=ip)
         return _cute_ir.tiled_mma_partition(
             _cute_ir.MmaOperand.B,
@@ -490,7 +695,13 @@ class ThrMma(TiledMma):
         )
 
     @dsl_user_op
-    def partition_C(self, input_mn: Tensor, *, loc=None, ip=None) -> Tensor:
+    def partition_C(
+        self,
+        input_mn: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor:
         thr_idx = _pack_coord(self.thr_idx, loc=loc, ip=ip)
         return _cute_ir.tiled_mma_partition(
             _cute_ir.MmaOperand.C,
@@ -503,7 +714,13 @@ class ThrMma(TiledMma):
 
 
 @dsl_user_op
-def make_mma_atom(op: MmaOp, *, loc=None, ip=None, **kwargs) -> MmaAtom:
+def make_mma_atom(
+    op: MmaOp,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+    **kwargs: Any,
+) -> MmaAtom:
     """
     Makes an MMA Atom from an MMA Operation.
 
@@ -522,12 +739,12 @@ def make_mma_atom(op: MmaOp, *, loc=None, ip=None, **kwargs) -> MmaAtom:
 @dsl_user_op
 def make_tiled_mma(
     op_or_atom: Union[Op, MmaAtom],
-    atom_layout_mnk=(1, 1, 1),
-    permutation_mnk=None,
+    atom_layout_mnk: Any = (1, 1, 1),
+    permutation_mnk: Any = None,
     *,
-    loc=None,
-    ip=None,
-    **kwargs,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+    **kwargs: Any,
 ) -> TiledMma:
     """
     Makes a tiled MMA from an MMA Operation or an MMA Atom.
@@ -610,33 +827,6 @@ class CopyAtom(Atom):
     def layout_dst_tv(self) -> Layout:
         return static(self._trait.value.type.layout_dst_tv)
 
-    @property
-    def smem_layout(self):
-        """
-        Convenience property to access the SMEM layout for TMA copy atoms.
-
-        This is a shortcut for ``atom.op.smem_layout`` that checks if the operation
-        is a TMA operation and provides a clearer error message if not.
-
-        :return: The SMEM layout
-        :rtype: Layout or ComposedLayout
-        :raises TypeError: If the operation is not a TMA operation
-        :raises ValueError: If the SMEM layout is not set
-
-        Example:
-            >>> layout = tma_atom.smem_layout  # Instead of tma_atom.op.smem_layout
-        """
-        # Import here to avoid circular dependency
-        from .nvgpu.cpasync.copy import TmaCopyOp
-
-        if not isinstance(self.op, TmaCopyOp):
-            raise TypeError(
-                f"smem_layout is only available for TMA copy operations, "
-                f"but this atom uses {type(self.op).__name__}"
-            )
-
-        return self.op.smem_layout
-
 
 class TiledCopy(CopyAtom):
     """
@@ -686,9 +876,18 @@ class TiledCopy(CopyAtom):
         return ThrCopy(self.op, self._trait, thr_idx)
 
     @dsl_user_op
-    def retile(self, src, *, loc=None, ip=None):
+    def retile(
+        self,
+        src: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         return _cute_ir.tiled_copy_retile(
-            tiled_copy=self._trait.value, input=src.value, loc=loc, ip=ip
+            tiled_copy=self._trait.value,
+            input=src.value,
+            loc=loc,
+            ip=ip,
         )
 
 
@@ -701,33 +900,58 @@ class ThrCopy(TiledCopy):
         super().__init__(op, trait)
         self._thr_idx = thr_idx
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "ThrCopy":
         return self.__class__(
             self.op, new_from_mlir_values(self._trait, values), self.thr_idx
         )
 
     @property
-    def thr_idx(self):
+    def thr_idx(self) -> Union[int, Int32]:
         return self._thr_idx
 
     @dsl_user_op
-    def partition_S(self, src: Tensor, *, loc=None, ip=None) -> Tensor:
+    def partition_S(
+        self,
+        src: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor:
         thr_idx = _pack_coord(self.thr_idx, loc=loc, ip=ip)
         return _cute_ir.tiled_copy_partition_S(
-            self._trait.value, src.value, thr_idx, loc=loc, ip=ip
+            self._trait.value,
+            src.value,
+            thr_idx,
+            loc=loc,
+            ip=ip,
         )
 
     @dsl_user_op
-    def partition_D(self, dst: Tensor, *, loc=None, ip=None) -> Tensor:
+    def partition_D(
+        self,
+        dst: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tensor:
         thr_idx = _pack_coord(self.thr_idx, loc=loc, ip=ip)
         return _cute_ir.tiled_copy_partition_D(
-            self._trait.value, dst.value, thr_idx, loc=loc, ip=ip
+            self._trait.value,
+            dst.value,
+            thr_idx,
+            loc=loc,
+            ip=ip,
         )
 
 
 @dsl_user_op
 def make_copy_atom(
-    op: CopyOp, copy_internal_type: Type[Numeric], *, loc=None, ip=None, **kwargs
+    op: CopyOp,
+    copy_internal_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+    **kwargs: Any,
 ) -> CopyAtom:
     """
     Makes a Copy Atom from a Copy Operation.
@@ -753,7 +977,14 @@ def make_copy_atom(
     return CopyAtom(op, trait)
 
 
-def _make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
+def _make_tiled_copy(
+    atom: Any,
+    layout_tv: Any,
+    tiler_mn: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     if type(tiler_mn) is tuple:
         tiler_mn = _pack_tile(tiler_mn, loc=loc, ip=ip)
 
@@ -774,7 +1005,14 @@ def _make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
     return TiledCopy(atom.op, trait)
 
 
-def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
+def make_tiled_copy(
+    atom: Any,
+    layout_tv: Any,
+    tiler_mn: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled type given a TV partitioner and tiler.
 
     :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
@@ -796,7 +1034,12 @@ def make_tiled_copy(atom, layout_tv, tiler_mn, *, loc=None, ip=None):
 
 @dsl_user_op
 def make_tiled_copy_tv(
-    atom: CopyAtom, thr_layout: Layout, val_layout: Layout, *, loc=None, ip=None
+    atom: CopyAtom,
+    thr_layout: Layout,
+    val_layout: Layout,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> TiledCopy:
     """Create a tiled copy given separate thread and value layouts.
 
@@ -825,7 +1068,12 @@ def make_tiled_copy_tv(
 
 @dsl_user_op
 def make_cotiled_copy(
-    atom: CopyAtom, atom_layout_tv: Layout, data_layout: Layout, *, loc=None, ip=None
+    atom: CopyAtom,
+    atom_layout_tv: Layout,
+    data_layout: Layout,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> TiledCopy:
     """
     Produce a TiledCopy from thread and value offset maps.
@@ -861,7 +1109,10 @@ def make_cotiled_copy(
     # check validity
     atom_layout_v_to_check = coalesce(
         make_layout(
-            atom_layout_tv.shape[1], stride=atom_layout_tv.stride[1], loc=loc, ip=ip
+            atom_layout_tv.shape[1],  # type: ignore[index]
+            stride=atom_layout_tv.stride[1],  # type: ignore[index]
+            loc=loc,
+            ip=ip,
         ),
         loc=loc,
         ip=ip,
@@ -915,7 +1166,13 @@ def make_cotiled_copy(
 
 
 @dsl_user_op
-def make_tiled_copy_A(atom, tiled_mma, *, loc=None, ip=None):
+def make_tiled_copy_A(
+    atom: Any,
+    tiled_mma: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled copy out of the copy_atom that matches the A-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -941,7 +1198,13 @@ def make_tiled_copy_A(atom, tiled_mma, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def make_tiled_copy_B(atom, tiled_mma, *, loc=None, ip=None):
+def make_tiled_copy_B(
+    atom: Any,
+    tiled_mma: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled copy out of the copy_atom that matches the B-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -967,7 +1230,13 @@ def make_tiled_copy_B(atom, tiled_mma, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def make_tiled_copy_C(atom, tiled_mma, *, loc=None, ip=None):
+def make_tiled_copy_C(
+    atom: Any,
+    tiled_mma: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled copy out of the copy_atom that matches the C-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -993,7 +1262,13 @@ def make_tiled_copy_C(atom, tiled_mma, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def make_tiled_copy_S(atom, tiled_copy, *, loc=None, ip=None):
+def make_tiled_copy_S(
+    atom: Any,
+    tiled_copy: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled copy out of the copy_atom that matches the Src-Layout of tiled_copy.
 
     :param atom: Copy atom
@@ -1015,7 +1290,13 @@ def make_tiled_copy_S(atom, tiled_copy, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def make_tiled_copy_D(atom, tiled_copy, *, loc=None, ip=None):
+def make_tiled_copy_D(
+    atom: Any,
+    tiled_copy: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create a tiled copy out of the copy_atom that matches the Dst-Layout of tiled_copy.
 
     :param atom: Copy atom
@@ -1037,7 +1318,13 @@ def make_tiled_copy_D(atom, tiled_copy, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def make_tiled_copy_C_atom(atom: CopyAtom, mma: TiledMma, *, loc=None, ip=None):
+def make_tiled_copy_C_atom(
+    atom: CopyAtom,
+    mma: TiledMma,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "TiledCopy":
     """Create the smallest tiled copy that can retile LayoutC_TV for use with pipelined epilogues with subtiled stores.
 
     :param atom: Copy atom
@@ -1127,7 +1414,7 @@ def _normalize_variadic_tensor_operand(
             raise ValueError(f"`{name}` must contain at least one Tensor")
         if not all(isinstance(t, Tensor) for t in x):
             raise TypeError(f"All elements of `{name}` must be Tensor")
-        return list(x)  # type: ignore
+        return list(x)
     raise TypeError(f"`{name}` must be a Tensor or a sequence of Tensors")
 
 
@@ -1138,9 +1425,9 @@ def copy_atom_call(
     dst: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
     *,
     pred: Optional[Tensor] = None,
-    loc=None,
-    ip=None,
-    **kwargs,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+    **kwargs: Any,
 ) -> None:
     """
     Execute a single copy atom operation.
@@ -1164,6 +1451,10 @@ def copy_atom_call(
     - For regular copy, ``src`` and ``dst`` each contain a single tensor.
     - For copy with auxiliary operands, they contain the main tensor followed by
       auxiliary tensors. For example:
+
+      - For static load from tensor memory, ``dst`` = [data, stat].
+      - For TMA gather4, ``src`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
+      - For TMA scatter4, ``dst`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
 
     :param atom: Copy atom specifying the transfer operation
     :type atom: CopyAtom
@@ -1195,16 +1486,26 @@ def copy_atom_call(
         # Predicated copy atom operation
         cute.copy_atom_call(copy_atom, src, dst, pred=pred)
 
+        # Static load from tensor memory: load with row-wise reduction (MAX, MIN, MAXABS, MINABS)
+        cute.copy_atom_call(loadtm_stat_atom, src, [data, stat])
+
+        # TMA gather4: combine four 2D coordinate tensors into single destination
+        cute.copy_atom_call(tma_gather4_atom, [coord0, coord1, coord2, coord3], dst)
+
     """
     # Normalize src/dst to lists for variadic IR operands, while keeping old API working.
     src_list = _normalize_variadic_tensor_operand(src, "src")
     dst_list = _normalize_variadic_tensor_operand(dst, "dst")
 
-    # Validate first src/dst for element type width check
-    if isinstance(src_list[0].type, _cute_ir.MemRefType) and isinstance(
-        dst_list[0].type, _cute_ir.MemRefType
+    # Validate first src/dst for element type width check.
+    if isinstance(src_list[0].type, _cute_ir.MemRefType) and isinstance(  # type: ignore[attr-defined]
+        dst_list[0].type,  # type: ignore[attr-defined]
+        _cute_ir.MemRefType,
     ):
-        if src_list[0].element_type.width != dst_list[0].element_type.width:
+        if (
+            len(dst_list) == 1
+            and src_list[0].element_type.width != dst_list[0].element_type.width  # type: ignore[union-attr]
+        ):
             raise TypeError(
                 "`copy_atom_call` currently only supports equal source and destination "
                 "element type bit width"
@@ -1228,13 +1529,13 @@ def copy_atom_call(
 def mma_atom_call(
     atom: MmaAtom,
     d: Tensor,
-    a: Tensor,
-    b: Tensor,
+    a: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
+    b: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
     c: Tensor,
     *,
-    loc=None,
-    ip=None,
-    **kwargs,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+    **kwargs: Any,
 ) -> None:
     """
     Execute a single MMA atom operation.
@@ -1245,15 +1546,23 @@ def mma_atom_call(
 
     Note: The tensors 'd', 'a', 'b', and 'c' must only have a single fragment.
 
+    The operands `a` and `b` are variadic, each containing a variable number of tensors:
+
+    - For regular MMA, `a` and `b` contain the MMA A and B tensors respectively.
+    - For MMA with auxiliary operands, `a` and `b` contain the MMA A and B tensors followed by
+      their respective auxiliary tensors. For example:
+
+      - For BlockScaledMMA, `a` = [A, SFA] and `b` = [B, SFB].
+
     :param atom: The MMA atom to execute
     :type atom: MmaAtom
     :param d: Destination tensor (output accumulator)
     :type d: Tensor
-    :param a: First source tensor (matrix A)
-    :type a: Tensor
-    :param b: Second source tensor (matrix B)
-    :type b: Tensor
-    :param c: Third source tensor (input accumulator C)
+    :param a: A tensor or list of tensors containing the MMA A tensor and optional auxiliary tensors
+    :type a: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
+    :param b: B tensor or list of tensors containing the MMA B tensor and optional auxiliary tensors
+    :type b: Union[Tensor, List[Tensor], Tuple[Tensor, ...]]
+    :param c: Input accumulator tensor
     :type c: Tensor
     :param loc: Source location for MLIR, defaults to None
     :type loc: Optional[Location], optional
@@ -1264,10 +1573,26 @@ def mma_atom_call(
 
     .. code-block:: python
 
-        # Call an MMA atom operation
+        # Regular MMA atom call
         cute.mma_atom_call(mma_atom, d_tensor, a_tensor, b_tensor, c_tensor)
+
+        # Block-scaled MMA atom call
+        cute.mma_atom_call(mma_atom, d_tensor, [a_tensor, sfa_tensor],
+                          [b_tensor, sfb_tensor], c_tensor)
     """
+    # Normalize A/B to lists for variadic IR operands, while keeping old API working.
+    a_list = _normalize_variadic_tensor_operand(a, "a")
+    b_list = _normalize_variadic_tensor_operand(b, "b")
+
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
+    a_vals = [t.value for t in a_list]
+    b_vals = [t.value for t in b_list]
     return _cute_ir.mma_atom_call(
-        value, d.value, a.value, b.value, c.value, loc=loc, ip=ip
+        value,
+        d.value,
+        a_vals,
+        b_vals,
+        c.value,
+        loc=loc,
+        ip=ip,
     )

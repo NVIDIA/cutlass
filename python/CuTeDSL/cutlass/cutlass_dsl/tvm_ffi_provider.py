@@ -9,6 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from dataclasses import is_dataclass, fields as dataclass_fields
+from typing import Any, Callable, List, Optional, cast
+
+from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.base_dsl.tvm_ffi_builder import (
     DynamicParamPackCallProvider,
     CallContext,
@@ -20,8 +24,8 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
 from cutlass._mlir._mlir_libs._cutlass_ir import _aot_support
 from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
+from cutlass.base_dsl.jit_executor import JitExecutor
 from cutlass.base_dsl.common import DSLRuntimeError
-from typing import Optional, Callable
 import tvm_ffi
 
 
@@ -31,11 +35,12 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
     cuda_device_index: Optional[ir.Value]
     cuda_error_handle_block: Optional[ir.Block]
 
-    def __init__(self, target_func: str):
+    def __init__(self, target_func: str, has_gpu_module: bool = True):
         super().__init__(target_func, struct_call=True)
         self.cuda_global_state_symbol = f"__{target_func}_cuda_state"
         self.cuda_device_index = None
         self.cuda_error_handle_block = None
+        self.has_gpu_module = has_gpu_module
 
     def get_callee_struct_for_param_tensor(
         self,
@@ -86,8 +91,11 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 arg_types.append(context.matched_var_binding[dim].type)
         return tuple(arg_types), tuple(allocas)
 
-    def declare_extern_funcs(self, current_block: ir.Block, context: CallContext):
+    def declare_extern_funcs(
+        self, current_block: ir.Block, context: CallContext
+    ) -> ir.Block:
         """Append the error handling function to the current block."""
+        assert context.builder is not None
         with ir.InsertionPoint(context.module.body):
             context.builder.find_or_declare_extern_func(
                 "cuda_dialect_get_error_name",
@@ -116,8 +124,11 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
         return current_block
 
-    def insert_lazy_init_cuda(self, current_block: ir.Block, context: CallContext):
+    def insert_lazy_init_cuda(
+        self, current_block: ir.Block, context: CallContext
+    ) -> ir.Block:
         """Insert the lazy init cuda function."""
+        assert context.builder is not None
         # create global private static that is initialized to nullptr
         with ir.InsertionPoint(context.module.body):
             parsed_op = ir.Operation.parse(
@@ -130,15 +141,14 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 self.cuda_global_state_symbol, self.ptr_type
             )
 
-        cuda_init_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_init"
-        )
-        cuda_load_to_device_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "cuda_load_to_device"
-        )
-        set_error_ptr = context.builder.get_or_load_global_func_ptr_from_text(
-            current_block, "TVMFFIErrorSetRaisedFromCStr"
-        )
+        with ir.InsertionPoint(current_block):
+            cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
+            cuda_load_to_device_ptr = self.address_of(
+                "cuda_load_to_device", self.ptr_type
+            )
+            set_error_ptr = self.address_of(
+                "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
+            )
 
         with ir.InsertionPoint(current_block):
             # Call the callback function with the loaded ptr value
@@ -231,7 +241,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
     def check_cuda_error(
         self, code: ir.Value, current_block: ir.Block, context: CallContext
-    ):
+    ) -> ir.Block:
         """Check if the CUDA error is raised and return the error string if so.
 
         Uses a shared error handling block to avoid code duplication. The error code
@@ -258,8 +268,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         current_device: Optional[ir.Value],
         target_device: Optional[ir.Value],
     ) -> ir.Block:
-        """Set the CUDA device index if it differs from the target device.
-        """
+        """Set the CUDA device index if it differs from the target device."""
         # If either device is None, no switching needed
         if current_device is None:
             assert target_device is None
@@ -277,7 +286,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             self.cond_br(
                 cond=devices_differ,
                 true_block=switch_device_block,
-                false_block=continuation_block
+                false_block=continuation_block,
             )
 
         # Switch device block: call cudaSetDevice
@@ -291,7 +300,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
 
         # Check for errors and branch to continuation
-        switch_device_block = self.check_cuda_error(result, switch_device_block, context)
+        switch_device_block = self.check_cuda_error(
+            result, switch_device_block, context
+        )
         with ir.InsertionPoint(switch_device_block):
             self.br(continuation_block)
 
@@ -304,6 +315,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         context: CallContext,
     ) -> ir.Block:
         """Generate the LLVM call operation and check if the call is successful."""
+        assert context.builder is not None
         old_cuda_device_index: Optional[ir.Value] = None
 
         # If we need to manage CUDA device context
@@ -322,7 +334,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-            current_block = self.check_cuda_error(get_device_result, current_block, context)
+            current_block = self.check_cuda_error(
+                get_device_result, current_block, context
+            )
 
             # Load the current device index from the alloca
             with ir.InsertionPoint(current_block):
@@ -354,8 +368,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
         return current_block
 
-
-    def find_cuda_device_index_from_params(self, context: CallContext):
+    def find_cuda_device_index_from_params(
+        self, context: CallContext
+    ) -> Optional[ir.Value]:
         """Find the CUDA device index from tensor parameters."""
         for param in context.params:
             if (
@@ -366,12 +381,10 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         return None
 
     def create_shared_cuda_error_block(
-        self,
-        current_block: ir.Block,
-        context: CallContext
+        self, current_block: ir.Block, context: CallContext
     ) -> ir.Block:
-        """Create a shared error handling block for all CUDA errors.
-        """
+        """Create a shared error handling block for all CUDA errors."""
+        assert context.builder is not None
         # Create the shared error block after the current block (setup phase)
         # This block will be branched to from multiple error checking sites
         # It accepts the error code as a block argument
@@ -397,11 +410,14 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
     def __call__(self, current_block: ir.Block, context: CallContext) -> ir.Block:
         current_block = self.declare_extern_funcs(current_block, context)
-        current_block = self.insert_lazy_init_cuda(current_block, context)
-        current_block = self.append_unload_to_global_dtors(current_block, context)
+        if self.has_gpu_module:
+            current_block = self.insert_lazy_init_cuda(current_block, context)
+            current_block = self.append_unload_to_global_dtors(current_block, context)
         # Create shared CUDA error handling block after the setup blocks
         # This reduces code duplication - all CUDA errors branch to this single block
-        self.cuda_error_handle_block = self.create_shared_cuda_error_block(current_block, context)
+        self.cuda_error_handle_block = self.create_shared_cuda_error_block(
+            current_block, context
+        )
         # setup device index, will be set around the call to the target function
         self.cuda_device_index = self.find_cuda_device_index_from_params(context)
         current_block = super().__call__(current_block, context)
@@ -411,16 +427,18 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         return current_block
 
 
-def _inplace_hide_symbols(ir_module: ir.Module, hide_check: Callable[[str], bool]):
+def _inplace_hide_symbols(
+    ir_module: ir.Module, hide_check: Callable[[str], bool]
+) -> None:
     """Walk through the IRModule, hide functions that do not yet have linkage set.
 
     @param ir_module: The ir module to hide the symbols.
     @param hide_check: The callback to check if the symbol should be hidden.
     @return: The ir module with the symbols hidden.
     """
-    defined_symbols = set()
+    defined_symbols: set[str] = set()
 
-    def walk_llvm_func_op(op):
+    def walk_llvm_func_op(op: ir.Operation) -> ir.WalkResult:
         # not a declaration
         if (
             op.name == "llvm.func"
@@ -432,7 +450,7 @@ def _inplace_hide_symbols(ir_module: ir.Module, hide_check: Callable[[str], bool
 
         return ir.WalkResult.ADVANCE
 
-    def walk_and_hide_symbols(op):
+    def walk_and_hide_symbols(op: ir.Operation) -> ir.WalkResult:
         # Handle llvm.func operations
         if op.name == "llvm.func":
             func_name = op.attributes["sym_name"].value
@@ -454,32 +472,48 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
     return format
 
 
+def _flatten_dataclass_arg(arg: Any) -> Any:
+    """Recursively flatten a dataclass argument into a tuple for TVM FFI runtime.
+
+    TVM FFI expects tuple/array for TupleParam specs. NamedTuples work because
+    they are tuples, but dataclass instances need explicit flattening.
+    """
+    if is_dataclass(arg) and not isinstance(arg, type):
+        values = []
+        for f in dataclass_fields(arg):
+            if is_constexpr_field(f):
+                continue
+            values.append(_flatten_dataclass_arg(getattr(arg, f.name)))
+        return tuple(values)
+    return arg
+
+
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
     # use direct call to the tvm_ffi.Function.__call__
     # to avoid most of python overhead
     __call__ = tvm_ffi.Function.__call__
 
-    def to(self, device=None):
+    def to(self, device: Optional[int] = None) -> JitExecutor:
         """TVM FFI function itself is already support all devices."""
-        return self
+        return cast(JitExecutor, self)
 
-    def run_compiled_program(self, exe_args: list[ir.Value]):
+    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
         """Run the compiled program. This override is needed for implicit compile and execution."""
-        return self.__call__(*exe_args)
+        return cast(int | None, self.__call__(*exe_args))  # type: ignore[misc]
 
-    def export_to_c(
+    def export_to_c(  # type: ignore[override]
         self,
         object_file_path: str,
-        function_name: str = None,
+        function_name: Optional[str] = None,
         *,
         enable_pic: bool = True,
         export_only_tvm_ffi_symbols: bool = False,
-    ):
+    ) -> None:
         """Export the TVM FFI function to an object file.
 
         :param object_file_path: The path to the object file.
@@ -488,16 +522,15 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
         :param host_target_triple: If not provided, the current host target is used.
         """
-        # prefix internal function by function name
-        internal_symbol_prefix = "__cute_internal_" + function_name
+        internal_symbol_prefix = "__cute_internal_" + function_name  # type: ignore[operator]
         mod = self.ir_module
         mod = get_export_module(
             self.ir_module,
             internal_symbol_prefix,
-            preserve_symbols=[f"__tvm_ffi_{self.function_name}"],
+            preserve_symbols={f"__tvm_ffi_{self.function_name}"},
         )
 
-        rename_tvm_ffi_function(mod, self.function_name, function_name)
+        rename_tvm_ffi_function(mod, self.function_name, function_name)  # type: ignore[arg-type]
         if export_only_tvm_ffi_symbols:
             _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
 
@@ -509,20 +542,33 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         with open(object_file_path, "wb") as f:
             f.write(out_bytes)
 
-    def _create_tvm_ffi_function(self):
-        """Create the tvm_ffi.Function from the current execution engine."""
+    def _create_tvm_ffi_function(self) -> Optional["tvm_ffi.Function"]:
+        """Create the tvm_ffi.Function from the current execution engine.
+
+        When the base class hands us an MlirExecutionEngine (MCJIT), we
+        replace it with a BinaryExecutionEngine (JITLink) to avoid
+        non-deterministic SIGSEGV with duplicate .text ELF sections in
+        multi-process torchrun workloads.
+        """
         if self.engine is not None:
-            # trigger eager compile of init callbacks
-            cuda_init = self.engine.raw_lookup("cuda_init")
-            cuda_load_to_device = self.engine.raw_lookup("cuda_load_to_device")
-            if cuda_init is None:
-                raise DSLRuntimeError("cuda_init not found")
-            if cuda_load_to_device is None:
-                raise DSLRuntimeError("cuda_load_to_device not found")
-            tvm_ffi_function_ptr = self.engine.raw_lookup(
-                "__tvm_ffi_" + self.function_name
+            from cutlass._mlir._mlir_libs._cutlass_ir._execution_engine import (
+                BinaryExecutionEngine,
             )
-            tvm_ffi_function = tvm_ffi.Function.__from_mlir_packed_safe_call__(
+            from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
+
+            obj = _aot_support.export_module_to_bytes(
+                self.ir_module, format="o", opt_level=3, enable_pic=True
+            )
+            libs_str = get_prefix_dsl_libs("CUTE_DSL")
+            shared_libs = libs_str.split(":") if libs_str else []
+            self.engine = BinaryExecutionEngine(
+                obj,
+                shared_libs,
+                True,  # useJitLink
+            )
+
+            tvm_ffi_function_ptr = self.engine.lookup("__tvm_ffi_" + self.function_name)
+            tvm_ffi_function = tvm_ffi.Function.__from_extern_c__(
                 tvm_ffi_function_ptr, keep_alive_object=self.engine
             )
             return tvm_ffi_function
@@ -532,7 +578,7 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
 class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase):
     """TVM FFI Function that directly subclasses the tvm_ffi.Function for pos only arguments."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TVMFFIJitCompiledFunctionBase.__init__(self, *args, **kwargs)
         # initialize the tvm_ffi.Function from the current execution engine
         if self.__chandle__() != 0:
@@ -542,23 +588,24 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
             # move the handle from the tvm_ffi.Function to the current instance
             self.__move_handle_from__(tvm_ffi_function)
 
-    # use direct call to the tvm_ffi.Function.__call__
-    # to avoid most of python overhead
-    __call__ = tvm_ffi.Function.__call__
+    def __call__(self, *args: Any) -> Any:
+        args = tuple(_flatten_dataclass_arg(a) for a in args)
+        return tvm_ffi.Function.__call__(self, *args)
 
 
 class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
     """TVM FFI Function with kwargs wrapper support"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         assert "kwargs_wrapper_spec" in kwargs, "kwargs_wrapper_spec is required"
         kwargs_wrapper_spec = kwargs.pop("kwargs_wrapper_spec")
         super().__init__(*args, **kwargs)
         # initialize the tvm_ffi.Function from the current execution engine
         self._tvm_ffi_function = self._create_tvm_ffi_function()
+        assert self._tvm_ffi_function is not None
         if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
             try:
-                from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+                from tvm_ffi.utils import kwargs_wrapper
 
                 self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
                     self._tvm_ffi_function,
@@ -575,18 +622,20 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
             # positional only is probably fine
             self._kwargs_wrapper = self._tvm_ffi_function
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the TVM FFI function with kwargs wrapper."""
+        args = tuple(_flatten_dataclass_arg(a) for a in args)
+        kwargs = {k: _flatten_dataclass_arg(v) for k, v in kwargs.items()}
         return self._kwargs_wrapper(*args, **kwargs)
 
-    def __tvm_ffi_object__(self):
+    def __tvm_ffi_object__(self) -> Optional["tvm_ffi.Function"]:
         return self._tvm_ffi_function
 
 
 def supports_kwargs_wrapper() -> bool:
     """Check if the kwargs wrapper is supported."""
     try:
-        from tvm_ffi.utils import kwargs_wrapper  # type: ignore
+        from tvm_ffi.utils import kwargs_wrapper
 
         return True
     except ImportError:

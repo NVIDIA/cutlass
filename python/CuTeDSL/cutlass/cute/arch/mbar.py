@@ -8,14 +8,13 @@
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
-from typing import Optional
-
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL, T, if_generate, dsl_user_op
+from cutlass.cutlass_dsl import BaseDSL, if_generate, dsl_user_op
 
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import nvvm, llvm
 
-from ..typing import Pointer, Int, Boolean, Int32, AddressSpace
+from ..typing import Optional, Pointer, Int, Boolean, Int32, AddressSpace
 
 ####################################################################################################
 #
@@ -25,17 +24,39 @@ from ..typing import Pointer, Int, Boolean, Int32, AddressSpace
 
 
 @dsl_user_op
-def mbarrier_init(mbar_ptr: Pointer, cnt: Int, *, loc=None, ip=None) -> None:
+def mbarrier_init(
+    mbar_ptr: Pointer,
+    cnt: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Initializes a mbarrier with the specified thread arrival count.
+
+    **Single-Thread Execution Required**: This operation **must** be executed by only one thread
+    per CTA. Use :func:`cute.arch.elect_one` to ensure proper synchronization:
+
+    .. code-block:: python
+
+        with cute.arch.elect_one():
+            cute.arch.mbarrier_init(barrier_ptr, arrival_count)
+
+    **PTX Mapping**: This operation maps to the PTX ``mbarrier.init.shared.b64`` instruction,
+    which must be issued by a single thread for correctness.
 
     :param mbar_ptr: A pointer to the mbarrier in SMEM
     :type mbar_ptr:  Pointer
     :param cnt:      The arrival count of the mbarrier
     :type cnt:       Int
+
+    .. seealso::
+       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_expect_tx` - Also requires elect_one
+       - PTX ISA documentation on ``mbarrier.init``
     """
     nvvm.mbarrier_init_shared(
-        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),  # type: ignore[attr-defined]
         Int32(cnt).ir_value(loc=loc, ip=ip),
         loc=loc,
         ip=ip,
@@ -43,20 +64,44 @@ def mbarrier_init(mbar_ptr: Pointer, cnt: Int, *, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def mbarrier_init_fence(*, loc=None, ip=None) -> None:
+def mbarrier_init_fence(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> None:
     """
     A fence operation that applies to the mbarrier initializations.
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
+
     nvvm.fence_mbarrier_init(loc=loc, ip=ip)
 
 
 @dsl_user_op
 def mbarrier_arrive_and_expect_tx(
-    mbar_ptr: Pointer, bytes: Int, peer_cta_rank_in_cluster=None, *, loc=None, ip=None
+    mbar_ptr: Pointer,
+    bytes: Int,
+    peer_cta_rank_in_cluster: Optional[Int] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Arrives on a mbarrier and expects a specified number of transaction bytes.
+
+    Each thread that executes this operation will increment the arrival count by 1 and
+    increment the expected transaction bytes by the specified number.
+
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+
+    .. code-block:: python
+
+        with cute.arch.elect_one():
+            cute.arch.mbarrier_arrive_and_expect_tx(barrier_ptr, num_transaction_bytes)
+
+    This is a combined operation that both arrives at the barrier (incrementing the arrival count)
+    and sets the expected transaction bytes. It is commonly used with TMA operations in pipelined
+    kernels.
+
+    See the PTX ISA documentation on `mbarrier.arrive.expect_tx <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-mbarrier-arrive-expect-tx>`__.
 
     :param mbar_ptr:                 A pointer to the mbarrier in SMEM
     :type mbar_ptr:                  Pointer
@@ -65,10 +110,15 @@ def mbarrier_arrive_and_expect_tx(
     :param peer_cta_rank_in_cluster: An optional CTA rank in cluster. If provided, the pointer to
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
+
+    .. seealso::
+       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init` - Also requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx` - Expect_tx without arrive
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)  # type: ignore[attr-defined]
     if peer_cta_rank_in_cluster is not None:
         mbar_cluster_type = llvm.PointerType.get(AddressSpace.dsmem)
         mbar_llvm_ptr = nvvm.mapa(
@@ -96,10 +146,29 @@ def mbarrier_arrive_and_expect_tx(
 
 @dsl_user_op
 def mbarrier_expect_tx(
-    mbar_ptr: Pointer, bytes: Int, peer_cta_rank_in_cluster=None, *, loc=None, ip=None
+    mbar_ptr: Pointer,
+    bytes: Int,
+    peer_cta_rank_in_cluster: Optional[Int] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Expects a specified number of transaction bytes without an arrive.
+
+    Each thread that executes this operation will increment the expected transaction bytes by the specified number.
+
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+
+    .. code-block:: python
+
+        with cute.arch.elect_one():
+            cute.arch.mbarrier_expect_tx(barrier_ptr, num_transaction_bytes)
+
+    This is commonly used with TMA operations to set the expected transaction size before
+    issuing a TMA load.
+
+    See the PTX ISA documentation on `mbarrier.expect_tx <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-mbarrier-expect-tx>`__.
 
     :param mbar_ptr:                 A pointer to the mbarrier in SMEM
     :type mbar_ptr:                  Pointer
@@ -108,10 +177,15 @@ def mbarrier_expect_tx(
     :param peer_cta_rank_in_cluster: An optional CTA rank in cluster. If provided, the pointer to
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
+
+    .. seealso::
+       - :func:`cute.arch.elect_one` - Recommended wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init` - initialize mbarrier
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Combined arrive and expect_tx
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)  # type: ignore[attr-defined]
     if peer_cta_rank_in_cluster is not None:
         mbar_cluster_type = llvm.PointerType.get(AddressSpace.dsmem)
         mbar_llvm_ptr = nvvm.mapa(
@@ -138,7 +212,13 @@ def mbarrier_expect_tx(
 
 
 @dsl_user_op
-def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
+def mbarrier_wait(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Waits on a mbarrier with a specified phase.
 
@@ -150,10 +230,11 @@ def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
     timeout_ns = 10000000
+
     # This NVVM Op is a spin-loop wrapping the mbarrier.try_wait.parity.shared.b64 PTX
     # The timeout in ns only applies to the latter and this call is truly blocking
     nvvm.mbarrier_try_wait_parity_shared(
-        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),  # type: ignore[attr-defined]
         Int32(phase).ir_value(loc=loc, ip=ip),
         Int32(timeout_ns).ir_value(loc=loc, ip=ip),
         loc=loc,
@@ -162,7 +243,13 @@ def mbarrier_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Boolean:
+def mbarrier_try_wait(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Boolean:
     """
     Attempts to wait on a mbarrier with a specified phase in a non-blocking fashion.
 
@@ -177,7 +264,7 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
 
     return Boolean(
         nvvm.mbarrier_wait_parity(
-            mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+            mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),  # type: ignore[attr-defined]
             Int32(phase).ir_value(loc=loc, ip=ip),
             nvvm.MBarrierWaitKind.TRY,
             loc=loc,
@@ -188,7 +275,12 @@ def mbarrier_try_wait(mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None) -> Bo
 
 @dsl_user_op
 def mbarrier_conditional_try_wait(
-    cond, mbar_ptr: Pointer, phase: Int, *, loc=None, ip=None
+    cond: Boolean,
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Boolean:
     """
     Conditionally attempts to wait on a mbarrier with a specified phase in a non-blocking fashion.
@@ -202,7 +294,7 @@ def mbarrier_conditional_try_wait(
     :rtype:          Boolean
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
-    return if_generate(
+    return if_generate(  # type: ignore[return-value]
         cond,
         lambda: mbarrier_try_wait(mbar_ptr, phase, loc=loc, ip=ip),
         lambda: Boolean(True).ir_value(loc=loc, ip=ip),
@@ -219,8 +311,8 @@ def mbarrier_arrive(
     peer_cta_rank_in_cluster: Optional[Int] = None,
     arrive_count: Int = 1,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Arrives on an mbarrier.
@@ -231,7 +323,7 @@ def mbarrier_arrive(
                                      the mbarrier is converted to a remote address in the peer CTA's
                                      SMEM.
     """
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)  # type: ignore[attr-defined]
     if peer_cta_rank_in_cluster is not None:
         BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
@@ -260,7 +352,12 @@ def mbarrier_arrive(
 
 
 @dsl_user_op
-def cp_async_mbarrier_arrive_noinc(mbar_ptr: Pointer, *, loc=None, ip=None) -> None:
+def cp_async_mbarrier_arrive_noinc(
+    mbar_ptr: Pointer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Arrives on an mbarrier for async load **without incrementing** the arrival count
     (`cp.async.mbarrier.arrive.shared ..., noinc=1`).
@@ -272,5 +369,5 @@ def cp_async_mbarrier_arrive_noinc(mbar_ptr: Pointer, *, loc=None, ip=None) -> N
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
-    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)
+    mbar_llvm_ptr = mbar_ptr.to_llvm_ptr(loc=loc, ip=ip)  # type: ignore[attr-defined]
     nvvm.cp_async_mbarrier_arrive_shared(mbar_llvm_ptr, noinc=True, loc=loc, ip=ip)

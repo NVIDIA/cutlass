@@ -15,16 +15,20 @@ This module provides logging helper functions
 
 import logging
 
-logger = None
+logger: logging.Logger
 
 
-def log():
+def log() -> logging.Logger:
     return logger
 
 
 def setup_log(
-    name, log_to_console=False, log_to_file=False, log_file_path=None, log_level=1
-):
+    name: str,
+    log_to_console: bool = False,
+    log_to_file: bool = False,
+    log_file_path: str | None = None,
+    log_level: int = 1,
+) -> logging.Logger:
     """Set up and configure a logger with console and/or file handlers.
 
     :param name: Name of the logger to create
@@ -78,7 +82,7 @@ def setup_log(
     return logger
 
 
-def _init_logger_with_client_name(prefix):
+def _init_logger_with_client_name(prefix: str) -> None:
     from ..env_manager import LogEnvironmentManager
 
     log_env = LogEnvironmentManager(prefix)

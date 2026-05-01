@@ -2,6 +2,24 @@
 Changelog for CuTe DSL API changes
 ======================================
 
+`4.4.0 <https://github.com/NVIDIA/cutlass/releases/tree/main>`_ (2026-03-24)
+==============================================================================
+
+* Added native support for ``typing.NamedTuple`` as a JIT function argument.
+
+  - A NamedTuple whose fields are DSL scalar types (``Int32``, ``Float32``, …)
+    can be passed directly to ``@cute.jit`` / ``cute.compile`` without any
+    protocol implementation.
+  - Fields are flattened field-by-field through the existing pytree system and
+    reconstructed via the NamedTuple constructor on entry to the kernel body.
+    Field attribute access (``tup.a``, ``tup.b``, …) works as in native Python.
+  - NamedTuple fields are **immutable** (tuple subclass).  To replace a field,
+    construct a new NamedTuple inside the kernel.  Use ``@native_struct`` when
+    mutable fields are required.
+  - See :doc:`../cute_dsl_general/dsl_struct_types` for a guide to NamedTuple,
+    ``@native_struct``, and other struct-like JIT argument types.
+
+
 `4.3.0 <https://github.com/NVIDIA/cutlass/releases/tree/main>`_ (2025-10-20)
 ==============================================================================
 
@@ -73,7 +91,7 @@ Changelog for CuTe DSL API changes
   - Introduce S2T CopyOps in `tcgen05/copy.py <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/cutlass/cute/nvgpu/tcgen05/copy.py>`_.
   - Introduce BlockScaled layout utilities in `blockscaled_layout.py <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/cutlass/utils/blockscaled_layout.py>`_ for creating the required scale factor layouts in global memory, shared memory and tensor memory.
 
-* ``cutlass.cute.compile`` now supports compilation options. Refer to `JIT compilation options <https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/dsl_jit_compilation_options.html>`_ for more details.
+* ``cutlass.cute.compile`` now supports compilation options. Refer to `JIT compilation options <https://docs.nvidia.com/cutlass/media/docs/pythonDSL/cute_dsl_general/dsl_jit_compilation_options.html>`_ for more details.
 * ``cutlass.cute.testing.assert_`` now works for device JIT function. Specify ``--enable-assertions`` as compilation option to enable.
 * ``cutlass.cute.make_tiled_copy`` is now deprecated. Please use ``cutlass.cute.make_tiled_copy_tv`` instead.
 * Shared memory capacity query

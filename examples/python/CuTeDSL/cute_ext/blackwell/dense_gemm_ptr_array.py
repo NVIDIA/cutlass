@@ -1,4 +1,4 @@
-# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -37,9 +37,12 @@ from cutlass.base_dsl.typing import Numeric
 from cutlass import cute as cute
 from cutlass import utils
 from cutlass import torch as cutlass_torch
+from cutlass.cute.experimental.host_runtime import QueryDeviceWorkspaceFunc
+from cutlass.cute.runtime import from_dlpack
 import cutlass.utils.blackwell_helpers as sm100_utils
 
 import cutlass.cute.testing as testing
+
 
 class DenseGemmPtrArrayKernel:
     def __init__(
@@ -115,7 +118,6 @@ class DenseGemmPtrArrayKernel:
         # Get pointers for the first batch to perform shape and stage calculations
         A_0_ptr = self._get_pointer(mA_tensor[0], self.ab_dtype)
         B_0_ptr = self._get_pointer(mB_tensor[0], self.ab_dtype)
-        D_0_ptr = self._get_pointer(mD_tensor[0], self.d_dtype)
 
         mA = cute.make_tensor(
             A_0_ptr, layout=cute.make_layout(self.A_shape, stride=self.A_stride)
@@ -125,11 +127,8 @@ class DenseGemmPtrArrayKernel:
             B_0_ptr, layout=cute.make_layout(self.B_shape, stride=self.B_stride)
         )
 
-        mD = cute.make_tensor(
-            D_0_ptr, layout=cute.make_layout(self.D_shape, stride=self.D_stride)
-        )
-
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
+            self.ab_dtype,
             self.ab_dtype,
             utils.LayoutEnum.from_tensor(mA).mma_major_mode(),
             utils.LayoutEnum.from_tensor(mB).mma_major_mode(),
@@ -146,26 +145,19 @@ class DenseGemmPtrArrayKernel:
             mma_inst_shape_k * mma_inst_tile_k,
         )
 
-        d_layout = utils.LayoutEnum.from_tensor(mD)
-        d_dtype = mD.element_type
-
         tiler_mk = (mnk_tiler[0], mnk_tiler[2])
         tiler_nk = (mnk_tiler[1], mnk_tiler[2])
-        tiler_mn = (mnk_tiler[0], mnk_tiler[1])
 
         gA = cute.zipped_divide(mA, tiler_mk)
         gB = cute.zipped_divide(mB, tiler_nk)
-        gD = cute.zipped_divide(mD, tiler_mn)
 
         mainloop_stage = 2
         acc_stage = 2
 
         cta_m, cta_n, cta_l = cute.arch.block_idx()
-        tid_x, _, _ = cute.arch.thread_idx()
 
         gA_tile = gA[(None, None), (cta_m, None, cta_l)]
         gB_tile = gB[(None, None), (cta_n, None, cta_l)]
-        gD_tile = gD[(None, None), (cta_m, cta_n, cta_l)]
 
         # Compute A/B/C shared memory layout
         a_smem_layout_staged = sm100_utils.make_smem_layout_a(
@@ -183,18 +175,6 @@ class DenseGemmPtrArrayKernel:
 
         cta_tile_shape_mnk = cute.shape_div(
             mnk_tiler, (cute.size(tiled_mma.thr_id.shape), 1, 1)
-        )
-        epi_tile = sm100_utils.compute_epilogue_tile_shape(
-            cta_tile_shape_mnk,
-            self.use_2cta_instrs,
-            d_layout,
-            d_dtype,
-        )
-        sc_smem_layout_staged = sm100_utils.make_smem_layout_epi(
-            d_dtype,
-            d_layout,
-            epi_tile,
-            self.TMA_STORE_STAGE,
         )
 
         # UMMA ACC TMEM Layout
@@ -220,51 +200,6 @@ class DenseGemmPtrArrayKernel:
             cute.AddressSpace.tmem,
             tmem_layout,
             alignment=16,
-        )
-
-        # Allocate SMEM buffer for C
-        bufferC = cute_ext.allocate(
-            d_dtype,
-            cute.AddressSpace.smem,
-            sc_smem_layout_staged,
-            alignment=1024,
-        )
-
-        # Create the TMEM load atom
-        copy_atom_t2r = sm100_utils.get_tmem_load_op(
-            cta_tile_shape_mnk,
-            d_layout,
-            self.tmem_output_dtype,
-            self.acc_dtype,
-            epi_tile,
-            self.use_2cta_instrs,
-        )
-
-        # Take only one stage of the TMEM buffer
-        accumulators = cute.zipped_divide(bufferAcc, ((epi_tile), 1))
-        acc_epi_div = accumulators[((None, None), 0), 0]
-
-        # Create the TMEM copy atom based on the size of transfer within one iteration of epilogue
-        tiled_copy_t2r = cute.nvgpu.tcgen05.make_tmem_copy(copy_atom_t2r, acc_epi_div)
-
-        # Calculate the per thread destination size per iteration for output of TMEM and input of SMEM
-        gC_mnl_epi = cute.flat_divide(gD_tile, epi_tile)
-        acc_d_rmem_layout = cute_ext.make_t2r_rmem_layout(
-            tiled_copy_t2r, gC_mnl_epi, tid_x
-        )
-
-        # Allocate RMEM buffers
-        bufferRAcc = cute_ext.allocate(
-            self.acc_dtype,
-            cute.AddressSpace.rmem,
-            acc_d_rmem_layout,
-            alignment=32,
-        )
-        bufferRD = cute_ext.allocate(
-            d_dtype,
-            cute.AddressSpace.rmem,
-            acc_d_rmem_layout,
-            alignment=32,
         )
 
         # TMA -> UMMA
@@ -363,42 +298,21 @@ class DenseGemmPtrArrayKernel:
             # MMA section remains same as a regular GEMM
             if is_mma_thr:
                 producer_stage_token, idx = acc_pipe.producer_acquire_and_get_stage()
-                ## acc_producer_body begin ##
                 accumulators_sliced = bufferAcc[None, None, None, idx]
 
-                mma_atom = cute.make_mma_atom(tiled_mma.op)
-                mma_atom.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, False)
-                for k_tile in cutlass.range(0, k_tile_size, 1, unroll=1):
-                    # Scoped state management - pipeline object manages consumer state internally
-                    (
-                        _,
-                        mainloop_idx,
-                    ) = mainloop_pipe.consumer_wait_and_get_stage()
-                    ## tma_consumer_body begin ##
+                (updated_a_pipe, _updated_b_pipe) = cute_ext.mainloop_mma(
+                    tiled_mma,
+                    bufferA,
+                    bufferB,
+                    accumulators_sliced,
+                    0,
+                    k_tile_size,
+                    mma_inst_tile_k,
+                    mainloop_pipe,
+                    mainloop_pipe,
+                )
+                mainloop_pipe = updated_a_pipe
 
-                    bufferA_sliced_stage = cute.core.slice_(
-                        bufferA, (None, None, None, mainloop_idx)
-                    )
-                    bufferB_sliced_stage = cute.core.slice_(
-                        bufferB, (None, None, None, mainloop_idx)
-                    )
-
-                    for k_block in cutlass.range(mma_inst_tile_k, unroll_full=True):
-                        bufferA_sliced = bufferA_sliced_stage[None, None, k_block]
-                        bufferB_sliced = bufferB_sliced_stage[None, None, k_block]
-
-                        cute_ext.dot(
-                            mma_atom,
-                            cute.append_ones(bufferA_sliced, up_to_rank=3),
-                            cute.append_ones(bufferB_sliced, up_to_rank=3),
-                            accumulators_sliced,
-                        )
-                        mma_atom.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, True)
-
-                    ## tma_consumer_body end ##
-                    mainloop_pipe.consumer_release_and_advance()
-
-                ## acc_producer_body end ##
                 acc_pipe.producer_commit_and_advance()
 
             if is_epi_thr:
@@ -406,57 +320,22 @@ class DenseGemmPtrArrayKernel:
                 mD = cute.make_tensor(
                     ptr_D, layout=cute.make_layout(self.D_shape, stride=self.D_stride)
                 )
-                gD = cute.zipped_divide(mD, tiler_mn)
-                gD_tile = gD[(None, None), (cta_m, cta_n, cta_l)]
-                gC_mnl_epi = cute.flat_divide(gD_tile, epi_tile)
+
                 _, idx = acc_pipe.consumer_wait_and_get_stage()
-                ## acc_consume_body begin ##
                 accumulators_sliced = bufferAcc[(None, None), 0, 0, idx]
-                acc_epi_div_tiled = cute.flat_divide(accumulators_sliced, epi_tile)
+                cta_d_tile_coord = (cta_m, cta_n, cta_l)
 
-                subtile_cnt = cute.size(acc_epi_div_tiled.shape, mode=[3])
-                for mn in range(subtile_cnt):
-                    # TMEM -> RMEM
-                    cute_ext.partition_and_copy(
-                        tiled_copy_t2r.get_slice(tid_x),
-                        acc_epi_div_tiled[None, None, 0, mn],
-                        bufferRAcc,
-                    )
+                tma_store_pipe = cute_ext.epilogue_tma_store(
+                    cta_tile_shape_mnk,
+                    self.use_2cta_instrs,
+                    accumulators_sliced,
+                    mD,
+                    cta_d_tile_coord,
+                    tma_store_pipe,
+                    tma_store_warp_id,
+                    self.epilogue_op,
+                )
 
-                    # RMEM -> RMEM
-                    bufferRD.store(self.epilogue_op(bufferRAcc.load().to(self.d_dtype)))
-
-                    # Acquire pipeline stage and synchronize before RMEM->SMEM copy
-                    tma_store_pipe.acquire_sync()
-                    idx = tma_store_pipe.get_index()
-
-                    # RMEM -> SMEM
-                    tiled_copy_r2s = cute.make_tiled_copy_D(
-                        cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.d_dtype),
-                        tiled_copy_t2r,
-                    )
-                    cute_ext.partition_and_copy(
-                        tiled_copy_r2s.get_slice(tid_x),
-                        bufferRD,
-                        bufferC[None, None, idx],
-                    )
-
-                    # Fence SMEM writes and synchronize before TMA store
-                    tma_store_pipe.commit_sync()
-
-                    # SMEM -> GMEM (only designated TMA store warp performs TMA store)
-                    if warp_idx == tma_store_warp_id:
-                        c_cta_v_map = cute_ext.get_cta_v_map_c(mD, epi_tile)
-                        cute_ext.tma_store(
-                            bufferC[None, None, idx],
-                            gC_mnl_epi[None, None, 0, mn],
-                            cta_v_map=c_cta_v_map,
-                        )
-
-                    # Release pipeline stage and advance
-                    tma_store_pipe.release_advance()
-
-                tma_store_pipe.tail()
                 acc_pipe.consumer_release_and_advance()
 
 
@@ -639,6 +518,19 @@ def run(
     d_major = c_major
     d_dtype = c_dtype
 
+    sm100_utils.check_gemm_tma_alignment(
+        m,
+        n,
+        k,
+        ab_dtype,
+        ab_dtype,
+        d_dtype,
+        a_major,
+        b_major,
+        d_major,
+        output_tensor_name="D",
+    )
+
     # a_tensor, b_tensor, d_tensor are cute Tensors where each element is an Int64 pointer to global memory
     # A_cutes, B_cutes, D_cutes are lists of cute Tensors for each batch of A/B/D
     (
@@ -674,7 +566,15 @@ def run(
     compiled_dense_gemm = cute_ext.compile(
         ptr_array_dense_gemm, a_tensor, b_tensor, d_tensor
     )
-    compiled_dense_gemm(a_tensor, b_tensor, d_tensor)
+
+    query = compiled_dense_gemm.get_aux_func(
+        QueryDeviceWorkspaceFunc, kernel=ptr_array_dense_gemm.kernel
+    )
+    req = query(a_tensor, b_tensor, d_tensor)
+    workspace = torch.empty(req.size_in_bytes, dtype=torch.uint8, device="cuda")
+    workspace_cute = from_dlpack(workspace)
+
+    compiled_dense_gemm(a_tensor, b_tensor, d_tensor, workspace_cute)
 
     if not skip_ref_check:
         for batch_idx in range(l):
@@ -704,7 +604,11 @@ def run(
         ) = create_tensors_for_ptr_array(
             l, m, n, k, a_major, b_major, d_major, ab_dtype, d_dtype
         )
-        args = testing.JitArguments(a_tensor, b_tensor, d_tensor)
+
+        ws = torch.empty(req.size_in_bytes, dtype=torch.uint8, device="cuda")
+        ws_cute = from_dlpack(ws)
+
+        args = testing.JitArguments(a_tensor, b_tensor, d_tensor, ws_cute)
         args.add_to_scope([A_cutes, B_cutes, D_cutes])
         return args
 

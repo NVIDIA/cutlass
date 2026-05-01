@@ -15,9 +15,10 @@ This module provides stacktrace helper functions
 
 import os
 import re
+import types
 
 
-def walk_to_top_module(start_path):
+def walk_to_top_module(start_path: str) -> str | None:
     """
     Walk up from the start_path to find the top-level Python module.
 
@@ -50,7 +51,9 @@ def walk_to_top_module(start_path):
     return current_path
 
 
-def _filter_internal_frames(traceback, internal_path):
+def _filter_internal_frames(
+    traceback: types.TracebackType | None, internal_path: str
+) -> types.TracebackType | None:
     """
     Filter out stack frames from the traceback that belong to the specified module path.
 
@@ -75,12 +78,14 @@ def _filter_internal_frames(traceback, internal_path):
     return traceback
 
 
-_generated_function_names = re.compile(
+_generated_function_names: re.Pattern[str] = re.compile(
     r"^(loop_body|while_region|while_before_block|while_after_block|if_region|then_block|else_block|elif_region)_\d+$"
 )
 
 
-def _filter_duplicated_frames(traceback):
+def _filter_duplicated_frames(
+    traceback: types.TracebackType | None,
+) -> types.TracebackType | None:
     """
     Filter out duplicated stack frames from the traceback.
     The function filters out consecutive frames that are in the same file and have the same line number.
@@ -115,6 +120,7 @@ def _filter_duplicated_frames(traceback):
             else:
                 traceback = iter_tb.tb_next
         elif skip_next:
+            assert iter_tb.tb_next is not None
             # if next is last frame, don't skip
             if iter_tb.tb_next.tb_next:
                 iter_tb.tb_next = iter_tb.tb_next.tb_next
@@ -126,7 +132,9 @@ def _filter_duplicated_frames(traceback):
     return traceback
 
 
-def filter_stackframe(traceback, prefix_path):
+def filter_stackframe(
+    traceback: types.TracebackType | None, prefix_path: str
+) -> types.TracebackType | None:
     """
     Filter out stack frames from the traceback that belong to the specified module path.
 
@@ -145,7 +153,7 @@ def filter_stackframe(traceback, prefix_path):
     return _filter_duplicated_frames(traceback)
 
 
-def filter_exception(value, module_dir):
+def filter_exception(value: BaseException, module_dir: str) -> None:
     """
     Filter out internal implementation details from exception traceback.
 

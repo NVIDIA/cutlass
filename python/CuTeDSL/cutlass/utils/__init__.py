@@ -24,9 +24,16 @@ from .dynamic_persistent_tile_scheduler import (
 from .hardware_info import HardwareInfo
 
 from .blackwell_helpers import (
+    cluster_shape_to_tma_atom_A,
+    cluster_shape_to_tma_atom_B,
+    cluster_shape_to_tma_atom_SFB,
     compute_epilogue_tile_shape,
+    get_permutation_mnk,
+    get_smem_layout_atom_ab,
+    get_smem_layout_atom_epi,
     get_smem_store_op,
     get_tmem_load_op,
+    make_smem_layout,
     make_smem_layout_a,
     make_smem_layout_b,
     make_smem_layout_epi,
@@ -36,9 +43,11 @@ from .blackwell_helpers import (
 
 from .hopper_helpers import (
     sm90_get_smem_store_op,
+    get_smem_layout_atom as sm90_get_smem_layout_atom,
     make_smem_layout_a as sm90_make_smem_layout_a,
     make_smem_layout_b as sm90_make_smem_layout_b,
     make_smem_layout_epi as sm90_make_smem_layout_epi,
+    make_trivial_tiled_mma as sm90_make_trivial_tiled_mma,
     compute_tile_shape_or_override,
 )
 
@@ -66,11 +75,14 @@ from .tensormap_manager import (
 )
 
 from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
-from .tmem_allocator import TmemAllocator, get_num_tmem_alloc_cols
+from .tmem_allocator import (
+    TmemAllocator,
+    TmemBufferPool,
+    get_num_tmem_alloc_cols,
+    compute_tmem_cols_from_layout,
+)
 
 from .layout import LayoutEnum
-
-from . import distributed
 
 from .mixed_input_helpers import (
     TransformMode,
@@ -99,6 +111,7 @@ from .mixed_input_helpers import (
 )
 
 from . import gemm
+from . import distributed
 
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
@@ -113,7 +126,9 @@ __all__ = [
     "get_smem_capacity_in_bytes",
     "SmemAllocator",
     "TmemAllocator",
+    "TmemBufferPool",
     "get_num_tmem_alloc_cols",
+    "compute_tmem_cols_from_layout",
     "LayoutEnum",
     "WorkTileInfo",
     "PersistentTileSchedulerParams",
@@ -141,14 +156,23 @@ __all__ = [
     "epilogue_tma_store",
     "epilogue",
     "create_tensor_a",
+    "cluster_shape_to_tma_atom_A",
+    "cluster_shape_to_tma_atom_B",
+    "cluster_shape_to_tma_atom_SFB",
     "compute_epilogue_tile_shape",
+    "get_permutation_mnk",
+    "get_smem_layout_atom_ab",
+    "get_smem_layout_atom_epi",
     "get_smem_store_op",
     "get_tmem_load_op",
+    "make_smem_layout",
     "make_smem_layout_a",
     "make_smem_layout_b",
     "make_smem_layout_epi",
     "make_trivial_tiled_mma",
     "make_blockscaled_trivial_tiled_mma",
+    "sm90_get_smem_layout_atom",
+    "sm90_make_trivial_tiled_mma",
     "sm90",
     "sm100",
     "gemm",

@@ -8,8 +8,9 @@
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
-from cuda.bindings import driver, runtime
-from cutlass.base_dsl.common import DSLRuntimeError
+from typing import Any
+
+from cuda.bindings import driver
 from cutlass import cute
 import tempfile
 
@@ -154,7 +155,7 @@ class HardwareInfo:
             )
         )
 
-    def _checkCudaErrors(self, result) -> None:
+    def _checkCudaErrors(self, result: Any) -> Any:
         if result[0].value:
             raise RuntimeError(
                 "CUDA error code={}({})".format(
@@ -169,7 +170,7 @@ class HardwareInfo:
         else:
             return result[1:]
 
-    def _cudaGetErrorEnum(self, error) -> str:
+    def _cudaGetErrorEnum(self, error: Any) -> str:
         if isinstance(error, driver.CUresult):
             err, name = driver.cuGetErrorName(error)
             return name if err == driver.CUresult.CUDA_SUCCESS else "<unknown>"
@@ -183,11 +184,11 @@ class HardwareInfo:
         return not self._cuda_driver_version_ge(major, minor)
 
     @cute.kernel
-    def _empty_kernel(self):
+    def _empty_kernel(self) -> None:
         return
 
     @cute.jit
-    def _host_function(self):
+    def _host_function(self) -> None:
         self._empty_kernel().launch(
             grid=[1, 1, 1],
             block=[1, 1, 1],

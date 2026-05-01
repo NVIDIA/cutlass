@@ -11,10 +11,11 @@
 
 import enum
 from dataclasses import dataclass
-from typing import Type, Any
+from typing import Any, Optional, Type, Union, cast
+import warnings
 
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL, T
+from cutlass.cutlass_dsl import BaseDSL, T, DSLRuntimeError
 from typing_extensions import deprecated
 
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -22,6 +23,7 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 
 from ..common import OpError, normalize_field_to_ir_name
+from ..common import OperandMajorMode as _OperandMajorMode
 from ...core import _pack_shape, rank, depth
 from ...typing import (
     Shape,
@@ -38,7 +40,7 @@ from ...typing import (
     Numeric,
     AddressSpace,
 )
-from ...atom import MmaOp, Trait, make_atom
+from ...atom import MmaOp as AtomMmaOp, Trait, make_atom
 
 
 ####################################################################################################
@@ -48,7 +50,7 @@ from ...atom import MmaOp, Trait, make_atom
 ####################################################################################################
 
 
-class WarpGroupMmaOp(MmaOp):
+class WarpGroupMmaOp(AtomMmaOp):
     """
     Base class for all warpgroup-level MMA operations.
     """
@@ -56,6 +58,9 @@ class WarpGroupMmaOp(MmaOp):
     pass
 
 
+@deprecated(
+    "warpgroup.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead"
+)
 class OperandMajorMode(enum.Enum):
     """
     An enumeration for the majorness of the input operands of the MMA.
@@ -70,14 +75,29 @@ class OperandMajorMode(enum.Enum):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
 
+    def __eq__(self, other: object) -> bool:
+        if hasattr(other, "_to_ir") and type(other._to_ir()) is type(self._to_ir()):
+            return self._to_ir() == other._to_ir()
+        raise DSLRuntimeError(
+            f"{self.__module__}.{self.__class__.__qualname__} cannot be compared with "
+            f"{getattr(other, '__module__', '?')}.{other.__class__.__qualname__}"
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: Any) -> Optional["OperandMajorMode"]:
         if isinstance(value, str):
             value = value.upper()
             if value == "MN":
                 return OperandMajorMode.MN
             elif value == "K":
                 return OperandMajorMode.K
+        return None
 
     def _to_ir(self) -> _cute_ir.MajorMode:
         return self.value
@@ -125,8 +145,8 @@ class MmaOp(WarpGroupMmaOp):
     acc_dtype: Type[Numeric]
     shape_mnk: Shape
     a_src: OperandSource
-    a_major_mode: OperandMajorMode
-    b_major_mode: OperandMajorMode
+    a_major_mode: Union[_OperandMajorMode, OperandMajorMode]
+    b_major_mode: Union[_OperandMajorMode, OperandMajorMode]
 
     def __post_init__(self) -> None:
         # Verify arch
@@ -143,24 +163,45 @@ class MmaOp(WarpGroupMmaOp):
                 self,
                 "expects the 'a_src' Op parameter to be a warpgroup.OperandSource instance",
             )
-        if not isinstance(self.a_major_mode, OperandMajorMode):
+        if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
+            self.a_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'a_major_mode' Op parameter to be a warpgroup.OperandMajorMode instance",
+                "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or warpgroup.OperandMajorMode (deprecated) instance",
             )
-        if not isinstance(self.b_major_mode, OperandMajorMode):
+        if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'b_major_mode' Op parameter to be a warpgroup.OperandMajorMode instance",
+                "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or warpgroup.OperandMajorMode (deprecated) instance",
+            )
+        if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
+            warnings.warn(
+                "warpgroup.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Normalize the major modes to the new enum type
+            # Since this is a frozen dataclass, we need to use the object.__setattr__ method to set the attributes
+            object.__setattr__(
+                self, "a_major_mode", _OperandMajorMode(self.a_major_mode.value)
+            )
+            object.__setattr__(
+                self, "b_major_mode", _OperandMajorMode(self.b_major_mode.value)
             )
         # Verify instruction shape
-        if (rank(self.shape_mnk) not in [2, 3]) or (depth(self.shape_mnk) != 1):
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
             raise OpError(
                 self,
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
-        m, n = self.shape_mnk[0], self.shape_mnk[1]
+        m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if m != 64:
             raise OpError(self, f"expects the M-mode to be 64, but got {m}")
         if (n < 8) or (n > 256) or (n % 8 != 0):
@@ -181,7 +222,13 @@ class MmaOp(WarpGroupMmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -193,7 +240,13 @@ class MmaOp(WarpGroupMmaOp):
             )
         return True
 
-    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -218,7 +271,14 @@ class MmaTraits(Trait):
         """
         return normalize_field_to_ir_name(field, self.admissible_fields)
 
-    def set(self, field, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        field: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         field_ir_name = self._normalize_field_name(field)
         # Prefer the newer builder that accepts a logical field name, but keep
         # a fallback for legacy attribute-based construction to avoid breaking changes.
@@ -235,7 +295,13 @@ class MmaTraits(Trait):
                 self.value, attr, bool_val, loc=loc, ip=ip
             )
 
-    def get(self, field, *, loc=None, ip=None) -> Any:
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         field_ir_name = self._normalize_field_name(field)
         try:
             return _cute_nvgpu_ir.atom_get_value(
@@ -266,8 +332,8 @@ class MmaF16BF16Op(MmaOp):
         acc_dtype: Type[Numeric],
         instruction_shape: Shape,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -301,16 +367,24 @@ class MmaF16BF16Op(MmaOp):
             )
         # Verify the instruction shape
         instruction_k = 16
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaF16BF16Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaF16BF16Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM90Type.get(
             shape_mnk.type.attribute,
@@ -322,7 +396,7 @@ class MmaF16BF16Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF16BF16Trait(
-            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
+            make_atom(ty, [Boolean(False).ir_value(loc=loc, ip=ip)], loc=loc, ip=ip)
         )
 
 
@@ -348,8 +422,8 @@ class MmaF8Op(MmaOp):
         acc_dtype: Type[Numeric],
         instruction_shape: Shape,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             a_dtype,
@@ -362,7 +436,7 @@ class MmaF8Op(MmaOp):
         )
         self._verify()
 
-    def _verify(self):
+    def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Float8E5M2, Float8E4M3FN]:
             raise OpError(
@@ -382,16 +456,24 @@ class MmaF8Op(MmaOp):
             )
         # Verify the instruction shape
         instruction_k = 32
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaF8Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaF8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM90Type.get(
             shape_mnk.type.attribute,
@@ -403,7 +485,7 @@ class MmaF8Op(MmaOp):
             self.a_src._to_ir(),
         )
         return MmaF8Trait(
-            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
+            make_atom(ty, [Boolean(False).ir_value(loc=loc, ip=ip)], loc=loc, ip=ip)
         )
 
 
@@ -429,8 +511,8 @@ class MmaI8Op(MmaOp):
         acc_dtype: Type[Numeric],
         instruction_shape: Shape,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             a_dtype,
@@ -443,7 +525,7 @@ class MmaI8Op(MmaOp):
         )
         self._verify()
 
-    def _verify(self):
+    def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Int8, Uint8]:
             raise OpError(
@@ -464,16 +546,18 @@ class MmaI8Op(MmaOp):
 
         # Verify the instruction shape
         instruction_k = 32
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-        n = self.shape_mnk[1]
+        n = shape_mnk_tuple[1]
         if not (n >= 8 and n <= 256 and (n == 8 or n == 24 or n % 16 == 0)):
             raise OpError(
                 self,
@@ -481,19 +565,25 @@ class MmaI8Op(MmaOp):
                 f"or N=16*i where i={{3,4,...,15,16}}. But got {n}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaI8Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaI8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM90Type.get(
             shape_mnk.type.attribute,
             self.a_major_mode._to_ir(),
             self.b_major_mode._to_ir(),
-            (T.si8() if self.a_dtype.signed else T.ui8()),
-            (T.si8() if self.b_dtype.signed else T.ui8()),
+            (T.si8() if self.a_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
+            (T.si8() if self.b_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
             self.acc_dtype.mlir_type,
             self.a_src._to_ir(),
         )
         return MmaI8Trait(
-            make_atom(ty, (Boolean(False).ir_value(loc=loc, ip=ip),), loc=loc, ip=ip)
+            make_atom(ty, [Boolean(False).ir_value(loc=loc, ip=ip)], loc=loc, ip=ip)
         )
 
 

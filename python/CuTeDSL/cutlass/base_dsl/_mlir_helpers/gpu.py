@@ -15,7 +15,7 @@ This module provides MLIR GPU Dialect helper functions
 
 from ..._mlir import ir
 from ..._mlir.dialects import gpu, arith, scf
-from ..._mlir.extras import types as T
+from ..._mlir.extras import types as _T
 
 from ..common import *
 
@@ -24,13 +24,13 @@ from ..common import *
 # =============================================================================
 
 
-def create_async_token():
+def create_async_token() -> ir.Value:
     token_ty = gpu.AsyncTokenType.get()
     token = gpu.wait(token_ty, [])
     return token
 
 
-def printf(fmt, *args, threadNumber=-1):
+def printf(fmt: str, *args: ir.Value, threadNumber: int = -1) -> None:
     """Generate gpu.printf OP predicated on threadNumber"""
     type_formats = []
     for arg in args:

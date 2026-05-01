@@ -12,8 +12,10 @@
 # Helpers
 import itertools, operator
 import ctypes
+from typing import Any
+
 from . import dlpack_types as _dpack
-from .dlpack_runtime import (
+from .dlpack_runtime import (  # type: ignore[import-not-found]
     dlpack_to_tensor_desc,
     get_tensor_desc_data_ptr,
     get_tensor_desc_is_in_device,
@@ -49,7 +51,7 @@ from ..typing import (
 
 
 class TensorDescriptor:
-    def __init__(self, tensor):
+    def __init__(self, tensor: Any) -> None:
         """Initialize with a tensor that supports the DLPack protocol.
 
         Args:
@@ -69,13 +71,13 @@ class TensorDescriptor:
             self.device_pointer = None
         else:
             raise DSLRuntimeError(
-                f"DLPack device type is not supported {self.dl_tensor.device.device_type}"
+                f"DLPack device type is not supported {self.dl_tensor.device.device_type}"  # type: ignore[attr-defined]
             )
 
-        log().info("TensorDescriptor is created = [%s]", self)
+        log().info("TensorDescriptor is created = [%s]", self)  # type: ignore[union-attr]
 
     @staticmethod
-    def can_transformed_to_dlpack(dl_tensor):
+    def can_transformed_to_dlpack(dl_tensor: object) -> bool:
         if not hasattr(dl_tensor, "__dlpack__") or not hasattr(
             dl_tensor, "__dlpack_device__"
         ):
@@ -83,19 +85,19 @@ class TensorDescriptor:
         return True
 
     @property
-    def is_in_device(self):
+    def is_in_device(self) -> bool:
         """Check if the tensor is stored on a device."""
         return not self.device_pointer is None
 
     @property
-    def device_id(self):
+    def device_id(self) -> int:
         """Return device id where tensor resides."""
         if self.is_in_device:
             return get_tensor_desc_device_id(self._capsule)
         return -1
 
     @property
-    def pointer(self):
+    def pointer(self) -> Any:
         """
         Returns the pointer to the tensor data. This is either the device pointer or the data pointer if the data is not
         in a device.
@@ -103,7 +105,7 @@ class TensorDescriptor:
         return self.device_pointer if self.device_pointer is not None else self.data_ptr
 
     @property
-    def element_type(self):
+    def element_type(self) -> type:
         """Return the corresponding Python type based on DLPack dtype metadata."""
         str_element_type = get_tensor_desc_element_type(self._capsule)
         dtype_map = {
@@ -132,27 +134,27 @@ class TensorDescriptor:
         return dtype_map[str_element_type]
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, ...]:
         """Return the shape of the tensor."""
         return get_tensor_desc_shape(self._capsule)
 
     @property
-    def rank(self):
+    def rank(self) -> int:
         """Return the rank of the tensor."""
         return get_tensor_desc_ndim(self._capsule)
 
     @property
-    def strides(self):
+    def strides(self) -> tuple[int, ...]:
         """Return the rank of the tensor."""
         return get_tensor_desc_stride(self._capsule)
 
     @property
-    def element_size_in_bytes(self):
+    def element_size_in_bytes(self) -> int:
         """Calculate the element size in bytes of the DLPack tensor."""
         return get_tensor_desc_element_size_in_bytes(self._capsule)
 
     @property
-    def size_in_bytes(self):
+    def size_in_bytes(self) -> int:
         """Calculate the total size in bytes of the DLPack tensor."""
         # Calculate the number of elements using the shape
         ndim = get_tensor_desc_ndim(self._capsule)
@@ -165,7 +167,7 @@ class TensorDescriptor:
         total_bytes = self.element_size_in_bytes * num_elements
         return total_bytes
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a compact string representation of the device_tensor with a tensor prefix."""
         # Extract shape
         shape = "x".join(map(str, self.shape))
@@ -184,7 +186,7 @@ class TensorDescriptor:
 
         return f"tensor<{shape}x{dtype}>_{device_type}"
 
-    def _check_is_managed_by_framework(self):
+    def _check_is_managed_by_framework(self) -> bool:
         """
         Ensure the tensor is not managed by the framework (e.g., GPU tensor).
         Raises an exception if the tensor is framework-managed.
@@ -192,18 +194,18 @@ class TensorDescriptor:
         return self.device_type == _dpack.DLDeviceType.kDLGPU
 
     @staticmethod
-    def is_compatible(maybe_tensor_descriptor) -> bool:
+    def is_compatible(maybe_tensor_descriptor: object) -> bool:
         """Check if the object is a TensorDescriptor or can be converted to one."""
         return isinstance(
             maybe_tensor_descriptor, TensorDescriptor
         ) or TensorDescriptor.can_transformed_to_dlpack(maybe_tensor_descriptor)
 
 
-def from_tensor(tensor) -> TensorDescriptor:
+def from_tensor(tensor: Any) -> TensorDescriptor:
     """Create a TensorDescriptor from a tensor object."""
     return TensorDescriptor(tensor)
 
 
-def to_tensor(tensor_descriptor: TensorDescriptor):
+def to_tensor(tensor_descriptor: TensorDescriptor) -> Any:
     """Return tensor object from tensor descriptor."""
     return tensor_descriptor.tensor

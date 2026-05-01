@@ -12,44 +12,39 @@
 from enum import Enum
 
 import cutlass.cute as cute
-from cutlass.cute.nvgpu import warpgroup
-from cutlass.cute.nvgpu import tcgen05
+from cutlass.cute.nvgpu import OperandMajorMode
 
 
 class LayoutEnum(Enum):
     ROW_MAJOR = "row_major"
     COL_MAJOR = "col_major"
 
-    def mma_major_mode(self):
+    def mma_major_mode(self) -> OperandMajorMode:
         return (
-            tcgen05.OperandMajorMode.K
-            if self == LayoutEnum.ROW_MAJOR
-            else tcgen05.OperandMajorMode.MN
+            OperandMajorMode.K if self == LayoutEnum.ROW_MAJOR else OperandMajorMode.MN
         )
 
-    def sm90_mma_major_mode(self):
+    def sm90_mma_major_mode(self) -> OperandMajorMode:
         return (
-            warpgroup.OperandMajorMode.K
-            if self == LayoutEnum.ROW_MAJOR
-            else warpgroup.OperandMajorMode.MN
+            OperandMajorMode.K if self == LayoutEnum.ROW_MAJOR else OperandMajorMode.MN
         )
 
-    def is_k_major_a(self):
+    def is_k_major_a(self) -> bool:
         return self == LayoutEnum.ROW_MAJOR
 
-    def is_m_major_a(self):
+    def is_m_major_a(self) -> bool:
         return self == LayoutEnum.COL_MAJOR
 
-    def is_n_major_b(self):
+    def is_n_major_b(self) -> bool:
         return self == LayoutEnum.COL_MAJOR
 
-    def is_k_major_b(self):
+    def is_k_major_b(self) -> bool:
         return self == LayoutEnum.ROW_MAJOR
 
-    def is_n_major_c(self):
+    def is_n_major_c(self) -> bool:
         return self == LayoutEnum.ROW_MAJOR
 
-    def is_m_major_c(self):
+    def is_m_major_c(self) -> bool:
         return self == LayoutEnum.COL_MAJOR
 
     @staticmethod

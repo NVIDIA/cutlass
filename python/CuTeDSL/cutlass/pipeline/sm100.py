@@ -12,6 +12,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from cutlass._mlir import ir
+
 import cutlass
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, Int32, if_generate, dsl_user_op
@@ -50,8 +52,8 @@ class PipelineTmaUmma(PipelineAsync):
         agent: tuple[PipelineOp, CooperativeGroup],
         tx_count: int = 0,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> SyncObject:
         """
         Returns a SyncObject corresponding to an agent's PipelineOp.
@@ -84,9 +86,9 @@ class PipelineTmaUmma(PipelineAsync):
         cta_layout_vmnk: cute.Layout,
         mcast_mode_mn: tuple[int, int],
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Int32:
         """
         Computes a mask for signaling arrivals to multicasting threadblocks.
         """
@@ -138,7 +140,12 @@ class PipelineTmaUmma(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_is_leader_cta(cta_layout_vmnk: cute.Layout, *, loc=None, ip=None):
+    def _compute_is_leader_cta(
+        cta_layout_vmnk: cute.Layout,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
         """
         Computes leader threadblocks for 2CTA kernels. For 1CTA, all threadblocks are leaders.
         """
@@ -160,13 +167,13 @@ class PipelineTmaUmma(PipelineAsync):
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
         tx_count: int,
-        barrier_storage: cute.Pointer = None,
+        barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         mcast_mode_mn: tuple[int, int] = (1, 1),
         defer_sync: bool = False,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineTmaUmma":
         """Creates and initializes a new PipelineTmaUmma instance.
 
         :param num_stages: Number of buffer stages for this pipeline
@@ -257,11 +264,17 @@ class PipelineTmaUmma(PipelineAsync):
         )
 
     @dsl_user_op
-    def consumer_release(self, state: PipelineState, *, loc=None, ip=None):
+    def consumer_release(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         UMMA consumer release buffer empty, cta_group needs to be provided.
         """
-        self.sync_object_empty.arrive(
+        self.sync_object_empty.arrive(  # type: ignore[call-arg]
             state.index, self.consumer_mask, self.cta_group, loc=loc, ip=ip
         )
 
@@ -270,15 +283,15 @@ class PipelineTmaUmma(PipelineAsync):
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         TMA producer commit conditionally waits on buffer empty and sets the transaction barrier for leader threadblocks.
         """
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -286,18 +299,19 @@ class PipelineTmaUmma(PipelineAsync):
         )
         if_generate(
             self.is_leader_cta,
-            lambda: self.sync_object_full.arrive(
+            lambda: self.sync_object_full.arrive(  # type: ignore[call-arg]
                 state.index, self.producer_mask, loc=loc, ip=ip
             ),
             loc=loc,
             ip=ip,
         )
 
-    def producer_commit(self, state: PipelineState):
+    def producer_commit(self, state: PipelineState) -> None:
         """
         TMA producer commit is a noop since TMA instruction itself updates the transaction count.
         """
         pass
+
 
 
 @dataclass(frozen=True)
@@ -310,7 +324,12 @@ class PipelineAsyncUmma(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_leading_cta_rank(cta_v_size, *, loc=None, ip=None):
+    def _compute_leading_cta_rank(
+        cta_v_size: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Int32:
         """
         Computes the leading CTA rank.
         """
@@ -323,7 +342,12 @@ class PipelineAsyncUmma(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_is_leader_cta(cta_layout_vmnk: cute.Layout, *, loc=None, ip=None):
+    def _compute_is_leader_cta(
+        cta_layout_vmnk: cute.Layout,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
         """
         Computes leader threadblocks for 2CTA kernels. For 1CTA, all threadblocks are leaders.
         """
@@ -338,7 +362,12 @@ class PipelineAsyncUmma(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_peer_cta_mask(cta_layout_vmnk: cute.Layout, *, loc=None, ip=None):
+    def _compute_peer_cta_mask(
+        cta_layout_vmnk: cute.Layout,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Int32:
         """
         Computes a mask for signaling arrivals to multicasting threadblocks.
         """
@@ -373,12 +402,12 @@ class PipelineAsyncUmma(PipelineAsync):
         num_stages: int,
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
-        barrier_storage: cute.Pointer = None,
+        barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineAsyncUmma":
         """Creates and initializes a new PipelineAsyncUmma instance.
 
         :param num_stages: Number of buffer stages for this pipeline
@@ -470,11 +499,17 @@ class PipelineAsyncUmma(PipelineAsync):
         )
 
     @dsl_user_op
-    def consumer_release(self, state: PipelineState, *, loc=None, ip=None):
+    def consumer_release(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         UMMA consumer release buffer empty, cta_group needs to be provided.
         """
-        self.sync_object_empty.arrive(state.index, self.consumer_mask, self.cta_group)
+        self.sync_object_empty.arrive(state.index, self.consumer_mask, self.cta_group)  # type: ignore[call-arg]
 
 
 @dataclass(frozen=True)
@@ -487,7 +522,12 @@ class PipelineUmmaAsync(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_tmem_sync_mask(cta_layout_vmnk: cute.Layout, *, loc=None, ip=None):
+    def _compute_tmem_sync_mask(
+        cta_layout_vmnk: cute.Layout,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Int32:
         """
         Computes a mask to signal completion of tmem buffers for 2CTA kernels.
         """
@@ -505,7 +545,9 @@ class PipelineUmmaAsync(PipelineAsync):
 
     @dsl_user_op
     @staticmethod
-    def _compute_peer_cta_rank(*, loc=None, ip=None):
+    def _compute_peer_cta_rank(
+        *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+    ) -> Int32:
         """
         Computes a mask to signal release of tmem buffers for 2CTA kernels.
         """
@@ -523,12 +565,12 @@ class PipelineUmmaAsync(PipelineAsync):
         num_stages: int,
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
-        barrier_storage: cute.Pointer = None,
+        barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineUmmaAsync":
         """Creates an instance of PipelineUmmaAsync with computed attributes.
 
         :param num_stages: Number of buffer stages for this pipeline
@@ -611,17 +653,29 @@ class PipelineUmmaAsync(PipelineAsync):
         )
 
     @dsl_user_op
-    def producer_commit(self, state: PipelineState, *, loc=None, ip=None):
+    def producer_commit(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         UMMA producer commit buffer full, cta_group needs to be provided.
         """
-        self.sync_object_full.arrive(
+        self.sync_object_full.arrive(  # type: ignore[call-arg]
             state.index, self.producer_mask, self.cta_group, loc=loc, ip=ip
         )
 
     @dsl_user_op
     @cute.jit
-    def producer_tail(self, state: PipelineState, *, loc=None, ip=None):
+    def producer_tail(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Make sure the last used buffer empty signal is visible to producer.
         Producer tail is usually executed by producer before exit, to avoid dangling
@@ -639,7 +693,7 @@ class PipelineUmmaAsync(PipelineAsync):
         if is_leader_cta:
             # Assume state contains that next useful buffer
             # So we only need to advance to num_stages - 1 times to last used buffer
-            for i in cutlass.range_constexpr(self.num_stages - 1):
+            for i in cutlass.range_constexpr(self.num_stages - 1):  # type: ignore[func-returns-value]
                 state.advance(loc=loc, ip=ip)
             self.producer_acquire(state, loc=loc, ip=ip)
 
@@ -667,7 +721,9 @@ class PipelineClcFetchAsync:
 
     @staticmethod
     @cute.jit
-    def _init_full_barrier_arrive_signal(cta_layout_vmnk: cute.Layout, tidx: Int32):
+    def _init_full_barrier_arrive_signal(
+        cta_layout_vmnk: cute.Layout, tidx: Int32
+    ) -> tuple:
         """
         Computes producer barrier signaling parameters, returns destination CTA rank
         (0 to cluster_size-1) based on thread ID, and a boolean flag indicating if
@@ -687,12 +743,12 @@ class PipelineClcFetchAsync:
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
         tx_count: int,
-        barrier_storage: cute.Pointer = None,
-        producer_mask: Int32 = None,
-        consumer_mask: Int32 = None,
+        barrier_storage: Optional[cute.Pointer] = None,
+        producer_mask: Optional[Int32] = None,
+        consumer_mask: Optional[Int32] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineClcFetchAsync":
         """
         This helper function computes any necessary attributes and returns an instance of PipelineClcFetchAsync.
         :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
@@ -741,7 +797,7 @@ class PipelineClcFetchAsync:
 
         # The producer (sched warp) runs ONLY in CTA 0, all consumers
         # across the cluster must arrive at CTA 0's empty barrier
-        consumer_mask = 0
+        consumer_mask = 0  # type: ignore[assignment]
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
@@ -765,9 +821,9 @@ class PipelineClcFetchAsync:
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Producer acquire waits for empty buffer and sets transaction expectation on full barrier.
 
@@ -776,7 +832,7 @@ class PipelineClcFetchAsync:
         """
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -784,7 +840,7 @@ class PipelineClcFetchAsync:
         )
         if_generate(
             self.is_signalling_thread,
-            lambda: self.sync_object_full.arrive(
+            lambda: self.sync_object_full.arrive(  # type: ignore[call-arg]
                 state.index, self.producer_mask, loc=loc, ip=ip
             ),
             loc=loc,
@@ -797,9 +853,9 @@ class PipelineClcFetchAsync:
         state: PipelineState,
         try_wait_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Consumer waits for full barrier to be signaled by hardware multicast.
 
@@ -808,7 +864,7 @@ class PipelineClcFetchAsync:
         """
         if_generate(
             try_wait_token is None or try_wait_token == 0,
-            lambda: self.sync_object_full.wait(
+            lambda: self.sync_object_full.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -816,14 +872,34 @@ class PipelineClcFetchAsync:
         )
 
     @dsl_user_op
-    def consumer_release(self, state: PipelineState, *, loc=None, ip=None):
-        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)
+    def consumer_release(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
 
     @dsl_user_op
     def producer_get_barrier(
-        self, state: PipelineState, *, loc=None, ip=None
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
-        return self.sync_object_full.get_barrier(state.index, loc=loc, ip=ip)
+        return self.sync_object_full.get_barrier(state.index, loc=loc, ip=ip)  # type: ignore[call-arg, return-value]
+
+    @dsl_user_op
+    def consumer_get_barrier(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
+        return self.sync_object_empty.get_barrier(state.index, loc=loc, ip=ip)  # type: ignore[call-arg, return-value]
 
     @dsl_user_op
     def producer_tail(
@@ -831,26 +907,10 @@ class PipelineClcFetchAsync:
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
-        """
-        Ensures all in-flight buffers are released before producer exits.
-
-        :param state: Pipeline state with current position in the buffer
-        :param try_acquire_token: Optional token to skip the empty barrier waits
-
-        """
-        for i in range(self.num_stages):
-            if_generate(
-                try_acquire_token is None or try_acquire_token == 0,
-                lambda: self.sync_object_empty.wait(
-                    state.index, state.phase, loc=loc, ip=ip
-                ),
-                loc=loc,
-                ip=ip,
-            )
-            state.advance(loc=loc, ip=ip)
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
+        return self.sync_object_empty.get_barrier(state.index, loc=loc, ip=ip)  # type: ignore[call-arg, return-value]
 
 
 @dataclass(frozen=True)
@@ -863,19 +923,21 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
     sync_object_empty_umma: SyncObject
     sync_object_empty_async: SyncObject
     cta_group: cute.nvgpu.tcgen05.CtaGroup
+    consumer_dst_rank_async: Optional[Int32] = None
+    is_signalling_thread: Boolean = True  # type: ignore[assignment]
 
     @staticmethod
-    def create(
+    def create(  # type: ignore[override]
         *,
         num_stages: int,
         producer_group: CooperativeGroup,
         consumer_group_umma: CooperativeGroup,
         consumer_group_async: CooperativeGroup,
         tx_count: int,
-        barrier_storage: cute.Pointer = None,
+        barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineTmaMultiConsumersAsync":
         """
         This helper function computes any necessary attributes and returns an instance of PipelineTmaMultiConsumersAsync.
         :param barrier_storage: Pointer to the smem address for this pipeline's mbarriers
@@ -922,7 +984,10 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         consumer = (consumer_type, consumer_group)
 
         sync_object_full = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer, tx_count
+            barrier_storage.align(min_align=8),
+            num_stages,
+            producer,
+            tx_count,
         )
         sync_object_empty = PipelineTmaUmma._make_sync_object(
             barrier_storage.align(min_align=8) + num_stages, num_stages, consumer
@@ -970,15 +1035,15 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         TMA producer acquire waits on buffer empty and sets the transaction barrier for leader threadblocks.
         """
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -986,13 +1051,19 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         )
         if_generate(
             self.is_leader_cta,
-            lambda: self.sync_object_full.arrive(state.index, self.producer_mask),
+            lambda: self.sync_object_full.arrive(state.index, self.producer_mask),  # type: ignore[call-arg]
             loc=loc,
             ip=ip,
         )
 
     @dsl_user_op
-    def producer_commit(self, state: PipelineState, *, loc=None, ip=None):
+    def producer_commit(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         TMA producer commit is a noop since TMA instruction itself updates the transaction count.
         """
@@ -1000,14 +1071,19 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
 
     @dsl_user_op
     def consumer_release(
-        self, state: PipelineState, op_type: PipelineOp, *, loc=None, ip=None
-    ):
+        self,
+        state: PipelineState,
+        op_type: PipelineOp,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         if op_type == PipelineOp.TCGen05Mma:
-            self.sync_object_empty_umma.arrive(
+            self.sync_object_empty_umma.arrive(  # type: ignore[call-arg]
                 state.index, self.consumer_mask, self.cta_group, loc=loc, ip=ip
             )
         elif op_type == PipelineOp.AsyncThread:
-            self.sync_object_empty_async.arrive(
+            self.sync_object_empty_async.arrive(  # type: ignore[call-arg]
                 state.index, self.consumer_mask, loc=loc, ip=ip
             )
         else:

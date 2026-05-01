@@ -13,6 +13,9 @@
 This module provides CUDA Python helper functions
 """
 
+import ctypes
+from typing import List, Tuple
+
 import cuda.bindings.driver as cuda_driver
 
 # MLIR imports
@@ -29,20 +32,20 @@ class CudaDialectStreamAdapter:
     Convert a CUDA stream to a stream representation for JIT arg generation.
     """
 
-    def __init__(self, arg):
+    def __init__(self, arg: "cuda_driver.CUstream") -> None:
         self._arg = arg
         self._c_pointer = self._arg.getPtr()
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> ir.Value:
         assert len(values) == 1
         return values[0]
 
-    def __c_pointers__(self):
+    def __c_pointers__(self) -> List[ctypes.c_void_p]:
         return [self._c_pointer]
 
-    def __get_mlir_types__(self):
+    def __get_mlir_types__(self) -> List[ir.Type]:
         return [cuda.StreamType.get()]
 
-    def __cuda_stream__(self):
+    def __cuda_stream__(self) -> Tuple[int, int]:
         # support cuda stream protocol
         return (0, int(self._arg))

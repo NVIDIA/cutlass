@@ -448,7 +448,7 @@ def signature(name: str, params: list[Param]) -> str:
             continue
 
         param_type = format_param_type(param)
-        param_str = f"{param.name}: {param_type}"
+        param_str = f"{param.name}: {param_type}"  # type: ignore[attr-defined]
         param_strs.append(param_str)
 
     return f"{name}({', '.join(param_strs)})"
@@ -522,6 +522,6 @@ def create_map_tensor_dtype_f4x2_to_f4_spec(f4_tensor_spec: Tensor) -> Tensor:
         f4_tensor_spec.name,
         new_shape,
         dtype=tvm_ffi.dtype("float4_e2m1fnx2"),
-        strides=new_strides,
+        strides=new_strides,  # type: ignore[arg-type]
         map_tensor_dtype_f4x2_to_f4=True,
     )

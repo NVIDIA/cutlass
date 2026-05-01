@@ -79,6 +79,12 @@ by reducing register usage and the number of address calculation instructions. W
 to True, a runtime check is performed to ensure that the layout does not overflow. Please note that this parameter
 only has an effect when the tensor's layout is marked as dynamic.
 
+For packed subbyte torch dtypes such as ``torch.float4_e2m1fn_x2``, ``from_dlpack`` exposes the
+logical element layout expected by CuTe instead of the packed storage layout. For example, a torch
+tensor with shape ``(128, 128)`` and dtype ``torch.float4_e2m1fn_x2`` is exposed as a logical FP4
+tensor with shape ``(128, 256)``. The same logical reinterpretation also applies when the leading
+dimension is not the last mode.
+
 Code Example
 ~~~~~~~~~~~~
 

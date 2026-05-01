@@ -14,9 +14,9 @@ This module provides CUDA Python helper functions
 """
 
 import cuda.bindings.driver as cuda
+from typing import Any
 
 # MLIR imports
-from ..._mlir import ir
 from ..._mlir.dialects import gpu
 
 from .jit_arg_adapters import JitArgAdapterRegistry
@@ -28,16 +28,16 @@ class StreamAdapter:
     Convert a CUDA stream to a stream representation for JIT arg generation.
     """
 
-    def __init__(self, arg):
+    def __init__(self, arg: Any) -> None:
         self._arg = arg
         self._c_pointer = self._arg.getPtr()
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: list[Any]) -> Any:
         assert len(values) == 1
         return values[0]
 
-    def __c_pointers__(self):
+    def __c_pointers__(self) -> list[Any]:
         return [self._c_pointer]
 
-    def __get_mlir_types__(self):
+    def __get_mlir_types__(self) -> list[Any]:
         return [gpu.AsyncTokenType.get()]

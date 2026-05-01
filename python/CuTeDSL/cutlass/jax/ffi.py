@@ -165,7 +165,7 @@ def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()):
                 fn.restype = ctypes.c_void_p
                 type_dict[field] = jax.ffi.pycapsule(fn())
             logger.debug(f"Registering ffi type: {type_name}, {type_dict}")
-            jax.ffi.register_ffi_type(type_name, type_dict, platform="CUDA")
+            jax.ffi.register_ffi_type(type_name, type_dict, platform="CUDA")  # type: ignore[arg-type]
 
     # Register the custom FFI targets.
     match ffi_version:

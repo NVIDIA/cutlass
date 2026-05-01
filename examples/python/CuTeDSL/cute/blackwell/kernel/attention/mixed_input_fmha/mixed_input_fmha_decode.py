@@ -27,14 +27,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-import enum
 import math
-import time
 from typing import Type, Tuple
 from functools import partial
 
 import torch
-import torch.nn.functional as F
 from torch.nn.functional import scaled_dot_product_attention
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -42,7 +39,7 @@ import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.nvgpu.tcgen05 as tcgen05
+from cutlass.cute.nvgpu import tcgen05, OperandMajorMode
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 import cutlass.torch as cutlass_torch
@@ -50,9 +47,6 @@ import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.cute.testing as testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cute.typing import *
-
-from cutlass._mlir.dialects import llvm
-from cutlass.cute.arch.nvvm_wrappers import mapa
 
 # Kernel invariants
 mma_modes = (0, 1, 2)
@@ -65,19 +59,22 @@ warpgroup_threads = 128
 # Math helpers
 log2_e = math.log2(math.e)  # change exponential base
 use_tensor_ssa_math = False  # experimental
-fadd2 = partial(cute.arch.add_packed_f32x2, ftz=False, rnd="rn")
-fmul2 = partial(cute.arch.mul_packed_f32x2, ftz=False, rnd="rn")
-ffma2 = partial(cute.arch.fma_packed_f32x2, ftz=False, rnd="rn")
+fadd2 = cute.arch.add_packed_f32x2
+fmul2 = cute.arch.mul_packed_f32x2
+ffma2 = cute.arch.fma_packed_f32x2
 exp2 = partial(cute.math.exp2, fastmath=True)
+warp_fmax = partial(cute.arch.warp_redux_sync, kind="fmax", nan=True)
+smem_fmax = partial(cute.arch.atomic_fmax, sem="relaxed", scope="cta")
+gmem_fmax = partial(cute.arch.atomic_fmax, sem="relaxed", scope="gpu")
 
 
 class MixedInputFusedMultiHeadAttentionDecode:
     def __init__(
         self,
         headdim,
-        block_scaledim, # headdim per scale factor; scale factor shape is (batches, heads_k, seqlen, headdim / block_scaledim)
-        grouped_head_tile, # GQA packing tile size, can be less than group size
-        convert_warpgroups = 1, # Multiple warpgroups striding on convert stages
+        block_scaledim,  # headdim per scale factor; scale factor shape is (batches, heads_k, seqlen, headdim / block_scaledim)
+        grouped_head_tile,  # GQA packing tile size, can be less than group size
+        convert_warpgroups=1,  # Multiple warpgroups striding on convert stages
     ):
         self.headdim = headdim
         self.grouped_head_tile = grouped_head_tile
@@ -93,7 +90,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
         self.softmax_warpgroup_id = warpgroup_id
         warpgroup_id += 1
 
-        self.cvt_warpgroup_ids = tuple(range(warpgroup_id, warpgroup_id+convert_warpgroups))
+        self.cvt_warpgroup_ids = tuple(
+            range(warpgroup_id, warpgroup_id + convert_warpgroups)
+        )
         warpgroup_id += convert_warpgroups
 
         # Why 2 MMA+TMA warps when not MMA bound?
@@ -114,12 +113,15 @@ class MixedInputFusedMultiHeadAttentionDecode:
         max_regs_per_wg_thread = 64 * 1024 // warpgroup_threads  # 64K regs per SM
         self.mma_tma_regs = 72
         self.cvt_regs = 112
-        self.softmax_regs = (max_regs_per_wg_thread
-                             - self.mma_tma_regs
-                             - self.cvt_regs * convert_warpgroups)
+        self.softmax_regs = (
+            max_regs_per_wg_thread
+            - self.mma_tma_regs
+            - self.cvt_regs * convert_warpgroups
+        )
         self.softmax_regs = max(128, min(256, self.softmax_regs))
-        assert (self.mma_tma_regs + self.softmax_regs + 
-                self.cvt_regs * convert_warpgroups) <= max_regs_per_wg_thread or not self.use_reg_reconfig
+        assert (
+            self.mma_tma_regs + self.softmax_regs + self.cvt_regs * convert_warpgroups
+        ) <= max_regs_per_wg_thread or not self.use_reg_reconfig
 
         self.bs_stages = 2
         self.sp_stages = 2
@@ -140,25 +142,33 @@ class MixedInputFusedMultiHeadAttentionDecode:
             raise ValueError("use Float8E4M3FN instead of Float8E4M3")
 
         if d % 64 != 0:
-            raise ValueError(f"headdim({d}) must be multiple of 64")
+            raise testing.CantImplementError(f"headdim({d}) must be multiple of 64")
 
         if h_q % h_k != 0:
-            raise ValueError(f"heads_q({h_q}) must be a multiple of heads_k({h_k})")
+            raise testing.CantImplementError(
+                f"heads_q({h_q}) must be a multiple of heads_k({h_k})"
+            )
 
         align_scale_bits = 128  # TMA requirement
         if self.scaledim * q_dtype.width < align_scale_bits:
             align_seq = align_scale_bits // (self.scaledim * q_dtype.width)
             if s_k % align_seq != 0:
-                raise ValueError(f"seqlen({s_k}) must be a multiple of {align_seq}")
+                raise testing.CantImplementError(
+                    f"seqlen({s_k}) must be a multiple of {align_seq}"
+                )
 
         if kv_dtype.width < 8 and d % 128 != 0:  # TMA requirement
-            raise ValueError(f"headdim({d}) must be multiple of 128 for {kv_dtype} KV")
+            raise testing.CantImplementError(
+                f"headdim({d}) must be multiple of 128 for {kv_dtype} KV"
+            )
 
     @cute.jit
     def __call__(
         self,
-        problem_shape: Tuple[Int32, Int32, Int32, Int32, Int32],  # b, h_q, h_k, s_k, d
-        kv_splits: Int32,  # threadblocks per sequence
+        problem_shape: Tuple[
+            cutlass.Int32, cutlass.Int32, cutlass.Int32, cutlass.Int32, cutlass.Int32
+        ],  # b, h_q, h_k, s_k, d
+        kv_splits: cutlass.Int32,  # threadblocks per sequence
         q_iter: cute.Pointer,
         k_iter: cute.Pointer,
         v_iter: cute.Pointer,
@@ -170,8 +180,8 @@ class MixedInputFusedMultiHeadAttentionDecode:
         o_partial_iter: cute.Pointer,  # partial O per kv split
         m_partial_iter: cute.Pointer,  # partial colmax_s per kv split
         l_partial_iter: cute.Pointer,  # partial colsum_p per kv split
-        scale_qs: Float32,
-        scale_o: Float32,
+        scale_qs: cutlass.Float32,
+        scale_o: cutlass.Float32,
         stream: cuda.CUstream,
     ):
         ##############################
@@ -179,7 +189,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         ##############################
         mma_dtype = q_iter.dtype
         acc_dtype = o_partial_iter.dtype
-        assert acc_dtype is Float32  # don't support other acc types for now
+        assert acc_dtype is cutlass.Float32  # don't support other acc types for now
 
         # Block tile sets the granularity at which threadblocks consume work
         blk_tile_s = 128
@@ -197,8 +207,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
         # GEMM1: (S_K, H_R, D, (H_K, B))
         tiled_mma_kq = sm100_utils.make_trivial_tiled_mma(
             mma_dtype,
-            tcgen05.OperandMajorMode.K,  # K
-            tcgen05.OperandMajorMode.K,  # Q
+            mma_dtype,
+            OperandMajorMode.K,  # K
+            OperandMajorMode.K,  # Q
             acc_dtype,
             tcgen05.CtaGroup.ONE,
             mma_tile_mnk[:2],
@@ -208,8 +219,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
         # GEMM2: (D, H_R, S_K, (H_K, B))
         tiled_mma_vp = sm100_utils.make_trivial_tiled_mma(  #
             mma_dtype,
-            tcgen05.OperandMajorMode.K,  # V
-            tcgen05.OperandMajorMode.MN,  # P
+            mma_dtype,
+            OperandMajorMode.K,  # V
+            OperandMajorMode.MN,  # P
             acc_dtype,
             tcgen05.CtaGroup.ONE,
             mma_tile_mnk[:2],
@@ -523,8 +535,8 @@ class MixedInputFusedMultiHeadAttentionDecode:
         mM: cute.Tensor,
         mM_partial: cute.Tensor,
         mL_partial: cute.Tensor,
-        scale_qs: Float32,
-        scale_qs_log2_e: Float32,
+        scale_qs: cutlass.Float32,
+        scale_qs_log2_e: cutlass.Float32,
     ):
         # Read special registers
         kv_splits, tiles_hr, tiles_hb = cute.arch.grid_dim()
@@ -586,7 +598,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         ##############################
         # Tmem Allocation
         ##############################
-        tmem_ptr_smem_ptr = smem.allocate_array(Int32)
+        tmem_ptr_smem_ptr = smem.allocate_array(cutlass.Int32)
         if warp_idx == init_warp and not exit_early:
             cute.arch.alloc_tmem(self.tmem_alloc_cols, tmem_ptr_smem_ptr)
         init_warp += 1
@@ -595,26 +607,32 @@ class MixedInputFusedMultiHeadAttentionDecode:
         # Pipeline Allocation + Init
         ##############################
         # Allocate Mbarriers
-        q_pipeline_ptr = smem.allocate_array(Int64, self.q_stages * 2)
-        kv_pipeline_ptr = smem.allocate_array(Int64, self.kv_stages * 2)
-        bs_pipeline_ptr = smem.allocate_array(Int64, self.bs_stages * 2)
-        cvt_pipeline_ptr = smem.allocate_array(Int64, self.cvt_stages * 2)
-        s_pipeline_ptr = smem.allocate_array(Int64, self.sp_stages * 2)
-        p_pipeline_ptr = smem.allocate_array(Int64, self.sp_stages * 2)
-        o_pipeline_ptr = smem.allocate_array(Int64, self.o_stages * 2)
+        q_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.q_stages * 2)
+        kv_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.kv_stages * 2)
+        bs_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.bs_stages * 2)
+        cvt_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.cvt_stages * 2)
+        s_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.sp_stages * 2)
+        p_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.sp_stages * 2)
+        o_pipeline_ptr = smem.allocate_array(cutlass.Int64, self.o_stages * 2)
 
         # Declare named barriers
-        softmax_nbar_id = 1
-        mma_kq_nbar_id = 2
-        mma_vp_nbar_id = 3
+        softmax_nbar = pipeline.NamedBarrier(
+            barrier_id=1, num_threads=warpgroup_threads
+        )
+        mma_kq_nbar = pipeline.NamedBarrier(barrier_id=2, num_threads=64)
+        mma_vp_nbar = pipeline.NamedBarrier(barrier_id=3, num_threads=64)
 
         # Alias thread cooperatives
         elect_one_cooperative = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        warpgroup_cooperative = pipeline.CooperativeGroup(pipeline.Agent.Thread, warpgroup_threads)
+        warpgroup_cooperative = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, warpgroup_threads
+        )
         mma_group = elect_one_cooperative
         tma_group = elect_one_cooperative
         cvt_group = warpgroup_cooperative
-        cvt_groups = pipeline.CooperativeGroup(pipeline.Agent.Thread, warpgroup_threads * self.convert_warpgroups)
+        cvt_groups = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, warpgroup_threads * self.convert_warpgroups
+        )
         softmax_group = warpgroup_cooperative
 
         # Initialize pipelines
@@ -642,7 +660,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
             num_stages=self.bs_stages,
             producer_group=tma_group,
             consumer_group=cvt_groups,
-            tx_count=cute.size_in_bytes(mma_dtype, cute.select(smem_layout_bs, mode=[0,1])),
+            tx_count=cute.size_in_bytes(
+                mma_dtype, cute.select(smem_layout_bs, mode=[0, 1])
+            ),
             barrier_storage=bs_pipeline_ptr,
             tidx=mcast_coord,
             cta_layout_vmnk=mcast_layout,
@@ -772,7 +792,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         tCtO = thrblk_mma_vp.make_fragment_C(tCsO.shape)
 
         # Tmem tensor allocation
-        tmem_ptr = cute.arch.retrieve_tmem_ptr(Int32, 16, tmem_ptr_smem_ptr)
+        tmem_ptr = cute.arch.retrieve_tmem_ptr(cutlass.Int32, 16, tmem_ptr_smem_ptr)
         tmem_offset = 0
 
         tAtK_cvt = cute.make_tensor(
@@ -802,7 +822,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         # Exit early
         ##############################
         if exit_early:
-            noop = None # early return not supported
+            noop = None  # early return not supported # noqa: F841
 
         ##############################
         # TMA KV Dispatch
@@ -991,9 +1011,11 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 cute.arch.setmaxregister_decrease(self.cvt_regs)
 
             # Intermediate convert type
-            cvt_type = Float32
-            if cutlass.const_expr(mma_dtype is cutlass.BFloat16 and
-                                  k_dtype in (cutlass.Int4, cutlass.Int8)):
+            cvt_type = cutlass.Float32
+            if cutlass.const_expr(
+                mma_dtype is cutlass.BFloat16
+                and k_dtype in (cutlass.Int4, cutlass.Int8)
+            ):
                 cvt_type = mma_dtype
 
             # Initialize for multiple warpgroups if necessary
@@ -1015,12 +1037,13 @@ class MixedInputFusedMultiHeadAttentionDecode:
             smem_load_atom_k = cute.make_copy_atom(
                 cute.nvgpu.warp.LdMatrix8x16x8bOp(
                     num_matrices=4,
-                    unpack_bits=(k_dtype.width if k_dtype.width < 8 else None)),
+                    unpack_bits=(k_dtype.width if k_dtype.width < 8 else None),
+                ),
                 kv_smem_dtype,
             )
 
             tmem_store_k = tcgen05.make_tmem_copy(
-                tmem_store_atom_k, tAtK_cvt[mma_dice+(0,)]
+                tmem_store_atom_k, tAtK_cvt[mma_dice + (0,)]
             )
             thr_store_k = tmem_store_k.get_slice(warpgroup_tidx)
             tKrK_cvt_shape = thr_store_k.partition_S(tAtK_cvt).shape[:-1]
@@ -1043,7 +1066,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             smem_load_atom_v = cute.make_copy_atom(smem_load_op_v, kv_smem_dtype)
 
             tmem_store_v = tcgen05.make_tmem_copy(
-                tmem_store_atom_v, tAtV_cvt[mma_dice+(0,)]
+                tmem_store_atom_v, tAtV_cvt[mma_dice + (0,)]
             )
             thr_store_v = tmem_store_v.get_slice(warpgroup_tidx)
             tVrV_cvt_shape = thr_store_v.partition_S(tAtV_cvt).shape[:-1]
@@ -1113,7 +1136,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     bs_handle.release()
 
                     # Convert and scale K
-                    for dk in cutlass.range(tiles_dk // self.convert_warpgroups, unroll=2):
+                    for dk in cutlass.range(
+                        tiles_dk // self.convert_warpgroups, unroll=2
+                    ):
                         tKrK = cute.make_rmem_tensor(tKrK_shape, kv_smem_dtype)
                         tKrK_cvt = cute.make_rmem_tensor(tKrK_cvt_shape, mma_dtype)
 
@@ -1139,7 +1164,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
                         cvt_handle = cvt_producer.acquire_and_advance()
                         cute.copy(
-                            thr_store_k, tKrK_cvt, tKtK_cvt[cpy_dice + (cvt_handle.index,)]
+                            thr_store_k,
+                            tKrK_cvt,
+                            tKtK_cvt[cpy_dice + (cvt_handle.index,)],
                         )
                         cute.arch.fence_view_async_tmem_store()
                         cvt_handle.commit()
@@ -1160,7 +1187,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     bs_handle.release()
 
                     # Convert and scale V
-                    for dmsk in cutlass.range(tiles_dm * tiles_sk // self.convert_warpgroups, unroll=2):
+                    for dmsk in cutlass.range(
+                        tiles_dm * tiles_sk // self.convert_warpgroups, unroll=2
+                    ):
                         tVrV = cute.make_rmem_tensor(tVrV_shape, kv_smem_dtype)
                         tVrV_cvt = cute.make_rmem_tensor(tVrV_cvt_shape, mma_dtype)
 
@@ -1186,7 +1215,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
                         cvt_handle = cvt_producer.acquire_and_advance()
                         cute.copy(
-                            thr_store_v, tVrV_cvt, tVtV_cvt[cpy_dice + (cvt_handle.index,)]
+                            thr_store_v,
+                            tVrV_cvt,
+                            tVtV_cvt[cpy_dice + (cvt_handle.index,)],
                         )
                         cute.arch.fence_view_async_tmem_store()
                         cvt_handle.commit()
@@ -1223,9 +1254,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                     k_handle = cvt_consumer.wait_and_advance(k_token)
                     # Signal BMM2 to start
                     if is_last_iter:
-                        cute.arch.barrier_arrive(
-                            barrier_id=mma_kq_nbar_id, number_of_threads=64
-                        )
+                        mma_kq_nbar.arrive()
                     for mma_k in cutlass.range_constexpr(tAtK_cvt.shape[2]):
                         cute.gemm(
                             tiled_mma_kq,
@@ -1245,7 +1274,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 if s > 0:
                     for _ in cutlass.range_constexpr(tiles_dm * tiles_sk):
                         cvt_consumer.advance()
-                    cute.arch.barrier(barrier_id=mma_vp_nbar_id, number_of_threads=64)
+                    mma_vp_nbar.arrive_and_wait()
                     s_token = s_producer.try_acquire()
 
         ##############################
@@ -1263,7 +1292,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             # Advance and wait for BMM1
             for _ in cutlass.range_constexpr(tiles_dk):
                 cvt_consumer.advance()
-            cute.arch.barrier(barrier_id=mma_kq_nbar_id, number_of_threads=64)
+            mma_kq_nbar.arrive_and_wait()
 
             # Sequence loop
             p_token = False
@@ -1273,7 +1302,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 if s < iters_s - 1:
                     for _ in cutlass.range_constexpr(tiles_dk):
                         cvt_consumer.advance()
-                    cute.arch.barrier(barrier_id=mma_kq_nbar_id, number_of_threads=64)
+                    mma_kq_nbar.arrive_and_wait()
                     p_token = p_consumer.try_wait()
 
                 # BMM2
@@ -1286,9 +1315,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                         v_handle = cvt_consumer.wait_and_advance(v_token)
                         # Signal BMM1 to start
                         if is_last_iter:
-                            cute.arch.barrier_arrive(
-                                barrier_id=mma_vp_nbar_id, number_of_threads=64
-                            )
+                            mma_vp_nbar.arrive()
                         for mma_k in cutlass.range_constexpr(tAtV_cvt.shape[2]):
                             cute.gemm(
                                 tiled_mma_vp,
@@ -1325,7 +1352,9 @@ class MixedInputFusedMultiHeadAttentionDecode:
             tmem_load_atom_s = cute.make_copy_atom(
                 tcgen05.Ld32x32bOp(tmem_op_repeat), acc_dtype
             )
-            tmem_load_s = tcgen05.make_tmem_copy(tmem_load_atom_s, tCtS[mma_dice + (0,)])
+            tmem_load_s = tcgen05.make_tmem_copy(
+                tmem_load_atom_s, tCtS[mma_dice + (0,)]
+            )
             thr_load_s = tmem_load_s.get_slice(warpgroup_tidx)
 
             tmem_store_atom_o = cute.make_copy_atom(
@@ -1356,7 +1385,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             # Partition colmax and initialize in RF
             tSsM = thr_load_s.partition_D(tCsM)  # (CPY, #CPY_MMA, #CPY_M, #CPY_N)
             tSrM_prev = cute.make_rmem_tensor_like(tSsM)
-            tSrM_prev.fill(-Float32.inf)
+            tSrM_prev.fill(-cutlass.Float32.inf)
 
             # Partition colsum and initialize in RF
             # Each thread maintains a local colsum in RF, smem reduction happens after loop
@@ -1364,7 +1393,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 tCsL
             )  # (CPY, #CPY_MMA, #CPY_M, #CPY_N, WARPS)
             tSrL = cute.make_rmem_tensor_like(tSsL[cpy_dice + (0,)])
-            tSrL.fill(Float32(0))
+            tSrL.fill(cutlass.Float32(0))
 
             assert warp_threads >= cute.size(tSsM)
 
@@ -1385,17 +1414,15 @@ class MixedInputFusedMultiHeadAttentionDecode:
             )
 
             # Initialize O
-            tSrO.fill(Float32(0))
+            tSrO.fill(cutlass.Float32(0))
             cute.copy(thr_store_o, tSrO, tStO)
 
             # Initialize colsum and colmax in smem and wait
             if warpgroup_widx == 0 and lane_store_max:
-                tSsM[lane_idx] = -Float32.inf
+                tSsM[lane_idx] = -cutlass.Float32.inf
             if warpgroup_widx == 1 and lane_store_max:
-                tSsL[lane_idx] = Float32(0)
-            cute.arch.barrier(
-                barrier_id=softmax_nbar_id, number_of_threads=warpgroup_threads
-            )
+                tSsL[lane_idx] = cutlass.Float32(0)
+            softmax_nbar.arrive_and_wait()
 
             #
             # Sequence loop
@@ -1410,20 +1437,18 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
                 # Reduce colmax in warp RF
                 tSrM = cute.make_rmem_tensor_like(tSsM)
-                tSrM_lane = Float32(0)  # Avoid dynamic register indexing
+                tSrM_lane = cutlass.Float32(0)  # Avoid dynamic register indexing
                 for i in cutlass.range_constexpr(cute.size(tSrS)):
-                    tSrM[i] = cute.arch.warp_redux_sync(tSrS[i], kind="fmax", nan=True)
+                    tSrM[i] = warp_fmax(tSrS[i])
                     if i == lane_idx:
                         tSrM_lane = tSrM[i]
 
                 # Reduce colmax in smem
                 if lane_store_max:
-                    self.smem_fmax(tSsM.iterator + tSsM.layout(lane_idx), tSrM_lane)
+                    smem_fmax(tSsM.iterator + tSsM.layout(lane_idx), tSrM_lane)
 
                 # Wait for colmax then load
-                cute.arch.barrier(
-                    barrier_id=softmax_nbar_id, number_of_threads=warpgroup_threads
-                )
+                softmax_nbar.arrive_and_wait()
                 cute.autovec_copy(tSsM, tSrM)
 
                 # Compute online softmax
@@ -1504,7 +1529,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             #
 
             # Reduce colsum in warp RF
-            tSrL_lane = Float32(0.0)
+            tSrL_lane = cutlass.Float32(0.0)
             for i in cutlass.range_constexpr(cute.size(tSrL)):
                 tSrL[i] = cute.arch.warp_reduction_sum(tSrL[i])
                 if i == lane_idx:
@@ -1515,16 +1540,12 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 tSsL[cpy_dice + (warpgroup_widx,)][lane_idx] = tSrL_lane
 
             # Wait for colsum
-            cute.arch.barrier(
-                barrier_id=softmax_nbar_id, number_of_threads=warpgroup_threads
-            )
+            softmax_nbar.arrive_and_wait()
 
             if warpgroup_widx == 0 and lane_store_max and inbound_hr:
                 # Load colsum and colmax
                 sL_lane_wg = sL[0, lane_idx, None]
-                sL_lane = (
-                    sL_lane_wg[0] + sL_lane_wg[1] + sL_lane_wg[2] + sL_lane_wg[3]
-                )
+                sL_lane = sL_lane_wg[0] + sL_lane_wg[1] + sL_lane_wg[2] + sL_lane_wg[3]
                 sM_lane = sM[0, lane_idx]
 
                 # Scale colmax
@@ -1533,7 +1554,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
                 # Store colsum and colmax
                 gL_partial[lane_idx] = sL_lane
                 gM_partial[lane_idx] = sM_lane
-                self.gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
+                gmem_fmax(gM.iterator + gM.layout(lane_idx), sM_lane)
 
             o_handle = o_consumer.wait_and_advance()
             cute.copy(thr_load_s, tStO, tSrO)
@@ -1563,16 +1584,16 @@ class MixedInputFusedMultiHeadAttentionDecode:
         o_partial: cute.Tensor,
         m_partial: cute.Tensor,
         l_partial: cute.Tensor,
-        scale_o: Float32,
+        scale_o: cutlass.Float32,
     ):
         d_blk_idx, coord_h, coord_b = cute.arch.block_idx()
         d_per_blk, _, _ = cute.arch.block_dim()
         d_idx, _, _ = cute.arch.thread_idx()
         coord_d = d_blk_idx * d_per_blk + d_idx
 
-        o_dhb = Float32(0)
+        o_dhb = cutlass.Float32(0)
         m_hb = m[coord_h, coord_b]
-        l_hb = Float32(0)
+        l_hb = cutlass.Float32(0)
 
         o_partial_dhb = o_partial[coord_d, coord_h, coord_b, None]
         m_partial_hb = m_partial[coord_h, coord_b, None]
@@ -1591,44 +1612,6 @@ class MixedInputFusedMultiHeadAttentionDecode:
 
         return
 
-    @staticmethod
-    @cute.jit
-    def smem_fmax(ptr: Pointer, val: Float32):
-        # https://stackoverflow.com/a/72461459
-        # Works with canonical NaN which warp_redux_sync(kind="fmax") should return
-        llvm.inline_asm(
-            None,
-            [ptr.llvm_ptr, val.ir_value()],
-            """{\n\t
-                .reg .pred p;\n\t
-                setp.lt.s32 p, $1, 0x0;
-            @p  red.relaxed.shared::cta.min.u32 [$0], $1;\n\t
-            @!p red.relaxed.shared::cta.max.s32 [$0], $1;\n\t
-            }\n\t""",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-        )
-
-    @staticmethod
-    @cute.jit
-    def gmem_fmax(ptr: Pointer, val: Float32):
-        llvm.inline_asm(
-            None,
-            [ptr.llvm_ptr, val.ir_value()],
-            """{\n\t
-                .reg .pred p;\n\t
-                setp.lt.s32 p, $1, 0x0;
-            @p  red.relaxed.gpu.global.min.u32 [$0], $1;\n\t
-            @!p red.relaxed.gpu.global.max.s32 [$0], $1;\n\t
-            }\n\t""",
-            "l,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-        )
-
 
 def run(
     batches: int = 1,
@@ -1638,10 +1621,10 @@ def run(
     headdim: int = 512,
     block_scaledim: int = 512,
     kv_splits: int = 0,
-    q_dtype: Type[cutlass.Numeric] = BFloat16,
-    kv_dtype: Type[cutlass.Numeric] = Int8,
-    o_dtype: Type[cutlass.Numeric] = BFloat16,
-    acc_dtype: Type[cutlass.Numeric] = Float32,
+    q_dtype: Type[cutlass.Numeric] = cutlass.BFloat16,
+    kv_dtype: Type[cutlass.Numeric] = cutlass.Int8,
+    o_dtype: Type[cutlass.Numeric] = cutlass.BFloat16,
+    acc_dtype: Type[cutlass.Numeric] = cutlass.Float32,
     tolerance: float = 0.1,
     scale_q: float = 1.0,
     scale_o: float = 1.0,
@@ -1652,7 +1635,7 @@ def run(
     use_cold_l2: bool = False,
     **kwargs,
 ):
-    print(f"Running Blackwell SM100 Mixed Input FMHA Decode test with:")
+    print("Running Blackwell SM100 Mixed Input FMHA Decode test with:")
     print(f"\tbatches: {batches}, seqlen: {seqlen}")
     print(f"\theads_q: {heads_q}, heads_k: {heads_k}")
     print(f"\theaddim: {headdim}, block_scaledim: {block_scaledim}")
@@ -1709,9 +1692,7 @@ def run(
 
     problem_shape = (batches, heads_q, heads_k, seqlen_k, headdim)
 
-    fmha.can_implement(
-        problem_shape, kv_splits, q_dtype, kv_dtype, o_dtype, acc_dtype
-    )
+    fmha.can_implement(problem_shape, kv_splits, q_dtype, kv_dtype, o_dtype, acc_dtype)
 
     #
     # Allocate Tensors
@@ -1719,24 +1700,24 @@ def run(
     torch.manual_seed(1111)
 
     def create_tensor(shape, dtype, init=True):
-        init_type = cutlass.torch.TensorInitType.RANDOM
-        init_config = cutlass.torch.RandomInitConfig(min_val=-2, max_val=2)
+        init_type = cutlass_torch.TensorInitType.RANDOM
+        init_config = cutlass_torch.RandomInitConfig(min_val=-2, max_val=2)
 
         if init is False or init is None:
-            init_type = cutlass.torch.TensorInitType.SKIP
+            init_type = cutlass_torch.TensorInitType.SKIP
             init_config = None
         elif isinstance(init, int) or isinstance(init, float):
-            init_type = cutlass.torch.TensorInitType.SCALAR
-            init_config = cutlass.torch.ScalarInitConfig(value=init)
+            init_type = cutlass_torch.TensorInitType.SCALAR
+            init_config = cutlass_torch.ScalarInitConfig(value=init)
         elif isinstance(init, tuple) or isinstance(init, list):
             if len(init) == 2:
-                init_type = cutlass.torch.TensorInitType.RANDOM
-                init_config = cutlass.torch.RandomInitConfig(
+                init_type = cutlass_torch.TensorInitType.RANDOM
+                init_config = cutlass_torch.RandomInitConfig(
                     min_val=init[0], max_val=init[1]
                 )
             if len(init) == 3:
-                init_type = cutlass.torch.TensorInitType.GAUSSIAN
-                init_config = cutlass.torch.RandomInitConfig(
+                init_type = cutlass_torch.TensorInitType.GAUSSIAN
+                init_config = cutlass_torch.RandomInitConfig(
                     mean=init[0], std=init[1], scale=init[2]
                 )
 
@@ -1809,7 +1790,7 @@ def run(
         scale_qs,
         scale_o,
         current_stream,
-        options=f"--opt-level 2",
+        options="--opt-level 2",
     )
     print("Finished Compiling")
 
@@ -1980,7 +1961,7 @@ if __name__ == "__main__":
 
     def parse_comma_separated_ints(s: str):
         try:
-            return tuple(int(x.strip()) for x in s.split(","))
+            return tuple(cutlass.int(x.strip()) for x in s.split(","))
         except ValueError:
             raise argparse.ArgumentTypeError(
                 "Invalid format. Expected comma-separated integers."
@@ -2052,7 +2033,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--acc_dtype",
         type=cutlass.dtype,
-        default=Float32,
+        default=cutlass.Float32,
         help="accumulator/reduction data type",
     )
 

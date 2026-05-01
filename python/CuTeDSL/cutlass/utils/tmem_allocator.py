@@ -14,9 +14,11 @@ from typing import Optional, Type, Union, List
 import inspect
 
 from cutlass import const_expr
+from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import (
     Numeric,
     Float32,
+    Boolean,
     extract_mlir_values,
     new_from_mlir_values,
     dsl_user_op,
@@ -26,6 +28,224 @@ import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass.cute.nvgpu.tcgen05 import find_tmem_tensor_col_offset
 from cutlass.cute.arch import get_max_tmem_alloc_cols, get_min_tmem_alloc_cols
+
+
+_TMEM_COL_MASK = 0x0000FFFF
+
+
+@dsl_user_op
+def compute_tmem_cols_from_layout(
+    layout: cute.Layout,
+    dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> int:
+    """Compute the number of TMEM columns required for a layout with a given dtype.
+
+    This function calculates the column offset by recasting the layout to Int32
+    and computing its cosize, similar to how find_tmem_tensor_col_offset works
+    but without requiring a tensor.
+
+    :param layout: The TMEM layout to compute columns for.
+    :type layout: cute.Layout
+    :param dtype: The data type of the elements in the layout.
+    :type dtype: Type[Numeric]
+    :return: The number of TMEM columns (always a Python int).
+    :rtype: int
+
+    :raises ValueError: If the layout size cannot be determined at compile time.
+    """
+    # Get source width from dtype
+    if dtype is Boolean:
+        src_width = 8
+    else:
+        src_width = dtype.width
+
+    # Recast layout to Int32 (32-bit width) as done in find_tmem_tensor_col_offset
+    dst_width = 32  # Int32.width
+    recasted_layout = cute.recast_layout(dst_width, src_width, layout, loc=loc, ip=ip)
+
+    # Compute cosize and mask
+    offset = cute.cosize(recasted_layout, loc=loc, ip=ip) & _TMEM_COL_MASK
+
+    # Ensure we return a Python int
+    if isinstance(offset, int):
+        return offset
+
+    # Try to fold the DSL value to a Python int
+    try:
+        return const_expr(offset)
+    except Exception:
+        raise ValueError(
+            "Dynamic TMEM layout size not supported; "
+            "the layout size must be determinable at compile time."
+        )
+
+
+class TmemBufferPool:
+    """A pool for sub-allocating from a reserved chunk of tensor memory.
+
+    This class enables sub-allocation from a pre-reserved TMEM region,
+    eliminating the need for manual offset calculations when allocating
+    multiple tensors in TMEM.
+
+    Example usage::
+
+        tmem_pool = tmem_allocator.reserve(tmem_total_size)
+
+        # Allocate and create tensors in one call
+        tCtAcc = tmem_pool.allocate_tensor(tCtAcc_layout, cutlass.Float32)
+        tCtSFA = tmem_pool.allocate_tensor(tCtSFA_layout, sf_dtype)
+
+        # Or allocate pointer only, then create tensor manually
+        sfb_ptr = tmem_pool.allocate(tCtSFB_layout, sf_dtype)
+        tCtSFB = cute.make_tensor(sfb_ptr, tCtSFB_layout)
+
+    :ivar _base_ptr: The base pointer to the reserved TMEM region.
+    :type _base_ptr: cute.Pointer
+    :ivar _total_cols: The total number of columns in the pool.
+    :type _total_cols: int
+    :ivar _current_offset: The current offset within the pool (in columns).
+    :type _current_offset: int
+    """
+
+    def __init__(
+        self,
+        base_ptr: cute.Pointer,
+        total_cols: int,
+    ):
+        """
+        Initialize a TmemBufferPool instance.
+
+        :param base_ptr: The base pointer to the reserved TMEM region.
+        :type base_ptr: cute.Pointer
+        :param total_cols: The total number of columns in the pool.
+        :type total_cols: int
+        """
+        self._base_ptr = base_ptr
+        self._total_cols = total_cols
+        self._current_offset = 0
+
+    def __extract_mlir_values__(self) -> list[ir.Value]:
+        return extract_mlir_values(self._base_ptr)
+
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "TmemBufferPool":
+        assert len(values) == 1
+        new_base_ptr = new_from_mlir_values(self._base_ptr, [values[0]])
+        pool = TmemBufferPool(new_base_ptr, self._total_cols)
+        pool._current_offset = self._current_offset
+        return pool
+
+    @property
+    def base_ptr(self) -> cute.Pointer:
+        """Return the base pointer of the pool."""
+        return self._base_ptr
+
+    @property
+    def total_cols(self) -> int:
+        """Return the total number of columns in the pool."""
+        return self._total_cols
+
+    @property
+    def current_offset(self) -> int:
+        """Return the current offset within the pool."""
+        return self._current_offset
+
+    @property
+    def remaining_cols(self) -> int:
+        """Return the number of remaining columns available for allocation."""
+        return self._total_cols - self._current_offset
+
+    @dsl_user_op
+    def allocate(
+        self,
+        size: Union[int, cute.Layout],
+        dtype: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
+        """Allocate a sub-region from the pool and return a pointer.
+
+        This method allocates a contiguous region of TMEM columns from the pool
+        and returns a pointer to the start of that region.
+
+        :param size: The allocation size, which can be:
+            - int: explicit number of columns to allocate
+            - cute.Layout: a TMEM layout that, combined with dtype, determines the size
+        :type size: Union[int, cute.Layout]
+        :param dtype: The data type for the returned pointer and for computing
+            layout size (when size is a Layout).
+        :type dtype: Type[Numeric]
+        :return: A pointer to the allocated region with the specified dtype.
+        :rtype: cute.Pointer
+
+        :raises AssertionError: If there are not enough columns remaining in the pool.
+
+        Example usage::
+
+            # Allocate with explicit column count
+            acc_ptr = pool.allocate(64, cutlass.Float32)
+
+            # Allocate based on layout and dtype
+            sfa_ptr = pool.allocate(tCtSFA_layout, sf_dtype)
+        """
+        # Determine number of columns from size argument
+        if isinstance(size, cute.Layout):
+            num_cols = compute_tmem_cols_from_layout(size, dtype, loc=loc, ip=ip)
+        else:
+            num_cols = size
+
+        assert self._current_offset + num_cols <= self._total_cols, (
+            f"Cannot allocate {num_cols} columns, only {self.remaining_cols} remaining"
+        )
+
+        if self._current_offset == 0:
+            # First allocation - return base pointer with recast
+            ptr = cute.recast_ptr(self._base_ptr, dtype=dtype, loc=loc, ip=ip)
+        else:
+            # Subsequent allocations - offset from base
+            ptr = cute.recast_ptr(
+                self._base_ptr + self._current_offset,
+                dtype=dtype,
+                loc=loc,
+                ip=ip,
+            )
+
+        self._current_offset += num_cols
+        return ptr
+
+    @dsl_user_op
+    def allocate_tensor(
+        self,
+        layout: cute.Layout,
+        dtype: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Tensor:
+        """Allocate a sub-region from the pool and return a tensor.
+
+        This is a convenience method that combines allocate() and cute.make_tensor()
+        into a single call.
+
+        :param layout: The TMEM layout for the tensor.
+        :type layout: cute.Layout
+        :param dtype: The data type for the tensor elements.
+        :type dtype: Type[Numeric]
+        :return: A tensor backed by the allocated TMEM region.
+        :rtype: cute.Tensor
+
+        :raises AssertionError: If there are not enough columns remaining in the pool.
+
+        Example usage::
+
+            tCtAcc = pool.allocate_tensor(tCtAcc_layout, cutlass.Float32)
+            tCtSFA = pool.allocate_tensor(tCtSFA_layout, sf_dtype)
+        """
+        ptr = self.allocate(layout, dtype, loc=loc, ip=ip)
+        return cute.make_tensor(ptr, layout, loc=loc, ip=ip)
 
 
 class TmemAllocator:
@@ -52,7 +272,12 @@ class TmemAllocator:
 
     @dsl_user_op
     @cute.jit
-    def _init_dealloc_mbarrier(self, *, loc=None, ip=None):
+    def _init_dealloc_mbarrier(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         assert self._two_cta_tmem_dealloc_mbar_ptr is not None, (
             "two_cta_tmem_dealloc_mbar_ptr is required for two cta"
         )
@@ -81,10 +306,10 @@ class TmemAllocator:
         two_cta_tmem_dealloc_mbar_ptr: Optional[cute.Pointer] = None,
         *,
         arch: str = "sm_100",
-        dealloc_mbarrier_initialized: bool = False,
-        loc=None,
-        ip=None,
-    ):
+        initialize_mbarrier: bool = True,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Initialize a TmemAllocator instance for managing tensor memory on Blackwell GPUs.
 
@@ -109,6 +334,8 @@ class TmemAllocator:
         :type num_allocated_columns: int, optional
         :param two_cta_tmem_dealloc_mbar_ptr: The mbarrier pointer required for two-CTA tensor memory deallocation, optional.
         :type two_cta_tmem_dealloc_mbar_ptr: cute.Pointer, optional
+        :param initialize_mbarrier: Whether to initialize the mbarrier for two cta, defaults to True.
+        :type initialize_mbarrier: bool, optional
         :param loc: Optional codegen location for debugging and error reporting.
         :type loc: Any, optional
         :param ip: Optional insertion point for codegen.
@@ -127,7 +354,7 @@ class TmemAllocator:
         self._max_tmem_columns = get_max_tmem_alloc_cols(arch)
 
         # Init tmem dealloc mbarrier if two cta
-        if not dealloc_mbarrier_initialized and const_expr(self._is_two_cta):
+        if const_expr(self._is_two_cta and initialize_mbarrier):
             self._init_dealloc_mbarrier(loc=loc, ip=ip)
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
@@ -160,11 +387,11 @@ class TmemAllocator:
             self._num_allocated_columns,
             new_two_cta_tmem_dealloc_mbar_ptr,
             arch=self._arch,  # Preserve the architecture parameter
-            dealloc_mbarrier_initialized=True,
+            initialize_mbarrier=False,
         )
 
     @cute.jit
-    def check_valid_num_columns(self, num_columns: int):
+    def check_valid_num_columns(self, num_columns: int) -> bool:
         """Check if the number of columns is valid.
 
         This method checks if the number of columns is valid.
@@ -180,13 +407,21 @@ class TmemAllocator:
         if const_expr(num_columns % 32 != 0):
             return False
         # power of two
-        if const_expr(num_columns & (num_columns - 1) != 0):
+        if const_expr(
+            (num_columns & (num_columns - 1) != 0)
+        ):
             return False
         return True
 
     @dsl_user_op
     @cute.jit
-    def allocate(self, num_columns: int, *, loc=None, ip=None):
+    def allocate(
+        self,
+        num_columns: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Allocate a block of tensor memory.
 
         This method allocates a block of tensor memory from allocator warp and returns a handle to retrieve
@@ -215,7 +450,12 @@ class TmemAllocator:
         self._num_allocated_columns += num_columns
 
     @dsl_user_op
-    def wait_for_alloc(self, *, loc=None, ip=None):
+    def wait_for_alloc(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Wait for the allocator warp to finish allocation.
 
         This method is used to synchronize the allocator warp with the other warps before retrieving tmem ptr.
@@ -227,8 +467,8 @@ class TmemAllocator:
         self,
         dtype: Type[Numeric] = Float32,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
         """Retrieve the pointer to the allocated tensor memory.
 
@@ -244,8 +484,49 @@ class TmemAllocator:
         )
 
     @dsl_user_op
+    def reserve(
+        self,
+        num_columns: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> TmemBufferPool:
+        """Reserve a block of tensor memory and return a pool for sub-allocation.
+
+        This method allocates a block of tensor memory, waits for the allocation
+        to complete, and returns a TmemBufferPool that can be used to sub-allocate
+        regions within that block without manual offset calculations.
+
+        Example usage::
+
+            tmem_pool = tmem_allocator.reserve(tmem_total_size)
+
+            # Allocate and create tensors in one call
+            tCtAcc = tmem_pool.allocate_tensor(tCtAcc_layout, cutlass.Float32)
+            tCtSFA = tmem_pool.allocate_tensor(tCtSFA_layout, sf_dtype)
+
+            # Or allocate pointer only, then create tensor manually
+            sfb_ptr = tmem_pool.allocate(tCtSFB_layout, sf_dtype)
+            tCtSFB = cute.make_tensor(sfb_ptr, tCtSFB_layout)
+
+        :param num_columns: The total number of columns to reserve.
+        :type num_columns: int
+        :return: A TmemBufferPool for sub-allocating within the reserved region.
+        :rtype: TmemBufferPool
+        """
+        self.allocate(num_columns, loc=loc, ip=ip)
+        self.wait_for_alloc(loc=loc, ip=ip)
+        base_ptr = self.retrieve_ptr(loc=loc, ip=ip)
+        return TmemBufferPool(base_ptr, num_columns)
+
+    @dsl_user_op
     @cute.jit
-    def relinquish_alloc_permit(self, *, loc=None, ip=None):
+    def relinquish_alloc_permit(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Relinquish the tensor memory allocation permit.
 
         This method relinquishes the tensor memory allocation permit for the allocator warp, promising
@@ -261,7 +542,14 @@ class TmemAllocator:
 
     @dsl_user_op
     @cute.jit
-    def free(self, tmem_ptr: cute.Pointer, num_columns: int = 0, *, loc=None, ip=None):
+    def free(
+        self,
+        tmem_ptr: cute.Pointer,
+        num_columns: int = 0,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Deallocate the tensor memory.
 
         This method sync on mbarrier (for two cta use case) and deallocates the tensor memory from the allocator warp.
@@ -309,7 +597,7 @@ class TmemAllocator:
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
-TmemAllocator.__init__.__signature__ = inspect.Signature(
+TmemAllocator.__init__.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
     [
         inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
         inspect.Parameter(
@@ -352,11 +640,11 @@ TmemAllocator.__init__.__signature__ = inspect.Signature(
 
 def get_num_tmem_alloc_cols(
     tmem_tensors: Union[cute.Tensor, List[cute.Tensor]],
-    rounding=True,
+    rounding: bool = True,
     *,
     arch: str = "sm_100",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> int:
     """Get the total number of TMEM allocation columns for the given TMEM tensors.
 

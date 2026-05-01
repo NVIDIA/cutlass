@@ -14,17 +14,18 @@ This module provides a timing helper functions
 """
 
 from functools import wraps
+from typing import Any
 
 from .logger import log
 
 
 # TODO: revisit this part when mlir timing manager is ready for pybind.
-def timer(*dargs, **kwargs):
+def timer(*dargs: Any, **kwargs: Any) -> Any:
     enable = kwargs.get("enable", True)
 
-    def decorator(func):
+    def decorator(func: Any) -> Any:
         @wraps(func)
-        def func_wrapper(*args, **kwargs):
+        def func_wrapper(*args: Any, **kwargs: Any) -> Any:
             if not enable:
                 return func(*args, **kwargs)
             from time import time

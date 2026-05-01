@@ -124,6 +124,7 @@ struct CollectiveBuilder<
       ) &&
       // Blockscaled Gemm
       (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100, BuilderScheduleTag>) &&
+      (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100, BuilderScheduleTag>) &&
       (cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>) 
        &&

@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -15,6 +15,8 @@ the DSL.
 """
 
 import numpy as np
+from typing import Any
+
 from ..._mlir.extras import types as T
 
 # =============================================================================
@@ -22,7 +24,7 @@ from ..._mlir.extras import types as T
 # =============================================================================
 
 
-def _numpy_type_to_mlir_type(dtype):
+def _numpy_type_to_mlir_type(dtype: type[np.generic] | np.dtype[Any]) -> Any:
     if dtype == np.float64:
         return T.f64()
     if dtype == np.float16:
@@ -47,22 +49,10 @@ def _numpy_type_to_mlir_type(dtype):
         return T.ui8()
     if dtype == np.bool_:
         return T.bool()
-    if dtype == f8E5M2:
-        return T.f8E5M2()
-    if dtype == f8E4M3FN:
-        return T.f8E4M3FN()
-    if dtype == f8E8M0FNU:
-        return T.f8E8M0FNU()
-    if dtype == f6E3M2FN:
-        return T.f6E3M2FN()
-    if dtype == f6E2M3FN:
-        return T.f6E2M3FN()
-    if dtype == f4E2M1FN:
-        return T.f4E2M1FN()
     raise TypeError(f"Unknown NumPy dtype for MLIR conversion: {dtype!r}")
 
 
-def _mlir_type_to_numpy_type(mlir_type):
+def _mlir_type_to_numpy_type(mlir_type: Any) -> type[np.generic]:
     if mlir_type == T.f64():
         return np.float64
     if mlir_type == T.f16():

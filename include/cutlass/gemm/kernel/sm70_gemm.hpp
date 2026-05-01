@@ -149,7 +149,7 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
   can_implement(Arguments const& args) {
     bool mode_implementable = args.mode == GemmUniversalMode::kGemm or
           (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
-    return mode_implementable && TileScheduler::can_implement(args.scheduler);
+    return mode_implementable && TileScheduler::can_implement(args.scheduler, args.hw_info);
   }
 
   static size_t

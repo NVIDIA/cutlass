@@ -9,8 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import Optional
+
 from cutlass import cute
 from cutlass.cutlass_dsl import dsl_user_op
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir
 
 from .memory import copy
@@ -18,17 +21,14 @@ from .memory import copy
 
 @dsl_user_op
 def simt_auto_vec_copy(
-    src: cute.Tensor, dst: cute.Tensor, async_op=False, loc=None, ip=None
-):
+    src: cute.Tensor,
+    dst: cute.Tensor,
+    async_op: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
-    Copies a tensor between two cute.memref buffers with single thread.
-
-    :param src: Source tensor
-    :type src: cute.Tensor
-    :param dst: Destination tensor
-    :type dst: cute.Tensor
-    :param async_op: Whether to use asynchronous operation, defaults to False
-    :type async_op: bool, optional
+    Copies a tensor between two cute.memref buffers with single thread
     """
     if async_op:
         cutlass_lir.SimtAutoVecCopyOp(
@@ -40,19 +40,16 @@ def simt_auto_vec_copy(
 
 @dsl_user_op
 def partition(
-    buffer: cute.Tensor, agent_id: cute.Int32, *, layout_tv, tiler, loc=None, ip=None
+    buffer: cute.Tensor,
+    agent_id: cute.Int32,
+    *,
+    layout_tv: cute.Layout,
+    tiler: cute.Layout,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.Tensor:
     """
     Partition a buffer into a given layout and tiler.
-
-    :param buffer: Buffer to partition
-    :type buffer: cute.Tensor
-    :param agent_id: Agent ID
-    :type agent_id: cute.Int32
-    :param layout_tv: Layout tensor
-    :type layout_tv: cute.Tensor
-    :param tiler: Tiler
-    :type tiler: cute.Tensor
     """
     assert isinstance(agent_id, cute.Int32), (
         f"Expected agent_id to be cute.Int32, got {type(agent_id)}"
@@ -74,18 +71,11 @@ def partition_and_copy(
     src: cute.Tensor,
     dst: cute.Tensor,
     *,
-    loc=None,
-    ip=None,
-):
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Copies a tensor between two cute.memref buffer
-
-    :param tiled_copy: Tiled copy
-    :type tiled_copy: cute.core.ThrCopy
-    :param src: Source tensor
-    :type src: cute.Tensor
-    :param dst: Destination tensor
-    :type dst: cute.Tensor
     """
     src_partitioned = src
     dst_partitioned = dst
@@ -144,7 +134,7 @@ def partition_and_copy(
         copy(
             src_partitioned,
             dst_partitioned,
-            copy_atom=tiled_copy,
+            copy_atom=cute.make_copy_atom(tiled_copy.op, src.element_type),
             loc=loc,
             ip=ip,
         )

@@ -9,12 +9,12 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Tuple
+from typing import Optional, Tuple
 
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cutlass_dsl import dsl_user_op
 
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import nvvm, llvm, vector, arith
+from cutlass._mlir.dialects import nvvm as _nvvm, vector
 
 from ..typing import Int32, Pointer, Int128
 
@@ -23,8 +23,9 @@ from ..typing import Int32, Pointer, Int128
 def issue_clc_query(
     mbar_ptr: Pointer,
     clc_response_ptr: Pointer,
-    loc=None,
-    ip=None,
+    multicast: bool = True,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     The clusterlaunchcontrol.try_cancel instruction requests atomically cancelling the launch
@@ -39,17 +40,27 @@ def issue_clc_query(
     """
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     clc_response_llvm_ptr = clc_response_ptr.llvm_ptr
-    nvvm.clusterlaunchcontrol_try_cancel_multicast(
-        clc_response_llvm_ptr,
-        mbar_llvm_ptr,
-        loc=loc,
-        ip=ip,
-    )
+    if multicast:
+        _nvvm.clusterlaunchcontrol_try_cancel_multicast(
+            clc_response_llvm_ptr,
+            mbar_llvm_ptr,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        _nvvm.clusterlaunchcontrol_try_cancel(
+            clc_response_llvm_ptr,
+            mbar_llvm_ptr,
+            loc=loc,
+            ip=ip,
+        )
 
 
 @dsl_user_op
 def clc_response(
-    result_addr: Pointer, loc=None, ip=None
+    result_addr: Pointer,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Int32, Int32, Int32, Int32]:
     """
     After loading response from clusterlaunchcontrol.try_cancel instruction into 16-byte
@@ -80,7 +91,8 @@ def clc_response(
         [0],
     )
     # Query if the cluster was canceled
-    pred = nvvm.clusterlaunchcontrol_query_cancel_is_canceled(
+    # res parameter expects an MLIR Type, and returns the actual OpResult value
+    pred = _nvvm.clusterlaunchcontrol_query_cancel_is_canceled(
         clc_result_i128,
         loc=loc,
         ip=ip,
@@ -88,21 +100,21 @@ def clc_response(
     is_valid = Int32(pred)
 
     # Get first CTA ID x component
-    m_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_x(
+    m_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_x(
         clc_result_i128,
         loc=loc,
         ip=ip,
     )
 
     # Get first CTA ID y component
-    n_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_y(
+    n_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_y(
         clc_result_i128,
         loc=loc,
         ip=ip,
     )
 
     # Get first CTA ID z component
-    l_idx_i32 = nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_z(
+    l_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_z(
         clc_result_i128,
         loc=loc,
         ip=ip,

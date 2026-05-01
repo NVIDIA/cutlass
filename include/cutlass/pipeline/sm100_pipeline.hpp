@@ -550,7 +550,7 @@ public:
   using ThreadCategory = typename Impl::ThreadCategory;
   using Params = typename Impl::Params;
 
-  using McastDirection = McastDirection;
+  using McastDirection = cutlass::McastDirection;
 
   // Helper function to initialize barriers
   static
@@ -818,6 +818,18 @@ public:
   CUTLASS_DEVICE
   void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
     impl_.producer_acquire(state, barrier_token);
+  }
+
+  template<class UserDefinedArriveOp>
+  CUTLASS_DEVICE
+  void producer_commit_local(PipelineState state, UserDefinedArriveOp&& user_defined_arrive_op) {
+    cute::forward<UserDefinedArriveOp>(user_defined_arrive_op)(producer_get_barrier(state));
+    producer_commit_local(state);
+  }
+
+  CUTLASS_DEVICE
+  void producer_commit_local(PipelineState state) {
+    impl_.producer_commit(state);
   }
 
   template<class UserDefinedArriveOp>

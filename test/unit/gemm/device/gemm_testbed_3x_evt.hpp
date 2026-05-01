@@ -620,7 +620,8 @@ template <
   typename ElementReduce,
   bool FinalReduction = true, // Should match the FinalReduction in Device type
   typename CtaTileShapeMNK = cute::Shape<cute::_1,cute::_1,cute::_1>,
-  typename ElementCompute = float
+  typename ElementCompute = float,
+  int ReduceIdentity = 0
 >
 class HostRowReduce: public HostEVTNodeBase<ElementCompute> {
 public:
@@ -674,7 +675,9 @@ public:
       reduce_buffer_.resize(shape);
     }
 
-    cutlass::reference::host::TensorFill(reduce_buffer_.host_view());
+    cutlass::reference::host::TensorFill(tensor_row_reduce_.host_view(), ElementDst(ReduceIdentity));
+    tensor_row_reduce_.sync_device();
+    cutlass::reference::host::TensorFill(reduce_buffer_.host_view(), ElementCompute(ReduceIdentity));
   }
 
   template <class ElementAccumulator>
@@ -725,7 +728,7 @@ public:
   }
 
   Arguments get_arguments() {
-    return {tensor_row_reduce_.device_data()};
+    return {{tensor_row_reduce_.device_data(), ElementCompute(ReduceIdentity)}};
   }
 };
 
@@ -738,7 +741,8 @@ template <
   typename ElementReduce,
   bool FinalReduction = true,  // Should match the FinalReduction in Device type
   typename CtaTileShapeMNK = cute::Shape<cute::_1,cute::_1,cute::_1>,
-  typename ElementCompute = float
+  typename ElementCompute = float,
+  int ReduceIdentity = 0
 >
 class HostColumnReduce: public HostEVTNodeBase<ElementCompute> {
 public:
@@ -793,7 +797,9 @@ public:
       reduce_buffer_.resize(shape);
     }
 
-    cutlass::reference::host::TensorFill(reduce_buffer_.host_view());
+    cutlass::reference::host::TensorFill(tensor_column_reduce_.host_view(), ElementDst(ReduceIdentity));
+    tensor_column_reduce_.sync_device();
+    cutlass::reference::host::TensorFill(reduce_buffer_.host_view(), ElementCompute(ReduceIdentity));
   }
 
   template <class ElementAccumulator>
@@ -844,7 +850,7 @@ public:
   }
 
   Arguments get_arguments() {
-    return {tensor_column_reduce_.device_data()};
+    return {{tensor_column_reduce_.device_data(), ElementCompute(ReduceIdentity)}};
   }
 };
 
@@ -856,7 +862,8 @@ template <
   template <class> class ReduceFn,
   typename ElementReduce,
   typename ElementCompute = float,
-  bool enabled = true
+  bool enabled = true,
+  int ReduceIdentity = 0
 >
 class HostScalarReduce: public HostEVTNodeBase<ElementCompute> {
 public:
@@ -886,8 +893,9 @@ public:
     reference_scalar_reduce_.resize(cutlass::Coord<1>(1));
     reduce_buffer_.resize(cutlass::Coord<1>(1));
 
+    cutlass::reference::host::TensorFill(tensor_scalar_reduce_.host_view(), ElementReduce(ReduceIdentity));
     tensor_scalar_reduce_.sync_device();
-    cutlass::reference::host::TensorFill(reduce_buffer_.host_view());
+    cutlass::reference::host::TensorFill(reduce_buffer_.host_view(), ElementCompute(ReduceIdentity));
   }
 
   template <class ElementAccumulator>
@@ -929,7 +937,7 @@ public:
   }
 
   Arguments get_arguments() {
-    return {tensor_scalar_reduce_.device_data()};
+    return {{tensor_scalar_reduce_.device_data(), ElementCompute(ReduceIdentity)}};
   }
 
   auto get_flatten_arguments() {

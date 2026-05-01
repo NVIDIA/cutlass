@@ -30,9 +30,10 @@ from functools import partial
 from typing import Union
 
 import cutlass.cute as cute
+from cutlass import Constexpr
 from cutlass.cute.runtime import from_dlpack
 from cutlass._mlir.dialects import llvm
-from cutlass.cute.typing import Boolean, Int32, Int, Constexpr
+from cutlass.cute.typing import Boolean, Int32, Int
 from cutlass.cutlass_dsl import T, dsl_user_op
 from cutlass.cute.arch.nvvm_wrappers import FULL_MASK, WARP_SIZE
 
@@ -42,7 +43,7 @@ A simple example to show how to wrap PTX instructions by using inline_asm op in 
 Situations like:
 
 1. Instructions that are not already exposed by CuTe DSL via `nvvm` module
-2. Sequences of instructions that the compiler otherwise does not generate optimally 
+2. Sequences of instructions that the compiler otherwise does not generate optimally
 
 motivate developers to inline PTX themselves.
 
@@ -57,7 +58,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/inline_ptx.py
+    python examples/dsl/inline_ptx.py
 
 The example will run the vote kernel with inline ptx and nvvm dialect separately.
 The results from inline ptx and nvvm dialect will be verified correspondingly.

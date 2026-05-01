@@ -31,7 +31,9 @@ from ..common import DSLRuntimeError
 from ..jit_executor import ExecutionArgs
 from ..._mlir import ir
 
-from typing import Type, List, Any, Dict
+from dataclasses import dataclass
+from typing import Any, Union, get_origin, get_args
+import inspect
 from inspect import isclass
 import cuda.bindings.driver as cuda
 
@@ -41,34 +43,24 @@ import cuda.bindings.driver as cuda
 cubin_suffix = "cubin"
 
 
+@dataclass
 class CHeaderArguments:
     """This class is used to store the arguments generation of the wrapper function.
     The arguments are generated when the JitCompiledFunction is created and used to avoid
     the long-term reference of the arguments by the JitCompiledFunction.
     """
 
-    def __init__(
-        self,
-        dummy_prefix_name: str,
-        arguments: List[str],
-        packed_args: List[str],
-        declarations: str,
-        error_msg: str = None,
-    ):
-        self.dummy_prefix_name = dummy_prefix_name
-        self.arguments = arguments
-        self.packed_args = packed_args
-        self.declarations = declarations
-        self.error_msg = error_msg
+    dummy_prefix_name: str
+    arguments: list[str]
+    packed_args: list[str]
+    declarations: list[str]
+    error_msg: str | None = None
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.error_msg is None
 
-    def __str__(self):
-        return self.error_msg
-
-    def __repr__(self):
-        return self.error_msg
+    def __str__(self) -> str:
+        return self.error_msg or ""
 
 
 class CHeaderGenerator:
@@ -116,7 +108,7 @@ class CHeaderGenerator:
         Float16: "__half_raw ",
     }
 
-    def _count_dynamic_expression(self, arg):
+    def _count_dynamic_expression(self, arg: Any) -> int:
         """
         Count the number of dynamic values in the argument.
         """
@@ -126,7 +118,7 @@ class CHeaderGenerator:
             return 1
         return 0
 
-    def _generate_numeric_argument(self, arg_name: str, arg_type: Type[Numeric]):
+    def _generate_numeric_argument(self, arg_name: str, arg_type: type[Numeric]) -> str:
         """
         Generate the argument of the wrapper function.
         """
@@ -136,7 +128,7 @@ class CHeaderGenerator:
             f"Unsupported argument type for c function argument generation: {arg_type}"
         )
 
-    def _generate_check_cuda(self, dsl_name: str):
+    def _generate_check_cuda(self, dsl_name: str) -> str:
         check_cuda = (
             f"""
 // Macro to check for cuda errors.
@@ -151,8 +143,11 @@ class CHeaderGenerator:
         return check_cuda
 
     def _generate_kernel_module(
-        self, symbol_prefix: str, kernel_info: Dict[str, List], dsl_name: str
-    ):
+        self,
+        symbol_prefix: str,
+        kernel_info: dict[str, list[Any]],
+        dsl_name: str,
+    ) -> str:
         """
         Generate the kernel module for the compiled function.
         """
@@ -208,28 +203,34 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
         self,
         symbol_prefix: str,
         args_spec: ExecutionArgs,
-        args: List[Any],
-        kwargs: Dict[str, Any],
-    ):
+        args: tuple[Any],
+        kwargs: dict[str, Any],
+    ) -> tuple[list[str], list[str], list[str]]:
         """
         Generate the arguments of the wrapper function.
         """
-        arguments = []
-        packed_args = []
-        declarations = []
+        arguments: list[str] = []
+        packed_args: list[str] = []
+        declarations: list[str] = []
         # traverse the runtime args_spec and generate the arguments
         rectified_args = args_spec.get_rectified_args(args, kwargs)
-        input_arg_names = args_spec.args_spec.args + args_spec.args_spec.kwonlyargs
-        for arg_name, arg in zip(input_arg_names, rectified_args):
-            arg_type = args_spec.args_spec.annotations.get(arg_name, None)
+        for param, arg in zip(args_spec.signature.parameters.values(), rectified_args):
+            arg_type = param.annotation
+            arg_name = param.name
 
             # process optional argument
             if arg is None:
                 continue
 
+            # Unwrap Optional[X] (i.e. Union[X, None]) to X when arg is not None
+            if get_origin(arg_type) is Union:
+                inner_types = [t for t in get_args(arg_type) if t is not type(None)]
+                if len(inner_types) == 1:
+                    arg_type = inner_types[0]
+
             # Generate basic numeric types
             if isinstance(arg_type, NumericMeta):
-                arguments.append(self._generate_numeric_argument(arg_name, arg_type))
+                arguments.append(self._generate_numeric_argument(arg_name, arg_type))  # type: ignore[arg-type]
                 packed_args.append("&" + arg_name)
             elif isclass(arg_type) and issubclass(arg_type, cuda.CUstream):
                 arguments.append("CUstream " + arg_name)
@@ -247,9 +248,9 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
         symbol_prefix: str,
         args_spec: ExecutionArgs,
         function_name: str,
-        kernel_info: Dict[str, List],
+        kernel_info: dict[str, list[Any]],
         c_header_arguments: CHeaderArguments,
-    ):
+    ) -> str:
         """
         Generate the wrapper function for the compiled function which is provided to users as the entry point.
         It uses the `symbol_prefix` as the function name for identification. The host/device symbols are hidden under the bytecode.
@@ -270,17 +271,17 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
             arg.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
             for arg in c_header_arguments.packed_args
         ]
-        declarations = [
+        declaration_lines = [
             declaration.replace(c_header_arguments.dummy_prefix_name, symbol_prefix)
             for declaration in c_header_arguments.declarations
         ]
-        declarations = "\n".join(declarations)
+        declarations_joined = "\n".join(declaration_lines)
 
         # 3. Generate the wrapper function
         kernel_symbols = tuple(kernel_info.keys())
         kernel_symbols_str = ", ".join([f"&module->{sym}" for sym in kernel_symbols])
         function = (
-            declarations
+            declarations_joined
             + f"""
 #ifdef __cplusplus
 extern "C"
@@ -297,7 +298,7 @@ static inline void {wrapper_function_name}({symbol_prefix}_Kernel_Module_t *modu
         )
         return function
 
-    def _generate_binary_declaration(self, symbol_prefix: str):
+    def _generate_binary_declaration(self, symbol_prefix: str) -> str:
         """
         Generate the binary of the compiled function.
         """
@@ -313,7 +314,7 @@ extern const unsigned char {varname}[];
         export_module: ir.Module,
         args_spec: ExecutionArgs,
         function_name: str,
-        kernel_info: Dict[str, List],
+        kernel_info: dict[str, list[Any]],
         c_header_arguments: CHeaderArguments,
         dsl_name: str,
     ) -> str:

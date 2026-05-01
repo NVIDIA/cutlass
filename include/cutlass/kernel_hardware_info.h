@@ -91,6 +91,7 @@ struct KernelHardwareInfo {
       void const* kernel_ptr,
       cudaStream_t stream = nullptr) {
     int max_active_clusters = 0;
+#if !(defined(__QNX__) && __QNX__ >= 800 && defined(NV_IS_SAFETY))
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
     ClusterLauncher::LaunchConfig cluster_launch_config = ClusterLauncher::make_cluster_launch_config(
                                                             cluster_dims /* minimum grid dim */, cluster_dims, {threads_per_block, 1, 1},
@@ -109,6 +110,10 @@ struct KernelHardwareInfo {
     return max_active_clusters;
 #else
     CUTLASS_TRACE_HOST("ClusterLauncher: CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED not defined! Aborting cluster occupancy query.");
+    return max_active_clusters;
+#endif
+#else
+    CUTLASS_TRACE_HOST("ClusterLauncher: cluster launch disabled for QNX 8+ safety builds");
     return max_active_clusters;
 #endif
   }

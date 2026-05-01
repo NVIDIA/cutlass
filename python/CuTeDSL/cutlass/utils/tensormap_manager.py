@@ -11,14 +11,17 @@
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Tuple
+from typing import Optional, Tuple
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute
 from cutlass import const_expr
+from cutlass.cute.core import AddressSpace as _CuteAddressSpace
+from cutlass.cute.core import make_ptr as _cute_make_ptr
 
 
 class TensorMapUpdateMode(Enum):
@@ -51,10 +54,10 @@ class TensorMapManager:
     def get_tensormap_ptr(
         self,
         ptr: cute.Pointer,
-        address_space=_cute_ir.AddressSpace.gmem,
+        address_space: _cute_ir.AddressSpace = _cute_ir.AddressSpace.gmem,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
         if address_space not in [
             _cute_ir.AddressSpace.gmem,
@@ -87,8 +90,8 @@ class TensorMapManager:
         dst_ptr: cute.Pointer,
         warp_id: int,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
@@ -103,8 +106,8 @@ class TensorMapManager:
     def fence_tensormap_initialization(
         self,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         if self.tensormap_update_mode == TensorMapUpdateMode.GMEM:
             cute.arch.fence_acq_rel_cta(loc=loc, ip=ip)
@@ -116,8 +119,8 @@ class TensorMapManager:
         self,
         tensormap_ptr: cute.Pointer,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         cute.nvgpu.cpasync.fence_tma_desc_acquire(tensormap_ptr, loc=loc, ip=ip)
         return
@@ -132,17 +135,31 @@ class TensorMapManager:
         warp_id: int,
         tensormap_smem_ptr: Tuple[cute.Pointer, ...],
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         warp_idx = cute.arch.make_warp_uniform(
             cute.arch.warp_idx(loc=loc, ip=ip), loc=loc, ip=ip
         )
+        if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
+            # Hoist SMEM pointer integer values into warp-uniform registers before
+            # entering predicated blocks. This avoids predicated R2UR lowering on sm_90a.
+            uniform_smem_ptrs = tuple(
+                _cute_make_ptr(
+                    p.dtype,
+                    cute.arch.make_warp_uniform(p.toint(), loc=loc, ip=ip),
+                    mem_space=_CuteAddressSpace.smem,
+                    assumed_align=p.alignment,  # type: ignore[attr-defined]
+                )
+                for p in tensormap_smem_ptr
+            )
+        else:
+            uniform_smem_ptrs = tensormap_smem_ptr
         # updates before touching tensormap in global memory
         if warp_idx == warp_id:
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
                 for copy_atom, tensor, smem_ptr in zip(
-                    tma_copy_atom, tensor_gmem, tensormap_smem_ptr
+                    tma_copy_atom, tensor_gmem, uniform_smem_ptrs
                 ):
                     cute.nvgpu.cpasync.update_tma_descriptor(
                         copy_atom, tensor, smem_ptr, loc=loc, ip=ip
@@ -154,7 +171,7 @@ class TensorMapManager:
             cute.arch.sync_warp(loc=loc, ip=ip)
             # updates to tensormap in global memory
             if const_expr(self.tensormap_update_mode == TensorMapUpdateMode.SMEM):
-                for gmem_ptr, smem_ptr in zip(tensormap_gmem_ptr, tensormap_smem_ptr):
+                for gmem_ptr, smem_ptr in zip(tensormap_gmem_ptr, uniform_smem_ptrs):
                     cute.nvgpu.cpasync.cp_fence_tma_desc_release(
                         gmem_ptr, smem_ptr, loc=loc, ip=ip
                     )

@@ -12,7 +12,7 @@
 from .c_header_generator import CuteCHeaderGenerator
 
 from .export import object_file_version as _object_file_version
-from .export import CuteArgsSpecProcessor as _CuteArgsSpecProcessor
+from .export import CuteSignatureProcessor as _CuteSignatureProcessor
 
 from ...base_dsl.jit_executor import ExportProvider as _ExportProvider
 from ...cutlass_dsl import CuTeDSL as _CuTeDSL
@@ -22,8 +22,8 @@ from ...cutlass_dsl.cuda_jit_executor import (
 from ..._mlir._mlir_libs._cutlass_ir import _mlirExecutionEngine
 
 _CudaDialectJitCompiledFunction.export_provider = _ExportProvider(
-    dsl=_CuTeDSL,
-    arg_spec_processor=_CuteArgsSpecProcessor(),
+    dsl=_CuTeDSL,  # type: ignore[type-abstract]
+    signature_processor=_CuteSignatureProcessor(),
     c_header_generator=CuteCHeaderGenerator(),
     object_file_version=_object_file_version,
     mlirExecutionEngine=_mlirExecutionEngine,
@@ -37,8 +37,8 @@ from ..._mlir._mlir_libs._cutlass_ir._execution_engine import (
 )
 
 _ExternalBinaryModule.load_provider = _LoadProvider(
-    dsl=_CuTeDSL,
-    args_spec_processor=_CuteArgsSpecProcessor(),
+    dsl=_CuTeDSL,  # type: ignore[type-abstract]
+    signature_processor=_CuteSignatureProcessor(),
     version_checker=_version_checker,
     execution_engine_constructor=_BinaryExecutionEngine,
     jit_function_constructor=_CudaDialectJitCompiledFunction,

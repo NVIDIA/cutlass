@@ -9,8 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import Optional
+
 from cutlass import cute
 from cutlass.cutlass_dsl import dsl_user_op
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir
 
 
@@ -22,25 +25,9 @@ def dot_block_scaled(
     b: cute.Tensor,
     sfb: cute.Tensor,
     c: cute.Tensor,
-    loc=None,
-    ip=None,
-):
-    """
-    Computes the dot product of two tensors with block scaling and accumulates the result into a third tensor.
-
-    :param mma_atom: MMA atom
-    :type mma_atom: cute.MmaAtom
-    :param a: First tensor
-    :type a: cute.Tensor
-    :param sfa: First scale factor tensor
-    :type sfa: cute.Tensor
-    :param b: Second tensor
-    :type b: cute.Tensor
-    :param sfb: Second scale factor tensor
-    :type sfb: cute.Tensor
-    :param c: Result tensor
-    :type c: cute.Tensor
-    """
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     cutlass_lir.DotBlockScaledOp(
         mma_atom._unpack(),
         a.value,
@@ -59,21 +46,9 @@ def dot(
     a: cute.Tensor,
     b: cute.Tensor,
     c: cute.Tensor,
-    loc=None,
-    ip=None,
-):
-    """
-    Computes the dot product of two tensors and accumulates the result into a third tensor.
-
-    :param mma_atom: MMA atom
-    :type mma_atom: cute.MmaAtom
-    :param a: First tensor
-    :type a: cute.Tensor
-    :param b: Second tensor
-    :type b: cute.Tensor
-    :param c: Result tensor
-    :type c: cute.Tensor
-    """
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     cutlass_lir.DotOp(
         mma_atom._unpack(),
         a.value,
@@ -82,3 +57,5 @@ def dot(
         loc=loc,
         ip=ip,
     )
+
+

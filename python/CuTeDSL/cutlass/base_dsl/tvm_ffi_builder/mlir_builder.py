@@ -138,7 +138,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         super().__init__()
         self.module: Optional[ir.Module] = None
         self.const_str_table: dict[str, ir.Value] = {}
-        self.const_func_ptr_table: dict[str, ir.Value] = {}
+
         self.get_element_extra_kwargs: dict[str, Any] = {}
 
     # create constants
@@ -307,7 +307,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         true_block: ir.Block,
         false_block: ir.Block,
         *,
-        branch_weights=None,
+        branch_weights: Optional[tuple[int, int]] = None,
         true_dest_operands: Sequence[ir.Value] = (),
         false_dest_operands: Sequence[ir.Value] = (),
     ) -> None:
@@ -371,65 +371,6 @@ class MLIRBuilder(MLIRTypeBuilder):
             self.const_str_table[content] = symbol
         return symbol
 
-    def get_or_load_global_func_ptr_from_text(
-        self,
-        current_block: ir.Block,
-        function_name: str,
-    ) -> ir.Value:
-        """Get or create a function pointer global in .text section and load it.
-
-        This creates a constant global function pointer in the .text section
-        (for AArch64 ADRP range compatibility) and performs a volatile load
-        to prevent optimization.
-
-        This forces the function pointer to be local to the code, bypassing GOT entry
-        ADRP lookup issues on AArch64 when GOT and .text section are more than 4GB
-        apart which can happen when ASLR is applied.
-        """
-        # Check if we've already created this global
-        if function_name not in self.const_func_ptr_table:
-            symbol = f"__func_ptr_{function_name}"
-
-            module_body = self.module.body
-            with ir.InsertionPoint(module_body):
-                # 1. Create the global constant
-                # We use 'private' linkage so it doesn't conflict across modules
-                global_ptr = llvm.GlobalOp(
-                    self.ptr_type,
-                    symbol,
-                    ir.Attribute.parse("#llvm.linkage<private>"),
-                    # Initialization via block below
-                )
-
-                # 2. Set the necessary attributes for JIT safety and AArch64 range
-                # We use 'constant' to mark it as immutable
-                # We use 'section = ".text"' to force it into the code block
-                global_ptr.attributes["constant"] = ir.UnitAttr.get()
-                global_ptr.attributes["section"] = ir.StringAttr.get(".text")
-
-                # 3. Add a constructor block to the GlobalOp to initialize it
-                # with the address of the target function
-                initializer_block = global_ptr.initializer.blocks.append()
-                with ir.InsertionPoint(initializer_block):
-                    # Get the address of the external function
-                    func_addr = llvm.AddressOfOp(self.ptr_type, function_name).res
-                    # Return the address as the initial value of the global
-                    llvm.return_(arg=func_addr)
-
-                self.const_func_ptr_table[function_name] = symbol
-        else:
-            symbol = self.const_func_ptr_table[function_name]
-
-        # Load it with volatile semantics in the current block
-        with ir.InsertionPoint(current_block):
-            symbol_addr = self.address_of(symbol, self.ptr_type)
-            # Perform a volatile load to prevent optimization
-            load_op = llvm.load(self.ptr_type, symbol_addr)
-            # Set volatile attribute to prevent optimization
-            load_op.owner.attributes["volatile_"] = ir.UnitAttr.get()
-            return load_op
-
-
     # function
     def function(
         self,
@@ -478,7 +419,9 @@ class MLIRBuilder(MLIRTypeBuilder):
         )
         func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
 
-    def create_alloca(self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int) -> ir.Value:
+    def create_alloca(
+        self, entry_block: ir.Block, alloca_type: ir.Type, array_size: int
+    ) -> ir.Value:
         """Create an alloca operation."""
         with ir.InsertionPoint(entry_block.operations[0]):
             # declare the struct type
@@ -534,7 +477,7 @@ class MLIRBuilder(MLIRTypeBuilder):
     ) -> list[ir.Operation]:
         """Find operations in the module by the operation name."""
         operations = []
-        for op in module.body:  # type: ignore[union-attr]
+        for op in module.body:
             if op.name == name:
                 operations.append(op)
         return operations
@@ -543,7 +486,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         self, module: ir.Module, name: str
     ) -> Optional[ir.Operation]:
         """Find a function in the module."""
-        for op in module.body:  # type: ignore[union-attr]
+        for op in module.body:
             if op.name == "llvm.func":
                 # Get the function name from the sym_name attribute
                 if "sym_name" in op.attributes:

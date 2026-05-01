@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Boolean, Int32, if_generate, dsl_user_op
@@ -27,6 +27,7 @@ from cutlass.pipeline import (
     make_pipeline_state,
     agent_sync,
 )
+from cutlass._mlir import ir
 
 ##############################################################################
 # Pipeline classes
@@ -155,11 +156,11 @@ class PipelineAsync:
         num_stages: int,
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
-        barrier_storage: cute.Pointer = None,
-        producer_mask: Int32 = None,
-        consumer_mask: Int32 = None,
+        barrier_storage: Optional[cute.Pointer] = None,
+        producer_mask: Optional[Int32] = None,
+        consumer_mask: Optional[Int32] = None,
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineAsync":
         """Creates and initializes a new PipelineAsync instance.
 
         This helper function computes necessary attributes and returns an instance of PipelineAsync
@@ -217,12 +218,12 @@ class PipelineAsync:
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -230,12 +231,24 @@ class PipelineAsync:
         )
 
     @dsl_user_op
-    def producer_try_acquire(self, state: PipelineState, *, loc=None, ip=None):
-        return self.sync_object_empty.try_wait(state.index, state.phase, loc=loc, ip=ip)
+    def producer_try_acquire(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
+        return self.sync_object_empty.try_wait(state.index, state.phase, loc=loc, ip=ip)  # type: ignore[attr-defined]
 
     @dsl_user_op
-    def producer_commit(self, state: PipelineState, *, loc=None, ip=None):
-        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)
+    def producer_commit(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
 
     @dsl_user_op
     def consumer_wait(
@@ -243,12 +256,12 @@ class PipelineAsync:
         state: PipelineState,
         try_wait_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         if_generate(
             try_wait_token is None or try_wait_token == 0,
-            lambda: self.sync_object_full.wait(
+            lambda: self.sync_object_full.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -256,21 +269,53 @@ class PipelineAsync:
         )
 
     @dsl_user_op
-    def consumer_try_wait(self, state: PipelineState, *, loc=None, ip=None):
-        return self.sync_object_full.try_wait(state.index, state.phase, loc=loc, ip=ip)
+    def consumer_try_wait(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
+        return self.sync_object_full.try_wait(state.index, state.phase, loc=loc, ip=ip)  # type: ignore[attr-defined]
 
     @dsl_user_op
-    def consumer_release(self, state: PipelineState, *, loc=None, ip=None):
-        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)
+    def consumer_release(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
+
+    @dsl_user_op
+    def consumer_get_barrier(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
+        return self.sync_object_empty.get_barrier(state.index, loc=loc, ip=ip)  # type: ignore[call-arg, return-value]
 
     @dsl_user_op
     def producer_get_barrier(
-        self, state: PipelineState, *, loc=None, ip=None
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
-        return self.sync_object_full.get_barrier(state.index, loc=loc, ip=ip)
+        return self.sync_object_full.get_barrier(state.index, loc=loc, ip=ip)  # type: ignore[call-arg, return-value]
 
     @dsl_user_op
-    def producer_tail(self, state: PipelineState, *, loc=None, ip=None):
+    def producer_tail(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         Make sure the last used buffer empty signal is visible to producer.
         Producer tail is usually executed by producer before exit, to avoid dangling
@@ -287,21 +332,36 @@ class PipelineAsync:
 
     # Util methods to manage producer and consumer
     @dsl_user_op
-    def make_producer(self, *, loc=None, ip=None):
+    def make_producer(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineProducer":
         state = make_pipeline_state(
             PipelineUserType.Producer, self.num_stages, loc=loc, ip=ip
         )
-        return PipelineProducer(self, state, self.sync_object_full.cg)
+        return PipelineProducer(self, state, self.sync_object_full.cg)  # type: ignore[attr-defined]
 
     @dsl_user_op
-    def make_consumer(self, *, loc=None, ip=None):
+    def make_consumer(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineConsumer":
         state = make_pipeline_state(
             PipelineUserType.Consumer, self.num_stages, loc=loc, ip=ip
         )
-        return PipelineConsumer(self, state, self.sync_object_empty.cg)
+        return PipelineConsumer(self, state, self.sync_object_empty.cg)  # type: ignore[attr-defined]
 
     @dsl_user_op
-    def make_participants(self, *, loc=None, ip=None):
+    def make_participants(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "tuple[PipelineProducer, PipelineConsumer]":
         return self.make_producer(loc=loc, ip=ip), self.make_consumer(loc=loc, ip=ip)
 
 
@@ -312,15 +372,15 @@ class PipelineCpAsync(PipelineAsync):
     """
 
     @staticmethod
-    def create(
+    def create(  # type: ignore[override]
         barrier_storage: cute.Pointer,
         num_stages: Int32,
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
-        producer_mask: Int32 = None,
-        consumer_mask: Int32 = None,
+        producer_mask: Optional[Int32] = None,
+        consumer_mask: Optional[Int32] = None,
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineCpAsync":
         """Helper function that computes necessary attributes and returns a ``PipelineCpAsync`` instance.
 
         :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
@@ -345,10 +405,14 @@ class PipelineCpAsync(PipelineAsync):
         consumer = (consumer_type, consumer_group)
 
         sync_object_array_full = PipelineCpAsync._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer
+            barrier_storage.align(min_align=8),
+            num_stages,  # type: ignore[arg-type]
+            producer,
         )
         sync_object_array_empty = PipelineCpAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages, num_stages, consumer
+            barrier_storage.align(min_align=8) + num_stages,
+            num_stages,  # type: ignore[arg-type]
+            consumer,
         )
 
         if not defer_sync:
@@ -358,7 +422,7 @@ class PipelineCpAsync(PipelineAsync):
         return PipelineCpAsync(
             sync_object_array_full,
             sync_object_array_empty,
-            num_stages,
+            num_stages,  # type: ignore[arg-type]
             producer_mask,
             consumer_mask,
         )
@@ -378,7 +442,7 @@ class PipelineTmaAsync(PipelineAsync):
         cta_layout_vmnk: cute.Layout,
         tidx: Int32,
         mcast_mode_mn: tuple[int, int] = (1, 1),
-    ):
+    ) -> tuple[Int32, Boolean]:
         """Initialize the empty barrier arrive signal.
 
         This function determines which threads should signal empty barrier arrives based on the cluster layout
@@ -409,14 +473,14 @@ class PipelineTmaAsync(PipelineAsync):
         cur_cta_coord = cta_layout_vmnk.get_hier_coord(cta_rank_in_cluster)
 
         is_mcast_mode_m = (
-            dst_cta_coord[0] == cur_cta_coord[0]
-            and dst_cta_coord[1] == cur_cta_coord[1]
-            and dst_cta_coord[3] == cur_cta_coord[3]
+            dst_cta_coord[0] == cur_cta_coord[0]  # type: ignore[index]
+            and dst_cta_coord[1] == cur_cta_coord[1]  # type: ignore[index]
+            and dst_cta_coord[3] == cur_cta_coord[3]  # type: ignore[index]
         )
         is_mcast_mode_n = (
-            dst_cta_coord[0] == cur_cta_coord[0]
-            and dst_cta_coord[2] == cur_cta_coord[2]
-            and dst_cta_coord[3] == cur_cta_coord[3]
+            dst_cta_coord[0] == cur_cta_coord[0]  # type: ignore[index]
+            and dst_cta_coord[2] == cur_cta_coord[2]  # type: ignore[index]
+            and dst_cta_coord[3] == cur_cta_coord[3]  # type: ignore[index]
         )
 
         assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
@@ -431,18 +495,18 @@ class PipelineTmaAsync(PipelineAsync):
         return dst_rank, is_signalling_thread
 
     @staticmethod
-    def create(
+    def create(  # type: ignore[override]
         *,
         num_stages: int,
         producer_group: CooperativeGroup,
         consumer_group: CooperativeGroup,
         tx_count: int,
-        barrier_storage: cute.Pointer = None,
+        barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         tidx: Optional[Int32] = None,
         mcast_mode_mn: tuple[int, int] = (1, 1),
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineTmaAsync":
         """Create a new ``PipelineTmaAsync`` instance.
 
         :param num_stages: Number of buffer stages for this pipeline
@@ -521,190 +585,30 @@ class PipelineTmaAsync(PipelineAsync):
         state: PipelineState,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         TMA producer commit conditionally waits on buffer empty and sets the transaction barrier.
         """
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
             ip=ip,
         )
-        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)
+        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
 
     @dsl_user_op
-    def producer_commit(self, state: PipelineState, *, loc=None, ip=None):
-        """
-        TMA producer commit is a noop since TMA instruction itself updates the transaction count.
-        """
-        pass
-
-    @dsl_user_op
-    def consumer_release(self, state: PipelineState, *, loc=None, ip=None):
-        """
-        TMA consumer release conditionally signals the empty buffer to the producer.
-        """
-        if_generate(
-            self.is_signalling_thread,
-            lambda: self.sync_object_empty.arrive(
-                state.index, self.consumer_mask, loc=loc, ip=ip
-            ),
-        )
-
-
-@dataclass(frozen=True)
-class PipelineTmaMultiConsumersAsync(PipelineAsync):
-    """
-    PipelineTmaMultiConsumersAsync is used for TMA producers and UMMA+Async consumers.
-    """
-
-    is_leader_cta: bool
-    sync_object_empty_umma: SyncObject
-    sync_object_empty_async: SyncObject
-    cta_group: cute.nvgpu.tcgen05.CtaGroup
-
-    @staticmethod
-    def create(
-        *,
-        num_stages: int,
-        producer_group: CooperativeGroup,
-        consumer_group_umma: CooperativeGroup,
-        consumer_group_async: CooperativeGroup,
-        tx_count: int,
-        barrier_storage: cute.Pointer = None,
-        cta_layout_vmnk: Optional[cute.Layout] = None,
-        defer_sync: bool = False,
-    ):
-        """Creates an instance of PipelineTmaMultiConsumersAsync with computed attributes.
-
-        :param barrier_storage: Pointer to the shared memory address for this pipeline's mbarriers
-        :type barrier_storage: cute.Pointer
-        :param num_stages: Number of buffer stages for this pipeline
-        :type num_stages: int
-        :param producer_group: ``CooperativeGroup`` for the producer agent
-        :type producer_group: CooperativeGroup
-        :param consumer_group_umma: ``CooperativeGroup`` for the UMMA consumer agent
-        :type consumer_group_umma: CooperativeGroup
-        :param consumer_group_async: ``CooperativeGroup`` for the AsyncThread consumer agent
-        :type consumer_group_async: CooperativeGroup
-        :param tx_count: Number of bytes expected to be written to the transaction barrier for one stage
-        :type tx_count: int
-        :param cta_layout_vmnk: Layout of the cluster shape, defaults to None
-        :type cta_layout_vmnk: Optional[cute.Layout]
-        :raises ValueError: If ``barrier_storage`` is not a ``cute.Pointer`` instance
-        :raises ValueError: If ``UMMA`` and ``AsyncThread`` consumer groups are not the same agent
-        :raises ValueError: If ``cta_layout_vmnk`` size is not 1
-        :return: New instance of ``PipelineTmaMultiConsumersAsync``
-        :rtype: PipelineTmaMultiConsumersAsync
-        """
-        if not isinstance(barrier_storage, cute.Pointer):
-            raise TypeError(
-                f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
-            )
-
-        producer_type = PipelineOp.TmaLoad
-        consumer_type = PipelineOp.Composite
-        consumer_type_umma = PipelineOp.TCGen05Mma
-        consumer_type_async = PipelineOp.AsyncThread
-
-        if consumer_group_umma.agent != consumer_group_async.agent:
-            raise ValueError(
-                "UMMA and AsyncThread consumer groups must be the same agent"
-            )
-
-        if cta_layout_vmnk is not None and cute.size(cta_layout_vmnk) != 1:
-            raise ValueError(
-                "PipelineTmaMultiConsumersAsync is not verified for cta_layout_vmnk != 1, "
-                f"cta_layout_vmnk:{cta_layout_vmnk}"
-            )
-
-        consumer_group = CooperativeGroup(
-            consumer_group_umma.agent,
-            consumer_group_umma.size + consumer_group_async.size,
-        )
-
-        producer = (producer_type, producer_group)
-        consumer = (consumer_type, consumer_group)
-
-        sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer, tx_count
-        )
-        sync_object_empty = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages, num_stages, consumer
-        )
-        sync_object_empty_umma = sync_object_empty.recast_to_new_op_type(
-            consumer_type_umma
-        )
-        sync_object_empty_async = sync_object_empty.recast_to_new_op_type(
-            consumer_type_async
-        )
-
-        # No mcast mask if not using clusters
-        producer_mask = None
-        consumer_mask = None
-        # All thread-blocks are leaders if not using clusters
-        is_leader_cta = True
-        cta_group = (
-            cute.nvgpu.tcgen05.CtaGroup.ONE
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1
-            else cute.nvgpu.tcgen05.CtaGroup.TWO
-        )
-
-        if not defer_sync:
-            cute.arch.mbarrier_init_fence()
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
-                agent_sync(Agent.ThreadBlock)
-            else:
-                agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
-
-        return PipelineTmaMultiConsumersAsync(
-            sync_object_full,
-            sync_object_empty,
-            num_stages,
-            producer_mask,
-            consumer_mask,
-            is_leader_cta,
-            sync_object_empty_umma,
-            sync_object_empty_async,
-            cta_group,
-        )
-
-    @dsl_user_op
-    def producer_acquire(
+    def producer_commit(
         self,
         state: PipelineState,
-        try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
-        """
-        TMA producer acquire waits on buffer empty and sets the transaction barrier for leader threadblocks.
-        """
-        if_generate(
-            try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(
-                state.index, state.phase, loc=loc, ip=ip
-            ),
-            loc=loc,
-            ip=ip,
-        )
-        if_generate(
-            self.is_leader_cta,
-            lambda: self.sync_object_full.arrive(
-                state.index, self.producer_mask, loc=loc, ip=ip
-            ),
-            loc=loc,
-            ip=ip,
-        )
-
-    @dsl_user_op
-    def producer_commit(self, state: PipelineState, *, loc=None, ip=None):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """
         TMA producer commit is a noop since TMA instruction itself updates the transaction count.
         """
@@ -712,18 +616,21 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
 
     @dsl_user_op
     def consumer_release(
-        self, state: PipelineState, op_type: PipelineOp, *, loc=None, ip=None
-    ):
-        if op_type == PipelineOp.TCGen05Mma:
-            self.sync_object_empty_umma.arrive(
-                state.index, self.consumer_mask, self.cta_group, loc=loc, ip=ip
-            )
-        elif op_type == PipelineOp.AsyncThread:
-            self.sync_object_empty_async.arrive(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """
+        TMA consumer release conditionally signals the empty buffer to the producer.
+        """
+        if_generate(
+            self.is_signalling_thread,
+            lambda: self.sync_object_empty.arrive(  # type: ignore[call-arg]
                 state.index, self.consumer_mask, loc=loc, ip=ip
-            )
-        else:
-            raise ValueError(f"Invalid PipelineOp specified. op_type:{op_type}")
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -733,11 +640,11 @@ class PipelineTmaStore(PipelineAsync):
     """
 
     @staticmethod
-    def create(
+    def create(  # type: ignore[override]
         *,
         num_stages: int,
         producer_group: CooperativeGroup,
-    ):
+    ) -> "PipelineTmaStore":
         """This helper function computes any necessary attributes and returns an instance of ``PipelineTmaStore``.
 
         :param num_stages: Number of buffer stages for this pipeline
@@ -751,29 +658,54 @@ class PipelineTmaStore(PipelineAsync):
 
         producer = (producer_type, producer_group)
 
-        sync_object_full = PipelineAsync._make_sync_object(None, num_stages, producer)
+        sync_object_full = PipelineAsync._make_sync_object(None, num_stages, producer)  # type: ignore[arg-type]
 
-        return PipelineTmaStore(sync_object_full, None, num_stages, None, None)
-
-    @dsl_user_op
-    def producer_acquire(self, *, loc=None, ip=None):
-        self.sync_object_full.wait(loc=loc, ip=ip)
+        return PipelineTmaStore(sync_object_full, None, num_stages, None, None)  # type: ignore[arg-type]
 
     @dsl_user_op
-    def producer_commit(self, *, loc=None, ip=None):
-        self.sync_object_full.arrive(loc=loc, ip=ip)
+    def producer_acquire(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_full.wait(loc=loc, ip=ip)  # type: ignore[call-arg]
 
     @dsl_user_op
-    def consumer_wait(self, *, loc=None, ip=None):
+    def producer_commit(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_full.arrive(loc=loc, ip=ip)  # type: ignore[call-arg]
+
+    @dsl_user_op
+    def consumer_wait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         assert False, "Error: PipelineTmaStore does not have a consumer agent."
 
     @dsl_user_op
-    def consumer_release(self, *, loc=None, ip=None):
+    def consumer_release(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         assert False, "Error: PipelineTmaStore does not have a consumer agent."
 
     @dsl_user_op
-    def producer_tail(self, *, loc=None, ip=None):
-        self.sync_object_full.tail(loc=loc, ip=ip)
+    def producer_tail(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        self.sync_object_full.tail(loc=loc, ip=ip)  # type: ignore[attr-defined]
 
 
 @dataclass(frozen=True)
@@ -825,7 +757,7 @@ class PipelineOrder:
         group_id: int,
         producer_group: CooperativeGroup,
         defer_sync: bool = False,
-    ):
+    ) -> "PipelineOrder":
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -858,24 +790,43 @@ class PipelineOrder:
             ),
         )
 
-    def get_barrier_for_current_stage_idx(self, group_id):
-        return self.state.index * self.length + group_id
+    def get_barrier_for_current_stage_idx(
+        self, group_id: int, state: Optional[PipelineState] = None
+    ) -> Int32:
+        state = self.state if state is None else state
+        return state.index * self.length + group_id
 
     @dsl_user_op
-    def arrive(self, *, loc=None, ip=None):
+    def arrive(  # type: ignore[return]
+        self,
+        state: Optional[PipelineState] = None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Optional[PipelineState]:
+        state = self.state if state is None else state
         signalling_id = (self.group_id + 1) % self.length
-        idx = self.get_barrier_for_current_stage_idx(signalling_id)
+        idx = self.get_barrier_for_current_stage_idx(signalling_id, state)
         cute.arch.mbarrier_arrive(
-            self.sync_object_full.get_barrier(idx, loc=loc, ip=ip), loc=loc, ip=ip
+            self.sync_object_full.get_barrier(idx, loc=loc, ip=ip),  # type: ignore[call-arg]
+            loc=loc,
+            ip=ip,
         )
-        self.state.advance(loc=loc, ip=ip)
+        state.advance(loc=loc, ip=ip)
+        if state is not self.state:
+            return state
 
     @dsl_user_op
-    def wait(self, *, loc=None, ip=None):
-        idx = self.get_barrier_for_current_stage_idx(self.group_id)
+    def wait(
+        self,
+        state: Optional[PipelineState] = None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        state = self.state if state is None else state
+        idx = self.get_barrier_for_current_stage_idx(self.group_id, state)
         cute.arch.mbarrier_wait(
-            self.sync_object_full.get_barrier(idx, loc=loc, ip=ip),
-            self.state.phase,
+            self.sync_object_full.get_barrier(idx, loc=loc, ip=ip),  # type: ignore[call-arg]
+            state.phase,
             loc=loc,
             ip=ip,
         )
@@ -892,26 +843,26 @@ class ImmutableResourceHandle:
     __immutable_state: PipelineState
 
     def __init__(self, origin: PipelineAsync, immutable_state: PipelineState):
-        self.__origin = origin
-        self.__immutable_state = immutable_state
+        self.__origin = origin  # type: ignore[misc]
+        self.__immutable_state = immutable_state  # type: ignore[misc]
 
     @property
-    def index(self):
+    def index(self) -> Int32:
         """Get the index of the current pipeline stage."""
         return self.__immutable_state.index
 
     @property
-    def count(self):
+    def count(self) -> Int32:
         """Get the count of how many handles this producer has committed.
         This is useful for tracking the number of blocks that have been loaded from gmem.
         """
         return self.__immutable_state.count
 
-    def get_origin(self):
+    def get_origin(self) -> PipelineAsync:
         """Get the original pipeline this resource handle belongs to."""
         return self.__origin
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list:
         """Extract MLIR values from the current state.
 
         :return: List of MLIR values representing the current state
@@ -920,7 +871,7 @@ class ImmutableResourceHandle:
         # TODO: need to handle pipeline as well
         return self.__immutable_state.__extract_mlir_values__()
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: "list") -> "ImmutableResourceHandle":
         """Create a new Producer instance from MLIR values.
 
         :param values: MLIR values to initialize the state
@@ -976,27 +927,36 @@ class PipelineProducer:
     @dataclass(frozen=True)
     class ImmutableResourceHandle(ImmutableResourceHandle):
         @property
-        def barrier(self):
+        def barrier(self) -> cute.Pointer:
             """Get the barrier pointer for the current pipeline stage.
 
             :return: Pointer to the barrier for the current stage
             :rtype: cute.Pointer
             """
             return self.get_origin().producer_get_barrier(
-                self._ImmutableResourceHandle__immutable_state
+                self._ImmutableResourceHandle__immutable_state  # type: ignore[attr-defined]
             )
 
         @dsl_user_op
-        def commit(self, *, loc=None, ip=None):
+        def commit(
+            self,
+            *,
+            loc: Optional[ir.Location] = None,
+            ip: Optional[ir.InsertionPoint] = None,
+        ) -> None:
             """Signal that data production is complete for the current stage.
 
             This allows consumers to start processing the data.
             """
             self.get_origin().producer_commit(
-                self._ImmutableResourceHandle__immutable_state, loc=loc, ip=ip
+                self._ImmutableResourceHandle__immutable_state,  # type: ignore[attr-defined]
+                loc=loc,
+                ip=ip,
             )
 
-    def __init__(self, pipeline, state, group: CooperativeGroup):
+    def __init__(
+        self, pipeline: PipelineAsync, state: PipelineState, group: CooperativeGroup
+    ):
         """Initialize a new Producer instance.
 
         :param pipeline: The pipeline this producer belongs to
@@ -1010,22 +970,32 @@ class PipelineProducer:
         self.__state = state
         self.__group = group
 
-    def clone(self):
+    def clone(self) -> "PipelineProducer":
         """Create a new Producer instance with the same state."""
         return PipelineProducer(self.__pipeline, self.__state.clone(), self.__group)
 
     @dsl_user_op
-    def reset(self, *, loc=None, ip=None):
+    def reset(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Reset the count of how many handles this producer has committed."""
         self.__state.reset_count(loc=loc, ip=ip)
+
+    def current_handle(self) -> ImmutableResourceHandle:
+        """Get the current handle for the producer."""
+        return PipelineProducer.ImmutableResourceHandle(self.__pipeline, self.__state)
 
     @dsl_user_op
     def acquire(
         self,
         try_acquire_token: Optional[Boolean] = None,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
     ) -> ImmutableResourceHandle:
         """Wait for the current buffer to be empty before producing data.
         This is a blocking operation.
@@ -1036,7 +1006,7 @@ class PipelineProducer:
         :rtype: ImmutableResourceHandle
         """
         self.__pipeline.producer_acquire(
-            self.__state, try_acquire_token, loc=loc, ip=ip
+            self.__state, try_acquire_token, loc=loc, ip=ip, **kwargs
         )
         handle = PipelineProducer.ImmutableResourceHandle(
             self.__pipeline, self.__state.clone()
@@ -1044,13 +1014,23 @@ class PipelineProducer:
         return handle
 
     @dsl_user_op
-    def advance(self, *, loc=None, ip=None):
+    def advance(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Move to the next pipeline stage."""
         self.__state.advance(loc=loc, ip=ip)
 
     @dsl_user_op
     def acquire_and_advance(
-        self, try_acquire_token: Optional[Boolean] = None, *, loc=None, ip=None
+        self,
+        try_acquire_token: Optional[Boolean] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
     ) -> ImmutableResourceHandle:
         """Acquire the current buffer and advance to the next pipeline stage.
 
@@ -1066,12 +1046,17 @@ class PipelineProducer:
             acquired buffer stage
         :rtype: ImmutableResourceHandle
         """
-        handle = self.acquire(try_acquire_token, loc=loc, ip=ip)
+        handle = self.acquire(try_acquire_token, loc=loc, ip=ip, **kwargs)
         self.advance(loc=loc, ip=ip)
         return handle
 
     @dsl_user_op
-    def try_acquire(self, *, loc=None, ip=None) -> Boolean:
+    def try_acquire(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
         """Attempt to acquire the current buffer without blocking.
 
         This method tries to acquire the current buffer stage for producing data
@@ -1085,8 +1070,12 @@ class PipelineProducer:
 
     @dsl_user_op
     def commit(
-        self, handle: Optional[ImmutableResourceHandle] = None, *, loc=None, ip=None
-    ):
+        self,
+        handle: Optional[ImmutableResourceHandle] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Signal that data production is complete for the current stage.
 
         This allows consumers to start processing the data.
@@ -1104,14 +1093,19 @@ class PipelineProducer:
             self.__pipeline.producer_commit(self.__state, loc=loc, ip=ip)
 
     @dsl_user_op
-    def tail(self, *, loc=None, ip=None):
+    def tail(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Ensure all used buffers are properly synchronized before producer exit.
 
         This should be called before the producer finishes to avoid dangling signals.
         """
         self.__pipeline.producer_tail(self.__state, loc=loc, ip=ip)
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         """Extract MLIR values from the current state.
 
         :return: List of MLIR values representing the current state
@@ -1120,7 +1114,7 @@ class PipelineProducer:
         # TODO: need to handle pipeline as well
         return self.__state.__extract_mlir_values__()
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "PipelineProducer":
         """Create a new Producer instance from MLIR values.
 
         :param values: MLIR values to initialize the state
@@ -1178,16 +1172,36 @@ class PipelineConsumer:
 
     @dataclass(frozen=True)
     class ImmutableResourceHandle(ImmutableResourceHandle):
+        @property
+        def barrier(self) -> cute.Pointer:
+            """Get the barrier pointer for the current pipeline stage.
+
+            :return: Pointer to the barrier for the current stage
+            :rtype: cute.Pointer
+            """
+            return self.get_origin().consumer_get_barrier(
+                self._ImmutableResourceHandle__immutable_state  # type: ignore[attr-defined]
+            )
+
         @dsl_user_op
-        def release(self, *, loc=None, ip=None):
+        def release(
+            self,
+            *,
+            loc: Optional[ir.Location] = None,
+            ip: Optional[ir.InsertionPoint] = None,
+        ) -> None:
             """Signal that data production is complete for the current stage.
             This allows consumers to start processing the data.
             """
             self.get_origin().consumer_release(
-                self._ImmutableResourceHandle__immutable_state, loc=loc, ip=ip
+                self._ImmutableResourceHandle__immutable_state,  # type: ignore[attr-defined]
+                loc=loc,
+                ip=ip,
             )
 
-    def __init__(self, pipeline, state: PipelineState, group: CooperativeGroup):
+    def __init__(
+        self, pipeline: PipelineAsync, state: PipelineState, group: CooperativeGroup
+    ):
         """Initialize a new Consumer instance.
 
         :param pipeline: The pipeline this consumer belongs to
@@ -1201,18 +1215,31 @@ class PipelineConsumer:
         self.__group = group
         self.__state = state
 
-    def clone(self):
+    def clone(self) -> "PipelineConsumer":
         """Create a new Consumer instance with the same state."""
         return PipelineConsumer(self.__pipeline, self.__state.clone(), self.__group)
 
     @dsl_user_op
-    def reset(self, *, loc=None, ip=None):
+    def reset(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Reset the count of how many handles this consumer has consumed."""
         self.__state.reset_count(loc=loc, ip=ip)
 
+    def current_handle(self) -> ImmutableResourceHandle:
+        """Get the current handle for the consumer."""
+        return PipelineConsumer.ImmutableResourceHandle(self.__pipeline, self.__state)
+
     @dsl_user_op
     def wait(
-        self, try_wait_token: Optional[Boolean] = None, *, loc=None, ip=None
+        self,
+        try_wait_token: Optional[Boolean] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> ImmutableResourceHandle:
         """Wait for data to be ready in the current buffer. This is a blocking operation
         that will not return until data is available.
@@ -1231,7 +1258,12 @@ class PipelineConsumer:
         return handle
 
     @dsl_user_op
-    def advance(self, *, loc=None, ip=None):
+    def advance(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Advance the consumer to the next pipeline stage.
 
         This updates the internal state to point to the next buffer in the pipeline.
@@ -1241,7 +1273,11 @@ class PipelineConsumer:
 
     @dsl_user_op
     def wait_and_advance(
-        self, try_wait_token: Optional[Boolean] = None, *, loc=None, ip=None
+        self,
+        try_wait_token: Optional[Boolean] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> ImmutableResourceHandle:
         """Atomically wait for data and advance to next pipeline stage.
 
@@ -1261,7 +1297,12 @@ class PipelineConsumer:
         return handle
 
     @dsl_user_op
-    def try_wait(self, *, loc=None, ip=None) -> Boolean:
+    def try_wait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
         """Non-blocking check if data is ready in the current buffer.
 
         This method provides a way to test if data is available without blocking.
@@ -1274,8 +1315,12 @@ class PipelineConsumer:
 
     @dsl_user_op
     def release(
-        self, handle: Optional[ImmutableResourceHandle] = None, *, loc=None, ip=None
-    ):
+        self,
+        handle: Optional[ImmutableResourceHandle] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Signal that data consumption is complete for the current stage.
         This allows producers to start producing new data.
         """
@@ -1287,7 +1332,7 @@ class PipelineConsumer:
         else:
             self.__pipeline.consumer_release(self.__state, loc=loc, ip=ip)
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         """Extract MLIR values from the current state.
 
         :return: List of MLIR values representing the current state
@@ -1295,7 +1340,7 @@ class PipelineConsumer:
         """
         return self.__state.__extract_mlir_values__()
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "PipelineConsumer":
         """Create a new Consumer instance from MLIR values.
 
         :param values: MLIR values to initialize the state

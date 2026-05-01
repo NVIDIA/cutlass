@@ -9,9 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import Any
+
 
 def check_value_in(
-    value, possible_values: list, value_description: str, prefix=""
+    value: Any, possible_values: list, value_description: str, prefix: str = ""
 ) -> None:
     if value not in possible_values:
         err_msg = prefix
@@ -21,7 +23,9 @@ def check_value_in(
         raise ValueError(err_msg)
 
 
-def check_type_in(ty, possible_types: list, type_description: str, prefix="") -> None:
+def check_type_in(
+    ty: Any, possible_types: list, type_description: str, prefix: str = ""
+) -> None:
     if not isinstance(ty, type):
         ty = type(ty)
     if ty not in possible_types:

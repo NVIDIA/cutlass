@@ -111,12 +111,12 @@ def jit_wrapper(
     spec: cutlass.Constexpr,
 ):
     # split buffer argument into inputs and outputs and return to tree
-    ins, outs = args[: len(spec.in_args)], args[(len(spec.in_args)) :]
-    ins = [x.get_tensor() for x in ins]
-    outs = [x.get_tensor() for x in outs]
-    ins = jax.tree.unflatten(spec.input_tree, ins)
-    outs = jax.tree.unflatten(spec.output_tree, outs)
-    wrapped_fn(stream, *ins, *outs, **dict(spec.kwargs))
+    ins, outs = args[: len(spec.in_args)], args[(len(spec.in_args)) :]  # type: ignore[attr-defined]
+    ins = [x.get_tensor() for x in ins]  # type: ignore[assignment, attr-defined]
+    outs = [x.get_tensor() for x in outs]  # type: ignore[assignment, attr-defined]
+    ins = jax.tree.unflatten(spec.input_tree, ins)  # type: ignore[attr-defined]
+    outs = jax.tree.unflatten(spec.output_tree, outs)  # type: ignore[attr-defined]
+    wrapped_fn(stream, *ins, *outs, **dict(spec.kwargs))  # type: ignore[operator, attr-defined]
 
 
 @dataclass
@@ -228,7 +228,7 @@ def get_or_compile_kernel(fn, spec):
         try:
             cute_compile = cutlass.cute.compile
             if spec.compile_options:
-                cute_compile = partial(cute_compile, options=spec.compile_options)
+                cute_compile = partial(cute_compile, options=spec.compile_options)  # type: ignore[assignment]
 
             compiled_fn = cute_compile(
                 jit_wrapper,

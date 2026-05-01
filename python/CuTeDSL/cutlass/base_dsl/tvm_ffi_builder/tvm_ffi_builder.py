@@ -1606,7 +1606,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 data_as_int = llvm.ptrtoint(self.i64_type, data)
                 # Check if data pointer is divisible by alignment
                 # (uses fast path for power-of-two alignments)
-                return self.i64_divisible_const(data_as_int, param.data_alignment)
+                return self.i64_divisible_const(data_as_int, param.data_alignment)  # type: ignore[arg-type]
 
             current_block = self.check_condition(
                 current_block,
@@ -2016,7 +2016,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         self.current_fn_signature = spec.signature(fn_display_name, params_list)
         self._fn_call_context = f" when calling: `{self.current_fn_signature}`"
 
-        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+        with ir.InsertionPoint(self.module.body):
             # void TVMFFIErrorSetRaisedFromCStr(
             #    const char* error_kind, const char* message);
             self.find_or_declare_extern_func(
@@ -2072,7 +2072,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     continue
 
                 arg_context = ArgContext(
-                    param_name=param.name,
+                    param_name=param.name,  # type: ignore[attr-defined]
                     arg_index=ffi_arg_index,
                     tuple_indices=[],
                 )

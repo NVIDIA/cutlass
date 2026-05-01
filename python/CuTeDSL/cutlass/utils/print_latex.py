@@ -26,7 +26,7 @@ from ..cute.typing import IntTuple
 __all__ = ["print_latex", "print_latex_tv"]
 
 
-def tikz_color_bwx8(idx: int):
+def tikz_color_bwx8(idx: int) -> str:
     color_map = [
         "black!00",
         "black!40",
@@ -40,11 +40,11 @@ def tikz_color_bwx8(idx: int):
     return color_map[idx % 8]
 
 
-def tikz_color_white(idx: int):
+def tikz_color_white(idx: int) -> str:
     return "white"
 
 
-def tikz_color_tv(tid: int, vid: int):
+def tikz_color_tv(tid: int, vid: int) -> str:
     color_map = [
         "{rgb,255:red,175;green,175;blue,255}",
         "{rgb,255:red,175;green,255;blue,175}",
@@ -58,7 +58,9 @@ def tikz_color_tv(tid: int, vid: int):
     return color_map[tid % 8]
 
 
-def print_latex(x: Union[Layout, ComposedLayout], *, color: Callable = tikz_color_bwx8):
+def print_latex(
+    x: Union[Layout, ComposedLayout], *, color: Callable = tikz_color_bwx8
+) -> None:
     """
     Prints a layout.
     :param x: A layout
@@ -111,7 +113,7 @@ def print_latex_tv(
     tile_mn: Union[IntTuple, Layout],
     *,
     color: Callable = tikz_color_tv,
-):
+) -> None:
     """
     Prints a tv layout for a tile M N. Everything must be static.
     :param layout_tv: A static thread value layout
@@ -137,14 +139,14 @@ def print_latex_tv(
     if not isinstance(tile_mn, Layout):
         tile_mn = make_layout(tile_mn)
 
-    M, N = product_each(tile_mn.shape)
+    M, N = product_each(tile_mn.shape)  # type: ignore[union-attr]
     filled = [[False for n in range(N)] for m in range(M)]
 
     for tid in range(size(layout_tv, mode=[0])):
         for vid in range(size(layout_tv, mode=[1])):
             idx = layout_tv((tid, vid))
-            m = (idx // tile_mn.stride[0]) % tile_mn.shape[0]
-            n = (idx // tile_mn.stride[1]) % tile_mn.shape[1]
+            m = (idx // tile_mn.stride[0]) % tile_mn.shape[0]  # type: ignore[operator, union-attr, index]
+            n = (idx // tile_mn.stride[1]) % tile_mn.shape[1]  # type: ignore[operator, union-attr, index]
             if not filled[m][n]:
                 filled[m][n] = True
                 print(

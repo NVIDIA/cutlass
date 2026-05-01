@@ -10,17 +10,20 @@
 # is strictly prohibited.
 
 import enum
+import warnings
 from dataclasses import dataclass
-from typing import Type, Any
+from typing import Type, Any, Union, Optional, cast, Tuple
 
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL, T
+from cutlass.cutlass_dsl import BaseDSL, T, DSLRuntimeError
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
-from cutlass._mlir import ir
+from typing_extensions import deprecated
 
 from ..common import OpError, normalize_field_to_ir_name
+from ..common import OperandMajorMode as _OperandMajorMode
 from ... import core, atom
 from ...core import _pack_shape, rank, depth
 from ...typing import (
@@ -30,6 +33,8 @@ from ...typing import (
     Float8E8M0FNU,
     Float8E5M2,
     Float8E4M3FN,
+    Float6E3M2FN,
+    Float6E2M3FN,
     Float16,
     BFloat16,
     Float32,
@@ -44,6 +49,14 @@ from ...typing import (
 )
 from ...atom import Trait, make_atom
 
+
+_F8F6F4_TYPES = [
+    Float8E5M2,
+    Float8E4M3FN,
+    Float6E3M2FN,
+    Float6E2M3FN,
+    Float4E2M1FN,
+]
 
 ####################################################################################################
 #
@@ -60,6 +73,9 @@ class Tcgen05MmaOp(atom.MmaOp):
     pass
 
 
+@deprecated(
+    "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead"
+)
 class OperandMajorMode(enum.Enum):
     """
     An enumeration for the majorness of the input operands of the MMA.
@@ -74,14 +90,28 @@ class OperandMajorMode(enum.Enum):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
 
+    def __eq__(self, other: object) -> bool:
+        if hasattr(other, "_to_ir") and type(other._to_ir()) is type(self._to_ir()):
+            return self._to_ir() == other._to_ir()
+        raise DSLRuntimeError(
+            f"{self.__module__}.{self.__class__.__qualname__} cannot be compared with {other.__module__}.{other.__class__.__qualname__}"
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: Any) -> Optional["OperandMajorMode"]:
         if isinstance(value, str):
             value = value.upper()
             if value == "MN":
                 return OperandMajorMode.MN
             elif value == "K":
                 return OperandMajorMode.K
+        return None
 
     def _to_ir(self) -> _cute_ir.MajorMode:
         return self.value
@@ -130,7 +160,6 @@ class Field(enum.Enum):
     ACCUMULATE = "accum_c"
     SFA = "sf_a"
     SFB = "sf_b"
-
     def __str__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"
 
@@ -151,8 +180,8 @@ class MmaOp(Tcgen05MmaOp):
     shape_mnk: Shape
     cta_group: CtaGroup
     a_src: OperandSource
-    a_major_mode: OperandMajorMode
-    b_major_mode: OperandMajorMode
+    a_major_mode: Union[_OperandMajorMode, OperandMajorMode]
+    b_major_mode: Union[_OperandMajorMode, OperandMajorMode]
 
     admissible_archs = Arch.filter(
         lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
@@ -178,28 +207,49 @@ class MmaOp(Tcgen05MmaOp):
                 self,
                 "expects the 'a_src' Op parameter to be a tcgen05.OperandSource instance",
             )
-        if not isinstance(self.a_major_mode, OperandMajorMode):
+        if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
+            self.a_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'a_major_mode' Op parameter to be a tcgen05.OperandMajorMode instance",
+                "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
-        if not isinstance(self.b_major_mode, OperandMajorMode):
+        if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'b_major_mode' Op parameter to be a tcgen05.OperandMajorMode instance",
+                "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
+            )
+        if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
+            warnings.warn(
+                "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Normalize the major modes to the new enum type
+            # Since this is a frozen dataclass, we need to use the object.__setattr__ method to set the attributes
+            object.__setattr__(
+                self, "a_major_mode", _OperandMajorMode(self.a_major_mode.value)
+            )
+            object.__setattr__(
+                self, "b_major_mode", _OperandMajorMode(self.b_major_mode.value)
             )
         # Verify the instruction shape
-        if (rank(self.shape_mnk) not in [2, 3]) or (depth(self.shape_mnk) != 1):
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
             raise OpError(
                 self,
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
-        m, n = self.shape_mnk[0], self.shape_mnk[1]
+        m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if self.cta_group == CtaGroup.ONE:
             if m not in [64, 128]:
                 raise OpError(self, f"expects the M-mode to be 64 or 128, but got {m}")
-            if self.b_dtype.width == 8 and self.b_major_mode == OperandMajorMode.MN:
+            if self.b_dtype.width == 8 and (self.b_major_mode == _OperandMajorMode.MN):
                 if (n < 16) or (n > 256) or (n % 16 != 0):
                     raise OpError(
                         self,
@@ -214,7 +264,7 @@ class MmaOp(Tcgen05MmaOp):
         else:
             if m not in [128, 256]:
                 raise OpError(self, f"expects the M-mode to be 128 or 256, but got {m}")
-            if self.b_dtype.width == 8 and self.b_major_mode == OperandMajorMode.MN:
+            if self.b_dtype.width == 8 and (self.b_major_mode == _OperandMajorMode.MN):
                 if (n < 32) or (n > 256) or (n % 32 != 0):
                     raise OpError(
                         self,
@@ -240,7 +290,13 @@ class MmaOp(Tcgen05MmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -252,7 +308,13 @@ class MmaOp(Tcgen05MmaOp):
             )
         return True
 
-    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -268,7 +330,14 @@ class MmaOp(Tcgen05MmaOp):
 class MmaTraits(Trait):
     admissible_fields = [Field.ACCUMULATE, Field.NEGATE_A, Field.NEGATE_B]
 
-    def set(self, field, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        field: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
         bool_val = Boolean(value).ir_value(loc=loc, ip=ip)
         try:
@@ -282,7 +351,13 @@ class MmaTraits(Trait):
                 self.value, attr, bool_val, loc=loc, ip=ip
             )
 
-    def get(self, field, *, loc=None, ip=None) -> Any:
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
         try:
             return _cute_nvgpu_ir.atom_get_value(
@@ -300,14 +375,14 @@ class MmaTraits(Trait):
 class BlockScaledMmaOp(Tcgen05MmaOp):
     a_dtype: Type[Numeric]
     b_dtype: Type[Numeric]
-    acc_dtype: Float32
+    acc_dtype: Type[Numeric]
     sf_dtype: Type[Numeric]
     sf_vec_size: int
     shape_mnk: Shape
     cta_group: CtaGroup
     a_src: OperandSource
-    a_major_mode: OperandMajorMode
-    b_major_mode: OperandMajorMode
+    a_major_mode: Union[_OperandMajorMode, OperandMajorMode]
+    b_major_mode: Union[_OperandMajorMode, OperandMajorMode]
 
     admissible_archs = [
         Arch.sm_100a,
@@ -334,24 +409,45 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
                 self,
                 "expects the 'a_src' Op parameter to be a tcgen05.OperandSource instance",
             )
-        if not isinstance(self.a_major_mode, OperandMajorMode):
+        if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
+            self.a_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'a_major_mode' Op parameter to be a tcgen05.OperandMajorMode instance",
+                "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
-        if not isinstance(self.b_major_mode, OperandMajorMode):
+        if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
             raise OpError(
                 self,
-                "expects the 'b_major_mode' Op parameter to be a tcgen05.OperandMajorMode instance",
+                "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
+            )
+        if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
+            self.b_major_mode, OperandMajorMode
+        ):
+            warnings.warn(
+                "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Normalize the major modes to the new enum type
+            # Since this is a frozen dataclass, we need to use the object.__setattr__ method to set the attributes
+            object.__setattr__(
+                self, "a_major_mode", _OperandMajorMode(self.a_major_mode.value)
+            )
+            object.__setattr__(
+                self, "b_major_mode", _OperandMajorMode(self.b_major_mode.value)
             )
         # Verify the instruction shape
-        if (rank(self.shape_mnk) not in [2, 3]) or (depth(self.shape_mnk) != 1):
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
             raise OpError(
                 self,
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
-        m, n = self.shape_mnk[0], self.shape_mnk[1]
+        m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if self.cta_group == CtaGroup.ONE:
             if m != 128:
                 raise OpError(self, f"expects the M-mode to be 128, but got {m}")
@@ -390,7 +486,13 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
             + f"\n  Instruction shape MNK     = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -402,7 +504,13 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
             )
         return True
 
-    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
@@ -424,7 +532,14 @@ class BlockScaledMmaTraits(Trait):
         Field.SFB,
     ]
 
-    def set(self, field, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        field: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
         # Derive boolean/pointer IR names from enum values, no hard-coded strings.
         bool_field_ir = {
@@ -460,7 +575,13 @@ class BlockScaledMmaTraits(Trait):
                 self.value, attr, val, loc=loc, ip=ip
             )
 
-    def get(self, field, *, loc=None, ip=None) -> Any:
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
         # Only boolean-returning fields supported for get. Derive from admissible_fields.
         gettable_fields = [
             f for f in self.admissible_fields if f not in (Field.SFA, Field.SFB)
@@ -491,6 +612,19 @@ class MmaTF32Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::tf32`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 TF32 MMA Operation"
@@ -500,8 +634,8 @@ class MmaTF32Op(MmaOp):
         instruction_shape: Shape,
         cta_group: CtaGroup,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             TFloat32,
@@ -518,16 +652,24 @@ class MmaTF32Op(MmaOp):
     def _verify(self) -> None:
         # Verify the instruction shape
         instruction_k = 8
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaTF32Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaTF32Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMAType.get(
             shape_mnk.type.attribute,
@@ -543,11 +685,11 @@ class MmaTF32Op(MmaOp):
         return MmaTF32Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -570,6 +712,19 @@ class MmaF16BF16Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::f16`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 F16/BF16 MMA Operation"
@@ -581,8 +736,8 @@ class MmaF16BF16Op(MmaOp):
         instruction_shape: Shape,
         cta_group: CtaGroup,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -612,16 +767,24 @@ class MmaF16BF16Op(MmaOp):
             )
         # Instruction shape verification
         instruction_k = 16
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaF16BF16Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaF16BF16Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMAType.get(
             shape_mnk.type.attribute,
@@ -637,11 +800,11 @@ class MmaF16BF16Op(MmaOp):
         return MmaF16BF16Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -664,6 +827,19 @@ class MmaI8Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::i8`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 I8 MMA Operation"
@@ -674,8 +850,8 @@ class MmaI8Op(MmaOp):
         instruction_shape: Shape,
         cta_group: CtaGroup,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -699,24 +875,32 @@ class MmaI8Op(MmaOp):
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Instruction shape verification
         instruction_k = 32
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaI8Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaI8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMAType.get(
             shape_mnk.type.attribute,
             self.cta_group.value,
             self.a_major_mode._to_ir(),
             self.b_major_mode._to_ir(),
-            (T.si8() if self.a_dtype.signed else T.ui8()),
-            (T.si8() if self.b_dtype.signed else T.ui8()),
+            (T.si8() if self.a_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
+            (T.si8() if self.b_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
             T.si32(),
             self.a_src._to_ir(),
             0,
@@ -724,11 +908,11 @@ class MmaI8Op(MmaOp):
         return MmaI8Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -744,12 +928,29 @@ class MmaI8Trait(MmaTraits):
 #
 
 
+@deprecated("MmaFP8Op is deprecated, use MmaF8F6F4Op instead")
 @dataclass(frozen=True)
 class MmaFP8Op(MmaOp):
     """
     F8 tcgen05 MMA Operation.
 
+    .. deprecated::
+        Use :class:`MmaF8F6F4Op` instead.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 F8 MMA Operation"
@@ -761,8 +962,8 @@ class MmaFP8Op(MmaOp):
         instruction_shape: Shape,
         cta_group: CtaGroup,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -778,10 +979,13 @@ class MmaFP8Op(MmaOp):
 
     def _verify(self) -> None:
         # Input data type verification
-        if self.a_dtype not in [Float8E5M2, Float8E4M3FN]:
+        if self.a_dtype not in [
+            Float8E5M2,
+            Float8E4M3FN,
+        ]:
             raise OpError(
                 self,
-                "expects the 'ab_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
+                "expects the 'ab_dtype' Op parameter to be one of Float8E5M2, Float8E4M3FN"
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Accumulator data type verification
@@ -792,16 +996,24 @@ class MmaFP8Op(MmaOp):
             )
         # Instruction shape verification
         instruction_k = 32
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaFP8Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaFP8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMAType.get(
             shape_mnk.type.attribute,
@@ -817,11 +1029,11 @@ class MmaFP8Op(MmaOp):
         return MmaFP8Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -832,19 +1044,152 @@ class MmaFP8Trait(MmaTraits):
     pass
 
 
+@dataclass(frozen=True)
+class MmaF8F6F4Op(MmaOp):
+    """
+    F8F6F4 tcgen05 MMA Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
+    """
+
+    descriptive_name = "tcgen05 F8F6F4 MMA Operation"
+
+    def __init__(
+        self,
+        a_dtype: Type[Numeric],
+        b_dtype: Type[Numeric],
+        acc_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+    ) -> None:
+        super().__init__(
+            a_dtype,
+            b_dtype,
+            acc_dtype,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+        )
+        self._verify()
+
+    def _verify(self) -> None:
+        # Input data type verification
+        if self.a_dtype not in _F8F6F4_TYPES:
+            raise OpError(
+                self,
+                "expects the 'a_dtype' Op parameter to be one of "
+                "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
+            )
+        if self.b_dtype not in _F8F6F4_TYPES:
+            raise OpError(
+                self,
+                "expects the 'b_dtype' Op parameter to be one of "
+                "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
+            )
+        # Accumulator data type verification
+        if self.acc_dtype not in [Float16, Float32]:
+            raise OpError(
+                self,
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
+            )
+        # Instruction shape verification
+        instruction_k = 32
+        shape_mnk_tuple = cast(Tuple[Any, ...], self.shape_mnk)
+        if rank(self.shape_mnk) == 2:
+            shape_mnk_tuple = (*shape_mnk_tuple, instruction_k)
+            object.__setattr__(self, "shape_mnk", shape_mnk_tuple)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise OpError(
+                self,
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaF8F6F4Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM100UMMAType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            self.a_src._to_ir(),
+            0,
+        )
+        return MmaF8F6F4Trait(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class MmaF8F6F4Trait(MmaTraits):
+    pass
+
+
 
 #
 # MXF8F6F4 MMA
 #
 
 
+@deprecated("MmaMXF8Op is deprecated, use MmaMXF8F6F4Op instead")
 @dataclass(frozen=True)
 class MmaMXF8Op(BlockScaledMmaOp):
     """
     MXF8 tcgen05 BlockScaled MMA Operation.
 
+    .. deprecated::
+        Use :class:`MmaMXF8F6F4Op` instead.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::mxf8f6f4`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 MXF8 BlockScaled MMA Operation"
@@ -855,8 +1200,8 @@ class MmaMXF8Op(BlockScaledMmaOp):
         instruction_shape: Shape,
         cta_group: CtaGroup,
         a_src: OperandSource,
-        a_major_mode: OperandMajorMode,
-        b_major_mode: OperandMajorMode,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -882,16 +1227,24 @@ class MmaMXF8Op(BlockScaledMmaOp):
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Instruction shape verification
         instruction_k = 32
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF8Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -908,7 +1261,7 @@ class MmaMXF8Op(BlockScaledMmaOp):
         return MmaMXF8Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
@@ -918,7 +1271,7 @@ class MmaMXF8Op(BlockScaledMmaOp):
                     core.make_ptr(
                         self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -926,6 +1279,126 @@ class MmaMXF8Op(BlockScaledMmaOp):
 
 
 class MmaMXF8Trait(BlockScaledMmaTraits):
+    pass
+
+
+@dataclass(frozen=True)
+class MmaMXF8F6F4Op(BlockScaledMmaOp):
+    """
+    MXF8F6F4 tcgen05 BlockScaled MMA Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
+    This Operation corresponds to the ``.kind::mxf8f6f4`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
+    """
+
+    descriptive_name = "tcgen05 MXF8F6F4 BlockScaled MMA Operation"
+
+    def __init__(
+        self,
+        a_dtype: Type[Numeric],
+        b_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+    ) -> None:
+        super().__init__(
+            a_dtype,
+            b_dtype,
+            Float32,
+            Float8E8M0FNU,
+            32,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+        )
+        self._verify()
+
+    def _verify(self) -> None:
+        # Input data type verification
+        if self.a_dtype not in _F8F6F4_TYPES:
+            raise OpError(
+                self,
+                "expects the 'a_dtype' Op parameter to be one of "
+                "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
+            )
+        if self.b_dtype not in _F8F6F4_TYPES:
+            raise OpError(
+                self,
+                "expects the 'b_dtype' Op parameter to be one of "
+                "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
+            )
+
+        # Instruction shape verification
+        instruction_k = 32
+        shape_mnk_tuple = cast(Tuple[Any, ...], self.shape_mnk)
+        if rank(self.shape_mnk) == 2:
+            shape_mnk_tuple = (*shape_mnk_tuple, instruction_k)
+            object.__setattr__(self, "shape_mnk", shape_mnk_tuple)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise OpError(
+                self,
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF8F6F4Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            self.sf_dtype.mlir_type,
+            self.a_src._to_ir(),
+            self.sf_vec_size,
+        )
+        return MmaMXF8F6F4Trait(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                    core.make_ptr(
+                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                    ).value,
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class MmaMXF8F6F4Trait(BlockScaledMmaTraits):
     pass
 
 
@@ -941,6 +1414,19 @@ class MmaMXF4Op(BlockScaledMmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::mxf4`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 MXF4 BlockScaled MMA Operation"
@@ -960,24 +1446,32 @@ class MmaMXF4Op(BlockScaledMmaOp):
             instruction_shape,
             cta_group,
             a_src,
-            OperandMajorMode.K,
-            OperandMajorMode.K,
+            _OperandMajorMode.K,
+            _OperandMajorMode.K,
         )
         self._verify()
 
     def _verify(self) -> None:
         # Instruction shape verification
         instruction_k = 64
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -994,7 +1488,7 @@ class MmaMXF4Op(BlockScaledMmaOp):
         return MmaMXF4Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
@@ -1004,7 +1498,7 @@ class MmaMXF4Op(BlockScaledMmaOp):
                     core.make_ptr(
                         self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -1027,6 +1521,19 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::mxf4nvf4`` qualifier.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 MXF4NVF4 BlockScaled MMA Operation"
@@ -1047,8 +1554,8 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
             instruction_shape,
             cta_group,
             a_src,
-            OperandMajorMode.K,
-            OperandMajorMode.K,
+            _OperandMajorMode.K,
+            _OperandMajorMode.K,
         )
         self._verify()
 
@@ -1061,16 +1568,24 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
             )
         # Instruction shape verification
         instruction_k = 64
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4NVF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4NVF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -1087,7 +1602,7 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
         return MmaMXF4NVF4Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
@@ -1097,7 +1612,7 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
                     core.make_ptr(
                         self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -1121,6 +1636,19 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::mxf4`` qualifier.
     This Operation is for SM103.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 SM103 MXF4 BlockScaled MMA Operation"
@@ -1140,24 +1668,32 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
             instruction_shape,
             cta_group,
             a_src,
-            OperandMajorMode.K,
-            OperandMajorMode.K,
+            _OperandMajorMode.K,
+            _OperandMajorMode.K,
         )
         self._verify()
 
     def _verify(self) -> None:
         # Instruction shape verification
         instruction_k = 96
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -1175,7 +1711,7 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
         return MmaMXF4Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
@@ -1185,7 +1721,7 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
                     core.make_ptr(
                         self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )
@@ -1205,6 +1741,19 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma>`__.
     This Operation corresponds to the ``.kind::mxf4nvf4`` qualifier.
     This Operation is for SM103.
+
+    MMA operations should be issued by a single thread. The DSL automatically handles this by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: MMA without elect_one
+        cute.gemm(mma_atom, d, a, b, c)
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     descriptive_name = "tcgen05 SM103 MXF4NVF4 BlockScaled MMA Operation"
@@ -1225,8 +1774,8 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
             instruction_shape,
             cta_group,
             a_src,
-            OperandMajorMode.K,
-            OperandMajorMode.K,
+            _OperandMajorMode.K,
+            _OperandMajorMode.K,
         )
         self._verify()
 
@@ -1239,16 +1788,24 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
             )
         # Instruction shape verification
         instruction_k = 96
-        if rank(self.shape_mnk) == 2:
-            object.__setattr__(self, "shape_mnk", (*self.shape_mnk, instruction_k))
-        if self.shape_mnk[2] != instruction_k:
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
             raise OpError(
                 self,
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
-                f"but got {self.shape_mnk[2]}",
+                f"but got {shape_mnk_tuple[2]}",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4NVF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4NVF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM100UMMABlockScaledType.get(
             shape_mnk.type.attribute,
@@ -1266,7 +1823,7 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
         return MmaMXF4NVF4Trait(
             make_atom(
                 ty,
-                (
+                [
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
@@ -1276,7 +1833,7 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
                     core.make_ptr(
                         self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
-                ),
+                ],
                 loc=loc,
                 ip=ip,
             )

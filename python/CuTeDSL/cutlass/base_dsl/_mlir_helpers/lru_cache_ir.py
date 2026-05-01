@@ -24,11 +24,12 @@ def make_layout(...):
 """
 
 from functools import lru_cache, wraps
+from typing import Any, Callable
 
-from ..._mlir import ir  # type: ignore
+from ..._mlir import ir
 
 
-def get_ir_context(func):
+def get_ir_context(func: Any) -> Any:
     """
     Return the context for given func called under ir.
     Currently the context includes MLIRContext and InsertionPoint.
@@ -42,7 +43,7 @@ def get_ir_context(func):
         return None
 
 
-def lru_cache_ir(maxsize=128, typed=True):
+def lru_cache_ir(maxsize: int = 128, typed: bool = True) -> Callable[..., Any]:
     """
     Applies an LRU cache to a given function, with awareness of IR context.
 
@@ -53,14 +54,14 @@ def lru_cache_ir(maxsize=128, typed=True):
     :param typed: Whether params are type-sensitive, default to True as IR is type-sensitive
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         # Use functools.lru_cache with a custom wrapper to control the key generation
         @lru_cache(maxsize=maxsize, typed=typed)
-        def cached_func(context, *args, **kwargs):
+        def cached_func(context: Any, *args: Any, **kwargs: Any) -> Any:
             return func(*args, **kwargs)
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 # Call the cached function with the context
                 return cached_func(get_ir_context(func), *args, **kwargs)
@@ -68,8 +69,8 @@ def lru_cache_ir(maxsize=128, typed=True):
                 return func(*args, **kwargs)
 
         # Expose cache-related methods for introspection
-        wrapper.cache_clear = cached_func.cache_clear
-        wrapper.cache_info = cached_func.cache_info
+        wrapper.cache_clear = cached_func.cache_clear  # type: ignore[attr-defined]
+        wrapper.cache_info = cached_func.cache_info  # type: ignore[attr-defined]
         return wrapper
 
     return decorator
