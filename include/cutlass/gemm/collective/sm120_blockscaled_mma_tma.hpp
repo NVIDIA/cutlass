@@ -642,10 +642,7 @@ struct CollectiveMma<
       // Prepare the TMA loads for A, B, SFA and SFB
       //
 
-      auto gA_mkl = get<0>(load_inputs);
-      auto gB_nkl = get<1>(load_inputs);
-      auto gSFA_mkl = get<2>(load_inputs);
-      auto gSFB_nkl = get<3>(load_inputs);
+      auto [gA_mkl, gB_nkl, gSFA_mkl, gSFB_nkl] = load_inputs;
 
       auto block_tma_a = params.tma_load_a.get_slice(0);
       auto block_tma_b = params.tma_load_b.get_slice(0);
@@ -654,9 +651,7 @@ struct CollectiveMma<
       auto block_tma_sfb = params.tma_load_sfb.get_slice(0);
 
       // Partition the inputs based on the current block coordinates.
-      auto m_coord = get<0>(blk_coord);
-      auto n_coord = get<1>(blk_coord);
-      auto l_coord = get<3>(blk_coord);
+      auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
 
       Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_M,BLK_K,PIPE)
       Tensor sSFB = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_N,BLK_K,PIPE)
@@ -852,8 +847,9 @@ struct CollectiveMma<
 
     // Size of the register pipeline
     constexpr auto K_BLOCK_MAX = size<2>(tCrA);
-    constexpr bool SingleCtaKBlock =
-      decltype(size<2>(TileShape{}) == Int<64>{})::value;
+    // A CTA-K tile equal to the MMA K dimension has one register k-block. Avoid
+    // prefetching k_block_next == 0 over the only live operand fragment.
+    constexpr bool SingleMmaKBlock = decltype(K_BLOCK_MAX == Int<1>{})::value;
 
     int read_stage = smem_pipe_read.index();
     auto tCsA_stage   = tCsA(_,_,_,read_stage);
@@ -890,7 +886,7 @@ struct CollectiveMma<
       //
       // Compute on k_tile
       //
-      if constexpr (SingleCtaKBlock) {
+      if constexpr (SingleMmaKBlock) {
         gemm_kblock(_0{});
 
         cutlass::arch::NamedBarrier::sync(
@@ -936,7 +932,7 @@ struct CollectiveMma<
     //
     // Hoist out last k_tile
     //
-    if constexpr (SingleCtaKBlock) {
+    if constexpr (SingleMmaKBlock) {
       gemm_kblock(_0{});
 
       cutlass::arch::NamedBarrier::sync(
