@@ -362,7 +362,6 @@ TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_cooper
   using ElementAccumulator = float;
   using ElementSF = cutlass::float_ue4m3_t;
   using ElementSFD  = ElementSF;
-  using ElementAccumulator = float;
   using GmemLayoutA = cutlass::layout::RowMajor;
   using GmemLayoutB = cutlass::layout::ColumnMajor;
   using GmemLayoutC = cutlass::layout::RowMajor;

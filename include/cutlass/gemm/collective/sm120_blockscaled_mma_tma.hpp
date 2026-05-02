@@ -847,8 +847,7 @@ struct CollectiveMma<
 
     // Size of the register pipeline
     constexpr auto K_BLOCK_MAX = size<2>(tCrA);
-    // A CTA-K tile equal to the MMA K dimension has one register k-block. Avoid
-    // prefetching k_block_next == 0 over the only live operand fragment.
+    // No distinct next register k-block exists when the CTA tile has one MMA-K block.
     constexpr bool SingleMmaKBlock = decltype(K_BLOCK_MAX == Int<1>{})::value;
 
     int read_stage = smem_pipe_read.index();
