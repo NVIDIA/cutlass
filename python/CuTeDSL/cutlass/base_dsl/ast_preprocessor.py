@@ -1500,10 +1500,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         target_var_is_active_before_loop = False
         if isinstance(node.target, ast.Name):
             target_var_name = node.target.id
-            for active_symbol in active_symbols:
+            for idx, active_symbol in enumerate(active_symbols):
                 if target_var_name in active_symbol:
                     target_var_is_active_before_loop = True
-                    active_symbols.remove(active_symbol)
+                    active_symbols[idx] = active_symbol - {target_var_name}
                     break
 
         # Add necessary exprs to handle this
