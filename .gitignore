@@ -2,3 +2,11 @@
 __pycache__/
 cutlass_library.egg-info/
 /build*
+
+# CuTe DSL editable-install payload copied from nvidia-cutlass-dsl-libs-*.
+python/CuTeDSL/VERSION.EDITABLE
+python/CuTeDSL/cutlass/_mlir/
+python/CuTeDSL/cutlass/base_dsl/py.typed
+python/CuTeDSL/cutlass/cute/py.typed
+python/CuTeDSL/lib/
+python/CuTeDSL/nvidia_cutlass_dsl.egg-info/
