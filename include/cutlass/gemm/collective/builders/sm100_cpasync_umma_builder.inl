@@ -142,8 +142,7 @@ struct CollectiveBuilder<
                                                                CLCResponseStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
   
-  static constexpr int ReducedSmemCapacityBytes = 
-    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
   using MainloopPipelineStorage = typename cutlass::PipelineUmmaConsumerAsync<1>::SharedStorage;
@@ -156,7 +155,8 @@ struct CollectiveBuilder<
         PipelineStages,
         SchedulerPipelineStageCount,
         AccumulatorPipelineStageCount,
-        ClusterShape_MNK>,
+        ClusterShape_MNK,
+        ArchTag>,
       TileShape_MNK,
       ElementA,
       cutlass::gemm::TagToStrideA_t<GmemLayoutATag>,

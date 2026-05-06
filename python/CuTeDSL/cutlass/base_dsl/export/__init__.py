@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -16,7 +16,7 @@ from .export import (
     decode_metadata_from_execution_engine,
 )
 
-from .export import ArgsSpecProcessor
+from .export import SignatureProcessor
 from .external_binary_module import ExternalBinaryModule, LoadProvider
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
     "get_export_module",
     "encode_metadata_into_ir_module",
     "decode_metadata_from_execution_engine",
-    "ArgsSpecProcessor",
+    "SignatureProcessor",
     "ExternalBinaryModule",
     "LoadProvider",
 ]

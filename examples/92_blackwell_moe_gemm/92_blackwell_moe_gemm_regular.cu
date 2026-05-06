@@ -171,6 +171,8 @@ bool initialize_block(
 template <
   // Type of kernel schedule to generate
   class MainloopScheduleType = cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100,
+  // Static cluster shape
+  class ClusterShapeMNK = Shape<_1, _1, _1>,
   // Type of epilogue schedule to generate
   class EpilogueScheduleType = cutlass::epilogue::collective::EpilogueScheduleAuto
 >
@@ -189,7 +191,6 @@ struct ExampleRunner {
   using ElementCompute = float;
   using ElementScalar = float;
 
-  using ClusterShapeMNK = Shape<_1,_1,_1>;
   using MmaTileMNK    = Shape<_128,_16,Int<128 / sizeof(ElementA)>>;  // use tile size of N=16 to match real use cases (N is typically very small in decoding stage)
 
   // 16B alignment lets us use TMA
@@ -325,6 +326,16 @@ struct ExampleRunner {
   typename Gemm::Arguments args_from_options(ProblemShapeType problem_size, cutlass::KernelHardwareInfo const& hw_info)
   {
     if constexpr (std::is_same_v<MainloopScheduleType, cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100>){
+      return typename Gemm::Arguments {
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        {block_A.get(), block_B.get()},
+        {{}, // epilogue.thread
+         block_C.get(), stride_C, block_D.get(), stride_D},
+        hw_info
+      };
+    } 
+    else if constexpr (std::is_same_v<MainloopScheduleType, cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized2SmSm100>){
       return typename Gemm::Arguments {
         cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
@@ -490,13 +501,33 @@ int main(int argc, char const **args) {
   runner_tma.run(options, hw_info);
 
   std::cout << "Running kernel with CPASYNC load:" << std::endl;
-  ExampleRunner runner_cpasync;
+  ExampleRunner<cutlass::gemm::KernelWarpSpecialized1SmSm100> runner_cpasync;
   runner_cpasync.run(options, hw_info);
 
-  std::cout << "Running kernel with mixed TMA+CPASYNC load:" << std::endl;
+  std::cout << "Running kernel with mixed TMA+CPASYNC load, cluster shape 1x1:" << std::endl;
   ExampleRunner<cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100> runner_mixed_tma_cpasync;
   runner_mixed_tma_cpasync.run(options, hw_info);
 
+  std::cout << "Running kernel with mixed TMA+CPASYNC load w/ multicast, cluster shape 2x2:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100,
+    Shape<_2, _2, _1>
+  > runner_mixed_tma_cpasync_2x2;
+  runner_mixed_tma_cpasync_2x2.run(options, hw_info);
+
+  std::cout << "Running kernel with mixed TMA+CPASYNC load w/ multicast, cluster shape 4x4, 1SM instructions:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmSm100,
+    Shape<_4, _4, _1>
+  > runner_mixed_tma_cpasync_4x4;
+  runner_mixed_tma_cpasync_4x4.run(options, hw_info);
+
+  std::cout << "Running kernel with mixed TMA+CPASYNC load w/ multicast, cluster shape 4x4, 2SM instructions:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized2SmSm100,
+    Shape<_4, _4, _1>
+  > runner_mixed_tma_cpasync_4x4_2sm;
+  runner_mixed_tma_cpasync_4x4_2sm.run(options, hw_info);
 #endif
 
   return 0;

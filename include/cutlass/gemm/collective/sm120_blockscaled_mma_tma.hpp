@@ -198,10 +198,21 @@ struct CollectiveMma<
     append(stride(SmemLayoutAtomSFA{}), size(filter_zeros(SmemLayoutAtomSFA{})))
   ));
 
-  using SmemLayoutSFB = decltype(make_layout(
+  using SmemLayoutSFB_ = decltype(make_layout(
     append(shape(SmemLayoutAtomSFB{}), Int<DispatchPolicy::Stages>{}),
     append(stride(SmemLayoutAtomSFB{}), size(filter_zeros(SmemLayoutAtomSFB{})))
   ));
+
+  using TileShapeSFB = cute::conditional_t<size<1>(TileShape{}) < 128,
+    decltype(cute::make_shape(
+      shape<0>(TileShape{}),
+      Int<128>{},
+      shape<2>(TileShape{}))),
+    TileShape>;
+
+  using SmemLayoutSFB = cute::conditional_t<size<1>(TileShape{}) < 128,
+    decltype(cute::logical_divide(SmemLayoutSFB_{}, select<1,2>(TileShape{}))),
+    SmemLayoutSFB_>;
 
   static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
   static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
@@ -307,7 +318,7 @@ struct CollectiveMma<
         GmemTiledCopySFB{},
         make_tensor(static_cast<ElementSF const*>(nullptr), LayoutSFB{}),
         SmemLayoutSFB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
+        make_shape(shape<1>(TileShapeSFB{}), shape<2>(TileShapeSFB{})),
         _1{}));  // No programmatic multicast
 
     TMA_A tma_load_a;
@@ -367,7 +378,7 @@ struct CollectiveMma<
         GmemTiledCopySFB{},
         tensor_sfb,
         SmemLayoutSFB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
+        make_shape(shape<1>(TileShapeSFB{}), shape<2>(TileShapeSFB{})),
         _1{}); // No programmatic multicast
 
     return {
@@ -627,10 +638,14 @@ struct CollectiveMma<
       // Partition the inputs based on the current block coordinates.
       auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
 
-      Tensor gA =   gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
-      Tensor gB =   gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
-      Tensor gSFA = gSFA_mkl(_,_,m_coord,_,l_coord);                                                   // (BLK_M,BLK_K,k)
-      Tensor gSFB = gSFB_nkl(_,_,n_coord,_,l_coord);                                                   // (BLK_N,BLK_K,k)
+      auto broadcast_n = make_layout(
+        make_shape(Int<size<1>(TileShapeSFB{}) / size<1>(TileShape{})>{},
+                   Int<cute::numeric_limits<int>::max()>{}),
+        make_stride(_0{}, size<1>(TileShapeSFB{}) / size<1>(TileShape{})));
+      Tensor gA =   gA_mkl(_,_,m_coord,_,l_coord);                                                    // (BLK_M,BLK_K,k)
+      Tensor gB =   gB_nkl(_,_,n_coord,_,l_coord);                                                    // (BLK_N,BLK_K,k)
+      Tensor gSFA = gSFA_mkl(_,_,m_coord,_,l_coord);                                                  // (BLK_M,BLK_K,k)
+      Tensor gSFB = gSFB_nkl(_,_,broadcast_n(n_coord),_,l_coord);                                     // (BLK_N,BLK_K,k)
 
       // Partition source and destination tensors for tma copies
       Tensor tAgA = block_tma_a.partition_S(gA);                                              // (TMA,TMA_M,TMA_K,k)
@@ -693,7 +708,8 @@ struct CollectiveMma<
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Consumer Perspective
   template <
-    class FrgTensorC
+    class FrgTensorC,
+    class BlockCoord
   >
   CUTLASS_DEVICE void
   mma(MainloopPipeline pipeline,
@@ -702,7 +718,8 @@ struct CollectiveMma<
       int k_tile_count,
       int thread_idx,
       TensorStorage& shared_tensors,
-      [[maybe_unused]] Params const& params) {
+      [[maybe_unused]] Params const& params,
+      BlockCoord const& blk_coord) {
     using namespace cute;
 
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
@@ -712,7 +729,16 @@ struct CollectiveMma<
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
     Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_M,BLK_K,PIPE)
-    Tensor sSFB = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_N,BLK_K,PIPE)
+    Tensor sSFB = [&]() {
+      if constexpr (size<1>(TileShape{}) >= 128) {
+        return make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_N,BLK_K,PIPE)
+      }
+      else {
+        Tensor temp = make_tensor(make_smem_ptr(shared_tensors.smem_SFB.begin()), SmemLayoutSFB{});  // (BLK_SFB_N,BLK_K,PIPE)
+        auto n = get<1>(blk_coord);
+        return temp(make_coord(_,n % (size<1>(TileShapeSFB{}) / size<1>(TileShape{}))), _, _);
+      }
+    }();
 
     //
     // Define C accumulators and A/B partitioning

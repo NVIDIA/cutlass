@@ -351,7 +351,8 @@ public:
         }
         else {
           if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 100 ||
-                        ConvKernel::ArchTag::kMinComputeCapability == 101) {
+                        ConvKernel::ArchTag::kMinComputeCapability == 101
+                        ) { 
             launch_result = ClusterLauncher::launch_with_fallback_cluster(
               grid,
               cluster,

@@ -49,7 +49,9 @@
 #endif
 
 #if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
+#if !(defined(__QNX__) && __QNX__ >= 800 && defined(NV_IS_SAFETY))
 #  define CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED
+#endif
 #endif
 
 #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))

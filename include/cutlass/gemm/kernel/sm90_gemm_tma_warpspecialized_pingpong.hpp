@@ -245,8 +245,10 @@ public:
       CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid cluster count to " << max_active_clusters);
     }
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count, max_active_clusters};
-
+    KernelHardwareInfo hw_info = args.hw_info;
+    hw_info.sm_count = sm_count;
+    hw_info.max_active_clusters = max_active_clusters;
+  
     // Calculate workspace pointers
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
@@ -285,7 +287,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
 
     return implementable;
   }
@@ -847,15 +849,29 @@ public:
         // Order two Math WG's MMA one after the other, helps hide Epilogue
         math_wg_order_barrier.wait();
 
-        collective_mainloop.mma(
-          mainloop_pipeline,
-          mainloop_pipe_consumer_state,
-          accumulators,
-          k_tile_count,
-          warp_group_thread_idx,
-          shared_storage.tensors.mainloop,
-          params.mainloop
-        );
+        if constexpr (IsSm120Family) {
+          collective_mainloop.mma(
+            mainloop_pipeline,
+            mainloop_pipe_consumer_state,
+            accumulators,
+            k_tile_count,
+            warp_group_thread_idx,
+            shared_storage.tensors.mainloop,
+            params.mainloop,
+            blk_coord
+          );
+        }
+        else {
+          collective_mainloop.mma(
+            mainloop_pipeline,
+            mainloop_pipe_consumer_state,
+            accumulators,
+            k_tile_count,
+            warp_group_thread_idx,
+            shared_storage.tensors.mainloop,
+            params.mainloop
+          );
+        }
 
         // Cue for next Math WG's MMA to start
         math_wg_order_barrier.arrive();

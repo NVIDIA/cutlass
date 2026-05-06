@@ -199,9 +199,11 @@ struct CollectiveBuilder<
   using sSFA_stride       = decltype(make_stride(sSFA_strideM{}, sSFA_strideK{}));
   using SmemLayoutAtomSFA = decltype(make_layout(  sSFA_shape{},  sSFA_stride{}));
 
-  using sSFB_shapeN       = decltype(prepend(size<1>(TileShape_MNK{}) / Blk_MN{},   mnBasicBlockShape{}));
+  using sSFBTileShape_N = Int<cute::max(size<1>(TileShape_MNK{}), 128)>;
+
+  using sSFB_shapeN       = decltype(prepend(sSFBTileShape_N{} / Blk_MN{},   mnBasicBlockShape{}));
   using sSFB_strideN      = sSF_strideMN;
-  using sSFB_strideK      = decltype(prepend(make_stride(Int<MMA_NSF>{},   size<1>(TileShape_MNK{}) / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
+  using sSFB_strideK      = decltype(prepend(make_stride(Int<MMA_NSF>{},   sSFBTileShape_N{} / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
   using sSFB_shape        = decltype(make_shape(  sSFB_shapeN{},   sSF_shapeK{}));
   using sSFB_stride       = decltype(make_stride(sSFB_strideN{}, sSFB_strideK{}));
   using SmemLayoutAtomSFB = decltype(make_layout(  sSFB_shape{},  sSFB_stride{}));

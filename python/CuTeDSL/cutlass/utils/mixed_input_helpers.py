@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -17,7 +17,9 @@ from typing import Optional, Union
 
 import cutlass
 import cutlass.cute as cute
+from cutlass._mlir import ir
 from cutlass.cutlass_dsl import (
+    Boolean,
     extract_mlir_values,
     new_from_mlir_values,
 )
@@ -68,7 +70,7 @@ def scale_tma_partition(
     """
     tSsS, tSgS = cpasync.tma_partition(
         tma_atom_s,
-        block_in_cluster_coord_vmnk[2],
+        block_in_cluster_coord_vmnk[2],  # type: ignore[index]
         scale_cta_layout,
         cute.group_modes(tCsS, 0, 3),
         cute.group_modes(tCgS, 0, 3),
@@ -170,7 +172,7 @@ def transform_partition(
         reg2smem_tiled_copy = cute.make_cotiled_copy(
             copy_atom_a_transform,
             cute.make_layout((128, 8), stride=(8, 1)),
-            A_transform[(None, None, None, 0)].layout,
+            A_transform[(None, None, None, 0)].layout,  # type: ignore[union-attr]
         )
         thr_reg2smem_tiled_copy = reg2smem_tiled_copy.get_slice(transform_local_tidx)
         partitioned_tensor_input = thr_reg2smem_tiled_copy.partition_S(sA_input)
@@ -281,7 +283,8 @@ def epilog_gmem_copy_and_partition(
     tTR_gC = None
     if tma_atom_c is not None:
         gC_epi_tma = cute.flat_divide(
-            gC_mnl_tma[((None, None), 0, 0, None, None, None)], epi_tile
+            gC_mnl_tma[((None, None), 0, 0, None, None, None)],  # type: ignore[index, arg-type]
+            epi_tile,
         )
         # TMA store
         sC_for_tma_partition = cute.group_modes(sC, 0, 2)
@@ -298,7 +301,8 @@ def epilog_gmem_copy_and_partition(
     if tiled_copy_t2r is not None:
         # SIMT Store
         gC_epi_simt = cute.flat_divide(
-            gC_mnl_simt[((None, None), 0, 0, None, None, None)], epi_tile
+            gC_mnl_simt[((None, None), 0, 0, None, None, None)],  # type: ignore[index, arg-type]
+            epi_tile,
         )
         # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
         thr_copy_t2r = tiled_copy_t2r.get_slice(tidx)
@@ -389,7 +393,7 @@ def epilog_tmem_copy_and_partition(
     )
     # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, STAGE)
     tAcc_epi = cute.flat_divide(
-        tAcc[((None, None), 0, 0, None)],
+        tAcc[((None, None), 0, 0, None)],  # type: ignore[arg-type]
         epi_tile,
     )
     # (EPI_TILE_M, EPI_TILE_N)
@@ -401,7 +405,8 @@ def epilog_tmem_copy_and_partition(
     tTR_tAcc = thr_copy_t2r.partition_S(tAcc_epi)
     # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, loopM, loopN, loopL)
     gC_mnl_epi = cute.flat_divide(
-        gC_mnl[((None, None), 0, 0, None, None, None)], epi_tile
+        gC_mnl[((None, None), 0, 0, None, None, None)],  # type: ignore[arg-type]
+        epi_tile,
     )
     # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, loopM, loopN, loopL)
     tTR_gC = thr_copy_t2r.partition_D(gC_mnl_epi)
@@ -416,7 +421,7 @@ def get_gmem_layout_scale(
     scale_shape_mkl: tuple[int, int, int],
     scale_granularity_m: int,
     scale_granularity_k: int,
-    scale_major_mode: tcgen05.OperandMajorMode,
+    scale_major_mode: cutlass.cute.nvgpu.OperandMajorMode,
 ) -> cute.Layout:
     """
     Get the layout of the scale tensor in global memory.
@@ -430,7 +435,7 @@ def get_gmem_layout_scale(
         (scale_granularity_m, cute.ceil_div(m, scale_granularity_m)),
         (scale_granularity_k, cute.ceil_div(k, scale_granularity_k)),
     )
-    if cutlass.const_expr(scale_major_mode == tcgen05.OperandMajorMode.MN):
+    if cutlass.const_expr(scale_major_mode == cutlass.cute.nvgpu.OperandMajorMode.MN):
         layout_mk = cute.make_layout(
             shape_scale,
             stride=(
@@ -457,7 +462,7 @@ def get_smem_layout_scale(
     use_2cta_instrs: bool,
     scale_granularity_m: int,
     scale_granularity_k: int,
-    scale_major_mode: tcgen05.OperandMajorMode,
+    scale_major_mode: cutlass.cute.nvgpu.OperandMajorMode,
     a_scale_dtype: type[cutlass.Numeric],
     num_scale_load2trans_stage: int,
 ) -> tuple[tuple[int, int], cute.ComposedLayout, cute.ComposedLayout]:
@@ -485,7 +490,7 @@ def get_smem_layout_scale(
         (smem_size_mn, div_mn),
         (smem_size_k, div_k),
     )
-    if cutlass.const_expr(scale_major_mode == tcgen05.OperandMajorMode.MN):
+    if cutlass.const_expr(scale_major_mode == cutlass.cute.nvgpu.OperandMajorMode.MN):
         outer_layout = cute.make_layout(
             smem_atom_shape,
             stride=(
@@ -570,7 +575,7 @@ def compute_smem_layout(
     smem_layout_a_transform = sm100_utils.make_smem_layout_a(
         tiled_mma,
         mma_tiler_mnk,
-        tiled_mma.op.a_dtype,
+        tiled_mma.op.a_dtype,  # type: ignore[attr-defined]
         trans2mma_stage_count,
     )
     smem_layout_b = sm100_utils.make_smem_layout_b(
@@ -583,12 +588,12 @@ def compute_smem_layout(
 
 
 def get_transform_a_source(
-    a_major_mode: tcgen05.OperandMajorMode,
+    a_major_mode: cutlass.cute.nvgpu.OperandMajorMode,
 ) -> tcgen05.OperandSource:
     """
     Determine the operand source for transformed A tensor based on the operand major mode.
     """
-    if cutlass.const_expr(a_major_mode == tcgen05.OperandMajorMode.K):
+    if cutlass.const_expr(a_major_mode == cutlass.cute.nvgpu.OperandMajorMode.K):
         return tcgen05.OperandSource.TMEM
     else:
         return tcgen05.OperandSource.SMEM
@@ -625,13 +630,13 @@ def get_copy_atom_a_transform(
     """
     if cutlass.const_expr(transform_a_source == tcgen05.OperandSource.TMEM):
         if cutlass.const_expr(
-            cute.size(a_smem_shape[0][0]) == 64 and (not use_2cta_instrs)
+            cute.size(a_smem_shape[0][0]) == 64 and (not use_2cta_instrs)  # type: ignore[index]
         ):
             copy_op_r2t = tcgen05.St16x256bOp(
                 tcgen05.Repetition(1), tcgen05.Unpack.NONE
             )
         else:
-            copy_op_r2t = tcgen05.St32x32bOp(tcgen05.Repetition(8), tcgen05.Unpack.NONE)
+            copy_op_r2t = tcgen05.St32x32bOp(tcgen05.Repetition(8), tcgen05.Unpack.NONE)  # type: ignore[assignment]
         return cute.make_copy_atom(copy_op_r2t, mma_dtype)
     else:
         return cute.make_copy_atom(
@@ -706,7 +711,11 @@ def is_valid_tensor_alignment(
     Check if the tensor alignments are valid for the given problem size and data types.
     """
 
-    def check_contiguous_16B_alignment(dtype, is_mode0_major, tensor_shape):
+    def check_contiguous_16B_alignment(
+        dtype: type[cutlass.Numeric],
+        is_mode0_major: bool,
+        tensor_shape: tuple[int, int],
+    ) -> bool:
         major_mode_idx = 0 if is_mode0_major else 1
         num_major_elements = tensor_shape[major_mode_idx]
         num_contiguous_elements = 16 * 8 // dtype.width
@@ -797,7 +806,7 @@ class ContiguousGGSearchState:
         cur_group_idx: cutlass.Int32,
         cur_offset: cutlass.Int32,
         cur_start: cutlass.Int32,
-    ):
+    ) -> None:
         self.last_tile_count = last_tile_count
         self.cur_boundary = cur_boundary
         self.cur_tile_count = cur_tile_count
@@ -805,7 +814,7 @@ class ContiguousGGSearchState:
         self.cur_offset = cur_offset
         self.cur_start = cur_start
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         values = extract_mlir_values(self.last_tile_count)
         values.extend(extract_mlir_values(self.cur_boundary))
         values.extend(extract_mlir_values(self.cur_tile_count))
@@ -814,7 +823,9 @@ class ContiguousGGSearchState:
         values.extend(extract_mlir_values(self.cur_start))
         return values
 
-    def __new_from_mlir_values__(self, values) -> "ContiguousGGSearchState":
+    def __new_from_mlir_values__(
+        self, values: list[ir.Value]
+    ) -> "ContiguousGGSearchState":
         last_tile_count = new_from_mlir_values(self.last_tile_count, [values[0]])
         cur_boundary = new_from_mlir_values(self.cur_boundary, [values[1]])
         cur_tile_count = new_from_mlir_values(self.cur_tile_count, [values[2]])
@@ -869,21 +880,23 @@ class ContiguousGroupWorkTileInfo:
         coord_n: cutlass.Int32,
         group_idx: cutlass.Int32,
         distance_to_boundary: cutlass.Int32,
-    ):
+    ) -> None:
         self.cta_coord_m = cta_coord_m
         self.coord_n = coord_n
         self.group_idx = group_idx
         self.distance_to_boundary = distance_to_boundary
         self.group_count = group_count
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         values = extract_mlir_values(self.cta_coord_m)
         values.extend(extract_mlir_values(self.coord_n))
         values.extend(extract_mlir_values(self.group_idx))
         values.extend(extract_mlir_values(self.distance_to_boundary))
         return values
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(
+        self, values: list[ir.Value]
+    ) -> "ContiguousGroupWorkTileInfo":
         assert len(values) == 4
         new_cta_coord_m = new_from_mlir_values(self.cta_coord_m, [values[0]])
         new_coord_n = new_from_mlir_values(self.coord_n, [values[1]])
@@ -900,7 +913,7 @@ class ContiguousGroupWorkTileInfo:
         )
 
     @property
-    def is_valid_tile(self):
+    def is_valid_tile(self) -> Boolean:
         return self.group_idx < self.group_count
 
 
@@ -926,7 +939,7 @@ def contiguous_group_search(
     if not_found:
         cur_group_idx = cur_group_idx + 1
     while not_found and cur_group_idx <= group_count:
-        next_boundary = cumsum[cur_group_idx]
+        next_boundary = cumsum[cur_group_idx]  # type: ignore[assignment]
         num_m_blocks = cute.ceil_div(
             (next_boundary - cur_boundary),
             cluster_tile_shape_mnk[search_mode],
@@ -953,7 +966,9 @@ def contiguous_group_search(
     )
 
 
-def make_contiguous_group_work_tile_info(group_count: int, sTile_info: cute.Tensor):
+def make_contiguous_group_work_tile_info(
+    group_count: int, sTile_info: cute.Tensor
+) -> ContiguousGroupWorkTileInfo:
     """
     Generate ContiguousGroupWorkTileInfo from tile_info tensor generated by contiguous_group_search
     """
@@ -971,11 +986,9 @@ def cvt_tensor_a(
     Convert tensor src to the given data type. If shuffle is True, use shuffle intrinsic
     for int4-to-bf16 conversion.
     """
-    from cutlass import CUDA_VERSION
+
     # shuffle is supported since CUDA 13.1
-    shuffle_supported = True
-    if CUDA_VERSION.major < 13 or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1):
-        shuffle_supported = False
+    shuffle_supported = cutlass.target_version(min_version="13.1")
     shuffle = shuffle and shuffle_supported
     rst = src.load()
     if cutlass.const_expr(shuffle):

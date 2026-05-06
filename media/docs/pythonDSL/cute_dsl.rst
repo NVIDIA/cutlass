@@ -11,8 +11,10 @@ CuTe DSL
   Control Flow <cute_dsl_general/dsl_control_flow.rst>
   JIT Argument Generation <cute_dsl_general/dsl_jit_arg_generation.rst>
   JIT Argument: Layouts <cute_dsl_general/dsl_dynamic_layout.rst>
+  Struct-like JIT Arguments <cute_dsl_general/dsl_struct_types.rst>
   JIT Caching <cute_dsl_general/dsl_jit_caching.rst>
   JIT Compilation Options <cute_dsl_general/dsl_jit_compilation_options.rst>
+  JIT Types <cute_dsl_general/types.rst>
   Integration with Frameworks <cute_dsl_general/framework_integration.rst>
   Debugging with the DSL <cute_dsl_general/debugging.rst>
   Autotuning with the DSL <cute_dsl_general/autotuning_gemm.rst>

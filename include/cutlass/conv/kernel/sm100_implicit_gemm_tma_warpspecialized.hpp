@@ -188,7 +188,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -270,7 +269,7 @@ public:
     bool implementable = true;
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
 
     if constexpr (IsDynamicCluster) {
       static constexpr int MaxClusterSize = 16;
@@ -413,7 +412,7 @@ public:
 
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop(params.mainloop, cluster_shape, cta_rank_in_cluster);
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);

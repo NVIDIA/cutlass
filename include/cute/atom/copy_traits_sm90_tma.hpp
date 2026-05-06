@@ -42,6 +42,7 @@
 
 #include <cute/numeric/integral_ratio.hpp>
 
+#include <cute/arch/copy_sm100_tma.hpp>
 #include <cutlass/cuda_host_adapter.hpp>
 
 namespace cute
@@ -1149,13 +1150,27 @@ make_tma_copy_atom(CopyOp,
   auto smem_layout  = get_nonswizzle_portion(slayout);
 
   auto tma_gbasis = detail::construct_tma_gbasis<TmaInternalType>(gtensor, smem_layout, cta_v_map);
-
+  auto tma_gbasis_tuple = conditional_return<is_same_v<CopyOp, SM100_TMA_LOAD_2D_GATHER4> 
+                                          ||is_same_v<CopyOp, SM100_TMA_LOAD_MULTICAST_2D_GATHER4>
+                                          ||is_same_v<CopyOp, SM100_TMA_STORE_2D_SCATTER4>>(
+    [](auto tma_gbasis) constexpr {
+      static_assert(rank_v<decltype(tma_gbasis)> == 2, "TMA Gather/Scatter only supports 2D tensors");
+      auto tma_gbasis_g4 = tma_gbasis.compose(make_identity_layout(make_shape(shape<0>(tma_gbasis), _1{})));
+      auto tma_gbasis_g4_size = size(tma_gbasis_g4) * _4{};
+      return make_tuple(tma_gbasis_g4, tma_gbasis_g4_size);
+    }, 
+    [](auto tma_gbasis) constexpr {
+      auto tma_gbasis_size = size(tma_gbasis);
+      return make_tuple(tma_gbasis, tma_gbasis_size);
+    })(tma_gbasis);
+  auto _tma_gbasis = get<0>(tma_gbasis_tuple);
+  auto _tma_gbasis_size = get<1>(tma_gbasis_tuple);
   //
   // Construct the TMA Desc and the strides of the TMA Tensor
   //
 
   auto [tma_desc, aux_params] = detail::make_tma_copy_desc<TmaInternalType>(gtensor,
-                                                                            tma_gbasis,
+                                                                            _tma_gbasis,
                                                                             smem_swizzle,
                                                                             num_multicast);
 
@@ -1163,7 +1178,7 @@ make_tma_copy_atom(CopyOp,
   // Construct the Copy_Traits
   //
 
-  constexpr int num_bits_per_tma = size(tma_gbasis) * sizeof_bits_v<TmaInternalType>;
+  constexpr int num_bits_per_tma = _tma_gbasis_size * sizeof_bits_v<TmaInternalType>;
   using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_tma>, decltype(aux_params)>;
   using Atom   = Copy_Atom<Traits, typename GEngine::value_type>;
 
@@ -1397,17 +1412,16 @@ template <class... Args,
           class CtaCoord,
           class TShape, class TStride,
           class SEngine, class SLayout,
-          class GEngine, class GLayout>
+          class... GTensors,
+          __CUTE_REQUIRES(conjunction_v<is_tensor<GTensors>...>)>
 CUTE_DEVICE
 auto
 tma_partition(Copy_Atom<Args...>      const& copy_atom,
               CtaCoord                const& cta_coord,
               Layout<TShape,TStride>  const& cta_layout,  // T: CTA coord -> logical multicast id
               Tensor<SEngine,SLayout> const& stensor,     // SMEM Tensor (TMATile, Rest...)
-              Tensor<GEngine,GLayout> const& gtensor)     // GMEM Tensor (TMATile, Rest...)
+              GTensors                const&... gtensors) // GMEM Tensor (TMATile, Rest...)
 {
-  CUTE_STATIC_ASSERT_V(size<0>(stensor) == size<0>(gtensor));
-
   // Invert the smem to get the largest contiguous vector in the smem layout
   Layout inv_smem_layout = right_inverse(get_nonswizzle_portion(layout<0>(stensor)));
   // Scale that up to cover all of the smem_coords
@@ -1417,22 +1431,24 @@ tma_partition(Copy_Atom<Args...>      const& copy_atom,
   Layout tma_layout_v = make_layout(Int<Copy_Atom<Args...>::NumValSrc>{});
   auto layout_V = make_tile(logical_divide(layout_v, tma_layout_v));
 
-  // Append with _ until we cover all Rest... modes
-  auto glayout_V = append<GLayout::rank>(layout_V, _);
-  auto slayout_V = append<SLayout::rank>(layout_V, _);
-  // Transform tile mode and coalesce
-  Tensor gtensor_v = coalesce(gtensor.compose(glayout_V), Shape<Shape<_1,_1>>{});    // ((TMA,TMA_Iter), Rest...)
-  Tensor stensor_v = coalesce(stensor.compose(slayout_V), Shape<Shape<_1,_1>>{});    // ((TMA,TMA_Iter), Rest...)
-  // Offset inside the TMA-mode for the multicast
   auto multicast_offset = cta_layout(cta_coord) * (size(tma_layout_v) / cosize(cta_layout));
   auto multicast_coord  = make_coord(make_coord(multicast_offset, Int<0>{}));
-  auto gcoord = append<GLayout::rank>(multicast_coord, Int<0>{});
-  auto scoord = append<SLayout::rank>(multicast_coord, Int<0>{});
 
-  Tensor gresult = domain_offset(gcoord, gtensor_v);
-  Tensor sresult = domain_offset(scoord, stensor_v);
+  // Existing convention is to return stensor last
+  return cute::transform(make_tuple(gtensors..., stensor), [&](auto && tensor) {
+      auto R = rank(tensor);
+      CUTE_STATIC_ASSERT_V(size<0>(stensor) == size<0>(tensor));
 
-  return cute::make_tuple(gresult, sresult);
+      // Append with _ until we cover all Rest... modes
+      auto tlayout_V = append<R>(layout_V, _);
+
+      // Transform tile mode and coalesce
+      Tensor tensor_v = coalesce(tensor.compose(tlayout_V), Shape<Shape<_1,_1>>{}); // ((TMA,TMA_Iter), Rest...)
+
+      // Offset inside the TMA-mode for the multicast
+      auto coord = append<R>(multicast_coord, Int<0>{});
+      return domain_offset(coord, tensor_v);
+    });
 }
 
 // Explicit defaults for cta_coord and cta_layout

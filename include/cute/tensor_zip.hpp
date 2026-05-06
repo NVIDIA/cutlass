@@ -72,9 +72,12 @@ struct ZipIterator
 
   template <class... Index>
   CUTE_HOST_DEVICE constexpr
-  ZipIterator operator+(cute::tuple<Index...> const& idxs) const {
+  auto operator+(cute::tuple<Index...> const& idxs) const {
     static_assert(sizeof...(Index) == sizeof...(Iters), "Expect same number of offsets as iterators.");
-    return cute::transform(iters_, idxs, [](auto&& iter, auto&& idx) { return iter + idx; });
+    return cute::transform_apply(iters_, idxs, 
+      [](auto&& iter, auto&& idx) { return iter + idx; },
+      [](auto... iter) { return ZipIterator<decltype(iter)...>(iter...); }
+    );
   }
 
   template <class... Index>
@@ -149,6 +152,13 @@ struct ZipLayout
 template <class... Layouts>
 struct is_layout<ZipLayout<Layouts...>> : true_type {};
 
+template <class Layout>
+struct is_zip_layout : false_type {};
+
+template <class... Layouts>
+struct is_zip_layout<ZipLayout<Layouts...>> : true_type {};
+
+
 //
 // make_zip_tensor and unzip_tensor
 //
@@ -189,6 +199,23 @@ auto
 size(ZipLayout<Layouts...> const& layouts)
 {
   return size<Is...>(get<0>(layouts.layouts_));
+}
+
+
+template <int... Is, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+get(ZipLayout<Layouts...> const& layouts)
+{
+  return ZipLayout(cute::transform(layouts.layouts_, [&](auto t){ return get<Is...>(t); }));
+}
+
+template <int... Is, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+layout(ZipLayout<Layouts...> const& layouts)
+{
+  return get<Is...>(layouts);
 }
 
 //
@@ -242,5 +269,46 @@ slice_and_offset(Coord const& c, ZipLayout<Layouts...> const& layouts)
   auto result = cute::zip(cute::transform(layouts.layouts_, [&c](auto const& layout) { return slice_and_offset(c, layout); }));
   return cute::make_tuple(ZipLayout(get<0>(result)), get<1>(result));
 }
+
+template <int B, int E, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+group(ZipLayout<Layouts...> const& layouts)
+{
+  return ZipLayout(cute::transform(layouts.layouts_, [&](auto t){ return group<B,E>(t); }));
+}
+
+template <int... Is, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+shape(ZipLayout<Layouts...> const& layouts) {
+  return shape<Is...>(get<0>(layouts.layouts_));
+}
+
+template <int... Is, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+coshape(ZipLayout<Layouts...> const& layouts) {
+  return cute::transform(layouts.layouts_, [&](auto t){ return coshape<Is...>(t); });
+}
+
+template <int... Is, class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+cosize(ZipLayout<Layouts...> const& layouts)
+{
+  return size(coshape<Is...>(layouts));
+}
+
+template <class... Layouts>
+CUTE_HOST_DEVICE constexpr
+auto
+nullspace(ZipLayout<Layouts...> const& layouts) {
+  return cute::fold(layouts.layouts_, make_layout(size(layouts)),
+                    [](auto null, auto layout) { 
+                       return composition(null, nullspace(composition(layout, null)));
+                    });
+}
+
 
 } // end namespace cute

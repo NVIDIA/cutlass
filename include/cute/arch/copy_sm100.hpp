@@ -7612,4 +7612,173 @@ struct SM100_TMEM_STORE_32dp32b128x_16b
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace SM100::TMEM::LOAD_STAT {
+
+// 32 data path lanes, 32-bit pattern, repeated 32 times
+struct SM100_TMEM_LOAD_STAT_32dp32b32x
+{
+  using SRegisters = uint32_t[1];
+  using DRegisters = uint32_t[32];
+
+  CUTE_HOST_DEVICE static void
+  copy(uint32_t const& src_addr,
+       uint32_t& dst00, uint32_t& dst01, uint32_t& dst02, uint32_t& dst03,
+       uint32_t& dst04, uint32_t& dst05, uint32_t& dst06, uint32_t& dst07,
+       uint32_t& dst08, uint32_t& dst09, uint32_t& dst10, uint32_t& dst11,
+       uint32_t& dst12, uint32_t& dst13, uint32_t& dst14, uint32_t& dst15,
+       uint32_t& dst16, uint32_t& dst17, uint32_t& dst18, uint32_t& dst19,
+       uint32_t& dst20, uint32_t& dst21, uint32_t& dst22, uint32_t& dst23,
+       uint32_t& dst24, uint32_t& dst25, uint32_t& dst26, uint32_t& dst27,
+       uint32_t& dst28, uint32_t& dst29, uint32_t& dst30, uint32_t& dst31,
+       float& row_max)
+  {
+#if defined(CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED)
+    asm volatile ("tcgen05.ld.red.sync.aligned.32x32b.x32.max.f32"
+                    "{%0, %1, %2, %3,"
+                    "%4, %5, %6, %7,"
+                    "%8, %9, %10, %11,"
+                    "%12, %13, %14, %15,"
+                    "%16, %17, %18, %19,"
+                    "%20, %21, %22, %23,"
+                    "%24, %25, %26, %27,"
+                    "%28, %29, %30, %31}, %32,"
+                    "[%33];\n"
+    :  "=r"(dst00), "=r"(dst01), "=r"(dst02), "=r"(dst03),
+       "=r"(dst04), "=r"(dst05), "=r"(dst06), "=r"(dst07),
+       "=r"(dst08), "=r"(dst09), "=r"(dst10), "=r"(dst11),
+       "=r"(dst12), "=r"(dst13), "=r"(dst14), "=r"(dst15),
+       "=r"(dst16), "=r"(dst17), "=r"(dst18), "=r"(dst19),
+       "=r"(dst20), "=r"(dst21), "=r"(dst22), "=r"(dst23),
+       "=r"(dst24), "=r"(dst25), "=r"(dst26), "=r"(dst27),
+       "=r"(dst28), "=r"(dst29), "=r"(dst30), "=r"(dst31),
+       "=f"(row_max)
+    :  "r"(src_addr));
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use TMEM_LOAD_STAT without CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED.");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// 32 data path lanes, 32-bit pattern, repeated 128 times
+struct SM100_TMEM_LOAD_STAT_32dp32b128x
+{
+  using SRegisters = uint32_t[1];
+  using DRegisters = uint32_t[128];
+
+  CUTE_HOST_DEVICE static void
+  copy(uint32_t const& src_addr,
+       uint32_t& dst000, uint32_t& dst001, uint32_t& dst002, uint32_t& dst003,
+       uint32_t& dst004, uint32_t& dst005, uint32_t& dst006, uint32_t& dst007,
+       uint32_t& dst008, uint32_t& dst009, uint32_t& dst010, uint32_t& dst011,
+       uint32_t& dst012, uint32_t& dst013, uint32_t& dst014, uint32_t& dst015,
+       uint32_t& dst016, uint32_t& dst017, uint32_t& dst018, uint32_t& dst019,
+       uint32_t& dst020, uint32_t& dst021, uint32_t& dst022, uint32_t& dst023,
+       uint32_t& dst024, uint32_t& dst025, uint32_t& dst026, uint32_t& dst027,
+       uint32_t& dst028, uint32_t& dst029, uint32_t& dst030, uint32_t& dst031,
+       uint32_t& dst032, uint32_t& dst033, uint32_t& dst034, uint32_t& dst035,
+       uint32_t& dst036, uint32_t& dst037, uint32_t& dst038, uint32_t& dst039,
+       uint32_t& dst040, uint32_t& dst041, uint32_t& dst042, uint32_t& dst043,
+       uint32_t& dst044, uint32_t& dst045, uint32_t& dst046, uint32_t& dst047,
+       uint32_t& dst048, uint32_t& dst049, uint32_t& dst050, uint32_t& dst051,
+       uint32_t& dst052, uint32_t& dst053, uint32_t& dst054, uint32_t& dst055,
+       uint32_t& dst056, uint32_t& dst057, uint32_t& dst058, uint32_t& dst059,
+       uint32_t& dst060, uint32_t& dst061, uint32_t& dst062, uint32_t& dst063,
+       uint32_t& dst064, uint32_t& dst065, uint32_t& dst066, uint32_t& dst067,
+       uint32_t& dst068, uint32_t& dst069, uint32_t& dst070, uint32_t& dst071,
+       uint32_t& dst072, uint32_t& dst073, uint32_t& dst074, uint32_t& dst075,
+       uint32_t& dst076, uint32_t& dst077, uint32_t& dst078, uint32_t& dst079,
+       uint32_t& dst080, uint32_t& dst081, uint32_t& dst082, uint32_t& dst083,
+       uint32_t& dst084, uint32_t& dst085, uint32_t& dst086, uint32_t& dst087,
+       uint32_t& dst088, uint32_t& dst089, uint32_t& dst090, uint32_t& dst091,
+       uint32_t& dst092, uint32_t& dst093, uint32_t& dst094, uint32_t& dst095,
+       uint32_t& dst096, uint32_t& dst097, uint32_t& dst098, uint32_t& dst099,
+       uint32_t& dst100, uint32_t& dst101, uint32_t& dst102, uint32_t& dst103,
+       uint32_t& dst104, uint32_t& dst105, uint32_t& dst106, uint32_t& dst107,
+       uint32_t& dst108, uint32_t& dst109, uint32_t& dst110, uint32_t& dst111,
+       uint32_t& dst112, uint32_t& dst113, uint32_t& dst114, uint32_t& dst115,
+       uint32_t& dst116, uint32_t& dst117, uint32_t& dst118, uint32_t& dst119,
+       uint32_t& dst120, uint32_t& dst121, uint32_t& dst122, uint32_t& dst123,
+       uint32_t& dst124, uint32_t& dst125, uint32_t& dst126, uint32_t& dst127, float& row_max)
+  {
+#if defined(CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED)
+    asm volatile ("tcgen05.ld.red.sync.aligned.32x32b.x128.max.f32"
+                    "{%0, %1, %2, %3,"
+                    "%4, %5, %6, %7,"
+                    "%8, %9, %10, %11,"
+                    "%12, %13, %14, %15,"
+                    "%16, %17, %18, %19,"
+                    "%20, %21, %22, %23,"
+                    "%24, %25, %26, %27,"
+                    "%28, %29, %30, %31,"
+                    "%32, %33, %34, %35,"
+                    "%36, %37, %38, %39,"
+                    "%40, %41, %42, %43,"
+                    "%44, %45, %46, %47,"
+                    "%48, %49, %50, %51,"
+                    "%52, %53, %54, %55,"
+                    "%56, %57, %58, %59,"
+                    "%60, %61, %62, %63,"
+                    "%64, %65, %66, %67,"
+                    "%68, %69, %70, %71,"
+                    "%72, %73, %74, %75,"
+                    "%76, %77, %78, %79,"
+                    "%80, %81, %82, %83,"
+                    "%84, %85, %86, %87,"
+                    "%88, %89, %90, %91,"
+                    "%92, %93, %94, %95,"
+                    "%96, %97, %98, %99,"
+                    "%100, %101, %102, %103,"
+                    "%104, %105, %106, %107,"
+                    "%108, %109, %110, %111,"
+                    "%112, %113, %114, %115,"
+                    "%116, %117, %118, %119,"
+                    "%120, %121, %122, %123,"
+                    "%124, %125, %126, %127}, %128,"
+                    "[%129];\n"
+    :  "=r"(dst000), "=r"(dst001), "=r"(dst002), "=r"(dst003),
+       "=r"(dst004), "=r"(dst005), "=r"(dst006), "=r"(dst007),
+       "=r"(dst008), "=r"(dst009), "=r"(dst010), "=r"(dst011),
+       "=r"(dst012), "=r"(dst013), "=r"(dst014), "=r"(dst015),
+       "=r"(dst016), "=r"(dst017), "=r"(dst018), "=r"(dst019),
+       "=r"(dst020), "=r"(dst021), "=r"(dst022), "=r"(dst023),
+       "=r"(dst024), "=r"(dst025), "=r"(dst026), "=r"(dst027),
+       "=r"(dst028), "=r"(dst029), "=r"(dst030), "=r"(dst031),
+       "=r"(dst032), "=r"(dst033), "=r"(dst034), "=r"(dst035),
+       "=r"(dst036), "=r"(dst037), "=r"(dst038), "=r"(dst039),
+       "=r"(dst040), "=r"(dst041), "=r"(dst042), "=r"(dst043),
+       "=r"(dst044), "=r"(dst045), "=r"(dst046), "=r"(dst047),
+       "=r"(dst048), "=r"(dst049), "=r"(dst050), "=r"(dst051),
+       "=r"(dst052), "=r"(dst053), "=r"(dst054), "=r"(dst055),
+       "=r"(dst056), "=r"(dst057), "=r"(dst058), "=r"(dst059),
+       "=r"(dst060), "=r"(dst061), "=r"(dst062), "=r"(dst063),
+       "=r"(dst064), "=r"(dst065), "=r"(dst066), "=r"(dst067),
+       "=r"(dst068), "=r"(dst069), "=r"(dst070), "=r"(dst071),
+       "=r"(dst072), "=r"(dst073), "=r"(dst074), "=r"(dst075),
+       "=r"(dst076), "=r"(dst077), "=r"(dst078), "=r"(dst079),
+       "=r"(dst080), "=r"(dst081), "=r"(dst082), "=r"(dst083),
+       "=r"(dst084), "=r"(dst085), "=r"(dst086), "=r"(dst087),
+       "=r"(dst088), "=r"(dst089), "=r"(dst090), "=r"(dst091),
+       "=r"(dst092), "=r"(dst093), "=r"(dst094), "=r"(dst095),
+       "=r"(dst096), "=r"(dst097), "=r"(dst098), "=r"(dst099),
+       "=r"(dst100), "=r"(dst101), "=r"(dst102), "=r"(dst103),
+       "=r"(dst104), "=r"(dst105), "=r"(dst106), "=r"(dst107),
+       "=r"(dst108), "=r"(dst109), "=r"(dst110), "=r"(dst111),
+       "=r"(dst112), "=r"(dst113), "=r"(dst114), "=r"(dst115),
+       "=r"(dst116), "=r"(dst117), "=r"(dst118), "=r"(dst119),
+       "=r"(dst120), "=r"(dst121), "=r"(dst122), "=r"(dst123),
+       "=r"(dst124), "=r"(dst125), "=r"(dst126), "=r"(dst127), "=f"(row_max)
+    :  "r"(src_addr));
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use TMEM_LOAD_STAT without CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED.");
+#endif
+  }
+//#endif
+};
+
+} // end namespace SM100::TMEM::LOAD_STAT
+
 } // end namespace cute

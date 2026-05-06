@@ -120,4 +120,132 @@ TEST(SM120_Device_Blockscaled_Gemm_mxf4t_mxf4n_f32n_tensor_op_f32, 128x128x256) 
   EXPECT_TRUE(result);
 }
 
+namespace kernel_2 {
+  using ElementA = cutlass::float_e2m1_t;
+  using ElementB = cutlass::float_e2m1_t;
+  using ElementC = float;
+  using ElementD = float;
+  using ElementAccumulator = float;
+  using ElementCompute = float;
+  using ElementSF = cutlass::float_ue8m0_t;
+
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using LayoutD = cutlass::layout::ColumnMajor;
+
+  using ElementPairA = cutlass::mx_float4_t<cutlass::float_e2m1_t>;
+  using ElementPairB = cutlass::mx_float4_t<cutlass::float_e2m1_t>;
+
+  static constexpr int AlignmentA = 16 * 8 / cutlass::sizeof_bits<ElementA>::value; // Align to 16 bytes.
+  static constexpr int AlignmentB = 16 * 8 / cutlass::sizeof_bits<ElementB>::value; // Align to 16 bytes.
+  static constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+  static constexpr int AlignmentD = 128 / cutlass::sizeof_bits<ElementD>::value;
+
+  using TileShape = Shape<_128,_64,_256>;
+  using ClusterShape = Shape<_1,_1,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC, AlignmentC,
+      ElementD, LayoutD, AlignmentD,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassBlockScaledTensorOp,
+      ElementPairA, LayoutA, AlignmentA,
+      ElementPairB, LayoutB, AlignmentB,
+      ElementAccumulator,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  template <typename T>
+  struct dummy {
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+        Shape<int,int,int,int>,
+        CollectiveMainloop,
+        CollectiveEpilogue
+    >;
+    using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  };
+  using GemmKernel = typename dummy<void>::GemmKernel;
+  using Gemm = typename dummy<void>::Gemm;
+
+} // kernel_2
+
+TEST(SM120_Device_Blockscaled_Gemm_mxf4t_mxf4n_f32n_tensor_op_f32, 128x64x256) {
+  bool result = test::gemm::device::TestSmall<kernel_2::Gemm, true>(1.0, 0.5);
+  EXPECT_TRUE(result);
+}
+
+namespace kernel_3 {
+  using ElementA = cutlass::float_e2m1_t;
+  using ElementB = cutlass::float_e2m1_t;
+  using ElementC = float;
+  using ElementD = float;
+  using ElementAccumulator = float;
+  using ElementCompute = float;
+  using ElementSF = cutlass::float_ue8m0_t;
+
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using LayoutD = cutlass::layout::ColumnMajor;
+
+  using ElementPairA = cutlass::mx_float4_t<cutlass::float_e2m1_t>;
+  using ElementPairB = cutlass::mx_float4_t<cutlass::float_e2m1_t>;
+
+  static constexpr int AlignmentA = 16 * 8 / cutlass::sizeof_bits<ElementA>::value; // Align to 16 bytes.
+  static constexpr int AlignmentB = 16 * 8 / cutlass::sizeof_bits<ElementB>::value; // Align to 16 bytes.
+  static constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+  static constexpr int AlignmentD = 128 / cutlass::sizeof_bits<ElementD>::value;
+
+  using TileShape = Shape<_128,_32,_256>;
+  using ClusterShape = Shape<_1,_1,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC, AlignmentC,
+      ElementD, LayoutD, AlignmentD,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassBlockScaledTensorOp,
+      ElementPairA, LayoutA, AlignmentA,
+      ElementPairB, LayoutB, AlignmentB,
+      ElementAccumulator,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  template <typename T>
+  struct dummy {
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+        Shape<int,int,int,int>,
+        CollectiveMainloop,
+        CollectiveEpilogue
+    >;
+    using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  };
+  using GemmKernel = typename dummy<void>::GemmKernel;
+  using Gemm = typename dummy<void>::Gemm;
+
+} // kernel_3
+
+TEST(SM120_Device_Blockscaled_Gemm_mxf4t_mxf4n_f32n_tensor_op_f32, 128x32x256) {
+  bool result = test::gemm::device::TestSmall<kernel_3::Gemm, true>(1.0, 0.5);
+  EXPECT_TRUE(result);
+}
+
 #endif // (defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED))

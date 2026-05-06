@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -16,6 +16,15 @@ from .smem import *
 from .tmem import *
 from .numeric_conversion import *
 from .clc import *
+
+import cutlass.cutlass_dsl as cutlass_dsl
+
+# Forward from auto-generated nvvm python: only export on 12.9 wheel
+_nvvm_forward_exports_12_9 = (
+    ["ProxyKind", "SharedSpace", "RoundingModeKind", "ReduxKind", "AtomicOpKind"]
+    if cutlass_dsl.target_version(exact_version="12.9")
+    else []
+)
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -40,6 +49,7 @@ __all__ = [
     #
     "lane_idx",
     "warp_idx",
+    "physical_warp_id",
     "thread_idx",
     "block_dim",
     "block_idx",
@@ -50,6 +60,7 @@ __all__ = [
     "block_in_cluster_idx",
     "block_in_cluster_dim",
     "block_idx_in_cluster",
+    "dynamic_smem_size",
     "shuffle_sync",
     "shuffle_sync_up",
     "shuffle_sync_down",
@@ -74,7 +85,7 @@ __all__ = [
     "vote_all_sync",
     "vote_uni_sync",
     "warp_redux_sync",
-    "atomic_max_float32",
+    "atomic_max_float32",  # Deprecated: use atomic_fmax
     "atomic_add",
     "atomic_and",
     "atomic_or",
@@ -85,6 +96,7 @@ __all__ = [
     "atomic_cas",
     "store",
     "load",
+    "red",
     "popc",
     "fence_proxy",
     "fence_view_async_tmem_load",
@@ -96,7 +108,9 @@ __all__ = [
     "fma_packed_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
+    "sub_packed_f32x2",
     "fmax",
+    "fmin",
     "rcp_approx",
     "exp2",
     "cvt_i8x4_to_f32x4",
@@ -105,9 +119,39 @@ __all__ = [
     "cvt_i8x2_to_bf16x2",
     "cvt_i8x4_to_bf16x4",
     "cvt_f32x2_bf16x2",
-    "warp_redux_sync",
+    "smid",
+    "nsmid",
+    "clock",
+    "clock64",
+    "match_sync",
+    "clz",
+    "bfind",
+    "brev",
+    "bfe",
+    "bfi",
+    "mul_hi",
+    "mul_wide",
+    "mul24",
+    "mad24",
+    "add_cc",
+    "addc",
+    "sub_cc",
+    "subc",
+    "mad_cc",
+    "madc",
+    "activemask",
+    "lanemask_lt",
+    "lanemask_le",
+    "lanemask_eq",
+    "lanemask_ge",
+    "lanemask_gt",
+    "add_sat_int",
+    "sub_sat_int",
+    "lop3",
+    "shf",
     # Constants
     "WARP_SIZE",
+    *_nvvm_forward_exports_12_9,
     #
     # smem.py
     #
