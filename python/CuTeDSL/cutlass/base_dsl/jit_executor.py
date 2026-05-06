@@ -968,7 +968,6 @@ class JitCompiledFunction:
         """
         args = self._propagate_dynamic_marks(args)
         exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
-        exe_args, adapted_args = self.args_spec.generate_execution_args(args, kwargs)
         exe_args, adapted_args = self.execution_args.generate_execution_args(
             args, kwargs
         )

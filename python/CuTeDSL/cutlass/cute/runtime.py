@@ -186,7 +186,6 @@ class _Tensor(Tensor):
         self._dtype: Any = None
         self._use_32bit_stride = use_32bit_stride
         self._dynamic_marking_calls = []
-        self._c_pointers_cache = None
         self._c_pointers_cache: Optional[List[int]] = None
 
     @property  # type: ignore[misc]
