@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include "cutlass/util/command_line.h"
@@ -27,6 +28,7 @@ struct W4A8BenchOptions {
   float beta = 0.f;
   int warmup = 20;
   int iterations = 200;
+  std::string only;
 
   void parse(int argc, char const **argv) {
     cutlass::CommandLine cmd(argc, argv);
@@ -39,6 +41,7 @@ struct W4A8BenchOptions {
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("warmup", warmup);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("only", only);
   }
 
   /// Total GEMM FLOPs across the grouped batch in GFLOP units (2*M*N*K per group).

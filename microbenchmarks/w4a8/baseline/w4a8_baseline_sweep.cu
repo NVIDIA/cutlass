@@ -117,6 +117,33 @@ namespace cfg {
   using C7 = GemmConfig<C7_Tile, Cluster_1_2_1>;
 }
 
+struct Variant {
+  const char *id;
+  const char *name;
+  SweepResult (*run)(W4A8BenchOptions const &);
+};
+
+template <class Config, class Schedule>
+static SweepResult run_named(W4A8BenchOptions const &opt, const char *name) {
+  return run_one<Config, Schedule>(std::string(name), opt);
+}
+
+#define VARIANT(ID, NAME, CFG, SCH)                                                                \
+  Variant {                                                                                        \
+    ID, NAME, [](W4A8BenchOptions const &o) { return run_named<CFG, SCH>(o, NAME); }               \
+  }
+
+static const Variant kVariants[] = {
+    VARIANT("C0", "C0 coop 128x128x128 cluster1x1x1", cfg::C0, sched::Coop),
+    VARIANT("C1", "C1 coop 128x 16x128 cluster1x1x1", cfg::C1, sched::Coop),
+    VARIANT("C2", "C2 coop 128x 16x128 cluster2x1x1", cfg::C2, sched::Coop),
+    VARIANT("C3", "C3 coop 128x 32x128 cluster1x1x1", cfg::C3, sched::Coop),
+    VARIANT("C4", "C4 ping  64x 16x128 cluster1x1x1", cfg::C4, sched::Ping),
+    VARIANT("C5", "C5 ping  64x 32x128 cluster1x1x1", cfg::C5, sched::Ping),
+    VARIANT("C6", "C6 ping  64x 64x128 cluster1x1x1", cfg::C6, sched::Ping),
+    VARIANT("C7", "C7 coop 128x 16x128 cluster1x2x1", cfg::C7, sched::Coop),
+};
+
 int main(int argc, char const **argv) {
   if (!cuda_toolkit_at_least_12_3()) {
     std::cerr << "CUDA 12.3+ required.\n";
@@ -137,18 +164,22 @@ int main(int argc, char const **argv) {
   std::cout << "  warmup/iters : " << opt.warmup << " / " << opt.iterations << "\n";
   std::cout << "  total math   : " << opt.total_gemm_gflops() << " GFLOPs/iter\n";
   std::cout << "  weight bytes : " << (opt.total_b_bytes() / (1024.0 * 1024.0)) << " MiB/iter\n";
-  std::cout << "  HBM3e peak   : " << H200_HBM_PEAK_GIB_S << " GiB/s\n\n";
+  std::cout << "  HBM3e peak   : " << H200_HBM_PEAK_GIB_S << " GiB/s\n";
+  if (!opt.only.empty()) {
+    std::cout << "  filter --only: " << opt.only << "\n";
+  }
+  std::cout << "\n";
 
   std::vector<SweepResult> results;
+  for (auto const &v : kVariants) {
+    if (!opt.only.empty() && opt.only != v.id) continue;
+    results.push_back(v.run(opt));
+  }
 
-  results.push_back(run_one<cfg::C0, sched::Coop>("C0 coop 128x128x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C1, sched::Coop>("C1 coop 128x 16x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C2, sched::Coop>("C2 coop 128x 16x128 cluster2x1x1", opt));
-  results.push_back(run_one<cfg::C3, sched::Coop>("C3 coop 128x 32x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C4, sched::Ping>("C4 ping  64x 16x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C5, sched::Ping>("C5 ping  64x 32x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C6, sched::Ping>("C6 ping  64x 64x128 cluster1x1x1", opt));
-  results.push_back(run_one<cfg::C7, sched::Coop>("C7 coop 128x 16x128 cluster1x2x1", opt));
+  if (results.empty()) {
+    std::cerr << "No variants matched --only='" << opt.only << "'.\n";
+    return 2;
+  }
 
   // Print as-run order.
   std::cout << "\n=== Sweep results (as-run order) ===\n";
