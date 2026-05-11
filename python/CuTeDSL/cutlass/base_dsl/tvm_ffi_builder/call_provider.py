@@ -12,7 +12,7 @@
 """Call provider that implements a specific calling convention."""
 
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from . import spec
 from ..._mlir import ir
@@ -125,7 +125,7 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                 return value
 
             def map_stride_for_tensor_dtype_f4x2_to_f4(
-                index, value: ir.Value
+                index: int, value: ir.Value
             ) -> ir.Value:
                 if index != stride_one_index:
                     with ir.InsertionPoint(current_block):
@@ -262,7 +262,7 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                     call_operands += self.load_to_call_operands(struct_type, alloca)
         else:
             # pack the values to an alloca that we can pass as void**
-            all_values = []
+            all_values: list[Any] = []
             for _, value in packed_params:
                 if isinstance(value, tuple):
                     all_values.extend(value)

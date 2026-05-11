@@ -3,7 +3,7 @@
 
 # CUTLASS 4.5.0
 
-_CUTLASS 4.5.0 - March 2026_
+_CUTLASS 4.5.0 - May 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -45,16 +45,57 @@ To get started quickly - please refer :
 
 # What's New in CUTLASS 4.5
 
-### CuTe DSL
+## CuTe DSL
+* New features
+  - New Block API `block_copy()` to simplify TMA and S2T copy. Users can ignore detail about multicast and 2CTA partition for TMA by `block_copy()` and need not to invoke `tma_partition()`. And users can remove bulk of S2T initialization to simplify S2T copy.
+  - MXF8F6F4 mixed precision supoort
+    - BlockScaled MMA now supports MXF8*MXF4 or MXF8*MXF6
+  - Block Scaled MMA for SM120 now works on Spark
+  - EFC broadcast semantics support
+    -  EFC epilogue functions can now broadcast and remap tensor modes via `C.remap_modes[:, 0, 1]` subscript syntax (where `:` marks a broadcast dimension and integers select source mode indices). Covers scalar broadcast, row/column broadcast, and arbitrary mode permutations (e.g. transpose). The PyTorch reference evaluator mirrors the same transformations.
+  - Initial linter support: Improved type hints on CuTe DSL APIs to support static type checkers like MyPy
+  - dataclasses.dataclass is now supported for JIT compilaton and cute.compile for both plain and tvm-ffi path
+  - cute.copy now supports user specified loop unrolling
+
 * Bug fixing and improvements
   - Improved source code correlation for profiling/debugging
+  - Fixed an aarch64 segfault issue with tvm-ffi
+  - Re-organization for CuTe DSL examples/tutorials for better discoverability
 
-### CUTLASS C++
+* More examples of authorizing peak-performance kernels
+  - MOE examles
+    - A new style of grouped-gemm that aligns to torch's grouped_mm and scaled_groued_mm interface.
+    - Expert-wise tensormap descriptor setup by a cheap helper kernel (~2us) to avoid long latency in tile switching, kernel structure is much more closer to a normal GEMM.
+    - Compared to torch_210_cu13, very few problem has worse perf in B200.
+        - mxfp8_2dx3d: avg 1.29 speedup;
+        - mxfp8_2dx2d: avg 1.41 speedup;
+            - nvfp4_2dx3d: avg 1.11 speedup;
+        - nvfp4_2dx2d: avg 1.12 speedup (worst case 0.98)
+        - bf16_2dx3d: avg 1.15 speedup (worst case 0.98)
+        - bf16_2dx2d: avg 1.17 speedup (worst case 0.96)
+        - Note: The perf is measured from torch profiler, this impl includes the helper kernel + main kernel, while torch's includes its setup kernel and cutlass_cpp main kernel.
+
+* API changes
+  - ab_dtype is deprecated in make_trivial_tiled_mma and make_blockscaled_trivial_tiled_mma from blackwell_helpers.py. Please specify a_dtype and b_dtype separately instead.
+
+## CUTLASS C++
+* Add 2SM MMA instruction support to mixed TMA+CpAsync SM100 vanilla GEMM kernels.
+  - Mixed TMA+CpAsync can now accept static, but non trivial cluster shapes.
+  - Uses TMA multicast for A tile when using non-trivial cluster size along N mode.
+  - Uses an additional barrier (mma_trampoline_barrier) to track cp.async arrivals in both CTAs.
+  - Changes included in [example 92](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm).
+* Add support for 128x32xK and 128x64xK tile sizes for SM120 blockscaled MMA collective builders, yielding up to 30% performance improvement on Blackwell SM121 related kernels.
+* Add static load to tensor memory support, included in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+* Use 64-bit adds for SM100 MMA descriptor offsets and reduce move instructions for improved code generation.
 * Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
   - Enables launching GEMM on stream with partial SM allocation.
 * Fix some kernel issues:
   - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
   - Fix CUTLASS clang build issues
+  - Fix atomicCAS read-modify-write loop in `ConstSubbyteReference`
+  - Replace `__nv_atomic_load_n` with `volatile` for CUDA 11.4 compatibility in subbyte reference
+  - Remove `PipelineStorage` shadowing in SM100 complex epilogue
+  - Fix build issue in SM90 epilogue fusion visitor TMA warpspecialized
 * Fix some profiler issues:
   - Add missing reference kernels for blockwise GEMM profiler
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!

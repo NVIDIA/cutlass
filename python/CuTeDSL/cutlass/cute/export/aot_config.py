@@ -106,7 +106,7 @@ def get_ldflags() -> str:
     return ""
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="AOT configuration helper for CuTe DSL (similar to tvm-ffi-config)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

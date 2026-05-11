@@ -15,6 +15,8 @@ import jax.numpy as jnp
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import dsl_user_op
+from typing import Optional
+from cutlass._mlir import ir
 
 
 def reorder_modes(src: str, target: str) -> tuple[int, ...]:
@@ -80,13 +82,17 @@ def gemm_c_shape(l, m, n, major) -> tuple[int, ...]:
 
 @dsl_user_op
 def get_gemm_shape_from_tensors(
-    a: cute.Tensor, b: cute.Tensor, *, loc=None, ip=None
+    a: cute.Tensor,
+    b: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> tuple[int, int, int, int]:
     """Returns a tuple of (M, N, K, L) from A/B gemm tensors."""
     # mkl, nkl
-    m, k, l = a.shape[:]
-    n = b.shape[0]
-    return (m, n, k, l)
+    m, k, l = a.shape[:]  # type: ignore[index]
+    n = b.shape[0]  # type: ignore[index]
+    return (m, n, k, l)  # type: ignore[return-value]
 
 
 def create_tensor(

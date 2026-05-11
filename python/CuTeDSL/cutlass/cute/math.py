@@ -9,16 +9,22 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Callable, Union
+from typing import Callable, Optional, Union
 
 from .typing import Numeric
 from .tensor import TensorSSA
 
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import math, arith
 from cutlass.cutlass_dsl import dsl_user_op
 
 
-def _math_op(func: Callable, fastmath: bool, *args, **kwargs):
+def _math_op(
+    func: Callable[..., ir.Value],
+    fastmath: bool,
+    *args: Union[TensorSSA, Numeric],
+    **kwargs: object,
+) -> Union[TensorSSA, ir.Value]:
     """Dispatch the function to either a TensorSSA or a Numeric(Float).
 
     :param func: The function to dispatch
@@ -44,40 +50,17 @@ def _math_op(func: Callable, fastmath: bool, *args, **kwargs):
             func(*args, fastmath=fastmath_flag, **kwargs), args[0].shape, args[0].dtype
         )
     else:
-        args = [a.ir_value() for a in args]
-        return func(*args, fastmath=fastmath_flag, **kwargs)
+        ir_args = [a.ir_value() for a in args]
+        return func(*ir_args, fastmath=fastmath_flag, **kwargs)
 
 
 @dsl_user_op
-def absf(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
-) -> Union[TensorSSA, Numeric]:
-    """Compute element-wise absolute value of the input tensor.
-
-    :param a: Input tensor
-    :type a: Union[TensorSSA, Numeric]
-    :param fastmath: Enable fast math optimizations, defaults to False
-    :type fastmath: bool, optional
-    :param loc: Source location information, defaults to None
-    :type loc: Optional[Location]
-    :param ip: Insertion point for IR generation, defaults to None
-    :type ip: Optional[InsertionPoint]
-    :return: Tensor containing the absolute value of each element in input tensor
-    :rtype: Union[TensorSSA, Numeric]
-
-    Example:
-
-    .. code-block::
-
-        x = cute.make_rmem_tensor(layout)  # Create tensor
-        y = x.load()  # Load values
-        z = absf(y)  # Compute absolute value
-    """
-    return _math_op(math.absf, fastmath, a, loc=loc, ip=ip)
-
-
 def acos(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise arc cosine of the input tensor.
 
@@ -105,7 +88,11 @@ def acos(
 
 @dsl_user_op
 def asin(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise arc sine of the input tensor.
 
@@ -133,7 +120,11 @@ def asin(
 
 @dsl_user_op
 def atan(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise arc tangent of the input tensor.
 
@@ -161,8 +152,12 @@ def atan(
 
 @dsl_user_op
 def atan2(
-    a: Union[TensorSSA, Numeric], b: Union[TensorSSA, Numeric], fastmath: bool = False,
-    *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    b: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise arc tangent of two tensors.
 
@@ -194,13 +189,45 @@ def atan2(
 
 
 @dsl_user_op
+def absf(
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[TensorSSA, Numeric]:
+    """Compute element-wise absolute value of the input tensor.
+
+    :param a: Input tensor
+    :type a: Union[TensorSSA, Numeric]
+    :param fastmath: Enable fast math optimizations, defaults to False
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: Tensor containing the absolute value of each element in input tensor
+    :rtype: Union[TensorSSA, Numeric]
+
+    Example:
+
+    .. code-block::
+
+        x = cute.make_rmem_tensor(layout)  # Create tensor
+        y = x.load()  # Load values
+        z = absf(y)  # Compute absolute value
+    """
+    return _math_op(math.absf, fastmath, a, loc=loc, ip=ip)
+
+
+@dsl_user_op
 def copysign(
     a: Union[TensorSSA, Numeric],
     b: Union[TensorSSA, Numeric],
     fastmath: bool = False,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise copysign of two tensors.
 
@@ -232,7 +259,11 @@ def copysign(
 
 @dsl_user_op
 def cos(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise cosine of the input tensor.
 
@@ -260,7 +291,11 @@ def cos(
 
 @dsl_user_op
 def erf(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise error function of the input tensor.
 
@@ -291,7 +326,11 @@ def erf(
 
 @dsl_user_op
 def exp(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise exponential of the input tensor.
 
@@ -319,7 +358,11 @@ def exp(
 
 @dsl_user_op
 def exp2(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise base-2 exponential of the input tensor.
 
@@ -347,7 +390,11 @@ def exp2(
 
 @dsl_user_op
 def floor(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise floor of the input tensor.
 
@@ -373,8 +420,13 @@ def floor(
     return _math_op(math.floor, fastmath, a, loc=loc, ip=ip)
 
 
+@dsl_user_op
 def log(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise natural logarithm of the input tensor.
 
@@ -402,7 +454,11 @@ def log(
 
 @dsl_user_op
 def log2(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise base-2 logarithm of the input tensor.
 
@@ -430,7 +486,11 @@ def log2(
 
 @dsl_user_op
 def log10(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise base-10 logarithm of the input tensor.
 
@@ -458,7 +518,11 @@ def log10(
 
 @dsl_user_op
 def rsqrt(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise reciprocal square root of the input tensor.
 
@@ -488,7 +552,11 @@ def rsqrt(
 
 @dsl_user_op
 def sin(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise sine of the input tensor.
 
@@ -516,7 +584,11 @@ def sin(
 
 @dsl_user_op
 def sqrt(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise square root of the input tensor.
 
@@ -544,7 +616,11 @@ def sqrt(
 
 @dsl_user_op
 def tan(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise tangent of the input tensor.
 
@@ -572,7 +648,11 @@ def tan(
 
 @dsl_user_op
 def tanh(
-    a: Union[TensorSSA, Numeric], fastmath: bool = False, *, loc=None, ip=None
+    a: Union[TensorSSA, Numeric],
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[TensorSSA, Numeric]:
     """Compute element-wise hyperbolic tangent of the input tensor.
 
@@ -604,8 +684,8 @@ __all__ = [
     "asin",
     "atan",
     "atan2",
-    "copysign",
     "cos",
+    "copysign",
     "erf",
     "exp",
     "exp2",

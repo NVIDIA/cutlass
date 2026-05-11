@@ -10,10 +10,9 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Type, Any
+from typing import Any, Optional, Type
 
 import enum
-from cutlass import cute
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
 
@@ -24,10 +23,10 @@ from ...typing import (
     Float4E2M1FN,
     Float8E8M0FNU,
     Float8E4M3FN,
+    Float8E5M2,
     Float16,
     BFloat16,
     Float32,
-    Boolean,
     Numeric,
     Pointer,
 )
@@ -89,7 +88,13 @@ class MmaF16BF16Op(WarpMmaOp):
                 "expects the 'shape_mnk' Op parameter to be one of (16,8,8) or (16,8,16)",
             )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaF16BF16Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaF16BF16Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM80Type.get(
             shape_mnk.type.attribute,
@@ -107,14 +112,103 @@ class MmaF16BF16Op(WarpMmaOp):
             + f"\n  Instruction shape MNK = {self.shape_mnk}"
         )
 
-    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
-        pass
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
+        return True
 
-    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
-        pass
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
+        return True
 
 
 class MmaF16BF16Trait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class MmaFP8Op(WarpMmaOp):
+    """
+    FP8 warp-level MMA Operation (SM89).
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma>`__.
+    This Operation covers the instructions using the ``.e4m3`` or ``.e5m2`` qualifiers for the input operands.
+    """
+
+    ab_dtype: Type[Numeric]
+    acc_dtype: Type[Numeric]
+    shape_mnk: Shape
+
+    def __post_init__(self) -> None:
+        if self.ab_dtype not in [Float8E4M3FN, Float8E5M2]:
+            raise OpError(
+                self,
+                "expects the 'ab_dtype' Op parameter to be one of Float8E4M3FN or Float8E5M2",
+            )
+        if self.acc_dtype not in [Float16, Float32]:
+            raise OpError(
+                self,
+                "expects the 'acc_dtype' Op parameter to be Float32 or Float16",
+            )
+        if self.shape_mnk not in [(16, 8, 32), (16, 8, 16)]:
+            raise OpError(
+                self,
+                "expects the 'shape_mnk' Op parameter to be (16,8,32) or (16,8,16)",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaFP8Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM89Type.get(
+            shape_mnk.type.attribute,
+            self.ab_dtype.mlir_type,
+            self.ab_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+        )
+        return MmaFP8Trait(make_atom(ty, loc=loc, ip=ip))
+
+    def __str__(self) -> str:
+        return (
+            "warp-level FP8 MMA Operation (SM89)"
+            + f"\n  A/B data type         = {self.ab_dtype}"
+            + f"\n  Accumulator data type = {self.acc_dtype}"
+            + f"\n  Instruction shape MNK = {self.shape_mnk}"
+        )
+
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        pass
+
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        pass
+
+
+class MmaFP8Trait(Trait):
     pass
 
 
@@ -129,16 +223,20 @@ class MmaSM120BlockScaledOp(MmaOp):
     use_sf_layout_TV: bool = False
 
     admissible_archs = [
-        "sm_120a",
+        Arch.sm_120a,
+        Arch.sm_121a,
     ]
 
     def __post_init__(self) -> None:
         # Verify arch
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch == Arch.sm_120a:
+        if arch not in self.admissible_archs:
             raise OpError(
                 self,
-                f"expects arch to be one of {self.admissible_archs}, but got {arch}",
+                f"expects arch to be one of {self.admissible_archs}, but got {arch}"
+                " - Note: sm_120f is currently not supported, "
+                " please compile for your local GPU architecture instead with env "
+                "CUTE_DSL_ARCH set to sm_120a or sm_121a",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         if self.ab_dtype != Float4E2M1FN:
@@ -185,10 +283,22 @@ class MmaSM120BlockScaledOp(MmaOp):
             + f"\n  SF data type          = {self.sf_type}"
         )
 
-    def _verify_fragment_A(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         pass
 
-    def _verify_fragment_B(self, input: Tensor, *, loc=None, ip=None):
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         pass
 
 
@@ -213,19 +323,23 @@ class Field(enum.Enum):
 
 class MmaBlockScaledTrait(Trait):
     admissible_fields = [
-        Field.ACCUMULATE,
         Field.SFA,
         Field.SFB,
     ]
 
-    def set(self, field, value, *, loc=None, ip=None) -> None:
+    def set(
+        self,
+        field: Any,
+        value: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         if field not in self.admissible_fields:
             raise ValueError(
                 f"expects field to be one of {self.admissible_fields}, but got {field}"
             )
-        if field == Field.ACCUMULATE:
-            value = Boolean(value).ir_value(loc=loc, ip=ip)
-        elif field in [Field.SFA, Field.SFB]:
+        if field in [Field.SFA, Field.SFB]:
             if not isinstance(value, Pointer):
                 raise ValueError(
                     f"expects value to be a pointer for {field}, but got {type(value).__name__}"
@@ -238,14 +352,14 @@ class MmaBlockScaledTrait(Trait):
             self.value, attr, value, loc=loc, ip=ip
         )
 
-    def get(self, field, *, loc=None, ip=None) -> Any:
-        if field not in [Field.ACCUMULATE]:
-            raise ValueError(f"the get method for {field} is not supported")
-        field_name = f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-        )
+    def get(
+        self,
+        field: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
+        raise ValueError(f"the get method for {field} is not supported")
 
 
 #
@@ -281,7 +395,13 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
             32,
         )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM120BlockScaledType.get(
             shape_mnk.type.attribute,
@@ -332,7 +452,13 @@ class MmaMXF4NVF4Op(MmaSM120BlockScaledOp):
             16,
         )
 
-    def _make_trait(self, *, loc=None, ip=None, **kwargs) -> "MmaMXF4NVF4Trait":
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaMXF4NVF4Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
         ty = _cute_nvgpu_ir.MmaAtomSM120BlockScaledType.get(
             shape_mnk.type.attribute,

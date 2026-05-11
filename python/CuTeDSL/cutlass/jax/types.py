@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Sequence
+from typing import Optional, Sequence
 from dataclasses import dataclass, field
 
 
@@ -153,7 +153,7 @@ def default_tensor_spec(shaped) -> TensorSpec:
     This is appropriate for standard row-major (C-contiguous) JAX arrays that
     do not require dimension reordering inside the kernel.
 
-    Divisibility hints are inferred only for concrete integer dimensions. 
+    Divisibility hints are inferred only for concrete integer dimensions.
     Symbolic dimensions always produce ``None`` for their slot; pass an
     explicit ``TensorSpec`` with ``divisibility`` set if you need alignment
     hints for symbolic shapes.
@@ -373,7 +373,12 @@ class JaxArrayValue(JaxArray):
         return str(self)
 
     def _make_ordered_layout_dynamic_strides(
-        self, shape, order: tuple[int, ...], *, loc=None, ip=None
+        self,
+        shape,
+        order: tuple[int, ...],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ):
         i32 = ir.IntegerType.get_signless(32)
         pairs = sorted(zip(shape, order), key=lambda x: x[1])
@@ -415,7 +420,13 @@ class JaxArrayValue(JaxArray):
 
         return cute.make_layout(shape_i32, stride=tuple(strides_ordered))
 
-    def _load_dynamic_shapes(self, ffi_buffer, *, loc=None, ip=None):
+    def _load_dynamic_shapes(
+        self,
+        ffi_buffer,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ):
         i64 = ir.IntegerType.get_signless(64)
         shape_array = llvm.extractvalue(
             llvm.PointerType.get(),
@@ -441,7 +452,13 @@ class JaxArrayValue(JaxArray):
 
         return tuple(shape_i64)
 
-    def _load_pointer(self, ffi_buffer, *, loc=None, ip=None):
+    def _load_pointer(
+        self,
+        ffi_buffer,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ):
         raw_ptr = llvm.extractvalue(
             llvm.PointerType.get(),
             ffi_buffer,
@@ -458,7 +475,12 @@ class JaxArrayValue(JaxArray):
             ip=ip,
         )
 
-    def get_tensor(self, *, loc=None, ip=None):
+    def get_tensor(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ):
         ffi_buffer_type = llvm.StructType.get_literal(
             [llvm.PointerType.get(), llvm.PointerType.get()]
         )

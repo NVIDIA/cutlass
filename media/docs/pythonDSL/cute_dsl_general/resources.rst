@@ -15,7 +15,7 @@ Conference Talks
 An introduction to the |DSL| architecture, covering the hybrid AST-rewrite and
 tracing approach, MLIR code generation, and integration with CUTLASS.
 
-*  `LLVM Video <https://www.youtube.com/watch?v=5NXd6MbKYNQ>`_
+*  `Video <https://www.youtube.com/watch?v=5NXd6MbKYNQ>`__
 *  `Slides (PDF) <https://llvm.org/devmtg/2025-10/slides/technical_talks/ozen.pdf>`_
 
 ----
@@ -25,4 +25,4 @@ tracing approach, MLIR code generation, and integration with CUTLASS.
 Learn how to leverage Tensor Cores directly from Python using CUTLASS 4.0's
 new DSL front-end, enabling rapid kernel development without writing CUDA C++.
 
-*  `GTC Video <https://www.nvidia.com/en-us/on-demand/session/gtc25-s74639/>`_
+*  `Video <https://www.nvidia.com/en-us/on-demand/session/gtc25-s74639/>`__

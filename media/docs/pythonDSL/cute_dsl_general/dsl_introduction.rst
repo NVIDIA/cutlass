@@ -117,6 +117,12 @@ Defines GPU kernel functions, compiled as specialized GPU symbols through |DC|.
   - ``False`` (default) — Standard kernel launch.
   - ``True`` — Cooperative kernel launch.
 
+- ``smem_merge_branch_allocs``
+  Enables mutually exclusive control flow branches (sequentially executed if-else) to reuse the same shared memory.
+
+  - ``False`` (default) — Shared memory is allocated additively across all branches (default CUDA C++ behavior).
+  - ``True`` — Merge shared-memory allocations across branches (experimental feature, recommended for mega-kernels).
+
 Calling Conventions
 -------------------
 

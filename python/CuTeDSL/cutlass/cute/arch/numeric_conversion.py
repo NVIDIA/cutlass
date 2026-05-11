@@ -9,12 +9,14 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import Optional
+
 from cutlass.base_dsl.arch import Arch
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
 
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import arith, llvm, vector
+from cutlass._mlir.dialects import arith, vector
 
 from .nvvm_wrappers import (
     cvt_i8_bf16,
@@ -34,7 +36,13 @@ from ..typing import Int4, Int8, Float32, BFloat16, Int32
 
 
 @dsl_user_op
-def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
+def cvt_i8_bf16_intrinsic(
+    vec_i8: ir.Value,
+    length: int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
     """
     Fast conversion from int8 to bfloat16. It converts a vector of int8 to a vector of bfloat16.
 
@@ -46,14 +54,20 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
     :rtype: 1D vector of bfloat16
     """
     arch = BaseDSL._get_dsl().get_arch_enum()
-    if not arch in cvt_i8_bf16_intrinsic.supported_archs:
+    if arch not in cvt_i8_bf16_intrinsic.supported_archs:  # type: ignore[attr-defined]
         raise DSLRuntimeError(f"cvt_i8_bf16_intrinsic is not supported on {arch}")
     src_pos = 0
     vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
     vec_i8x2_type = ir.VectorType.get([2], Int8.mlir_type, loc=loc)
     vec_f32x2_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
     vec_dst_type = ir.VectorType.get([length], BFloat16.mlir_type, loc=loc)
-    vec_dst = llvm.mlir_zero(vec_dst_type, loc=loc, ip=ip)
+    zero_attr = ir.FloatAttr.get(BFloat16.mlir_type, 0.0)
+    vec_dst = arith.ConstantOp(
+        vec_dst_type,
+        ir.DenseElementsAttr.get_splat(vec_dst_type, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
     arch = BaseDSL._get_dsl().get_arch_enum()
     # try to use vectorized version
     if length >= 4:
@@ -62,7 +76,7 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
             vec_i8x4 = vector.extract_strided_slice(
                 vec_i8x4_type, vec_i8, [src_pos], [4], [1], loc=loc, ip=ip
             )
-            if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:
+            if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
                 vec_bf16x4 = cvt_i8x4_to_bf16x4(vec_i8x4, loc=loc, ip=ip)
                 vec_dst = vector.insert_strided_slice(
                     vec_bf16x4, vec_dst, [src_pos], [1], loc=loc, ip=ip
@@ -90,7 +104,7 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
         vec_i8x2 = vector.extract_strided_slice(
             vec_i8x2_type, vec_i8, [src_pos], [2], [1], loc=loc, ip=ip
         )
-        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:
+        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             vec_bf16x2 = cvt_i8x2_to_bf16x2(vec_i8x2, loc=loc, ip=ip)
         else:
             vec_f32x2 = cvt_i8x2_to_f32x2(vec_i8x2, loc=loc, ip=ip)
@@ -101,7 +115,7 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
         src_pos += 2
         length -= 2
     if length >= 1:
-        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:
+        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             val_bf16 = cvt_i8_bf16(
                 vector.extractelement(
                     vec_i8,
@@ -119,8 +133,8 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
                 loc=loc,
                 ip=ip,
             )
-            src_i32 = llvm.sext(Int32.mlir_type, src_i8, loc=loc, ip=ip)
-            src_f32 = llvm.sitofp(Float32.mlir_type, src_i32, loc=loc, ip=ip)
+            src_i32 = arith.ExtSIOp(Int32.mlir_type, src_i8, loc=loc, ip=ip)
+            src_f32 = arith.SIToFPOp(Float32.mlir_type, src_i32, loc=loc, ip=ip)
             val_bf16 = cvt_f32_bf16(src_f32, loc=loc, ip=ip)
         vec_dst = vector.insertelement(
             val_bf16,
@@ -133,7 +147,14 @@ def cvt_i8_bf16_intrinsic(vec_i8, length, *, loc=None, ip=None):
 
 
 @dsl_user_op
-def cvt_i4_bf16_intrinsic(vec_i4, length, *, with_shuffle=False, loc=None, ip=None):
+def cvt_i4_bf16_intrinsic(
+    vec_i4: ir.Value,
+    length: int,
+    *,
+    with_shuffle: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
     """
     Fast conversion from int4 to bfloat16. It converts a vector of int4 to a vector of bfloat16.
 
@@ -152,14 +173,20 @@ def cvt_i4_bf16_intrinsic(vec_i4, length, *, with_shuffle=False, loc=None, ip=No
     :rtype: 1D vector of bfloat16
     """
     arch = BaseDSL._get_dsl().get_arch_enum()
-    if not arch in cvt_i4_bf16_intrinsic.supported_archs:
+    if arch not in cvt_i4_bf16_intrinsic.supported_archs:  # type: ignore[attr-defined]
         raise DSLRuntimeError(f"cvt_i4_bf16_intrinsic is not supported on {arch}")
     src_pos = 0
     vec_i4x8_type = ir.VectorType.get([8], Int4.mlir_type, loc=loc)
     vec_i4x4_type = ir.VectorType.get([4], Int4.mlir_type, loc=loc)
     vec_i4x2_type = ir.VectorType.get([2], Int4.mlir_type, loc=loc)
     vec_dst_type = ir.VectorType.get([length], BFloat16.mlir_type, loc=loc)
-    vec_dst = llvm.mlir_zero(vec_dst_type, loc=loc, ip=ip)
+    zero_attr = ir.FloatAttr.get(BFloat16.mlir_type, 0.0)
+    vec_dst = arith.ConstantOp(
+        vec_dst_type,
+        ir.DenseElementsAttr.get_splat(vec_dst_type, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
 
     # try to use vectorized version
     if length >= 8:
@@ -222,7 +249,13 @@ def cvt_i4_bf16_intrinsic(vec_i4, length, *, with_shuffle=False, loc=None, ip=No
 
 
 @dsl_user_op
-def sext_unpacked_i4_i8_intrinsic(vec_unpacked_i4, length, *, loc=None, ip=None):
+def sext_unpacked_i4_i8_intrinsic(
+    vec_unpacked_i4: ir.Value,
+    length: int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
     """
     Sign extend vector of int4 unpacked in 8b containers to packed int8
 
@@ -237,7 +270,13 @@ def sext_unpacked_i4_i8_intrinsic(vec_unpacked_i4, length, *, loc=None, ip=None)
 
     vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
     vec_i8_type = ir.VectorType.get([length], Int8.mlir_type, loc=loc)
-    vec_i8 = llvm.mlir_zero(vec_i8_type, loc=loc, ip=ip)
+    zero_attr = ir.IntegerAttr.get(Int8.mlir_type, 0)
+    vec_i8 = arith.ConstantOp(
+        vec_i8_type,
+        ir.DenseElementsAttr.get_splat(vec_i8_type, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
 
     for pos in range(0, length, 4):
         vec_unpacked_i4x4 = vector.extract_strided_slice(
@@ -252,19 +291,19 @@ def sext_unpacked_i4_i8_intrinsic(vec_unpacked_i4, length, *, loc=None, ip=None)
 
 
 # Expose supported architectures via the intrinsic symbol
-cvt_i8_bf16_intrinsic.supported_archs = (
+cvt_i8_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
     *Arch.AmpereArchs(),
     *Arch.AdaArchs(),
     *Arch.HopperArchs(),
     *Arch.BlackwellArchs(),
 )
-cvt_i8_bf16_intrinsic.s26_bf16_supported_archs = (
+cvt_i8_bf16_intrinsic.s26_bf16_supported_archs = (  # type: ignore[attr-defined]
     Arch.sm_100a,
     Arch.sm_110a,
     Arch.sm_120a,
     Arch.sm_121a,
 )
-cvt_i4_bf16_intrinsic.supported_archs = (
+cvt_i4_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
     Arch.sm_100a,
     Arch.sm_110a,
     Arch.sm_120a,

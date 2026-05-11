@@ -241,7 +241,7 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
     return true;
   }
 

@@ -9,9 +9,12 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+
+from dataclasses import is_dataclass, fields as dataclass_fields
 from cutlass.base_dsl.tvm_ffi_builder import spec
 from cutlass.base_dsl.jit_executor import ExecutionArgs
 from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.cutlass_dsl import is_cute_algebra_type
 from cutlass._mlir.dialects import cute as _cute_ir
 from .runtime import _FakeStream
@@ -19,7 +22,6 @@ from .typing import Tensor, Pointer, SymInt
 from .typing import (
     Numeric,
     Boolean,
-    Integer,
     Int4,
     Int8,
     Uint8,
@@ -43,17 +45,17 @@ from .typing import (
 )
 import cuda.bindings.driver as cuda
 
+from types import UnionType
 from typing import (
     List,
     Dict,
     Any,
     Optional,
-    Tuple,
+    Union,
     get_origin,
     get_args,
     get_type_hints,
 )
-from types import UnionType
 import inspect
 
 NumericToTVMFFIDtype = {
@@ -113,22 +115,24 @@ class SymIntId:
     def __init__(self, sym_int: SymInt):
         self.sym_int = sym_int
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return id(self.sym_int)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SymIntId):
+            return NotImplemented
         return self.sym_int is other.sym_int
 
 
 class ConverterContext:
     """Context for managing variable allocation during TVM FFI args conversion."""
 
-    def __init__(self):
-        self.num_dyn_shape_vars = 0
-        self.num_dyn_stride_vars = 0
-        self.num_device_id_vars = 0
-        self.sym_int_id_mapping = {}
-        self.vdevice_to_device_id_mapping = {}
+    def __init__(self) -> None:
+        self.num_dyn_shape_vars: int = 0
+        self.num_dyn_stride_vars: int = 0
+        self.num_device_id_vars: int = 0
+        self.sym_int_id_mapping: Dict[SymIntId, spec.Var] = {}
+        self.vdevice_to_device_id_mapping: Dict[tuple, spec.Var] = {}
 
     def alloc_shape_name(self) -> str:
         """Allocate a new dynamic shape variable name."""
@@ -142,7 +146,9 @@ class ConverterContext:
         self.num_dyn_stride_vars += 1
         return name
 
-    def alloc_or_reuse_symint_var(self, value: SymInt, name_alloc_func):
+    def alloc_or_reuse_symint_var(
+        self, value: SymInt, name_alloc_func: Any
+    ) -> spec.Var:
         """Allocate or reuse a symbolic integer variable."""
         sym_int_id = SymIntId(value)
         if sym_int_id in self.sym_int_id_mapping:
@@ -179,7 +185,7 @@ class ConverterContext:
 
 
 def _convert_single_arg(
-    arg, arg_name: str, arg_type, ctx: ConverterContext
+    arg: Any, arg_name: str, arg_type: Any, ctx: ConverterContext
 ) -> spec.Param:
     """Convert a single argument to a spec.Param.
 
@@ -219,14 +225,20 @@ def _convert_single_arg(
                     spec.Var(ctx.alloc_shape_name(), NumericToTVMFFIDtype[arg[i].dtype])
                 )
         return spec.Shape(arg_name, shape)
+    elif isinstance(arg, SymInt):
+        if arg.width == 32:
+            dtype = NumericToTVMFFIDtype[Int32]
+        else:
+            dtype = NumericToTVMFFIDtype[Int64]
+        return spec.Var(arg_name, dtype, divisibility=arg.divisibility)
     elif isinstance(arg, Tensor):
         shapes = []
-        for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):
+        for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):  # type: ignore[attr-defined]
             if not dyn_mask:
-                shapes.append(arg.shape[i])
-            elif isinstance(arg.shape[i], SymInt):
+                shapes.append(arg.shape[i])  # type: ignore[index]
+            elif isinstance(arg.shape[i], SymInt):  # type: ignore[index]
                 shapes.append(
-                    ctx.alloc_or_reuse_symint_var(arg.shape[i], ctx.alloc_shape_name)
+                    ctx.alloc_or_reuse_symint_var(arg.shape[i], ctx.alloc_shape_name)  # type: ignore[arg-type, index]
                 )
             else:
                 shapes.append(
@@ -234,12 +246,12 @@ def _convert_single_arg(
                 )
         strides = []
 
-        for i, dyn_mask in enumerate(arg.dynamic_strides_mask):
+        for i, dyn_mask in enumerate(arg.dynamic_strides_mask):  # type: ignore[attr-defined]
             if not dyn_mask:
-                strides.append(arg.stride[i])
-            elif isinstance(arg.stride[i], SymInt):
+                strides.append(arg.stride[i])  # type: ignore[index]
+            elif isinstance(arg.stride[i], SymInt):  # type: ignore[index]
                 strides.append(
-                    ctx.alloc_or_reuse_symint_var(arg.stride[i], ctx.alloc_stride_name)
+                    ctx.alloc_or_reuse_symint_var(arg.stride[i], ctx.alloc_stride_name)  # type: ignore[arg-type, index]
                 )
             else:
                 if hasattr(arg, "_use_32bit_stride") and arg._use_32bit_stride:
@@ -258,10 +270,10 @@ def _convert_single_arg(
 
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
-                shapes,
+                shapes,  # type: ignore[arg-type]
                 arg._tvm_ffi_tensor.dtype,
-                strides=strides,
-                data_alignment=arg._assumed_align,
+                strides=strides,  # type: ignore[arg-type]
+                data_alignment=arg._assumed_align,  # type: ignore[attr-defined]
                 device_type=device_type,
                 device_id=device_id,
             )
@@ -274,10 +286,10 @@ def _convert_single_arg(
 
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
-                shapes,
-                NumericToTVMFFIDtype[arg.element_type],
-                strides=strides,
-                data_alignment=arg._assumed_align,
+                shapes,  # type: ignore[arg-type]
+                NumericToTVMFFIDtype[arg.element_type],  # type: ignore[index]
+                strides=strides,  # type: ignore[arg-type]
+                data_alignment=arg._assumed_align,  # type: ignore[attr-defined]
                 device_type=device_type,
                 device_id=device_id,
             )
@@ -298,7 +310,7 @@ def _convert_single_arg(
             return spec.Stream(arg_name)
     elif isinstance(arg, cuda.CUstream):
         return spec.Stream(arg_name)
-    elif arg_type is not None and hasattr(arg_type, "_fields"):
+    elif arg_type is not inspect.Parameter.empty and hasattr(arg_type, "_fields"):
         # Handle NamedTuple - normalize to Tuple by order of fields, ignoring defaults
         # Get field types from annotations
         type_hints = get_type_hints(arg_type)
@@ -323,9 +335,9 @@ def _convert_single_arg(
             tuple_params.append(elem_param)
 
         return spec.TupleParam(arg_name, tuple_params)
-    elif arg_type is not None and get_origin(arg_type) is tuple:
+    elif arg_type is not inspect.Parameter.empty and get_origin(arg_type) is tuple:
         # Handle Tuple[X, Y, ...] type annotations
-        tuple_element_types = get_args(arg_type)
+        tuple_element_types = get_args(arg_type)  # type: ignore[assignment]
         if not isinstance(arg, (tuple, list)):
             raise DSLRuntimeError(
                 f"Expected tuple for argument {arg_name}, got {type(arg)}"
@@ -360,6 +372,49 @@ def _convert_single_arg(
         return spec.Var(arg_name, NumericToTVMFFIDtype[Int32])
     elif isinstance(arg, float):
         return spec.Var(arg_name, NumericToTVMFFIDtype[Float32])
+    elif (
+        is_dataclass(arg_type)
+        if (arg_type is not None and arg_type is not inspect.Parameter.empty)
+        else is_dataclass(type(arg))
+    ):
+        dc_type = (
+            arg_type
+            if (
+                arg_type is not None
+                and arg_type is not inspect.Parameter.empty
+                and is_dataclass(arg_type)
+            )
+            else type(arg)
+        )
+        if not isinstance(arg, dc_type):
+            raise DSLRuntimeError(
+                f"Expected {dc_type.__name__} for argument {arg_name}, got {type(arg)}"
+            )
+        dc_fields = dataclass_fields(dc_type)
+        tuple_params = []
+        for f in dc_fields:
+            if is_constexpr_field(f):
+                continue
+            field_value = getattr(arg, f.name)
+            field_name = f"{arg_name}.{f.name}"
+            field_type = f.type
+            tuple_params.append(
+                _convert_single_arg(field_value, field_name, field_type, ctx)
+            )
+        return spec.TupleParam(arg_name, tuple_params)
+    elif arg_type is not None and (
+        get_origin(arg_type) is UnionType or get_origin(arg_type) is Union
+    ):
+        member_types = get_args(arg_type)
+        for member_type in member_types:
+            try:
+                return _convert_single_arg(arg, arg_name, member_type, ctx)
+            except DSLRuntimeError:
+                continue
+        raise DSLRuntimeError(
+            f"Unsupported argument type: {type(arg)} for union type: {arg_type}. "
+            f"None of the union members matched: {member_types}"
+        )
     else:
         raise DSLRuntimeError(
             f"Unsupported argument type: {type(arg)} for annotated type: {get_origin(arg_type)}"
@@ -368,25 +423,25 @@ def _convert_single_arg(
 
 def _tvm_ffi_args_spec_converter(
     function_name: str,
-    args_spec: inspect.FullArgSpec,
+    signature: inspect.Signature,
     full_args: List[Any],
     full_kwargs: Dict[str, Any],
-):
+) -> tuple[List[spec.Param], Any]:
     """Convert cute algebra args to tvm ffi spec params.
 
     This function converts the cute arguments specs to tvm ffi spec params.
     """
-    exec_args = ExecutionArgs(args_spec, function_name)
+    exec_args = ExecutionArgs(signature, function_name)
     rectified_args = exec_args.get_rectified_args_from_original_args(
         full_args, full_kwargs
     )
-    arg_names = exec_args.args_spec.args + exec_args.args_spec.kwonlyargs
     params = []
     ctx = ConverterContext()
     wrapper_extra_exclude_arg_names = []
 
-    for arg, arg_name in zip(rectified_args, arg_names):
-        arg_type = args_spec.annotations.get(arg_name, None)
+    for arg, parameter in zip(rectified_args, exec_args.signature.parameters.values()):
+        arg_type = parameter.annotation
+        arg_name = parameter.name
         param = _convert_single_arg(arg, arg_name, arg_type, ctx)
         params.append(param)
         if isinstance(param, spec.EnvStream):
@@ -397,6 +452,6 @@ def _tvm_ffi_args_spec_converter(
     return params, kwargs_wrapper_spec
 
 
-def attach_args_spec_converter(dsl):
+def attach_args_spec_converter(dsl: Any) -> None:
     """Attach TVM FFI ABI interface postprocessor to the DSL instance."""
     dsl._tvm_ffi_args_spec_converter = _tvm_ffi_args_spec_converter

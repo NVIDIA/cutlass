@@ -10,20 +10,17 @@
 # is strictly prohibited.
 
 from functools import partial
-from typing import Tuple, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import cutlass
 import cutlass.cute as cute
-from cutlass.cute.typing import Pointer, Int32, Literal
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cute.typing import Pointer, Int32
+from cutlass.cutlass_dsl import Numeric, T, dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
 from typing_extensions import deprecated
 
 __all__ = [
-    # Deprecated
-    "atomicAdd",
-    "ld_bypass",
     # Message Passing Lock & Unlock
     "multimem_red_add1",
     "red_add1",
@@ -64,8 +61,14 @@ __all__ = [
 
 @deprecated("atomicAdd is deprecated, use cute.arch.atomic_add instead")
 @dsl_user_op
-def atomicAdd(dst_ptr: Pointer, val: Int32, *, loc=None, ip=None) -> Int32:
-    return cute.arch.atomic_add(
+def atomicAdd(
+    dst_ptr: Pointer,
+    val: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return cute.arch.atomic_add(  # type: ignore[return-value]
         ptr=dst_ptr.llvm_ptr,
         val=val,
         sem="relaxed",
@@ -79,7 +82,7 @@ def atomicAdd(dst_ptr: Pointer, val: Int32, *, loc=None, ip=None) -> Int32:
     "ld_bypass is deprecated, use cute.arch.load with cop='cv' directly instead"
 )
 @cute.jit
-def ld_bypass(input_tensor: cute.Tensor):
+def ld_bypass(input_tensor: cute.Tensor) -> cute.Tensor:
     fragment = cute.make_rmem_tensor(input_tensor.layout, input_tensor.element_type)
     copy_atom = cute.make_copy_atom(
         cute.nvgpu.CopyUniversalOp(),
@@ -101,8 +104,8 @@ def ld_bypass(input_tensor: cute.Tensor):
 def multimem_red_release_gpu_add1(
     lock_ptr: Pointer,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     llvm.inline_asm(
         None,
@@ -120,8 +123,8 @@ def multimem_red_release_gpu_add1(
 def multimem_red_release_sys_add1(
     lock_ptr: Pointer,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     llvm.inline_asm(
         None,
@@ -138,8 +141,8 @@ def multimem_red_release_sys_add1(
 @dsl_user_op
 def multimem_red_relaxed_gpu_add1(
     lock_ptr: Pointer,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     llvm.inline_asm(
         None,
@@ -156,8 +159,8 @@ def multimem_red_relaxed_gpu_add1(
 @dsl_user_op
 def multimem_red_relaxed_sys_add1(
     lock_ptr: Pointer,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     llvm.inline_asm(
         None,
@@ -177,8 +180,8 @@ def multimem_red_add1(
     *,
     order: str,
     scope: str,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     add 1 to multicast ptr
@@ -201,8 +204,8 @@ def red_add1(
     *,
     order: str,
     scope: str,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     add 1 to unicast ptr
@@ -226,8 +229,8 @@ def spin_lock_atom_cas_relaxed_wait(
     expected_val: Int32,
     reset_val: Int32,
     scope: Literal["gpu", "sys"],
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     wait on a spin lock until the expected count is reached. Reset flag to reset_val if the expected count is reached.
@@ -252,8 +255,8 @@ def spin_lock_atom_cas_acquire_wait(
     expected_val: Int32,
     reset_val: Int32,
     scope: Literal["gpu", "sys"],
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     wait on a spin lock until the expected count is reached. Reset flag to reset_val if the expected count is reached.
@@ -277,8 +280,8 @@ def spin_lock_ld_lt_relaxed_wait(
     *,
     expected_val: Int32,
     scope: Literal["gpu", "sys"],
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     wait on a spin lock until the expected count is reached.
@@ -306,8 +309,8 @@ def multimem_ld_reduce_128bit_base(
     mc_ptr: Pointer,
     *,
     ptx_string: str = "",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Int32, Int32, Int32, Int32]:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     return_struct = llvm.inline_asm(
@@ -330,8 +333,8 @@ def multimem_ld_reduce_64bit_base(
     mc_ptr: Pointer,
     *,
     ptx_string: str = "",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Int32, Int32]:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     return_struct = llvm.inline_asm(
@@ -354,8 +357,8 @@ def multimem_ld_reduce_32bit_base(
     mc_ptr: Pointer,
     *,
     ptx_string: str = "",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Int32]:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     return_struct = llvm.inline_asm(
@@ -448,8 +451,8 @@ def multimem_st_4xb32(
     z: Int32,
     w: Int32,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
@@ -471,8 +474,8 @@ def multimem_st_2xb32(
     x: Int32,
     y: Int32,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
@@ -493,8 +496,8 @@ def multimem_st_1xb32(
     mc_ptr: Pointer,
     x: Int32,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
@@ -518,10 +521,10 @@ def multimem_st_1xb32(
 def multimem_ld_reduce(
     mc_ptr: Pointer,
     *,
-    dtype,
+    dtype: Type[Numeric],
     num_elements: int,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Tuple[Int32, Int32, Int32, Int32], Tuple[Int32, Int32], Tuple[Int32]]:
     """
     Dispatch to appropriate multimem_ld_reduce variant based on dtype and num_elements.
@@ -576,8 +579,8 @@ def multimem_ld_reduce(
 def multimem_st(
     mc_ptr: Pointer,
     *regs: Int32,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Dispatch to appropriate multimem_st variant based on number of registers.

@@ -10,13 +10,14 @@
 # is strictly prohibited.
 
 import copy
+from typing import Any
 
 from . import cuda as cuda_helpers
 from .tensor_descriptor import *
 from ..common import *
 
 
-def allocate(tensor: TensorDescriptor, stream=None):
+def allocate(tensor: TensorDescriptor, stream: Any = None) -> None:
     """
     Allocates GPU memory
     """
@@ -29,10 +30,10 @@ def allocate(tensor: TensorDescriptor, stream=None):
 
     tensor.device_pointer = cuda_helpers.allocate(tensor.size_in_bytes, stream)
 
-    log().info("Allocate done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
+    log().info("Allocate done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
 
 
-def deallocate(tensor: TensorDescriptor, stream=None):
+def deallocate(tensor: TensorDescriptor, stream: Any = None) -> None:
     """
     Deallocates GPU memory
     """
@@ -43,7 +44,7 @@ def deallocate(tensor: TensorDescriptor, stream=None):
     if tensor.device_pointer is None:
         raise DSLRuntimeError("Tensor is not allocated on the device.")
 
-    log().info(
+    log().info(  # type: ignore[union-attr]
         "Deallocating done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer
     )
 
@@ -51,27 +52,31 @@ def deallocate(tensor: TensorDescriptor, stream=None):
     tensor.device_pointer = None
 
 
-def copy_to_gpu(tensor: TensorDescriptor, do_allocate=True, stream=None):
+def copy_to_gpu(
+    tensor: TensorDescriptor, do_allocate: bool = True, stream: Any = None
+) -> TensorDescriptor:
     """
     Copies data from host memory to the GPU memory.
     If do_allocate is True, it first calls allocate
     """
-    log().info("copyin tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
+    log().info("copyin tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
     if do_allocate:
         allocate(tensor, stream)
     cuda_helpers.memcpy_h2d(
         tensor.data_ptr, tensor.device_pointer, tensor.size_in_bytes, stream
     )
-    log().info("copyin done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
+    log().info("copyin done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
     return tensor
 
 
-def copy_from_gpu(tensor: TensorDescriptor, do_deallocate=True, stream=None):
+def copy_from_gpu(
+    tensor: TensorDescriptor, do_deallocate: bool = True, stream: Any = None
+) -> None:
     """
     Copies data from GPU memory back to the host.
     If do_deallocate is True, it calls deallocate
     """
-    log().info("copyout tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
+    log().info("copyout tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
     if tensor._check_is_managed_by_framework():
         raise DSLRuntimeError(
             "GPU tensors are managed by the framework and cannot be modified."
@@ -84,10 +89,12 @@ def copy_from_gpu(tensor: TensorDescriptor, do_deallocate=True, stream=None):
     )
     if do_deallocate:
         deallocate(tensor, stream)
-    log().info("copyout done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
+    log().info(  # type: ignore[union-attr]
+        "copyout done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer
+    )
 
 
-def to_gpu(tensor, stream=None) -> TensorDescriptor:
+def to_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
     """
     Copies the tensor to the GPU memory from Host memory
     """
@@ -104,7 +111,7 @@ def to_gpu(tensor, stream=None) -> TensorDescriptor:
     raise DSLRuntimeError("Unsupported type")
 
 
-def from_gpu(tensor, stream=None) -> TensorDescriptor:
+def from_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
     """
     Copies the tensor to the GPU memory from Host memory
     """

@@ -21,7 +21,9 @@ from cutlass._mlir.dialects.core import OperationTypeEnum
 from cutlass import cute
 
 
-def _get_tma_load_kind(tma_operation_type: OperationTypeEnum):
+def _get_tma_load_kind(
+    tma_operation_type: OperationTypeEnum,
+) -> _cute_ir.TiledTmaLoadEnum:
     """Convert OperationTypeEnum to TiledTmaLoadEnum."""
     if tma_operation_type == OperationTypeEnum.SM100_TMA_LOAD_2SM_MULTICAST:
         return _cute_ir.TiledTmaLoadEnum.sm_100_2sm_multicast
@@ -41,8 +43,8 @@ def allocate(
     layout: cute.Layout | cute.ComposedLayout,
     alignment: cute.Int32,
     is2cta: bool = False,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.Tensor:
     """
     Allocate a buffer of the given type and layout.
@@ -63,10 +65,10 @@ def allocate(
         swizzle = layout.inner
         layout = layout.outer
 
-    # Handle SparseElemType (pass through) vs regular types (get mlir_type)
-    if isinstance(type, _cute_ir.SparseElemType):
-        pass
-    else:
+    bit_layout = None
+
+    _is_passthrough_type = False
+    if not _is_passthrough_type:
         type = type.mlir_type
 
     ptr_ty = _cute_ir.PtrType.get(
@@ -74,6 +76,8 @@ def allocate(
         address_space,
         alignment,
         swizzle.type.attribute if swizzle else None,
+        None,
+        bit_layout.type.attribute if bit_layout else None,
     )
     buffer_type = _cute_ir.MemRefType.get(ptr_ty, layout.type)
 
@@ -90,15 +94,15 @@ def allocate(
 def tma_load(
     src: cute.Tensor,
     dst: cute.Tensor,
-    mbar,
+    mbar: ir.Value,
     *,
-    cta_v_map,
+    cta_v_map: Optional[cute.Layout] = None,
     tma_operation_type: Optional[OperationTypeEnum] = None,
-    internal_type=None,
+    internal_type: Optional[Type[cute.Numeric]] = None,
     update_expect_tx: bool = True,
-    loc=None,
-    ip=None,
-):
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Copies a tensor pointed by a !cute.memref into a Buffer using TMA.
 
@@ -106,23 +110,6 @@ def tma_load(
     When used with Cute DSL pipelines, it must be set to False as the pipeline already initializes the mbarrier's transaction bytes.
     tma_operation_type (optional): specifies the TMA operation type (SM90_TMA_LOAD, SM100_TMA_LOAD_2SM, etc.)
     internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
-    Does not change src/dst memref types. For structured sparsity, use base storage types:
-    Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
-
-    :param src: Source tensor in global memory
-    :type src: cute.Tensor
-    :param dst: Destination tensor in shared memory
-    :type dst: cute.Tensor
-    :param mbar: Memory barrier for synchronization
-    :type mbar: cute.core.Mbarrier
-    :param cta_v_map: CTA V-map for the tensor
-    :type cta_v_map: cute.core.CtaVMap
-    :param tma_operation_type: TMA operation type (e.g., SM90_TMA_LOAD, SM100_TMA_LOAD_2SM, etc.)
-    :type tma_operation_type: OperationTypeEnum
-    :param internal_type: Internal type of the TMA transfer
-    :type internal_type: cute.core.InternalType
-    :param update_expect_tx: Whether to update expected transaction bytes
-    :type update_expect_tx: bool
     """
     if tma_operation_type is not None:
         kind = _get_tma_load_kind(tma_operation_type)
@@ -130,11 +117,12 @@ def tma_load(
         kind = _cute_ir.TiledTmaLoadEnum.sm_90
 
     kwargs = {
-        "cta_v_map": cta_v_map.type.attribute,
         "kind": kind,
         "loc": loc,
         "ip": ip,
     }
+    if cta_v_map is not None:
+        kwargs["cta_v_map"] = cta_v_map.type.attribute
     # Map internal_type to tma_format per updated API
     if internal_type is not None:
         internal_mlir_ty = (
@@ -148,7 +136,6 @@ def tma_load(
 
     if update_expect_tx:
         kwargs["update_expect_tx"] = True
-        
     cutlass_lir.TmaLoadOp(src.value, dst.value, mbar, **kwargs)
 
 
@@ -156,16 +143,16 @@ def tma_load(
 def tma_load_multicast(
     src: cute.Tensor,
     dst: cute.Tensor,
-    mbar,
+    mbar: ir.Value,
     *,
     vmnk_layout: cute.Layout,
-    cta_v_map,
+    cta_v_map: Optional[cute.Layout] = None,
     tma_operation_type: OperationTypeEnum,
     multicast_mode: int,
     update_expect_tx: bool = True,
-    loc=None,
-    ip=None,
-):
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Copies a tensor pointed by a !cute.memref into a Buffer using TMA with multicast.
 
@@ -180,17 +167,17 @@ def tma_load_multicast(
     """
     kind = _get_tma_load_kind(tma_operation_type)
     kwargs = {
-        "cta_v_map": cta_v_map.type.attribute,
         "kind": kind,
         "vmnk_layout": vmnk_layout,
         "multicast_mode": multicast_mode,
         "loc": loc,
         "ip": ip,
     }
+    if cta_v_map is not None:
+        kwargs["cta_v_map"] = cta_v_map.type.attribute
 
     if update_expect_tx:
         kwargs["update_expect_tx"] = True
-
     cutlass_lir.TmaLoadMulticastOp(
         src.value,
         dst.value,
@@ -204,34 +191,23 @@ def tma_store(
     src: cute.Tensor,
     dst: cute.Tensor,
     *,
-    cta_v_map,
-    internal_type=None,
-    loc=None,
-    ip=None,
-):
+    cta_v_map: Optional[cute.Layout] = None,
+    internal_type: Optional[Type[cute.Numeric]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Copies a tensor from a Buffer to a tensor pointed to by a !cute.memref.
 
     internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
-    Does not change src/dst memref types. For structured sparsity, use base storage types:
-    Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
-
-
-    :param src: Source tensor in shared memory
-    :type src: cute.Tensor
-    :param dst: Destination tensor in global memory
-    :type dst: cute.Tensor
-    :param cta_v_map: CTA V-map for the tensor
-    :type cta_v_map: cute.core.CtaVMap
-    :param internal_type: Internal type of the TMA transfer
-    :type internal_type: cute.core.InternalType
     """
 
     kwargs = {
-        "cta_v_map": cta_v_map.type.attribute,
         "loc": loc,
         "ip": ip,
     }
+    if cta_v_map is not None:
+        kwargs["cta_v_map"] = cta_v_map.type.attribute
 
     # Map internal_type to tma_format per updated API
     if internal_type is not None:
@@ -248,7 +224,14 @@ def tma_store(
 
 
 @dsl_user_op
-def copy(src: cute.Tensor, dst: cute.Tensor, *, copy_atom, loc=None, ip=None):
+def copy(
+    src: cute.Tensor,
+    dst: cute.Tensor,
+    *,
+    copy_atom: cute.CopyAtom,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Copy a tensor from src to dst using a given copy atom.
     """

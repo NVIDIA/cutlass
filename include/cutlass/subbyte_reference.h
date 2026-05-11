@@ -454,18 +454,21 @@ public:
     //
     // Homebrew read-modify-write
     //
-    Storage original;
-    Storage updated;
+    Storage assumed;
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+    Storage original = __nv_atomic_load_n(ptr_, __NV_ATOMIC_RELAXED);
+#else
+    Storage original = *const_cast<Storage const volatile *>(ptr_);
+#endif
 
     do {
 
-      original = (*ptr_);
+      assumed  = original;
+      Storage updated = Storage((assumed & kUpdateMask) | new_bits);
 
-      updated  = Storage((original & kUpdateMask) | new_bits);
+      original = atomicCAS(ptr_, assumed, updated);
 
-      original = atomicCAS(ptr_, original, updated);
-
-    } while (updated != original);
+    } while (original != assumed);
 
 #else
 

@@ -15,8 +15,10 @@ This module provides jit executor related classes for CUTLASS.
 
 import ctypes
 import functools
+import inspect
 import weakref
 import threading
+from typing import Any, List, Optional, Tuple, Union
 
 import cuda.bindings.runtime as cuda_runtime
 import cuda.bindings.driver as cuda_driver
@@ -33,35 +35,39 @@ from ..base_dsl.common import DSLRuntimeError
 from ..base_dsl.typing import Int32
 from ..base_dsl.runtime.cuda import checkCudaErrors
 
+from .._mlir import ir, execution_engine
+
 
 class CudaDialectJitModule:
     """Holds the execution engine and cuda libraries."""
 
     def __init__(
         self,
-        engine,
-        capi_func,
-        args_spec: ExecutionArgs,
+        engine: execution_engine.ExecutionEngine,
+        capi_func: Any,
+        execution_args: ExecutionArgs,
         cuda_library: list["cuda_runtime.cudaLibrary_t"],
-    ):
+    ) -> None:
         self.engine = engine
         self.capi_func = capi_func
-        self.args_spec = args_spec
+        self.execution_args = execution_args
         self.cuda_library = cuda_library
         self._unloaded = False
 
-    def is_unloaded(self):
+    def is_unloaded(self) -> bool:
         return self._unloaded
 
-    def unload(self):
+    def unload(self) -> None:
         try:
             for library in self.cuda_library:
                 cuda_runtime.cudaLibraryUnload(library)
             self.cuda_library.clear()
+        except Exception as e:
+            pass
         finally:
             self._unloaded = True
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.unload()
 
 
@@ -70,24 +76,25 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
 
     def __init__(
         self,
-        ir_module,
-        engine,
-        capi_func,
-        args_spec,
-        function_name,
-        kernel_info,
-        jit_time_profiling,
-        jit_function_artifacts,
-        prefix=None,
-        load_from_binary=False,
-        dynamic_args=None,
-        dynamic_kwargs=None,
-    ):
+        ir_module: ir.Module,
+        engine: Optional[execution_engine.ExecutionEngine],
+        capi_func: Any,
+        signature: Optional[inspect.Signature],
+        function_name: str,
+        kernel_info: Optional[dict],
+        jit_time_profiling: bool,
+        jit_function_artifacts: Optional[JitFunctionArtifacts],
+        prefix: Optional[str] = None,
+        load_from_binary: bool = False,
+        dynamic_args: tuple[Any] = tuple[Any](),
+        dynamic_kwargs: dict[str, Any] = dict[str, Any](),
+        has_gpu_module: bool = True,
+    ) -> None:
         super().__init__(
             ir_module,
             engine,
             capi_func,
-            args_spec,
+            signature,
             function_name,
             kernel_info,
             jit_time_profiling,
@@ -96,21 +103,29 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             load_from_binary,
             dynamic_args,
             dynamic_kwargs,
+            has_gpu_module,
         )
+
+        # Populated from module attributes by CuteExperimentalDSL.compile_and_cache;
+        # defaults match pre-pass state and non-experimental CUDA JIT functions.
+        self.kernel_extra_args: dict[str, int] = {}
+        self.total_added_arguments: int = 0
 
         # Set cuda result return type.
         # When execution engine/capi function is None, do not set the return type.
         if self.capi_func:
             self.capi_func.restype = ctypes.c_int32
-        if self.args_spec:
-            self.args_spec.args_spec.annotations["return"] = Int32
+        if self.execution_args:
+            self.execution_args.signature = self.execution_args.signature.replace(
+                return_annotation=Int32
+            )
 
     @functools.cached_property
-    def num_devices(self):
+    def num_devices(self) -> int:
         """Returns the number of CUDA devices available."""
         return checkCudaErrors(cuda_runtime.cudaGetDeviceCount())
 
-    def _deserializer(self):
+    def _deserializer(self) -> List["cuda_runtime.cudaLibrary_t"]:
         """Load the cuda library from the binary execution engine.
         @return: The list of cuda kernels.
         """
@@ -137,7 +152,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         cuda_init_args = [pointer_to_pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_init_args))()
         for i in range(len(cuda_init_args)):
-            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
+            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
         cuda_init(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
@@ -145,14 +160,14 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         cuda_load_args = [pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
         for i in range(len(cuda_load_args)):
-            packed_args[i] = ctypes.cast(cuda_load_args[i], ctypes.c_void_p)
+            packed_args[i] = ctypes.cast(cuda_load_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
         cuda_load(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
         return [cuda_runtime.cudaLibrary_t(library.value)]
 
-    def _get_cuda_init_and_load(self):
+    def _get_cuda_init_and_load(self) -> Tuple[Any, Any]:
         """Returns the cuda init and load functions from the engine."""
         # cuda init takes in a pointer to a cudaLibrary_t and returns
         # a i32 cudaError_t. It initialized (lazy loads) our cudaLibrary_t
@@ -194,7 +209,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
 
         return cuda_init, cuda_load_to_device
 
-    def _load_cuda_library(self):
+    def _load_cuda_library(self) -> List["cuda_runtime.cudaLibrary_t"]:
         """Loads the CUDA library from the engine."""
 
         cuda_init, cuda_load_to_device = self._get_cuda_init_and_load()
@@ -208,7 +223,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         cuda_init_args = [pointer_to_pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_init_args))()
         for i in range(len(cuda_init_args)):
-            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
+            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
         cuda_init(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
@@ -223,7 +238,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         ]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
         for i, arg in enumerate(cuda_load_args):
-            packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)
+            packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)  # type: ignore[arg-type]
 
         for dev in range(self.num_devices):
             device_id.value = dev
@@ -234,7 +249,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
 
         return [cuda_runtime.cudaLibrary_t(library.value)]
 
-    def to(self, device=None) -> JitExecutor:
+    def to(self, device: Optional[int] = None) -> JitExecutor:
         """Returns an executable function bound to the given device.
 
         For multi-device execution this method can be called for each device where
@@ -252,12 +267,15 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         super()._validate_engine()
         with self._executor_lock:
             # We need to ensure that the modules are loaded if not already
-            if self.jit_module is None or self.jit_module.is_unloaded():
-                cuda_library = self._load_cuda_library()
-                self.jit_module = CudaDialectJitModule(
+            if self.jit_module is None or (
+                isinstance(self.jit_module, CudaDialectJitModule)
+                and self.jit_module.is_unloaded()
+            ):
+                cuda_library = self._load_cuda_library() if self.has_gpu_module else []
+                self.jit_module = CudaDialectJitModule(  # type: ignore[assignment]
                     self.engine,
                     self.capi_func,
-                    self.args_spec,
+                    self.execution_args,
                     cuda_library,
                 )
 

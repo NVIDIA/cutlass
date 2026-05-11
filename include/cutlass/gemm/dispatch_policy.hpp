@@ -715,6 +715,7 @@ struct KernelTmaWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelSchedul
 struct KernelTmaWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100DenseGemm {};  // Use for 2SM Dense GEMM Kernels for Collective Mainloop Builder
 struct KernelWarpSpecialized1SmSm100    final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};  // Use for 1SM Dense GEMM Kernels for Collective Mainloop Builder Without TMA
 struct KernelMixedTmaCpAsyncWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};
+struct KernelMixedTmaCpAsyncWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100DenseGemm {};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Ptr-Array Dense GEMM Dispatch Policies
@@ -829,6 +830,7 @@ struct KernelTmaWarpSpecialized2SmMxf4Sm100              final : KernelSchedule2
 struct KernelTmaWarpSpecialized1SmMxf8f6f4Sm100          final : KernelSchedule1Sm, KernelScheduleMxf8f6f4Sm100 { };
 struct KernelTmaWarpSpecialized2SmMxf8f6f4Sm100          final : KernelSchedule2Sm, KernelScheduleMxf8f6f4Sm100 { };
 struct KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100 final : KernelSchedule1Sm, KernelScheduleBlockScaledGemmSm100 {};
+struct KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100 final : KernelSchedule2Sm, KernelScheduleBlockScaledGemmSm100 {};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 BlockScaled Ptr Array Dense GEMM Dispatch Policies

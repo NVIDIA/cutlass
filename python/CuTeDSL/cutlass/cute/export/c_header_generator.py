@@ -11,14 +11,13 @@
 
 from cutlass.cute.typing import NumericMeta, Integer
 from cutlass.base_dsl.export import CHeaderGenerator, CHeaderArguments
-from cutlass.base_dsl.dsl import is_dynamic_expression
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.jit_executor import ExecutionArgs
 from cutlass.cutlass_dsl.cutlass import is_cute_algebra_type
 from ..runtime import Tensor, Pointer
 
-from typing import List, Any, Dict
-from inspect import isclass
+from typing import Any, Union, get_origin, get_args
+from inspect import isclass, Parameter
 import cuda.bindings.driver as cuda
 
 # =============================================================================
@@ -75,15 +74,15 @@ class CuteCHeaderGenerator(CHeaderGenerator):
             return "int32_t "
         return self.numeric_to_c_type[dyn_type]
 
-    def _generate_binary_declaration(self, symbol_prefix: str):
+    def _generate_binary_declaration(self, symbol_prefix: str) -> str:
         """
         Generate the binary of the compiled function.
         """
         return ""
 
     def _generate_kernel_module(
-        self, symbol_prefix: str, kernel_info: Dict[str, List], dsl_name: str
-    ):
+        self, symbol_prefix: str, kernel_info: dict[str, list[Any]], dsl_name: str
+    ) -> str:
         """
         Generate the kernel module for the compiled function.
         """
@@ -137,10 +136,10 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
     def _generate_arguments(
         self,
         symbol_prefix: str,
-        args_spec: ExecutionArgs,
-        args: List[Any],
-        kwargs: Dict[str, Any],
-    ):
+        execution_args: ExecutionArgs,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> tuple[list[str], list[str], list[str]]:
         """
         Generate the arguments of the wrapper function.
         """
@@ -148,28 +147,37 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
         packed_args = []
         declarations = []
         # traverse the runtime args_spec and generate the arguments
-        rectified_args = args_spec.get_rectified_args(args, kwargs)
-        input_arg_names = args_spec.args_spec.args + args_spec.args_spec.kwonlyargs
-        for arg_name, arg in zip(input_arg_names, rectified_args):
-            arg_type = args_spec.args_spec.annotations.get(arg_name, None)
+        rectified_args = execution_args.get_rectified_args(args, kwargs)
+
+        for param, arg in zip(
+            execution_args.signature.parameters.values(), rectified_args
+        ):
+            arg_type = param.annotation
+            arg_name = param.name
 
             # process optional argument
             if arg is None:
                 continue
+
+            # Unwrap Optional[X] (i.e. Union[X, None]) to X when arg is not None
+            if get_origin(arg_type) is Union:
+                inner_types = [t for t in get_args(arg_type) if t is not type(None)]
+                if len(inner_types) == 1:
+                    arg_type = inner_types[0]
 
             if isinstance(arg, Pointer):
                 arguments.append(f"void *{arg_name}")
                 packed_args.append("&" + arg_name)
             elif isinstance(arg, Tensor):
                 dynamic_shapes = (
-                    f"\n    int32_t dynamic_shapes[{sum(arg.dynamic_shapes_mask)}];"
-                    if sum(arg.dynamic_shapes_mask) > 0
+                    f"\n    int32_t dynamic_shapes[{sum(arg.dynamic_shapes_mask)}];"  # type: ignore[attr-defined]
+                    if sum(arg.dynamic_shapes_mask) > 0  # type: ignore[attr-defined]
                     else ""
                 )
-                stride_type = "int32_t" if arg._use_32bit_stride else "int64_t"
+                stride_type = "int32_t" if arg._use_32bit_stride else "int64_t"  # type: ignore[attr-defined]
                 dynamic_strides = (
-                    f"\n    {stride_type} dynamic_strides[{sum(arg.dynamic_strides_mask)}];"
-                    if sum(arg.dynamic_strides_mask) > 0
+                    f"\n    {stride_type} dynamic_strides[{sum(arg.dynamic_strides_mask)}];"  # type: ignore[attr-defined]
+                    if sum(arg.dynamic_strides_mask) > 0  # type: ignore[attr-defined]
                     else ""
                 )
                 declarations.append(
@@ -183,7 +191,7 @@ typedef struct {{
                 packed_args.append(arg_name)
             # Generate basic numeric types
             elif isinstance(arg_type, NumericMeta):
-                arguments.append(self._generate_numeric_argument(arg_name, arg_type))
+                arguments.append(self._generate_numeric_argument(arg_name, arg_type))  # type: ignore[arg-type]
                 packed_args.append("&" + arg_name)
             elif is_cute_algebra_type(arg_type) or isinstance(arg, (tuple, list)):
                 c_type = self._get_cute_algebra_type(arg_type, arg)
@@ -204,11 +212,11 @@ typedef struct {{
         self,
         dsl_name: str,
         symbol_prefix: str,
-        args_spec: ExecutionArgs,
+        execution_args: ExecutionArgs,
         function_name: str,
-        kernel_info: Dict[str, List],
+        kernel_info: dict[str, list[Any]],
         c_header_arguments: CHeaderArguments,
-    ):
+    ) -> str:
         """
         Generate the wrapper function for the compiled function which is provided to users as the entry point.
         It uses the `symbol_prefix` as the function name for identification. The host/device symbols are hidden under the bytecode.
@@ -236,16 +244,16 @@ typedef struct {{
 
         # 3. Get the return type of the wrapper function.
         # Note that this requires the return type to be properly annotated in python.
-        return_type = args_spec.args_spec.annotations.get("return", None)
-        if return_type is None:
+        return_type = execution_args.signature.return_annotation
+        if return_type is Parameter.empty:
             return_type = "void"
         else:
             return_type = self.numeric_to_c_type[return_type][:-1]
-        declarations = "\n".join(declarations)
+        declarations_str = "\n".join(declarations)
 
         # 4. Generate the wrapper function
         function = (
-            declarations
+            declarations_str
             + f"""
 #ifdef __cplusplus
 extern "C"

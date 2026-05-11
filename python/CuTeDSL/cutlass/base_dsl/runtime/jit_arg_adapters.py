@@ -14,7 +14,11 @@ This module provides runtime utilities for JIT argument conversion in DSL.
 """
 
 from functools import wraps
-from typing import get_origin
+from typing import Callable, Any, Optional, get_origin
+from inspect import Parameter
+from dataclasses import is_dataclass, fields
+from itertools import chain
+
 
 # Local modules imports
 from ..common import DSLRuntimeError
@@ -23,15 +27,30 @@ from ..typing import (
     Int32,
     Float32,
     Boolean,
+    NumericMeta,
+    cast,
+    get_c_pointers,
+    get_mlir_types,
+    implements_jit_argument,
+    implements_dynamic_expression,
 )
+from ..utils.tree_utils import is_constexpr_field
+from ..._mlir import ir
 
 
-def is_arg_spec_constexpr(arg_spec, arg_name, arg_index, owning_func):
+def is_arg_annotation_constexpr(
+    arg_annotation: Any,
+    arg_name: str,
+    arg_index: int,
+    owning_func: Optional[Callable[..., Any]],
+) -> bool:
     """
-    Check if the argument spec is a constexpr.
+    Check if the argument annotation is a constexpr.
     """
 
-    def _is_reserved_python_func_arg(arg_index, arg_name, func):
+    def _is_reserved_python_func_arg(
+        arg_index: int, arg_name: str, func: Optional[Callable[..., Any]]
+    ) -> bool:
         """
         Check if the argument is a reserved python function argument.
         """
@@ -42,35 +61,43 @@ def is_arg_spec_constexpr(arg_spec, arg_name, arg_index, owning_func):
         if arg_name == "self":
             return True
 
-        is_classmethod = isinstance(func, classmethod) or (
-            hasattr(func, "__func__") and isinstance(func.__func__, classmethod)
-        )
-        return arg_name == "cls" and is_classmethod
+        if func:
+            is_classmethod = isinstance(func, classmethod) or (
+                hasattr(func, "__func__") and isinstance(func.__func__, classmethod)
+            )
+            return arg_name == "cls" and is_classmethod
+        return False
 
     return (
         _is_reserved_python_func_arg(arg_index, arg_name, owning_func)
-        or (isinstance(arg_spec, type) and issubclass(arg_spec, Constexpr))
-        or (get_origin(arg_spec) is Constexpr)
+        or (isinstance(arg_annotation, type) and issubclass(arg_annotation, Constexpr))
+        or (get_origin(arg_annotation) is Constexpr)
     )
 
 
-def is_argument_constexpr(arg, arg_spec, arg_name, arg_index, owning_func):
+def is_argument_constexpr(
+    arg: Any,
+    arg_annotation: Any,
+    arg_name: str,
+    arg_index: int,
+    owning_func: Callable[..., Any],
+) -> bool:
     """
     Check if the argument is a constexpr.
     """
 
-    def _is_type_argument(arg, arg_annotation):
+    def _is_type_argument(arg: Any, arg_annotation: Any) -> bool:
         """
         Check if the argument is a type argument like Type[X]
         """
 
         return isinstance(arg, type) and (
-            arg_annotation is None or get_origin(arg_annotation) is type
+            arg_annotation is Parameter.empty or get_origin(arg_annotation) is type
         )
 
     return (
-        is_arg_spec_constexpr(arg_spec, arg_name, arg_index, owning_func)
-        or _is_type_argument(arg, arg_spec)
+        is_arg_annotation_constexpr(arg_annotation, arg_name, arg_index, owning_func)
+        or _is_type_argument(arg, arg_annotation)
         or arg is None
     )
 
@@ -86,10 +113,14 @@ class JitArgAdapterRegistry:
     """
 
     # A dictionary with key=type and value=callable
-    jit_arg_adapter_registry = {}
+    jit_arg_adapter_registry: dict[type, Any] = {}
+
+    # Default adapters for arguments we don't know type names beforehand
+    # Default dataclass adapter
+    default_dataclass_adapter: Callable[[object], Any] | None = None
 
     @classmethod
-    def register_jit_arg_adapter(cls, *dargs, **dkwargs):
+    def register_jit_arg_adapter(cls, *dargs: Any, **dkwargs: Any) -> Any:
         """
         Register a JIT argument adapter callable
 
@@ -106,11 +137,11 @@ class JitArgAdapterRegistry:
         The adapters are registered per type. If a type is already registerd, an error will be raised.
         """
 
-        def decorator(*dargs, **dkwargs):
+        def decorator(*dargs: Any, **dkwargs: Any) -> Any:
             darg_python_ty = dargs[0]
 
             @wraps(darg_python_ty)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
                 if len(args) != 1 or not callable(args[0]):
                     raise DSLRuntimeError(
                         "a callable must be provided for registering JIT argument adapter"
@@ -140,11 +171,81 @@ class JitArgAdapterRegistry:
             )
 
     @classmethod
-    def get_registered_adapter(cls, ty):
+    def get_registered_adapter(cls, arg: object) -> Any:
         """
-        Get the registered JIT argument adapter for the given type.
+        Get the registered JIT argument adapter for the given argument.
         """
-        return cls.jit_arg_adapter_registry.get(ty, None)
+        adapter = cls.jit_arg_adapter_registry.get(type(arg), None)
+        if adapter is None:
+            if (cls.default_dataclass_adapter
+                and not implements_jit_argument(arg, partial=True)
+                and not implements_dynamic_expression(arg, partial=True)
+                and is_dataclass(arg)
+                and len(vars(arg)) == len(fields(arg))):  # no extra/missing instance attrs
+                adapter = cls.default_dataclass_adapter
+        return adapter
+
+    @classmethod
+    def set_default_dataclass_adapter(cls, adapter: Callable[[object], Any]) -> None:
+        """
+        Set up a default dataclass adapter. If any user defined dataclass implements the JitArgument/DynamicExpression protocol,
+        those impls will be honored instead of this default adapter.
+        """
+        cls.default_dataclass_adapter = adapter
+
+
+class DefaultDataclassAdapter:
+    """
+    Adapter for dataclass typed JIT arguments.
+    """
+    def __init__(self, arg: object) -> None:
+        self._ir_fields: dict[str, object] = {}
+        self._ir_fields_len: dict[str, int] = {}
+        self._arg = arg
+        for f in fields(arg): # type: ignore[arg-type]
+            arg_field = getattr(arg, f.name)
+            if not is_constexpr_field(f):
+                if isinstance(f.type, NumericMeta) and not isinstance(arg_field, f.type):
+                    self._ir_fields[f.name] = cast(arg_field, f.type) # type: ignore[arg-type]
+                else:
+                    # Allow the nested fields to be adapted
+                    arg_adapter = JitArgAdapterRegistry.get_registered_adapter(arg_field)
+                    if arg_adapter is not None:
+                        self._ir_fields[f.name] = arg_adapter(arg_field)
+                    else:
+                        self._ir_fields[f.name] = arg_field
+
+    def __c_pointers__(self) -> list[Any]:
+        return list(chain.from_iterable(get_c_pointers(v) for v in self._ir_fields.values()))
+
+    def __get_mlir_types__(self) -> list[Any]:
+        ir_types = []
+        for f, v in self._ir_fields.items():
+            types = get_mlir_types(v)
+            self._ir_fields_len[f] = len(types)
+            ir_types.extend(types)
+        return ir_types
+
+    def __new_from_mlir_values__(self, values: list[Any]) -> Any:
+        from ..dsl import new_from_mlir_values  # deferred to avoid circular import
+
+        kwargs = {}
+        idx = 0
+        for f in fields(self._arg): # type: ignore[arg-type]
+            if is_constexpr_field(f):
+                kwargs[f.name] = getattr(self._arg, f.name)
+            else:
+                kwargs[f.name] = new_from_mlir_values(self._ir_fields[f.name], values[idx : idx + self._ir_fields_len[f.name]])
+                idx += self._ir_fields_len[f.name]
+        return type(self._arg)(**kwargs)
+
+    def __extract_mlir_values__(self) -> list[ir.Value]:
+        from ..dsl import extract_mlir_values  # deferred to avoid circular import
+
+        return list(chain.from_iterable(extract_mlir_values(v) for v in self._ir_fields.values()))
+
+
+JitArgAdapterRegistry.set_default_dataclass_adapter(DefaultDataclassAdapter)
 
 
 # =============================================================================
@@ -155,7 +256,7 @@ class JitArgAdapterRegistry:
 @JitArgAdapterRegistry.register_jit_arg_adapter(int)
 @JitArgAdapterRegistry.register_jit_arg_adapter(float)
 @JitArgAdapterRegistry.register_jit_arg_adapter(bool)
-def _convert_python_scalar(arg):
+def _convert_python_scalar(arg: Any) -> Any:
     """
     Convert a Python scalar to a DSL type.
     """
@@ -164,19 +265,19 @@ def _convert_python_scalar(arg):
         float: Float32,
         bool: Boolean,
     }
-    return conversion_map.get(type(arg))(arg)
+    return conversion_map.get(type(arg))(arg)  # type: ignore[misc]
 
 
 @JitArgAdapterRegistry.register_jit_arg_adapter(tuple)
 @JitArgAdapterRegistry.register_jit_arg_adapter(list)
-def _convert_python_sequence(arg):
+def _convert_python_sequence(arg: Any) -> Any:
     """
     Go through each element in the sequence and convert it to a type that can be
     further processed by DSL to generate the corresponding JIT argument(s).
     """
     adapted_arg = []
     for elem in arg:
-        adapter = JitArgAdapterRegistry.get_registered_adapter(type(elem))
+        adapter = JitArgAdapterRegistry.get_registered_adapter(elem)
         if adapter is not None:
             converted_elem = adapter(elem)
             adapted_arg.append(converted_elem)

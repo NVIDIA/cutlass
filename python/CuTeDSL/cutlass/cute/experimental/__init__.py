@@ -17,6 +17,7 @@ compile = _dsl.CompileCallable()
 
 from .algorithm import *
 from .core import *
+from .host_runtime import *
 from .math import *
 from .memory import *
 from .pipeline import *

@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import overload, Type, Tuple, Union, Optional
+from typing import Any, overload, Type, Tuple, Union, Optional
 
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -27,6 +27,7 @@ from ...typing import (
     Int,
     Numeric,
     NumericMeta,
+    Boolean,
     Int16,
     Int32,
     Int64,
@@ -60,7 +61,11 @@ from .copy import (
 
 @dsl_user_op
 def make_smem_layout_atom(
-    kind: SmemLayoutAtomKind, element_type: Type[Numeric], *, loc=None, ip=None
+    kind: SmemLayoutAtomKind,
+    element_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> ComposedLayout:
     """
     Makes a SMEM layout Atom.
@@ -117,9 +122,15 @@ def make_smem_layout_atom(
     return core.make_composed_layout(sw, 0, outer, loc=loc, ip=ip)
 
 
+
 @overload
 def tile_to_mma_shape(
-    atom: Layout, mma_tile_shape: Shape, order: IntTuple = None, *, loc=None, ip=None
+    atom: Layout,
+    mma_tile_shape: Shape,
+    order: Optional[IntTuple] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Layout: ...
 
 
@@ -127,17 +138,22 @@ def tile_to_mma_shape(
 def tile_to_mma_shape(
     atom: ComposedLayout,
     mma_tile_shape: Shape,
-    order: IntTuple = None,
+    order: Optional[IntTuple] = None,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> ComposedLayout: ...
 
 
 @dsl_user_op
 def tile_to_mma_shape(
-    atom, mma_tile_shape: Shape, order: IntTuple = None, *, loc=None, ip=None
-):
+    atom: Union[Layout, ComposedLayout],
+    mma_tile_shape: Shape,
+    order: Optional[IntTuple] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Layout, ComposedLayout]:
     """
     Tiles a layout to an MMA shape.
     """
@@ -170,19 +186,38 @@ def tile_to_mma_shape(
 @dsl_user_op
 def commit(
     mbar_ptr: core.Pointer,
-    mask=None,
+    mask: Any = None,
     cta_group: CtaGroup = CtaGroup.ONE,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Perform an arrive operation on a mbarrier upon completion of previous MMA operations.
+
+    **Single-Thread Execution Required - DSL Does NOT Handle Automatically**: This operation
+    **must** be wrapped in :func:`cute.arch.elect_one`. Without ``elect_one()``, all 32
+    threads in the warp will execute the commit, causing 32x redundant ``tcgen05.commit`` PTX instructions.
+
+    .. code-block:: python
+
+        # CORRECT: Wrap tcgen05.commit in elect_one
+        with cute.arch.elect_one():
+            tcgen05.commit(barrier_ptr, None, cta_group)
+
+        # WRONG: Without elect_one, all threads execute (32x redundant)
+        tcgen05.commit(barrier_ptr, None, cta_group)
 
     :param mbar_ptr: A pointer to the mbarrier in SMEM
     :type mbar_ptr:  Pointer
     :param mask:     An optional multicast mask for the CTAs in the cluster to signal arrival to
     :type mask:      Int
+    :param cta_group: The CTA group size for the operation (ONE or TWO)
+    :type cta_group: CtaGroup
+
+    .. seealso::
+       - :func:`cute.arch.elect_one` - **REQUIRED** wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_arrive` - General barrier arrive operation
     """
     if cta_group == CtaGroup.ONE:
         group = nvvm.Tcgen05GroupKind.CTA_1
@@ -200,7 +235,9 @@ def commit(
 
 
 @dsl_user_op
-def int_to_smem_descriptor(i, *, loc=None, ip=None) -> ir.Value:
+def int_to_smem_descriptor(
+    i: Any, *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> ir.Value:
     desc_type = _cute_nvgpu_ir.SmemDescType.get()
     return builtin.unrealized_conversion_cast(
         [desc_type], [Int64(i).ir_value(loc=loc, ip=ip)], loc=loc, ip=ip
@@ -208,7 +245,12 @@ def int_to_smem_descriptor(i, *, loc=None, ip=None) -> ir.Value:
 
 
 @dsl_user_op
-def smem_descriptor_to_int(desc: ir.Value, *, loc=None, ip=None) -> Int64:
+def smem_descriptor_to_int(
+    desc: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int64:
     return Int64(
         builtin.unrealized_conversion_cast([Int64.mlir_type], [desc], loc=loc, ip=ip)
     )
@@ -273,14 +315,19 @@ def get_tmem_copy_properties(
     else:
         raise ValueError(f"expects 'atom' to be a TMEM copy, but got {atom}")
     if is_tmem_load(atom):
-        return num_dp, num_bits, atom.op.repeat.value, atom.op.pack
+        return num_dp, num_bits, atom.op.repeat.value, atom.op.pack  # type: ignore[union-attr]
     else:
         assert is_tmem_store(atom), "atom must be a TMEM store"
-        return num_dp, num_bits, atom.op.repeat.value, atom.op.unpack
+        return num_dp, num_bits, atom.op.repeat.value, atom.op.unpack  # type: ignore[union-attr]
 
 
 @dsl_user_op
-def find_tmem_tensor_col_offset(tmem_tensor: Tensor, *, loc=None, ip=None) -> Int:
+def find_tmem_tensor_col_offset(
+    tmem_tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int:
     """
     Computes the TMEM column offset given a TMEM tensor.
 
@@ -303,7 +350,11 @@ def find_tmem_tensor_col_offset(tmem_tensor: Tensor, *, loc=None, ip=None) -> In
 
 @dsl_user_op
 def make_tmem_copy(
-    atom: CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
+    atom: CopyAtom,
+    tmem_tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> TiledCopy:
     """
     Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
@@ -317,11 +368,16 @@ def make_tmem_copy(
 
 @dsl_user_op
 def make_s2t_copy(
-    atom: CopyAtom, tmem_tensor: Tensor, *, loc=None, ip=None
+    atom: CopyAtom,
+    tmem_tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> TiledCopy:
     """
     Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
     """
+    tmem_tensor = core.filter_zeros(tmem_tensor, loc=loc, ip=ip)
     tiled_copy_val = _cute_nvgpu_ir.atom_make_s2t_copy(
         atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
     )
@@ -331,7 +387,11 @@ def make_s2t_copy(
 
 @dsl_user_op
 def get_s2t_smem_desc_tensor(
-    atom: CopyAtom, smem_tensor: Tensor, *, loc=None, ip=None
+    atom: CopyAtom,
+    smem_tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Tensor:
     """
     Returns the SMEM descriptor tensor from a S2T copy atom and a SMEM tensor.
@@ -348,9 +408,9 @@ def make_umma_smem_desc(
     major: str,
     next_src: Optional[Pointer] = None,
     *,
-    loc=None,
-    ip=None,
-):
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
     """
     Construct shared memory descriptor for UMMA.
 
@@ -392,3 +452,5 @@ def make_umma_smem_desc(
         loc=loc,
         ip=ip,
     )
+
+

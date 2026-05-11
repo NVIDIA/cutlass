@@ -9,14 +9,16 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type
+from typing import Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
+from cutlass.base_dsl.arch import Arch
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
-from ..typing import Pointer, Int, Int32, Numeric, NumericMeta, Tensor
+from ..typing import Pointer, Int, Int32, Numeric, NumericMeta
 
 SM100_TMEM_CAPACITY_COLUMNS = (
     512  # deprecated; use get_max_tmem_alloc_cols(arch="sm_100") instead
@@ -72,14 +74,15 @@ def get_min_tmem_alloc_cols(compute_capability: str) -> int:
     return TMEM_MIN_ALLOC_COLUMNS_MAP[compute_capability]
 
 
+
 @dsl_user_op
 def retrieve_tmem_ptr(
     element_type: Type[Numeric],
     alignment: int,
     ptr_to_buffer_holding_addr: Pointer,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
     """
     Retrieves a pointer to TMEM with the provided element type and alignment.
@@ -103,7 +106,10 @@ def retrieve_tmem_ptr(
         element_type.mlir_type, _cute_ir.AddressSpace.tmem, alignment
     )
     return _cute_nvgpu_ir.arch_sm100_retrieve_tmem_ptr(
-        res_ty, ptr_to_buffer_holding_addr.value, loc=loc, ip=ip
+        res_ty,
+        ptr_to_buffer_holding_addr.value,
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -111,11 +117,11 @@ def retrieve_tmem_ptr(
 def alloc_tmem(
     num_columns: Int,
     smem_ptr_to_write_address: Pointer,
-    is_two_cta=None,
+    is_two_cta: Optional[bool] = None,
     *,
     arch: str = "sm_100",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Allocates TMEM.
@@ -135,11 +141,15 @@ def alloc_tmem(
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
-            or not (num_columns & (num_columns - 1) == 0)
-        ):
-            raise ValueError(
-                f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, and must be pow of 2, but got {num_columns}"
+            or not (
+                (num_columns & (num_columns - 1) == 0)
             )
+        ):
+            err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
+            err_msg += "and must be pow of 2"
+            err_msg += f", but got {num_columns}."
+            raise ValueError(err_msg)
+
     _cute_nvgpu_ir.arch_sm100_alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
         smem_ptr_to_write_address.value,
@@ -150,7 +160,12 @@ def alloc_tmem(
 
 
 @dsl_user_op
-def relinquish_tmem_alloc_permit(is_two_cta=None, *, loc=None, ip=None) -> None:
+def relinquish_tmem_alloc_permit(
+    is_two_cta: Optional[bool] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     Relinquishes the right to allocate TMEM so that other CTAs potentially in a different grid can
     allocate.
@@ -164,11 +179,11 @@ def relinquish_tmem_alloc_permit(is_two_cta=None, *, loc=None, ip=None) -> None:
 def dealloc_tmem(
     tmem_ptr: Pointer,
     num_columns: Int,
-    is_two_cta=None,
+    is_two_cta: Optional[bool] = None,
     *,
     arch: str = "sm_100",
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Deallocates TMEM using the provided pointer and number of columns.
@@ -178,6 +193,8 @@ def dealloc_tmem(
     :param num_columns: The number of columns in the TMEM allocation
     :type num_columns:  Int
     :param is_two_cta:  Optional boolean parameter for 2-CTA MMAs
+    :param arch:        The architecture of the GPU.
+    :type arch:         str
     """
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
@@ -185,11 +202,15 @@ def dealloc_tmem(
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
-            or not (num_columns & (num_columns - 1) == 0)
-        ):
-            raise ValueError(
-                f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, and must be pow of 2, but got {num_columns}"
+            or not (
+                (num_columns & (num_columns - 1) == 0)
             )
+        ):
+            err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
+            err_msg += "and must be pow of 2"
+            err_msg += f", but got {num_columns}."
+            raise ValueError(err_msg)
+
     _cute_nvgpu_ir.arch_sm100_dealloc_tmem(
         tmem_ptr.value,
         Int32(num_columns).ir_value(loc=loc, ip=ip),

@@ -9,12 +9,60 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from enum import Enum
+from collections.abc import Callable
+from enum import Enum, EnumMeta
 import re
-from typing import Callable, List, Tuple
+from typing import Any
 
 
-class Arch(Enum):
+class ArchMeta(EnumMeta):
+    """
+    Custom metaclass for Arch enum that supports dynamic aliases based on CUDA version.
+
+    - If cuda_version >= 13.0: sm_101/sm_101a/sm_101f are aliases of sm_110/sm_110a/sm_110f, use sm_110 as the canonical name
+    - Otherwise: sm_110/sm_110a/sm_110f are aliases of sm_101/sm_101a/sm_101f, use sm_101 as the canonical name
+    """
+
+    _arch_aliases: dict[str, str] = {}
+
+    def __new__(
+        mcs, name: str, bases: tuple[type, ...], namespace: dict[str, Any]
+    ) -> "ArchMeta":
+        cls = super().__new__(mcs, name, bases, namespace)  # type: ignore[arg-type]
+        from .version_info import CUDA_VERSION
+
+        if CUDA_VERSION.major >= 13:
+            # sm_101 -> sm_110, use sm_110 as the canonical name
+            mcs._arch_aliases = {
+                "sm_101": "sm_110",
+                "sm_101a": "sm_110a",
+                "sm_101f": "sm_110f",
+            }
+        else:
+            # sm_110 -> sm_101, use sm_101 as the canonical name
+            mcs._arch_aliases = {
+                "sm_110": "sm_101",
+                "sm_110a": "sm_101a",
+                "sm_110f": "sm_101f",
+            }
+        return cls
+
+    def __getattribute__(cls, name: str) -> Any:
+        # Use type.__getattribute__ to avoid recursion when accessing _arch_aliases
+        aliases = type.__getattribute__(cls, "_arch_aliases")
+        if name in aliases:
+            # Redirect to the target member
+            return type.__getattribute__(cls, aliases[name])
+        return super().__getattribute__(name)
+
+    def __getitem__(cls, name: str) -> "Arch":  # type: ignore[override]
+        # Support Arch["sm_101"] style access
+        if name in cls._arch_aliases:
+            return super().__getitem__(cls._arch_aliases[name])
+        return super().__getitem__(name)
+
+
+class Arch(Enum, metaclass=ArchMeta):
     # sm_arch = (major, minor, suffix)
     # Ampere
     sm_80 = (8, 0, "")
@@ -44,36 +92,26 @@ class Arch(Enum):
     sm_121 = (12, 1, "")
     sm_121a = (12, 1, "a")
     sm_121f = (12, 1, "f")
-    def __init__(self, major, minor, suffix):
+    def __init__(self, major: int, minor: int, suffix: str) -> None:
         self.major = major
         self.minor = minor
         self.suffix = suffix
 
-    @classmethod
-    def _missing_(cls, value):
-        if isinstance(value, tuple) and len(value) == 2:
-            # Support creating Arch enum from (major, minor) tuple
-            # Arch(major, minor) is equivalent to Arch(major, minor, "")
-            major, minor, suffix = *value, ""
-            return cls((major, minor, suffix))
-        else:
-            raise ValueError(f"invalid arguments for Arch: {value}")
-
     # attributes to get arch list of specific families
     @classmethod
-    def AmpereArchs(cls) -> Tuple["Arch"]:
+    def AmpereArchs(cls) -> tuple["Arch", ...]:
         return (Arch.sm_80, Arch.sm_86, Arch.sm_87)
 
     @classmethod
-    def AdaArchs(cls) -> Tuple["Arch"]:
+    def AdaArchs(cls) -> tuple["Arch", ...]:
         return (Arch.sm_89,)
 
     @classmethod
-    def HopperArchs(cls) -> Tuple["Arch"]:
+    def HopperArchs(cls) -> tuple["Arch", ...]:
         return (Arch.sm_90, Arch.sm_90a)
 
     @classmethod
-    def BlackwellArchs(cls) -> Tuple["Arch"]:
+    def BlackwellArchs(cls) -> tuple["Arch", ...]:
         return (
             Arch.sm_100,
             Arch.sm_100a,
@@ -95,20 +133,21 @@ class Arch(Enum):
             Arch.sm_121f,
         )
 
-    def __repr__(self):
-        return self.__str__()
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return f"Arch.{self.name}"
 
     @classmethod
-    def from_string(cls, arch_str):
-        pattern = r"^(?:sm_?|SM_?)?(\d+)(\d)([af]?)$"
-        match = re.match(pattern, arch_str)
-        if not match:
-            raise ValueError(f"Invalid architecture string format: {arch_str}")
-        major, minor, suffix = match.groups()
-        return cls((int(major), int(minor), suffix))
+    def from_string(cls, arch_str: str) -> "Arch":
+        return cls[arch_str]
+
+    def to_string(self) -> str:
+        return self.name
 
     @classmethod
-    def filter(cls, criterion: Callable[["Arch"], bool]) -> List["Arch"]:
+    def filter(cls, criterion: Callable[["Arch"], bool]) -> list["Arch"]:
         """
         Filter the archs by the given criterion.
         """
@@ -129,7 +168,7 @@ class Arch(Enum):
         """
         # sm_101 is renamed to sm_110, sm_101f is family of sm_110f, but is not family of sm_100f
         if self in [Arch.sm_101a, Arch.sm_101f]:
-            return arch.major == 11 and arch.minor == 0
+            return arch.major == 11 and arch.minor >= 0
 
         return (
             self.major == arch.major
@@ -137,22 +176,22 @@ class Arch(Enum):
             and self.suffix in ["a", "f"]
         )
 
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> bool:
         if not isinstance(other, Arch):
             return NotImplemented
         return (self.major, self.minor) < (other.major, other.minor)
 
-    def __le__(self, other):
+    def __le__(self, other: object) -> bool:
         if not isinstance(other, Arch):
             return NotImplemented
         return (self.major, self.minor) <= (other.major, other.minor)
 
-    def __gt__(self, other):
+    def __gt__(self, other: object) -> bool:
         if not isinstance(other, Arch):
             return NotImplemented
         return (self.major, self.minor) > (other.major, other.minor)
 
-    def __ge__(self, other):
+    def __ge__(self, other: object) -> bool:
         if not isinstance(other, Arch):
             return NotImplemented
         return (self.major, self.minor) >= (other.major, other.minor)

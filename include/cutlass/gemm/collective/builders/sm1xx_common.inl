@@ -503,6 +503,7 @@ check_input_datatypes() {
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized1SmBlockScaledSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized2SmBlockScaledSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100>)
+            || (cute::is_same_v<BuilderScheduleTag, KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100>)
             // SM100 BS ptr_array
             || (cute::is_same_v<BuilderScheduleTag, KernelSchedulePtrArrayBlockScaledGemmSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledSm100>)

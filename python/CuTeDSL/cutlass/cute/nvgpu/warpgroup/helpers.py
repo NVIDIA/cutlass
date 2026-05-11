@@ -9,10 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type
+from typing import Any, Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
 
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import nvvm
 
 from ...typing import Numeric, NumericMeta, ComposedLayout
@@ -22,7 +23,11 @@ from .mma import SmemLayoutAtomKind
 
 @dsl_user_op
 def make_smem_layout_atom(
-    kind: SmemLayoutAtomKind, element_type: Type[Numeric], *, loc=None, ip=None
+    kind: SmemLayoutAtomKind,
+    element_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> ComposedLayout:
     """
     Makes a SMEM layout Atom.
@@ -86,7 +91,9 @@ def make_smem_layout_atom(
 
 
 @dsl_user_op
-def fence(*, loc=None, ip=None) -> None:
+def fence(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-multiply-and-accumulate-instruction-wgmma-fence>`__.
     """
@@ -94,7 +101,9 @@ def fence(*, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def commit_group(*, loc=None, ip=None) -> None:
+def commit_group(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-commit-group>`__.
     """
@@ -102,7 +111,12 @@ def commit_group(*, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def wait_group(group, *, loc=None, ip=None) -> None:
+def wait_group(
+    group: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-multiply-and-accumulate-instruction-wgmma-wait-group>`__.
     """

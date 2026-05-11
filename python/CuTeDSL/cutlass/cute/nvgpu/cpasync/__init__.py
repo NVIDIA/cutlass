@@ -25,9 +25,16 @@ __all__ = [
     "CopyBulkTensorTileS2GOp",
     "CopyReduceBulkTensorTileS2GOp",
     "CopyDsmemStoreOp",
+    "CopyBulkG2SOp",
+    "CopyBulkG2SMulticastOp",
+    "CopyBulkS2GOp",
+    "CopyBulkS2GByteMaskOp",
+    "CopyBulkS2SOp",
+    "TmaCopyOp",
     #
     # helpers.py
     #
+    "TmaInfo",
     "make_tiled_tma_atom",
     "tma_partition",
     "create_tma_multicast_mask",
@@ -37,4 +44,5 @@ __all__ = [
     "fence_tma_desc_acquire",
     "cp_fence_tma_desc_release",
     "fence_tma_desc_release",
+    "group_bulk_copy_modes",
 ]

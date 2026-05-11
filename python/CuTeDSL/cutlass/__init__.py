@@ -13,6 +13,27 @@ from ._mlir._mlir_libs import _cutlass_ir
 
 _cutlass_ir.populate(_cutlass_ir)
 
+
+def _ensure_mlir_type_compat() -> None:
+    """Patch `.isinstance()` onto MLIR type classes that no longer expose it."""
+    try:
+        from ._mlir import ir as _mlir_ir
+    except Exception:
+        return
+    for name in dir(_mlir_ir):
+        if not name.endswith("Type"):
+            continue
+        cls = getattr(_mlir_ir, name)
+        if not isinstance(cls, type) or hasattr(cls, "isinstance"):
+            continue
+        try:
+            cls.isinstance = staticmethod(lambda ty, _cls=cls: isinstance(ty, _cls))  # type: ignore[attr-defined]
+        except Exception:
+            continue
+
+
+_ensure_mlir_type_compat()
+del _ensure_mlir_type_compat
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
 # Monkey patch CUDA version query function
 from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
@@ -52,6 +73,7 @@ from .cutlass_dsl import (
     # Data types
     dtype,  # Provides conversions to types inheriting from NumericType
     DSLRuntimeError,
+    DSLAstPreprocessorError,
     JitArgAdapterRegistry,
     # Construction utilities for user-defined classes
     extract_mlir_values,
@@ -77,3 +99,5 @@ cuda = _dsl.cuda_helpers
 
 # Jax Framework support
 from . import jax as jax
+
+CACHE_FILE = "compiled_cache.db"

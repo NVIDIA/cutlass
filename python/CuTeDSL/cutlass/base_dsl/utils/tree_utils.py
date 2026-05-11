@@ -9,15 +9,61 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Callable, Any, Iterable, Iterator, NamedTuple, Union, get_origin
+from collections.abc import Callable, Iterable, Iterator
+from typing import Any, NamedTuple, get_origin
+
 import dataclasses
 import itertools as it
 from types import SimpleNamespace
 
-from ..typing import as_numeric, Numeric, Constexpr
+from ..typing import as_numeric, Numeric, Constexpr, implements_dynamic_expression
 from .._mlir_helpers.arith import ArithValue
 from ..common import DSLBaseError
 from ..._mlir import ir
+
+
+def _flatten_mlir_values(values: Any) -> list[ir.Value]:
+    """
+    Flatten a nested dict/list structure of MLIR values into a flat list.
+    Local copy to avoid circular imports with dsl.py.
+    """
+    if values is None:
+        return []
+    elif isinstance(values, ir.Value):
+        return [values]
+    elif isinstance(values, dict):
+        result = []
+        for v in values.values():
+            result.extend(_flatten_mlir_values(v))
+        return result
+    elif isinstance(values, list):
+        result = []
+        for v in values:
+            result.extend(_flatten_mlir_values(v))
+        return result
+    else:
+        return []
+
+
+def _unflatten_mlir_values(flat_values: Any, template: Any) -> Any:
+    """
+    Reconstruct a nested dict/list structure from a flat list of MLIR values.
+    Local copy to avoid circular imports with dsl.py.
+    """
+    if not hasattr(flat_values, "__next__"):
+        flat_values = iter(flat_values)
+
+    if template is None:
+        return None
+    elif isinstance(template, ir.Value):
+        return next(flat_values)
+    elif isinstance(template, dict):
+        return {k: _unflatten_mlir_values(flat_values, v) for k, v in template.items()}
+    elif isinstance(template, list):
+        return [_unflatten_mlir_values(flat_values, v) for v in template]
+    else:
+        return None
+
 
 NoneType = type(None)
 
@@ -99,27 +145,25 @@ def is_frozen_dataclass(obj_or_cls: Any) -> bool:
     return (
         dataclasses.is_dataclass(cls)
         and getattr(cls, "__dataclass_params__", None) is not None
-        and cls.__dataclass_params__.frozen
+        and cls.__dataclass_params__.frozen  # type: ignore[attr-defined]
     )
 
 
-def is_dynamic_expression(x: Any) -> bool:
+def is_namedtuple_instance(x: Any) -> bool:
     """
-    Check if an object implements the DynamicExpression protocol.
-
-    Objects implementing this protocol must have both `__extract_mlir_values__`
-    and `__new_from_mlir_values__` methods.
+    Check if an object is an instance of a :class:`typing.NamedTuple` subclass.
 
     Args:
         x: Any object to check
 
     Returns:
-        bool: True if the object implements the DynamicExpression protocol,
-              False otherwise
+        bool: True if *x* is a NamedTuple instance, False otherwise
     """
-    return all(
-        hasattr(x, attr)
-        for attr in ("__extract_mlir_values__", "__new_from_mlir_values__")
+    t = type(x)
+    return (
+        issubclass(t, tuple)
+        and hasattr(t, "_fields")
+        and isinstance(t._fields, tuple)
     )
 
 
@@ -183,8 +227,8 @@ class Leaf:
 
     is_numeric: bool = False
     is_none: bool = False
-    node_metadata: SimpleNamespace = None
-    ir_type_str: str = None
+    node_metadata: SimpleNamespace | None = None
+    ir_type_str: str | None = None
 
 
 # =============================================================================
@@ -192,7 +236,7 @@ class Leaf:
 # =============================================================================
 
 
-def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[Any]]:
+def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
     """
     Extract non-method, non-function attributes from a dataclass instance.
 
@@ -223,7 +267,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[Any]]:
             constexpr_fields.append(field.name)
             fields.remove(field.name)
             v = getattr(x, field.name)
-            if is_dynamic_expression(v):
+            if implements_dynamic_expression(v):
                 raise DSLTreeFlattenError(
                     f"`{x}` has dynamic expression field `{field.name}` with a Constexpr type annotation `{field.type}`",
                     type_str=get_fully_qualified_class_name(x),
@@ -316,7 +360,43 @@ def default_dataclass_from_iterable(
     )
 
 
-def dynamic_expression_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
+def namedtuple_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
+    """
+    Convert a :class:`typing.NamedTuple` instance to iterable form.
+
+    Args:
+        x: A NamedTuple instance
+
+    Returns:
+        tuple: (metadata, field_values) where metadata stores the field names
+               and original object for later reconstruction
+    """
+    fields = list(type(x)._fields)
+    return (
+        SimpleNamespace(
+            type_str=get_fully_qualified_class_name(x),
+            fields=fields,
+            original_obj=x,
+        ),
+        list(x),
+    )
+
+
+def namedtuple_from_iterable(metadata: SimpleNamespace, children: Iterable[Any]) -> Any:
+    """
+    Reconstruct a :class:`typing.NamedTuple` instance from iterable form.
+
+    Args:
+        metadata: Metadata produced by :func:`namedtuple_to_iterable`
+        children: Iterable of reconstructed field values
+
+    Returns:
+        A new NamedTuple instance of the original type
+    """
+    return type(metadata.original_obj)(*children)
+
+
+def dynamic_expression_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any] | None]:
     """
     Convert a dynamic expression to iterable form.
 
@@ -329,9 +409,31 @@ def dynamic_expression_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
         tuple: (metadata, mlir_values) where metadata marks this as a dynamic expression
                and mlir_values are the extracted MLIR values
     """
+    extracted = x.__extract_mlir_values__()
+    if extracted is None:
+        # Preserve None so the caller's "children is None" check still triggers
+        # DSLTreeFlattenError for types whose __extract_mlir_values__ returns None
+        # (e.g. runtime._Pointer inheriting an unimplemented ABC stub).
+        return (
+            SimpleNamespace(is_dynamic_expression=1, original_obj=x, template=None),
+            None,
+        )
+
+    flattened = _flatten_mlir_values(extracted)
+    if not flattened and extracted:
+        # extracted is non-empty but flatten produced nothing -- this means
+        # __extract_mlir_values__ returned non-ir.Value items (e.g. Python ints
+        # before they are promoted to MLIR values).  Fall back to passing the raw
+        # values as children, which preserves the old (pre-flatten) behavior and
+        # lets _tree_flatten raise DSLTreeFlattenError for unsupported types.
+        return (
+            SimpleNamespace(is_dynamic_expression=1, original_obj=x, template=None),
+            extracted,
+        )
+
     return (
-        SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-        x.__extract_mlir_values__(),
+        SimpleNamespace(is_dynamic_expression=1, original_obj=x, template=extracted),
+        flattened,
     )
 
 
@@ -350,7 +452,13 @@ def dynamic_expression_from_iterable(
     Returns:
         The reconstructed dynamic expression object
     """
-    return metadata.original_obj.__new_from_mlir_values__(list(children))
+    children_list = list(children)
+    # If we have a template, unflatten the values back to the original structure
+    if hasattr(metadata, "template") and metadata.template is not None:
+        values = _unflatten_mlir_values(children_list, metadata.template)
+    else:
+        values = children_list
+    return metadata.original_obj.__new_from_mlir_values__(values)
 
 
 def default_dict_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
@@ -508,7 +616,9 @@ unflattened_a should be structurally identical to a, and unflattened_b should be
 """
 
 
-def tree_flatten(x: Any) -> tuple[list[Any], list[ir.Attribute], PyTreeDef]:
+def tree_flatten(
+    x: Any, return_ir_values: bool = True
+) -> tuple[list[Any], list[ir.Attribute], PyTreeDef | Leaf]:
     """
     Flatten a nested structure into a flat list of values and a tree definition.
 
@@ -518,9 +628,10 @@ def tree_flatten(x: Any) -> tuple[list[Any], list[ir.Attribute], PyTreeDef]:
 
     Args:
         x: The nested structure to flatten
-
+        return_ir_values: Whether to return ir.Values instead of original values
     Returns:
-        tuple: (flat_values, treedef) where flat_values is a list of leaf values
+        tuple: (flat_values, flat_attributes, treedef) where flat_values is a list of leaf values
+               and flat_attributes is a list of attributes for the leaf values
                and treedef is the tree structure definition
 
     Raises:
@@ -530,11 +641,11 @@ def tree_flatten(x: Any) -> tuple[list[Any], list[ir.Attribute], PyTreeDef]:
         >>> tree_flatten([1, [2, 3], 4])
         ([1, 2, 3, 4], PyTreeDef(...))
     """
-    children_iter, child_attrs_iter, treedef = _tree_flatten(x)
+    children_iter, child_attrs_iter, treedef = _tree_flatten(x, return_ir_values)
     return list(children_iter), list[ir.Attribute](child_attrs_iter), treedef
 
 
-def get_registered_node_types_or_insert(x: Any) -> Union[NodeType, None]:
+def get_registered_node_types_or_insert(x: Any) -> NodeType | None:
     """
     Get the registered node type for an object, registering it if necessary.
 
@@ -553,10 +664,16 @@ def get_registered_node_types_or_insert(x: Any) -> Union[NodeType, None]:
     node_type = _node_types.get(type(x))
     if node_type:
         return node_type
-    elif is_dynamic_expression(x):
+    elif implements_dynamic_expression(x):
         # If a class implements DynamicExpression protocol, register it before default dataclass one
         return register_pytree_node(
             type(x), dynamic_expression_to_iterable, dynamic_expression_from_iterable
+        )
+    elif is_namedtuple_instance(x):
+        # NamedTuples are pytree containers: flatten to field values, rebuild via constructor.
+        # Checked before dataclass because NamedTuples are tuples, not dataclasses.
+        return register_pytree_node(
+            type(x), namedtuple_to_iterable, namedtuple_from_iterable
         )
     elif dataclasses.is_dataclass(x):
         return register_pytree_node(
@@ -567,11 +684,11 @@ def get_registered_node_types_or_insert(x: Any) -> Union[NodeType, None]:
 
 
 def create_leaf_for_value(
-    x: Any,
+    x: Any = None,
     is_numeric: bool = False,
     is_none: bool = False,
-    node_metadata: SimpleNamespace = None,
-    ir_type_str: str = None,
+    node_metadata: SimpleNamespace | None = None,
+    ir_type_str: str | None = None,
 ) -> Leaf:
     """
     Create a Leaf node for a given value.
@@ -596,7 +713,8 @@ def create_leaf_for_value(
 
 def _tree_flatten(
     x: Any,
-) -> tuple[Iterable[Any], Iterable[ir.Attribute], Union[PyTreeDef, Leaf]]:
+    return_ir_values: bool = True,
+) -> tuple[Iterable[Any], Iterable[ir.Attribute], PyTreeDef | Leaf]:
     """
     Internal function to flatten a tree structure.
 
@@ -606,10 +724,12 @@ def _tree_flatten(
 
     Args:
         x: The object to flatten
+        return_ir_values: Whether to return ir.Value instead of original values
 
     Returns:
-        tuple: (flattened_values, treedef) where flattened_values is an iterable
-               of leaf values and treedef is the tree structure
+        tuple: (flattened_values, flattened_attributes, treedef) where flattened_values is an iterable
+               of leaf values, flattened_attributes is an iterable of leaf attributes
+               and treedef is the tree structure
 
     Raises:
         DSLTreeFlattenError: If the object type is not supported
@@ -617,8 +737,12 @@ def _tree_flatten(
     if x is None:
         return [], [], create_leaf_for_value(x, is_none=True)
 
-    elif isinstance(x, ArithValue) and is_dynamic_expression(x):
-        v = x.__extract_mlir_values__()
+    elif isinstance(x, ArithValue) and implements_dynamic_expression(x):
+        v = (
+            _flatten_mlir_values(x.__extract_mlir_values__())
+            if return_ir_values
+            else [x]
+        )
         a = (
             [ir.DictAttr.get({})]
             if not hasattr(x, "__extract_mlir_attributes__")
@@ -630,18 +754,18 @@ def _tree_flatten(
             create_leaf_for_value(
                 x,
                 node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-                ir_type_str=str(v[0].type),
+                ir_type_str=str(x.type),
             ),
         )
 
     elif isinstance(x, ArithValue):
         return [x], [ir.DictAttr.get({})], create_leaf_for_value(x, is_numeric=True)
 
-    elif isinstance(x, ir.Value):
-        return [x], [ir.DictAttr.get({})], create_leaf_for_value(x)
-
-    elif isinstance(x, Numeric):
-        v = x.__extract_mlir_values__()
+    elif implements_dynamic_expression(x) and isinstance(x, ir.Value):
+        # Only for ir.Value subclasses (e.g. ctm.Pointer). Check before plain ir.Value
+        # so they are unflattened via __new_from_mlir_values__. Other dynamic
+        # expressions (e.g. TmemAllocator with 2 values) use the registered/node path.
+        v = _flatten_mlir_values(x.__extract_mlir_values__())
         a = (
             [ir.DictAttr.get({})]
             if not hasattr(x, "__extract_mlir_attributes__")
@@ -653,7 +777,31 @@ def _tree_flatten(
             create_leaf_for_value(
                 x,
                 node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
-                ir_type_str=str(v[0].type),
+                ir_type_str=str(v[0].type) if v else "unknown",
+            ),
+        )
+
+    elif isinstance(x, ir.Value):
+        return [x], [ir.DictAttr.get({})], create_leaf_for_value(x)
+
+    elif isinstance(x, Numeric):
+        v = (
+            _flatten_mlir_values(x.__extract_mlir_values__())  # type: ignore[attr-defined]
+            if return_ir_values
+            else [x]
+        )
+        a = (
+            [ir.DictAttr.get({})]
+            if not hasattr(x, "__extract_mlir_attributes__")
+            else x.__extract_mlir_attributes__()
+        )
+        return (
+            v,
+            a,
+            create_leaf_for_value(
+                x,
+                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+                ir_type_str=str(type(x).mlir_type),
             ),
         )
 
@@ -667,7 +815,7 @@ def _tree_flatten(
                     "Flatten Error: children is None", get_fully_qualified_class_name(x)
                 )
             children_flat, child_attrs_flat, child_trees = unzip3(
-                map(_tree_flatten, children)
+                map(lambda child: _tree_flatten(child, return_ir_values), children)
             )
             flattened = it.chain.from_iterable(children_flat)
 
@@ -685,11 +833,13 @@ def _tree_flatten(
 
         # Try to convert to numeric
         try:
-            nval = as_numeric(x).ir_value()
+            numeric = as_numeric(x)
             return (
-                [nval],
+                [numeric.ir_value() if return_ir_values else x],
                 [ir.DictAttr.get({})],
-                create_leaf_for_value(nval, is_numeric=True),
+                create_leaf_for_value(
+                    is_numeric=True, ir_type_str=str(type(numeric).mlir_type)
+                ),
             )
         except Exception:
             raise DSLTreeFlattenError(
@@ -720,7 +870,7 @@ def tree_unflatten(treedef: PyTreeDef, xs: list[Any]) -> Any:
     return _tree_unflatten(treedef, iter(xs))
 
 
-def _tree_unflatten(treedef: Union[PyTreeDef, Leaf], xs: Iterator[Any]) -> Any:
+def _tree_unflatten(treedef: PyTreeDef | Leaf, xs: Iterator[Any]) -> Any:
     """
     Internal function to reconstruct a tree structure.
 
@@ -748,7 +898,7 @@ def _tree_unflatten(treedef: Union[PyTreeDef, Leaf], xs: Iterator[Any]) -> Any:
         return treedef.node_type.from_iterable(treedef.node_metadata, children)
 
 
-def _check_tree_equal(lhs: Union[PyTreeDef, Leaf], rhs: Union[PyTreeDef, Leaf]) -> bool:
+def _check_tree_equal(lhs: PyTreeDef | Leaf, rhs: PyTreeDef | Leaf) -> bool:
     """
     Check if two tree definitions are structurally equal.
 

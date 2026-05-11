@@ -15,11 +15,13 @@ and executes it using MLIR's ExecutionEngine.
 
 """
 
-from typing import Sequence, Optional, Tuple, Callable
+from typing import Any
+import collections.abc
 import os
 import sys
 import inspect
-from .common import DSLRuntimeError, CudaDriverDependencyError
+import types
+from .common import DSLRuntimeError
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
 
@@ -48,14 +50,12 @@ class CompilationError(RuntimeError):
     def __init__(
         self,
         message: str,
-        nvvm_error: Optional[str] = None,
-        ir_context: Optional[str] = None,
-        cuda_toolkit: Optional[str] = None,
-        arch: Optional[str] = None,
-    ):
+        nvvm_error: str | None = None,
+        ir_context: str | None = None,
+        arch: str | None = None,
+    ) -> None:
         self.nvvm_error = nvvm_error
         self.ir_context = ir_context
-        self.cuda_toolkit = cuda_toolkit
         self.arch = arch
         # Call parent with formatted error to avoid showing class name
         super().__init__("")  # Empty string to avoid class name
@@ -79,8 +79,7 @@ class CompilationError(RuntimeError):
 ----------------------
 
 {self.BLUE}⚙️  Current Settings:{self.RESET}
-{self.BOLD}- CUDA Toolkit Path: {self.cuda_toolkit or "Not Set"}
-- Target Architecture: {self.arch}{self.RESET}
+{self.BOLD}- Target Architecture: {self.arch}{self.RESET}
 
 IR Context (truncated):
 {self.ir_context}
@@ -94,15 +93,12 @@ IR Context (truncated):
 class Compiler:
     """Compiler class for compiling and building MLIR modules."""
 
-    def __init__(self, passmanager, execution_engine):
+    def __init__(self, passmanager: Any, execution_engine: Any) -> None:
         self.passmanager = passmanager
         self.execution_engine = execution_engine
-        # Flag to track if CUDA dependencies have been checked once in this process
-        self._cuda_dependencies_checked = False
-        # Post-compile hook to run on Module
-        self._post_compile_hook: Optional[Callable[[ir.Module], None]] = None
+        self._post_compile_hook: collections.abc.Callable[[Any], None] | None = None
 
-    def _process_error(self, error_msg: str) -> Tuple[Optional[str], Optional[str]]:
+    def _process_error(self, error_msg: str) -> tuple[str | None, str | None]:
         """Process error message to extract NVVM error and IR context"""
         nvvm_error = None
         ir_msg = ""
@@ -135,16 +131,17 @@ class Compiler:
 
     def compile(
         self,
-        module,
+        module: ir.Module,
         pipeline: str,
-        cuda_toolkit: str = "",
         arch: str = "",
-        enable_verifier=False,
-    ):
+        enable_debug_info: bool = False,
+        enable_verifier: bool = False,
+    ) -> None:
         """Compiles the module by invoking the pipeline."""
         try:
             pm = self.passmanager.PassManager.parse(pipeline)
             pm.enable_verifier(enable_verifier)
+
             pm.run(module.operation)
         except Exception as e:
             error_msg = str(e)
@@ -155,85 +152,69 @@ class Compiler:
                     error_msg,
                     nvvm_error=nvvm_error,
                     ir_context=ir_msg,
-                    cuda_toolkit=cuda_toolkit,
                     arch=arch,
                 ) from e
             raise e
+        finally:
+            pass
 
         if self._post_compile_hook:
             self._post_compile_hook(module)
 
-    def jit(self, module, opt_level: int = 2, shared_libs: Sequence[str] = ()):
+    def jit(
+        self,
+        module: ir.Module,
+        opt_level: int = 2,
+        shared_libs: collections.abc.Sequence[str] = (),
+    ) -> Any:
         """Wraps the module in a JIT execution engine."""
-        # Check CUDA driver and GPU dependencies before JIT execution (once per process)
-        self._check_cuda_dependencies_once(shared_libs)
-        # If pre-checks passed, attempt to create ExecutionEngine
-        # Any failures at this point are likely non-CUDA related
         return self.execution_engine.ExecutionEngine(
             module, opt_level=opt_level, shared_libs=shared_libs
         )
 
     def compile_and_jit(
         self,
-        module,
+        module: ir.Module,
         pipeline: str,
-        shared_libs: Sequence[str] = (),
+        shared_libs: collections.abc.Sequence[str] = (),
         opt_level: int = 2,
-        cuda_toolkit: str = "",
         arch: str = "",
-    ):
+        enable_debug_info: bool = False,
+    ) -> Any:
         """Compiles and jits the module."""
         self.compile(
             module,
             pipeline,
-            cuda_toolkit,
             arch,
+            enable_debug_info=enable_debug_info,
         )
 
         return self.jit(module, opt_level, shared_libs)
-
-    def _check_cuda_dependencies_once(self, shared_libs: Sequence[str]) -> None:
-        """
-        Check CUDA dependencies only once per process lifecycle.
-        After the first check (success or failure), skip all subsequent checks
-        as the runtime environment doesn't change during process execution.
-        """
-        if self._cuda_dependencies_checked:
-            return  # Already checked in this process, skip
-
-        # Mark as checked to skip all future validations
-        self._cuda_dependencies_checked = True
-
-        # Simple CUDA driver check - just call cuInit(0)
-        try:
-            import cuda.bindings.driver as cuda
-
-            cuda.cuInit(0)
-        except Exception as e:
-            # Create a comprehensive error message for CUDA driver issues
-            error_message = (
-                "CUDA runtime initialization failed during dependency check."
-            )
-
-            raise CudaDriverDependencyError(
-                message=error_message,
-            )
 
 
 class PostCompileHookContext:
     """Context manager for post-compile hook for a compiler."""
 
-    def __init__(self, compiler: Compiler, hook: Callable[[ir.Module], None]):
+    def __init__(
+        self,
+        compiler: Compiler,
+        hook: collections.abc.Callable[[Any], None],
+    ) -> None:
         self.compiler = compiler
         self.hook = hook
-        self.prev_post_compile_hook = None
+        self.prev_post_compile_hook: collections.abc.Callable[[Any], None] | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "PostCompileHookContext":
         self.prev_post_compile_hook = self.compiler._post_compile_hook
         self.compiler._post_compile_hook = self.hook
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> None:
         self.compiler._post_compile_hook = self.prev_post_compile_hook
 
 
@@ -242,33 +223,33 @@ class CompileOption:
     Base class for compile options.
     """
 
-    option_name = ""  # name of the compile option in the pipeline
+    option_name: str = ""
 
-    def __init__(self, val):
-        self._value = val
+    def __init__(self, val: Any) -> None:
+        self._value: Any = val
 
-    def serialize(self):
+    def serialize(self) -> str:
         return f"{self.__class__.option_name}={self._value}"
 
     @property
-    def value(self):
+    def value(self) -> Any:
         return self._value
 
     @value.setter
-    def value(self, value):
+    def value(self, value: Any) -> None:
         self._value = value
 
 
 class BooleanCompileOption(CompileOption):
-    def __init__(self, val: bool = True):
+    def __init__(self, val: bool = True) -> None:
         super().__init__(val)
 
-    def serialize(self):
+    def serialize(self) -> str:
         return f"{self.__class__.option_name}={'true' if self._value else 'false'}"
 
 
 class StringCompileOption(CompileOption):
-    def serialize(self):
+    def serialize(self) -> str:
         if self._value:
             self._value = self._value.strip("'")
             return f"{self.__class__.option_name}='{self._value}'"
@@ -276,19 +257,19 @@ class StringCompileOption(CompileOption):
 
 
 class BooleanBasedFileDumpOption(CompileOption):
-    def __init__(self, val: bool = True):
+    def __init__(self, val: bool = True) -> None:
         super().__init__(val)
-        self._dump_path = ""
+        self._dump_path: str = ""
 
     @property
-    def dump_path(self):
+    def dump_path(self) -> str:
         return self._dump_path
 
     @dump_path.setter
-    def dump_path(self, path):
+    def dump_path(self, path: str) -> None:
         self._dump_path = path
 
-    def serialize(self):
+    def serialize(self) -> str:
         if self._value:
             assert self._dump_path, (
                 f"Dump path is not set for {self.__class__.__name__}"
@@ -298,14 +279,14 @@ class BooleanBasedFileDumpOption(CompileOption):
 
 
 class EmptyCompileOption(CompileOption):
-    def serialize(self):
+    def serialize(self) -> str:
         return ""
 
 
 class OptLevel(CompileOption):
     option_name = "opt-level"
 
-    def __init__(self, val: int):
+    def __init__(self, val: int) -> None:
         if val < 0 or val > 3:
             raise DSLRuntimeError(f"Invalid OPT_LEVEL: {val}, valid range is [0, 3]")
         super().__init__(val)
@@ -340,6 +321,29 @@ class LinkLibraries(StringCompileOption):
 class GPUArch(StringCompileOption):
     option_name = "cubin-chip"
 
+    def __init__(self, val: str) -> None:
+        if val == "":
+            super().__init__(val)
+        else:
+            # Avoid circular dependency
+            from .arch import Arch
+
+            super().__init__(Arch.from_string(val).to_string())
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    @value.setter
+    def value(self, value: str) -> None:
+        if value == "":
+            self._value = value
+        else:
+            # Avoid circular dependency
+            from .arch import Arch
+
+            self._value = Arch.from_string(value).to_string()
+
 
 class EnableTVMFFI(EmptyCompileOption):
     pass
@@ -347,6 +351,7 @@ class EnableTVMFFI(EmptyCompileOption):
 
 class DumpDir(EmptyCompileOption):
     option_name = "dump-dir"
+
 
 
 class CompileOptions:
@@ -357,8 +362,10 @@ class CompileOptions:
     compilation parameters such as optimization level, debugging control, etc.
     """
 
-    def __init__(self, options=None):
-        self.options = {
+    def __init__(
+        self, options: "CompileOption | tuple[CompileOption, ...] | None" = None
+    ) -> None:
+        self.options: dict[type[CompileOption], CompileOption] = {
             # Compilation control options
             OptLevel: OptLevel(3),
             PtxasOptions: PtxasOptions(""),
@@ -376,8 +383,8 @@ class CompileOptions:
         if options is not None:
             self._update(options)
 
-    def _update(self, options):
-        def _validate_and_update_option(option):
+    def _update(self, options: "CompileOption | tuple[CompileOption, ...]") -> None:
+        def _validate_and_update_option(option: CompileOption) -> None:
             if type(option) not in self.options:
                 raise DSLRuntimeError(f"Invalid compile option: {option}")
             self.options[type(option)] = option
@@ -388,7 +395,9 @@ class CompileOptions:
         else:
             _validate_and_update_option(options)
 
-    def apply_envar_settings(self, envar: EnvironmentVarManager, function_name: str):
+    def apply_envar_settings(
+        self, envar: EnvironmentVarManager, function_name: str
+    ) -> None:
         # Honor the settings from environment variables as well
         if envar.keep_ptx:
             self.options[KeepPTX].value = True
@@ -413,16 +422,19 @@ class CompileOptions:
             else self.options[DumpDir].value
         )
         if self.options[KeepPTX].value:
-            self.options[KeepPTX].dump_path = os.path.join(dump_dir, f"{function_name}")
-            self.options[KeepPTX].full_ptx_path = os.path.join(
-                dump_dir, f"{function_name}.{arch}.ptx"
+            self.options[KeepPTX].dump_path = os.path.join(dump_dir, f"{function_name}")  # type: ignore[attr-defined, arg-type]
+            self.options[KeepPTX].full_ptx_path = os.path.join(  # type: ignore[attr-defined]
+                dump_dir,  # type: ignore[arg-type]
+                f"{function_name}.{arch}.ptx",
             )
         if self.options[KeepCUBIN].value:
-            self.options[KeepCUBIN].dump_path = os.path.join(
-                dump_dir, f"{function_name}"
+            self.options[KeepCUBIN].dump_path = os.path.join(  # type: ignore[attr-defined]
+                dump_dir,  # type: ignore[arg-type]
+                f"{function_name}",
             )
-            self.options[KeepCUBIN].full_cubin_path = os.path.join(
-                dump_dir, f"{function_name}.{arch}.cubin"
+            self.options[KeepCUBIN].full_cubin_path = os.path.join(  # type: ignore[attr-defined]
+                dump_dir,  # type: ignore[arg-type]
+                f"{function_name}.{arch}.cubin",
             )
     @property
     def generate_line_info(self) -> bool:
@@ -434,24 +446,28 @@ class CompileOptions:
 
     @property
     def dump_ptx_path(self) -> str | None:
-        return self.options[KeepPTX].dump_path if self.options[KeepPTX].value else None
+        return self.options[KeepPTX].dump_path if self.options[KeepPTX].value else None  # type: ignore[attr-defined]
 
     @property
     def full_ptx_path(self) -> str | None:
         return (
-            self.options[KeepPTX].full_ptx_path if self.options[KeepPTX].value else None
+            self.options[KeepPTX].full_ptx_path  # type: ignore[attr-defined]
+            if self.options[KeepPTX].value
+            else None
         )
 
     @property
     def dump_cubin_path(self) -> str | None:
         return (
-            self.options[KeepCUBIN].dump_path if self.options[KeepCUBIN].value else None
+            self.options[KeepCUBIN].dump_path  # type: ignore[attr-defined]
+            if self.options[KeepCUBIN].value
+            else None
         )
 
     @property
     def full_cubin_path(self) -> str | None:
         return (
-            self.options[KeepCUBIN].full_cubin_path
+            self.options[KeepCUBIN].full_cubin_path  # type: ignore[attr-defined]
             if self.options[KeepCUBIN].value
             else None
         )
@@ -481,14 +497,16 @@ class CompileOptions:
         return flattend_options
 
 
-def _parse_compile_options_from_str(options: str) -> CompileOptions:
-    """
-    Parse the compile options from a string.
-    Deprecated and will be removed in the future.
-    """
 
-    def _get_compile_option_from_str(option_str: str):
-        mapping = {
+# This is a temp function to preserve backward compatibility.
+# To be removed in the future.
+def _parse_compile_options_from_str(options: str) -> CompileOptions:
+    """Parse the compile options from a string."""
+    import shlex as _shlex
+
+    _base_compile_options: "CompileOptions | None" = None
+    def _get_compile_option_from_str(option_str: str) -> type[CompileOption]:
+        mapping: dict[str, type[CompileOption]] = {
             "opt_level": OptLevel,
             "ptxas_options": PtxasOptions,
             "enable_assertions": EnableAssertions,
@@ -516,18 +534,20 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
     parser.add_argument("--gpu-arch", type=str, default="")
     parser.add_argument("--enable-tvm-ffi", action="store_true", default=False)
     parser.add_argument("--dump-dir", type=str, default="")
-    compile_options = CompileOptions()
+    compile_options = (
+        _base_compile_options if _base_compile_options is not None else CompileOptions()
+    )
     try:
         # Use shlex to properly handle options with spaces
-        parsed_options = shlex.split(options) if options else []
+        parsed_options = _shlex.split(options) if options else []
         # Avoid parsing the ptxas-options value as a hyphen key
         for i in range(1, len(parsed_options)):
             if parsed_options[i - 1] in ["--ptxas-options"]:
                 parsed_options[i] = f"'{parsed_options[i]}'"
         option_dict = vars(parser.parse_args(parsed_options))
-        for option, value in option_dict.items():
-            option = _get_compile_option_from_str(option)
-            compile_options.options[option].value = value
+        for option_name, value in option_dict.items():
+            option_cls = _get_compile_option_from_str(option_name)
+            compile_options.options[option_cls].value = value
     except SystemExit as e:
         # catch argparse error and raise as DSLRuntimeError
         raise DSLRuntimeError(
@@ -538,8 +558,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
 
 
 class CompileCallable:
-    def __init__(self, options=None):
-        def preprocess_options(option):
+    def __init__(self, options: Any = None) -> None:
+        def preprocess_options(option: Any) -> Any:
             if type(option) is type and issubclass(
                 option, (BooleanCompileOption, BooleanBasedFileDumpOption, EnableTVMFFI)
             ):
@@ -551,17 +571,17 @@ class CompileCallable:
 
         self._compile_options = CompileOptions(preprocess_options(options))
 
-    def __getitem__(self, options):
+    def __getitem__(self, options: Any) -> "CompileCallable":
         """
         Get a new CompileCallable object with the specified options.
         """
         new_callable_with_options = CompileCallable(options)
         return new_callable_with_options
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._compile(*args, **kwargs)
 
-    def _compile(self, func, *args, **kwargs):
+    def _compile(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         """
         This function is used to compile a `cute.jit` decorated function.
         It will process the compile options and input parameters, do explicit compilation and return  the jit executor.
@@ -589,7 +609,7 @@ class CompileCallable:
             pass
         elif inspect.ismethod(func):
             # if it's a method, add the instance to the first argument
-            args = [func.__self__] + list(args)
+            args = [func.__self__] + list(args)  # type: ignore[assignment]
             func = func.__func__
         elif (
             inspect.isclass(type(func))
@@ -597,7 +617,7 @@ class CompileCallable:
             and hasattr(func.__call__, "__func__")
         ):
             # If it's a class instance, get the class's __call__ method
-            args = [func] + list(args)
+            args = [func] + list(args)  # type: ignore[assignment]
             # Get the actual function from the class definition
             func = func.__call__.__func__
         else:

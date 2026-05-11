@@ -204,8 +204,7 @@ public:
   void store(Fragment const &frag, TensorCoord const & tile_offset) {
     store_with_pointer_offset(
       frag,
-      tile_offset.contiguous() * Shape::kContiguous / ThreadMap::kElementsPerAccess +
-        tile_offset.strided() * Shape::kStrided * stride_
+      tile_offset.contiguous() * Shape::kContiguous / ThreadMap::kElementsPerAccess + tile_offset.strided() * Shape::kStrided * stride_
     );
   }
 

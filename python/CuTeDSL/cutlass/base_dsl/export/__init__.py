@@ -16,7 +16,7 @@ from .export import (
     decode_metadata_from_execution_engine,
 )
 
-from .export import ArgsSpecProcessor
+from .export import SignatureProcessor
 from .external_binary_module import ExternalBinaryModule, LoadProvider
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
     "get_export_module",
     "encode_metadata_into_ir_module",
     "decode_metadata_from_execution_engine",
-    "ArgsSpecProcessor",
+    "SignatureProcessor",
     "ExternalBinaryModule",
     "LoadProvider",
 ]

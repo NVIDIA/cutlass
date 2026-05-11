@@ -158,6 +158,7 @@ def extract_version_from_wheel(wheel_path: Path) -> str:
     else:
         return "9.9.9.dev0"
 
+
 def extract_wheel_contents(wheel_path: Path, extract_dir: Path) -> None:
     """
     Extract wheel contents to specified directory.

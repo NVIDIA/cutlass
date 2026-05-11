@@ -16,8 +16,9 @@ from cutlass.cutlass_dsl import T, dsl_user_op
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
+from cutlass._mlir.dialects import nvvm, llvm
 
-from ..typing import Pointer, Numeric, NumericMeta, Layout
+from ..typing import Int, Int32, Pointer, Numeric, NumericMeta
 
 
 @dsl_user_op
@@ -26,8 +27,8 @@ def alloc_smem(
     size_in_elems: int,
     alignment: Optional[int] = None,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
     """
     Statically allocates SMEM.
@@ -66,8 +67,8 @@ def get_dyn_smem(
     element_type: Type[Numeric],
     alignment: Optional[int] = None,
     *,
-    loc=None,
-    ip=None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
     """
     Retrieves a pointer to a dynamic SMEM allocation.
@@ -97,7 +98,9 @@ def get_dyn_smem(
 
 
 @dsl_user_op
-def get_dyn_smem_size(*, loc=None, ip=None) -> int:
+def get_dyn_smem_size(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> int:
     """
     Gets the size in bytes of the dynamic shared memory that was specified at kernel launch time.
     This can be used for bounds checking during shared memory allocation.
@@ -106,3 +109,38 @@ def get_dyn_smem_size(*, loc=None, ip=None) -> int:
     :rtype:  int
     """
     return _cute_nvgpu_ir.arch_get_dyn_smem_size(loc=loc, ip=ip)
+
+
+@dsl_user_op
+def map_dsmem_ptr(
+    smem_ptr: Pointer,
+    cta_rank_in_cluster: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Pointer:
+    """
+    Maps a shared memory pointer to a remote CTA's distributed shared memory.
+
+    :param smem_ptr:            A pointer in SMEM
+    :type smem_ptr:             Pointer
+    :param cta_rank_in_cluster: The CTA in cluster to map to
+    :type cta_rank_in_cluster:  Int
+
+    :return: The remote shared memory CuTe pointer
+    :rtype: Pointer
+
+    """
+    dsmem_llvm_ptr = nvvm.mapa(
+        llvm.PointerType.get(_cute_ir.AddressSpace.dsmem),
+        smem_ptr.to_llvm_ptr(loc=loc, ip=ip),  # type: ignore[attr-defined]
+        Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+
+    intptr = llvm.ptrtoint(T.i32(), dsmem_llvm_ptr, loc=loc, ip=ip)
+    aligned_ty = _cute_ir.ConstrainedIntType.get(smem_ptr.alignment, 32)  # type: ignore[attr-defined]
+    aligned_intptr = _cute_ir.assume(aligned_ty, intptr, loc=loc, ip=ip)
+
+    return _cute_ir.inttoptr(smem_ptr.type, aligned_intptr, loc=loc, ip=ip)
