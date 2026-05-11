@@ -2,8 +2,11 @@
  * W4A8 grouped GEMM tile/schedule sweep for the decode regime (small M, many experts).
  *
  * For every (TileShape, ClusterShape, KernelSchedule) candidate we instantiate the same
- * Int4Fp8GemmGivenSchedule<...> from sm90_int4_fp8_grouped.cuh, run it through
- * profile_variant(), and print a single ranked table.
+ * Int4Fp8GemmGivenSchedule<...> from common/sm90_int4_fp8_grouped_baseline.cuh, run it
+ * through profile_variant(), and print a single ranked table.
+ *
+ * The sweep itself is the baseline experiment; per the project convention it does
+ * not perform an output-equality check (every other experiment does).
  **************************************************************************************************/
 
 #include <algorithm>
@@ -16,22 +19,14 @@
 #include <vector>
 
 #include "common/w4a8_bench_common.hpp"
+#include "common/w4a8_kernel_common.cuh"
+#include "common/sm90_int4_fp8_grouped_baseline.cuh"
+#include "common/w4a8_grouped_setup.cuh"
 
 #include "cutlass/cutlass.h"
-#include "cute/tensor.hpp"
-#include "cutlass/epilogue/collective/default_epilogue.hpp"
-#include "cutlass/gemm/dispatch_policy.hpp"
-#include "cutlass/gemm/group_array_problem_shape.hpp"
-#include "cutlass/gemm/collective/collective_builder.hpp"
-#include "cutlass/epilogue/collective/collective_builder.hpp"
-#include "cutlass/gemm/device/gemm_universal_adapter.h"
-#include "cutlass/gemm/kernel/gemm_universal.hpp"
-
 #include "cutlass/util/device_memory.h"
 
 #include "helper.h"
-
-#include "w4a8_grouped_setup.cuh"
 
 #if !defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
 int main() {
@@ -41,14 +36,15 @@ int main() {
 #else
 
 template <class Config, class Schedule>
-static SweepResult run_one(const std::string &name, W4A8BenchOptions const &opt) {
+static SweepResult run_one(const std::string &name, W4A8BenchOptions const &opt,
+                           W4A8SharedInputs &shared) {
   using Gemm = typename Int4Fp8GemmGivenSchedule<Config, Schedule>::GemmScaleOnly;
   SweepResult r;
   r.name = name;
 
-  BaselineGroupedContext<Gemm> ctx;
-  std::vector<typename ProblemShape::UnderlyingProblemShape> problem_host;
-  ctx.allocate_and_init(opt, problem_host);
+  W4A8GemmContext<Gemm> ctx;
+  ctx.shared = &shared;
+  ctx.allocate(opt);
 
   Gemm gemm;
   auto arguments = ctx.make_arguments(opt);
@@ -120,17 +116,20 @@ namespace cfg {
 struct Variant {
   const char *id;
   const char *name;
-  SweepResult (*run)(W4A8BenchOptions const &);
+  SweepResult (*run)(W4A8BenchOptions const &, W4A8SharedInputs &);
 };
 
 template <class Config, class Schedule>
-static SweepResult run_named(W4A8BenchOptions const &opt, const char *name) {
-  return run_one<Config, Schedule>(std::string(name), opt);
+static SweepResult run_named(W4A8BenchOptions const &opt, W4A8SharedInputs &shared, const char *name) {
+  return run_one<Config, Schedule>(std::string(name), opt, shared);
 }
 
 #define VARIANT(ID, NAME, CFG, SCH)                                                                \
   Variant {                                                                                        \
-    ID, NAME, [](W4A8BenchOptions const &o) { return run_named<CFG, SCH>(o, NAME); }               \
+    ID, NAME,                                                                                      \
+    [](W4A8BenchOptions const &o, W4A8SharedInputs &s) {                                           \
+      return run_named<CFG, SCH>(o, s, NAME);                                                      \
+    }                                                                                              \
   }
 
 static const Variant kVariants[] = {
@@ -170,10 +169,15 @@ int main(int argc, char const **argv) {
   }
   std::cout << "\n";
 
+  // Allocate the inputs once and reuse them across every variant.
+  W4A8SharedInputs shared;
+  std::vector<typename ProblemShape::UnderlyingProblemShape> problem_host;
+  shared.allocate_and_init(opt, problem_host);
+
   std::vector<SweepResult> results;
   for (auto const &v : kVariants) {
     if (!opt.only.empty() && opt.only != v.id) continue;
-    results.push_back(v.run(opt));
+    results.push_back(v.run(opt, shared));
   }
 
   if (results.empty()) {

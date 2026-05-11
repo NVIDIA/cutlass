@@ -28,6 +28,7 @@ set(CUTLASS_INCLUDES
 add_executable(w4a8_baseline_sweep w4a8_baseline_sweep.cu)
 target_include_directories(w4a8_baseline_sweep PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/.."   # for #include "common/..."
   ${CUTLASS_INCLUDES}
 )
 target_compile_definitions(w4a8_baseline_sweep PRIVATE INT4FP8_GROUPED_SUPPORTED)

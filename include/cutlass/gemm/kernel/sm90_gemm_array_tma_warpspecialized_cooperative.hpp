@@ -164,13 +164,22 @@ public:
   static constexpr uint32_t NumMmaThreads = size(TiledMma{});
   static constexpr uint32_t NumMmaWarpGroups = NumMmaThreads / NumThreadsPerWarpGroup;
   static constexpr uint32_t MaxThreadsPerBlock = NumMmaThreads + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
-  static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
+#ifndef CUTLASS_W4A8_MIN_BLOCKS_PER_SM
+#define CUTLASS_W4A8_MIN_BLOCKS_PER_SM 1
+#endif
+  static constexpr uint32_t MinBlocksPerMultiprocessor = CUTLASS_W4A8_MIN_BLOCKS_PER_SM;
   static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
   static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
 
   /// Register requirement for Load and Math WGs
-  static constexpr uint32_t LoadRegisterRequirement = 40;
-  static constexpr uint32_t MmaRegisterRequirement = 232;
+#ifndef CUTLASS_W4A8_LOAD_REG_REQUIREMENT
+#define CUTLASS_W4A8_LOAD_REG_REQUIREMENT 40
+#endif
+#ifndef CUTLASS_W4A8_MMA_REG_REQUIREMENT
+#define CUTLASS_W4A8_MMA_REG_REQUIREMENT 232
+#endif
+  static constexpr uint32_t LoadRegisterRequirement = CUTLASS_W4A8_LOAD_REG_REQUIREMENT;
+  static constexpr uint32_t MmaRegisterRequirement = CUTLASS_W4A8_MMA_REG_REQUIREMENT;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
