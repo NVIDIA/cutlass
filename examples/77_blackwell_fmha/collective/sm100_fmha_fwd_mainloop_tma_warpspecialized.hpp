@@ -536,7 +536,11 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
 
     // Each thread owns a single row
+    #if defined CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED
+      using TMEM_LOAD = SM100_TMEM_LOAD_STAT_32dp32b32x;
+    #else
       using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x; // 4x32 threads with 128 cols of 32b elem
+    #endif
     using TMEM_STORE = SM100_TMEM_STORE_32dp32b32x;  // 4x32 threads with 128 cols of 8b elem
     using TMEM_STORE_V = SM100_TMEM_STORE_32dp32b2x;   // 4x32 threads with 2 cols of 32b elem
 
@@ -573,6 +577,14 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     }
 
     ElementQK old_row_max = row_max;
+    #if defined CUTE_ARCH_TCGEN05_TMEM_STAT_ENABLED
+      auto pos = tTMEM_LOADcS(0);
+      if (!need_apply_mask || (need_apply_mask && (get<0>(pos) >= get<1>(pos) + 12) && (get<1>(pos) < get<1>(problem_shape)))) {
+        float curr_max = tiled_tmem_load.get_max();
+        row_max = ::fmax(row_max, curr_max);
+      }
+      else
+    #endif
     {
       // compute rowmax
       float row_max_0 = row_max;

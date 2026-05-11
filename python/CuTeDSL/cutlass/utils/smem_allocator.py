@@ -3,29 +3,29 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Optional, Type, Union, overload
+from typing import Any, Optional, Type, Union, overload
 import inspect
 
 import cutlass.cute as cute
 from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
-from cutlass.cutlass_dsl import CuTeDSL, Int8, Numeric, NumericMeta, dsl_user_op
-
-
-SMEM_CAPACITY_MAP = {
-    "sm_120": (100 - 1) * 1024,
-    "sm_103": (228 - 1) * 1024,
-    "sm_100": (228 - 1) * 1024,
-    "sm_90": (228 - 1) * 1024,
-    "sm_80": (164 - 1) * 1024,
-    "sm_86": (100 - 1) * 1024,
-    "sm_89": (100 - 1) * 1024,
-}
+from cutlass.cute.tensor import _Tensor
+from cutlass.cutlass_dsl import (
+    SMEM_CAPACITY_MAP,
+    CuTeDSL,
+    Boolean,
+    Int8,
+    Numeric,
+    NumericMeta,
+    dsl_user_op,
+)
+from cutlass._mlir import ir
+from cutlass._mlir.dialects import cute as _cute_ir
 
 
 class SmemAllocator:
@@ -36,6 +36,7 @@ class SmemAllocator:
 
     .. note::
         - The base pointer is aligned to 1024 bytes upon initialization.
+        - SmemAllocator will automatically calculate the usage upon kernel launch.
         - There is no need to explicitly specify shared memory size in kernel launch.
         - Currently only supports static layouts. Dynamic layouts are not supported.
 
@@ -63,6 +64,7 @@ class SmemAllocator:
         # use of struct members
         struct_ptr.alpha = 1.0
         struct_ptr.x = 2
+        x_ptr = struct_ptr.x.ptr
 
         # Allocate array
         int8_array = smem.allocate_array(Int8, 10)  # 10 bytes
@@ -70,6 +72,7 @@ class SmemAllocator:
         # Allocate tensor
         layout = cute.make_layout((16, 16))
         tensor = smem.allocate_tensor(Int8, layout)  # 256 bytes
+
     """
 
     @staticmethod
@@ -93,7 +96,12 @@ class SmemAllocator:
         return SMEM_CAPACITY_MAP[compute_capability]
 
     @dsl_user_op
-    def __init__(self, *, loc=None, ip=None):
+    def __init__(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
         """Initialize a new SmemAllocator instance.
 
         Creates a new shared memory allocator with a base pointer aligned to 1024 bytes.
@@ -106,26 +114,46 @@ class SmemAllocator:
         """
         self._base = get_dyn_smem(Int8, alignment=1024, loc=loc, ip=ip)
         self._allocated_bytes = 0
-        CuTeDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)
+        CuTeDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)  # type: ignore[attr-defined]
 
     @overload
     def allocate(
-        self, size_or_type: int, byte_alignment: int, *, loc=None, ip=None
+        self,
+        size_or_type: int,
+        byte_alignment: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer: ...
 
     @overload
     def allocate(
-        self, size_or_type: Type[Numeric], byte_alignment: int, *, loc=None, ip=None
+        self,
+        size_or_type: Type[Numeric],
+        byte_alignment: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer: ...
 
     @overload
     def allocate(
-        self, size_or_type: cute.struct, byte_alignment: int, *, loc=None, ip=None
+        self,
+        size_or_type: cute.struct,
+        byte_alignment: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer: ...
 
     @dsl_user_op
     def allocate(
-        self, size_or_type, byte_alignment: int = 1, *, loc=None, ip=None
+        self,
+        size_or_type: Any,
+        byte_alignment: int = 1,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
         """Allocate a block of memory with specified size and alignment.
 
@@ -158,8 +186,14 @@ class SmemAllocator:
             alignment = max(byte_alignment, size_or_type.__alignof__())
             base_ptr = self.allocate(size_in_bytes, alignment, loc=loc, ip=ip)
             return size_or_type(base_ptr)
-        elif isinstance(size_or_type, NumericMeta):
-            size_in_bytes = cute.ceil_div(size_or_type.width, 8)
+        elif isinstance(
+            size_or_type,
+            (
+                NumericMeta,
+            ),
+        ):
+            element_width = size_or_type.width if size_or_type is not Boolean else 8
+            size_in_bytes = cute.ceil_div(element_width, 8)
             base_ptr = self.allocate(size_in_bytes, byte_alignment, loc=loc, ip=ip)
             return cute.recast_ptr(base_ptr, dtype=size_or_type, loc=loc, ip=ip)
         else:
@@ -195,12 +229,20 @@ class SmemAllocator:
 
     @dsl_user_op
     def allocate_array(
-        self, element_type: Type[Numeric], num_elems: int = 1, *, loc=None, ip=None
-    ):
+        self,
+        element_type: Union[
+            Type[Numeric],
+        ],
+        num_elems: int = 1,
+        *,
+        byte_alignment: int = 1,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
         """Allocate an array of elements in shared memory.
 
         :param element_type: The type of elements to allocate
-        :type element_type: Type[Numeric]
+        :type element_type: Union[Type[Numeric]]
         :param num_elems: Number of elements to allocate, defaults to 1
         :type num_elems: int, optional
         :return: Pointer to the start of the allocated array
@@ -208,15 +250,22 @@ class SmemAllocator:
         :raises ValueError: If num_elems is less than 1
         :raises TypeError: If element_type is not a Numeric type
         """
-        if num_elems < 1:
+        if cute.is_static(num_elems) and num_elems < 1:
             raise ValueError("num_elems must be at least 1")
-        if not isinstance(element_type, NumericMeta):
+        if not isinstance(
+            element_type,
+            (
+                NumericMeta,
+            ),
+        ):
             raise TypeError(
                 f"value_ty must be a type of Numeric, but got {element_type}"
             )
 
+        element_width = element_type.width if element_type is not Boolean else 8
+        byte_alignment = max(byte_alignment, element_width // 8)
         ptr = self.allocate(
-            element_type.width // 8 * num_elems, element_type.width // 8, loc=loc, ip=ip
+            element_width * num_elems // 8, byte_alignment, loc=loc, ip=ip
         )
 
         return cute.recast_ptr(ptr, dtype=element_type, loc=loc, ip=ip)
@@ -224,20 +273,20 @@ class SmemAllocator:
     @dsl_user_op
     def allocate_tensor(
         self,
-        element_type: Type[Numeric],
+        element_type: Union[Type[Numeric],],
         layout: Union[int, cute.Layout, cute.ComposedLayout],
         byte_alignment: int = 1,
         swizzle: Optional[cute.Swizzle] = None,
         *,
-        loc=None,
-        ip=None,
-    ):
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Tensor:
         """Allocate a tensor in shared memory.
 
         Note: Currently only supports static layouts. Dynamic layouts are not supported.
 
         :param element_type: The type of elements in the tensor
-        :type element_type: Type[Numeric]
+        :type element_type: Union[Type[Numeric]]
         :param layout: The layout specification for the tensor. Must be a static layout.
         :type layout: Union[int, cute.Layout, cute.ComposedLayout]
         :param byte_alignment: The byte alignment requirement, defaults to 1
@@ -246,11 +295,16 @@ class SmemAllocator:
         :type swizzle: cute.Swizzle, optional
         :return: The allocated tensor with specified properties
         :rtype: cute.Tensor
-        :raises TypeError: If element_type is not a Numeric type or if swizzle conflicts with layout
+        :raises TypeError: If element_type is not a Numeric type, or if swizzle conflicts with layout
         :raises ValueError: If allocation is not byte-aligned
         :raises NotImplementedError: If dynamic layout is specified
         """
-        if not isinstance(element_type, NumericMeta):
+        if not isinstance(
+            element_type,
+            (
+                NumericMeta,
+            ),
+        ):
             raise TypeError(
                 f"value_ty must be a type of Numeric, but got {element_type}"
             )
@@ -266,7 +320,7 @@ class SmemAllocator:
         if isinstance(layout, int):
             layout = cute.make_layout(layout)
 
-        profile = layout(0, loc=loc, ip=ip)
+        profile = layout(0, loc=loc, ip=ip)  # type: ignore[operator]
         if isinstance(profile, tuple):
             raise TypeError(
                 "cannot allocate a shared memory tensor with a non-integer iterator"
@@ -276,11 +330,12 @@ class SmemAllocator:
             raise NotImplementedError(f"dynamic layout is not supported: {layout}")
 
         # At least align the allocation to the natural alignment given by the element type
-        if element_type.width // 8 > byte_alignment:
-            byte_alignment = element_type.width // 8
+        element_width = element_type.width if element_type is not Boolean else 8
+        if element_width // 8 > byte_alignment:
+            byte_alignment = element_width // 8
 
         # Relevant only for sub-byte data types: verify that the entire allocation is byte-aligned
-        cosize_in_bits = cute.cosize(layout, loc=loc, ip=ip) * element_type.width
+        cosize_in_bits = cute.cosize(layout, loc=loc, ip=ip) * element_width
         assert isinstance(cosize_in_bits, int)
         if cosize_in_bits % 8 != 0:
             raise ValueError("invalid allocation that is not byte-aligned")
@@ -288,11 +343,12 @@ class SmemAllocator:
         num_bytes = cosize_in_bits // 8
         ptr = self.allocate(num_bytes, byte_alignment, loc=loc, ip=ip)
         ptr = cute.recast_ptr(ptr, swizzle, dtype=element_type, loc=loc, ip=ip)
-        return cute.make_tensor(ptr, layout, loc=loc, ip=ip)
+        tensor = cute.make_tensor(ptr, layout, loc=loc, ip=ip)
+        return _Tensor(tensor, dtype=element_type, loc=loc, ip=ip)
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
-SmemAllocator.__init__.__signature__ = inspect.Signature(
+SmemAllocator.__init__.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
     [
         inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
     ]

@@ -132,6 +132,77 @@ TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_pingpo
   EXPECT_TRUE(pass);
 }
 
+TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_pingpong, row_sf_128x32x128) {
+  using ElementInput = float_e2m1_t;
+  using ElementA = cutlass::nv_float4_t<ElementInput>;
+  using ElementB = cutlass::nv_float4_t<ElementInput>;
+  using ElementC = cutlass::half_t;
+  using ElementD = cutlass::float_e2m1_t;
+  using ElementCompute = float;
+  using ElementAccumulator = float;
+  using ElementSF = cutlass::float_ue4m3_t;
+  using ElementSFD  = ElementSF;
+  using ElementAccumulator = float;
+  using GmemLayoutA = cutlass::layout::RowMajor;
+  using GmemLayoutB = cutlass::layout::ColumnMajor;
+  using GmemLayoutC = cutlass::layout::RowMajor;
+  constexpr int SFVectorSize = 16;
+  using TileShape_MNK = Shape<_128,_32,_128>;
+  using ClusterShape_MNK = Shape<_1,_1,_1>;
+
+  constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementInput>::value;
+  constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementInput>::value;
+  constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;
+  constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;
+
+  //
+  // Construct CollectiveEpilogue
+  //
+
+  constexpr int OutputSFVectorSize = SFVectorSize;
+  // D = alpha * acc + beta * C
+  // With Row-major BlockScaleFactor generation.
+  using FusionOperation = cutlass::epilogue::fusion::LinCombBlockScaleFactor<
+      OutputSFVectorSize,
+      ElementD,
+      ElementCompute,
+      ElementSFD, GmemLayoutC,
+      ElementC>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassBlockScaledTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, GmemLayoutC *, AlignmentC,
+      ElementD, GmemLayoutC *, AlignmentD,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      FusionOperation
+    >::CollectiveOp;
+
+  //
+  // Construct CollectiveMainloop
+  //
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassBlockScaledTensorOp,
+      ElementA, GmemLayoutA *, AlignmentA,
+      ElementB, GmemLayoutB *, AlignmentB,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  auto pass = test::gemm::device::TestSmallFusion<Gemm>(1.0, 0.5);
+  EXPECT_TRUE(pass);
+}
 
 
 TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_pingpong, silu_row_sf) {

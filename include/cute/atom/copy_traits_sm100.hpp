@@ -3506,6 +3506,105 @@ tmem_load_to_store(CopyOp) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace SM100::TMEM::LOAD_STAT {
+
+//
+// Specialized copy_unpack implementation for SM100::TMEM::LOAD_STAT instructions
+//
+
+template <class CopyOp,
+          class TS, class SLayout,
+          class TD, class DLayout>
+CUTE_HOST_DEVICE constexpr
+void
+copy_unpack(Copy_Traits<CopyOp> const& traits,
+            Tensor<TS,SLayout>  const& src,
+            Tensor<TD,DLayout>       & dst)
+{
+  static_assert(is_tmem<TS>::value, "Expected TMEM src.");
+  static_assert(is_rmem<TD>::value, "Expected RMEM dst.");
+
+  using SrcType = typename TS::value_type;
+  CUTE_STATIC_ASSERT_V((coalesce(layout(src)) == coalesce(upcast<sizeof_bits<SrcType>::value>(typename Copy_Traits<CopyOp>::ValID{}))),
+    "Expected src to have the specific TMEM layout required by CopyOp.");
+
+  uint32_t tmem_addr = raw_pointer_cast(src.data());
+  const float& row_max = traits.get_max();
+
+  using RegTypeDst = typename remove_extent<typename CopyOp::DRegisters>::type;
+  Tensor rD = recast<RegTypeDst>(dst);
+
+  constexpr int RegNumDst = extent<typename CopyOp::DRegisters>::value;
+  CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
+    "In CopyAtom, dst layout doesn't vectorize into registers. This dst layout is incompatible with this CopyOp.");
+
+  // thread idx <=> DP lane assert.
+  // ASSERT  thread attemping to access DP lane within sub-partition.
+#if defined(__CUDA_ARCH__) && !defined(NDEBUG)
+  assert(((uint32_t(threadIdx.x) / 32) % 4) == (((tmem_addr >> 16) / 32) % 4));
+#endif
+  float* row_max_ = const_cast<float*>(&row_max);
+  float tmp_row_max = row_max_[0];
+  detail::explode(CopyOp::copy,
+                  &tmem_addr, seq<0>{},
+                  rD, make_seq<RegNumDst>{},
+                  &tmp_row_max, seq<0>{});
+
+  row_max_[0] = fmax(row_max_[0], tmp_row_max);
+}
+
+} // end namespace SM100::TMEM::LOAD_STAT
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+using SM100::TMEM::LOAD_STAT::SM100_TMEM_LOAD_STAT_32dp32b32x;
+
+template <>
+struct Copy_Traits<SM100_TMEM_LOAD_STAT_32dp32b32x>
+{
+  using ThrID = Layout<_32>;
+  using ValID = Layout<Shape <_1024,       Int<32>>,
+                       Stride<   _1,TMEM::DP_b>>;
+  using SrcLayout = Layout<Shape <_32,_32768>,
+                           Stride< _0,    _1>>;
+  using DstLayout = Layout<Shape <  _32, Int<1024>>,
+                           Stride<Int<1024>,   _1>>;
+  using RefLayout = SrcLayout;
+
+  float row_max = -cutlass::platform::numeric_limits<float>::infinity();
+
+  CUTE_HOST_DEVICE constexpr
+  float const& get_max() const {
+    return row_max;
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+using SM100::TMEM::LOAD_STAT::SM100_TMEM_LOAD_STAT_32dp32b128x;
+
+template <>
+struct Copy_Traits<SM100_TMEM_LOAD_STAT_32dp32b128x>
+{
+  using ThrID = Layout<_32>;
+  using ValID = Layout<Shape <_4096,       _32>,
+                       Stride<   _1,TMEM::DP_b>>;
+  using SrcLayout = Layout<Shape <_32,_131072>,
+                           Stride< _0,     _1>>;
+  using DstLayout = Layout<Shape <  _32,_4096>,
+                           Stride<_4096,   _1>>;
+  using RefLayout = SrcLayout;
+
+  float row_max = -cutlass::platform::numeric_limits<float>::infinity();
+
+  CUTE_HOST_DEVICE constexpr
+  float const& get_max() const {
+    return row_max;
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // UTCCP Copy Traits

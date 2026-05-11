@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -11,7 +11,9 @@
 
 """Utility functions for tensor creation and type handling."""
 
-from typing import Type, Optional
+from typing import Any, Optional, Type
+
+import cutlass.cute as cute
 
 # Import only the specific types needed to avoid circular import with cutlass module
 from cutlass.cute.typing import Float8E5M2, Float8E4M3FN, TFloat32, Numeric
@@ -28,11 +30,11 @@ def is_fp8_dtype(dtype: Type[Numeric]) -> bool:
 
 
 def create_cute_tensor_for_fp8(
-    storage_tensor,
+    storage_tensor: Any,
     dtype: Type[Numeric],
     leading_dim: int,
-    source_f32_tensor=None,
-):
+    source_f32_tensor: Optional[Any] = None,
+) -> cute.Tensor:
     """Create cute tensor, handling float8 types that don't support dlpack.
 
     For float8 types, the storage_tensor should be uint8 (for DLPack compatibility).

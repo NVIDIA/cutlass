@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -11,8 +11,9 @@
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Tuple
+from typing import Optional, Tuple
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass.cutlass_dsl import dsl_user_op
@@ -53,10 +54,10 @@ class TensorMapManager:
     def get_tensormap_ptr(
         self,
         ptr: cute.Pointer,
-        address_space=_cute_ir.AddressSpace.gmem,
+        address_space: _cute_ir.AddressSpace = _cute_ir.AddressSpace.gmem,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
         if address_space not in [
             _cute_ir.AddressSpace.gmem,
@@ -89,8 +90,8 @@ class TensorMapManager:
         dst_ptr: cute.Pointer,
         warp_id: int,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
@@ -105,8 +106,8 @@ class TensorMapManager:
     def fence_tensormap_initialization(
         self,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         if self.tensormap_update_mode == TensorMapUpdateMode.GMEM:
             cute.arch.fence_acq_rel_cta(loc=loc, ip=ip)
@@ -118,8 +119,8 @@ class TensorMapManager:
         self,
         tensormap_ptr: cute.Pointer,
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         cute.nvgpu.cpasync.fence_tma_desc_acquire(tensormap_ptr, loc=loc, ip=ip)
         return
@@ -134,8 +135,8 @@ class TensorMapManager:
         warp_id: int,
         tensormap_smem_ptr: Tuple[cute.Pointer, ...],
         *,
-        loc=None,
-        ip=None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         warp_idx = cute.arch.make_warp_uniform(
             cute.arch.warp_idx(loc=loc, ip=ip), loc=loc, ip=ip
@@ -148,7 +149,7 @@ class TensorMapManager:
                     p.dtype,
                     cute.arch.make_warp_uniform(p.toint(), loc=loc, ip=ip),
                     mem_space=_CuteAddressSpace.smem,
-                    assumed_align=p.alignment,
+                    assumed_align=p.alignment,  # type: ignore[attr-defined]
                 )
                 for p in tensormap_smem_ptr
             )

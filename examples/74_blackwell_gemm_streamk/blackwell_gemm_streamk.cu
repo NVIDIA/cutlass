@@ -216,7 +216,7 @@ struct Options {
   float alpha, beta;
   int iterations;
   int m, n, k;
-  int preferred_cluster_m, preferred_cluster_n, fallback_cluster_m, fallback_cluster_n;
+  int cluster_m, cluster_n;
   using DecompositionMode = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
   using ReductionMode = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::ReductionMode;
   DecompositionMode decomposition_mode;
@@ -240,10 +240,8 @@ struct Options {
     m(256), n(256), k(16384),
     alpha(1.f), beta(0.f),
     iterations(10),
-    preferred_cluster_m(4),
-    preferred_cluster_n(4),
-    fallback_cluster_m(2),
-    fallback_cluster_n(1),
+    cluster_m(2),
+    cluster_n(1),
     decomposition_mode(DecompositionMode::Heuristic),
     reduction_mode(ReductionMode::Deterministic),
     splits(1)
@@ -265,10 +263,8 @@ struct Options {
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("splits", splits, 1);
-    cmd.get_cmd_line_argument("preferred_cluster_m", preferred_cluster_m, 4);
-    cmd.get_cmd_line_argument("preferred_cluster_n", preferred_cluster_n, 4);
-    cmd.get_cmd_line_argument("fallback_cluster_m", fallback_cluster_m, 2);
-    cmd.get_cmd_line_argument("fallback_cluster_n", fallback_cluster_n, 1);
+    cmd.get_cmd_line_argument("cluster_m", cluster_m, 2);
+    cmd.get_cmd_line_argument("cluster_n", cluster_n, 1);
 
     // Parse decompsition mode
     std::string decomp_mode;
@@ -303,10 +299,8 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n"
-      << "  --preferred_cluster_m=<str> Sets the M extent of preferred cluster shape\n"
-      << "  --preferred_cluster_n=<str> Sets the N extent of preferred cluster shape\n"
-      << "  --fallback_cluster_m=<str>  Sets the M extent of fallback cluster shape\n"
-      << "  --fallback_cluster_n=<str>  Sets the N extent of fallback cluster shape\n"
+      << "  --cluster_m=<str>           Sets the M extent of the cluster shape\n"
+      << "  --cluster_n=<str>           Sets the N extent of the cluster shape\n"
       << "  --decomposition=<str>       Mode in which the stream-K kernel should decompose the problem. Options: Heuristic (default), SplitK, StreamK, DataParallel\n"
       << "  --reduction=<str>           Mode in which the stream-K kernel's reduction should be performed. Options: Deterministic (default), Nondeterministic\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
@@ -424,8 +418,8 @@ typename Gemm::Arguments args_from_options(const Options &options) {
     {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
 
-  arguments.hw_info.cluster_shape = dim3(options.preferred_cluster_m, options.preferred_cluster_n,1);
-  arguments.hw_info.cluster_shape_fallback = dim3(options.fallback_cluster_m, options.fallback_cluster_n,1);
+  arguments.hw_info.cluster_shape = dim3(options.cluster_m, options.cluster_n, 1);
+  arguments.hw_info.cluster_shape_fallback = dim3(options.cluster_m, options.cluster_n, 1);
 
   arguments.scheduler.splits = options.splits;
   arguments.scheduler.decomposition_mode = options.decomposition_mode;
@@ -498,8 +492,7 @@ int run(Options &options) {
 
   std::cout << "Stream-K GEMM with"
             << " Problem Size: " << options.m << 'x' << options.n << 'x' << options.k
-            << " Preferred Cluster = (" << options.preferred_cluster_m << ", " << options.preferred_cluster_n << ", 1)"
-            << " Fallback Cluster = (" << options.fallback_cluster_m << ", " << options.fallback_cluster_n << ", 1)\n"
+            << " Cluster = (" << options.cluster_m << ", " << options.cluster_n << ", 1)\n"
             << " Decomposition_mode=" << options.decomposition_mode_str()
             << " Split_count=" << options.splits
             << " Reduction_mode=" << options.reduction_mode_str()

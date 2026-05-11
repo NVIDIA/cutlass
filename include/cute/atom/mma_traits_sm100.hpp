@@ -333,11 +333,7 @@ struct DescriptorIterator
   CUTE_HOST_DEVICE constexpr
   DescriptorIterator operator+(Index const& offset) const
   {
-    // Use 32bit calculation rather than 64 bit calculation as we only update the part of desc
-    SmemDescriptor ret;
-    ret.lo = desc_.lo + uint32_t(offset);
-    ret.hi = desc_.hi;
-    return { ret };
+    return { desc_ + uint64_t(offset)};
   }
 };
 

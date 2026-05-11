@@ -213,12 +213,15 @@ auto make_iterator(T* ptr) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct ExampleRunner {
+template <
   // Type of kernel schedule to generate
-  using MainloopScheduleType = cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100;
+  class MainloopScheduleType = cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100,
   // Type of epilogue schedule to generate
-  using EpilogueScheduleType = cutlass::epilogue::collective::EpilogueScheduleAuto;
-  static constexpr bool FuseQuantization = false;
+  class EpilogueScheduleType = cutlass::epilogue::collective::EpilogueScheduleAuto,
+  class ClusterShapeMNK = Shape<_1, _1, _1>,
+  bool FuseQuantization = false
+>
+struct ExampleRunner {
 
   using LayoutATag = cutlass::layout::RowMajor;
   using LayoutBTag = cutlass::layout::ColumnMajor;
@@ -238,10 +241,8 @@ struct ExampleRunner {
   using ElementCompute = float;
   using ElementScalar = float;
 
-  
-
-  using ClusterShapeMNK = Shape<_1,_1,_1>;
-  using MmaTileMNK    = Shape<_128,_64,_256>;  // use tile size of N=64 to match real use cases (N is typically very small in decoding stage)
+  static constexpr int TileM = cute::is_base_of_v<cutlass::gemm::KernelSchedule2Sm, MainloopScheduleType> ? 256 : 128;
+  using MmaTileMNK    = Shape<Int<TileM>,_64,_256>;  // use tile size of N=64 to match real use cases (N is typically very small in decoding stage)
 
   static constexpr int AlignmentA = 32;
   static constexpr int AlignmentB = 32;
@@ -712,9 +713,33 @@ int main(int argc, char const **args) {
   hw_info.device_id = 0;
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
-  std::cout << "Running kernel with mixed TMA+CPASYNC load:" << std::endl;
+  std::cout << "Running kernel with mixed TMA+CPASYNC load, 1SM:" << std::endl;
   ExampleRunner runner_mixed_tma_cpasync;
   runner_mixed_tma_cpasync.run(options, hw_info);
+
+  std::cout << "\n\n\nRunning kernel with mixed TMA+CPASYNC load, 1SM, 2x2 cluster:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100,
+    cutlass::epilogue::collective::EpilogueScheduleAuto,
+    Shape<_2, _2, _1>
+  > runner_mixed_tma_cpasync_1sm_2x2;
+  runner_mixed_tma_cpasync_1sm_2x2.run(options, hw_info);
+
+  std::cout << "\n\n\nRunning 2SM kernel with mixed TMA+CPASYNC load, 2x1 cluster:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100,
+    cutlass::epilogue::collective::EpilogueScheduleAuto,
+    Shape<_2, _1, _1>
+  > runner_mixed_tma_cpasync_2sm_2x1;
+  runner_mixed_tma_cpasync_2sm_2x1.run(options, hw_info);
+
+  std::cout << "\n\n\nRunning 2SM kernel with mixed TMA+CPASYNC load, 2x4 cluster:" << std::endl;
+  ExampleRunner<
+    cutlass::gemm::KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100,
+    cutlass::epilogue::collective::EpilogueScheduleAuto,
+    Shape<_2, _4, _1>
+  > runner_mixed_tma_cpasync_2sm_2x4;
+  runner_mixed_tma_cpasync_2sm_2x4.run(options, hw_info);
 
 #endif
 

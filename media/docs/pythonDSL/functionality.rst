@@ -3,11 +3,7 @@
 Functionality
 ====================
 
-The CUTLASS DSL 4.0 release supports **Python 3.12** only.  It shares the same driver requirements 
-as the `CUDA Toolkit 12.9 <https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html>`__.
-Specifically, the driver version must be 575.51.03 or later.
-
-Currently, only Linux x86_64 is supported. Additional platform support will be added in future releases.
+For dependency version requirements, refer to the :doc:`quick_start` section.
 
 Supported MMA Operations
 ---------------------------------

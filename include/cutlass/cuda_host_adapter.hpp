@@ -87,7 +87,9 @@ namespace cutlass {
 
 #if ((__CUDACC_VER_MAJOR__ >= 12) ||                               \
     ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
+#if !(defined(__QNX__) && __QNX__ >= 800 && defined(NV_IS_SAFETY))
 #include <cudaTypedefs.h>
+#endif
 #endif // (__CUDACC_VERSION__ >= 11.8)
 
 #include <driver_types.h>

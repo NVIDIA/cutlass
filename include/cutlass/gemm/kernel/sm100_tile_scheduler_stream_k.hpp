@@ -218,8 +218,14 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
-    return UnderlyingStreamKScheduler::can_implement(args);
+  can_implement(Arguments const& args, KernelHardwareInfo const& hw_info) {
+    if (hw_info.cluster_shape.x != hw_info.cluster_shape_fallback.x || 
+        hw_info.cluster_shape.y != hw_info.cluster_shape_fallback.y || 
+        hw_info.cluster_shape.z != hw_info.cluster_shape_fallback.z) {
+      CUTLASS_TRACE_HOST(" CAN IMPLEMENT: Stream-K scheduler requires cluster shape and fallback cluster shape to be the same.\n");
+      return false;
+    }
+    return UnderlyingStreamKScheduler::can_implement(args, hw_info);
   }
 
   CUTLASS_DEVICE

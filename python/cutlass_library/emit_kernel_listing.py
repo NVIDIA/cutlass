@@ -789,9 +789,11 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                     }
                   }
 
-                  cluster_m_fallback = ctas_per_mma_instruction if dynamic_cluster else cluster_shape_m
-                  cluster_n_fallback = 1 if dynamic_cluster else cluster_shape_n
-                  cluster_k_fallback = 1 if dynamic_cluster else cluster_shape_k
+                  # Fallback cluster shape cannot differ from preferred cluster shape in stream-K kernels.
+                  enable_fallback_cluster = dynamic_cluster and 'stream_k' not in kernel_name
+                  cluster_m_fallback = ctas_per_mma_instruction if enable_fallback_cluster else cluster_shape_m
+                  cluster_n_fallback = 1 if enable_fallback_cluster else cluster_shape_n
+                  cluster_k_fallback = 1 if enable_fallback_cluster else cluster_shape_k
 
 
                   if dynamic_datatype:

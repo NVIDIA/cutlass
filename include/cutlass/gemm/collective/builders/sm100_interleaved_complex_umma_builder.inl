@@ -210,8 +210,7 @@ struct CollectiveBuilder<
                                                                TensorMapStorage);
   // Reduce SMEM capacity available for buffers considering extra B smem and barrier smem allocations
   
-  static constexpr int ReducedSmemCapacityBytes = 
-    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
 
@@ -230,7 +229,8 @@ struct CollectiveBuilder<
         AccumulatorPipelineStageCount,
         TransformationStageCount,
         ClusterShape_MNK,
-        AccumulatorCopyAtom
+        AccumulatorCopyAtom,
+        ArchTag
       >,
       cutlass::gemm::MainloopSm100TmaUmmaWarpSpecializedInterleavedComplexTF32<
         PipelineStages,
@@ -238,7 +238,8 @@ struct CollectiveBuilder<
         AccumulatorPipelineStageCount,
         TransformationStageCount,
         ClusterShape_MNK,
-        AccumulatorCopyAtom
+        AccumulatorCopyAtom,
+        ArchTag
       >
     >;
 

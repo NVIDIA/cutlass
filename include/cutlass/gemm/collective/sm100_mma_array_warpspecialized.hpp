@@ -63,6 +63,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, _1)
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
   class ElementA_,
@@ -83,7 +84,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -109,7 +111,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   using TileShape = TileShape_;
 
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
@@ -122,11 +125,6 @@ struct CollectiveMma<
   // Define A and B block shapes for reduced size TMA_LOADs
   using MmaShapeA_MK = decltype(partition_shape_A(TiledMma{}, make_shape(size<0>(TileShape{}), size<2>(TileShape{}))));
   using MmaShapeB_NK = decltype(partition_shape_B(TiledMma{}, make_shape(size<1>(TileShape{}), size<2>(TileShape{}))));
-
-  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
-  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
-  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
-  constexpr static uint32_t NumTmaDescriptorsPerSm = SchedulerPipelineStageCount + Stages + 2;
 
   using ElementA = ElementA_;
   using ElementAMma = typename TiledMma::ValTypeA;
@@ -226,6 +224,11 @@ struct CollectiveMma<
   using RuntimeDataTypeB = cute::conditional_t<IsRuntimeDataTypeB, cute::UMMA::MXF8F6F4Format, void*>;
 
   static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
+
+  // Multiple buffer the TMA descriptors for each SM so that we can update them asynchronously.
+  // This should be larger than the total number of TMA requests inflight (from update to issued to returned).
+  // This can be calculated by SchedulerStages + max(TmaStages) + 2 (for consumer and producer in-flight accessies).
+  constexpr static uint32_t NumTmaDescriptorsPerSm = IsGroupedGemmKernel ? (SchedulerPipelineStageCount + Stages + 2) : 1;
 
   struct SharedStorage {
     struct TensorStorage : cute::aligned_struct<128, _0> {

@@ -11192,6 +11192,8 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
   ]
 
   tile_sizes = [
+    [128, 32, 128],
+    [128, 64, 128],
     [128, 128, 128]
   ]
 
@@ -11324,12 +11326,20 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
   ]
 
   tile_sizes_cooperative = [
+    [128, 32, 128],
+    [128, 32, 256],
+    [128, 64, 128],
+    [128, 64, 256],
     [128, 128, 128],
     [128, 128, 256],
     [256, 128, 128]
   ]
 
   tile_sizes_pingpong = [
+    [128, 32, 128],
+    [128, 32, 256],
+    [128, 64, 128],
+    [128, 64, 256],
     [128, 128, 128],
     [128, 128, 256]
   ]

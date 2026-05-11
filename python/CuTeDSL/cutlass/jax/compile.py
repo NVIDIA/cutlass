@@ -3,20 +3,16 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import os
 import gc
-import ctypes
-import inspect
-from typing import Any, Callable, Optional, Sequence
+from typing import Any
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 
 import time
 import logging
@@ -27,17 +23,13 @@ import cuda.bindings.driver as cuda
 
 import jax
 import jax.numpy as jnp
-import jaxlib
 
 from .types import (
     jax_to_cutlass_dtype,
-    from_dlpack,
-    JaxArray,
     JaxArrayList,
     TensorSpec,
     JaxTracedArray,
     DEFAULT_CUTLASS_DEVICE_MEMSPACE,
-    DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT,
 )
 
 import cutlass
@@ -90,6 +82,7 @@ class FunctionSpec:
                 leaf.spec.layout,
                 leaf.spec.mode,
                 leaf.get_static_flag(self.use_static_tensors),
+                leaf.spec.divisibility,
             )
             for leaf in self.in_args
         ]
@@ -102,6 +95,7 @@ class FunctionSpec:
                 leaf.spec.layout,
                 leaf.spec.mode,
                 leaf.get_static_flag(self.use_static_tensors),
+                leaf.spec.divisibility,
             )
             for leaf in self.out_args
         ]
@@ -117,12 +111,12 @@ def jit_wrapper(
     spec: cutlass.Constexpr,
 ):
     # split buffer argument into inputs and outputs and return to tree
-    ins, outs = args[: len(spec.in_args)], args[(len(spec.in_args)) :]
-    ins = [x.get_tensor() for x in ins]
-    outs = [x.get_tensor() for x in outs]
-    ins = jax.tree.unflatten(spec.input_tree, ins)
-    outs = jax.tree.unflatten(spec.output_tree, outs)
-    wrapped_fn(stream, *ins, *outs, **dict(spec.kwargs))
+    ins, outs = args[: len(spec.in_args)], args[(len(spec.in_args)) :]  # type: ignore[attr-defined]
+    ins = [x.get_tensor() for x in ins]  # type: ignore[assignment, attr-defined]
+    outs = [x.get_tensor() for x in outs]  # type: ignore[assignment, attr-defined]
+    ins = jax.tree.unflatten(spec.input_tree, ins)  # type: ignore[attr-defined]
+    outs = jax.tree.unflatten(spec.output_tree, outs)  # type: ignore[attr-defined]
+    wrapped_fn(stream, *ins, *outs, **dict(spec.kwargs))  # type: ignore[operator, attr-defined]
 
 
 @dataclass
@@ -234,7 +228,7 @@ def get_or_compile_kernel(fn, spec):
         try:
             cute_compile = cutlass.cute.compile
             if spec.compile_options:
-                cute_compile = partial(cute_compile, options=spec.compile_options)
+                cute_compile = partial(cute_compile, options=spec.compile_options)  # type: ignore[assignment]
 
             compiled_fn = cute_compile(
                 jit_wrapper,

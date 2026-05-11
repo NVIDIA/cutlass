@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -25,8 +25,6 @@ from ..base_dsl.ast_helpers import (
     assert_executor,
     bool_cast,
     compare_executor,
-    any_executor,
-    all_executor,
     range_value_check,
     cf_symbol_check,
     redirect_builtin_function,
@@ -38,6 +36,7 @@ from ..base_dsl.ast_helpers import (
 )
 
 from ..base_dsl import *
+from ..base_dsl.arch import Arch
 from ..base_dsl.dsl import extract_mlir_values, new_from_mlir_values
 from ..base_dsl.typing import _binary_op_type_promote
 from ..base_dsl._mlir_helpers.gpu import *
@@ -53,9 +52,11 @@ from ..base_dsl.compiler import (
     KeepCUBIN,
     KeepPTX,
     GPUArch,
+    LinkLibraries,
     EnableTVMFFI,
 )
 from ..base_dsl.runtime.jit_arg_adapters import *
+from ..base_dsl.native_struct import make_native_struct, native_struct
 
 
 from ..base_dsl.utils.logger import _init_logger_with_client_name

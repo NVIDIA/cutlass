@@ -663,4 +663,105 @@ struct SM100_TMA_2SM_LOAD_IM2COL_MULTICAST
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+struct SM100_TMA_LOAD_2D_GATHER4
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
+       void      * smem_ptr,
+       int32_t const& crd0, int32_t const& crd1_i0, int32_t const& crd1_i1, int32_t const& crd1_i2, int32_t const& crd1_i3)
+  {
+#if defined(CUTE_ARCH_TMA_SM100_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.2d.shared::cluster.global.tile::gather4.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5, %6, %7}], [%2], %8;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "r"(crd1_i0), "r"(crd1_i1), "r"(crd1_i2), "r"(crd1_i3), "l"(cache_hint)
+      : "memory");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM100_ENABLED.");
+#endif
+  }
+
+  struct PREFETCH
+  {
+    CUTE_HOST_DEVICE static void
+    copy(void const* desc_ptr,
+         int32_t const& crd0, int32_t const& crd1_i0, int32_t const& crd1_i1, int32_t const& crd1_i2, int32_t const& crd1_i3)
+    {
+  #if defined(CUTE_ARCH_TMA_SM100_ENABLED)
+      uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+      asm volatile (
+        "cp.async.bulk.prefetch.tensor.2d.L2.global.tile::gather4"
+        " [%0, {%1, %2, %3, %4, %5}];"
+        :
+        : "l"(gmem_int_desc),
+          "r"(crd0), "r"(crd1_i0), "r"(crd1_i1), "r"(crd1_i2), "r"(crd1_i3)
+        : "memory");
+  #else
+      CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM100_ENABLED.");
+  #endif
+    }
+  };
+};
+
+
+struct SM100_TMA_LOAD_MULTICAST_2D_GATHER4
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint16_t multicast_mask, uint64_t cache_hint,
+       void      * smem_ptr,
+       int32_t const& crd0, int32_t const& crd1_i0, int32_t const& crd1_i1, int32_t const& crd1_i2, int32_t const& crd1_i3)
+  {
+#if defined(CUTE_ARCH_TMA_SM100_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.2d.shared::cluster.global.tile::gather4.mbarrier::complete_tx::bytes.multicast::cluster.L2::cache_hint"
+      " [%0], [%1, {%4, %5, %6, %7, %8}], [%2], %3, %9;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "h"(multicast_mask),
+        "r"(crd0), "r"(crd1_i0), "r"(crd1_i1), "r"(crd1_i2), "r"(crd1_i3), "l"(cache_hint)
+      : "memory");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM100_ENABLED.");
+#endif
+  }
+
+  using PREFETCH = SM100_TMA_LOAD_2D_GATHER4::PREFETCH;
+};
+
+struct SM100_TMA_STORE_2D_SCATTER4
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* desc_ptr, void const* smem_ptr,
+       int32_t const& crd0, int32_t const& crd1_i0, int32_t const& crd1_i1, int32_t const& crd1_i2, int32_t const& crd1_i3)
+  {
+#if defined(CUTE_ARCH_TMA_SM100_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_tma_store(__LINE__, gmem_int_desc, smem_int_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.2d.global.shared::cta.tile::scatter4.bulk_group [%0, {%2, %3, %4, %5, %6}], [%1];"
+      :
+      : "l"(gmem_int_desc), "r"(smem_int_ptr),
+        "r"(crd0), "r"(crd1_i0), "r"(crd1_i1), "r"(crd1_i2), "r"(crd1_i3)
+      : "memory");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM100_ENABLED.");
+#endif
+  }
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 } // end namespace cute

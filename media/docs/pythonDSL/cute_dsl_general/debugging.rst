@@ -39,10 +39,11 @@ CuTe DSL provides environment variables to control logging level:
     # Enable console logging (default: False)
     export CUTE_DSL_LOG_TO_CONSOLE=1
 
-    # Log to file instead of console (default: False)
-    export CUTE_DSL_LOG_TO_FILE=my_log.txt
+    # Log to file instead of console (default: False).
+    # Set to 1/True to enable; the log file path is chosen automatically by the DSL.
+    export CUTE_DSL_LOG_TO_FILE=1
 
-    # Control log verbosity (0, 10, 20, 30, 40, 50, default: 10)
+    # Control log verbosity (0=disabled, 1=all messages (debug and above), 10=debug, 20=info, 30=warning, 40=error, 50=critical; default: 1)
     export CUTE_DSL_LOG_LEVEL=20
 
 
@@ -68,39 +69,52 @@ Similar to standard Python logging, different log levels provide varying degrees
 +--------+-------------+
 
 
-Dump the generated IR
-~~~~~~~~~~~~~~~~~~~~~
+Save generated artifacts to files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For users familiar with MLIR and compilers, CuTe DSL supports dumping the Intermediate Representation (IR).
-This helps you verify whether the IR is generated as expected.
+CuTe DSL can save generated artifacts (IR, PTX, CUBIN, …) to files for offline inspection.
+Use ``CUTE_DSL_KEEP`` with a comma-separated list of artifact tokens:
 
 .. code:: bash
 
-    # Dump Generated CuTe IR (default: False)
+    # Save clean IR (after canonicalize+cse, human-readable) to a .mlir file
+    export CUTE_DSL_KEEP=ir
+
+    # Save raw IR (before any passes) to a .mlir file
+    export CUTE_DSL_KEEP=ir-debug
+
+    # Save PTX assembly to a .ptx file
+    export CUTE_DSL_KEEP=ptx
+
+    # Save CUBIN binary to a .cubin file
+    export CUTE_DSL_KEEP=cubin
+
+    # Save LLVM IR to a file
+    export CUTE_DSL_KEEP=llvm
+
+    # Save multiple artifacts at once
+    export CUTE_DSL_KEEP=ir,ptx,cubin
+
+    # Save all supported artifacts
+    export CUTE_DSL_KEEP=all
+
+Files are written to the current working directory by default. Use ``CUTE_DSL_DUMP_DIR``
+to redirect them (see `Change the dump directory`_ below).
+
+.. note::
+
+    The ``sass`` token requires ``nvdisasm`` (or ``nvdisasm_internal``) to be available
+    in your ``PATH``. It is usually installed with the CUDA toolkit.
+
+Print the generated IR to the console
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To print the IR directly to the console (without writing a file):
+
+.. code:: bash
+
+    # Print generated IR to stdout (default: False)
     export CUTE_DSL_PRINT_IR=1
-
-    # Keep Generated CuTe IR in a file (default: False)
-    export CUTE_DSL_KEEP_IR=1
-
-
-Dump the generated PTX & CUBIN
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-For users familiar with PTX and SASS, CuTe DSL supports dumping the generated PTX and CUBIN.
-
-.. code:: bash
-
-    # Dump generated PTX in a .ptx file (default: False)
-    export CUTE_DSL_KEEP_PTX=1
-
-    # Dump generated cubin in a .cubin file (default: False)
-    export CUTE_DSL_KEEP_CUBIN=1
-
-To further get SASS from cubin, users can use ``nvdisasm`` (usually installed with CUDA toolkit) to disassemble the cubin.
-
-.. code:: bash
-
-    nvdisasm your_dsl_code.cubin > your_dsl_code.sass
 
 
 Access the dumped contents programmatically

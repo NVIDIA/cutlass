@@ -188,6 +188,7 @@ struct CollectiveBuilder<
       // Dense Gemm / PtrArrayDenseGemm
       (
        (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
+       (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized2SmSm100, BuilderScheduleTag>) && 
        (not cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
        (cute::is_base_of_v<KernelScheduleSm100DenseGemm, BuilderScheduleTag> ||
         cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)) &&
@@ -288,9 +289,7 @@ struct CollectiveBuilder<
       IsArrayOfPointersGemm
     >::KernelSmemCarveout;
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  
-  static constexpr int ReducedSmemCapacityBytes = 
-    cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
   
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
@@ -307,20 +306,23 @@ struct CollectiveBuilder<
             PipelineStages,
             SchedulerPipelineStageCount,
             AccumulatorPipelineStageCount,
-            ClusterShape_MNK
+            ClusterShape_MNK,
+            ArchTag
           >,
           cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecialized<
             PipelineStages,
             SchedulerPipelineStageCount,
             AccumulatorPipelineStageCount,
-            ClusterShape_MNK
+            ClusterShape_MNK,
+            ArchTag
           >
         >,
       cutlass::gemm::MainloopSm100TmaUmmaWarpSpecialized<
           PipelineStages,
           SchedulerPipelineStageCount,
           AccumulatorPipelineStageCount,
-          ClusterShape_MNK
+          ClusterShape_MNK,
+          ArchTag
       >
     >;
 
