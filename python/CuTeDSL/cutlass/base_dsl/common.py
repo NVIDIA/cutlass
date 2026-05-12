@@ -200,6 +200,14 @@ class DSLRuntimeError(DSLBaseError):
     pass
 
 
+class CudaDriverDependencyError(DSLRuntimeError):
+    """
+    Raised when CUDA Driver dependencies are unavailable.
+    """
+
+    pass
+
+
 def _get_friendly_cuda_error_message(
     error_code: int, error_name: Union[str, bytes]
 ) -> tuple[str, str, Union[str, tuple[str, ...]]]:

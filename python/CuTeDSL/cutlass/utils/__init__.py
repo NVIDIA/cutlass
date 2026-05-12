@@ -70,8 +70,15 @@ from .grouped_gemm_persistent_tile_scheduler import (
 )
 
 from .tensormap_manager import (
+    SM120_MXF4NVF4_SCALE_K_GRANULARITY,
+    SM120_MXF4NVF4_TENSOR_MAP_BYTES,
     TensorMapUpdateMode,
     TensorMapManager,
+    make_sm120_mxf4nvf4_scale_tma_desc_bytes,
+    make_sm120_mxf4nvf4_tma_desc_bytes,
+    sm120_mxf4nvf4_padded_scale_k_extent,
+    validate_sm120_mxf4nvf4_scale_tma_desc,
+    validate_sm120_mxf4nvf4_tma_desc,
 )
 
 from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
@@ -136,6 +143,13 @@ __all__ = [
     "StaticPersistentRuntimeTileScheduler",
     "TensorMapUpdateMode",
     "TensorMapManager",
+    "SM120_MXF4NVF4_TENSOR_MAP_BYTES",
+    "SM120_MXF4NVF4_SCALE_K_GRANULARITY",
+    "make_sm120_mxf4nvf4_tma_desc_bytes",
+    "make_sm120_mxf4nvf4_scale_tma_desc_bytes",
+    "validate_sm120_mxf4nvf4_tma_desc",
+    "validate_sm120_mxf4nvf4_scale_tma_desc",
+    "sm120_mxf4nvf4_padded_scale_k_extent",
     "GroupSearchResult",
     "GroupedGemmGroupSearchState",
     "create_initial_search_state",
