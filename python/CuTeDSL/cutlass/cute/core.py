@@ -3603,10 +3603,16 @@ def make_layout(
     shape_val = _pack_shape(shape, loc=loc, ip=ip)
     if stride is not None:
         stride_val = _pack_stride(stride, loc=loc, ip=ip)
-        layout_ty = _cute_ir.LayoutType.get(shape_val.type, stride_val.type)
+        try:
+            layout_ty = _cute_ir.LayoutType.get(shape_val.type, stride_val.type)
+        except TypeError:
+            layout_ty = _cute_ir.LayoutType.get(shape_val, stride_val)
     else:
         stride_val = None
-        layout_ty = _cute_ir.LayoutType.get(shape_val.type)
+        try:
+            layout_ty = _cute_ir.LayoutType.get(shape_val.type)
+        except TypeError:
+            layout_ty = _cute_ir.LayoutType.get(shape_val)
 
     return _cute_ir.make_layout(
         layout_ty, shape=shape_val, stride=stride_val, loc=loc, ip=ip

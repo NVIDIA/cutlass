@@ -17,6 +17,7 @@ from cutlass.cutlass_dsl import DSLBaseError, DSLRuntimeError
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+import cutlass._mlir.dialects.nvvm as _nvvm_ir
 from cutlass._mlir import ir
 
 from .. import atom
@@ -272,12 +273,18 @@ class MemoryScope(enum.Enum):
         return self.value
 
 
+if hasattr(_cute_ir, "L2PrefetchSize"):
+    _L2PrefetchSize = _cute_ir.L2PrefetchSize
+else:
+    _L2PrefetchSize = _nvvm_ir.L2PrefetchSize
+
+
 class L2PrefetchSize(enum.Enum):
-    NONE = _cute_ir.L2PrefetchSize.NONE
-    RESERVED = _cute_ir.L2PrefetchSize.RESERVED
-    SIZE_64B = _cute_ir.L2PrefetchSize.SIZE_64B
-    SIZE_128B = _cute_ir.L2PrefetchSize.SIZE_128B
-    SIZE_256B = _cute_ir.L2PrefetchSize.SIZE_256B
+    NONE = _L2PrefetchSize.NONE
+    RESERVED = _L2PrefetchSize.RESERVED
+    SIZE_64B = _L2PrefetchSize.SIZE_64B
+    SIZE_128B = _L2PrefetchSize.SIZE_128B
+    SIZE_256B = _L2PrefetchSize.SIZE_256B
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"
@@ -285,7 +292,7 @@ class L2PrefetchSize(enum.Enum):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
 
-    def _to_ir(self) -> _cute_ir.L2PrefetchSize:
+    def _to_ir(self) -> _L2PrefetchSize:
         return self.value
 
 
@@ -323,12 +330,23 @@ class LoadCacheMode(enum.Enum):
         return self.value
 
 
+if hasattr(_cute_nvgpu_ir, "StoreCacheMode"):
+    _StoreCacheMode = _cute_nvgpu_ir.StoreCacheMode
+else:
+    class _StoreCacheMode(enum.Enum):
+        write_back = "write_back"
+        global_ = "global"
+        streaming = "streaming"
+        write_through = "write_through"
+        none = "none"
+
+
 class StoreCacheMode(enum.Enum):
-    WRITE_BACK = _cute_nvgpu_ir.StoreCacheMode.write_back
-    GLOBAL = _cute_nvgpu_ir.StoreCacheMode.global_
-    STREAMING = _cute_nvgpu_ir.StoreCacheMode.streaming
-    WRITE_THROUGH = _cute_nvgpu_ir.StoreCacheMode.write_through
-    NONE = _cute_nvgpu_ir.StoreCacheMode.none
+    WRITE_BACK = _StoreCacheMode.write_back
+    GLOBAL = _StoreCacheMode.global_
+    STREAMING = _StoreCacheMode.streaming
+    WRITE_THROUGH = _StoreCacheMode.write_through
+    NONE = _StoreCacheMode.none
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"
@@ -336,13 +354,21 @@ class StoreCacheMode(enum.Enum):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
 
-    def _to_ir(self) -> _cute_nvgpu_ir.StoreCacheMode:
+    def _to_ir(self) -> _StoreCacheMode:
         return self.value
 
 
 class SharedSpace(enum.Enum):
-    CTA = _cute_nvgpu_ir.SharedSpace.CTA
-    CLUSTER = _cute_nvgpu_ir.SharedSpace.CLUSTER
+    CTA = (
+        _cute_nvgpu_ir.SharedSpace.CTA
+        if hasattr(_cute_nvgpu_ir, "SharedSpace")
+        else _nvvm_ir.SharedSpace.shared_cta
+    )
+    CLUSTER = (
+        _cute_nvgpu_ir.SharedSpace.CLUSTER
+        if hasattr(_cute_nvgpu_ir, "SharedSpace")
+        else _nvvm_ir.SharedSpace.shared_cluster
+    )
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"
@@ -350,7 +376,7 @@ class SharedSpace(enum.Enum):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}.{self.name}>"
 
-    def _to_ir(self) -> _cute_nvgpu_ir.SharedSpace:
+    def _to_ir(self) -> Any:
         return self.value
 
 

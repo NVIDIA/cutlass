@@ -21,6 +21,11 @@ __all__ = [
     "MmaFP8Op",
     "MmaMXF4Op",
     "MmaMXF4NVF4Op",
+    "make_mxf4nvf4_sfa_layout",
+    "make_mxf4nvf4_sfb_layout",
+    "make_mxf4nvf4_sfa_fragment",
+    "make_mxf4nvf4_sfb_fragment",
+    "mma_unpack",
     # copy.py
     "LdMatrix8x8x16bOp",
     "LdMatrix16x8x8bOp",

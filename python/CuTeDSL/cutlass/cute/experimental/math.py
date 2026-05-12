@@ -28,6 +28,10 @@ def dot_block_scaled(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    if mma_atom.op.supports_operand_bundle([a, sfa], [b, sfb]):
+        return mma_atom.op.gemm_with_operand_bundle(
+            mma_atom, c, [a, sfa], [b, sfb], c, loc=loc, ip=ip
+        )
     cutlass_lir.DotBlockScaledOp(
         mma_atom._unpack(),
         a.value,
@@ -57,5 +61,4 @@ def dot(
         loc=loc,
         ip=ip,
     )
-
 

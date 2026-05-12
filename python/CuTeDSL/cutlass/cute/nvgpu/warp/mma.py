@@ -10,14 +10,15 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, List, Optional, Tuple, Type, Union
 
 import enum
+from cutlass import cute
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
 
 
-from ..common import OpError
+from ..common import OpError, normalize_field_to_ir_name
 from ...typing import (
     Shape,
     Float4E2M1FN,
@@ -27,6 +28,8 @@ from ...typing import (
     Float16,
     BFloat16,
     Float32,
+    Boolean,
+    Int32,
     Numeric,
     Pointer,
 )
@@ -35,6 +38,7 @@ from ...typing import Tensor
 from ...atom import MmaOp, Trait, make_atom
 
 from cutlass._mlir import ir
+import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 
@@ -207,7 +211,6 @@ class MmaFP8Op(WarpMmaOp):
     ) -> None:
         pass
 
-
 class MmaFP8Trait(Trait):
     pass
 
@@ -301,6 +304,32 @@ class MmaSM120BlockScaledOp(MmaOp):
     ) -> None:
         pass
 
+    def supports_operand_bundle(self, a: List[Tensor], b: List[Tensor]) -> bool:
+        return (
+            len(a) == 2
+            and len(b) == 2
+            and self.shape_mnk == (16, 8, 64)
+            and self.ab_dtype == Float4E2M1FN
+            and self.acc_dtype == Float32
+            and self.sf_type == Float8E4M3FN
+            and self.sf_vec_size == 16
+        )
+
+    def gemm_with_operand_bundle(
+        self,
+        atom: cute.MmaAtom,
+        d: Tensor,
+        a: List[Tensor],
+        b: List[Tensor],
+        c: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        if not self.supports_operand_bundle(a, b):
+            raise TypeError(f"{self} does not support GEMM operand bundles")
+        return mma_unpack(atom, d, a, b, c, loc=loc, ip=ip)
+
 
 class Field(enum.Enum):
     """
@@ -323,9 +352,13 @@ class Field(enum.Enum):
 
 class MmaBlockScaledTrait(Trait):
     admissible_fields = [
+        Field.ACCUMULATE,
         Field.SFA,
         Field.SFB,
     ]
+
+    def _normalize_field_name(self, field: Any) -> str:
+        return normalize_field_to_ir_name(field, self.admissible_fields)
 
     def set(
         self,
@@ -335,22 +368,28 @@ class MmaBlockScaledTrait(Trait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        if field not in self.admissible_fields:
-            raise ValueError(
-                f"expects field to be one of {self.admissible_fields}, but got {field}"
-            )
-        if field in [Field.SFA, Field.SFB]:
+        field_ir_name = self._normalize_field_name(field)
+        if field_ir_name == Field.ACCUMULATE.value:
+            value = Boolean(value).ir_value(loc=loc, ip=ip)
+        elif field_ir_name in [Field.SFA.value, Field.SFB.value]:
             if not isinstance(value, Pointer):
                 raise ValueError(
                     f"expects value to be a pointer for {field}, but got {type(value).__name__}"
                 )
             value = value.value
 
-        field_name = f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field._to_ir_field_name()}>"
-        attr = ir.Attribute.parse(field_name)
-        self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, value, loc=loc, ip=ip
-        )
+        try:
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, field_ir_name, value, loc=loc, ip=ip
+            )
+        except (TypeError, AttributeError):
+            field_name = (
+                f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field_ir_name}>"
+            )
+            attr = ir.Attribute.parse(field_name)
+            self.value = _cute_nvgpu_ir.atom_set_value(
+                self.value, attr, value, loc=loc, ip=ip
+            )
 
     def get(
         self,
@@ -359,7 +398,21 @@ class MmaBlockScaledTrait(Trait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Any:
-        raise ValueError(f"the get method for {field} is not supported")
+        field_ir_name = self._normalize_field_name(field)
+        if field_ir_name != Field.ACCUMULATE.value:
+            raise ValueError(f"the get method for {field} is not supported")
+        try:
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, field_ir_name, loc=loc, ip=ip
+            )
+        except (TypeError, AttributeError):
+            field_name = (
+                f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field_ir_name}>"
+            )
+            attr = ir.Attribute.parse(field_name)
+            return _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
 
 
 #
@@ -474,3 +527,229 @@ class MmaMXF4NVF4Op(MmaSM120BlockScaledOp):
 
 class MmaMXF4NVF4Trait(MmaBlockScaledTrait):
     pass
+
+
+def _normalize_mxf4nvf4_operand(
+    operand: Union[List[Tensor], Tuple[Tensor, ...]],
+    name: str,
+) -> Tuple[Tensor, Tensor]:
+    if not isinstance(operand, (list, tuple)) or len(operand) != 2:
+        raise TypeError(f"`{name}` must be a two-tensor sequence `(fragment, scale)`")
+    fragment, scale = operand
+    if not isinstance(fragment, Tensor) or not isinstance(scale, Tensor):
+        raise TypeError(f"`{name}` must contain only Tensor operands")
+    return fragment, scale
+
+
+def _require_rmem(tensor: Tensor, name: str) -> None:
+    if tensor.memspace != cute.AddressSpace.rmem:
+        raise ValueError(f"`{name}` must be register-resident")
+
+
+def _require_static_size(actual: Any, expected: int, name: str) -> None:
+    if actual != expected:
+        raise ValueError(f"`{name}` must have static size {expected}, but got {actual}")
+
+
+def _validate_mxf4nvf4_packed_fragment_layout(
+    fragment: Tensor,
+    name: str,
+    *,
+    expected_logical_size: int,
+    expected_i32_size: int,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    _require_rmem(fragment, name)
+    if fragment.element_type != Float4E2M1FN:
+        raise TypeError(f"`{name}` must have element type {Float4E2M1FN}")
+    _require_static_size(
+        cute.size(fragment, loc=loc, ip=ip), expected_logical_size, name
+    )
+
+    compact = cute.filter_zeros(fragment, loc=loc, ip=ip)
+    i32_fragment = cute.recast_tensor(compact, Int32, loc=loc, ip=ip)
+    _require_static_size(
+        cute.size(i32_fragment, loc=loc, ip=ip),
+        expected_i32_size,
+        f"packed `{name}`",
+    )
+    return i32_fragment
+
+
+def _validate_mxf4nvf4_accumulator_layout(
+    accumulator: Tensor,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    _require_rmem(accumulator, name)
+    if accumulator.element_type != Float32:
+        raise TypeError(f"`{name}` must have element type {Float32}")
+    _require_static_size(cute.size(accumulator, loc=loc, ip=ip), 4, name)
+
+
+def _validate_mxf4nvf4_scale_fragment_layout(
+    scale: Tensor,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    _require_rmem(scale, name)
+    if scale.element_type != Float8E4M3FN:
+        raise TypeError(f"`{name}` must have element type {Float8E4M3FN}")
+    _require_static_size(cute.size(scale, loc=loc, ip=ip), 64, name)
+
+    compact = cute.filter_zeros(scale, loc=loc, ip=ip)
+    _require_static_size(
+        cute.cosize(compact.layout, loc=loc, ip=ip),
+        4,
+        f"compact `{name}`",
+    )
+    i32_scale = cute.recast_tensor(compact, Int32, loc=loc, ip=ip)
+    _require_static_size(
+        cute.size(i32_scale, loc=loc, ip=ip),
+        1,
+        f"packed `{name}`",
+    )
+    return compact
+
+
+def _validate_mxf4nvf4_atom(atom: cute.MmaAtom) -> MmaSM120BlockScaledOp:
+    op = getattr(atom, "op", None)
+    if not isinstance(op, MmaSM120BlockScaledOp):
+        raise TypeError("`mma_unpack` expects an SM120 warp blockscaled MMA atom")
+    if not op.supports_operand_bundle([None, None], [None, None]):  # type: ignore[list-item]
+        raise ValueError(
+            "SM120 NVFP4 MMA requires Float4E2M1FN A/B, Float32 accumulators, "
+            "Float8E4M3FN scales, shape (16, 8, 64), and scale_vec::4X"
+        )
+    return op
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_layout(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Return the SM120 MXF4NVF4 SFA register scale-fragment layout."""
+    return cute.make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_layout(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Return the SM120 MXF4NVF4 SFB register scale-fragment layout."""
+    return cute.make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return an SM120 MXF4NVF4 SFA register scale fragment."""
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFA fragments require Float8E4M3FN")
+    return cute.make_rmem_tensor(
+        make_mxf4nvf4_sfa_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return an SM120 MXF4NVF4 SFB register scale fragment."""
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFB fragments require Float8E4M3FN")
+    return cute.make_rmem_tensor(
+        make_mxf4nvf4_sfb_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def mma_unpack(
+    atom: cute.MmaAtom,
+    d: Tensor,
+    a: Union[List[Tensor], Tuple[Tensor, ...]],
+    b: Union[List[Tensor], Tuple[Tensor, ...]],
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Issue SM120 MXF4NVF4 warp MMA with bundled FP4 and E4M3 scale fragments."""
+    _validate_mxf4nvf4_atom(atom)
+    a_fragment, sfa = _normalize_mxf4nvf4_operand(a, "a")
+    b_fragment, sfb = _normalize_mxf4nvf4_operand(b, "b")
+
+    a_i32 = _validate_mxf4nvf4_packed_fragment_layout(
+        a_fragment,
+        "a fragment",
+        expected_logical_size=32,
+        expected_i32_size=4,
+        loc=loc,
+        ip=ip,
+    )
+    b_i32 = _validate_mxf4nvf4_packed_fragment_layout(
+        b_fragment,
+        "b fragment",
+        expected_logical_size=16,
+        expected_i32_size=2,
+        loc=loc,
+        ip=ip,
+    )
+    _validate_mxf4nvf4_accumulator_layout(d, "d", loc=loc, ip=ip)
+    _validate_mxf4nvf4_accumulator_layout(c, "c", loc=loc, ip=ip)
+
+    compact_sfa = _validate_mxf4nvf4_scale_fragment_layout(
+        sfa, "sfa", loc=loc, ip=ip
+    )
+    compact_sfb = _validate_mxf4nvf4_scale_fragment_layout(
+        sfb, "sfb", loc=loc, ip=ip
+    )
+
+    sfa_i32 = cute.recast_tensor(compact_sfa, Int32, loc=loc, ip=ip)
+    sfb_i32 = cute.recast_tensor(compact_sfb, Int32, loc=loc, ip=ip)
+
+    a_vec = a_i32.load(loc=loc, ip=ip)
+    b_vec = b_i32.load(loc=loc, ip=ip)
+    c_vec = c.load(loc=loc, ip=ip)
+    shape_mnk = _pack_shape((16, 8, 64), loc=loc, ip=ip)
+    result = _cute_nvgpu_ir.arch_mma_SM120_block_scaled(
+        c_vec.type,
+        shape_mnk.type.attribute,
+        16,
+        ir.TypeAttr.get(Float4E2M1FN.mlir_type),
+        ir.TypeAttr.get(Float4E2M1FN.mlir_type),
+        ir.TypeAttr.get(Float8E4M3FN.mlir_type),
+        a_vec,
+        b_vec,
+        c_vec,
+        Int32(sfa_i32[0]).ir_value(loc=loc, ip=ip),
+        Int32(sfb_i32[0]).ir_value(loc=loc, ip=ip),
+        # This helper accepts only the canonical register fragments produced by
+        # partition_shape_A/B for the single-instruction SM120 MXF4NVF4 form.
+        # Their physical layout carries the lane/byte mapping, so the
+        # instruction's immediate byte/thread selectors stay at the canonical
+        # zero values.
+        byte_id_a=0,
+        byte_id_b=0,
+        thread_id_a=0,
+        thread_id_b=0,
+        loc=loc,
+        ip=ip,
+    )
+    d.store(cute.TensorSSA(result, d.shape, Float32, loc=loc, ip=ip), loc=loc, ip=ip)

@@ -511,11 +511,23 @@ class TypedTensor:
 
     @property
     def mlir_type(self) -> ir.Type:
-        shape_ty = _cute_ir.ShapeType.get_from_x_tuple(ir.Context.current, self._shape)
-        stride_ty = _cute_ir.StrideType.get_from_x_tuple(
-            ir.Context.current, self._stride
-        )
-        layout_ty = _cute_ir.LayoutType.get(shape_ty, stride_ty)
+        if hasattr(_cute_ir.ShapeType, "get_from_x_tuple"):
+            shape_ty = _cute_ir.ShapeType.get_from_x_tuple(
+                ir.Context.current, self._shape
+            )
+            stride_ty = _cute_ir.StrideType.get_from_x_tuple(
+                ir.Context.current, self._stride
+            )
+        else:
+            shape_ty = _cute_ir.ShapeType.get(str(self._shape).replace(" ", ""))
+            stride_ty = _cute_ir.StrideType.get(str(self._stride).replace(" ", ""))
+        try:
+            layout_ty = _cute_ir.LayoutType.get(shape_ty, stride_ty)
+        except TypeError:
+            layout_ty = ir.Type.parse(
+                f'!cute.layout<"{str(self._shape).replace(" ", "")}:'
+                f'{str(self._stride).replace(" ", "")}">'
+            )
 
         # Boolean types are stored as i8 in memory
         elem_type = T.i8() if self._dtype.width == 1 else self._dtype.mlir_type

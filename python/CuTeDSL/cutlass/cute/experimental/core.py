@@ -32,6 +32,20 @@ class _SupportsIrValue(Protocol):
 SkipWaitToken: TypeAlias = bool | ir.Value | _SupportsIrValue
 
 
+def _safe_register_value_caster(typeid):
+    def _decorator(cls):
+        if typeid is None:
+            return cls
+        try:
+            return ir.register_value_caster(typeid)(cls)
+        except RuntimeError as exc:
+            if "already registered" in str(exc).lower():
+                return cls
+            raise
+
+    return _decorator
+
+
 @dsl_user_op
 def elect_sync(
     loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
@@ -51,7 +65,7 @@ def get_mbarrier(
     return cutlass_lir_ir.GetMbarrierOp(stage_token, loc=loc, ip=ip)
 
 
-@ir.register_value_caster(cutlass_lir_ir.PipelineStateType.get_static_typeid())
+@_safe_register_value_caster(cutlass_lir_ir.PipelineStateType.get_static_typeid())
 class PipelineState(ir.Value):
     def __init__(self, value: ir.Value) -> None:
         if isinstance(value, ir.Value):
@@ -372,8 +386,10 @@ def get_pipeline_consume_stage(
     return op.stage_token, op.stage_index
 
 
-@ir.register_value_caster(
+@_safe_register_value_caster(
     cutlass_lir_ir.CircularBufferPipelineStateType.get_static_typeid()
+    if hasattr(cutlass_lir_ir, "CircularBufferPipelineStateType")
+    else None
 )
 class CircularBufferPipelineState(ir.Value):
     def __init__(self, value: ir.Value) -> None:

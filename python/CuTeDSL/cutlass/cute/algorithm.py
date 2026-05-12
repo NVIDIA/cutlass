@@ -114,6 +114,16 @@ def gemm(
     a_list = _normalize_variadic_tensor_operand(a, "a")
     b_list = _normalize_variadic_tensor_operand(b, "b")
 
+    if atom.op.supports_operand_bundle(a_list, b_list):
+        return atom.op.gemm_with_operand_bundle(
+            atom, d, a_list, b_list, c, loc=loc, ip=ip
+        )
+    if len(a_list) != len(b_list):
+        raise ValueError(
+            "`a` and `b` must have the same number of tensor operands, "
+            f"but got {len(a_list)} and {len(b_list)}"
+        )
+
     # Rank validations based on the primary A/B tensors (guaranteed non-empty)
     a_rank = rank(a_list[0].shape)
     b_rank = rank(b_list[0].shape)

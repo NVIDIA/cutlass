@@ -52,6 +52,30 @@ class MmaOp(Op, metaclass=ABCMeta):
     MMA Operation abstract base class.
     """
 
+    def supports_operand_bundle(self, a: List[Tensor], b: List[Tensor]) -> bool:
+        """
+        Return whether this MMA op accepts auxiliary register fragments bundled with A/B.
+        """
+        return False
+
+    def gemm_with_operand_bundle(
+        self,
+        atom: "MmaAtom",
+        d: Tensor,
+        a: List[Tensor],
+        b: List[Tensor],
+        c: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """
+        Issue GEMM for MMA ops with auxiliary register fragments such as scale operands.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GEMM operand bundles"
+        )
+
     @abstractmethod
     def _make_trait(
         self,
