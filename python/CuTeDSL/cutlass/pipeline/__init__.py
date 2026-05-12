@@ -49,6 +49,14 @@ from .sm100 import (
     PipelineTmaMultiConsumersAsync,
 )
 
+from .sm120 import (
+    PipelineTmaWarpMma,
+    issue_tma_load_3d,
+    issue_tma_load_4d,
+    producer_acquire_issue_tma_load_3d,
+    producer_acquire_issue_tma_load_4d,
+)
+
 __all__ = [
     "Agent",
     "CooperativeGroup",
@@ -68,9 +76,14 @@ __all__ = [
     "PipelineUmmaAsync",
     "PipelineClcFetchAsync",
     "PipelineTmaMultiConsumersAsync",
+    "PipelineTmaWarpMma",
     "PipelineTmaStore",
     "PipelineProducer",
     "PipelineConsumer",
+    "issue_tma_load_3d",
+    "issue_tma_load_4d",
+    "producer_acquire_issue_tma_load_3d",
+    "producer_acquire_issue_tma_load_4d",
     "make_pipeline_state",
     "pipeline_init_arrive",
     "pipeline_init_wait",
