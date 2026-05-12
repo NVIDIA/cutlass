@@ -48,6 +48,7 @@
 * Use 64-bit adds for SM100 MMA descriptor offsets and reduce move instructions for improved code generation.
 * Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
   - Enables launching GEMM on stream with partial SM allocation.
+* Add [Snake](https://github.com/NVIDIA/cutlass/blob/main/test/unit/epilogue/thread/activation.cu#L409) activation functor for EVT.
 * Fix some kernel issues:
   - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
   - Fix CUTLASS clang build issues

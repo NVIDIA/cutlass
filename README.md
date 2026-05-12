@@ -89,6 +89,7 @@ To get started quickly - please refer :
 * Use 64-bit adds for SM100 MMA descriptor offsets and reduce move instructions for improved code generation.
 * Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
   - Enables launching GEMM on stream with partial SM allocation.
+* Add [Snake](https://github.com/NVIDIA/cutlass/blob/main/test/unit/epilogue/thread/activation.cu#L409) activation functor for EVT.
 * Fix some kernel issues:
   - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
   - Fix CUTLASS clang build issues
@@ -97,9 +98,7 @@ To get started quickly - please refer :
   - Remove `PipelineStorage` shadowing in SM100 complex epilogue
   - Fix build issue in SM90 epilogue fusion visitor TMA warpspecialized
 * Fix some profiler issues:
-  - Add missing reference kernels for blockwise GEMM profiler
-* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
-* Optimal code generation with CUDA toolkit versions 13.2.
+  - Add missing reference kernels for blockwise GEMM profiler.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.
