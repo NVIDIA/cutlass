@@ -524,14 +524,17 @@ using std::is_trivially_copyable;
 
 #endif
 
-#if (CUTLASS_CXX17_OR_LATER)
+// Ensure is_unsigned is available (standard in <type_traits>).
+using CUTLASS_STL_NAMESPACE::is_unsigned;
 
-/// std::is_unsigned_v
-using CUTLASS_STL_NAMESPACE::is_integral_v;
-/// std::is_unsigned_v
-using CUTLASS_STL_NAMESPACE::is_unsigned_v;
+// Provide stable, C++11-compatible definitions for is_integral_v and is_unsigned_v.
+// This avoids issues on MSVC/CUDA where CUTLASS_CXX17_OR_LATER is true but the
+// underlying STL implementation does not expose the _v variants.
+template <typename T>
+constexpr bool is_integral_v = is_integral<T>::value;
 
-#endif
+template <typename T>
+constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
 //-----------------------------------------------------------------------------
 // <utility>

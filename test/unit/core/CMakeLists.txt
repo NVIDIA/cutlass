@@ -45,4 +45,5 @@ cutlass_test_unit_add_executable(
   numeric_conversion_subbyte.cu
   fast_numeric_conversion.cu
   functional.cu
+  platform_traits.cpp
   )
