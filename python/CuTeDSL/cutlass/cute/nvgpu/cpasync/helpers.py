@@ -12,7 +12,10 @@
 from typing import Any, Iterator, List, Optional, Tuple, Type, Union, cast
 from typing_extensions import deprecated
 
+from cutlass import const_expr
+from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import (
+    BaseDSL,
     dsl_user_op,
     extract_mlir_attributes,
     extract_mlir_values,
@@ -31,10 +34,14 @@ from ...typing import (
     Tiler,
     Pointer,
     Int16,
+    Int32,
+    Int64,
     Numeric,
     NumericMeta,
     IntTuple,
+    AddressSpace,
 )
+from ... import arch as cute_arch
 from ... import core, atom
 from .copy import (
     CopyBulkTensorTileG2SOp,
@@ -164,6 +171,354 @@ TMAOp = Union[
     CopyBulkTensorIm2ColS2GOp,
     CopyReduceBulkTensorTileS2GOp,
 ]
+
+
+def _check_sm120_tma_load_supported() -> None:
+    BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_120)
+
+
+def _check_pointer_address_space(
+    ptr: Pointer,
+    expected: Tuple[AddressSpace, ...],
+    name: str,
+) -> None:
+    memspace = ptr.memspace
+    if memspace not in expected:
+        expected_names = ", ".join(space.name for space in expected)
+        raise ValueError(
+            f"`{name}` must be in address space {expected_names}, but got {memspace.name}"
+        )
+
+
+def _sm120_tma_ptx(rank: int, *, tile_mode: bool, cache_policy: bool) -> str:
+    tile = ".tile" if tile_mode else ""
+    cache = ".L2::cache_hint" if cache_policy else ""
+    return (
+        f"cp.async.bulk.tensor.{rank}d.shared::cta.global{tile}"
+        f".mbarrier::complete_tx::bytes{cache}"
+    )
+
+
+def _sm120_coord_asm(rank: int) -> str:
+    return "{" + ", ".join(f"${i}" for i in range(2, 2 + rank)) + "}"
+
+
+@dsl_user_op
+def _sm120_issue_tma_load_2d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    _check_sm120_tma_load_supported()
+    fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
+    dst_smem_i32 = dst_smem_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    tma_desc_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    coord0_i32 = Int32(coord0).ir_value(loc=loc, ip=ip)
+    coord1_i32 = Int32(coord1).ir_value(loc=loc, ip=ip)
+    tma_bar_i32 = tma_bar_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    ptx = _sm120_tma_ptx(2, tile_mode=tile_mode, cache_policy=cache_policy is not None)
+    operands = [dst_smem_i32, tma_desc_i64, coord0_i32, coord1_i32, tma_bar_i32]
+    if cache_policy is None:
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(2)}], [$4];"
+        constraints = "r,l,r,r,r"
+    else:
+        operands.append(Int64(cache_policy).ir_value(loc=loc, ip=ip))
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(2)}], [$4], $5;"
+        constraints = "r,l,r,r,r,l"
+    llvm.inline_asm(
+        None,
+        operands,
+        asm,
+        constraints,
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def _sm120_issue_tma_load_3d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    coord2: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    _check_sm120_tma_load_supported()
+    fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
+    dst_smem_i32 = dst_smem_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    tma_desc_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    coord0_i32 = Int32(coord0).ir_value(loc=loc, ip=ip)
+    coord1_i32 = Int32(coord1).ir_value(loc=loc, ip=ip)
+    coord2_i32 = Int32(coord2).ir_value(loc=loc, ip=ip)
+    tma_bar_i32 = tma_bar_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    ptx = _sm120_tma_ptx(3, tile_mode=tile_mode, cache_policy=cache_policy is not None)
+    operands = [
+        dst_smem_i32,
+        tma_desc_i64,
+        coord0_i32,
+        coord1_i32,
+        coord2_i32,
+        tma_bar_i32,
+    ]
+    if cache_policy is None:
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(3)}], [$5];"
+        constraints = "r,l,r,r,r,r"
+    else:
+        operands.append(Int64(cache_policy).ir_value(loc=loc, ip=ip))
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(3)}], [$5], $6;"
+        constraints = "r,l,r,r,r,r,l"
+    llvm.inline_asm(
+        None,
+        operands,
+        asm,
+        constraints,
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def _sm120_issue_tma_load_4d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    coord2: Int32,
+    coord3: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    _check_sm120_tma_load_supported()
+    fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
+    dst_smem_i32 = dst_smem_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    tma_desc_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    coord0_i32 = Int32(coord0).ir_value(loc=loc, ip=ip)
+    coord1_i32 = Int32(coord1).ir_value(loc=loc, ip=ip)
+    coord2_i32 = Int32(coord2).ir_value(loc=loc, ip=ip)
+    coord3_i32 = Int32(coord3).ir_value(loc=loc, ip=ip)
+    tma_bar_i32 = tma_bar_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    ptx = _sm120_tma_ptx(4, tile_mode=tile_mode, cache_policy=cache_policy is not None)
+    operands = [
+        dst_smem_i32,
+        tma_desc_i64,
+        coord0_i32,
+        coord1_i32,
+        coord2_i32,
+        coord3_i32,
+        tma_bar_i32,
+    ]
+    if cache_policy is None:
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(4)}], [$6];"
+        constraints = "r,l,r,r,r,r,r"
+    else:
+        operands.append(Int64(cache_policy).ir_value(loc=loc, ip=ip))
+        asm = f"{ptx} [$0], [$1, {_sm120_coord_asm(4)}], [$6], $7;"
+        constraints = "r,l,r,r,r,r,r,l"
+    llvm.inline_asm(
+        None,
+        operands,
+        asm,
+        constraints,
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sm120_tma_load_2d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    already_elected: bool = False,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Issue a CTA-local SM120 rank-2 TMA load from an external descriptor.
+
+    Coordinates are passed directly to the tensor-map instruction and must match the external descriptor's rank and basis.
+    The destination and barrier pointers must be shared-memory pointers. The descriptor pointer must address
+    global or generic memory containing a 128-byte tensor-map descriptor. This helper issues a
+    ``fence.proxy.tensormap::generic.acquire.gpu`` before the TMA instruction so descriptor bytes written
+    before the call are visible to the async/TMA proxy.
+    """
+    _check_pointer_address_space(dst_smem_ptr, (AddressSpace.smem,), "dst_smem_ptr")
+    _check_pointer_address_space(
+        tma_desc_ptr, (AddressSpace.gmem, AddressSpace.generic), "tma_desc_ptr"
+    )
+    _check_pointer_address_space(tma_bar_ptr, (AddressSpace.smem,), "tma_bar_ptr")
+    if const_expr(already_elected):
+        _sm120_issue_tma_load_2d(
+            dst_smem_ptr,
+            tma_desc_ptr,
+            tma_bar_ptr,
+            coord0,
+            coord1,
+            cache_policy=cache_policy,
+            tile_mode=tile_mode,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        with cute_arch.elect_one(loc=loc, ip=ip):
+            _sm120_issue_tma_load_2d(
+                dst_smem_ptr,
+                tma_desc_ptr,
+                tma_bar_ptr,
+                coord0,
+                coord1,
+                cache_policy=cache_policy,
+                tile_mode=tile_mode,
+                loc=loc,
+                ip=ip,
+            )
+
+
+@dsl_user_op
+def sm120_tma_load_3d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    coord2: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    already_elected: bool = False,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Issue a CTA-local SM120 rank-3 TMA load from an external descriptor.
+
+    Coordinates are passed directly to the tensor-map instruction and must match the external descriptor's rank and basis.
+    The destination and barrier pointers must be shared-memory pointers. The descriptor pointer must address
+    global or generic memory containing a 128-byte tensor-map descriptor. This helper issues a
+    ``fence.proxy.tensormap::generic.acquire.gpu`` before the TMA instruction so descriptor bytes written
+    before the call are visible to the async/TMA proxy.
+    """
+    _check_pointer_address_space(dst_smem_ptr, (AddressSpace.smem,), "dst_smem_ptr")
+    _check_pointer_address_space(
+        tma_desc_ptr, (AddressSpace.gmem, AddressSpace.generic), "tma_desc_ptr"
+    )
+    _check_pointer_address_space(tma_bar_ptr, (AddressSpace.smem,), "tma_bar_ptr")
+    if const_expr(already_elected):
+        _sm120_issue_tma_load_3d(
+            dst_smem_ptr,
+            tma_desc_ptr,
+            tma_bar_ptr,
+            coord0,
+            coord1,
+            coord2,
+            cache_policy=cache_policy,
+            tile_mode=tile_mode,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        with cute_arch.elect_one(loc=loc, ip=ip):
+            _sm120_issue_tma_load_3d(
+                dst_smem_ptr,
+                tma_desc_ptr,
+                tma_bar_ptr,
+                coord0,
+                coord1,
+                coord2,
+                cache_policy=cache_policy,
+                tile_mode=tile_mode,
+                loc=loc,
+                ip=ip,
+            )
+
+
+@dsl_user_op
+def sm120_tma_load_4d(
+    dst_smem_ptr: Pointer,
+    tma_desc_ptr: Pointer,
+    tma_bar_ptr: Pointer,
+    coord0: Int32,
+    coord1: Int32,
+    coord2: Int32,
+    coord3: Int32,
+    *,
+    cache_policy: Optional[Int64] = None,
+    already_elected: bool = False,
+    tile_mode: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Issue a CTA-local SM120 rank-4 TMA load from an external descriptor.
+
+    Coordinates are passed directly to the tensor-map instruction and must match the external descriptor's rank and basis.
+    The destination and barrier pointers must be shared-memory pointers. The descriptor pointer must address
+    global or generic memory containing a 128-byte tensor-map descriptor. This helper issues a
+    ``fence.proxy.tensormap::generic.acquire.gpu`` before the TMA instruction so descriptor bytes written
+    before the call are visible to the async/TMA proxy.
+    """
+    _check_pointer_address_space(dst_smem_ptr, (AddressSpace.smem,), "dst_smem_ptr")
+    _check_pointer_address_space(
+        tma_desc_ptr, (AddressSpace.gmem, AddressSpace.generic), "tma_desc_ptr"
+    )
+    _check_pointer_address_space(tma_bar_ptr, (AddressSpace.smem,), "tma_bar_ptr")
+    if const_expr(already_elected):
+        _sm120_issue_tma_load_4d(
+            dst_smem_ptr,
+            tma_desc_ptr,
+            tma_bar_ptr,
+            coord0,
+            coord1,
+            coord2,
+            coord3,
+            cache_policy=cache_policy,
+            tile_mode=tile_mode,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        with cute_arch.elect_one(loc=loc, ip=ip):
+            _sm120_issue_tma_load_4d(
+                dst_smem_ptr,
+                tma_desc_ptr,
+                tma_bar_ptr,
+                coord0,
+                coord1,
+                coord2,
+                coord3,
+                cache_policy=cache_policy,
+                tile_mode=tile_mode,
+                loc=loc,
+                ip=ip,
+            )
 
 
 @dsl_user_op

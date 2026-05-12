@@ -44,5 +44,8 @@ __all__ = [
     "fence_tma_desc_acquire",
     "cp_fence_tma_desc_release",
     "fence_tma_desc_release",
+    "sm120_tma_load_2d",
+    "sm120_tma_load_3d",
+    "sm120_tma_load_4d",
     "group_bulk_copy_modes",
 ]
