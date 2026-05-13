@@ -18,6 +18,7 @@ from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass._mlir.dialects import llvm
 from cutlass._mlir.dialects.nvvm import ReductionOp as ReductionOp
 from cutlass._mlir import ir
 
@@ -33,6 +34,26 @@ from ..tcgen05.mma import CtaGroup
 # Asynchronous copies
 #
 ####################################################################################################
+
+
+def _fence_tma_desc_acquire(
+    tma_desc_ptr: Pointer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    tma_desc_ptr_i64 = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    llvm.inline_asm(
+        None,
+        [tma_desc_ptr_i64],
+        "fence.proxy.tensormap::generic.acquire.gpu [$0], 128;",
+        "l",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @deprecated(
@@ -270,6 +291,7 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
 
         The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
         using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        When `tma_desc_ptr` is provided, this path emits a tensor-map acquire fence before the copy.
         Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(tma_bar_ptr, Pointer):
@@ -283,6 +305,7 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
             exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
+            _fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -394,6 +417,7 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(Trait):
 
         The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
         using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        When `tma_desc_ptr` is provided, this path emits a tensor-map acquire fence before the copy.
         Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(tma_bar_ptr, Pointer):
@@ -412,6 +436,7 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(Trait):
             exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
+            _fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -527,7 +552,8 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
 
         The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
         provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
-        l2 cache eviction priority.
+        l2 cache eviction priority. When `tma_desc_ptr` is provided, this path emits a tensor-map
+        acquire fence before the copy.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -549,6 +575,7 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
+            _fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -780,7 +807,8 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
 
         The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
         provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
-        l2 cache eviction priority.
+        l2 cache eviction priority. When `tma_desc_ptr` is provided, this path emits a tensor-map
+        acquire fence before the copy.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -797,6 +825,7 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
+            _fence_tma_desc_acquire(tma_desc_ptr, loc=loc, ip=ip)
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -1540,5 +1569,3 @@ class CopyDsmemStoreTrait(Trait):
             ip=ip,
         )
         return val
-
-

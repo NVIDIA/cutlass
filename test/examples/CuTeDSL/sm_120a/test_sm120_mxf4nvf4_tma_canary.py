@@ -161,6 +161,31 @@ def _expected_rank3_fp4_tma_output(torch, src, output_bytes: int):
     return expected
 
 
+def _expected_rank3_fp4_tma_output_from_logical_tile(
+    torch,
+    src,
+    output_bytes: int,
+    *,
+    k_extent: int,
+    major_extent: int,
+    coord_k: int,
+    coord_major: int,
+    coord_l: int = 0,
+):
+    major_stride = k_extent // 2
+    l_stride = major_stride * major_extent
+    payload = torch.empty((8192,), device="cuda", dtype=torch.uint8)
+    for major in range(128):
+        src_base = (
+            coord_l * l_stride
+            + (coord_major + major) * major_stride
+            + coord_k // 2
+        )
+        dst_base = major * 64
+        payload[dst_base : dst_base + 64] = src[src_base : src_base + 64]
+    return _expected_rank3_fp4_tma_output(torch, payload, output_bytes)
+
+
 def _expected_rank4_scale_tma_output(torch, src, output_bytes: int):
     expected = torch.full((output_bytes,), 0xCD, device="cuda", dtype=torch.uint8)
     payload_bytes = src.numel()
@@ -210,6 +235,58 @@ def test_sm120_mxf4nvf4_rank3_external_descriptor_nonzero_coordinate_canary():
     _run_canary(desc, expected, output_bytes, 3, 8192, (0, 0, 1, 0), 16384)
 
 
+def test_sm120_mxf4nvf4_rank3_external_descriptor_nonzero_k_tile_canary():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA device unavailable")
+    src_storage, src = _aligned_u8_tensor(16384, 32)
+    src.copy_(_patterned_u8(torch, src.numel()))
+    try:
+        desc = cutlass.utils.make_sm120_mxf4nvf4_tma_desc_bytes(
+            src.data_ptr(), k_extent=256
+        )
+    except CudaDriverDependencyError as exc:
+        pytest.skip(f"CUDA Driver tensor-map encoder unavailable: {exc}")
+    assert src_storage is not None
+    output_bytes = 17408
+    expected = _expected_rank3_fp4_tma_output_from_logical_tile(
+        torch,
+        src,
+        output_bytes,
+        k_extent=256,
+        major_extent=128,
+        coord_k=128,
+        coord_major=0,
+    )
+    _run_canary(desc, expected, output_bytes, 3, 8192, (128, 0, 0, 0), 16384)
+
+
+def test_sm120_mxf4nvf4_rank3_external_descriptor_nonzero_major_tile_canary():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA device unavailable")
+    src_storage, src = _aligned_u8_tensor(16384, 32)
+    src.copy_(_patterned_u8(torch, src.numel()))
+    try:
+        desc = cutlass.utils.make_sm120_mxf4nvf4_tma_desc_bytes(
+            src.data_ptr(), major_extent=256, box_major_extent=128
+        )
+    except CudaDriverDependencyError as exc:
+        pytest.skip(f"CUDA Driver tensor-map encoder unavailable: {exc}")
+    assert src_storage is not None
+    output_bytes = 17408
+    expected = _expected_rank3_fp4_tma_output_from_logical_tile(
+        torch,
+        src,
+        output_bytes,
+        k_extent=128,
+        major_extent=256,
+        coord_k=0,
+        coord_major=128,
+    )
+    _run_canary(desc, expected, output_bytes, 3, 8192, (0, 128, 0, 0), 16384)
+
+
 def test_sm120_mxf4nvf4_scale_rank4_external_descriptor_tma_canary():
     torch = pytest.importorskip("torch")
     if not torch.cuda.is_available():
@@ -241,6 +318,27 @@ def test_sm120_mxf4nvf4_scale_rank4_external_descriptor_nonzero_coordinate_canar
     assert src_storage is not None
     expected = _expected_rank4_scale_tma_output(torch, expected_src, 2048)
     _run_canary(desc, expected, 2048, 4, 1024, (0, 1, 0, 0), 1024)
+
+
+def test_sm120_mxf4nvf4_scale_rank4_external_descriptor_scale_k_substep_is_view_offset():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA device unavailable")
+    src_storage, src = _aligned_u8_tensor(2048, 16)
+    src.copy_(_patterned_u8(torch, src.numel()))
+    # The external scale descriptor transfers the full logical scale-K box.
+    # K64 substep selection is handled by the SMEM scale-fragment view, not by
+    # issuing a second descriptor coordinate inside the scale-K box.
+    expected_src = src[:1024].clone()
+    try:
+        desc = cutlass.utils.make_sm120_mxf4nvf4_scale_tma_desc_bytes(
+            src.data_ptr(), scale_k_extent=16, logical_scale_k_extent=8
+        )
+    except CudaDriverDependencyError as exc:
+        pytest.skip(f"CUDA Driver tensor-map encoder unavailable: {exc}")
+    assert src_storage is not None
+    expected = _expected_rank4_scale_tma_output(torch, expected_src, 2048)
+    _run_canary(desc, expected, 2048, 4, 1024, (0, 8, 0, 0), 1024)
 
 
 def test_sm120_mxf4nvf4_driver_descriptor_path_repro():

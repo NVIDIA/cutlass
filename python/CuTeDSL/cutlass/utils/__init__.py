@@ -122,6 +122,7 @@ from . import distributed
 
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
+from . import blackwell_geforce_helpers as sm120
 from .print_latex import print_latex, print_latex_tv
 
 from .tensor_helpers import (
@@ -189,6 +190,7 @@ __all__ = [
     "sm90_make_trivial_tiled_mma",
     "sm90",
     "sm100",
+    "sm120",
     "gemm",
     "ClcDynamicPersistentTileSchedulerParams",
     "ClcDynamicPersistentTileScheduler",

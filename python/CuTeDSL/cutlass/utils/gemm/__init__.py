@@ -10,7 +10,9 @@
 # is strictly prohibited.
 
 from . import sm100
+from . import sm120
 
 __all__ = [
     "sm100",
+    "sm120",
 ]

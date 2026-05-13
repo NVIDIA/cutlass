@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import inspect
+from functools import lru_cache
 from typing import Any, Iterator, List, Optional, Tuple, Type, Union, cast
 from typing_extensions import deprecated
 
@@ -201,6 +203,19 @@ def _sm120_tma_ptx(rank: int, *, tile_mode: bool, cache_policy: bool) -> str:
 
 def _sm120_coord_asm(rank: int) -> str:
     return "{" + ", ".join(f"${i}" for i in range(2, 2 + rank)) + "}"
+
+
+@lru_cache(maxsize=1)
+def _atom_tma_partition_gmem_keyword() -> str:
+    params = inspect.signature(_cute_nvgpu_ir.atom_tma_partition).parameters
+    if "gmem_tensor" in params:
+        return "gmem_tensor"
+    if "target_tensors" in params:
+        return "target_tensors"
+    raise TypeError(
+        "atom_tma_partition binding exposes neither `gmem_tensor` nor "
+        "`target_tensors`"
+    )
 
 
 @dsl_user_op
@@ -936,15 +951,27 @@ def tma_partition(
     Tiles the GMEM and SMEM tensors for the provided TMA Copy Atom.
     """
     cta_coord_val = core._pack_coord(cta_coord, loc=loc, ip=ip)
-    s, d = _cute_nvgpu_ir.atom_tma_partition(
-        atom._trait.value,
-        cta_coord=cta_coord_val,
-        cta_layout=cta_layout,
-        smem_tensor=cast(Any, smem_tensor).value,
-        target_tensors=[cast(Any, gmem_tensor).value],
-        loc=loc,
-        ip=ip,
-    )
+    gmem_keyword = _atom_tma_partition_gmem_keyword()
+    if gmem_keyword == "gmem_tensor":
+        s, d = _cute_nvgpu_ir.atom_tma_partition(
+            atom._trait.value,
+            cta_coord=cta_coord_val,
+            cta_layout=cta_layout,
+            smem_tensor=cast(Any, smem_tensor).value,
+            gmem_tensor=cast(Any, gmem_tensor).value,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        s, d = _cute_nvgpu_ir.atom_tma_partition(
+            atom._trait.value,
+            cta_coord=cta_coord_val,
+            cta_layout=cta_layout,
+            smem_tensor=cast(Any, smem_tensor).value,
+            target_tensors=[cast(Any, gmem_tensor).value],
+            loc=loc,
+            ip=ip,
+        )
     return s, d
 
 
