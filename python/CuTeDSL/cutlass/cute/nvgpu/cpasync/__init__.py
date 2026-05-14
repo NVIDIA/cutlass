@@ -37,6 +37,7 @@ __all__ = [
     "TmaInfo",
     "make_tiled_tma_atom",
     "tma_partition",
+    "tma_partition_s2g_tile",
     "create_tma_multicast_mask",
     "prefetch_descriptor",
     "copy_tensormap",

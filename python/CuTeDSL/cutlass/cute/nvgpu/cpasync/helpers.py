@@ -175,6 +175,22 @@ TMAOp = Union[
 ]
 
 
+_S2G_TMA_PARTITION_ERROR = (
+    "S2G TMA store partition failed. For tiled S2G TMA store atoms, the "
+    "GMEM tensor passed to cpasync.tma_partition should be derived from the "
+    "TMA tensor returned by cpasync.make_tiled_tma_atom(...), not from a "
+    "manually tiled view of the original GMEM tensor. If the returned TMA "
+    "tensor was already used, this is likely an internal verifier/lowering "
+    "issue for the S2G TMA store partition path."
+)
+
+
+def _is_s2g_tma_atom(copy_atom: atom.CopyAtom) -> bool:
+    return isinstance(
+        copy_atom.op, (CopyBulkTensorTileS2GOp, CopyReduceBulkTensorTileS2GOp)
+    )
+
+
 def _check_sm120_tma_load_supported() -> None:
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_120)
 
@@ -802,6 +818,27 @@ def make_tiled_tma_atom(
        TMA unit. TMA tensors contain basis stride elements that enable their associated layout to \
        compute coordinates. Like other CuTe tensors, TMA tensors can be partitioned.
 
+    For S2G TMA stores, partition the returned TMA tensor instead of a manually
+    tiled view of the original GMEM tensor. The returned tensor carries the TMA
+    basis layout required by the non-exec tiled TMA store atom. For example::
+
+        tma_atom_d, tma_tensor_d = cpasync.make_tiled_tma_atom(
+            cpasync.CopyBulkTensorTileS2GOp(), d, epi_smem_layout, d_cta_tiler
+        )
+        tD_mn = tma_tensor_d[None, None, batch_idx]
+        tD_tile = cute.local_tile(tD_mn, tile_shape_mn, tile_coord_mn)
+        tD_epi = cute.flat_divide(tD_tile, epi_tile)
+        tDsD, tDgD = cpasync.tma_partition(
+            tma_atom_d,
+            0,
+            cute.make_layout(1),
+            cute.group_modes(sD, 0, 2),
+            cute.group_modes(tD_epi, 0, 2),
+        )
+
+    :func:`tma_partition_s2g_tile` wraps this recipe for common epilogue-store
+    tiles.
+
     :param op:            The TMA Copy Operation to construct an Atom
     :type op:             TMAOp
     :param gmem_tensor:   The GMEM tensor involved in the Copy
@@ -952,27 +989,85 @@ def tma_partition(
     """
     cta_coord_val = core._pack_coord(cta_coord, loc=loc, ip=ip)
     gmem_keyword = _atom_tma_partition_gmem_keyword()
-    if gmem_keyword == "gmem_tensor":
-        s, d = _cute_nvgpu_ir.atom_tma_partition(
-            atom._trait.value,
-            cta_coord=cta_coord_val,
-            cta_layout=cta_layout,
-            smem_tensor=cast(Any, smem_tensor).value,
-            gmem_tensor=cast(Any, gmem_tensor).value,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        s, d = _cute_nvgpu_ir.atom_tma_partition(
-            atom._trait.value,
-            cta_coord=cta_coord_val,
-            cta_layout=cta_layout,
-            smem_tensor=cast(Any, smem_tensor).value,
-            target_tensors=[cast(Any, gmem_tensor).value],
-            loc=loc,
-            ip=ip,
-        )
+    try:
+        if gmem_keyword == "gmem_tensor":
+            s, d = _cute_nvgpu_ir.atom_tma_partition(
+                atom._trait.value,
+                cta_coord=cta_coord_val,
+                cta_layout=cta_layout,
+                smem_tensor=cast(Any, smem_tensor).value,
+                gmem_tensor=cast(Any, gmem_tensor).value,
+                loc=loc,
+                ip=ip,
+            )
+        else:
+            s, d = _cute_nvgpu_ir.atom_tma_partition(
+                atom._trait.value,
+                cta_coord=cta_coord_val,
+                cta_layout=cta_layout,
+                smem_tensor=cast(Any, smem_tensor).value,
+                target_tensors=[cast(Any, gmem_tensor).value],
+                loc=loc,
+                ip=ip,
+            )
+    except ValueError as exc:
+        if _is_s2g_tma_atom(atom):
+            raise ValueError(_S2G_TMA_PARTITION_ERROR) from exc
+        raise
     return s, d
+
+
+@dsl_user_op
+def tma_partition_s2g_tile(
+    tma_atom: atom.CopyAtom,
+    tma_tensor: Tensor,
+    smem_tensor: Tensor,
+    tile_shape_mn: Tiler,
+    epi_tile: Tiler,
+    tile_coord_mnkl: Coord,
+    *,
+    cta_coord: Coord = 0,
+    cta_layout: Optional[Layout] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Tensor, Tensor]:
+    """
+    Partition one rank-3 MN/L S2G TMA epilogue-store tile.
+
+    ``tma_tensor`` must be the tensor returned by
+    :func:`make_tiled_tma_atom` for ``tma_atom``. This helper intentionally
+    derives the GMEM partition from that tensor, not from the original GMEM
+    output tensor, so the partition carries the TMA basis layout required by
+    non-exec tiled TMA store atoms. ``tile_coord_mnkl`` follows the GEMM
+    epilogue tile-coordinate convention; this helper uses its M/N entries to
+    select the tile and its L entry to select the rank-3 output batch.
+    """
+    if not _is_s2g_tma_atom(tma_atom):
+        raise ValueError(
+            "tma_partition_s2g_tile expects a CopyBulkTensorTileS2GOp or "
+            "CopyReduceBulkTensorTileS2GOp atom"
+        )
+    if core.rank(tile_coord_mnkl) < 4:
+        raise ValueError(
+            "tile_coord_mnkl must have at least four modes (M, N, K, L), "
+            f"but got {core.pretty_str(tile_coord_mnkl)}"
+        )
+    tD_mn = tma_tensor[None, None, tile_coord_mnkl[3]]
+    tD_tile = core.local_tile(
+        tD_mn, tile_shape_mn, tile_coord_mnkl[:2], loc=loc, ip=ip
+    )
+    tD_epi = core.flat_divide(tD_tile, epi_tile, loc=loc, ip=ip)
+    if cta_layout is None:
+        cta_layout = core.make_layout(1, loc=loc, ip=ip)
+    return tma_partition(
+        tma_atom,
+        cta_coord,
+        cta_layout,
+        core.group_modes(smem_tensor, 0, 2, loc=loc, ip=ip),
+        core.group_modes(tD_epi, 0, 2, loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
