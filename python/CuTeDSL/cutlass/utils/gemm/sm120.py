@@ -51,13 +51,17 @@ def _check_default_tile(tile_mn: int, tile_k: int, sf_vec_size: int) -> None:
         raise ValueError("SM120 MXF4NVF4 helpers currently support sf_vec_size=16")
 
 
-def _require_zero_scale_major_offset(name: str, value: cutlass.Int32 | int) -> None:
+def _require_zero_major_offset(name: str, value: cutlass.Int32 | int) -> None:
     raw_value = getattr(value, "value", value)
     if raw_value != 0:
         raise ValueError(
             f"`{name}` is not supported by this helper; encode the global major "
             "tile in the TMA descriptor coordinates and stage the local 128-major tile"
         )
+
+
+def _require_zero_scale_major_offset(name: str, value: cutlass.Int32 | int) -> None:
+    _require_zero_major_offset(name, value)
 
 
 def mxf4nvf4_ab_tma_tx_bytes(tile_mn: int = 128, tile_k: int = 128) -> int:
@@ -181,6 +185,121 @@ def make_mxf4nvf4_ab_tma_physical_layout_staged(
     )
 
 
+@dsl_user_op
+def make_mxf4nvf4_consumer_smem_layout_atom_ab(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.ComposedLayout:
+    """Return the SM120 packed-FP4 consumer SMEM atom layout.
+
+    This mirrors the layout atom selected by the 79a C++ collective:
+    `Sw<2,4,3> o smem_ptr[4b] o (_8,_128):(_128,_1)`.
+    """
+    return cute.make_composed_layout(
+        cute.make_swizzle(2, 4, 3, loc=loc, ip=ip),
+        0,
+        cute.make_layout((8, 128), stride=(128, 1), loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_a_consumer_smem_layout_staged(
+    major_extent: int = 128,
+    tile_k: int = 128,
+    num_stages: int = 1,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.ComposedLayout:
+    """Return the staged 79a-style A consumer SMEM layout."""
+    _check_default_tile(major_extent, tile_k, MXF4NVF4_SCALE_VEC_SIZE)
+    _check_positive("num_stages", num_stages)
+    return cute.tile_to_shape(
+        make_mxf4nvf4_consumer_smem_layout_atom_ab(loc=loc, ip=ip),
+        (major_extent, tile_k, num_stages),
+        (0, 1, 2),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_b_consumer_smem_layout_staged(
+    major_extent: int = 128,
+    tile_k: int = 128,
+    num_stages: int = 1,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.ComposedLayout:
+    """Return the staged 79a-style B consumer SMEM layout."""
+    _check_default_tile(major_extent, tile_k, MXF4NVF4_SCALE_VEC_SIZE)
+    _check_positive("num_stages", num_stages)
+    return cute.tile_to_shape(
+        make_mxf4nvf4_consumer_smem_layout_atom_ab(loc=loc, ip=ip),
+        (major_extent, tile_k, num_stages),
+        (0, 1, 2),
+        loc=loc,
+        ip=ip,
+    )
+
+
+def make_mxf4nvf4_ab_consumer_smem_views(
+    smem: SmemAllocator,
+    *,
+    num_stages: int = 1,
+    tile_m: int = 128,
+    tile_n: int = 128,
+    tile_k: int = 128,
+) -> Tuple[cute.Tensor, cute.Tensor]:
+    """Allocate A/B SMEM views for the 79a-style consumer LDSM path."""
+    layout_a = make_mxf4nvf4_a_consumer_smem_layout_staged(
+        tile_m, tile_k, num_stages
+    )
+    layout_b = make_mxf4nvf4_b_consumer_smem_layout_staged(
+        tile_n, tile_k, num_stages
+    )
+    return (
+        smem.allocate_tensor(cutlass.Float4E2M1FN, layout_a, byte_alignment=128),
+        smem.allocate_tensor(cutlass.Float4E2M1FN, layout_b, byte_alignment=128),
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_ab_consumer_microtile_views(
+    sA_consumer: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    m_atom: cutlass.Int32 | int = 0,
+    n_atom: cutlass.Int32 | int = 0,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[cute.Tensor, cute.Tensor]:
+    """Return local 16x8 MMA microtile views from a staged CTA consumer tile.
+
+    Global CTA M/N selection belongs in the tensor-map descriptor coordinates.
+    This helper only selects the local output atom within the already-staged
+    128x128 CTA tile.
+    """
+    return (
+        cute.domain_offset(
+            (m_atom * MXF4NVF4_MMA_SHAPE_MNK[0], 0, 0),
+            sA_consumer,
+            loc=loc,
+            ip=ip,
+        ),
+        cute.domain_offset(
+            (n_atom * MXF4NVF4_MMA_SHAPE_MNK[1], 0, 0),
+            sB_consumer,
+            loc=loc,
+            ip=ip,
+        ),
+    )
+
+
 def make_mxf4nvf4_smem_layout_staged(
     major_extent: int = 128,
     tile_k: int = 128,
@@ -228,8 +347,9 @@ def make_mxf4nvf4_ab_smem_views(
     """Allocate A/B TMA physical storage views.
 
     The returned LDSM views are compatibility aliases of the physical views.
-    New kernels should use `allocate_mxf4nvf4_ldsm_scratch()` and stage from
-    TMA physical storage into scratch before loading fragments.
+    New kernels should stage from TMA physical storage into the SM120 consumer
+    layout with `stage_mxf4nvf4_ab_tma_physical_to_consumer_smem()` before
+    loading fragments.
     """
     layout_a = make_mxf4nvf4_ab_tma_physical_layout_staged(tile_m, tile_k, num_stages)
     layout_b = make_mxf4nvf4_ab_tma_physical_layout_staged(tile_n, tile_k, num_stages)
@@ -545,6 +665,203 @@ def make_mxf4nvf4_ldsm_copy_atom(
 
 
 @dsl_user_op
+def make_mxf4nvf4_ab_smem_copy_atoms(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[cute.CopyAtom, cute.CopyAtom]:
+    """Return the non-transposed A/B LDSM copy atoms used by the C++ path."""
+    return (
+        make_mxf4nvf4_ldsm_copy_atom(
+            transpose=False, dtype=cutlass.Float4E2M1FN, loc=loc, ip=ip
+        ),
+        make_mxf4nvf4_ldsm_copy_atom(
+            transpose=False, dtype=cutlass.Float4E2M1FN, loc=loc, ip=ip
+        ),
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_ab_ldsm_copy_views_from_consumer_smem(
+    tiled_mma: cute.TiledMma,
+    sA_consumer: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    a_frag: cute.Tensor,
+    b_frag: cute.Tensor,
+    lane_idx: cutlass.Int32,
+    *,
+    m_atom: cutlass.Int32 | int = 0,
+    n_atom: cutlass.Int32 | int = 0,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+):
+    """Return 79a-style A/B tiled-copy views from consumer SMEM.
+
+    Input tensors must use the consumer SMEM layouts produced by
+    `make_mxf4nvf4_ab_consumer_smem_views()` or the corresponding layout
+    helpers. Do not pass raw external-TMA physical SMEM to this helper.
+    `lane_idx` is the warp-local lane index, not the CTA thread index.
+    """
+    sA_consumer, sB_consumer = make_mxf4nvf4_ab_consumer_microtile_views(
+        sA_consumer,
+        sB_consumer,
+        m_atom=m_atom,
+        n_atom=n_atom,
+        loc=loc,
+        ip=ip,
+    )
+    copy_atom_a, copy_atom_b = make_mxf4nvf4_ab_smem_copy_atoms(loc=loc, ip=ip)
+    tiled_copy_a = cute.make_tiled_copy_A(copy_atom_a, tiled_mma, loc=loc, ip=ip)
+    tiled_copy_b = cute.make_tiled_copy_B(copy_atom_b, tiled_mma, loc=loc, ip=ip)
+    thr_copy_a = tiled_copy_a.get_slice(lane_idx)
+    thr_copy_b = tiled_copy_b.get_slice(lane_idx)
+    sA_src = cute.as_position_independent_swizzle_tensor(
+        sA_consumer, loc=loc, ip=ip
+    )
+    sB_src = cute.as_position_independent_swizzle_tensor(
+        sB_consumer, loc=loc, ip=ip
+    )
+    tCsA = thr_copy_a.partition_S(sA_src, loc=loc, ip=ip)
+    tCsB = thr_copy_b.partition_S(sB_src, loc=loc, ip=ip)
+    tCrA = thr_copy_a.retile_D(a_frag, loc=loc, ip=ip)
+    tCrB = thr_copy_b.retile_D(b_frag, loc=loc, ip=ip)
+    return tiled_copy_a, tCsA, tCrA, tiled_copy_b, tCsB, tCrB
+
+
+@dsl_user_op
+def make_mxf4nvf4_ab_fragments_from_consumer_smem(
+    tiled_mma: cute.TiledMma,
+    sA_consumer: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    lane_idx: cutlass.Int32,
+    *,
+    m_atom: cutlass.Int32 | int = 0,
+    n_atom: cutlass.Int32 | int = 0,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[cute.Tensor, cute.Tensor]:
+    """Allocate A/B fragments for one local output atom.
+
+    `lane_idx` is the warp-local lane index. Use `m_atom`/`n_atom` to select
+    the local 16x8 atom inside the staged 128x128 CTA tile.
+    """
+    sA_consumer, sB_consumer = make_mxf4nvf4_ab_consumer_microtile_views(
+        sA_consumer,
+        sB_consumer,
+        m_atom=m_atom,
+        n_atom=n_atom,
+        loc=loc,
+        ip=ip,
+    )
+    thread_mma = tiled_mma.get_slice(lane_idx)
+    tCsA_mma = thread_mma.partition_A(sA_consumer, loc=loc, ip=ip)
+    tCsB_mma = thread_mma.partition_B(sB_consumer, loc=loc, ip=ip)
+    return (
+        tiled_mma.make_fragment_A(tCsA_mma[None, None, None, 0], loc=loc, ip=ip),
+        tiled_mma.make_fragment_B(tCsB_mma[None, None, None, 0], loc=loc, ip=ip),
+    )
+
+
+@dsl_user_op
+def shift_mxf4nvf4_post_ldsm_fp4_fragment(
+    fragment: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Validate the FP4 post-LDSM transform point for MXF4NVF4 MMA.
+
+    The C++ path applies an explicit nibble shift after its packed LDSM copy.
+    Python CuTe's typed `Float4E2M1FN` LDSM copy already materializes
+    MMA-ready fragments, so this hook is intentionally a no-op after dtype
+    validation. Keeping the hook explicit makes the consumer path match the C++
+    mainloop structure without corrupting the Python fragment encoding.
+    """
+    if fragment.element_type is not cutlass.Float4E2M1FN:
+        raise TypeError(
+            "SM120 MXF4NVF4 post-LDSM shift expects a Float4E2M1FN fragment, "
+            f"got {fragment.element_type}"
+        )
+
+
+@dsl_user_op
+def fp4_shift_mxf4nvf4_a(
+    fragment: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Apply the A-fragment FP4 post-LDSM shift."""
+    shift_mxf4nvf4_post_ldsm_fp4_fragment(fragment, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def fp4_shift_mxf4nvf4_b(
+    fragment: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Apply the B-fragment FP4 post-LDSM shift."""
+    shift_mxf4nvf4_post_ldsm_fp4_fragment(fragment, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def load_mxf4nvf4_ab_fragments_from_consumer_smem(
+    tiled_mma: cute.TiledMma,
+    sA_consumer: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    a_frag: cute.Tensor,
+    b_frag: cute.Tensor,
+    lane_idx: cutlass.Int32,
+    k_block_idx: int,
+    consumer_stage_idx: int = 0,
+    *,
+    m_atom: cutlass.Int32 | int = 0,
+    n_atom: cutlass.Int32 | int = 0,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Load one K64 A/B block through the 79a-style consumer copy path.
+
+    `lane_idx` is the warp-local lane index. Use `m_atom`/`n_atom` to select
+    the local 16x8 atom inside the staged 128x128 CTA tile.
+    """
+    tiled_copy_a, tCsA, tCrA, tiled_copy_b, tCsB, tCrB = (
+        make_mxf4nvf4_ab_ldsm_copy_views_from_consumer_smem(
+            tiled_mma,
+            sA_consumer,
+            sB_consumer,
+            a_frag,
+            b_frag,
+            lane_idx,
+            m_atom=m_atom,
+            n_atom=n_atom,
+            loc=loc,
+            ip=ip,
+        )
+    )
+    tCsA_stage = tCsA[(None, None, None, consumer_stage_idx)]
+    tCsB_stage = tCsB[(None, None, None, consumer_stage_idx)]
+    cute.copy(
+        tiled_copy_a,
+        tCsA_stage[(None, None, k_block_idx)],
+        tCrA[(None, None, k_block_idx)],
+        loc=loc,
+        ip=ip,
+    )
+    cute.copy(
+        tiled_copy_b,
+        tCsB_stage[(None, None, k_block_idx)],
+        tCrB[(None, None, k_block_idx)],
+        loc=loc,
+        ip=ip,
+    )
+    fp4_shift_mxf4nvf4_a(tCrA[(None, None, k_block_idx)], loc=loc, ip=ip)
+    fp4_shift_mxf4nvf4_b(tCrB[(None, None, k_block_idx)], loc=loc, ip=ip)
+
+
+@dsl_user_op
 def make_mxf4nvf4_ab_ldsm_copy_views(
     tiled_mma: cute.TiledMma,
     sA_ldsm: cute.Tensor,
@@ -558,12 +875,13 @@ def make_mxf4nvf4_ab_ldsm_copy_views(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ):
-    """Return packed-LDSM source views and destination register fragments.
+    """Return compatibility packed-LDSM source views and register fragments.
 
-    The SM120 MXF4NVF4 consumer path uses packed FP4 bytes in SMEM but the
-    hardware load is a 16-bit `ldmatrix.x4` operation. This helper keeps the
-    public call site in CuTe-style terms while the paired load helper owns the
-    exact scratch mapping and inline instruction form.
+    This is the older manual inline-LDSM path. New code should use
+    `make_mxf4nvf4_ab_ldsm_copy_views_from_consumer_smem()` and
+    `load_mxf4nvf4_ab_fragments_from_consumer_smem()`, which mirror the C++
+    tiled-copy consumer contract. This compatibility helper remains available
+    for existing internal canaries and backward compatibility.
     """
     lane_row = tidx % 16
     lane_smem_offset = lane_row * 16
@@ -662,6 +980,112 @@ def stage_mxf4nvf4_b_tma_physical_to_ldsm_scratch(
         yield_out()
 
 
+def stage_mxf4nvf4_a_tma_physical_to_consumer_smem(
+    sA_tma_physical: cute.Tensor,
+    sA_consumer: cute.Tensor,
+    *,
+    a_major_tile: cutlass.Int32 = cutlass.Int32(0),
+    consumer_stage_idx: int = 0,
+    lane_idx: Optional[cutlass.Int32] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Stage one physical TMA A tile into the SM120 consumer SMEM layout.
+
+    `consumer_stage_idx` selects the destination consumer stage. Pass a
+    physical-stage view as `sA_tma_physical` when staging from a nonzero
+    physical stage.
+    """
+    _require_zero_major_offset("a_major_tile", a_major_tile)
+    loop_start = lane_idx if lane_idx is not None else 0
+    loop_step = 32 if lane_idx is not None else 1
+    src = cute.make_tensor(
+        sA_tma_physical.iterator, cute.make_layout(MXF4NVF4_AB_SMEM_BYTES)
+    )
+    dst = cute.recast_tensor(sA_consumer, cutlass.Uint8, loc=loc, ip=ip)
+    for i in for_generate(loop_start, MXF4NVF4_AB_TMA_BYTES, loop_step, loc=loc, ip=ip):
+        major = i // (MXF4NVF4_CTA_SHAPE_MNK[2] // 2)
+        k_byte = i % (MXF4NVF4_CTA_SHAPE_MNK[2] // 2)
+        payload_byte = major * (MXF4NVF4_CTA_SHAPE_MNK[2] // 2) + k_byte
+        payload_chunk = payload_byte // 8
+        payload_byte_in_chunk = payload_byte % 8
+        physical_chunk = payload_chunk ^ ((payload_chunk >> 3) & 0x7)
+        dst[(major, k_byte, consumer_stage_idx)] = src[
+            physical_chunk * 16 + payload_byte_in_chunk
+        ]
+        yield_out()
+
+
+def stage_mxf4nvf4_b_tma_physical_to_consumer_smem(
+    sB_tma_physical: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    *,
+    b_major_tile: cutlass.Int32 = cutlass.Int32(0),
+    consumer_stage_idx: int = 0,
+    lane_idx: Optional[cutlass.Int32] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Stage one physical TMA B tile into the SM120 consumer SMEM layout.
+
+    `consumer_stage_idx` selects the destination consumer stage. Pass a
+    physical-stage view as `sB_tma_physical` when staging from a nonzero
+    physical stage.
+    """
+    _require_zero_major_offset("b_major_tile", b_major_tile)
+    loop_start = lane_idx if lane_idx is not None else 0
+    loop_step = 32 if lane_idx is not None else 1
+    src = cute.make_tensor(
+        sB_tma_physical.iterator, cute.make_layout(MXF4NVF4_AB_SMEM_BYTES)
+    )
+    dst = cute.recast_tensor(sB_consumer, cutlass.Uint8, loc=loc, ip=ip)
+    for i in for_generate(loop_start, MXF4NVF4_AB_TMA_BYTES, loop_step, loc=loc, ip=ip):
+        major = i // (MXF4NVF4_CTA_SHAPE_MNK[2] // 2)
+        k_byte = i % (MXF4NVF4_CTA_SHAPE_MNK[2] // 2)
+        payload_byte = major * (MXF4NVF4_CTA_SHAPE_MNK[2] // 2) + k_byte
+        payload_chunk = payload_byte // 8
+        payload_byte_in_chunk = payload_byte % 8
+        physical_chunk = payload_chunk ^ ((payload_chunk >> 3) & 0x7)
+        dst[(major, k_byte, consumer_stage_idx)] = src[
+            physical_chunk * 16 + payload_byte_in_chunk
+        ]
+        yield_out()
+
+
+def stage_mxf4nvf4_ab_tma_physical_to_consumer_smem(
+    sA_tma_physical: cute.Tensor,
+    sB_tma_physical: cute.Tensor,
+    sA_consumer: cute.Tensor,
+    sB_consumer: cute.Tensor,
+    *,
+    a_major_tile: cutlass.Int32 = cutlass.Int32(0),
+    b_major_tile: cutlass.Int32 = cutlass.Int32(0),
+    consumer_stage_idx: int = 0,
+    lane_idx: Optional[cutlass.Int32] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Stage physical TMA A/B tiles into the SM120 consumer SMEM layouts."""
+    stage_mxf4nvf4_a_tma_physical_to_consumer_smem(
+        sA_tma_physical,
+        sA_consumer,
+        a_major_tile=a_major_tile,
+        consumer_stage_idx=consumer_stage_idx,
+        lane_idx=lane_idx,
+        loc=loc,
+        ip=ip,
+    )
+    stage_mxf4nvf4_b_tma_physical_to_consumer_smem(
+        sB_tma_physical,
+        sB_consumer,
+        b_major_tile=b_major_tile,
+        consumer_stage_idx=consumer_stage_idx,
+        lane_idx=lane_idx,
+        loc=loc,
+        ip=ip,
+    )
+
+
 def stage_mxf4nvf4_ab_tma_physical_to_ldsm_scratch(
     sA_tma_physical: cute.Tensor,
     sB_tma_physical: cute.Tensor,
@@ -694,7 +1118,6 @@ def stage_mxf4nvf4_ab_tma_physical_to_ldsm_scratch(
         loc=loc,
         ip=ip,
     )
-
 
 @dsl_user_op
 def _ldmatrix_x4_shared_b16(
@@ -740,7 +1163,7 @@ def load_mxf4nvf4_packed_ldsm_kblock_fragments(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
-    """Load one K64 block of packed A/B fragments from SMEM to registers."""
+    """Compatibility manual inline-LDSM load for one K64 A/B block."""
     a_src = tCsA[(None, k_block_idx * 64, stage_idx)]
     b_src = tCsB[(None, k_block_idx * 64, stage_idx)]
     _ldmatrix_x4_shared_b16(a_src, tCrA, transpose=False, loc=loc, ip=ip)
@@ -765,7 +1188,11 @@ def load_mxf4nvf4_ldsm_scratch_fragments(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
-    """Load A/B fragments from one staged K64 LDSM scratch tile."""
+    """Compatibility manual inline-LDSM load from staged scratch.
+
+    New kernels should prefer `load_mxf4nvf4_ab_fragments_from_consumer_smem()`
+    once their A/B data is in the SM120 consumer SMEM layout.
+    """
     copy_a, tCsA, tCrA, copy_b, tCsB, tCrB = (
         make_mxf4nvf4_ab_ldsm_copy_views_from_scratch(
             tiled_mma,
@@ -1067,20 +1494,23 @@ __all__ = [
     "MXF4NVF4_SCALE_TMA_BYTES",
     "MXF4NVF4_SCALE_VEC_SIZE",
     "MXF4NVF4_TMA_DESC_BYTES",
-    "allocate_mxf4nvf4_ldsm_scratch",
     "allocate_mxf4nvf4_scale_fragment_scratch",
-    "load_mxf4nvf4_ldsm_scratch_fragments",
-    "load_mxf4nvf4_packed_ldsm_kblock_fragments",
+    "fp4_shift_mxf4nvf4_a",
+    "fp4_shift_mxf4nvf4_b",
+    "load_mxf4nvf4_ab_fragments_from_consumer_smem",
     "load_mxf4nvf4_sfa_fragment",
     "load_mxf4nvf4_sfb_fragment",
-    "make_mxf4nvf4_ab_ldsm_copy_views",
-    "make_mxf4nvf4_ab_ldsm_copy_views_from_scratch",
-    "make_mxf4nvf4_ab_ldsm_scratch_layout",
+    "make_mxf4nvf4_a_consumer_smem_layout_staged",
+    "make_mxf4nvf4_ab_consumer_microtile_views",
+    "make_mxf4nvf4_ab_consumer_smem_views",
+    "make_mxf4nvf4_ab_fragments_from_consumer_smem",
+    "make_mxf4nvf4_ab_ldsm_copy_views_from_consumer_smem",
     "make_mxf4nvf4_ab_smem_views",
+    "make_mxf4nvf4_ab_smem_copy_atoms",
     "make_mxf4nvf4_ab_tma_physical_layout_staged",
+    "make_mxf4nvf4_b_consumer_smem_layout_staged",
+    "make_mxf4nvf4_consumer_smem_layout_atom_ab",
     "make_mxf4nvf4_external_tma_desc_ptr",
-    "make_mxf4nvf4_ldsm_copy_atom",
-    "make_mxf4nvf4_ldsm_scratch_views",
     "make_mxf4nvf4_scale_fragment_scratch_layout",
     "make_mxf4nvf4_scale_fragment_scratch_views",
     "make_mxf4nvf4_scale_fragment_views_from_compact_smem",
@@ -1102,9 +1532,10 @@ __all__ = [
     "mxf4nvf4_ab_tma_tx_bytes",
     "mxf4nvf4_full_tma_tx_bytes",
     "mxf4nvf4_scale_tma_tx_bytes",
-    "stage_mxf4nvf4_a_tma_physical_to_ldsm_scratch",
-    "stage_mxf4nvf4_ab_tma_physical_to_ldsm_scratch",
-    "stage_mxf4nvf4_b_tma_physical_to_ldsm_scratch",
+    "shift_mxf4nvf4_post_ldsm_fp4_fragment",
+    "stage_mxf4nvf4_a_tma_physical_to_consumer_smem",
+    "stage_mxf4nvf4_ab_tma_physical_to_consumer_smem",
+    "stage_mxf4nvf4_b_tma_physical_to_consumer_smem",
     "stage_mxf4nvf4_scale_tma_physical_to_fragment_scratch",
     "stage_mxf4nvf4_sfa_tma_physical_to_fragment_scratch",
     "stage_mxf4nvf4_sfb_tma_physical_to_fragment_scratch",

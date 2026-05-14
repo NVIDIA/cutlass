@@ -914,6 +914,22 @@ class TiledCopy(CopyAtom):
             ip=ip,
         )
 
+    @dsl_user_op
+    def retile_D(
+        self,
+        src: Any,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Any:
+        """Return the destination-retiled copy view.
+
+        For the SM120 MXF4NVF4 LDSM tiled-copy path, Python CuTe's existing
+        `retile()` lowering is the verified destination-retile operation used
+        by the consumer fragment loader.
+        """
+        return self.retile(src, loc=loc, ip=ip)
+
 
 class ThrCopy(TiledCopy):
     """

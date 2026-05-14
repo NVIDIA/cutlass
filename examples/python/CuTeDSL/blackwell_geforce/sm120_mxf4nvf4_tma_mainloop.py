@@ -31,14 +31,10 @@ def _mainloop_kernel(
     out: cute.Tensor,
 ):
     tidx, _, _ = cute.arch.thread_idx()
+    lane_idx = tidx % 32
     smem = cutlass.utils.SmemAllocator()
     sA_tma, _, sB_tma, _ = sm120.make_mxf4nvf4_ab_smem_views(smem)
-    sA_ldsm_scratch_all, sB_ldsm_scratch_all = sm120.allocate_mxf4nvf4_ldsm_scratch(
-        smem
-    )
-    sA_ldsm_scratch, sB_ldsm_scratch = sm120.make_mxf4nvf4_ldsm_scratch_views(
-        sA_ldsm_scratch_all, sB_ldsm_scratch_all, cutlass.Int32(0)
-    )
+    sA_consumer, sB_consumer = sm120.make_mxf4nvf4_ab_consumer_smem_views(smem)
     sSFA = smem.allocate_tensor(
         cutlass.Uint8,
         sm120.make_mxf4nvf4_scale_tma_physical_layout_staged(),
@@ -140,16 +136,17 @@ def _mainloop_kernel(
         sSFB,
         sSFA_scratch,
         sSFB_scratch,
-        lane_idx=tidx,
+        lane_idx=lane_idx,
     )
     cute.arch.sync_threads()
 
     tiled_mma = sm120.make_mxf4nvf4_tiled_mma()
-    a_frag = cute.make_rmem_tensor(
-        tiled_mma.partition_shape_A((16, 64)), cutlass.Float4E2M1FN
+    sm120.stage_mxf4nvf4_ab_tma_physical_to_consumer_smem(
+        sA_tma, sB_tma, sA_consumer, sB_consumer, lane_idx=lane_idx
     )
-    b_frag = cute.make_rmem_tensor(
-        tiled_mma.partition_shape_B((8, 64)), cutlass.Float4E2M1FN
+    cute.arch.sync_threads()
+    a_frag, b_frag = sm120.make_mxf4nvf4_ab_fragments_from_consumer_smem(
+        tiled_mma, sA_consumer, sB_consumer, lane_idx=lane_idx
     )
     acc = cute.make_rmem_tensor(
         tiled_mma.partition_shape_C((16, 8)), cutlass.Float32
@@ -157,24 +154,27 @@ def _mainloop_kernel(
     sfa, sfb = sm120.make_mxf4nvf4_scale_fragments()
     acc.fill(0.0)
     for k_block_idx in cutlass.range_constexpr(2):
-        sm120.stage_mxf4nvf4_ab_tma_physical_to_ldsm_scratch(
-            sA_tma,
-            sB_tma,
-            sA_ldsm_scratch,
-            sB_ldsm_scratch,
-            k_block_idx=k_block_idx,
-            lane_idx=tidx,
-        )
-        cute.arch.sync_threads()
-        sm120.load_mxf4nvf4_ldsm_scratch_fragments(
-            tiled_mma, sA_ldsm_scratch, sB_ldsm_scratch, a_frag, b_frag, tidx
+        sm120.load_mxf4nvf4_ab_fragments_from_consumer_smem(
+            tiled_mma,
+            sA_consumer,
+            sB_consumer,
+            a_frag,
+            b_frag,
+            lane_idx,
+            k_block_idx,
         )
         sfa_src, sfb_src = sm120.make_mxf4nvf4_scale_fragment_views_from_scratch(
             sSFA_scratch, sSFB_scratch, k_block_idx
         )
         sm120.load_mxf4nvf4_sfa_fragment(sfa_src, sfa)
         sm120.load_mxf4nvf4_sfb_fragment(sfb_src, sfb)
-        cute.gemm(tiled_mma, acc, (a_frag, sfa), (b_frag, sfb), acc)
+        cute.gemm(
+            tiled_mma,
+            acc,
+            (a_frag[(None, 0, k_block_idx)], sfa),
+            (b_frag[(None, 0, k_block_idx)], sfb),
+            acc,
+        )
         cute.arch.sync_threads()
     pipe.consumer_release(consumer_state)
     out[0] = acc[0].to(cutlass.BFloat16)
