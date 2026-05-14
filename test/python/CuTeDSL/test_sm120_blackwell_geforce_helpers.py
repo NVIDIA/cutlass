@@ -4,6 +4,9 @@
 import pytest
 
 import cutlass
+import cutlass.cute as cute
+import cutlass.utils.blackwell_geforce_helpers as sm120_utils
+from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.utils.gemm import sm120
 
 
@@ -11,12 +14,10 @@ def test_sm120_blackwell_geforce_helpers_are_exported():
     assert cutlass.utils.gemm.sm120 is sm120
     assert cutlass.cute.as_position_independent_swizzle_tensor is not None
     assert "as_position_independent_swizzle_tensor" in cutlass.cute.__all__
-    assert cutlass.utils.sm120.make_mxf4nvf4_tiled_mma is sm120.make_mxf4nvf4_tiled_mma
-    assert (
-        cutlass.utils.sm120.make_mxf4nvf4_scale_smem_fragment_views
-        is sm120.make_mxf4nvf4_scale_smem_fragment_views
+    assert cutlass.utils.sm120.make_blockscaled_trivial_tiled_mma is (
+        sm120_utils.make_blockscaled_trivial_tiled_mma
     )
-    assert cutlass.utils.blackwell_geforce_helpers.MXF4NVF4_FULL_TMA_BYTES == 18432
+    assert sm120_utils.get_full_tma_tx_bytes() == 18432
 
 
 @pytest.mark.parametrize(
@@ -54,6 +55,161 @@ def test_sm120_blackwell_geforce_helpers_are_exported():
 def test_sm120_mxf4nvf4_layout_adapter_helpers_are_exported(name):
     assert hasattr(sm120, name)
     assert name in sm120.__all__
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "make_blockscaled_trivial_tiled_mma",
+        "make_smem_layout_a_tma_physical",
+        "make_smem_layout_b_tma_physical",
+        "make_smem_layout_a_consumer",
+        "make_smem_layout_b_consumer",
+        "make_smem_layout_scale_tma_physical",
+        "make_smem_layouts_ab",
+        "make_ab_smem_views",
+        "make_ab_consumer_smem_views",
+        "cluster_shape_to_tma_atom_A",
+        "cluster_shape_to_tma_atom_B",
+        "cluster_shape_to_tma_atom_SFA",
+        "cluster_shape_to_tma_atom_SFB",
+        "make_tiled_tma_atom_A",
+        "make_tiled_tma_atom_B",
+        "make_tiled_tma_atom_SFA",
+        "make_tiled_tma_atom_SFB",
+        "get_ab_tma_tx_bytes",
+        "get_scale_tma_tx_bytes",
+        "get_full_tma_tx_bytes",
+        "get_tma_desc_bytes",
+        "stage_ab_tma_physical_to_consumer_smem",
+        "make_ab_consumer_microtile_views",
+        "make_ab_fragments_from_consumer_smem",
+        "load_ab_fragments_from_consumer_smem",
+        "allocate_scale_fragment_scratch",
+        "make_scale_fragment_scratch_views",
+        "stage_scale_tma_physical_to_fragment_scratch",
+        "make_scale_fragment_views_from_scratch",
+        "make_scale_fragments",
+        "load_sfa_fragment",
+        "load_sfb_fragment",
+        "make_external_tma_desc_ptr",
+        "validate_ab_tma_contract",
+        "validate_scale_tma_contract",
+    ],
+)
+def test_sm120_blackwell_geforce_facade_helpers_are_exported(name):
+    assert hasattr(sm120_utils, name)
+    assert name in sm120_utils.__all__
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "MXF4NVF4_FULL_TMA_BYTES",
+        "make_mxf4nvf4_tiled_mma",
+        "make_mxf4nvf4_scale_smem_fragment_views",
+        "make_trivial_tiled_mma",
+        "get_tmem_load_op",
+        "get_tmem_store_op",
+        "get_smem_store_op",
+        "get_num_tmem_alloc_cols",
+        "make_tmem_layout_sfa",
+        "make_tmem_layout_sfb",
+    ],
+)
+def test_sm120_blackwell_geforce_facade_does_not_export_low_level_or_stub_names(name):
+    assert not hasattr(sm120_utils, name)
+    assert name not in sm120_utils.__all__
+
+
+def test_sm120_blackwell_geforce_facade_transaction_bytes():
+    assert sm120_utils.get_ab_tma_tx_bytes() == sm120.mxf4nvf4_ab_tma_tx_bytes()
+    assert sm120_utils.get_scale_tma_tx_bytes() == sm120.mxf4nvf4_scale_tma_tx_bytes()
+    assert sm120_utils.get_full_tma_tx_bytes() == sm120.mxf4nvf4_full_tma_tx_bytes()
+    assert sm120_utils.get_tma_desc_bytes() == sm120.MXF4NVF4_TMA_DESC_BYTES
+
+
+def test_sm120_blackwell_geforce_facade_cluster_atom_success():
+    atom = sm120_utils.cluster_shape_to_tma_atom_A((1, 1, 1))
+    assert isinstance(atom, cutlass.cute.nvgpu.cpasync.CopyBulkTensorTileG2SOp)
+
+
+@cute.kernel
+def _facade_mma_wrapper_kernel(out: cute.Tensor):
+    sm120_utils.make_blockscaled_trivial_tiled_mma()
+    out[0] = cutlass.Float32(0.0)
+
+
+@cute.jit
+def _launch_facade_mma_wrapper(out: cute.Tensor):
+    _facade_mma_wrapper_kernel(out).launch(grid=[1, 1, 1], block=[32, 1, 1])
+
+
+def test_sm120_blackwell_geforce_facade_mma_wrapper_success():
+    out = make_fake_compact_tensor(cutlass.Float32, (1,))
+    compiled = cute.compile(
+        _launch_facade_mma_wrapper,
+        out,
+        options="--gpu-arch=sm_120a --keep-ptx",
+    )
+    assert compiled.__ptx__
+
+
+@cute.kernel
+def _facade_scale_layout_wrapper_kernel(out: cute.Tensor):
+    sm120_utils.make_smem_layout_scale_tma_physical()
+    out[0] = cutlass.Float32(0.0)
+
+
+@cute.jit
+def _launch_facade_scale_layout_wrapper(out: cute.Tensor):
+    _facade_scale_layout_wrapper_kernel(out).launch(
+        grid=[1, 1, 1], block=[32, 1, 1]
+    )
+
+
+def test_sm120_blackwell_geforce_facade_scale_layout_wrapper_success():
+    out = make_fake_compact_tensor(cutlass.Float32, (1,))
+    compiled = cute.compile(
+        _launch_facade_scale_layout_wrapper,
+        out,
+        options="--gpu-arch=sm_120a --keep-ptx",
+    )
+    assert compiled.__ptx__
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"tile_k": 8},
+        {"sf_vec_size": 8},
+    ],
+)
+def test_sm120_blackwell_geforce_facade_rejects_unsupported_scale_layout_contract(
+    kwargs,
+):
+    with pytest.raises(ValueError):
+        sm120_utils.make_smem_layout_scale_tma_physical(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"a_dtype": cutlass.Float16},
+        {"b_dtype": cutlass.Float16},
+        {"acc_dtype": cutlass.Float16},
+        {"sf_dtype": cutlass.Float8E5M2},
+        {"sf_vec_size": 32},
+    ],
+)
+def test_sm120_blackwell_geforce_facade_rejects_unsupported_mma_contract(kwargs):
+    with pytest.raises(ValueError):
+        sm120_utils.make_blockscaled_trivial_tiled_mma(**kwargs)
+
+
+def test_sm120_blackwell_geforce_facade_rejects_multicast_cluster_shape():
+    with pytest.raises(ValueError):
+        sm120_utils.cluster_shape_to_tma_atom_A((1, 2, 1))
 
 
 def test_sm120_mxf4nvf4_manual_ldsm_compat_helpers_are_not_public_exports():
