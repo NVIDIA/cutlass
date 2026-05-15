@@ -1207,6 +1207,10 @@ struct SM100_MMA_S8_2x1SM_SS_SPARSE
   }
 };
 
+template <class a_type, class b_type, class c_type, int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One,
+          UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
 struct SM100_MMA_F8F6F4_SS
 {
   using DRegisters = void;
@@ -1452,6 +1456,10 @@ struct SM100_MMA_MXF8F6F4_SS_SPARSE
   }
 };
 
+template <class a_type, class b_type, class c_type, int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One,
+          UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
 struct SM100_MMA_F8F6F4_2x1SM_SS
 {
   using DRegisters = void;

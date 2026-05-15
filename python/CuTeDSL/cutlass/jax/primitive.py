@@ -21,7 +21,11 @@ from jax._src.interpreters import batching
 
 
 from .compile import get_or_compile_kernel, build_function_spec
-from .types import cutlass_to_jax_layout_order, default_tensor_spec, TensorSpec
+from .types import (
+    cutlass_to_jax_layout_order,
+    default_tensor_spec,
+    TensorSpec,
+)
 from .ffi import get_cutlass_call_ffi_name, is_ffi_registered, register_ffi
 
 
@@ -77,8 +81,10 @@ def cutlass_call(
             objects with ``.shape`` and ``.dtype`` attributes) describing each
             output buffer.
         input_spec: A :class:`TensorSpec` or list thereof providing
-            layout/mode/divisibility hints for input tensors.  ``None`` infers
-            defaults from each array.
+            layout/mode/divisibility hints for input tensors. ``None`` infers
+            defaults from each array. A ``TensorSpec`` with ``layout=None`` uses
+            and constrains row-major physical layout; use ``mode`` to remap
+            physical dimensions to the kernel's logical modes.
         output_spec: Same as *input_spec* but applied to output tensors.
         input_output_aliases: ``{input_index: output_index}`` mapping that
             allows an input buffer to alias an output, avoiding an extra copy.
@@ -308,7 +314,9 @@ def cutlass_call_inner_p_impl(
 
     call_name = get_cutlass_call_ffi_name(allow_cuda_graph)
 
-    # Convert layout from CuTeDSL to JAX order as ffi_call expects this.
+    # Convert explicit layout constraints from CuTeDSL to JAX order. ``None`` is
+    # passed through intentionally: jax.ffi.ffi_call treats it as default
+    # row-major layout.
     input_layouts = [cutlass_to_jax_layout_order(s.layout) for s in input_spec_flat]
     output_layouts = [cutlass_to_jax_layout_order(s.layout) for s in output_spec_flat]
 

@@ -50,13 +50,7 @@
 #include <cute/arch/tmem_allocator_sm100.hpp>   // TMEM allocator for SM100
 #include <cute/arch/copy_sm90_desc.hpp>
 
-#define gpuErrChk(ans) { gpuAssert2((ans), __FILE__, __LINE__); }
-inline void gpuAssert2(cudaError_t code, const char *file, int line, bool abort=true) {
-  if (code != cudaSuccess) {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-    if (abort) exit(code);
-  }
-}
+#include "common.cuh"
 
 namespace TGV {
 namespace gqa {
@@ -92,27 +86,6 @@ v = tl.load(v_ptrs) # [BLOCK_kvL, BLOCK_dH]
 acc = tl.dot(p.to(q.dtype), v) # [BLOCK_qL, BLOCK_dH]
 tl.store(acc_ptrs, acc)
 */
-
-// Store value to remote shared memory in the cluster
-CUTE_DEVICE void
-store_shared_remote_f32(float value, uint32_t dsmem_addr, uint32_t remote_barrier_addr) {
-  asm volatile("st.async.shared::cluster.mbarrier::complete_tx::bytes.f32 [%0], %1, [%2];"
-               : : "r"(dsmem_addr), "f"(value), "r"(remote_barrier_addr));
-}
-
-// given a smem tensor, return the dsmem tensor for the given rank, the tensor addr is in smem addr space (not generic addr space)
-template <class Tensor>
-CUTE_DEVICE auto 
-get_dsmem_tensor(Tensor tensor, int rank) {
-  using T = typename decltype(tensor)::value_type;
-  // tensor.data().get() is the smem addr in the generic addr space, in the generic addr space a region is reserved for smem
-  // doing ld/st to this region of the generic addr space will be converted into ld.shared/st.shared to the smem addr space by the compiler
-  // the mapa (and many inline ptx) instruction's input and output addr are in the smem/dsmem addr space, so we need to explicitly convert from generic to shared addr space
-  uint32_t smem_addr = __cvta_generic_to_shared(tensor.data().get()); // smem addr space
-  // mapa to get the dsmem addr of this tensor in another CTA
-  uint32_t dsmem_addr = set_block_rank(smem_addr, rank); // smem addr space
-  return make_tensor(make_smem_ptr((T*)dsmem_addr), tensor.layout());
-}
 
 // Helper methods to create layouts
 // K always has the shape (kvL, dH, kvH, BS)
@@ -242,6 +215,8 @@ struct SharedStorage {
 
   alignas(16) cute::uint64_t bmm1_softmax_full_barrier;      // Barrier between BMM1 and softmax, BMM1 tells softmax the tile is ready/full, softmax can start consuming it
   alignas(16) cute::uint64_t bmm2_epilog_full_barrier;       // Barrier between BMM2 and epilog, BMM2 tells epilog the tile is ready/full, epilog can start consuming it
+
+  alignas(16) cute::uint64_t tmem_allocation_result_barrier;   // Barrier between MMA and epilog, sync tmem allocation/deallocation status between MMA and epilogue warps within CTA
 
   // for cluster reduction
   alignas(16) cute::uint64_t maxsum_mailbox_full_barrier;  // barrier indicating the st.async of fmax and fsum are done
@@ -512,67 +487,6 @@ cta_reduce_transposed(
   return acc;
 }
 
-// copied from SM100::TMEM::LOAD::copy_unpack cutlass/include/cute/atom/copy_traits_sm100.hpp
-// what it does is given a tmem address, load the data into rmem tensor with the given tcgen05.ld copy op
-template <
-  class CopyOp,
-  class TD, class DLayout>
-CUTLASS_DEVICE void 
-tmem_load(
-  uint32_t tmem_addr,
-  Tensor<TD,DLayout>& dst
-) {
-  static_assert(is_rmem<TD>::value, "Expected RMEM dst.");
-
-  using RegTypeDst = typename remove_extent<typename CopyOp::DRegisters>::type;
-  Tensor rD = recast<RegTypeDst>(dst);
-
-  constexpr int RegNumDst = extent<typename CopyOp::DRegisters>::value;
-  CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
-  "The tcgen05.ld CopyOp's size does not match the destination tensor size.");
-
-  detail::explode(CopyOp::copy,
-                  &tmem_addr, seq<0>{},
-                  rD, make_seq<RegNumDst>{});
-}
-
-// copied from SM100::TMEM::STORE::copy_unpack cutlass/include/cute/atom/copy_traits_sm100.hpp
-// what it does is given a tmem address, store the data in rmem tensor to the tmem address with the given tcgen05.st copy op
-template <
-  class CopyOp,
-  class TS, class SLayout>
-CUTLASS_DEVICE void 
-tmem_store(
-  Tensor<TS,SLayout>& src,
-  uint32_t tmem_addr
-) {
-  static_assert(is_rmem<TS>::value, "Expected RMEM src.");
-
-  using RegTypeSrc = typename remove_extent<typename CopyOp::SRegisters>::type;
-  Tensor rS = recast<RegTypeSrc>(src);
-
-  constexpr int RegNumSrc = extent<typename CopyOp::SRegisters>::value;
-  CUTE_STATIC_ASSERT_V(size(rS) == Int<RegNumSrc>{},
-      "The tcgen05.st CopyOp's size does not match the source tensor size.");
-
-  detail::explode(CopyOp::copy,
-                  rS, make_seq<RegNumSrc>{},
-                  &tmem_addr, seq<0>{});
-}
-
-// issue cp.async
-CUTLASS_DEVICE void 
-cp_async(
-  int* gmem_addr,
-  int* smem_addr
-) {
-  uint32_t smem_int_ptr = cute::cast_smem_ptr_to_uint(smem_addr);
-  asm volatile("cp.async.ca.shared.global.L2::128B [%0], [%1], %2;\n"
-      :: "r"(smem_int_ptr),
-          "l"(gmem_addr),
-          "n"(sizeof(int)));
-}
-
 // mapping between thread id (T) -> dH (row index of Acc2)
 template <int CTA_dH>
 CUTLASS_DEVICE auto 
@@ -831,14 +745,13 @@ template <
   class TiledBMM1,
   class TiledBMM2,
   int CTA_qHLocal, int CTA_qL, int CTA_kvL, int CTA_dH>
-CUTLASS_DEVICE void 
+CUTLASS_DEVICE void
 MMA_warp(
   SharedStorage& shared_storage,
   WorkTileInfo work_tile_info,
   OTensor mO,
   TiledBMM1 tiled_bmm1,
-  TiledBMM2 tiled_bmm2,
-  cutlass::arch::NamedBarrier& tmem_allocation_barrier
+  TiledBMM2 tiled_bmm2
 ) {
   if (!work_tile_info.is_valid()) {
     // we don't allocate tmem for invalid tiles but we still need to relinquish the allocation lock
@@ -900,7 +813,7 @@ MMA_warp(
   tmem_allocator.allocate(Acc1_col_max, &shared_storage.bmm1_tmem_base_ptr);
   tmem_allocator.allocate(Acc2_col_max, &shared_storage.bmm2_tmem_base_ptr);
   // notify epilog warp that tmem allocation is complete
-  tmem_allocation_barrier.arrive();
+  arrive_barrier(shared_storage.tmem_allocation_result_barrier);
 
   // relinquish early so that prefetch cta can be launched
   tmem_allocator.release_allocation_lock();
@@ -963,7 +876,10 @@ MMA_warp(
   MMA_gemm<decltype(tCrV), decltype(tCrP), decltype(tCtAcc2), TiledBMM2, '2', Print>(tCrV, tCrP, tCtAcc2, tiled_bmm2, bmm2_stage_idx, tma_bmm2_full_barrier_phase_bit, bmm2_accumulate, shared_storage.tmasoftmax_bmm2_full_barrier, shared_storage.tma_bmm2_empty_barrier, shared_storage.bmm2_epilog_full_barrier);
 
   // wait for tmem deallocation signal from epilog warp
-  tmem_allocation_barrier.arrive_and_wait();
+  arrive_barrier(shared_storage.tmem_allocation_result_barrier);
+  // initial phase bit = 1 since it's already flipped once for tmem allocation
+  // it will flip to 0 when tmem can be deallocated, so we wait for old phase bit of 1
+  wait_barrier(shared_storage.tmem_allocation_result_barrier, 1);
 
   // deallocate TMEM
   tmem_allocator.free(shared_storage.bmm1_tmem_base_ptr, Acc1_col_max);
@@ -982,7 +898,7 @@ template <
   int CTA_qHLocal, int CTA_qL, int CTA_kvL, int CTA_dH,
   int NumReductionCTA,
   bool NoSink>
-CUTLASS_DEVICE void 
+CUTLASS_DEVICE void
 EPILOG_warp(
   SharedStorage& shared_storage,
   WorkTileInfo work_tile_info,
@@ -994,7 +910,6 @@ EPILOG_warp(
   TiledBMM2 tiled_bmm2,
   float softmax_scale_log2,
   int sliding_window_size,
-  cutlass::arch::NamedBarrier& tmem_allocation_barrier,
   cutlass::arch::NamedBarrier& epilog_barrier,
   int NumSplits,
   int tid,      // tid local to epilog warp
@@ -1024,7 +939,9 @@ EPILOG_warp(
 
   // wait for tmem allocation in mma warp to complete, only do the wait for valid tiles
   if (work_tile_info.is_valid()) {
-    tmem_allocation_barrier.arrive_and_wait();
+    arrive_barrier(shared_storage.tmem_allocation_result_barrier);
+    // initial phase bit = 0, it will flip to 1 when tmem is allocated, so we wait for old phase bit of 0
+    wait_barrier(shared_storage.tmem_allocation_result_barrier, 0);
   }
 
   // update tmem base ptr of the accumulator tensor
@@ -1344,10 +1261,14 @@ EPILOG_warp(
   static_assert(MaxSplits <= 32, "we can use 1 warp to initialize mailbox");
   // initialize mailbox tensor for fmax and fsum, when NumSplits < MaxSplits, we need to init those value to -inf and 0
   // because we do reduction on the full tensor (of size MaxSplits) not just the valid splits
-  // there is no need to init sAcc2 because it will be scaled with beta which will be 0 for invalid splits
   if (tid < MaxSplits) {
     fill(sFmaxMailbox(tid, _), -cutlass::platform::numeric_limits<TypeAcc>::infinity());
     clear(sFsumMailbox(tid, _));
+  }
+  // we also need to clear out acc2 mailbox for invalid splits, because acc2 value could be nan
+  // nan * 0 (beta) = nan, we still need to clear acc2
+  if (tid < CTA_dH) {
+    clear(sAcc2Mailbox(tid, _, _));
   }
 
   // ensure initialized smem is visible to the entire cluster
@@ -1606,7 +1527,7 @@ EPILOG_warp(
     }
 
     // signal the mma warp tcgen05.ld of bmm2 is done, can start deallocate all tmem
-    tmem_allocation_barrier.arrive();
+    arrive_barrier(shared_storage.tmem_allocation_result_barrier);
   }
 
   // only NumReductionCTA number of reduction ctas will do the reduction
@@ -1734,15 +1655,16 @@ EPILOG_warp(
   }*/
 }
 
-// K has shape (kvL, dH, kvH, BS)
-// Q has shape ((qHLocal, qL), dH, kvH, BS)
-// V has shape (dH, kvL, kvH, BS)
-// O has shape (dH, (qHLocal, qL), kvH, BS)
-// sinks has shape ((qHLocal, qL), kvH)
-// seq_len has shape (BS)
+// mK has shape (kvL, dH, kvH, BS)
+// mQ has shape ((qHLocal, qL), dH, kvH, BS)
+// mV has shape (dH, kvL, kvH, BS)
+// mO has shape (dH, (qHLocal, qL), kvH, BS)
+// mSink has shape ((qHLocal, qL), kvH)
+// mSeqLens has shape (BS)
 template <
   class SharedStorage,
   class KTensor, class QTensor, class VTensor, class OTensor, class SinkTensor,
+  class SeqLensTensor,
   class TmaAtomK, class TmaAtomQ, class TmaAtomV,
   class TiledBMM1, class TiledBMM2,
   class TypeAcc,
@@ -1758,7 +1680,7 @@ gqa_device(
   VTensor mV,
   OTensor mO,
   SinkTensor mSink,
-  int* seq_lens,
+  SeqLensTensor mSeqLens,
   CUTE_GRID_CONSTANT TmaAtomK const tma_atom_K,
   CUTE_GRID_CONSTANT TmaAtomQ const tma_atom_Q,
   CUTE_GRID_CONSTANT TmaAtomV const tma_atom_V,
@@ -1782,7 +1704,7 @@ gqa_device(
   int BS_idx = blockIdx.x / kvH;
   // only thread 0 issues cp.async to load the seq_len
   if (threadIdx.x == 0) {
-    cp_async(&seq_lens[BS_idx], &shared_storage.seq_len);
+    cp_async(&mSeqLens(BS_idx), &shared_storage.seq_len);
   }
 
   //if (threadIdx.x == 0) {
@@ -1805,15 +1727,13 @@ gqa_device(
     cutlass::arch::detail::initialize_barrier_array_aligned<cutlass::arch::ClusterBarrier, 1>(&shared_storage.bmm1_softmax_full_barrier, /* arrival count */ 1);
     // 1 thread (BMM2) arrive to signal epilog
     cutlass::arch::detail::initialize_barrier_array_aligned<cutlass::arch::ClusterBarrier, 1>(&shared_storage.bmm2_epilog_full_barrier, /* arrival count */ 1);
+    // 32 (mma) + 128 (epilog) to signal tmem allocation/deallocation result
+    cutlass::arch::detail::initialize_barrier_array_aligned<cutlass::arch::ClusterBarrier, 1>(&shared_storage.tmem_allocation_result_barrier, /* arrival count */ 32 + 128);
     // 1 thread (epilog) arrive to signal maxsum
     cutlass::arch::detail::initialize_barrier_array_aligned<cutlass::arch::ClusterTransactionBarrier, 1>(&shared_storage.maxsum_mailbox_full_barrier, /* arrival count */ 1);
     // 1 thread (epilog) arrive to signal acc2
     cutlass::arch::detail::initialize_barrier_array_aligned<cutlass::arch::ClusterTransactionBarrier, 1>(&shared_storage.acc2_mailbox_full_barrier, /* arrival count */ 1);
   }
-  // Sync tmem allocation status between MMA and softmax/epilogue warps within CTA
-  // 32 threads (mma) + 128 threads (epilog) to sync
-  // also used for tmem deallocation between epilog warps and mma warps within CTA
-  cutlass::arch::NamedBarrier tmem_allocation_barrier(32 + 128, cutlass::arch::ReservedNamedBarriers::TmemAllocBarrier);
   // syncing all threads (128) within 4 epilog warps
   cutlass::arch::NamedBarrier epilog_barrier(128, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier);
 
@@ -1913,13 +1833,13 @@ gqa_device(
     DMA_KV_warp<SharedStorage, WorkTileInfo, decltype(mK), decltype(mV), TmaAtomK, TmaAtomV, TiledBMM1, TiledBMM2, CTA_kvL, CTA_dH>(shared_storage, work_tile_info, mK, mV, &tma_atom_K, &tma_atom_V, tiled_bmm1, tiled_bmm2);
   } 
   else if (warp_idx == 2) {
-    MMA_warp<SharedStorage, WorkTileInfo, decltype(mO), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH>(shared_storage, work_tile_info, mO, tiled_bmm1, tiled_bmm2, tmem_allocation_barrier);
-  } 
+    MMA_warp<SharedStorage, WorkTileInfo, decltype(mO), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH>(shared_storage, work_tile_info, mO, tiled_bmm1, tiled_bmm2);
+  }
   else if (warp_idx >= 4) {
     // epilog tid is from 128 to 255, need to offset by -128 when getting the per thread slice
     int tid = threadIdx.x - 128;
     // warp_idx - 4 because epilog warp group starts from warp 4
-    EPILOG_warp<SharedStorage, WorkTileInfo, decltype(mK), decltype(mO), decltype(mSink), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH, NumReductionCTA, NoSink>(shared_storage, work_tile_info, mK, mO, mSink, seq_len, tiled_bmm1, tiled_bmm2, softmax_scale_log2, sliding_window_size, tmem_allocation_barrier, epilog_barrier, NumSplits, tid, warp_idx - 4, rank);
+    EPILOG_warp<SharedStorage, WorkTileInfo, decltype(mK), decltype(mO), decltype(mSink), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH, NumReductionCTA, NoSink>(shared_storage, work_tile_info, mK, mO, mSink, seq_len, tiled_bmm1, tiled_bmm2, softmax_scale_log2, sliding_window_size, epilog_barrier, NumSplits, tid, warp_idx - 4, rank);
   }
 
   __syncthreads();
@@ -1980,6 +1900,7 @@ void gqa_host(
   Tensor mV = make_tensor(make_gmem_ptr(device_ptr_V), layout_V); // (dH, kvL, kvH, BS)
   Tensor mO = make_tensor(make_gmem_ptr(device_ptr_O), layout_O); // (dH, (qHLocal, qL), kvH, BS)
   Tensor mSink = make_tensor(make_gmem_ptr(device_ptr_sinks), layout_sinks); // ((qHLocal, qL), kvH)
+  Tensor mSeqLens = make_tensor(make_gmem_ptr(seq_lens), make_layout(make_shape(BS))); // (BS)
 
   //printf("mK: "); print(mK); printf("\n");
   //printf("mQ: "); print(mQ); printf("\n");
@@ -2174,6 +2095,7 @@ void gqa_host(
   if (device_ptr_sinks != nullptr) {
     auto *kernel_instance =
       &gqa_device<SMEMStorage, decltype(mK_tma), decltype(mQ_tma), decltype(mV_tma), decltype(mO), decltype(mSink),
+                  decltype(mSeqLens),
                   decltype(tma_atom_K), decltype(tma_atom_Q), decltype(tma_atom_V),
                   decltype(tiled_bmm1), decltype(tiled_bmm2),
                   TypeAcc,
@@ -2185,14 +2107,15 @@ void gqa_host(
     // portable max cluster size is 8, but sm100a supports 16, need explicit opt in
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
     gpuErrChk(cudaLaunchKernelEx(&config, kernel_instance, mK_tma, mQ_tma, mV_tma, mO, mSink,
-                                seq_lens,
+                                mSeqLens,
                                 tma_atom_K, tma_atom_Q, tma_atom_V,
                                 tiled_bmm1, tiled_bmm2,
                                 softmax_scale * Log2_E, sliding_window_size, pdl_count));
-  } 
+  }
   else {
     auto *kernel_instance =
       &gqa_device<SMEMStorage, decltype(mK_tma), decltype(mQ_tma), decltype(mV_tma), decltype(mO), decltype(mSink),
+                  decltype(mSeqLens),
                   decltype(tma_atom_K), decltype(tma_atom_Q), decltype(tma_atom_V),
                   decltype(tiled_bmm1), decltype(tiled_bmm2),
                   TypeAcc,
@@ -2204,7 +2127,7 @@ void gqa_host(
     // portable max cluster size is 8, but sm100a supports 16, need explicit opt in
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
     gpuErrChk(cudaLaunchKernelEx(&config, kernel_instance, mK_tma, mQ_tma, mV_tma, mO, mSink,
-                                seq_lens,
+                                mSeqLens,
                                 tma_atom_K, tma_atom_Q, tma_atom_V,
                                 tiled_bmm1, tiled_bmm2,
                                 softmax_scale * Log2_E, sliding_window_size, pdl_count));

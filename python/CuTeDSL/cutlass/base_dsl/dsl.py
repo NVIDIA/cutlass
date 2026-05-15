@@ -1865,7 +1865,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         sources = set(x.value for x in link_libraries_attributes)
                         link_libraries = (
                             link_libraries
-                            + ("," if len(link_libraries) > 0 else "")
+                            + ("," if link_libraries and len(sources) > 0 else "")
                             + ",".join(sources)
                         )
                         self.compile_options.options[LinkLibraries] = LinkLibraries(

@@ -612,7 +612,7 @@ def get_tmem_load_op(
 def get_smem_layout_atom_ab(
     major_mode: OperandMajorMode,
     element_type: Type[Numeric],
-    smem_shape_mn_k: Tuple[int, int],
+    smem_shape_mn_k: cute.Tile,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
@@ -625,13 +625,16 @@ def get_smem_layout_atom_ab(
     :param element_type: The element type for the SMEM tensor.
     :type element_type: Type[Numeric]
     :param smem_shape_mn_k: The shape of the SMEM tensor.
-    :type smem_shape_mn_k: Tuple[int, int]
+    :type smem_shape_mn_k: cute.Tile
     :return: The SMEM layout atom kind
     :rtype: cutlass.cute.nvgpu.tcgen05.SmemLayoutAtomKind
     """
     is_k_major = major_mode == OperandMajorMode.K
-    major_mode_size = smem_shape_mn_k[1] if is_k_major else smem_shape_mn_k[0]
-
+    major_mode_size = (
+        cute.size(smem_shape_mn_k, mode=[1])
+        if is_k_major
+        else cute.size(smem_shape_mn_k, mode=[0])
+    )
     assert major_mode_size % 8 == 0
     sw128_num_contiguous_bits = 1024
     sw64_num_contiguous_bits = 512
@@ -711,6 +714,7 @@ def make_smem_layout(
         cute.append(smem_tile_shape, num_stages),
         order=(0, 1, 2) if is_k_major else (1, 0, 2),
     )
+
     return cute.coalesce(smem_layout, target_profile=(1, 1, 1), loc=loc, ip=ip)
 
 
@@ -1956,12 +1960,35 @@ def thrfrg_SFA(
     """Thread-fragment scale factor A tensor for SM120 block-scaled MMA.
 
     Implements the ThrFrg partitioning for scale factor A according to the
-    corresponding C++ code.
+    corresponding C++ code in cutlass/include/cute/atom/mma_traits_sm120.hpp:
+    SFALayout for SM120 MXF4 16x8x64 uses K=64, SM120 MXF8F6F4 16x8x32 uses
+    K=32; the stride pattern ``((_8,_0,_1), _16)`` is shared.
     """
     assert cute.rank(sfa_tensor) >= 2
 
     atom_shape_mnk = tiled_mma.shape_mnk
-    atom_sfa_layout = cute.make_layout(shape=((2, 2, 8), 64), stride=((8, 0, 1), 16))
+    # K-dim of the warp-MMA atom: FP4 -> 64, FP8 -> 32 (per mma_traits_sm120.hpp).
+    # For FP8 (atom_K=32) where mma_nsf=1, wrap K in a 2-tuple ``(atom_K, 1)``
+    # so the layout's K mode keeps its 2D structure and the resulting fragment
+    # has the same rank as the FP4 path. For FP4 (atom_K=64) the original 1D
+    # layout already produces a 2D K decomposition through SMEM-layout
+    # composition, so we keep the original shape.
+    atom_K = atom_shape_mnk[2]
+    if atom_K == 32:
+        atom_sfa_layout = cute.make_layout(
+            shape=((2, 2, 8), (atom_K, 1)),
+            stride=((8, 0, 1), (16, 0)),
+        )
+    elif atom_K == 64:
+        atom_sfa_layout = cute.make_layout(
+            shape=((2, 2, 8), atom_K),
+            stride=((8, 0, 1), 16),
+        )
+    else:
+        raise ValueError(
+            f"thrfrg_SFA: unsupported atom_K={atom_K}; SM120 block-scaled atoms "
+            f"use atom_K=32 (mxf8/mxf8f6f4) or atom_K=64 (mxf4/mxf4nvf4)"
+        )
     permutation_mnk = tiled_mma.permutation_mnk
     thr_layout_vmnk = tiled_mma.thr_layout_vmnk
 
@@ -2000,12 +2027,32 @@ def thrfrg_SFB(
     """Thread-fragment scale factor B tensor for SM120 block-scaled MMA.
 
     Implements the ThrFrg partitioning for scale factor B according to the
-    corresponding C++ code.
+    corresponding C++ code in cutlass/include/cute/atom/mma_traits_sm120.hpp:
+    SFBLayout for SM120 MXF4 16x8x64 uses K=64, SM120 MXF8F6F4 16x8x32 uses
+    K=32; the stride pattern ``((_0,_1), _8)`` is shared.
     """
     assert cute.rank(sfb_tensor) >= 2
 
     atom_shape_mnk = tiled_mma.shape_mnk
-    atom_sfb_layout = cute.make_layout(shape=((4, 8), 64), stride=((0, 1), 8))
+    # K-dim of the warp-MMA atom: FP4 -> 64, FP8 -> 32 (per mma_traits_sm120.hpp).
+    # See :func:`thrfrg_SFA` for the rationale behind the FP8-only
+    # ``(atom_K, 1)`` wrapping.
+    atom_K = atom_shape_mnk[2]
+    if atom_K == 32:
+        atom_sfb_layout = cute.make_layout(
+            shape=((4, 8), (atom_K, 1)),
+            stride=((0, 1), (8, 0)),
+        )
+    elif atom_K == 64:
+        atom_sfb_layout = cute.make_layout(
+            shape=((4, 8), atom_K),
+            stride=((0, 1), 8),
+        )
+    else:
+        raise ValueError(
+            f"thrfrg_SFB: unsupported atom_K={atom_K}; SM120 block-scaled atoms "
+            f"use atom_K=32 (mxf8/mxf8f6f4) or atom_K=64 (mxf4/mxf4nvf4)"
+        )
     permutation_mnk = tiled_mma.permutation_mnk
     thr_layout_vmnk = tiled_mma.thr_layout_vmnk
 

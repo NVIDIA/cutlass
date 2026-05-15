@@ -1820,14 +1820,21 @@ struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::float_e4m3_t, 2, Roun
   #if defined(CUDA_PTX_FP8_CVT_ENABLED)
     uint32_t res_half;
     uint16_t const& src_packed = reinterpret_cast<uint16_t const&>(source);
-
-    asm volatile( \
-        "{\n" \
-        "cvt.rn.f16x2.e4m3x2 %0, %1;\n" \
-        "}\n" : "=r"(res_half): "h"(src_packed));
-    float2 res_float = __half22float2(reinterpret_cast<__half2 &>(res_half));
-    NumericArrayConverter<cutlass::bfloat16_t, float, 2, Round> converter;
-    return converter(reinterpret_cast<Array<float, 2> const&>(res_float));
+    #if defined(CUDA_PTX_FP8_BF16_CVT_ENABLED)
+      asm volatile( \
+          "{\n" \
+          "cvt.rn.bf16x2.e4m3x2 %0, %1;\n" \
+          "}\n" : "=r"(res_half): "h"(src_packed));
+      return reinterpret_cast<result_type const &>(res_half);
+    #else
+      asm volatile( \
+          "{\n" \
+          "cvt.rn.f16x2.e4m3x2 %0, %1;\n" \
+          "}\n" : "=r"(res_half): "h"(src_packed));
+      float2 res_float = __half22float2(reinterpret_cast<__half2 &>(res_half));
+      NumericArrayConverter<cutlass::bfloat16_t, float, 2, Round> converter;
+      return converter(reinterpret_cast<Array<float, 2> const&>(res_float));
+    #endif
   #else
     result_type result;
     NumericConverter<result_element, source_element, Round> converter;
@@ -2961,19 +2968,31 @@ struct NumericArrayConverterPacked4Element<cutlass::bfloat16_t, cutlass::float_e
   static result_type convert(source_type const & source) {
 
   #if defined(CUDA_PTX_FP8_CVT_ENABLED)
-    // Convert f8 to float
-    NumericArrayConverterPacked4Element<float, source_element, Round> src2float;
-    Array<float, 4> tmp_floats = src2float(source);
-
-    // Convert float to bf16
     result_type out;
-    Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp_floats);
-    Array<result_element, 2>* packed_out = reinterpret_cast<Array<result_element, 2>*>(&out);
-    NumericArrayConverter<result_element, float, 2, Round> float2result;
-    packed_out[0] = float2result(packed_tmp[0]);
-    packed_out[1] = float2result(packed_tmp[1]);
+    #if defined(CUDA_PTX_FP8_BF16_CVT_ENABLED)
+      uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+      Array<uint32_t, 2>& out_packed = reinterpret_cast<Array<uint32_t, 2>&>(out);
+      asm volatile("{\n"
+                  ".reg .b16 b0, b1;\n"
+                  "mov.b32 {b0, b1}, %2;\n"
+                  "cvt.rn.bf16x2.e4m3x2 %0, b0;\n"
+                  "cvt.rn.bf16x2.e4m3x2 %1, b1;\n"
+                  "}\n"
+                  : "=r"(out_packed[0]), "=r"(out_packed[1])
+                  : "r"(src_packed));
+    #else
+      // Convert f8 to float
+      NumericArrayConverterPacked4Element<float, source_element, Round> src2float;
+      Array<float, 4> tmp_floats = src2float(source);
 
-    return out;
+      // Convert float to bf16
+      Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp_floats);
+      Array<result_element, 2>* packed_out = reinterpret_cast<Array<result_element, 2>*>(&out);
+      NumericArrayConverter<result_element, float, 2, Round> float2result;
+      packed_out[0] = float2result(packed_tmp[0]);
+      packed_out[1] = float2result(packed_tmp[1]);
+    #endif
+      return out;
   #else
     result_type result;
     NumericConverter<result_element, source_element, Round> converter;
