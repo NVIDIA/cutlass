@@ -84,6 +84,8 @@ from .tmem_allocator import (
 
 from .layout import LayoutEnum
 
+from .block import block_copy
+
 from .mixed_input_helpers import (
     TransformMode,
     scale_tma_partition,
@@ -176,6 +178,7 @@ __all__ = [
     "sm90",
     "sm100",
     "gemm",
+    "block_copy",
     "ClcDynamicPersistentTileSchedulerParams",
     "ClcDynamicPersistentTileScheduler",
     "print_latex",

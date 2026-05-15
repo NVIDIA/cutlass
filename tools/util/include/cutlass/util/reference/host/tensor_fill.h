@@ -658,6 +658,74 @@ public:
   }
 };
 
+/// Computes an exponent-uniform random distribution for UE8M0 scale factors.
+template <>
+struct RandomUniformFunc<float_ue8m0_t> {
+
+  using Element = float_ue8m0_t;
+
+  uint64_t seed;
+  int exp_min;
+  int exp_range;
+  int int_scale;              ///< Retained for Params compatibility; exponent is integral.
+
+  double pnan;
+private:
+  using engine_type = std::mt19937;
+public:
+  engine_type bernoulli_rnd;
+  std::bernoulli_distribution bernoulli_dist;
+
+  bool exclude_zero;          ///< Retained for Params compatibility; unused for UE8M0.
+
+  static int closest_log2_exp(double value) {
+    // UE8M0 scale factors are strictly positive. Keep invalid lower bounds
+    // finite so callers using the generic [0, max] default do not produce NaN.
+    double min_scale = double(Element::bitcast(0x01));
+    double positive_value = value > 0.0 ? value : min_scale;
+    return int(std::nearbyint(std::log2(positive_value)));
+  }
+
+  RandomUniformFunc(
+    uint64_t seed_ = 0,
+    double max = 1,
+    double min_ = 0,
+    int int_scale_ = -1,
+    double pnan_ = 0,
+    bool exclude_zero_ = false
+  ):
+    seed(seed_),
+    exp_min(closest_log2_exp(min_)),
+    exp_range(closest_log2_exp(max) - closest_log2_exp(min_)),
+    int_scale(int_scale_),
+    pnan(pnan_),
+    bernoulli_rnd{static_cast<engine_type::result_type>(seed_)},
+    bernoulli_dist(pnan_),
+    exclude_zero(exclude_zero_)
+    {
+      std::srand((unsigned)seed);
+  }
+
+  /// Compute random value and update RNG state
+  Element operator()() {
+
+    // Sample from NaN distribution.
+    if constexpr (std::numeric_limits<Element>::has_quiet_NaN) {
+      if (pnan > 0 && bernoulli_dist(bernoulli_rnd)) {
+        return Element(NAN);
+      }
+    }
+
+    double rnd = double(std::rand()) / double(RAND_MAX);
+    int exponent_count = exp_range + 1;
+    int exponent_offset = int(rnd * double(exponent_count));
+    exponent_offset = exponent_offset < exponent_count ? exponent_offset : exponent_count - 1;
+    double sf = std::pow(2.0, double(exp_min + exponent_offset));
+
+    return Element(sf);
+  }
+};
+
 /// Partial specialization for initializing a complex value.
 template <typename Element>
 struct RandomUniformFunc<complex<Element> > {
