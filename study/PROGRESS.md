@@ -8,7 +8,7 @@
 |-------|----|----|---------|---------|
 | 1 | W1 — Layout basics | ☑ | `ex01_crd2idx_paper.md` + `ex01_verify.cu` + `ex02_layout_print.cu` + `ex03_coalesce.cu` + 5 道自检 | 2026-05-12 |
 | 1 | W2 — Composition + Swizzle | ☑ | `ex04_composition_paper.md` + `ex04_verify.cu` + `ex05_swizzle_paper.md` + `ex06_hgemm_naive.cu` + 4 道自检（Q3 重写后） | 2026-05-12 |
-| 1 | W3 — TiledMMA | 🔵 in-progress | | |
+| 1 | W3 — TiledMMA | ☑ | `ex07_tiled_mma_layout.cu`（输出验证通过：4 warp 起点 + V 维 stride 接 atom 接线）+ ex08 跳过（概念已懂：循环顺序影响 reg liveness）+ 自检 Q3/Q5 已懂；Q1/Q2/Q4 跳过（实现细节，Stage 6 再补）| 2026-05-18 |
 | 1 | W4 — TiledCopy | ☐ | | |
 | 1 | **CHECKPOINT** | ☐ | sgemm_sm80 变体 + 5 道口答 | |
 | 2 | W5 — WGMMA (SM90) | ☐ | | |
@@ -73,4 +73,6 @@
 
 | 周 | 题目 | 状态 |
 |----|------|------|
-| | | |
+| W3 | Q1: ThrID vs ALayout 关系 | 跳过；Stage 6 读 mma_traits 时补 |
+| W3 | Q2: thrfrg_C 4 步哪步接硬件 | 跳过；Stage 6 读 mma_atom.hpp 时补 |
+| W3 | Q4: serpentine 省多少 reg / 为什么 | 跳过；Stage 7 ncu 撞 spill 时回头看 gemm.hpp:260-390 |
