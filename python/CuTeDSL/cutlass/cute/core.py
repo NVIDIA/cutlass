@@ -6342,31 +6342,36 @@ class FastDivmodDivisor:
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
         """Extract MLIR values for Host->Device transfer."""
-        # CRITICAL: Extract the FastDivmodDivisor MLIR value directly.
+        # Extract the encoded FastDivmod SSA ("_divisor_mlir") plus the scalar divisor SSA
+        # used when building it.
         #
         # This allows GridInvariantCodeMotionPass to:
         # 1. Recognize FastDivmodCreateDivisorOp in the IR
         # 2. Hoist it to the host side before kernel launch
         # 3. Pass the pre-computed divisor as a kernel argument
         #
-        # We only extract the _divisor_mlir to maintain compatibility with
-        # other code that assumes each FastDivmodDivisor has exactly 1 MLIR value.
-        # The _original_divisor is preserved in the object structure.
-        return [self._divisor_mlir]
+        # The scalar divisor must travel as its own SSA value so that after
+        # ``__new_from_mlir_values__`` inside an isolated kernel region,
+        # ``.divisor`` refers to SSA defined in that region (see GitHub issue #3243).
+        divisor_for_pack = self._original_divisor
+        if isinstance(divisor_for_pack, ir.Value):
+            divisor_ir = divisor_for_pack
+        else:
+            divisor_ir = Int32(divisor_for_pack).ir_value()
+        return [self._divisor_mlir, divisor_ir]
 
     def __new_from_mlir_values__(self, values: List[ir.Value]) -> "FastDivmodDivisor":
         """Reconstruct FastDivmodDivisor from MLIR values."""
         # Directly use the passed FastDivmodDivisor value without recreating it.
         # This is critical to avoid generating new create_divisor ops on device side,
         # which would bypass GridInvariantCodeMotionPass optimization.
+        assert len(values) >= 2, (
+            "FastDivmodDivisor reconstructs from the encoded divisor plus the transit "
+            f"scalar divisor IR; expected 2 values, got {len(values)}."
+        )
         new_obj = object.__new__(FastDivmodDivisor)
         new_obj._divisor_mlir = values[0]
-
-        # Preserve the original divisor to support the public divisor property.
-        # Note: After host-device transfer, _original_divisor will reference
-        # the same value as before transfer for constants, or the reconstructed
-        # value for dynamic expressions.
-        new_obj._original_divisor = self._original_divisor
+        new_obj._original_divisor = IntValue(values[1])
 
         return new_obj
 
