@@ -88,6 +88,11 @@ def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
             "sm_120a",
             ["sm_120a"],
         ),  # RTX PRO 6000 / RTX 50 Series
+        (12, 1): (
+            "Blackwell",
+            "sm_121a",
+            ["sm_121a"],
+        ),  # DGX Spark
     }
     return gpu_arch_map.get(
         (major, minor), ("Unknown", f"sm_{major}{minor}", [f"sm_{major}{minor}"])

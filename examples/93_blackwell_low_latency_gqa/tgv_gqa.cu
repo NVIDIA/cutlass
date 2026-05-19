@@ -40,8 +40,14 @@
     kvL is max_seq_len, seq_lens[BS] is the actual seq len for each batch
     sinks has shape (qHLocal * kvH), i.e. one sink per q head
 
+  --mode 1 enables the paged variant:
+    Combined KV cache shape (num_pages_total, 2, Page_Size, kvH, dH), with BS folded into num_pages_total
+      and KV(_,0,_,_,_) = K, KV(_,1,_,_,_) = V.
+    page_table shape (kvL/Page_Size, BS), entry [p, bs] = physical page id of batch bs's per-batch page p.
+
   Example usage:
     $ ./examples/93_blackwell_low_latency_gqa --kvL 8192 --kvH 8 --qH 64 --BS 1
+    $ ./examples/93_blackwell_low_latency_gqa --kvL 8192 --kvH 8 --qH 64 --BS 1 --mode 1
 */
 
 // Standard library includes
@@ -51,6 +57,8 @@
 #include <cmath>
 #include <iostream>
 #include <ctime>
+#include <numeric>
+#include <utility>
 #include <getopt.h>
 
 #include <cuda_runtime.h>
@@ -68,7 +76,9 @@
 // CuTe includes
 #include <cute/tensor.hpp>                      // CuTe tensor implementation
 
+#include "common.cuh"
 #include "tgv_gqa.cuh"
+#include "tgv_gqa_paged.cuh"
 
 using namespace cute;
 
@@ -411,9 +421,23 @@ struct ProblemStride {
   int stride_O_qL;
   int stride_O_dH;
   int stride_O_BS;
+
+  // Combined KV (paged mode) layout: (num_pages_total, 2, Page_Size, kvH, dH).
+  // BS is folded into num_pages_total = BS * kvL / Page_Size (no explicit BS mode).
+  // Mode 1 is the K/V selector; harness picks dH-innermost packed strides below.
+  int stride_KV_pages;
+  int stride_KV_KV;
+  int stride_KV_ps;
+  int stride_KV_kvH;
+  int stride_KV_dH;
+
+  // Page table (paged mode) layout: (kvL/Page_Size, BS), entry [p, bs] = physical page id of batch bs's per-batch
+  // page p. Mode 0 is innermost in memory (per-batch page id, stride 1); mode 1 advances by pages_per_batch across batches.
+  int stride_PT_p;
+  int stride_PT_BS;
 };
 
-ProblemStride make_gqa_stride(int kvH, int qHLocal, int qL, int kvL, int dH, int BS) {
+ProblemStride make_gqa_stride(int kvH, int qHLocal, int qL, int kvL, int dH, int BS, int Page_Size) {
   ProblemStride stride;
 
   // Q shape ((qHLocal, qL), dH, kvH, BS), where dH is contiguous
@@ -446,6 +470,20 @@ ProblemStride make_gqa_stride(int kvH, int qHLocal, int qL, int kvL, int dH, int
   stride.stride_O_dH = 1;
   stride.stride_O_BS = kvH * qHLocal * dH * qL;
 
+  // Combined KV (paged) shape (num_pages_total, 2, Page_Size, kvH, dH), dH innermost contiguous.
+  // BS is folded into num_pages_total; the (bs_idx, per_batch_page_idx) -> physical page mapping lives in the
+  // page_table tensor (see stride_PT_*). Strides slowest -> fastest:
+  // num_pages_total, KV (K/V selector), Page_Size, kvH, dH.
+  stride.stride_KV_dH = 1;
+  stride.stride_KV_kvH = dH;
+  stride.stride_KV_ps = kvH * dH;
+  stride.stride_KV_KV = Page_Size * kvH * dH;
+  stride.stride_KV_pages = 2 * Page_Size * kvH * dH;
+
+  // Page table shape (kvL/Page_Size, BS); per-batch page idx is mode 0 (contiguous, stride 1), batch is mode 1 (advances by pages_per_batch).
+  stride.stride_PT_p = 1;
+  stride.stride_PT_BS = kvL / Page_Size;
+
   return stride;
 }
 
@@ -459,17 +497,25 @@ public:
   static constexpr int CTA_qL = 1;
   static constexpr int CTA_kvL = 128;
   static constexpr int CTA_dH = 64;
+  // Page_Size only used by gqa_paged (mode 1). Page_Size must divide CTA_kvL; CTA_kvL/Page_Size = pages per CTA tile.
+  static constexpr int Page_Size = 32;
   static constexpr int BMM1_DMA_Stage = 3;
   static constexpr int BMM2_DMA_Stage = 3;
+  // Page-idx staging (mode 1 only). Num_Page_Idx_Per_Stage must be a multiple of CTA_kvL/Page_Size
+  // so a DMA stage's pages live in one pi stage. Page_Idx_Stage = pipeline depth on the page-idx side.
+  static constexpr int Page_Idx_Stage = 2;
+  static constexpr int Num_Page_Idx_Per_Stage = 8 * (CTA_kvL / Page_Size);
   static constexpr int MaxSplits = 8;
   static constexpr int NumReductionCTA = 8;
   static constexpr bool NoSink = true;
+  static constexpr bool VarSeqLens = false;
 
 private:
   int kvH_, qHLocal_, qL_, kvL_, dH_, BS_;
   float softmax_scale_;
   ProblemStride stride_;
   int sliding_window_size_;
+  int mode_; // 0: gqa, 1: gqa_paged
 
   // Host vectors
   thrust::host_vector<TypeQKV> host_Q_;
@@ -480,17 +526,82 @@ private:
   thrust::host_vector<int> host_seq_lens_;
   thrust::host_vector<TypeAcc> host_sinks_;
 
-  // Device vectors  
+  // Device vectors
   thrust::device_vector<TypeQKV> device_Q_;
   thrust::device_vector<TypeQKV> device_K_;
   thrust::device_vector<TypeQKV> device_V_;
+  // Combined KV cache for paged mode (mode_ == 1).
+  // Layout: (num_pages_total, 2, Page_Size, kvH, dH) with dH innermost; BS is folded into num_pages_total.
+  // The (bs, per_batch_page_idx) -> physical page mapping is held in device_page_table_ (built by
+  // build_random_page_table: a Fisher-Yates shuffle of [0, num_pages_total) sliced per batch).
+  // KV(_,0,_,_,_) is K, KV(_,1,_,_,_) is V.
+  thrust::device_vector<TypeQKV> device_KV_;
+  // Page table for paged mode. Logical shape (kvL/Page_Size, BS); entry [p, bs] is the physical page id for
+  // batch bs and per-batch page index p. Padded by Num_Page_Idx_Per_Stage ints at the tail so the device's
+  // last-pi-stage cp.async never reads past the allocation.
+  thrust::device_vector<int> device_page_table_;
   thrust::device_vector<TypeO> device_O_;
   thrust::device_vector<int> device_seq_lens_;
   thrust::device_vector<TypeAcc> device_sinks_;
 
+  // Build the host-side page table: tail-padded buffer with shape (kvL/Page_Size, BS) and contents = a random
+  // per-batch slice of a Fisher-Yates shuffle of [0, num_pages_total). Each batch's slice length is
+  // seq_len[bs]/Page_Size, so total pages assigned = sum(seq_len_pages) <= num_pages_total. Tail padding
+  // (Num_Page_Idx_Per_Stage ints) covers the device's last-pi-stage cp.async OOB read.
+  thrust::host_vector<int> build_random_page_table(int pages_per_batch, int num_pages_total) {
+    thrust::host_vector<int> host_page_table(num_pages_total + Num_Page_Idx_Per_Stage, 0);
+    auto host_tensor_page_table = make_tensor(host_page_table.data(),
+        make_layout(make_shape(pages_per_batch, BS_),
+                    make_stride(stride_.stride_PT_p, stride_.stride_PT_BS)));
+    std::vector<int> perm(num_pages_total);
+    std::iota(perm.begin(), perm.end(), 0);
+    for (int i = num_pages_total - 1; i > 0; --i) {
+      std::swap(perm[i], perm[rand() % (i + 1)]);
+    }
+    int perm_offset = 0;
+    for (int bs = 0; bs < BS_; ++bs) {
+      // ceil_div: a partial tail page (seq_len % Page_Size != 0) still needs a physical page assigned
+      // so the kernel's address-by-page lookup for positions [floor(seq_len/Page_Size)*Page_Size, seq_len)
+      // hits real packed K/V data. Positions past seq_len are masked by the kernel and don't contribute.
+      int seq_len_pages = cutlass::ceil_div(host_seq_lens_[bs], Page_Size);
+      for (int p = 0; p < seq_len_pages; ++p) {
+        host_tensor_page_table(p, bs) = perm[perm_offset + p];
+      }
+      perm_offset += seq_len_pages;
+    }
+    return host_page_table;
+  }
+
+  // Pack the flat per-batch K/V buffers into the combined paged KV layout, using the page table for the
+  // (bs, per_batch_page) -> physical page mapping. Bounded by seq_len_pages per batch so out-of-seq-len entries
+  // (which the page table doesn't populate) aren't dereferenced.
+  template <class HostTensorPageTable, class HostTensorK, class HostTensorV, class HostTensorKV>
+  void pack_combined_kv(HostTensorPageTable const& host_tensor_page_table,
+                        HostTensorK const& host_tensor_K, HostTensorV const& host_tensor_V,
+                        HostTensorKV& host_tensor_KV) {
+    for (int bs = 0; bs < BS_; ++bs) {
+      // ceil_div pages so the partial tail page (when seq_len isn't page-aligned) is packed.
+      // We pack the full Page_Size for the tail page; positions past seq_len carry whatever
+      // initialize_tensor wrote into the K/V buffers, but the kernel masks those out.
+      int seq_len_pages = cutlass::ceil_div(host_seq_lens_[bs], Page_Size);
+      for (int p = 0; p < seq_len_pages; ++p) {
+        int global_page = host_tensor_page_table(p, bs);
+        for (int ps = 0; ps < Page_Size; ++ps) {
+          int kvl = p * Page_Size + ps;
+          for (int kvh = 0; kvh < kvH_; ++kvh) {
+            for (int dh = 0; dh < dH_; ++dh) {
+              host_tensor_KV(global_page, 0, ps, kvh, dh) = host_tensor_K(kvl, dh, kvh, bs);
+              host_tensor_KV(global_page, 1, ps, kvh, dh) = host_tensor_V(dh, kvl, kvh, bs);
+            }
+          }
+        }
+      }
+    }
+  }
+
 public:
-  GQATester(int kvH, int qH, int qL, int kvL, int dH, int BS, float softmax_scale, int sliding_window_size) : 
-  kvH_(kvH), qHLocal_(qH / kvH), qL_(qL), kvL_(kvL), dH_(dH), BS_(BS), softmax_scale_(softmax_scale), sliding_window_size_(sliding_window_size) {
+  GQATester(int kvH, int qH, int qL, int kvL, int dH, int BS, float softmax_scale, int sliding_window_size, int mode = 0) :
+  kvH_(kvH), qHLocal_(qH / kvH), qL_(qL), kvL_(kvL), dH_(dH), BS_(BS), softmax_scale_(softmax_scale), sliding_window_size_(sliding_window_size), mode_(mode) {
     assert(sliding_window_size_ >= 0);
     // Allocate host memory
     host_Q_.resize(kvH_ * qHLocal_ * qL_ * dH_ * BS_);
@@ -501,7 +612,7 @@ public:
     host_seq_lens_.resize(BS_);
     host_sinks_.resize(qHLocal_ * kvH_); // one sink per q head
 
-    stride_ = make_gqa_stride(kvH_, qHLocal_, qL_, kvL_, dH_, BS_);
+    stride_ = make_gqa_stride(kvH_, qHLocal_, qL_, kvL_, dH_, BS_, Page_Size);
 
     // Create host CuTe tensors for initialization
     auto host_tensor_Q = make_tensor(host_Q_.data(), TGV::gqa::make_layout_Q(kvH_, qHLocal_, qL_, dH_, BS_, stride_.stride_Q_kvH, stride_.stride_Q_qHLocal, stride_.stride_Q_qL, stride_.stride_Q_dH, stride_.stride_Q_BS));
@@ -513,10 +624,8 @@ public:
     initialize_tensor(host_tensor_Q);
     initialize_tensor(host_tensor_K);
     initialize_tensor(host_tensor_V);
-    // have batch size matching kvL (i.e. max seq len) for now
-    bool test_var_seq_lens = false;
     for (int i = 0; i < BS_; ++i) {
-      if (test_var_seq_lens) {
+      if (VarSeqLens) {
         host_seq_lens_[i] = rand() % kvL_ + 1;
       } 
       else { // all the batch have the same seq len
@@ -535,27 +644,81 @@ public:
     device_seq_lens_ = host_seq_lens_;
     device_sinks_ = host_sinks_;
 
+    // For paged mode, build the page_table and combined KV tensor on device. The harness owns the layouts:
+    // stride_KV_* and stride_PT_* were computed in make_gqa_stride above and are used both here (host pack)
+    // and downstream (passed into gqa_paged_host as stride args). Combined KV shape: (num_pages_total, 2,
+    // Page_Size, kvH, dH), BS folded into num_pages_total. We populate the page_table via
+    // build_random_page_table (Fisher-Yates shuffle of [0, num_pages_total) sliced per batch) to stress
+    // non-contiguous mappings.
+    if (mode_ == 1) {
+      assert(kvL_ % Page_Size == 0);
+      assert(kvL_ % CTA_kvL == 0);
+      int pages_per_batch = kvL_ / Page_Size;
+      int num_pages_total = BS_ * pages_per_batch;
+
+      auto host_page_table = build_random_page_table(pages_per_batch, num_pages_total);
+      auto host_tensor_page_table = make_tensor(host_page_table.data(),
+          make_layout(make_shape(pages_per_batch, BS_),
+                      make_stride(stride_.stride_PT_p, stride_.stride_PT_BS)));
+
+      thrust::host_vector<TypeQKV> host_KV(num_pages_total * stride_.stride_KV_pages);
+      auto host_tensor_KV = make_tensor(host_KV.data(),
+          make_layout(make_shape(num_pages_total, 2, Page_Size, kvH_, dH_),
+                      make_stride(stride_.stride_KV_pages, stride_.stride_KV_KV,
+                                  stride_.stride_KV_ps, stride_.stride_KV_kvH, stride_.stride_KV_dH)));
+      pack_combined_kv(host_tensor_page_table, host_tensor_K, host_tensor_V, host_tensor_KV);
+
+      device_KV_ = host_KV;
+      device_page_table_ = host_page_table;
+    }
+
     gpuErrChk(cudaDeviceSynchronize());
   }
 
     void run_kernel(bool pdl, int pdl_count = -1, cudaStream_t stream = 0) {
-      TGV::gqa::gqa_host<
-        TypeQKV, TypeO, TypeAcc,
-        CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH,
-        BMM1_DMA_Stage, BMM2_DMA_Stage, 
-        MaxSplits,
-        NumReductionCTA>(
-        device_K_.data().get(), device_Q_.data().get(), device_V_.data().get(), device_O_.data().get(),
-        device_seq_lens_.data().get(),
-        NoSink ? nullptr : device_sinks_.data().get(),
-        kvH_, qHLocal_, qL_, kvL_, dH_, BS_,
-        stride_.stride_K_kvH, stride_.stride_K_kvL, stride_.stride_K_dH, stride_.stride_K_BS,
-        stride_.stride_Q_kvH, stride_.stride_Q_qHLocal, stride_.stride_Q_qL, stride_.stride_Q_dH, stride_.stride_Q_BS,
-        stride_.stride_V_kvH, stride_.stride_V_kvL, stride_.stride_V_dH, stride_.stride_V_BS,
-        stride_.stride_O_kvH, stride_.stride_O_qHLocal, stride_.stride_O_qL, stride_.stride_O_dH, stride_.stride_O_BS,
-        softmax_scale_,
-        sliding_window_size_,
-        pdl, pdl_count, stream);
+      if (mode_ == 0) {
+        TGV::gqa::gqa_host<
+          TypeQKV, TypeO, TypeAcc,
+          CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH,
+          BMM1_DMA_Stage, BMM2_DMA_Stage,
+          MaxSplits,
+          NumReductionCTA>(
+          device_K_.data().get(), device_Q_.data().get(), device_V_.data().get(), device_O_.data().get(),
+          device_seq_lens_.data().get(),
+          NoSink ? nullptr : device_sinks_.data().get(),
+          kvH_, qHLocal_, qL_, kvL_, dH_, BS_,
+          stride_.stride_K_kvH, stride_.stride_K_kvL, stride_.stride_K_dH, stride_.stride_K_BS,
+          stride_.stride_Q_kvH, stride_.stride_Q_qHLocal, stride_.stride_Q_qL, stride_.stride_Q_dH, stride_.stride_Q_BS,
+          stride_.stride_V_kvH, stride_.stride_V_kvL, stride_.stride_V_dH, stride_.stride_V_BS,
+          stride_.stride_O_kvH, stride_.stride_O_qHLocal, stride_.stride_O_qL, stride_.stride_O_dH, stride_.stride_O_BS,
+          softmax_scale_,
+          sliding_window_size_,
+          pdl, pdl_count, stream);
+      }
+      else {
+        TGV::gqa_paged::gqa_paged_host<
+          TypeQKV, TypeO, TypeAcc,
+          CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH,
+          Page_Size,
+          BMM1_DMA_Stage, BMM2_DMA_Stage,
+          Page_Idx_Stage, Num_Page_Idx_Per_Stage,
+          MaxSplits,
+          NumReductionCTA>(
+          device_KV_.data().get(),
+          device_Q_.data().get(),
+          device_O_.data().get(),
+          NoSink ? nullptr : device_sinks_.data().get(),
+          device_seq_lens_.data().get(),
+          device_page_table_.data().get(),
+          kvH_, qHLocal_, qL_, kvL_, dH_, BS_,
+          stride_.stride_KV_pages, stride_.stride_KV_KV, stride_.stride_KV_ps, stride_.stride_KV_kvH, stride_.stride_KV_dH,
+          stride_.stride_Q_kvH, stride_.stride_Q_qHLocal, stride_.stride_Q_qL, stride_.stride_Q_dH, stride_.stride_Q_BS,
+          stride_.stride_O_kvH, stride_.stride_O_qHLocal, stride_.stride_O_qL, stride_.stride_O_dH, stride_.stride_O_BS,
+          stride_.stride_PT_p, stride_.stride_PT_BS,
+          softmax_scale_,
+          sliding_window_size_,
+          pdl, pdl_count, stream);
+      }
     }
 
     bool verify() {
@@ -604,16 +767,17 @@ public:
 
 };
 
-void benchmark_gqa(int kvH, int qH, int qL, int kvL, int dH, int BS, float softmax_scale, int sliding_window_size, bool pdl, int pdl_count, int num_testers = 4, int bench_iters = 100) {
+void benchmark_gqa(int kvH, int qH, int qL, int kvL, int dH, int BS, float softmax_scale, int sliding_window_size, int mode, bool pdl, int pdl_count, int num_testers = 4, int bench_iters = 100) {
   std::cout << "=== GQA Benchmark ===" << std::endl;
   std::cout << "Problem size: kvH=" << kvH << ", qH=" << qH << ", qL=" << qL << ", kvL=" << kvL << ", dH=" << dH << ", BS=" << BS << ", sliding_window_size=" << sliding_window_size << std::endl;
+  std::cout << "Mode: " << mode << " (" << (mode == 0 ? "gqa" : "gqa_paged") << ")" << std::endl;
   std::cout << "Number of testers (L2 thrashing): " << num_testers << std::endl;
   std::cout << "Benchmark iterations: " << bench_iters << std::endl;
 
   // Create multiple tester instances to thrash L2 cache
   std::vector<std::unique_ptr<GQATester>> testers;
   for (int i = 0; i < num_testers; ++i) {
-    testers.push_back(std::make_unique<GQATester>(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size));
+    testers.push_back(std::make_unique<GQATester>(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size, mode));
   }
   std::cout << "Created " << num_testers << " GQATester instances" << std::endl;
 
@@ -708,6 +872,8 @@ int main(int argc, char* argv[]) {
   bool pdl = false;
   // don't support it yet
   int pdl_count = -1;
+  // 0: gqa (contiguous KV cache), 1: gqa_paged (paged KV cache)
+  int mode = 0;
 
   // arg parsing
   while (1) {
@@ -718,6 +884,7 @@ int main(int argc, char* argv[]) {
     {"qL",          required_argument, 0, 0},
     {"BS",          required_argument, 0, 0},
     {"sliding_window_size", required_argument, 0, 0},
+    {"mode",        required_argument, 0, 0},
     {0, 0, 0, 0} // denote end of array
     };
 
@@ -737,14 +904,17 @@ int main(int argc, char* argv[]) {
         else if (option_index == 3) qL = atoi(optarg);
         else if (option_index == 4) BS = atoi(optarg);
         else if (option_index == 5) sliding_window_size = atoi(optarg);
+        else if (option_index == 6) mode = atoi(optarg);
         break;
       default: assert(false);
     }
   }
 
-  GQATester tester(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size);
+  GQATester tester(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size, mode);
   bool success = tester.verify();
-  std::cout << "Correctness test " << (success ? "PASSED" : "FAILED") << std::endl;
+  std::cout << "Correctness test"
+            << " mode=" << mode
+            << " " << (success ? "PASSED" : "FAILED") << std::endl;
 
-  benchmark_gqa(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size, pdl, pdl_count, 100, 1000);
+  benchmark_gqa(kvH, qH, qL, kvL, dH, BS, softmax_scale, sliding_window_size, mode, pdl, pdl_count, 100, 1000);
 }

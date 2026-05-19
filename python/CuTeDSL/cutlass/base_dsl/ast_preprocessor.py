@@ -720,7 +720,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         offset = len(all_args) - len(func_ast.args.defaults)
         for i, default_node in enumerate(func_ast.args.defaults):
             ast_defaults[all_args[offset + i].arg] = default_node
-        for kwarg, kw_default in zip(func_ast.args.kwonlyargs, func_ast.args.kw_defaults):
+        for kwarg, kw_default in zip(
+            func_ast.args.kwonlyargs, func_ast.args.kw_defaults
+        ):
             if kw_default is not None:
                 ast_defaults[kwarg.arg] = kw_default
         for param_name, default_val in params_with_defaults.items():

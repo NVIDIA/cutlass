@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.5.0
+# CUTLASS 4.5.1
 
-_CUTLASS 4.5.0 - May 2026_
+_CUTLASS 4.5.1 - May 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -61,6 +61,17 @@ To get started quickly - please refer :
   - Improved source code correlation for profiling/debugging
   - Fixed an aarch64 segfault issue with tvm-ffi
   - Re-organization for CuTe DSL examples/tutorials for better discoverability
+  - Fixed following issues:
+    https://github.com/NVIDIA/cutlass/issues/3219
+    https://github.com/NVIDIA/cutlass/issues/3218
+    https://github.com/NVIDIA/cutlass/issues/3212
+    https://github.com/NVIDIA/cutlass/issues/3210
+    https://github.com/NVIDIA/cutlass/issues/3208
+    https://github.com/NVIDIA/cutlass/issues/3201
+    https://github.com/NVIDIA/cutlass/issues/3227
+  - Fixed Jax int64 stride divisibility issue
+  - Fixed issues for SM120 blockscaled MMAs
+    - added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
 
 * More examples of authorizing peak-performance kernels
   - MOE examles
@@ -90,11 +101,13 @@ To get started quickly - please refer :
 * Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
   - Enables launching GEMM on stream with partial SM allocation.
 * Add [Snake](https://github.com/NVIDIA/cutlass/blob/main/test/unit/epilogue/thread/activation.cu#L409) activation functor for EVT.
+* Fix SM100 F8F6F4 SS MMA (1SM and 2SM) traits to use typed op templates.
+* Add UE8M0 (uniform exponent distribution) initialization support in tensor fill utilities.
+* Add `cvt.rn.bf16x2.e4m3x2` conversion instruction support to `numeric_conversion.h`.
+* Update [example 93](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa) with paged KV cache support for Blackwell low-latency GQA.
 * Fix some kernel issues:
   - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
   - Fix CUTLASS clang build issues
-  - Fix atomicCAS read-modify-write loop in `ConstSubbyteReference`
-  - Replace `__nv_atomic_load_n` with `volatile` for CUDA 11.4 compatibility in subbyte reference
   - Remove `PipelineStorage` shadowing in SM100 complex epilogue
   - Fix build issue in SM90 epilogue fusion visitor TMA warpspecialized
 * Fix some profiler issues:
