@@ -10,7 +10,9 @@
 - 能跑通 `wgmma_sm90.cu` 并解释每行作用
 
 ## 读
-- `include/cute/arch/mma_sm90.hpp` — `wgmma` PTX 包装（关注 fence / commit / wait）
+- `include/cute/arch/mma_sm90_gmma.hpp:42-100` — `wgmma` 同步原语 `warpgroup_arrive` / `warpgroup_wait<N>` / `warpgroup_commit_batch` / `warpgroup_fence_operand`（思想跟 cp.async fence/commit/wait 对称）
+- `include/cute/arch/mma_sm90_gmma.hpp:139-225` — 挑 2 个 atom struct 对比：`MMA_64x8x16_F16F16F16_SS` vs `_RS`，看 PTX inline asm 差别（其余 60+ 个 size 变体跳）
+- `include/cute/arch/mma_sm90_desc.hpp` — GMMA descriptor（64-bit 编码 SMEM 操作数），全文件 151 行
 - `include/cute/atom/mma_traits_sm90_gmma.hpp:71-130` — WGMMA atom 的 layout
   ```cpp
   using Layout_MN_SW128_Atom_Bits = ComposedLayout<
@@ -19,7 +21,7 @@
   ```
   - `upcast<sizeof_bits<Type>>` 把 bit 单位转换到元素单位
 - `examples/cute/tutorial/hopper/wgmma_sm90.cu` — 最小 WGMMA 示例
-- 跳过 `mma_sm90_gmma_ext.hpp`（60k 行自动生成枚举）和 `mma_sm90_gmma_sparse_ext.hpp`（56k 行）
+- 跳过 `mma_sm90_gmma_ext.hpp`（60k 行自动生成枚举）和 `mma_sm90_gmma_sparse_ext.hpp`（56k 行）；sparse 留到 Stage 5 MoE
 
 ## 写
 - `exercises/ex11_wgmma_minimal.cu` — 复刻 `wgmma_sm90.cu` 的核心逻辑，写注释解释每一步
