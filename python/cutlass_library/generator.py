@@ -11303,7 +11303,16 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
       layout[2][1] = 128 // DataTypeSize[data_types[0]["d_type"]]
 
     for data_type, kernel_schedule in product(data_types, kernel_schedules):
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+      filtered_tile_descriptions = [
+          td for td in tile_descriptions
+          if all(
+              sm120_fp6_epilogue_threadblock_shape_ok(
+                  td.threadblock_shape, data_type["d_type"], layout_d[2][0])
+              for layout_d in layouts)
+      ]
+      if not filtered_tile_descriptions:
+        continue
+      CreateGemmUniversal3xOperator(manifest, layouts, filtered_tile_descriptions, data_type,
         [[kernel_schedule, EpilogueScheduleType.ScheduleAuto]],
         tile_schedulers = tile_schedulers(data_type["sfd_type"], kernel_schedule),
         gemm_kind = gemm_kind

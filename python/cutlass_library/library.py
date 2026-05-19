@@ -421,6 +421,22 @@ class LayoutType(enum.Enum):
   TensorKCSRT = enum_auto()
 
 #
+def sm120_fp6_epilogue_threadblock_shape_ok(threadblock_mnk, element_d, gmem_layout_tag_d):
+  """
+  Return True if a GEMM threadblock shape satisfies the FP6 / EpilogueTileAuto
+  constraints in ``include/cutlass/epilogue/collective/builders/sm120_builder.inl``
+  (``sm120_compute_tile_shape_or_override``): for ElementD FP6, the contiguous
+  extent along D in global memory must be a multiple of 128.
+  """
+  if element_d not in (DataType.e3m2, DataType.e2m3):
+    return True
+  if gmem_layout_tag_d == LayoutType.ColumnMajor:
+    return threadblock_mnk[0] % 128 == 0
+  if gmem_layout_tag_d == LayoutType.RowMajor:
+    return threadblock_mnk[1] % 128 == 0
+  return True
+
+#
 LayoutTag = {
   LayoutType.ColumnMajor: 'cutlass::layout::ColumnMajor',
   LayoutType.RowMajor: 'cutlass::layout::RowMajor',
