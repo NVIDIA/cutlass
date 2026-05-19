@@ -2,6 +2,28 @@
 
 # CUTLASS 4.x
 
+## [4.5.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.1) (2026-05-15)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed following issues:
+    https://github.com/NVIDIA/cutlass/issues/3219
+    https://github.com/NVIDIA/cutlass/issues/3218
+    https://github.com/NVIDIA/cutlass/issues/3212
+    https://github.com/NVIDIA/cutlass/issues/3210
+    https://github.com/NVIDIA/cutlass/issues/3208
+    https://github.com/NVIDIA/cutlass/issues/3201
+    https://github.com/NVIDIA/cutlass/issues/3227
+  - Fixed Jax int64 stride divisibility issue
+  - Fixed issues for SM120 blockscaled MMAs
+	- added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
+
+### CUTLASS C++
+* Fix SM100 F8F6F4 SS MMA (1SM and 2SM) traits to use typed op templates.
+* Add UE8M0 (uniform exponent distribution) initialization support in tensor fill utilities.
+* Add `cvt.rn.bf16x2.e4m3x2` conversion instruction support to `numeric_conversion.h`.
+* Update [example 93](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa) with paged KV cache support for Blackwell low-latency GQA.
+
 ## [4.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.0) (2026-05-01)
 
 ### CuTe DSL
@@ -20,7 +42,7 @@
   - Improved source code correlation for profiling/debugging
   - Fixed an aarch64 segfault issue with tvm-ffi
   - Re-organization for CuTe DSL examples/tutorials for better discoverability
- 
+
 * More examples of authorizing peak-performance kernels
   - MOE examles
 	- A new style of grouped-gemm that aligns to torch's grouped_mm and scaled_groued_mm interface.

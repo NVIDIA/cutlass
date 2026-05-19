@@ -21,6 +21,9 @@ __all__ = [
     "MmaFP8Op",
     "MmaMXF4Op",
     "MmaMXF4NVF4Op",
+    "MmaMXF8Op",
+    "MmaMXF8F6F4Op",
+    "MXF8F6F4_SUPPORTED_PAIRS",
     # copy.py
     "LdMatrix8x8x16bOp",
     "LdMatrix16x8x8bOp",

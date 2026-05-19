@@ -3330,7 +3330,12 @@ def filter_zeros(
     if not isinstance(input, (Layout, Tensor)):
         raise TypeError(f"Expected layout or tensor as input, but got {type(input)=}")
     if isinstance(input, Tensor):
-        input = input.value
+        return _op_wrapper(
+            partial(_cute_ir.filter_zeros, target_profile=target_profile),
+            input,
+            loc=loc,
+            ip=ip,
+        )
     return _cute_ir.filter_zeros(input, target_profile=target_profile, loc=loc, ip=ip)
 
 
@@ -3388,7 +3393,7 @@ def filter(
             input.inner, input.offset, filter(input.outer, loc=loc, ip=ip)
         )
     elif isinstance(input, _Tensor):
-        return _cute_ir.filter(input.value, loc=loc, ip=ip)
+        return _op_wrapper(_cute_ir.filter, input, loc=loc, ip=ip)
     else:
         return _cute_ir.filter(input, loc=loc, ip=ip)
 
@@ -5020,10 +5025,9 @@ def local_partition(
         raise NotImplementedError(
             f"Index value should be 32-bit or smaller integer type, but got {index_val.type}"
         )
-    return _cute_ir.local_partition(
-        input=target.value,
-        tiler=dice(tiler, proj),
-        index=index_val,
+    return _op_wrapper(
+        partial(_cute_ir.local_partition, tiler=dice(tiler, proj), index=index_val),
+        target,
         loc=loc,
         ip=ip,
     )
@@ -5114,11 +5118,9 @@ def local_tile(
         proj_val = _pack_coord(proj, loc=loc, ip=ip)
         proj = proj_val.type.attribute
 
-    return _cute_ir.local_tile(
-        input=input.value,
-        tile=tiler_val,
-        coord=coord_val,
-        proj=proj,
+    return _op_wrapper(
+        partial(_cute_ir.local_tile, tile=tiler_val, coord=coord_val, proj=proj),
+        input,
         loc=loc,
         ip=ip,
     )
