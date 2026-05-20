@@ -56,6 +56,41 @@ namespace cutlass {
 namespace epilogue {
 namespace collective {
 
+namespace detail {
+
+// SFINAE trait: detect HasAuxTmaStore on a type or any Op in an Sm90VisitorImpl pack.
+// Primary: false
+template <class T, class = void>
+struct has_aux_tma_store : cute::false_type {};
+
+// Match types that directly define HasAuxTmaStore = true
+template <class T>
+struct has_aux_tma_store<T, cute::void_t<decltype(T::HasAuxTmaStore)>>
+  : cute::bool_constant<T::HasAuxTmaStore> {};
+
+// Variadic OR over a pack
+template <class... Ts>
+struct any_has_aux_tma_store : cute::bool_constant<(has_aux_tma_store<Ts>::value || ...)> {};
+
+// Match Sm90VisitorImpl<Ops...> — check all Ops in the EVT tree
+template <class... Ops>
+struct has_aux_tma_store<
+    cutlass::epilogue::fusion::Sm90VisitorImpl<Ops...>,
+    cute::void_t<typename cutlass::epilogue::fusion::Sm90VisitorImpl<Ops...>::Params>>
+  : any_has_aux_tma_store<Ops...> {};
+
+// Match Sm90TreeVisitor<NodeOp, ChildOps...> — delegates to Sm90VisitorImpl<ChildOps..., NodeOp>
+template <class NodeOp, class... ChildOps>
+struct has_aux_tma_store<
+    cutlass::epilogue::fusion::Sm90TreeVisitor<NodeOp, ChildOps...>,
+    cute::void_t<typename cutlass::epilogue::fusion::Sm90TreeVisitor<NodeOp, ChildOps...>::Params>>
+  : any_has_aux_tma_store<ChildOps..., NodeOp> {};
+
+template <class T>
+static constexpr bool has_aux_tma_store_v = has_aux_tma_store<T>::value;
+
+} // namespace detail
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -230,6 +265,10 @@ public:
                           cutlass::PipelineTmaStore<StagesD>>;
   using StorePipelineState = cutlass::PipelineState<ReuseSmemC ? StagesC : StagesD>;
 
+  // Detect if the fusion tree contains an auxiliary TMA store (e.g. SwiGLU visitor)
+  static constexpr bool HasAuxTmaStore = detail::has_aux_tma_store_v<FusionCallbacks>;
+  static constexpr uint32_t NumAuxTmaTensors = HasAuxTmaStore ? NumEpilogueWarpGroups : 0;
+
   struct SharedStorage {
     struct TensorStorage {
       using CollectiveStorage = cute::conditional_t<not is_source_supported, CollectiveStorageWithoutC,
@@ -243,6 +282,7 @@ public:
     struct TensorMapStorage : cute::aligned_struct<128, _0> {
       cute::TmaDescriptor smem_tensormap_C;
       cute::array<cute::TmaDescriptor, NumEpilogueWarpGroups> smem_tensormap_D;
+      cute::array<cute::TmaDescriptor, NumAuxTmaTensors> smem_tensormap_aux;
     } tensormaps;
 
     using PipelineStorage = typename LoadPipeline::SharedStorage;
@@ -374,7 +414,7 @@ public:
   template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
-    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
+    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1) + NumAuxTmaTensors;
     auto descriptors_shape = cute::make_shape(sm_count, Int<NumInputTensors>{});
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
@@ -636,6 +676,7 @@ public:
       int thread_idx,
       TensorStorage& shared_tensors,
       TensorMapD const& store_tensormap,
+      cute::TmaDescriptor const* aux_store_tensormap = nullptr,
       int subtile_idx=-1) {
 
     using namespace cute;
@@ -776,7 +817,8 @@ public:
                       tRS_cD,
                       residue_tRS_cD,
                       tRS_rC,
-                      thread_idx
+                      thread_idx,
+                      aux_store_tensormap
                     };
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
@@ -1039,6 +1081,86 @@ public:
     return cute::make_tuple(null_tma_desc);
   }
 
+  // Initialize auxiliary TMA store descriptor (e.g. SwiGLU output).
+  // Mirrors store_init() but targets the aux tensormap workspace slots.
+  CUTLASS_DEVICE auto
+  aux_store_init(
+      Params const& params,
+      TensorMapStorage& shared_tensormaps,
+      int32_t sm_count,
+      int32_t sm_idx,
+      int32_t warp_group_idx) {
+    if constexpr (!HasAuxTmaStore) {
+      cute::TmaDescriptor* null_desc = nullptr;
+      return cute::make_tuple(null_desc);
+    }
+    else {
+      int warp_idx_in_warp_group = canonical_warp_idx_sync() % NumWarpsPerWarpGroup;
+      if (warp_idx_in_warp_group == 0) {
+        constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1) + NumAuxTmaTensors;
+        constexpr uint32_t aux_base = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
+        Layout desc_layout = make_layout(make_shape(sm_count, Int<NumInputTensors>{}));
+        Tensor gmem_tensormap = make_tensor(params.tensormaps, desc_layout);
+
+        auto const& aux_tma_desc = fusion_callbacks.get_aux_tma_descriptor();
+        Tensor p_desc = make_tensor(aux_tma_desc, Int<1>{}, Int<1>{});
+        Tensor s_desc = make_tensor(
+            make_smem_ptr(&shared_tensormaps.smem_tensormap_aux[warp_group_idx]),
+            Int<1>{}, Int<1>{});
+        if (cute::elect_one_sync()) {
+          copy(recast<uint128_t>(p_desc), recast<uint128_t>(s_desc));
+        }
+        __syncwarp();
+        return cute::make_tuple(&gmem_tensormap(sm_idx, aux_base + warp_group_idx));
+      }
+      cute::TmaDescriptor* null_desc = nullptr;
+      return cute::make_tuple(null_desc);
+    }
+  }
+
+  // Patch the aux smem descriptor for the next batch/group
+  template <class ProblemShape_MNKL>
+  CUTLASS_DEVICE void
+  aux_tensormaps_perform_update(
+      TensorMapStorage& shared_tensormaps,
+      Params const& params,
+      cute::TmaDescriptor const* tensormap,
+      ProblemShape_MNKL problem_shape_mnkl,
+      int32_t next_batch,
+      int32_t warp_group_idx) {
+    if constexpr (HasAuxTmaStore) {
+      if (cute::elect_one_sync()) {
+        fusion_callbacks.aux_tensormaps_replace(
+            shared_tensormaps.smem_tensormap_aux[warp_group_idx],
+            problem_shape_mnkl, next_batch);
+      }
+    }
+  }
+
+  // Wait for in-flight aux TMA stores, then publish updated descriptor to gmem
+  CUTLASS_DEVICE void
+  aux_tensormaps_cp_fence_release(
+      TensorMapStorage& shared_tensormaps,
+      cute::TmaDescriptor const* tensormap,
+      int32_t warp_group_idx) {
+    if constexpr (HasAuxTmaStore) {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
+      cute::tma_descriptor_cp_fence_release(
+          tensormap, shared_tensormaps.smem_tensormap_aux[warp_group_idx]);
+    }
+  }
+
+  // Acquire fence so subsequent TMA ops see the updated aux descriptor
+  CUTLASS_DEVICE void
+  aux_tensormaps_fence_acquire(cute::TmaDescriptor const* tensormap) {
+    if constexpr (HasAuxTmaStore) {
+      cute::tma_descriptor_fence_acquire(tensormap);
+    }
+  }
+
   //
   // Methods to perform different parts of TMA/Tensormap modifications
   //
@@ -1052,7 +1174,7 @@ public:
       int32_t sm_idx,
       int32_t warp_group_idx) {
 
-    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
+    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1) + NumAuxTmaTensors;
     Layout desc_layout = make_layout(make_shape(sm_count, Int<NumInputTensors>{}));
 
     Tensor gmem_tensormap = make_tensor(params.tensormaps, desc_layout);                      // (SMs, NumInputTensors)
