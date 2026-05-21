@@ -55,7 +55,7 @@ Coverage
 
 import pytest
 import cutlass
-from hopper.dense_gemm_fp8_2xacc import run
+from hopper.kernel.dense_gemm.dense_gemm_fp8_2xacc import run
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -169,8 +169,8 @@ def _run_benchmark(
     [
         pytest.param((128, 256), (2048, 2048, 2048, 1), id="tile128x256"),
         pytest.param((128, 128), (2048, 2048, 2048, 1), id="tile128x128"),
-        pytest.param((128, 64),  (2048, 2048, 2048, 1), id="tile128x64"),
-        pytest.param((64,  64),  (2048, 2048, 2048, 1), id="tile64x64"),
+        pytest.param((128, 64), (2048, 2048, 2048, 1), id="tile128x64"),
+        pytest.param((64, 64), (2048, 2048, 2048, 1), id="tile64x64"),
     ],
 )
 def test_l0_tile_shapes(tile_shape_mn, mnkl):
@@ -195,8 +195,11 @@ def test_l0_tile_shapes(tile_shape_mn, mnkl):
 )
 def test_l0_cluster_shapes(cluster_shape_mn):
     """All valid cluster shapes compile (tile 128x128, 2048^3)."""
-    _run_compile(mnkl=(2048, 2048, 2048, 1), tile_shape_mn=(128, 128),
-                 cluster_shape_mn=cluster_shape_mn)
+    _run_compile(
+        mnkl=(2048, 2048, 2048, 1),
+        tile_shape_mn=(128, 128),
+        cluster_shape_mn=cluster_shape_mn,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +211,8 @@ def test_l0_cluster_shapes(cluster_shape_mn):
 @pytest.mark.parametrize(
     "c_dtype",
     [
-        pytest.param(F16,  id="Float16"),
-        pytest.param(F32,  id="Float32"),
+        pytest.param(F16, id="Float16"),
+        pytest.param(F32, id="Float32"),
         pytest.param(F8E4, id="Float8E4M3FN"),
     ],
 )
@@ -227,8 +230,8 @@ def test_l0_output_dtypes(c_dtype):
 @pytest.mark.parametrize(
     "mma_promotion_interval",
     [
-        pytest.param(4,  id="interval4"),
-        pytest.param(8,  id="interval8"),
+        pytest.param(4, id="interval4"),
+        pytest.param(8, id="interval8"),
         pytest.param(16, id="interval16"),
     ],
 )
@@ -249,8 +252,8 @@ def test_l0_mma_promotion_intervals(mma_promotion_interval):
     [
         pytest.param((128, 256), (2048, 2048, 2048, 1), id="tile128x256"),
         pytest.param((128, 128), (2048, 2048, 2048, 1), id="tile128x128"),
-        pytest.param((128, 64),  (2048, 2048, 2048, 1), id="tile128x64"),
-        pytest.param((64,  64),  (2048, 2048, 2048, 1), id="tile64x64"),
+        pytest.param((128, 64), (2048, 2048, 2048, 1), id="tile128x64"),
+        pytest.param((64, 64), (2048, 2048, 2048, 1), id="tile64x64"),
     ],
 )
 def test_l1_tile_shapes(tile_shape_mn, mnkl):
@@ -276,8 +279,11 @@ def test_l1_tile_shapes(tile_shape_mn, mnkl):
 )
 def test_l1_cluster_shapes(cluster_shape_mn):
     """All cluster shapes (including A/B multicast paths) produce correct results."""
-    _run_correctness(mnkl=(2048, 2048, 2048, 1), tile_shape_mn=(128, 128),
-                     cluster_shape_mn=cluster_shape_mn)
+    _run_correctness(
+        mnkl=(2048, 2048, 2048, 1),
+        tile_shape_mn=(128, 128),
+        cluster_shape_mn=cluster_shape_mn,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +296,9 @@ def test_l1_cluster_shapes(cluster_shape_mn):
 @pytest.mark.parametrize(
     "c_dtype, tolerance",
     [
-        pytest.param(F16,  0.1,  id="Float16"),
-        pytest.param(F32,  0.1,  id="Float32"),
-        pytest.param(F8E4, 0.5,  id="Float8E4M3FN"),
+        pytest.param(F16, 0.1, id="Float16"),
+        pytest.param(F32, 0.1, id="Float32"),
+        pytest.param(F8E4, 0.5, id="Float8E4M3FN"),
     ],
 )
 def test_l1_output_dtypes(c_dtype, tolerance):
@@ -310,8 +316,8 @@ def test_l1_output_dtypes(c_dtype, tolerance):
 @pytest.mark.parametrize(
     "mma_promotion_interval",
     [
-        pytest.param(4,  id="interval4"),
-        pytest.param(8,  id="interval8"),
+        pytest.param(4, id="interval4"),
+        pytest.param(8, id="interval8"),
         pytest.param(16, id="interval16"),
     ],
 )
@@ -330,9 +336,9 @@ def test_l1_mma_promotion_intervals(mma_promotion_interval):
 @pytest.mark.parametrize(
     "scale_a_val, scale_b_val",
     [
-        pytest.param(0.5,  2.0,  id="scale_a0.5_b2.0"),
-        pytest.param(0.25, 4.0,  id="scale_a0.25_b4.0"),
-        pytest.param(2.0,  0.5,  id="scale_a2.0_b0.5"),
+        pytest.param(0.5, 2.0, id="scale_a0.5_b2.0"),
+        pytest.param(0.25, 4.0, id="scale_a0.25_b4.0"),
+        pytest.param(2.0, 0.5, id="scale_a2.0_b0.5"),
     ],
 )
 def test_l1_scale_factors(scale_a_val, scale_b_val):
@@ -351,7 +357,7 @@ def test_l1_scale_factors(scale_a_val, scale_b_val):
     "mnkl",
     [
         pytest.param((1024, 1024, 1024, 2), id="L2"),
-        pytest.param((512,  512,  512,  4), id="L4"),
+        pytest.param((512, 512, 512, 4), id="L4"),
     ],
 )
 def test_l1_batched(mnkl):
@@ -370,25 +376,118 @@ def test_l1_batched(mnkl):
     "mnkl, tile_shape_mn, cluster_shape_mn, mma_promotion_interval, label",
     [
         # Square 4096^3 — tile / cluster sweep
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 1), 4,  "4096^3  tile=128x128  cluster=1x1",  id="4096-128x128-1x1"),
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 2), 4,  "4096^3  tile=128x128  cluster=1x2",  id="4096-128x128-1x2"),
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (2, 2), 4,  "4096^3  tile=128x128  cluster=2x2",  id="4096-128x128-2x2"),
-        pytest.param((4096, 4096, 4096, 1), (128, 256), (1, 2), 4,  "4096^3  tile=128x256  cluster=1x2",  id="4096-128x256-1x2"),
-        pytest.param((4096, 4096, 4096, 1), (128, 256), (2, 2), 4,  "4096^3  tile=128x256  cluster=2x2",  id="4096-128x256-2x2"),
-        pytest.param((4096, 4096, 4096, 1), (128, 64),  (1, 2), 4,  "4096^3  tile=128x64   cluster=1x2",  id="4096-128x64-1x2"),
-        pytest.param((4096, 4096, 4096, 1), (64,  64),  (1, 2), 4,  "4096^3  tile=64x64    cluster=1x2",  id="4096-64x64-1x2"),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 1),
+            4,
+            "4096^3  tile=128x128  cluster=1x1",
+            id="4096-128x128-1x1",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 2),
+            4,
+            "4096^3  tile=128x128  cluster=1x2",
+            id="4096-128x128-1x2",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (2, 2),
+            4,
+            "4096^3  tile=128x128  cluster=2x2",
+            id="4096-128x128-2x2",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 256),
+            (1, 2),
+            4,
+            "4096^3  tile=128x256  cluster=1x2",
+            id="4096-128x256-1x2",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 256),
+            (2, 2),
+            4,
+            "4096^3  tile=128x256  cluster=2x2",
+            id="4096-128x256-2x2",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 64),
+            (1, 2),
+            4,
+            "4096^3  tile=128x64   cluster=1x2",
+            id="4096-128x64-1x2",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (64, 64),
+            (1, 2),
+            4,
+            "4096^3  tile=64x64    cluster=1x2",
+            id="4096-64x64-1x2",
+        ),
         # LLM-like: 8192x8192x4096
-        pytest.param((8192, 8192, 4096, 1), (128, 128), (1, 2), 4,  "8192x8192x4096  tile=128x128  cluster=1x2", id="llm-128x128-1x2"),
-        pytest.param((8192, 8192, 4096, 1), (128, 256), (2, 2), 4,  "8192x8192x4096  tile=128x256  cluster=2x2", id="llm-128x256-2x2"),
+        pytest.param(
+            (8192, 8192, 4096, 1),
+            (128, 128),
+            (1, 2),
+            4,
+            "8192x8192x4096  tile=128x128  cluster=1x2",
+            id="llm-128x128-1x2",
+        ),
+        pytest.param(
+            (8192, 8192, 4096, 1),
+            (128, 256),
+            (2, 2),
+            4,
+            "8192x8192x4096  tile=128x256  cluster=2x2",
+            id="llm-128x256-2x2",
+        ),
         # mma_promotion_interval sweep (shows precision/performance trade-off)
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 2), 4,  "4096^3  interval=4",  id="4096-interval4"),
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 2), 8,  "4096^3  interval=8",  id="4096-interval8"),
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 2), 16, "4096^3  interval=16", id="4096-interval16"),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 2),
+            4,
+            "4096^3  interval=4",
+            id="4096-interval4",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 2),
+            8,
+            "4096^3  interval=8",
+            id="4096-interval8",
+        ),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 2),
+            16,
+            "4096^3  interval=16",
+            id="4096-interval16",
+        ),
         # FP8 output
-        pytest.param((4096, 4096, 4096, 1), (128, 128), (1, 2), 4,  "4096^3  out=FP8E4M3", id="4096-fp8-out"),
+        pytest.param(
+            (4096, 4096, 4096, 1),
+            (128, 128),
+            (1, 2),
+            4,
+            "4096^3  out=FP8E4M3",
+            id="4096-fp8-out",
+        ),
     ],
 )
-def test_bench(mnkl, tile_shape_mn, cluster_shape_mn, mma_promotion_interval, label, capsys):
+def test_bench(
+    mnkl, tile_shape_mn, cluster_shape_mn, mma_promotion_interval, label, capsys
+):
     """
     Performance benchmark — run with: pytest -m bench -s
 

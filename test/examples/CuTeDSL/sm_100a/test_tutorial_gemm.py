@@ -26,14 +26,14 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from blackwell.tutorial_gemm import fp16_gemm_0
-from blackwell.tutorial_gemm import fp16_gemm_1
-from blackwell.tutorial_gemm import fp16_gemm_2
-from blackwell.tutorial_gemm import fp16_gemm_3
-from blackwell.tutorial_gemm import fp16_gemm_3_1
-from blackwell.tutorial_gemm import fp16_gemm_4
-from blackwell.tutorial_gemm import fp16_gemm_5
-from blackwell.tutorial_gemm import fp16_gemm_6
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_0
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_1
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_2
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_3
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_3_1
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_4
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_5
+from blackwell.tutorial.tutorial_gemm import fp16_gemm_6
 
 import pytest
 from typing import Tuple
@@ -61,7 +61,6 @@ def test_fp16_gemm_1(
     tolerance: float,
 ):
     fp16_gemm_1.run_dense_gemm(mnk, tolerance)
-
 
 
 @pytest.mark.parametrize(

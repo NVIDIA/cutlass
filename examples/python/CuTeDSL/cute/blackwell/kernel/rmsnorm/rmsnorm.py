@@ -30,6 +30,8 @@ import argparse
 import ctypes
 import functools
 import math
+import os
+import sys
 from typing import Optional, Tuple, Union
 
 import cuda.bindings.driver as cuda
@@ -44,10 +46,11 @@ from cutlass import Boolean, Float32, Int32, Int64
 from cutlass.cute.runtime import make_ptr
 
 # Support both direct execution and module import
-try:
-    from .reduce import row_reduce
-except ImportError:
-    from reduce import row_reduce
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(current_dir, "../../.."))
+
+from blackwell.kernel.reduce.reduce import row_reduce
 
 """
 RMSNorm: Root Mean Square Layer Normalization for Hopper & Blackwell (SM90+)
