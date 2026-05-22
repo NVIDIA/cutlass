@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import enum
+import warnings
 from dataclasses import dataclass
 from typing import Any, Optional, Type
 from typing_extensions import deprecated
@@ -18,8 +19,12 @@ from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
-from cutlass._mlir.dialects.nvvm import ReductionOp as ReductionOp
+from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
+from cutlass._mlir.dialects.cute import ReductionOp as _CuteReductionOp
+from cutlass._mlir.dialects.nvvm import ReductionOp as _NvvmReductionOp
 from cutlass._mlir import ir
+
+ReductionOp = ReductionKind
 
 from ...atom import CopyOp, Trait, make_atom
 from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
@@ -952,9 +957,41 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
     This Operation uses TMA in the ``.tile`` mode.
     """
 
-    reduction_kind: ReductionOp = ReductionOp.ADD
+    reduction_kind: ReductionKind = ReductionKind.ADD
 
     def __post_init__(self) -> None:
+        # Canonicalize reduction_kind to cute.ReductionKind by NAME (not value)
+        # to (1) eliminate the silent IntEnum cross-class miscompile
+        # (cute.ReductionOp.ADD == nvvm.ReductionOp.AND because both are
+        # integer 0) and (2) decouple from upstream NVVM enum stability.
+        kind = self.reduction_kind
+        if isinstance(kind, ReductionKind):
+            pass  # native path — already the contract type
+        elif isinstance(kind, _NvvmReductionOp):
+            # Hardware-correct upstream enum; convert silently by name.
+            self.reduction_kind = ReductionKind[kind.name]
+        elif isinstance(kind, _CuteReductionOp):
+            # Validate the name first so an unknown member (e.g. MUL) raises
+            # a clean TypeError. Doing it before warnings.warn guarantees the
+            # invalid-name case isn't masked by the DeprecationWarning being
+            # escalated to an exception under -W error / warnings-as-errors.
+            if kind.name not in ReductionKind.__members__:
+                raise TypeError(
+                    f"cute.ReductionOp.{kind.name} is not a valid TMA "
+                    f"reduction kind. Valid kinds: "
+                    f"{[m.name for m in ReductionKind]}."
+                )
+            self.reduction_kind = ReductionKind[kind.name]
+            warnings.warn(
+                "Passing cute.ReductionOp to CopyReduceBulkTensorTileS2GOp "
+                "is deprecated: cute.ReductionOp models compute reductions "
+                "(for cute.reduce). TMA hardware reduction uses a separate "
+                "enum -- use cute.ReductionKind instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        # else: leave as-is; _to_ir raises TypeError on unknown types.
+
         # Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
         if not arch >= Arch.sm_90:
@@ -979,25 +1016,18 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
             "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
         )
 
-    def _to_ir(self) -> _cute_nvgpu_ir.ReductionKind:
-        if self.reduction_kind == ReductionOp.ADD:
-            return _cute_nvgpu_ir.ReductionKind.ADD
-        elif self.reduction_kind == ReductionOp.MIN:
-            return _cute_nvgpu_ir.ReductionKind.MIN
-        elif self.reduction_kind == ReductionOp.MAX:
-            return _cute_nvgpu_ir.ReductionKind.MAX
-        elif self.reduction_kind == ReductionOp.INC:
-            return _cute_nvgpu_ir.ReductionKind.INC
-        elif self.reduction_kind == ReductionOp.DEC:
-            return _cute_nvgpu_ir.ReductionKind.DEC
-        elif self.reduction_kind == ReductionOp.AND:
-            return _cute_nvgpu_ir.ReductionKind.AND
-        elif self.reduction_kind == ReductionOp.OR:
-            return _cute_nvgpu_ir.ReductionKind.OR
-        elif self.reduction_kind == ReductionOp.XOR:
-            return _cute_nvgpu_ir.ReductionKind.XOR
-        else:
-            assert False, "unrecognized self.reduction_kind"
+    def _to_ir(self) -> ReductionKind:
+        # __post_init__ canonicalizes reduction_kind to ReductionKind, so this
+        # is normally a pass-through. Raise (rather than assert) so the error
+        # survives ``python -O`` and we never silently return None.
+        kind = self.reduction_kind
+        if isinstance(kind, ReductionKind):
+            return kind
+        raise TypeError(
+            f"reduction_kind must be cute.ReductionKind; got "
+            f"{type(kind).__module__}.{type(kind).__name__} ({kind!r}). "
+            f"Valid kinds: {[m.name for m in ReductionKind]}."
+        )
 
 
 class CopyReduceBulkTensorTileS2GNonExecTrait(Trait):
