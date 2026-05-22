@@ -2,6 +2,21 @@
 
 # CUTLASS 4.x
 
+## [4.5.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.2) (2026-05-22)
+
+### CuTe DSL
+* New features
+  - Python 3.14t is now supported with GIL enabled
+
+* Bug fixing and improvements
+  - Fixed following issues:
+      https://github.com/NVIDIA/cutlass/issues/3240
+      https://github.com/NVIDIA/cutlass/issues/3241
+
+### CUTLASS C++
+* Fix missing convert fucntion in EVT for fp4 kernels.
+* Avoid instantiate 2sm tma kernels where ctaN is none power of 64 when ctaN > 128 in profiler.
+
 ## [4.5.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.1) (2026-05-15)
 
 ### CuTe DSL
