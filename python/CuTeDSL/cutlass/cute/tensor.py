@@ -38,7 +38,6 @@ from .typing import (
     Int8,
     Int32,
     BFloat16,
-    Float32,
     IntTuple,
     Coord,
     Shape,
@@ -68,6 +67,8 @@ from .core import (
     append,
     depth,
     flatten,
+    get_nonswizzle_portion,
+    get_swizzle_portion,
     has_underscore,
     make_layout,
     select,
@@ -95,6 +96,7 @@ __all__ = [
     "make_fragment_like",
     "make_rmem_tensor_like",
     "make_rmem_tensor",
+    "as_position_independent_swizzle_tensor",
     "recast_tensor",
     "domain_offset",
     "print_tensor",
@@ -905,6 +907,31 @@ def make_fragment(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Tensor:
     return make_rmem_tensor(layout_or_shape, dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def as_position_independent_swizzle_tensor(
+    src: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return a shared-memory tensor with layout swizzle moved onto the pointer."""
+    if not isinstance(src, Tensor):
+        raise TypeError(f"expects a Tensor, but got {type(src)}")
+    if src.memspace != AddressSpace.smem:
+        raise TypeError("expects a shared-memory tensor")
+
+    swizzle = get_swizzle_portion(src.layout, loc=loc, ip=ip)
+    layout = get_nonswizzle_portion(src.layout, loc=loc, ip=ip)
+    ptr = recast_ptr(
+        src.iterator,
+        swizzle_=swizzle,
+        dtype=src.element_type,
+        loc=loc,
+        ip=ip,
+    )
+    return make_tensor(ptr, layout, loc=loc, ip=ip)
 
 
 @dsl_user_op
