@@ -5837,6 +5837,20 @@ class struct:
 
         type.__setattr__(self._cls, "__repr__", struct_repr)
 
+        # Implement the DynamicExpression protocol so struct instances can
+        # be threaded through DSL control flow (e.g. captured into the
+        # branches of an `scf.if` or the body of an `scf.while`). A struct
+        # instance is fully described by its `base` pointer; all field
+        # instances are re-derived from `base + offsets` on reconstruction.
+        decorator = self
+        type.__setattr__(self._cls, "__get_mlir_types__",
+                         lambda self: self.base.__get_mlir_types__())
+        type.__setattr__(self._cls, "__extract_mlir_values__",
+                         lambda self: self.base.__extract_mlir_values__())
+        type.__setattr__(self._cls, "__new_from_mlir_values__",
+                         lambda self, values:
+                             decorator(self.base.__new_from_mlir_values__(values)))
+
         # Calculate the offsets and alignment
         offset = 0
         alignment = 1
