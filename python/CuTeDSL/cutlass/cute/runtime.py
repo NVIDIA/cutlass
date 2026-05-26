@@ -294,7 +294,7 @@ class _Tensor(Tensor):
 
             # Create a tensor from a numpy array
             import numpy as np
-            from cutlass.cute import from_dlpack
+            from cutlass.cute.runtime import from_dlpack
 
             # Create a tensor with Float32 elements
             a = np.zeros(shape, dtype=np.uint8)
