@@ -14,6 +14,15 @@
 - **从哪里分化**：LSU
 - **解决的问题**：大块多维 tensor 搬运 + 自动适配 Tensor Core 需要的 swizzling 格式 + cluster 内分发 + SMEM→GMEM 时附带 atomic reduction
 - **编程模型**：`cp.async.bulk.tensor`、`cp.async.bulk.tensor.multicast`、`cp.reduce.async.bulk`
+- **常用 PTX**：
+  ```
+  cp.async.bulk.tensor.{1..5}d.shared::cluster.global              ← G→S 异步搬 N 维 tile
+  cp.async.bulk.tensor.{1..5}d.global.shared::cta                  ← S→G 写回
+  cp.async.bulk.tensor.2d.shared::cluster.global.multicast::cluster ← cluster 内 multicast
+  cp.reduce.async.bulk.tensor.{1..5}d.global.shared::cta.add       ← S→G 时累加（split-K 用）
+  tensormap.replace.tile.global_address [tmap], ptr                ← 运行时改 TensorMap（变形状）
+  ```
+- **配套 host API**：`cuTensorMapEncodeTiled`（构造 128 字节 TensorMap 描述符）
 
 ### 2. SM-to-SM Network（GPC 内 SM 互联网络）
 
@@ -45,6 +54,21 @@
   - 4 个 sub-partition（SMSP）的 Tensor Core 协同完成一条 WGMMA（warpgroup = 4 warp，每个 warp 占一个 SMSP）
 - **解决的问题**：进一步提升 MMA 吞吐和喂数效率，降低指令开销，让单条指令驱动更多算力
 - **编程模型**：`wgmma.mma_async`、`wgmma.fence`、`wgmma.commit_group`、`wgmma.wait_group`
+- **常用 PTX**：
+  ```
+  wgmma.fence.sync.aligned                                           ← register operand 同步屏障
+  wgmma.mma_async.sync.aligned.m64nNk16.f16.f16.f16                  ← FP16 (N = 8..256, 8 的倍数)
+  wgmma.mma_async.sync.aligned.m64nNk16.f32.bf16.bf16                ← BF16, fp32 累加
+  wgmma.mma_async.sync.aligned.m64nNk32.f32.e4m3.e4m3                ← FP8 (k=32, fp32 累加)
+  wgmma.commit_group.sync.aligned                                    ← 把之前发的 wgmma 打包
+  wgmma.wait_group.sync.aligned N                                    ← 等到只剩 N 个 group 未完成
+  ```
+- **配套指令（SM90 新增）**：
+  ```
+  stmatrix.sync.aligned.x{1,2,4}.m8n8.shared.b16  [smem], {r0,...}   ← ldmatrix 的对称指令，
+                                                                       epilogue 把 register C
+                                                                       重排回 SMEM 时必用
+  ```
 
 #### A2. Thread Block Cluster（CWD + LSU + SMEM 控制器联动升级）
 
@@ -54,6 +78,17 @@
   - **SMEM 控制器**升级，能响应来自 SM-to-SM Network 的远程访问请求
 - **解决的核心问题**：让一组协同计算的 block 共享更大的 SMEM 容量和更大的 Tensor Core 算力（等价于把多 SM 的 SMEM "虚拟拼接" 成一个更大的逻辑 SMEM，8 个 block 的 cluster ≈ 1.78 MB = 8 × 228 KB），同时通信延迟远低于走 GMEM/L2
 - **编程模型**：cluster launch 配置、DSMEM（`.shared::cluster` 地址空间）、cluster mbarrier、`cluster.sync()`、TMA multicast
+- **常用 PTX**：
+  ```
+  barrier.cluster.arrive                                             ← cluster 级 arrive
+  barrier.cluster.wait                                               ← cluster 级 wait
+  mapa.shared::cluster.u32  dst, smem_ptr, rank                      ← 计算远程 SMEM 地址
+                                                                       （把本地 SMEM ptr + cluster
+                                                                       内 SM rank → 远程地址）
+  ld.shared::cluster.b32   r, [remote_smem]                          ← 读远程 SMEM
+  st.shared::cluster.b32   [remote_smem], r                          ← 写远程 SMEM
+  ```
+- **内置变量**：`%cluster_ctarank`（本 CTA 在 cluster 内的 rank）、`%cluster_nctaid`（cluster 大小）
 
 ### B 组：Async 类（让多硬件单元异步协作）
 
@@ -63,18 +98,46 @@
 - **注意**：mbarrier 这个原语 Ampere 就有（SM80，PTX 7.0 引入），Hopper 是给它加了 transaction count 这个新维度
 - **解决的问题**：事件完成通知（时间维度）—— 让 consumer 能等待"对方做完了"的信号，统一 TMA、WGMMA、warp 间同步的 rendezvous 机制
 - **编程模型**：`mbarrier.expect_tx`、`mbarrier.complete_tx`、`mbarrier.try_wait`
+- **常用 PTX**：
+  ```
+  mbarrier.init.shared::cta.b64        [bar], count                  ← 初始化（旧）
+  mbarrier.expect_tx.shared::cta       [bar], bytes                  ← 声明等待 N 字节 (Hopper 新)
+  mbarrier.arrive.expect_tx.shared::cta [bar], bytes                 ← arrive + expect 一步 (Hopper 新)
+  mbarrier.complete_tx.shared::cta     [bar], bytes                  ← 由 TMA 完成时自己调
+                                                                       (硬件 → mbarrier 直接通路)
+  mbarrier.try_wait.parity.shared::cta phase, [bar]                  ← phase-bit 等待 (Hopper 新)
+  ```
 
 #### B2. Register File 仲裁器升级（setmaxnreg）
 
 - **升级了什么**：Register File 控制器新增运行时配额重分配状态机，允许 warpgroup 在运行时动态归还或借取寄存器（Ampere 及之前是静态分配，kernel launch 时固定）
 - **解决的问题**：配合 warp specialization，让 producer warpgroup（寄存器需求少）和 consumer warpgroup（寄存器需求大）能不对称分配寄存器
 - **编程模型**：`setmaxnreg.inc.sync`、`setmaxnreg.dec.sync`
+- **常用 PTX**：
+  ```
+  setmaxnreg.inc.sync.aligned.u32  232                               ← consumer warpgroup 借寄存器
+  setmaxnreg.dec.sync.aligned.u32   40                               ← producer warpgroup 还寄存器
+  ```
+- **配套指令（SM90 新增）**：
+  ```
+  elect.sync u32 r, mask                                             ← warp 内挑唯一 leader 线程
+                                                                       (用 mask 内最小 lane id)
+                                                                       —— warp specialization 里
+                                                                       让单个线程发 TMA 时必用
+  ```
 
 #### B3. Proxy Fence（SM 内 LSU + 内存 ordering 逻辑升级）
 
 - **升级了什么**：LSU 指令解码器识别新的 fence 类型；内存系统 ordering 逻辑扩展，跟踪不同 proxy（generic / async）的 in-flight writes；不同 fence 类型触发不同的 flush 范围
 - **解决的问题**：跨 proxy 的内存可见性（空间维度）—— 把普通 SM 指令（generic proxy）的写"刷"到 TMA / WGMMA（async proxy）能看到的层级
 - **编程模型**：`fence.proxy.async`、`fence.proxy.alias`
+- **常用 PTX**：
+  ```
+  fence.proxy.async                                                  ← generic → async 全局可见
+  fence.proxy.async.shared::cluster                                  ← 仅刷 DSMEM proxy
+  fence.proxy.async.global                                           ← 仅刷 global proxy
+  fence.proxy.alias                                                  ← alias proxy (TMA 描述符更新后用)
+  ```
 
 ### C 组：独立的 kernel 边界优化（不属于上面任何主轴）
 
@@ -83,6 +146,11 @@
 - **升级了什么**：CWD 内新增 "pending dependent kernel" 状态机；SM→CWD 控制通路新增 launch_dependents 消息类型；新增 dependent kernel 的资源预留逻辑
 - **解决的问题**：消除 GPU 内部 kernel-to-kernel 的 launch 延迟，让下一个 kernel 在当前 kernel 还没跑完时就开始 setup
 - **编程模型**：`griddepcontrol.launch_dependents`、`griddepcontrol.wait`
+- **常用 PTX**：
+  ```
+  griddepcontrol.wait                                                ← 等父 kernel 通知可以开始
+  griddepcontrol.launch_dependents                                   ← 通知 CWD 子 kernel 可以 launch
+  ```
 
 ---
 
