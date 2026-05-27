@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.5.1
+# CUTLASS 4.5.2
 
-_CUTLASS 4.5.1 - May 2026_
+_CUTLASS 4.5.2 - May 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -56,6 +56,7 @@ To get started quickly - please refer :
   - Initial linter support: Improved type hints on CuTe DSL APIs to support static type checkers like MyPy
   - dataclasses.dataclass is now supported for JIT compilaton and cute.compile for both plain and tvm-ffi path
   - cute.copy now supports user specified loop unrolling
+  - Python 3.14t is now supported with GIL enabled
 
 * Bug fixing and improvements
   - Improved source code correlation for profiling/debugging
@@ -69,6 +70,8 @@ To get started quickly - please refer :
     https://github.com/NVIDIA/cutlass/issues/3208
     https://github.com/NVIDIA/cutlass/issues/3201
     https://github.com/NVIDIA/cutlass/issues/3227
+    https://github.com/NVIDIA/cutlass/issues/3240
+    https://github.com/NVIDIA/cutlass/issues/3241
   - Fixed Jax int64 stride divisibility issue
   - Fixed issues for SM120 blockscaled MMAs
     - added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
@@ -110,8 +113,10 @@ To get started quickly - please refer :
   - Fix CUTLASS clang build issues
   - Remove `PipelineStorage` shadowing in SM100 complex epilogue
   - Fix build issue in SM90 epilogue fusion visitor TMA warpspecialized
+  - Fix missing convert fucntion in EVT for fp4 kernels
 * Fix some profiler issues:
   - Add missing reference kernels for blockwise GEMM profiler.
+  - Avoid instantiate 2sm tma kernels where ctaN is none power of 64 when ctaN > 128 in profiler.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

@@ -145,6 +145,7 @@ from .tuple import (
     unwrap,
     wrap,
 )
+from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
 from .tensor import (
     TensorSSA,
     ReductionOp,
@@ -256,6 +257,7 @@ __all__ = [
     "ThrCopy",
     "TensorSSA",
     "ReductionOp",
+    "ReductionKind",
     "SymInt",
     # Basic utility functions
     "assume",

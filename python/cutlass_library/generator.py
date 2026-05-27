@@ -7057,8 +7057,19 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
       for layout in layouts:
         layout[2][1] = 128 // DataTypeSize[data_types_mixed[0]["d_type"]]
 
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_types_mixed,
-        [[kernel_schedule, epi_schedule]], tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
+      # SM100 2SM TMA epilogue with 16-bit output requires CtaN divisible by 64 when CtaN > 128.
+      # N=160 and N=224 fail the upcast<64> stride-divisibility check in the SMEM swizzle
+      # layout. Skip tile shapes where CtaN is not 64-aligned.
+      if DataTypeSize[data_types_mixed[0]["d_type"]] == 16:
+        tile_descs_for_mixed = [
+          td for td in tile_descriptions if td.threadblock_shape[1] <= 128 or td.threadblock_shape[1] % 64 == 0
+        ]
+      else:
+        tile_descs_for_mixed = tile_descriptions
+
+      if tile_descs_for_mixed:
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descs_for_mixed, data_types_mixed,
+          [[kernel_schedule, epi_schedule]], tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
 
 def GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version, gemm_kind=GemmKind.Universal3x):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 8):
@@ -7448,6 +7459,18 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
          ( data_type["d_type"] == DataType.e5m2 ):
         continue
 
+      # SM100 2SM TMA epilogue with 16-bit output requires CtaN divisible by 64 when CtaN > 128.
+      # N=160 and N=224 fail the upcast<64> stride-divisibility check in the SMEM swizzle
+      # layout. Skip tile shapes where CtaN is not 64-aligned.
+      if DataTypeSize[data_type["d_type"]] == 16:
+        tile_descs_for_dtype = [
+          td for td in tile_descriptions if td.threadblock_shape[1] <= 128 or td.threadblock_shape[1] % 64 == 0
+        ]
+      else:
+        tile_descs_for_dtype = tile_descriptions
+      if not tile_descs_for_dtype:
+        continue
+
       if grouped:
         epi_schedule = EpilogueScheduleType.PtrArrayTmaWarpSpecialized2Sm
       elif math_inst.instruction_shape[0] == 128:
@@ -7456,7 +7479,7 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
         epi_schedule = EpilogueScheduleType.ScheduleAuto
       kernel_schedule = to_grouped_schedule(KernelScheduleType.TmaWarpSpecialized2SmSm100, grouped)
 
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descs_for_dtype, data_type,
       [[kernel_schedule, epi_schedule]], tile_schedulers=tile_schedulers, gemm_kind=gemm_kind)
 
 def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kind=GemmKind.Universal3x):
