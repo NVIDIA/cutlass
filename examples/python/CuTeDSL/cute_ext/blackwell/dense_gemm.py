@@ -50,8 +50,7 @@ import cutlass.cute.testing as testing
 #   - D has shape (M, N, L) and is the output in global memory
 #   - L is the batch dimension
 #
-# The kernel uses the LIR (Low-level Intermediate Representation) DSL which is a Python DSL
-# for writing high-performance, Blackwell (SM100)-targeted kernels on top of CuTe abstractions.
+# The kernel uses Python DSL for writing high-performance, Blackwell (SM100)-targeted kernels on top of CuTe abstractions.
 #
 # KEY CONCEPTS:
 # - TMA (Tensor Memory Accelerator): Hardware feature for high-bandwidth GMEM <-> SMEM transfers
@@ -89,7 +88,7 @@ class DenseGemmKernel:
     This class encapsulates all the configuration and logic for a high-performance
     batched matrix multiplication: D = A @ B (with optional epilogue operation).
 
-    The design follows LIR conventions:
+    The design follows conventions:
     1. __init__: Store configuration parameters
     2. __call__: JIT-decorated host launcher that computes grid and calls kernel
     3. kernel: Device kernel that performs the actual computation
@@ -223,7 +222,7 @@ class DenseGemmKernel:
         - Contains all SMEM/TMEM/RMEM allocations, pipeline setup, and compute logic
         - Is compiled to PTX and executed by each thread in the grid
 
-        This kernel follows the standard LIR GEMM structure:
+        This kernel follows the standard GEMM structure:
         1. Create tiled_mma configuration
         2. Compute tiler and divide tensors
         3. Allocate SMEM, TMEM, and RMEM buffers
@@ -307,7 +306,7 @@ class DenseGemmKernel:
         # ========================================================================================
         # STEP 3: DIVIDE GLOBAL TENSORS INTO TILES (zipped_divide)
         # ========================================================================================
-        # cute.zipped_divide is the PRIMARY tiling operation in LIR kernels.
+        # cute.zipped_divide is the PRIMARY tiling operation in kernels.
         #
         # CUTE ALGEBRA EXPLANATION - zipped_divide:
         # ------------------------------------------
