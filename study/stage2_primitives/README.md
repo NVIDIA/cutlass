@@ -24,6 +24,8 @@
 | W7 | [Pipeline + Cluster](week07_pipeline_cluster/) | 🟢 5060 Ti | minimal mbarrier ping-pong toy |
 | W8 | [TMEM + UMMA](week08_tmem_umma/) | 🟢 5060 Ti 读 + 🔴 B200 实测 | TMEM alloc + minimal UMMA toy |
 
+> 入门前先读 [`sm90_hopper_overview.md`](sm90_hopper_overview.md)：Hopper 硬件改动 × 编程模型的完整梳理（两条主轴：Scale Up + Async），是 W5-W7 的认知地图，W8 SM100 也以这份为对照基线。
+
 ## CHECKPOINT — 进入 Stage 3 前必过
 
 ### 综合练习
