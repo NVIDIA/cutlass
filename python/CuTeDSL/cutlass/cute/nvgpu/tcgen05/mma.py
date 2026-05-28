@@ -387,6 +387,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
     admissible_archs = [
         Arch.sm_100a,
         Arch.sm_103a,
+        Arch.sm_110a,
     ]
 
     def __post_init__(self) -> None:
