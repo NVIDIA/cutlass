@@ -1,9 +1,11 @@
 # Hopper (SM90) 硬件改动 × 编程模型 完整梳理
 
-## 框架：两条定律
+## 框架：两条定律（SM90/SM100/SM120 三份笔记共用）
 
 - **进化定律**：既有硬件结构通过少量改动（新增状态机、扩展控制路径、把已有结构包装成新编程模型）就能达到新能力，无需占用独立 die area。
 - **分化定律**：无法靠改造既有结构实现，必须新增独立硬件单元，占独立 die area。
+
+> SM100 笔记沿用同一套定律分析"加了什么"，SM120 笔记在此基础上多一条判定（通用性 × 代价）分析"砍了什么"。
 
 ---
 
@@ -14,6 +16,7 @@
 - **从哪里分化**：LSU
 - **解决的问题**：大块多维 tensor 搬运 + 自动适配 Tensor Core 需要的 swizzling 格式 + cluster 内分发 + SMEM→GMEM 时附带 atomic reduction
 - **编程模型**：`cp.async.bulk.tensor`、`cp.async.bulk.tensor.multicast`、`cp.reduce.async.bulk`
+- **源码锚点**：`include/cute/arch/copy_sm90_tma.hpp`（PTX 包装）+ `include/cute/atom/copy_traits_sm90_tma.hpp`（atom layout）
 - **常用 PTX**：
   ```
   cp.async.bulk.tensor.{1..5}d.shared::cluster.global              ← G→S 异步搬 N 维 tile
@@ -54,6 +57,7 @@
   - 4 个 sub-partition（SMSP）的 Tensor Core 协同完成一条 WGMMA（warpgroup = 4 warp，每个 warp 占一个 SMSP）
 - **解决的问题**：进一步提升 MMA 吞吐和喂数效率，降低指令开销，让单条指令驱动更多算力
 - **编程模型**：`wgmma.mma_async`、`wgmma.fence`、`wgmma.commit_group`、`wgmma.wait_group`
+- **源码锚点**：`include/cute/arch/mma_sm90_gmma.hpp`（PTX，含 fence/commit/wait + 各 dtype 的 `wgmma.mma_async`）+ `include/cute/atom/mma_traits_sm90_gmma.hpp`（atom layout，W3 学的 ThrID/ALayout 都在这里）
 - **常用 PTX**：
   ```
   wgmma.fence.sync.aligned                                           ← register operand 同步屏障
