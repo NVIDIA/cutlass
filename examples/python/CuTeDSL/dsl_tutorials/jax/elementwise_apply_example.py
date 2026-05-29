@@ -116,7 +116,7 @@ def elementwise_apply_kernel(
     ###############################################################################
     # Compute predicate for out of boundary checks
     ###############################################################################
-    frgPred = cute.make_fragment(thrCrd.shape, cutlass.Boolean)
+    frgPred = cute.make_rmem_tensor(thrCrd.shape, cutlass.Boolean)
     print(f"[DSL INFO]   frgPred = {frgPred.type}")
 
     for i in cutlass.range_constexpr(cute.size(frgPred)):
