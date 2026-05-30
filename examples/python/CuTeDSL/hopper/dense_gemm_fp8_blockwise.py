@@ -124,7 +124,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--scale_b", type=float, default=1.0)
     parser.add_argument("--scale_c", type=float, default=1.0)
     parser.add_argument("--scale_d", type=float, default=1.0)
-    parser.add_argument("--tolerance", type=float, default=2e-2)
+    parser.add_argument("--tolerance", type=float, default=5e-2)
     parser.add_argument("--warmup_iterations", type=int, default=0)
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--skip_ref_check", action="store_true")
@@ -1034,7 +1034,7 @@ def run(
     scale_b_val: float = 1.0,
     scale_c_val: float = 1.0,
     scale_d_val: float = 1.0,
-    tolerance: float = 2e-2,
+    tolerance: float = 5e-2,
     warmup_iterations: int = 0,
     iterations: int = 1,
     skip_ref_check: bool = False,
@@ -1062,6 +1062,8 @@ def run(
     a_dtype = cutlass.Float8E4M3FN
     b_dtype = cutlass.Float8E4M3FN
     c_dtype = cutlass.Float32
+    # D output uses BF16: halves SMEM-D footprint and TMA-store bytes vs FP32.
+    d_dtype = cutlass.BFloat16
 
     print("Hopper FP8 Blockwise GEMM")
     print(f"  mnkl          : {mnkl}")
@@ -1082,8 +1084,8 @@ def run(
     b_torch = cutlass_torch.matrix(l, n, k, False, b_dtype)    # (N, K, L) k-major
     # C and D: M-major (column-major / ColumnMajor in CUTLASS)
     c_torch = cutlass_torch.matrix(l, m, n, True, c_dtype)     # (M, N, L) m-major
-    d_torch = cutlass_torch.matrix(l, m, n, True, c_dtype,
-                                   init_type=TensorInitType.SCALAR)  # (M, N, L) m-major
+    d_torch = cutlass_torch.matrix(l, m, n, True, d_dtype,
+                                   init_type=TensorInitType.SCALAR)  # (M, N, L) m-major BF16
 
     # Blockwise scale factors: shape (M_tiles/N_tiles, K_tiles, L), k-major
     m_tiles = m // sg
@@ -1102,7 +1104,7 @@ def run(
     # is_dynamic_layout=False: partition_C needs static strides for correct offset computation.
     # Dynamic strides from mark_layout_dynamic cause tiled_mma_partition to compute zero offsets.
     c_tensor, _   = cutlass_torch.cute_tensor_like(c_torch, c_dtype, is_dynamic_layout=False, assumed_align=16)
-    d_tensor, d_gpu = cutlass_torch.cute_tensor_like(d_torch, c_dtype, is_dynamic_layout=True, assumed_align=16)
+    d_tensor, d_gpu = cutlass_torch.cute_tensor_like(d_torch, d_dtype, is_dynamic_layout=True, assumed_align=16)
     sfa_tensor, _ = cutlass_torch.cute_tensor_like(sfa_torch, cutlass.Float32, is_dynamic_layout=True, assumed_align=16)
     sfb_tensor, _ = cutlass_torch.cute_tensor_like(sfb_torch, cutlass.Float32, is_dynamic_layout=True, assumed_align=16)
 
@@ -1158,11 +1160,15 @@ def run(
         )
 
         # Both d_gpu and d_ref have shape (M, N, L) in M-major layout.
-        diff = (d_gpu.cpu() - d_ref.cpu()).abs()
+        # Upcast to FP32 for the comparison so BF16 quantization noise lands
+        # in the rtol term rather than atol.
+        d_gpu_f32 = d_gpu.cpu().to(torch.float32)
+        d_ref_f32 = d_ref.cpu().to(torch.float32)
+        diff = (d_gpu_f32 - d_ref_f32).abs()
         print(f"  max_diff={diff.max():.4f}  mean_diff={diff.mean():.4f}")
         torch.testing.assert_close(
-            d_gpu.cpu(), d_ref.cpu(),
-            atol=tolerance, rtol=1e-3,
+            d_gpu_f32, d_ref_f32,
+            atol=tolerance, rtol=1e-2,
             msg="Blockwise GEMM output does not match reference",
         )
         print("  Correctness check: PASSED")
@@ -1171,7 +1177,7 @@ def run(
         a_ws, _ = cutlass_torch.cute_tensor_like(a_torch, a_dtype, is_dynamic_layout=True, assumed_align=16)
         b_ws, _ = cutlass_torch.cute_tensor_like(b_torch, b_dtype, is_dynamic_layout=True, assumed_align=16)
         c_ws, _ = cutlass_torch.cute_tensor_like(c_torch, c_dtype, is_dynamic_layout=True, assumed_align=16)
-        d_ws, _ = cutlass_torch.cute_tensor_like(d_torch, c_dtype, is_dynamic_layout=True, assumed_align=16)
+        d_ws, _ = cutlass_torch.cute_tensor_like(d_torch, d_dtype, is_dynamic_layout=True, assumed_align=16)
         return testing.JitArguments(
             a_ws, b_ws, c_ws,
             sfa_tensor, sfb_tensor,
