@@ -451,6 +451,7 @@ class HopperFP8GroupedBlockwiseGemmKernel:
             cluster=(*self.cluster_shape_mn, 1),
             min_blocks_per_mp=1,
             stream=stream,
+            use_pdl=True,
         )
 
     # ------------------------------------------------------------------
@@ -489,6 +490,10 @@ class HopperFP8GroupedBlockwiseGemmKernel:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_a)
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_b)
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_d)
+
+        # PDL: wait for prior kernel on this stream before TMA. Paired with
+        # use_pdl=True on .launch(); no-op without it.
+        cute.arch.griddepcontrol_wait()
 
         cta_rank_in_cluster = cute.arch.make_warp_uniform(cute.arch.block_idx_in_cluster())
         cluster_coord_mnk = cta_layout_mnk.get_flat_coord(cta_rank_in_cluster)
