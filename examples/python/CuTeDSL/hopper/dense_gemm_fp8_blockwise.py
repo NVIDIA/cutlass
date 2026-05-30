@@ -836,13 +836,17 @@ class HopperFP8BlockwiseGemmKernel:
                     self.epilog_sync_barrier.arrive_and_wait()
 
                     if warp_idx == self.epi_store_warp_id:
+                        # Lazy acquire: wait for THIS epi-buffer to be free
+                        # (its prior TMA store, epi_stage iterations ago, drained)
+                        # before issuing the next store. Lets up to epi_stage
+                        # stores run in flight without per-iter serialization.
+                        tma_store_pipeline.producer_acquire()
                         cute.copy(
                             tma_atom_d,
                             bSG_sD[(None, epi_buffer)],
                             bSG_gD[(None, gmem_coord)],
                         )
                         tma_store_pipeline.producer_commit()
-                        tma_store_pipeline.producer_acquire()
 
                     self.epilog_sync_barrier.arrive_and_wait()
 
