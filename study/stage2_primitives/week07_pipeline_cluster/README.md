@@ -3,6 +3,12 @@
 预计 ~15h
 > **硬件**：🟢 5060 Ti 完整可跑（SM120 沿用 SM90 cluster：`cluster_sm90.hpp` 在 SM120 上可用，只是 cluster size 上限可能比 H100 / B200 小）
 
+> **认知锚点**（对照 [`sm90_hopper_overview.md`](../sm90_hopper_overview.md)）：
+> 本周是把"双主轴怎么协作"落地 —— **B1 mbarrier**（Async：事件完成通知）+ **A2 Cluster / 一.2 SM-to-SM Network**（Scale Up：多 SM 共享更大 SMEM）+ **B2 setmaxnreg**（Async：寄存器不对称分配）三者合起来 = **warp specialization**（overview"为什么 WS 在 Hopper 才流行"那段）。
+> 对照 [`sm120_fake_blackwell_overview.md`](../sm120_fake_blackwell_overview.md)：mbarrier/setmaxnreg 消费卡**保留**（通用同步原语），但 cluster/DSMEM/SM-to-SM **砍掉**（5060 Ti 上 cluster size 实际≈1）—— 所以 CHECKPOINT 的 ping-pong 能跑，但跨 CTA 的 cluster 部分在 5060 Ti 上意义有限。
+>
+> **向前看（SM100 钩子）**：SM100 在 cluster 之上又加了 **CLC（Cluster Launch Control，overview SM100 一.4 + C1）**—— 把 persistent kernel + dynamic tile scheduling 硬件化（`clusterlaunchcontrol.try_cancel`）。本周不实操，但记住：Stage 3 SM100 GEMM 的调度核心就是它，到时回来看 `PersistentTileSchedulerSm100`。
+
 ## 目标
 - 能解释 `mbarrier` 比 `__syncthreads` 强在哪
 - 能用 `PipelineTmaAsync` 写 TMA producer / MMA consumer 同步
