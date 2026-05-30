@@ -277,8 +277,12 @@ class HopperFP8GroupedBlockwiseGemmKernel:
         self.num_mma_threads = self.num_mma_warp_groups * self.num_threads_per_warp_group
         self.load_warp_id = 0
         self.epi_store_warp_id = self.num_dma_warp_groups * self.num_warps_per_warp_group
-        self.load_register_requirement = 40
-        self.mma_register_requirement = 232
+        # Register split: math warpgroups want as many regs as possible to
+        # avoid spills in the WGMMA inner loop + scale-and-accumulate path.
+        # Sweep (cf. PR1) showed 24/240 dominates 40/232. DMA warps only hold
+        # TMA descriptors + barrier addrs, so 24 regs is sufficient.
+        self.load_register_requirement = 24
+        self.mma_register_requirement = 240
         self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_90")
         self.buffer_align_bytes = 1024
 
