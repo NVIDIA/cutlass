@@ -107,7 +107,11 @@ def parse_arguments() -> argparse.Namespace:
         choices=[(1, 1), (2, 1), (1, 2), (2, 2)],
         default=(1, 2),
     )
-    parser.add_argument("--swizzle_size", type=int, default=2)
+    parser.add_argument(
+        "--swizzle_size", type=int, default=None,
+        help="Rasterisation swizzle. Defaults to cluster-aware optimum "
+             "(1 for multicast clusters, 2 for the single-CTA case).",
+    )
     parser.add_argument(
         "--raster_order", choices=["along_m", "along_n"], default="along_m"
     )
@@ -918,6 +922,10 @@ class HopperFP8GroupwiseGemmKernel:
         gd = cute.zipped_divide(d, tiler=c_shape)
         num_ctas_mnl = gd[(0, (None, None, None))].shape
         cluster_shape_mnl = (*cluster_shape_mn, 1)
+        # Cluster-aware default: tighter swizzle (=1) keeps the multicast
+        # peer's operand L2-resident; without multicast, swizzle=2 is best.
+        if swizzle_size is None:
+            swizzle_size = 2 if cluster_shape_mn == (1, 1) else 1
         tile_sched_params = utils.PersistentTileSchedulerParams(
             num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along_m
         )
@@ -1016,7 +1024,7 @@ def reference_groupwise_gemm(
 def run(
     mnkl: Tuple[int, int, int, int],
     cluster_shape_mn: Tuple[int, int] = (1, 2),
-    swizzle_size: int = 2,
+    swizzle_size: int | None = None,
     raster_along_m: bool = True,
     alpha_val: float = 1.0,
     scale_a_val: float = 1.0,
@@ -1052,7 +1060,11 @@ def run(
     print("Hopper FP8 Groupwise GEMM")
     print(f"  mnkl          : {mnkl}")
     print(f"  tile_shape_mn : (256, 128)  cluster_shape_mn : {cluster_shape_mn}")
-    print(f"  swizzle       : {swizzle_size}   raster : {'along_m' if raster_along_m else 'along_n'}")
+    effective_swizzle = (
+        swizzle_size if swizzle_size is not None
+        else (2 if cluster_shape_mn == (1, 1) else 1)
+    )
+    print(f"  swizzle       : {effective_swizzle}   raster : {'along_m' if raster_along_m else 'along_n'}")
     print(f"  alpha={alpha_val}  scale_a={scale_a_val}  scale_b={scale_b_val}  scale_d={scale_d_val}")
 
     # ------------------------------------------------------------------
