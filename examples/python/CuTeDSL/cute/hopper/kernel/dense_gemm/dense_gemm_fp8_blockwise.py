@@ -383,6 +383,7 @@ class HopperFP8BlockwiseGemmKernel:
             cluster=(*self.cluster_shape_mn, 1),
             min_blocks_per_mp=1,
             stream=stream,
+            use_pdl=True,
         )
 
     # ------------------------------------------------------------------
@@ -435,6 +436,12 @@ class HopperFP8BlockwiseGemmKernel:
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_a)
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_b)
             cute.nvgpu.cpasync.prefetch_descriptor(tma_atom_d)
+
+        # PDL: wait for the prior kernel on this stream to drain before any TMA
+        # loads. Lets the runtime pre-launch this grid (overlapping prologue
+        # setup with the prior kernel's tail) while still preventing data
+        # hazards. No-op when the launch attribute is not set.
+        cute.arch.griddepcontrol_wait()
 
         cta_rank_in_cluster = cute.arch.make_warp_uniform(
             cute.arch.block_idx_in_cluster()
