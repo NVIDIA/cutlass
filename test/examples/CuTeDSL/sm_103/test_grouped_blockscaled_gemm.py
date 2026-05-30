@@ -42,7 +42,7 @@ from typing import List, Tuple, Type
 import pytest
 
 import cutlass
-from blackwell.sm103_grouped_blockscaled_gemm import (
+from blackwell.kernel.blockscaled_grouped_gemm.sm103_grouped_blockscaled_gemm import (
     Sm103GroupedBlockScaledGemmKernel,
     run,
 )
@@ -160,6 +160,22 @@ def test_grouped_blockscaled_gemm(
         mma_tiler_mn,
         cluster_shape_mn,
         host_problem_shape_available,
+    )
+
+
+def test_grouped_blockscaled_gemm_large_persistent_repro():
+    _run_case(
+        [(2048, 2048, 2048, 1)] * 8,
+        cutlass.Float4E2M1FN,
+        cutlass.Float8E8M0FNU,
+        32,
+        cutlass.Float32,
+        "k",
+        "k",
+        "n",
+        (128, 128),
+        (1, 1),
+        True,
     )
 
 

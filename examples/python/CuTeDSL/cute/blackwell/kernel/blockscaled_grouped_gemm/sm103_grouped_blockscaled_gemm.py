@@ -47,7 +47,7 @@ import cutlass.utils.blockscaled_layout as blockscaled_utils
 from cutlass.cute.runtime import from_dlpack
 
 """
-This example provides an experimental implementation of the SM103 grouped 3xFP4 blockscaled GEMM kernel.
+This example provides an experimental implementation of the SM103 grouped FP4 Ultra blockscaled GEMM kernel.
 
 Combines SM103 kernel internals from sm103_dense_blockscaled_gemm_persistent.py with
 grouped scheduling from grouped_blockscaled_gemm.py.
@@ -441,7 +441,7 @@ class Sm103GroupedBlockScaledGemmKernel:
             ab_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage]
             acc_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
             acc_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
-            tmem_dealloc_mbar_ptr: cutlass.Int64
+            tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
             # (EPI_TILE_M, EPI_TILE_N, STAGE)
             sC: cute.struct.Align[
@@ -604,8 +604,8 @@ class Sm103GroupedBlockScaledGemmKernel:
             + Sm103GroupedBlockScaledGemmKernel.bytes_per_tensormap // 8
         )
 
-        tmem_dealloc_mbar_ptr = storage.tmem_dealloc_mbar_ptr
-        tmem_holding_buf = storage.tmem_holding_buf
+        tmem_dealloc_mbar_ptr = storage.tmem_dealloc_mbar.ptr
+        tmem_holding_buf_ptr = storage.tmem_holding_buf.ptr
 
         # Initialize mainloop ab_producer and ab_consumer (two separate pipelines)
         ab_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -872,9 +872,9 @@ class Sm103GroupedBlockScaledGemmKernel:
             tensormap_init_done = cutlass.Boolean(False)
             last_group_idx = cutlass.Int32(-1)
             work_tile = initial_work_tile_info
-            ab_producer.reset()
-            peek_ab_empty_status = ab_producer.try_acquire()
             while work_tile.is_valid_tile:
+                ab_producer.reset()
+                peek_ab_empty_status = ab_producer.try_acquire()
                 grouped_gemm_cta_tile_info = work_tile.group_search_result
                 cur_k_tile_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
                 cur_group_idx = grouped_gemm_cta_tile_info.group_idx
@@ -980,9 +980,9 @@ class Sm103GroupedBlockScaledGemmKernel:
             tensormap_init_done = cutlass.Boolean(False)
             last_group_idx = cutlass.Int32(-1)
             work_tile = initial_work_tile_info
-            sf_producer.reset()
-            peek_sf_empty_status = sf_producer.try_acquire()
             while work_tile.is_valid_tile:
+                sf_producer.reset()
+                peek_sf_empty_status = sf_producer.try_acquire()
                 grouped_gemm_cta_tile_info = work_tile.group_search_result
                 cur_k_tile_cnt = grouped_gemm_cta_tile_info.cta_tile_count_k
                 cur_group_idx = grouped_gemm_cta_tile_info.group_idx
@@ -1115,7 +1115,7 @@ class Sm103GroupedBlockScaledGemmKernel:
             acc_tmem_ptr = cute.arch.retrieve_tmem_ptr(
                 self.acc_dtype,
                 alignment=16,
-                ptr_to_buffer_holding_addr=tmem_holding_buf,
+                ptr_to_buffer_holding_addr=tmem_holding_buf_ptr,
             )
             # (MMA, MMA_M, MMA_N, STAGE)
             tCtAcc_base = cute.make_tensor(acc_tmem_ptr, tCtAcc_fake.layout)
@@ -1505,7 +1505,7 @@ class Sm103GroupedBlockScaledGemmKernel:
             if warp_idx == self.epilog_warp_id[0]:
                 cute.arch.alloc_tmem(
                     self.num_tmem_alloc_cols,
-                    tmem_holding_buf,
+                    tmem_holding_buf_ptr,
                     is_two_cta=use_2cta_instrs,
                 )
 
@@ -1516,7 +1516,7 @@ class Sm103GroupedBlockScaledGemmKernel:
             acc_tmem_ptr = cute.arch.retrieve_tmem_ptr(
                 self.acc_dtype,
                 alignment=16,
-                ptr_to_buffer_holding_addr=tmem_holding_buf,
+                ptr_to_buffer_holding_addr=tmem_holding_buf_ptr,
             )
             # (MMA, MMA_M, MMA_N, STAGE)
             tCtAcc_base = cute.make_tensor(acc_tmem_ptr, tCtAcc_fake.layout)
@@ -1916,7 +1916,7 @@ class Sm103GroupedBlockScaledGemmKernel:
         mma_tiler_mn: Tuple[int, int],
         a_source: tcgen05.OperandSource = tcgen05.OperandSource.SMEM,
     ) -> cute.TiledMma:
-        """Create a blockscaled trivial tiled MMA for SM103 (3xFP4), K fixed to 96."""
+        """Create a blockscaled trivial tiled MMA for SM103 (FP4 Ultra), K fixed to 96."""
         if sf_vec_size == 32:
             mma_op = tcgen05.SM103MmaMXF4Op(
                 (*mma_tiler_mn, 96),
