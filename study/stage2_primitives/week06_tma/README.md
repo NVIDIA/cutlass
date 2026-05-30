@@ -13,12 +13,12 @@
 - 能在 kernel 里用 `cp.async.bulk.tensor` 做 G→S 异步搬运
 - 跑通 `wgmma_tma_sm90.cu` 并改一改
 
-## 读
-- `include/cute/arch/copy_sm90_tma.hpp` — `cp.async.bulk.tensor` PTX wrapper
-- `include/cute/arch/copy_sm90_desc.hpp` — `initialize_barrier` / `set_barrier_transaction_bytes` / `wait_barrier`（mbarrier 的 transaction 机制，对应 overview B1）
-- `include/cute/atom/copy_traits_sm90_tma.hpp` — TMA descriptor 构造
-- `media/docs/cpp/cute/0z_tma_tensors.md` — TMA Tensor 概念文档（必读）
-- `examples/cute/tutorial/hopper/wgmma_tma_sm90.cu` — WGMMA + TMA 组合
+## 读（**由浅入深**：概念 → PTX → 同步原语 → descriptor 构造 → 实战）
+1. `media/docs/cpp/cute/0z_tma_tensors.md` — **先读这个**：TMA Tensor 概念文档，box / global stride / element stride 的直觉（最浅，建立全貌）
+2. `include/cute/arch/copy_sm90_tma.hpp` — `cp.async.bulk.tensor` 的 PTX wrapper（看指令长什么样，1496 行但只挑 LOAD 几个 struct）
+3. `include/cute/arch/copy_sm90_desc.hpp` — `initialize_barrier` / `set_barrier_transaction_bytes` / `wait_barrier`（mbarrier 的 transaction 机制，对应 overview B1；只有这几个函数，很短）
+4. `include/cute/atom/copy_traits_sm90_tma.hpp` — `make_tma_copy` descriptor 构造（**最深**：1609 行，是 TMA 的核心魔法，看懂 box/stride 怎么编码进 128B TensorMap）
+5. `examples/cute/tutorial/hopper/wgmma_tma_sm90.cu` — WGMMA + TMA 组合（整合，看上面几块怎么拼起来）
 - **Proxy Fence**（overview B3）：搜 `fence.proxy.async` 在 cutlass 里的用法 —— TMA（async proxy）写 smem 后，普通指令（generic proxy）要读，必须 fence。这是真实 pipeline 的 bug 高发区，先建立意识，W7 写 pipeline 时会用到。
 
 ## 写

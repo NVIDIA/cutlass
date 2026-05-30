@@ -14,17 +14,17 @@
 - 能用 `PipelineTmaAsync` 写 TMA producer / MMA consumer 同步
 - 完成 Stage 2 CHECKPOINT：minimal warpspec ping-pong toy
 
-## 读
+## 读（**由浅入深 / 自下而上**：底层 mbarrier → cluster → 概念 → 上层抽象，正好配合练习 ex15→ex16）
 
-> 本周是阅读 `include/cutlass/pipeline/sm90_pipeline.hpp` 的入口；完整阅读策略见 [cutlass_reading_strategy.md](../../cutlass_reading_strategy.md#1-pipeline-抽象--includecutlasspipeline)。
+> 完整阅读策略见 [cutlass_reading_strategy.md](../../cutlass_reading_strategy.md#1-pipeline-抽象--includecutlasspipeline)。
 
-- `include/cutlass/pipeline/sm90_pipeline.hpp` — `PipelineAsync` / `PipelineTmaAsync`
-  - `PipelineState`：循环 buffer 的 index + phase，避免 ABA
-  - 4 步协议：`producer_acquire` → `producer_commit` → `consumer_wait` → `consumer_release`
-  - `spread_arrivals_to_warpgroup`：barrier arrive 均摊到 warpgroup
-- `media/docs/cpp/pipeline.md` — barrier 设计思想（必读）
-- `include/cute/arch/cluster_sm90.hpp` — cluster 同步 API
-- `include/cutlass/arch/barrier.h` — 底层 mbarrier wrapper
+1. `include/cutlass/arch/barrier.h` — **先读这个**：最底层 mbarrier / NamedBarrier wrapper（`init` / `wait` / `arrive`），对应 ex15。952 行但只看 `ClusterBarrier` / `ClusterTransactionBarrier` 两个 struct
+2. `include/cute/arch/cluster_sm90.hpp` — cluster 同步 API（`cluster_sync` / `block_rank_in_cluster`，仅 246 行，浅）
+3. `media/docs/cpp/pipeline.md` — barrier 设计思想（概念文档，必读，建立 producer/consumer 模型）
+4. `include/cutlass/pipeline/sm90_pipeline.hpp` — **最深，最后读**：`PipelineAsync` / `PipelineTmaAsync`（建立在上面三块之上的完整抽象），对应 ex16
+   - `PipelineState`：循环 buffer 的 index + phase，避免 ABA
+   - 4 步协议：`producer_acquire` → `producer_commit` → `consumer_wait` → `consumer_release`
+   - `spread_arrivals_to_warpgroup`：barrier arrive 均摊到 warpgroup
 
 ## 写
 - `exercises/ex15_mbarrier_basic.cu` — 单个 mbarrier 在 1 个 warp 内 arrive / wait，验证 phase 翻转
