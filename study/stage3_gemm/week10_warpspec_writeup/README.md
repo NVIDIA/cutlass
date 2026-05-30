@@ -9,14 +9,12 @@
 - 跑出正确结果（跟 CPU ref 对齐）
 - 性能不重要，正确性优先
 
-## 读
-
-> 本周读两份 cutlass/ 必读文件（kernel 骨架 + collective mainloop）；详见 [cutlass_reading_strategy.md §2-§3](../../cutlass_reading_strategy.md#2-warpspec-kernel-骨架--includecutlassgemmkernel)。
-
-- `include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp` — 基础 WarpSpec 完整骨架（必读）
-- `include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp` — `load()` / `mma()` 分离 mainloop
-- `include/cutlass/pipeline/sm90_pipeline.hpp` — pipeline state 流转（W7 已读，复习）
-- `examples/48_hopper_warp_specialized_gemm/` — 参照实现
+## 读（**由浅入深**：参考实现 → kernel 骨架 → mainloop → SM120 落地点）
+1. `include/cutlass/pipeline/sm90_pipeline.hpp` — pipeline state 流转（W7 已读，**先复习**：producer_acquire/commit、consumer_wait/release 四步协议是本周代码的骨架）
+2. `examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm.cu` — **参照实现**，先把它跑起来当 baseline，再写自己的 v1
+3. `include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp`（522 行）— 基础 WarpSpec 完整骨架（必读）：看 `operator()` 怎么按 warp_idx 分到 producer / consumer 分支
+4. `include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp`（584 行）— `load()` / `mma()` 分离 mainloop（最深，是 producer 和 consumer 的两段逻辑本体）
+5. **🟢 5060 Ti 落地点（关键）**：`include/cutlass/gemm/collective/sm120_mma_tma.hpp` —— SM120 用的 mainloop 在这里，类名 `MainloopSm120TmaWarpSpecialized`（第 75 行）。配合 `include/cutlass/gemm/dispatch_policy.hpp:585+` 的 `KernelTmaWarpSpecialized{Cooperative,Pingpong}Sm120` 系列 dispatch policy。这是为什么本周代码能在 5060 Ti 上跑完整 WarpSpec 框架的**真实文件依据**。
 
 ## WarpSpec 模式
 

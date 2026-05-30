@@ -8,26 +8,25 @@
 - 跑通 example 48 和 49，能解释每个模板参数
 - 能说出 `CollectiveBuilder` 帮你省掉了哪些手写代码
 
-## 读
+## 读（**由浅入深**：概念 → Builder 入门 → 手动展开 → kernel/mainloop 源码）
+1. `media/docs/cpp/cutlass_3x_design.md` — 设计哲学（最浅，建立直觉）
+2. `media/docs/cpp/gemm_api_3x.md` — **必读**，5 层 API 设计文档
+3. `examples/49_hopper_gemm_with_collective_builder/49_collective_builder.cu` — **Builder 简化版（先读这个）**：看用户视角最少要写哪些模板参数
+4. `examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm.cu` — 手动展开版（后读）：看 Builder 帮你推断了哪些类型
+5. `include/cutlass/gemm/kernel/gemm_universal.hpp` — 3.x kernel 骨架（薄，81 行，容易啃）
+6. `include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp:1-200` — mainloop 入口（最深）
 
-> 本周开始接触 `include/cutlass/gemm/`；先看 [cutlass_reading_strategy.md](../../cutlass_reading_strategy.md) 知道哪些必读、哪些跳过（约 38 万行 2.x 遗产可以直接跳）。
+> **顺序心得**：先 49（Builder 简化）后 48（手动展开）—— 这样能直接对比"Builder 帮我省了什么",而不是先被 48 的一堆模板参数糊脸。这是 stage1 W2 "先看 fused API 再看 unfuse" 的思路在 stage3 的复用。
 
-- `media/docs/cpp/gemm_api_3x.md` — **必读**，5 层 API 设计文档
-- `media/docs/cpp/cutlass_3x_design.md` — 设计哲学
-- `include/cutlass/gemm/kernel/gemm_universal.hpp` — 3.x kernel 骨架
-- `include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp:1-200` — mainloop 入口
-- `examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm.cu` — 手动组装版
-- `examples/49_hopper_gemm_with_collective_builder/49_hopper_gemm_with_collective_builder.cu` — Builder 简化版
-
-## 写
+## 写（顺序对应"读"的顺序：先 Builder 再手动展开）
 - `exercises/ex17_layered_diagram.md` — 自己画一张分层图（mermaid 或 ASCII），标出每层关键类与文件
-- `exercises/ex18_run_48.cu` — 抄并跑通 example 48，把每个模板参数（TileShape、ClusterShape、KernelSchedule、EpilogueSchedule）的含义注释出来
-- `exercises/ex19_run_49.cu` — 跑通 example 49，对比 48，列出 Builder 推断了哪些类型
+- `exercises/ex18_run_builder.cu` — **先做**：跑通 example 49（Builder 简化版），把"用户必须自己定的"模板参数全部标注（TileShape / ClusterShape / KernelSchedule / EpilogueSchedule）
+- `exercises/ex19_unwrap_manual.cu` — **再做**：跑通 example 48（手动展开版），列出 Builder 帮你推断了哪些类型（DispatchPolicy、StageCount、SmemLayoutAtom、SmemCopyAtom 等）。直接 diff 两份 cu 的 typedef 区也行
 
 ## 跑
 ```bash
-make study_stage3_w09_ex18_run_48 -j && ./study_stage3_w09_ex18_run_48
-make study_stage3_w09_ex19_run_49 -j && ./study_stage3_w09_ex19_run_49
+make study_stage3_w09_ex18_run_builder -j && ./study_stage3_w09_ex18_run_builder
+make study_stage3_w09_ex19_unwrap_manual -j && ./study_stage3_w09_ex19_unwrap_manual
 ```
 
 ## 自检

@@ -43,6 +43,6 @@ endfunction()
 # Each stage owns its own CMakeLists.txt so progress is local.
 add_subdirectory(stage1_cute_algebra)
 # add_subdirectory(stage2_primitives)        # uncomment as exercises land
-# add_subdirectory(stage3_gemm)
+add_subdirectory(stage3_gemm)
 # add_subdirectory(stage4_flashattn)
 # add_subdirectory(stage5_moe)

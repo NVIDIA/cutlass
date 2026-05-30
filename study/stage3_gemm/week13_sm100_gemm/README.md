@@ -9,12 +9,13 @@
 - 理解 SM100 pipeline 引入 TMEM consumer 后语义的变化
 - 理解 2-CTA cluster
 
-## 读
-- `include/cutlass/pipeline/sm100_pipeline.hpp` — pipeline 在 SM100 的修改
-- `include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized.hpp` — SM100 kernel 骨架
-- `include/cutlass/gemm/collective/sm100_mma_*.hpp` — SM100 mainloop
-- `examples/`（搜 sm100 / blackwell 的 GEMM example）
-- `examples/python/CuTeDSL/blackwell/dense_gemm.py`
+## 读（**由浅入深**：example 入门 → kernel 骨架 → mainloop → pipeline → DSL 参考）
+1. `examples/71_blackwell_gemm_with_collective_builder/71_blackwell_gemm_with_collective_builder.cu` — **先读**：SM100 GEMM 的 Builder 入门版（对应 W9 的 example 49）
+2. `examples/70_blackwell_gemm/70_blackwell_fp16_gemm.cu` — 手动展开版（对应 W9 的 example 48），看 SM100 模板参数怎么填
+3. `include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized.hpp`（963 行）— SM100 kernel 骨架，与 W10 的 SM90 版对照看异同
+4. `include/cutlass/gemm/collective/sm100_mma_array_warpspecialized.hpp` — 主 mainloop（在 15+ 个 sm100_mma_*.hpp 里挑这个，array 后缀的是单 SM 路径，对应 `cta_group::1`）
+5. `include/cutlass/pipeline/sm100_pipeline.hpp`（1328 行）— SM100 pipeline 改动（增加 TMEM consumer 同步）
+6. **选读**：`examples/python/CuTeDSL/blackwell/dense_gemm.py` — Python DSL 版,可执行参考（C++ 学完后回看）
 
 ## SM90 → SM100 移植清单
 
