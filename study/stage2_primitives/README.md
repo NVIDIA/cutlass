@@ -24,7 +24,12 @@
 | W7 | [Pipeline + Cluster](week07_pipeline_cluster/) | 🟢 5060 Ti | minimal mbarrier ping-pong toy |
 | W8 | [TMEM + UMMA](week08_tmem_umma/) | 🟢 5060 Ti 读 + 🔴 B200 实测 | TMEM alloc + minimal UMMA toy |
 
-> 入门前先读 [`sm90_hopper_overview.md`](sm90_hopper_overview.md)：Hopper 硬件改动 × 编程模型的完整梳理（两条主轴：Scale Up + Async），是 W5-W7 的认知地图，W8 SM100 也以这份为对照基线。
+> **认知地图 = 你自己写的三份 overview**（本 stage 所有 week 都挂回它们的框架：两条定律 分化/进化、三主轴 Scale Up/Async/物理解耦）：
+> - [`sm90_hopper_overview.md`](sm90_hopper_overview.md) — W5-W7 的基线（Hopper 两条主轴）
+> - [`sm100_blackwell_overview.md`](sm100_blackwell_overview.md) — W8 的基线（TMEM/UMMA/2-SM 增量）
+> - [`sm120_fake_blackwell_overview.md`](sm120_fake_blackwell_overview.md) — 解释每个 week 为什么 5060 Ti 能跑/不能跑（通用底座留、大矩阵专用砍）
+>
+> 每个 week README 顶部都有"认知锚点"标注它对应 overview 的哪条主轴/定律 —— 学完一周回 overview 对应条目打勾，操作和认知就接上了。
 
 ## CHECKPOINT — 进入 Stage 3 前必过
 

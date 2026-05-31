@@ -4,6 +4,11 @@
 > **硬件**：🟢 5060 Ti（读源码 + 静态编译 `sm_90a`，看 PTX）｜ 🟡 H20（实际跑 WGMMA + ncu 性能数字）  
 > **5060 Ti 注意**：SM120 没有 WGMMA，本周只能读+静态编译，跑要租 H20
 
+> **认知锚点**（对照 [`sm90_hopper_overview.md`](../sm90_hopper_overview.md)）：
+> WGMMA = **进化定律 · Scale Up 主轴 A1**（warp→warpgroup 粒度放大）+ **Async 主轴交汇点**（`wgmma.mma_async` 异步发射）。
+> 学的时候时刻问自己：这一步是在"放大单次操作"（Scale Up）还是"让操作异步重叠"（Async）？
+> 对照 [`sm120_fake_blackwell_overview.md`](../sm120_fake_blackwell_overview.md)：WGMMA 是消费卡**砍掉**的（绑大矩阵 + warp spec），5060 Ti 退回 `mma.sync` —— 本周末尾会亲手验证这条。
+
 ## 目标
 - 看到一条 `wgmma.mma_async.sync.aligned.m64nNk16` 能拆出每段含义
 - 能解释 SS 模式下为什么 smem 必须是 swizzled 128B-aligned
@@ -24,14 +29,25 @@
 - 跳过 `mma_sm90_gmma_ext.hpp`（60k 行自动生成枚举）和 `mma_sm90_gmma_sparse_ext.hpp`（56k 行）；sparse 留到 Stage 5 MoE
 
 ## 写
-- `exercises/ex11_wgmma_minimal.cu` — 复刻 `wgmma_sm90.cu` 的核心逻辑，写注释解释每一步
-- `exercises/ex12_wgmma_layout_print.cu` — 打印各种 N 维度（N=8,16,...,256）的 WGMMA atom 的 LayoutA_TV / LayoutB_TV / LayoutC_TV
+- `exercises/ex12_wgmma_layout_print.cu` — **先做这个**（纯 host，任意卡可跑）：打印 N=8/64/128/256 的 WGMMA atom 的 LayoutA_TV / LayoutB_TV / LayoutC_TV，亲眼看 warpgroup=128 接线
+- `exercises/ex11_wgmma_minimal.cu` — 单 CTA / 单 k-tile 64x64x64 TN GEMM，把 swizzled smem → cp.async → 一条 `cute::gemm` 发 WGMMA → fence/commit/wait → epilogue 主干走通（要 H20 实跑）
 
 ## 跑
 ```bash
-make study_stage2_w05_ex11_wgmma_minimal -j && ./study_stage2_w05_ex11_wgmma_minimal
+# ex12 任意卡都能跑（包括 5060 Ti），它只是 layout 代数
 make study_stage2_w05_ex12_wgmma_layout_print -j && ./study_stage2_w05_ex12_wgmma_layout_print
+# ex11 要 Hopper；在 5060 Ti 上会因 arch 检查直接跳过
+make study_stage2_w05_ex11_wgmma_minimal -j && ./study_stage2_w05_ex11_wgmma_minimal
 ```
+
+### 🟢 5060 Ti 专属验证：亲手确认 SM120 没有 WGMMA
+对照 `sm120_fake_blackwell_overview.md` 的"砍掉 wgmma"那条，用静态编译把它变成可触摸的事实：
+```bash
+# sm_90a 能编出 wgmma.mma_async；sm_120a 编不出（或退化）
+nvcc -arch=sm_90a  -ptx exercises/ex11_wgmma_minimal.cu -I../../../../include -o /tmp/sm90.ptx && grep -c wgmma.mma_async /tmp/sm90.ptx
+nvcc -arch=sm_120a -ptx exercises/ex11_wgmma_minimal.cu -I../../../../include -o /tmp/sm120.ptx 2>&1 | head  # 观察报错 / 无 wgmma
+```
+> 这一步把 overview 的"消费卡砍了什么"从结论变成你自己跑出来的证据。
 
 ## 自检
 1. 一个 WGMMA 指令需要几个 warp 协作？为什么是 128 线程？
