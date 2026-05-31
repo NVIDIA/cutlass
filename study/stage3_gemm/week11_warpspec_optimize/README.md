@@ -12,7 +12,7 @@
 
 > 本周读 builder 和 tile scheduler；详见 [cutlass_reading_strategy.md §3-§4](../../cutlass_reading_strategy.md#3-collective-mainloop--includecutlassgemmcollective) 和 [选读：EVT](../../cutlass_reading_strategy.md#evt--epilogue-visitor-tree)。
 
-- `include/cute/atom/mma_traits_sm90_gmma.hpp:71-200` — 各种 swizzle atom，挑对的
+- `include/cute/atom/mma_traits_sm90_gmma.hpp:71-130` — 各种 swizzle atom（`Layout_MN_INTER_Atom_Bits` / `SW32` / `SW64` / `SW128` 和 K-major 版本），挑对的（atom 别名 `SM90_64xNx16_*_SS/RS` 在 477+ 行）
 - `include/cutlass/gemm/collective/builders/sm90_gmma_builder.inl` — Builder 是怎么选 swizzle / depth / cluster 的，抄它的逻辑
 - `include/cutlass/gemm/kernel/sm90_tile_scheduler.hpp` — persistent scheduler 入门
 - **选读**：`include/cutlass/epilogue/collective/sm90_epilogue_tma_warpspecialized.hpp` + `include/cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp` — EVT 编译期组合

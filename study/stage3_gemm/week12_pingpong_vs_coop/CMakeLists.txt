@@ -1,0 +1,9 @@
+cutlass_study_add_executable(
+  study_stage3_w12_ex_warpspec_gemm_v3_pingpong
+  exercises/ex_warpspec_gemm_v3_pingpong.cu
+)
+
+cutlass_study_add_executable(
+  study_stage3_w12_ex_warpspec_gemm_v3_cooperative
+  exercises/ex_warpspec_gemm_v3_cooperative.cu
+)
