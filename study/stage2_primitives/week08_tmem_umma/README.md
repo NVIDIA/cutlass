@@ -4,6 +4,12 @@
 > **硬件**：🟢 5060 Ti（读源码 + 静态编译 `sm_100a`）｜ 🔴 B200（实测 UMMA + TMEM + tcgen05.ld/st）  
 > **5060 Ti 注意**：SM120 没有 UMMA / TMEM，本周只能读+静态编译，跑要租 B200。这是承接 W5-W7 之后的 SM100 增量学习（紧跟 SM90 prim 趁热打铁）
 
+> **认知锚点**（对照 [`sm100_blackwell_overview.md`](../sm100_blackwell_overview.md)，这是你自己写的笔记，本周是把它的"为什么"落成"怎么写代码"）：
+> - **TMEM**（一.1，分化）：累加器从 RMEM 迁到 per-SM 256KB 专用 SRAM → ex27 亲手 alloc/读/写
+> - **tcgen05.mma**（A1，进化）：发起从 warpgroup 退到单线程 → ex28 看 `elect_one_warp` 发 MMA
+> - **2-SM MMA / TPC 显式编程边界**（一.3，你挖的最深洞察）：`cta_group::2` 让两个 SM 锁步算一条 MMA_M=256。ex28 用的是 `cta_group::1`（单 SM），但读 `mma_sm100_umma.hpp` 时务必对比 `::1` vs `::2` 两套 PTX 并存 —— 这就是"物理 HW 在 SM、协同通路在 TPC"的源码证据
+> - **FP4/FP6/MX**（A3）：本周只跑 F16，但读 `tcgen05.mma.kind::*` 时留意 `f8f6f4`/`mxf4`/`nvf4` —— 这是 5060 Ti 唯一**保留**的 SM100 Tensor Core 能力（本地 LLM 推理刚需，见 `sm120_fake_blackwell_overview.md` 2.2）
+
 ## 目标
 - 看懂 TMEM 是什么、怎么 alloc、怎么访问
 - 看懂 UMMA 与 WGMMA 的核心差异
@@ -59,6 +65,15 @@ cmake -DCUTLASS_ENABLE_STUDY=ON -DCUTLASS_NVCC_ARCHS=100a ..
 make study_stage2_w08_ex27_tmem_alloc -j && ./study_stage2_w08_ex27_tmem_alloc
 make study_stage2_w08_ex28_umma_minimal -j && ./study_stage2_w08_ex28_umma_minimal
 ```
+
+### 🟢 5060 Ti 专属验证：亲手确认 SM120 没有 UMMA/TMEM
+对照 `sm120_fake_blackwell_overview.md` 的"砍掉 tcgen05 + TMEM"那条（两条路同时判死刑的最典型案例）：
+```bash
+# sm_100a 能编出 tcgen05.mma / tcgen05.alloc；sm_120a 编不出
+nvcc -arch=sm_100a -ptx exercises/ex28_umma_minimal.cu -I../../../../include -o /tmp/sm100.ptx && grep -c "tcgen05.mma" /tmp/sm100.ptx
+nvcc -arch=sm_120a -ptx exercises/ex28_umma_minimal.cu -I../../../../include -o /tmp/sm120.ptx 2>&1 | head  # 观察缺失 / 报错
+```
+> 把"消费卡为何砍 TMEM（大 SRAM 代价）"从结论变成你跑出来的事实。
 
 ## 自检
 1. TMEM 是 SM 私有还是 cluster 共享？
