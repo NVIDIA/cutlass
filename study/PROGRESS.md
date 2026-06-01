@@ -11,7 +11,7 @@
 | 1 | W3 — TiledMMA | ☑ | `ex07_tiled_mma_layout.cu`（输出验证通过：4 warp 起点 + V 维 stride 接 atom 接线）+ ex08 跳过（概念已懂：循环顺序影响 reg liveness）+ 自检 Q3/Q5 已懂；Q1/Q2/Q4 跳过（实现细节，Stage 6 再补）| 2026-05-18 |
 | 1 | W4 — TiledCopy | ⏭ skip (first-pass) | 概念跟 W3 镜像 (THINKING O21)；原子指令 (cp.async/ldmatrix/pipeline) + ex09/ex10 + CHECKPOINT 一起推后到 Stage 2 之后补。第一遍 Stage 2 直接学 TMA/wgmma，cp.async/ldmatrix 大部分被新硬件抽走 | (待补) |
 | 1 | **CHECKPOINT** | ☐ | sgemm_sm80 变体 + 5 道口答 | |
-| 2 | W5 — WGMMA (SM90) | ◧ 读+ex12 done | `notes_w05.md`（7 节：四件套/SS-RS/descriptor/swizzle↔bank line/TV layout/op-traits-atom 三层/MMA 语义=TV线+swizzle线）+ ex12 跑通（A/B_TV 退化 stride=0 vs C_TV 真分工）+ 自检 5 题全答 | 2026-06-01（ex11 实跑等 H20）|
+| 2 | W5 — WGMMA (SM90) | ◧ 读+ex12 done | 概念沉淀进 `THINKING.md` O23-O27 + O3 扩展（四件套/proxy/SS-RS/descriptor/swizzle↔bank line/TV 退化/三层解耦）；ex12 产出在 `week05_wgmma/ex12_findings.md`；自检 5 题全答 | 2026-06-01（ex11 实跑等 H20）|
 | 2 | W6 — TMA (SM90/SM100/SM120 共用) | ☐ | | |
 | 2 | W7 — Pipeline + Cluster (SM90) | ☐ | | |
 | 2 | W8 — TMEM + UMMA (SM100 增量) | ☐ | | |
