@@ -165,3 +165,58 @@
 | 物理解耦（资源放大） | （无） | TMEM + 单线程发起 MMA | **完全没有**，回退到寄存器堆 + warp 语义 |
 
 结论：**Async 主轴在消费卡上几乎全留，Scale Up / 物理解耦主轴几乎全砍**。这印证了"通用底座保留 + 大矩阵专用砍"的判断 —— Async 主轴本身就是"通用同步原语"，与 workload 大小关系小；Scale Up / 物理解耦才是大矩阵专用的硬投入。
+
+---
+
+## 八、追问：消费卡留下了 TMA，但 TMA 到底对哪种 kernel 提 MFU？
+
+> 起点疑问：TMA 不提带宽、不加算力，那它在消费卡上的意义是不是只是"减少 warp 占用、让 copy / mma 并行"？cp.async + mma 流水线不也能做到？
+
+### 8.1 先纠两个直觉
+
+- **cp.async 的 "async" 和 TMA 不是一回事**。cp.async 是「每线程发一条 LDGSTS 搬 4/8/16B」，异步的只是"等待"那步；地址生成 / swizzle / 边界判断全程占着 SM。TMA 是「一条指令 + 一个 tensor map 坐标 → DMA 引擎搬整个多维 tile」。区别不是同步/异步，是**谁来算地址、谁来摆 swizzle**。
+- **"减少 warp 占用"只是结果之一，不是核心价值**。cp.async 也能做 copy/compute 重叠，所以那不是 TMA 存在的理由。
+
+### 8.2 TMA 省的"SM 占用"= 4 样一起省（不只是少发指令）
+
+| 省的资源 | 说明 | 消费卡上的权重 |
+|----------|------|----------------|
+| 指令发射 slots | cp.async 成百上千条 LDGSTS + 地址指令 → TMA 一条 | 最显性 |
+| 整数 ALU | 地址 / 循环 / swizzle / 边界全是 INT 运算，抢发射带宽 + 调度时间片 | 高（消费卡 SM 窄） |
+| **寄存器** | 地址 / 计数器 / predicate mask 占寄存器 → 压 occupancy | **最致命**（消费卡寄存器紧，决定能塞多少 warp 藏延迟） |
+| warp 调度压力 | cp.async 要整 warp 参与；TMA 一个 `elect_one` 线程发起 | 中 |
+
+一句话：把「地址生成 + swizzle + 边界 + 同步」从 SM 的「发射端口 + INT 单元 + 寄存器 + warp 调度」整体卸载到 DMA 引擎，让 SM 资源**纯供给 tensor core**。
+
+### 8.3 判据：TMA 提 MFU 当且仅当 kernel 是"喂数据 bound"
+
+> TMA 不加算力不加带宽 → 它提 MFU **当且仅当**当前瓶颈是「SM 忙着算地址 / 搬运 / swizzle / 边界，而 tensor core 在 stall 等数据」。把这部分卸载 → tensor core 空转变少 → MFU 升。
+> 反之：纯 compute-bound（tensor core 已满载）或纯 DRAM-bound，TMA 无感。
+
+### 8.4 分类表：消费卡加 TMA 对各 kernel 的 MFU 影响
+
+| Kernel | 瓶颈 | 加 TMA 对 MFU |
+|--------|------|---------------|
+| **大方阵 GEMM**（compute-bound） | tensor core 已满载 | ≈ **无感**（只省点寄存器/指令，边际） |
+| 小 / 瘦 GEMM、GEMV、decode (M=1~16) | 搬运启动 + 边界开销摊不薄 → tensor core 空转 | 有感 |
+| **FlashAttention / fused attention** | 很多小 GEMM 串 + softmax + causal/变长 边界碎 | **明显**（Stage 4 主线） |
+| 卷积 implicit GEMM | 多维坐标→偏移地址计算重 + padding 边界 | 明显 |
+| **MoE / Grouped GEMM** | 一堆形状不规则小 GEMM + routing gather | **明显**（Stage 5 主线） |
+| 纯逐元素 / memory-bound | DRAM 带宽 | 无感（无 tensor core） |
+
+**修正了一个常见误判**："TMA 对 GEMM 没用"——不准。准确说法是：对 **compute-bound 的大方阵 GEMM** 无感，但对 **latency-bound 的小/瘦 GEMM** 仍受益。tile 越小、边界越碎、搬运越复杂，TMA 越值。
+
+### 8.5 5060 Ti（SM120）的现实修正
+
+SM120 砍了 WGMMA，退回 `mma.sync`（寄存器输入的 warp 级 MMA），数据流是 `smem → ldmatrix → 寄存器 → mma`。所以 **SM90 那种「TMA → smem → WGMMA 直喂 tensor core」的最大红利吃不到**——还得过 ldmatrix 进寄存器。消费卡上 TMA 的价值主要落在：
+1. swizzle 自动摆放（零 bank conflict、零手算）
+2. 边界 / padding 自动（tensor map 知道全局 shape，越界补零）
+3. 地址生成 + 搬运彻底从 SM 卸载（省寄存器/occupancy）
+
+更像"高级 memcpy 引擎"，而非 SM90 的"喂养 MMA 的传送带"。
+
+> **待验证（Stage 4）**：同一个 FA kernel，在 5060 Ti vs H20 上各测「有 TMA / 无 TMA」两版的 MFU。预期：两边都涨，但 H20（WGMMA 直连）的 TMA 增量明显大于 5060 Ti（mma.sync 经寄存器）。这是把"消费卡 TMA 红利更小"从结论变成实测数据的对照实验。
+
+### 8.6 一句话提炼
+
+TMA 不提带宽不加算力，但把「地址生成 + swizzle + 边界 + 同步」硬件化。消费卡上它提 MFU 的真正大户不是大 GEMM，而是 **FlashAttention 和 MoE/Grouped GEMM** 这类"很多小而碎的 tensor-core 操作 + 复杂搬运/边界"的 kernel —— 恰好是 Stage 4 / Stage 5 的主线。底层逻辑始终是：**TMA 只在"SM 忙搬运、tensor core 在饿"时提 MFU。**
