@@ -611,7 +611,7 @@ Then we need to compile and load this extension into PyTorch:
          verbose=True,
       )
 
-With all the boilerplate code ready, now let's write a CuTeDSL kernel and use the C++ extension to call it. 
+With all the boilerplate code ready, now let's write a CuTeDSL kernel and use the C++ extension to call it.
 In practice you might want to call the CuTeDSL function from C++ directly without going back to Python. We call from Python here just for demonstration purposes.
 
 .. code-block:: python
@@ -652,10 +652,10 @@ In practice you might want to call the CuTeDSL function from C++ directly withou
 
 Calling convention of TVM-FFI in C++
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-When you compile a @cute.jit function with the ``--enable-tvm-ffi`` option, `cute.compile` will return a TVM FFI function object. 
+When you compile a ``@cute.jit`` function with the ``--enable-tvm-ffi`` option, ``cute.compile`` will return a TVM FFI function object.
 Then you can register it as a `Global Function <https://tvm.apache.org/ffi/guides/export_func_cls.html#global-functions>`_ to make it accessible from other languages.
 
-In C++, you can load the compiled function from the global registry with `tvm::ffi::Function::GetGlobal` (or `tvm::ffi::Function::GetGlobalRequired`, which will throw if the function is not found).
+In C++, you can load the compiled function from the global registry with ``tvm::ffi::Function::GetGlobal`` (or ``tvm::ffi::Function::GetGlobalRequired``, which will throw if the function is not found).
 The returned object will be of type ``tvm::ffi::Function``.
 
 The signature of the TVM FFI function loaded in C++ will use a unified ABI for all functions like this:
@@ -664,30 +664,30 @@ The signature of the TVM FFI function loaded in C++ will use a unified ABI for a
 
    void CallPacked(const AnyView* args, int32_t num_args, Any* result) const
 
-where `const AnyView* args` is the type-erased array of arguments, whose actual types are determined at runtime,
-`int32_t num_args` is the number of arguments, and `Any* result` is a pointer to the return value (if any).
+where ``const AnyView* args`` is the type-erased array of arguments, whose actual types are determined at runtime,
+``int32_t num_args`` is the number of arguments, and ``Any* result`` is a pointer to the return value (if any).
 
-- The arguments are called "AnyView", meaning they are "non-owning" views of the underlying data and therefore the lifetime is determined by the actual data owner. 
+- The arguments are called "AnyView", meaning they are "non-owning" views of the underlying data and therefore the lifetime is determined by the actual data owner.
 - The return value is called "Any", meaning it owns the data and is responsible for its lifetime.
-- Both `Any` and `AnyView` are type-erased containers that can hold objects from different types. The actual type is decided by their ``type_index`` attribute at runtime, which is a `TVMFFITypeIndex <https://tvm.apache.org/ffi/reference/cpp/generated/enum_c__api_8h_1a1925bb5d568a3f5c92a6c28934c9bcc2.html#_CPPv4N15TVMFFITypeIndex11kTVMFFINoneE>`_ enum that represents a TVM-FFI type.
+- Both ``Any`` and ``AnyView`` are type-erased containers that can hold objects from different types. The actual type is decided by their ``type_index`` attribute at runtime, which is a `TVMFFITypeIndex <https://tvm.apache.org/ffi/reference/cpp/generated/enum_c__api_8h_1a1925bb5d568a3f5c92a6c28934c9bcc2.html#_CPPv4N15TVMFFITypeIndex11kTVMFFINoneE>`_ enum that represents a TVM-FFI type.
 
-However, you do not need to explicitly call TVM-FFI functions with this low-level packed format signature, because TVM-FFI has overridden the ``operator()`` method, which creates arguments of `CallPacked` for you
+However, you do not need to explicitly call TVM-FFI functions with this low-level packed format signature, because TVM-FFI has overridden the ``operator()`` method, which creates arguments of ``CallPacked`` for you
 to allow you to call the function with the same signature as how you defined it.
-So in our elementwise addition example, the C++ signature of the TVM FFI function will be something like (note our kernel does not return anything, so the return value will be a `tvm::ffi::Any` with `type_index` of `kTVMFFINone`):
+So in our elementwise addition example, the C++ signature of the TVM FFI function will be something like (note our kernel does not return anything, so the return value will be a ``tvm::ffi::Any`` with ``type_index`` of ``kTVMFFINone``):
 
 .. code-block:: cpp
 
    tvm::ffi::Any add(tvm::ffi::AnyView x, tvm::ffi::AnyView y, tvm::ffi::AnyView z)
 
-When we want to call the TVM FFI function in C++, we need to construct our inputs in a form that can be converted to `AnyView` and recognized by TVM-FFI. In this case, the conversion path we would take is
-`DLTensor` -> `tvm::ffi::TensorView` -> `tvm::ffi::AnyView`. The latter two conversions can be implicit (supported by TVM-FFI already), so we just need to convert our tensor type to `DLTensor`.
-For PyTorch tensors, they would be `at::Tensor` in C++ and we can use `at::toDLPackNonOwning` to get a `DLTensor` view. For custom tensor types, you might need to implement the conversion yourself.
+When we want to call the TVM FFI function in C++, we need to construct our inputs in a form that can be converted to ``AnyView`` and recognized by TVM-FFI. In this case, the conversion path we would take is
+``DLTensor`` -> ``tvm::ffi::TensorView`` -> ``tvm::ffi::AnyView``. The latter two conversions can be implicit (supported by TVM-FFI already), so we just need to convert our tensor type to ``DLTensor``.
+For PyTorch tensors, they would be ``at::Tensor`` in C++ and we can use ``at::toDLPackNonOwning`` to get a ``DLTensor`` view. For custom tensor types, you might need to implement the conversion yourself.
 
 For other basic types, you can directly pass them and let TVM-FFI handle the conversion implicitly. You are unlikely to need to convert them manually, since they are general types that are widely recognized.
 
-See https://tvm.apache.org/ffi/concepts/any.html#layout for more detail on how TVM-FFI's `Any` type works.
+See `layout <https://tvm.apache.org/ffi/concepts/any.html#layout>`_ for more detail on how TVM-FFI's ``Any`` type works.
 
-See https://tvm.apache.org/ffi/concepts/tensor.html#tensor-classes for more detail on how DLPack tensors and TVM-FFI tensors convert between each other.
+See `tensor-classes <https://tvm.apache.org/ffi/concepts/tensor.html#tensor-classes>`_ for more detail on how DLPack tensors and TVM-FFI tensors convert between each other.
 
 
 Exporting Compiled Module
