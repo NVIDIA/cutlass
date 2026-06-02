@@ -16,7 +16,7 @@
 | 2 | W7 — Pipeline + Cluster (SM90) | ◑ 核心过完 | 加速模式：mbarrier vs syncthreads / PipelineState(index+phase 防 ABA) / 4 步协议 / warp specialization+setmaxnreg / cluster+DSMEM 核心已过；自检 5 题全答；概念进 THINKING O30 | 2026-06-02 |
 | 2 | W8 — TMEM + UMMA (SM100 增量) | ◑ 核心过完 | 加速模式：UMMA vs WGMMA(单线程发射/累加器 TMEM)、TMEM alloc+ld/st、2-SM UMMA(cluster=2 结构必需)、FP4/MX、四层模型已过；概念进 THINKING O31。**Stage 2 收口** | 2026-06-02 |
 | 2 | **CHECKPOINT** | ☐ | minimal warpspec ping-pong 玩具 + minimal UMMA toy | |
-| 3 | W9 — 3.x 分层设计 | ☐ | | |
+| 3 | W9 — 3.x 分层设计 | ◑ 核心过完 | 加速模式：五层(device/kernel/collective/tiled/atom)分层图、CollectiveBuilder 自动推断价值、TileShape/ClusterShape/Schedule 编译期语义、自检 5 题；概念进 THINKING O32。**Stage 3 起步** | 2026-06-02 |
 | 3 | W10 — WarpSpec writeup (SM90) | ☐ | | |
 | 3 | W11 — WarpSpec optimize (SM90) | ☐ | | |
 | 3 | W12 — Pingpong vs Cooperative (SM90) | ☐ | | |
