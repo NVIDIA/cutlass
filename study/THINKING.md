@@ -369,6 +369,21 @@ B32 : Swizzle<1,4,3> o ((8,m),(T,2)):((2T,SBO),(1,T))   # 2 chunk
 - **结论**：TV 三件套对"进寄存器"的操作数才是完整语义（C 永远是；A/B 在 RS/mma.sync 时是）。**SS 的 A/B 不进寄存器 → TV 退化，真实语义转移到 smem swizzle layout + descriptor**。SS 把 A/B 从 TV 线甩给 swizzle 线（不占寄存器），只把 C 留在 TV 线 —— 这是 WGMMA 比 mma.sync 省寄存器的根本原因。
 - **op/traits/atom 三层解耦**（`mma_atom.hpp`）：你写的 `SM90_64x8x16_..._SS` 只是 **MMA_Op**（alias，仅 `fma()`/PTX，无 layout）。`make_tiled_mma(op)` 重载(:548) 自动包成 `MMA_Atom<op>`(:45)，继承时按类型查 `MMA_Traits<op>`(:480, traits 文件) 拿 5 个 layout。换硬件只换 op+traits 特化，上层不动。
 
+### O28. swizzled smem 的两种锚法：position-dependent vs independent
+
+`pointer_flagged.hpp:98-123`。swizzled smem tensor 的 layout = `ComposedLayout<SwizzleFn, 中间锚, Layout>`，关键在中间项：
+
+| | 中间锚 | swizzle XOR 作用于 | 数据指针 |
+|---|---|---|---|
+| `sA`（默认，position-**dependent**） | `smem_ptr_flag` | **绝对地址**+offset（地址低位参与） | 有 |
+| `sA_pi`（`as_position_independent_swizzle_tensor`） | `Int<0>` | **仅 offset**（锚 tensor 自身 base，与绝对位置无关） | **同一个，仍在** |
+
+- **常见误解**：不是"sA 含地址、sA_pi 不含"。**两者都握同一物理指针**（不然无法落地址）。变的只是 **swizzle 运算依不依赖绝对地址**。
+- base 对齐到 swizzle 跨度时（`as_pi` 内有 assert `(address & mask)==0` 保证），两种锚算出的**物理布局完全一致**——换锚不改结果，纯实现机制。
+- **为何要两种**（ex11 对称点）：**cp.async 写**侧用 `sA_pi`——通用 `copy` 循环靠 layout 从 base 算 offset，且 `partition_D` 会切/推进指针，swizzle 必须自参照 base0 才算得对；**wgmma 读**侧用 `sA`（`partition_A(sA)`）——`make_gmma_desc` 要读真实 smem 地址 + swizzle 模式，硬件在绝对地址上施加。
+- 两侧物理布局一致 → 写进去的 = wgmma 读出的，"写读同一 swizzle、逻辑透明"在代码里的落点。
+- 配套理解 layout 方向：CuTe Layout **恒为 `逻辑坐标→一维 offset`**（含 swizzle 那步 XOR），无"反过来"。`sA(m,k) ⟺ smemA[sA_layout(m,k)]`，你写逻辑坐标、layout 翻成物理槽。`partition_D` 分的是**逻辑元素**，swizzle 在**实际 load/store 那刻**才把逻辑翻成物理 —— 不是 partition 直接拿打散偏移。
+
 ---
 
 ## 三、方法论
