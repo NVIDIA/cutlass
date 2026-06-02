@@ -417,6 +417,23 @@ B32 : Swizzle<1,4,3> o ((8,m),(T,2)):((2T,SBO),(1,T))   # 2 chunk
 
 **ping-pong 至少 2 个 mbarrier**：一个表"slot 空(可写)"、一个表"slot 满(可读)"。1 个无法同时表达两个相反事件，producer/consumer 会互相覆盖/读脏。
 
+### O31. TMEM + UMMA（W8 SM100/103，加速模式）
+
+SM100 把 tensor core 从"warpgroup 协作 + 累加器在寄存器"升级为"**单线程发射 + 累加器在 TMEM + 双 SM 可锁步**"。全靠对比 W5 wgmma 理解：
+
+| | WGMMA(SM90) | UMMA(SM100) |
+|---|---|---|
+| 发射 | warpgroup 128 线程 `.sync.aligned` | **单线程**(`elect_one` 发 `tcgen05.mma`) |
+| 累加器 C | RMEM(128 线程摊开) | **TMEM**(256KB/SM 专用 SRAM) |
+| A | SMEM/RMEM | SMEM/**TMEM** |
+| 规模 | M64 | 单 SM M128；**2-SM 锁步 M256** |
+
+- **TMEM**：累加器新家，不占寄存器→occupancy 大涨。专用指令 `tcgen05.alloc/dealloc`(生命周期) + `tcgen05.ld/st`(TMEM↔RMEM)。**代价：epilogue 多一跳 TMEM→RMEM→GMEM**(W5 是 RMEM 直接写)。
+- **为何单线程能发**：累加器在 TMEM、操作数在 SMEM/TMEM(集中，descriptor 寻址)→ 不靠线程寄存器分散持有 → 无需协同。对比 wgmma 要 128 线程是因数据散在寄存器。
+- **2-SM UMMA = cluster=2 结构必需**：`cta_group::2` 两 SM 锁步算 MMA_M=256，A/B 分摊两 CTA SMEM、累加器共享 TMEM。`mma_sm100_umma.hpp` 里 `::1`/`::2` 两套 PTX 并存。物理算力在 SM、协同通路在 TPC。
+- **四层心智模型**(同 W3/W4)：`tcgen05.mma/.ld/.alloc` PTX → `mma_traits_sm100`+`copy_traits_sm100` 包 atom → `tmem_allocator_sm100` 管段 → 上层 kernel。
+- **FP4/FP6/MX**(`tcgen05.mma.kind::f8f6f4/mxf4/nvf4`)：低精度+microscaling，**5060 Ti 唯一保留的 SM100 TC 能力**(本地 LLM 推理刚需，走 SM120 自有路径非 tcgen05)。消费卡砍 UMMA/TMEM/cluster。
+
 ---
 
 ## 三、方法论
