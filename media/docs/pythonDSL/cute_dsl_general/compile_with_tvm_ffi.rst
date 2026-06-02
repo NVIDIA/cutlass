@@ -643,8 +643,11 @@ In practice you might want to call the CuTeDSL function from C++ directly withou
       x = torch.randn((4, 4), dtype=torch.bfloat16, device="cuda")
       y = torch.randn((4, 4), dtype=torch.bfloat16, device="cuda")
       z = torch.randn((4, 4), dtype=torch.bfloat16, device="cuda")
+
+      # Launch the C++ function. This is only for demonstration because it's the easiest way to run our C++ function.
+      # In practice you might be working with some C++ heavy framework and you should call the C++ function from C++ directly without going through Python.
       ext.apply_tvm_function("CuTeDSL_add", x, y, z)
-      assert torch.allclose(x + y, z, atol=1e-5, rtol=1e-5)
+      assert torch.allclose(x + y, z, atol=1e-8, rtol=1e-8)
       print("Successfully called CuTeDSL function from C++!")
 
    if __name__ == "__main__":
