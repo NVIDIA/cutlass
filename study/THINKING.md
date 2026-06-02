@@ -43,13 +43,27 @@ CUTLASS 的标准 swizzle 都是 **8 行 × N chunks of 16B** 的非方 tile：
 
 S=3 是因为 Hopper 约定 **row 字段对齐到 offset 的 bit 7+**（外层 stride 撑出来），公式跨 SW 系列统一。
 
-**B+M 必须等于 `log2(单条指令实际触及字节数)`** —— Swizzle<3,2,3> 配 32×32 fp32 (128B/row) 只能从 32-way 降到 16-way，要消干净得 Swizzle<5,2,5>（B+M=7 覆盖整条 bank-row）。
-
-**三参数的 bank 几何对账**（W5 实算，机制 `apply(off)=off ^ ((off & yyy_msk)>>S)`）：
-- **M**：`2^M=16` 字节 = 一次 **128-bit 访问 = 4 banks**（不动的原子块，块内连续读无冲突）。M=4 不是"4B=1bank"，是 smem 高效访问以 128-bit 为单位。
-- **M+S**：swizzle 周期 = 一条 **bank line**。`2^(M+S)=2^7=128`B = 32 banks×4B。这是 S=3 的来历。
-- **B**：周期内打散几路。`2^B` 个 16B chunk 进拉丁方；B=3→8 chunk→8×8 填满 32 banks。**B 越大越散，上限 B=3**（再大目标段 bit[M..] 与源段 bit[M+S..] 重叠非法，且已满一条 line）。
+**三参数的 bank 几何对账**（机制 `apply(off)=off ^ ((off & yyy_msk)>>S)`）：
+- **M**：`2^M=16`B = 一次 **128-bit 访问 = 4 banks**（不动的原子块）。M=4 不是"4B=1bank"，是 smem 高效访问以 128-bit 为单位。
+- **M+S**：swizzle 周期 = 连续方向宽度 = `2^(M+S)` 字节。SW128 时 `2^7=128`B = 一条完整 bank line（32 banks×4B），S=3 来历。
+- **B**：周期内打散几路。`2^B` 个 16B chunk 进拉丁方；B=3→8 chunk 填满 32 banks。上限 B=3（再大源/目标 bit 段重叠非法，且已满一条 line）。
 - swizzle 主语是 **wgmma 地址生成器 / cp.async / TMA 写入**，不是"32 线程各自读"。写读同一 swizzle，逻辑不变、物理打散。
+
+**四档 atom 的真实几何**（`mma_traits_sm90_gmma.hpp:75-104`，定义在 **bit** 域再 `upcast<sizeof_bits<T>>`）。另一维恒 `_8`(=core matrix 8 行)：
+
+| atom | Swizzle | 连续 bit | =字节 | =banks | fp16 元素 |
+|------|---------|------|------|------|------|
+| INTER(无) | `<0,4,3>` | 128 | 16B | 4 | 8 |
+| SW32 | `<1,4,3>` | 256 | 32B | 8 | 16 |
+| SW64 | `<2,4,3>` | 512 | 64B | 16 | 32 |
+| SW128 | `<3,4,3>` | 1024 | 128B | 32 | 64 |
+
+**⚠️ 纠正旧算式**：fp16 SW128 连续方向 = `1024bit/16 = 64 元素 × 2B = 128B`，正确算式 **`64×2=128`**，那个 64 来自 `1024÷16`，**不是** WGMMA 的 atom-K=16（两个 K 别混：atom-K=16 是一条 wgmma 的 MMA 深度；swizzle 连续维=64 元素是 smem 摆放周期，无关）。atom 连续方向**恒 128B，与 dtype 无关**（fp8 是 128 元素仍 128B）。
+
+**swizzle 是"尺寸匹配"不是"质量旋钮"**：atom 连续字节宽必须 = 你 smem tile 连续维的字节宽。
+- 数据宽 128B(fp16 K-tile=64) → SW128 打满 32 bank。
+- 数据宽 64B(fp16 K-tile=32 / fp8 K=64) → **只占 16 bank**，SW128 套不进(整除不进 tile)，SW64 在这 16 bank 内已无冲突 = 该 case 的"打满"。
+- 用大了套不进，用小了 8 行在更宽数据里还撞。"只有 SW128 用满 32 bank"对，但不代表 SW64/32 没用——窄数据时它们才是"打满"。
 
 ### O4. CuTe 的 B 写作 `(N, K)`，不是 BLAS 的 `(K, N)`
 
@@ -334,7 +348,19 @@ wgmma 通过独立的 **async proxy** 访问 smem/累加器寄存器，跟普通
 `mma_sm90_desc.hpp`（151 行，`union GmmaDescriptor` 64-bit）。**不用背 bit**，一句话：内容 = 起始地址 + 两个方向 stride(LBO/SBO) + swizzle 模式(layout_type_)，**纯几何零数据**。
 - **两 stride 随 major 切换含义**（K：LBO=8行→下8行 / SBO=8列→下8列；MN：角色互换）。**SS 转置 = 互换这两个 stride 的角色**——这是 O12 "硬件接线图" 在 smem 侧的对应。
 - 全是几何零数据 → 印证 SS 模式 A 不进寄存器：descriptor 只说"去哪取"，数据 wgmma 硬件自己流式读进 PE 阵列。
-- **"smem 地址生成器"不是独立的 smem 控制器**，是 wgmma(GMMA) 单元内部解码 descriptor 的逻辑；smem bank 只管存储+仲裁，"按什么规则取"的智能在发起方。（微架构 NVIDIA 未公开，此为 PTX 语义+proxy 模型层结论。）
+- **"smem 地址生成器"不是独立的 smem 控制器**，是 wgmma(GMMA) 单元内部解码 descriptor 的逻辑；smem bank 只管存储+仲裁，"按什么规则取"的智能在发起方。（微架构未公开，此为 PTX 语义+proxy 模型层结论。）
+
+**descriptor 只认 4 种合法布局**（`mma_traits_sm90_gmma.hpp:162-194` 官方注释，不在表内 `make_gmma_desc` 拒绝）。Major-K 形如：
+```
+B128: Swizzle<3,4,3> o ((8,m),(T,2)):((8T,SBO),(1,T))   # 行恒(8,m)，swizzle 只缩放 leading
+B64 : Swizzle<2,4,3> o ((8,m),(T,2)):((4T,SBO),(1,T))   # 4 chunk
+B32 : Swizzle<1,4,3> o ((8,m),(T,2)):((2T,SBO),(1,T))   # 2 chunk
+```
+**swizzle 宽度与 leading 宽度死死配对**，每档唯一。两条不可让渡的硬约束：
+1. **行轴恒 `(8,…)`**：core matrix 8 行是硬件常量，且靠**独立 SBO stride** 寻址。swizzle 只改另一维(leading-K)的 chunk 数(B32→2/B64→4/B128→8)。
+2. **leading 维必须是某一行自己的连续 K**：MMA 沿它 unit-stride 走。
+
+→ **swizzle 本质 = `8行 × N个leading-chunk` 的固定拉丁方**。"窄 K-tile 拼两行进一个 128B 周期"不行：等于侵占已被 SBO 占用的行轴，且让 MMA 的 unit-stride K-walk 在"row0 k=32"处跨读进 row1 的字节（descriptor 描述的逻辑布局在撒谎）。编码上也无"swizzle 128B 但行距 64B"这种组合。swizzle 透明(写读同函数)→ 不损坏数据，但逻辑映射错。**所以 swizzle 只能按行——是 core matrix 8 行固定 + 单行 K 连续两件事都不可让渡，不是设计偷懒。**
 
 ### O27. WGMMA 完整语义 = TV 线 + swizzle 线（SS 的 A/B TV 退化）
 

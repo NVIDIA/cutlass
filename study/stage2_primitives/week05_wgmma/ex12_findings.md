@@ -22,7 +22,7 @@ size(tiled_mma) = 128
 1. **128 线程 = 1 warpgroup = 4 warp**（`.sync.aligned` warpgroup 粒度发射）
 2. fence(可见性入口) / commit(批次边界) / wait(出口等待) 三正交职责，分开才能流水线 → 见 THINKING O24
 3. m64n128k16：m=A/C 的 M 维，n=B/C 的 N 维，k=A/B 的 K 深度
-4. fp16 一行 128B 用满 SW128，fp8 一行 64B 用 SW64 → 见 THINKING O3
+4. swizzle 选档 = **尺寸匹配**（atom 连续字节宽 = tile 连续维宽），不绑 dtype：连续 128B→SW128 打满 32 bank，连续 64B→SW64（只占 16 bank，套 SW128 整除不进）。atom 连续方向恒 128B/64B…(bit 域定义后 upcast)。⚠️ 旧笔记"16×2=128"算错，正确 `64×2=128`（64=1024bit/16），atom-K=16 与 swizzle 连续维=64 无关 → 见 THINKING O3
 5. RS 吃寄存器压 occupancy，A 复用多时值得；否则 SS 省寄存器 → 见 THINKING O25
 
 ## 待办（需硬件）
