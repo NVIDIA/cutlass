@@ -652,8 +652,11 @@ In practice you might want to call the CuTeDSL function from C++ directly withou
 
 Calling convention of TVM-FFI in C++
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-When you compile a ``@cute.jit`` function with the ``--enable-tvm-ffi`` option, ``cute.compile`` will return a TVM FFI function object.
-Then you can register it as a `Global Function <https://tvm.apache.org/ffi/guides/export_func_cls.html#global-functions>`_ to make it accessible from other languages.
+To call a compiled CuTeDSL function from C++, we need to utilize the Ahead-of-Time (AOT) compilation to obtain the compiled function as a TVM FFI function object first,
+and then register it in the TVM FFI global registry with a string name. This requires you to use ``cute.compile`` to compile the ``@cute.jit`` function with the ``--enable-tvm-ffi`` option, then ``cute.compile`` will return a TVM FFI function object.
+Next, you need to register this function object as a `Global Function <https://tvm.apache.org/ffi/guides/export_func_cls.html#global-functions>`_ with this API: ``tvm_ffi.register_global_func(func_name, f=None, override=False)``,
+where ``func_name`` is the string name to identify the function in the global registry, ``f`` is the TVM FFI function object returned by ``cute.compile``, and ``override=True`` allows overwriting an existing function with the same name in the registry.
+In this way, you can make this compiled ``@cute.jit`` TVM-FFI function accessible from other languages, including C++.
 
 In C++, you can load the compiled function from the global registry with ``tvm::ffi::Function::GetGlobal`` (or ``tvm::ffi::Function::GetGlobalRequired``, which will throw if the function is not found).
 The returned object will be of type ``tvm::ffi::Function``.
