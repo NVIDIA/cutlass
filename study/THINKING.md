@@ -384,6 +384,39 @@ B32 : Swizzle<1,4,3> o ((8,m),(T,2)):((2T,SBO),(1,T))   # 2 chunk
 - 两侧物理布局一致 → 写进去的 = wgmma 读出的，"写读同一 swizzle、逻辑透明"在代码里的落点。
 - 配套理解 layout 方向：CuTe Layout **恒为 `逻辑坐标→一维 offset`**（含 swizzle 那步 XOR），无"反过来"。`sA(m,k) ⟺ smemA[sA_layout(m,k)]`，你写逻辑坐标、layout 翻成物理槽。`partition_D` 分的是**逻辑元素**，swizzle 在**实际 load/store 那刻**才把逻辑翻成物理 —— 不是 partition 直接拿打散偏移。
 
+### O29. TMA 核心（W6，加速模式）
+
+**一条指令搬一整 tile**（G↔S），硬件自算地址、异步、单线程发射（区别于 wgmma 的 warpgroup 发射）。三个必知：
+1. **descriptor 在 host 建**：128B TensorMap = {基址 + 各维 size/stride + box + swizzle 模式 + 越界行为}，靠驱动 `cuTensorMapEncode`，device 建不了，全 CTA 共享。kernel 里 TMA 只吃 **descriptor 指针 + smem 指针 + GMEM 坐标**（不吃 GMEM 指针——它封进 descriptor 当常量，这就是 `0z_tma_tensors.md` 那个 ArithTuple 坐标 tensor 的由来：layout 算出的是**坐标**不是 offset，stride 用基元素 `E<i>`=`1@i`）。
+2. **mbarrier transaction count**（同步灵魂）：普通 barrier 等"**线程**到齐"，TMA barrier 等"**字节**到齐"。模板 `expect_tx(bar, tile_bytes)` → 发 TMA → `wait`；引擎搬完自动累加字节，凑够放行。函数在 `copy_sm90_desc.hpp`。
+3. **proxy fence**：TMA 走 async proxy 写 smem，普通指令/wgmma 走 generic proxy 读 → 跨 proxy 不自动同步（**同 W5 wgmma fence 同源**），中间需 `fence.proxy.async`。
+
+**128B 对齐到底对谁**（纠正：别一锅烩）：
+| 对象 | 对齐 |
+|---|---|
+| global tensor 基址 | **16B** |
+| 各维 global stride（字节） | 16B 倍数 |
+| **smem 侧 box 地址** | **128B** ← "128B"真正来源 |
+| box 内层 × 元素大小 | swizzle atom（SW128=128B，呼应 O3） |
+
+三个"起点"别混：**global tensor 起点**=整矩阵基址(`&A[0][0]`，进 descriptor)；**box 起点**=本次搬的 tile 左上角坐标(运行时传)；**元素地址**=任意 `&A[i][j]`。
+
+**descriptor 的 swizzle 字段 = W5 GMMA `layout_type`(B32/B64/B128) 同一套** → TMA 直接按 wgmma 要的 swizzle 摆进 smem，省中间重排。三套 group 计数互不干扰：cp.async / `cp.async.bulk`(TMA) / wgmma 各一套 scoreboard。
+
+### O30. Pipeline + Cluster + Warp Specialization（W7，加速模式）
+
+**mbarrier vs `__syncthreads`**：mbarrier = 带 **phase bit**、可**异步**(arrive 不阻塞)、可按**线程子集/字节**的 barrier。这是流水线地基；syncthreads 只能整 block 同步、无 phase、不异步。
+
+**PipelineState = index + phase**：循环 buffer `depth` 个 slot。index 管空间(用哪个 slot)、phase 管时间(第几圈，每圈翻 0↔1)。**phase 不能用 `index%depth` 替代 → ABA 问题**：index 绕回 0 时分不清"本圈新写"还是"上圈残留"，phase bit 才能判数据新旧。
+
+**4 步协议**：`producer_acquire`(等 slot 空,被 `consumer_release` 解锁) → `producer_commit`(数据好了通知，TMA 场景由字节到齐自动触发) → `consumer_wait`(等 slot 满) → `consumer_release`(用完通知 producer 可覆盖)。
+
+**Warp Specialization（Hopper 才流行）**：warpgroup 分工 producer(专发 TMA)/consumer(专做 wgmma)。三支撑：**mbarrier**(子集同步,syncthreads 做不到) + **setmaxnreg**(consumer 多给寄存器、producer 少给，不对称分配提 occupancy) + **cluster/DSMEM**(多 SM 共享 smem)。
+
+**Cluster/DSMEM**：多 CTA 绑一组互访 smem，`cluster_sync` 跨 CTA 同步，`cluster_to_smem_ptr`(本地 smem 地址 + 目标 CTA rank → DSMEM 地址)。**消费卡 cluster size≈1，基本空转，概念懂即可**。SM100 在其上加 CLC(硬件化 persistent + 动态 tile 调度)，Stage3 SM100 GEMM 再碰。
+
+**ping-pong 至少 2 个 mbarrier**：一个表"slot 空(可写)"、一个表"slot 满(可读)"。1 个无法同时表达两个相反事件，producer/consumer 会互相覆盖/读脏。
+
 ---
 
 ## 三、方法论

@@ -13,7 +13,7 @@
 | 1 | **CHECKPOINT** | ☐ | sgemm_sm80 变体 + 5 道口答 | |
 | 2 | W5 — WGMMA (SM90) | ◧ 读+ex12 done | 概念沉淀进 `THINKING.md` O23-O27 + O3 扩展（四件套/proxy/SS-RS/descriptor/swizzle↔bank line/TV 退化/三层解耦）；ex12 产出在 `week05_wgmma/ex12_findings.md`；自检 5 题全答 | 2026-06-01（ex11 实跑等 H20）|
 | 2 | W6 — TMA (SM90/SM100/SM120 共用) | ◑ 核心过完 | **加速模式**：只啃核心 20%。读①`0z_tma_tensors.md` 通译 + TMA 核心机制（descriptor/mbarrier transaction/proxy fence/make_tma_copy/kernel 模板）已过；自检 5 题全答 | 2026-06-02 |
-| 2 | W7 — Pipeline + Cluster (SM90) | ☐ | | |
+| 2 | W7 — Pipeline + Cluster (SM90) | ◑ 核心过完 | 加速模式：mbarrier vs syncthreads / PipelineState(index+phase 防 ABA) / 4 步协议 / warp specialization+setmaxnreg / cluster+DSMEM 核心已过；自检 5 题全答；概念进 THINKING O30 | 2026-06-02 |
 | 2 | W8 — TMEM + UMMA (SM100 增量) | ☐ | | |
 | 2 | **CHECKPOINT** | ☐ | minimal warpspec ping-pong 玩具 + minimal UMMA toy | |
 | 3 | W9 — 3.x 分层设计 | ☐ | | |
