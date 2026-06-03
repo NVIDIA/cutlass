@@ -34,7 +34,10 @@ import numpy as np
 import torch.distributed as dist
 import torch.distributed._symmetric_memory as symm_mem
 import cuda.bindings.driver as cuda
-from cuda.core.experimental import Device
+try:
+    from cuda.core import Device
+except ImportError:
+    from cuda.core.experimental import Device
 from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
