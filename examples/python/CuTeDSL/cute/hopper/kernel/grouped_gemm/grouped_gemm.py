@@ -127,7 +127,7 @@ def CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
         tmaDescriptor = _llvm_d.addrspacecast(
             _llvm_d.PointerType.get(_CuteAddressSpace.generic), tmaDescriptor, loc=loc, ip=ip
         )
-        return _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+        _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
             dstMem,
             tmaDescriptor,
             coordinates,
@@ -139,7 +139,7 @@ def CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
             ip = ip,
         )
     else:
-        return _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+        _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
             dstMem,
             tmaDescriptor,
             coordinates,
