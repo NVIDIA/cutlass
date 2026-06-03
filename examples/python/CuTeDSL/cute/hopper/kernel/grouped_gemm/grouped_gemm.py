@@ -29,7 +29,7 @@
 import argparse
 import functools
 import os
-from typing import List, Optional, Tuple, Type
+from typing import Any, List, Optional, Tuple, Type
 from inspect import isclass
 import math
 import cuda.bindings.driver as cuda
@@ -49,9 +49,6 @@ from cutlass.cute.core import (
     make_ptr as _cute_make_ptr,
 )
 from cutlass._mlir.dialects import nvvm as _nvvm_d
-from cutlass._mlir.dialects._nvvm_enum_gen import (
-    CpAsyncBulkTensorLoadMode as _CpAsyncBulkTensorLoadMode,
-)
 from cutlass.cutlass_dsl import dsl_user_op as _dsl_user_op, T as _T
 from cutlass.cute.typing import Int32 as _Int32, Pointer as _Pointer
 
@@ -114,6 +111,48 @@ Debug environment options:
 
 
 @_dsl_user_op
+def CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
+    dstMem: _Pointer,
+    tmaDescriptor: _Pointer,
+    coordinates: List[_Int32],
+    mbar: _Pointer,
+    im2colOffsets: List[_Int32],
+    predicate: Any,
+    loc = None,
+    ip = None,
+) -> None:
+    if cutlass.__version__[0:3] == "4.6":
+        from cutlass._mlir.dialects import llvm as _llvm_d
+        # Handle new nvvm API in 4.6+
+        tmaDescriptor = _llvm_d.addrspacecast(
+            _llvm_d.PointerType.get(_CuteAddressSpace.generic), tmaDescriptor, loc=loc, ip=ip
+        )
+        _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+            dstMem,
+            tmaDescriptor,
+            coordinates,
+            mbar,
+            im2colOffsets,
+            predicate = predicate,
+            mode = _nvvm_d.TMALoadMode.TILE,
+            loc = loc,
+            ip = ip,
+        )
+    else:
+        _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+            dstMem,
+            tmaDescriptor,
+            coordinates,
+            mbar,
+            im2colOffsets,
+            predicate = predicate,
+            loadMode = _nvvm_d.CpAsyncBulkTensorLoadMode.TILE,
+            loc = loc,
+            ip = ip,
+        )
+
+
+@_dsl_user_op
 def _tma_load_ab_nvvm_no_mcast(
     k_coord: _Int32,
     m_coord: _Int32,
@@ -146,7 +185,8 @@ def _tma_load_ab_nvvm_no_mcast(
     desc_b_llvm = desc_b.llvm_ptr
     # TMA A: elect one thread and issue the load with predicate.
     is_elected_a = _nvvm_d.elect_sync(loc=loc, ip=ip)
-    _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+
+    CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
         dstMem=smem_a_llvm,
         tmaDescriptor=desc_a_llvm,
         coordinates=[
@@ -157,13 +197,12 @@ def _tma_load_ab_nvvm_no_mcast(
         mbar=mbar_llvm,
         im2colOffsets=[],
         predicate=is_elected_a,
-        loadMode=_CpAsyncBulkTensorLoadMode.TILE,
         loc=loc,
         ip=ip,
     )
     # TMA B: elect one thread and issue the load with predicate.
     is_elected_b = _nvvm_d.elect_sync(loc=loc, ip=ip)
-    _nvvm_d.CpAsyncBulkTensorGlobalToSharedClusterOp(
+    CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
         dstMem=smem_b_llvm,
         tmaDescriptor=desc_b_llvm,
         coordinates=[
@@ -174,7 +213,6 @@ def _tma_load_ab_nvvm_no_mcast(
         mbar=mbar_llvm,
         im2colOffsets=[],
         predicate=is_elected_b,
-        loadMode=_CpAsyncBulkTensorLoadMode.TILE,
         loc=loc,
         ip=ip,
     )
