@@ -34,7 +34,10 @@ import argparse
 import numpy as np
 import torch
 import torch.distributed as dist
-from cuda.core.experimental import Device
+try:
+    from cuda.core import Device
+except ImportError:
+    from cuda.core.experimental import Device
 from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
