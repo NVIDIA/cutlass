@@ -4003,6 +4003,7 @@ def run(
         total_softmax_count,
         current_stream,
         use_pdl,
+        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
     )
     if stats_skip_softmax_ratio:
         print(
