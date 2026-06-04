@@ -3701,7 +3701,7 @@ if __name__ == "__main__":
     if len(args.gbehcdln) != 8:
         parser.error("--gbehcdln must contain exactly 8 values")
 
-    time = run(
+    run(
         args.gbehcdln,
         args.io_dtype,
         args.cumsum_delta_dtype,
@@ -3715,4 +3715,4 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_cold_l2,
     )
-    print(f"PASS, time: {time} us")
+    print("PASS")
