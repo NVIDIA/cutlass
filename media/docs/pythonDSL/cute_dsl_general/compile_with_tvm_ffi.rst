@@ -599,11 +599,12 @@ Then we need to compile and load this extension into PyTorch:
 
    def build_extension():
       include_dir = _tvm_ffi_config("--includedir")
+      dlpack_include_dir = _tvm_ffi_config("--dlpack-includedir")
       lib_dir = _tvm_ffi_config("--libdir")
       return load(
          name="tvm_ffi_demo_ext",
          sources=["extension.cpp"],
-         extra_include_paths=[include_dir],
+         extra_include_paths=[include_dir, dlpack_include_dir],
          extra_cflags=["-std=c++17"],
          # -ltvm_ffi to link, and -rpath so the .so is found at runtime. This is
          # the same libtvm_ffi.so that `import tvm_ffi` loads -> shared registry.
@@ -660,6 +661,9 @@ and then register it in the TVM FFI global registry with a string name. This req
 Next, you need to register this function object as a `Global Function <https://tvm.apache.org/ffi/guides/export_func_cls.html#global-functions>`_ with this API: ``tvm_ffi.register_global_func(func_name, f=None, override=False)``,
 where ``func_name`` is the string name to identify the function in the global registry, ``f`` is the TVM FFI function object returned by ``cute.compile``, and ``override=True`` allows overwriting an existing function with the same name in the registry.
 In this way, you can make this compiled ``@cute.jit`` TVM-FFI function accessible from other languages, including C++.
+
+Note this is not the only option to obtain a TVM-FFI function in C++. You can also export the compiled module to an object file and load it in C++ with TVM-FFI APIs.
+See `Exporting Compiled Module <https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/compile_with_tvm_ffi.html#exporting-compiled-module>`_ for more details.
 
 In C++, you can load the compiled function from the global registry with ``tvm::ffi::Function::GetGlobal`` (or ``tvm::ffi::Function::GetGlobalRequired``, which will throw if the function is not found).
 The returned object will be of type ``tvm::ffi::Function``.
@@ -743,6 +747,39 @@ The exported object file exposes the function symbol ``__tvm_ffi_add_one`` that 
 compatible with TVM FFI and can be used in various frameworks and programming languages.
 You can either build a shared library and load it back, or link the object file directly
 into your application and invoke the function via the ``InvokeExternC`` mechanism in TVM FFI.
+
+How it works is very similar to the C++ example above. The only difference is that instead of looking up the function from the TVM-FFI global registry,
+the TVM-FFI function symbol is now exposed via a shared library:
+
+.. code-block:: cpp
+
+   extern "C" int __tvm_ffi_add_one(void*, const TVMFFIAny*, int32_t, TVMFFIAny*);
+
+   // If the tvm-ffi function symbol is already known at compile time and it's dynamically linked (or statically linked if you build a static library),
+   // then you can directly call the function via the exposed symbol via extern C.
+   void apply_tvm_function_via_extern_C(at::Tensor &a, at::Tensor &b){
+      DLTensor dl_a = {};
+      DLTensor dl_b = {};
+      at::toDLPackNonOwning(a, &dl_a);
+      at::toDLPackNonOwning(b, &dl_b);
+      tvm::ffi::Function::InvokeExternC(nullptr, __tvm_ffi_add_one, &dl_a, &dl_b);
+   }
+
+   // If the tvm-ffi function symbol is not known until runtime, you can resolve it from its shared library at
+   // runtime by giving the library path and function name (dynamic loading).
+   void apply_tvm_function_via_dynamic_resolution(const std::string& lib_path,
+                                          const std::string& func_name,
+                                          at::Tensor &a, at::Tensor &b){
+      tvm::ffi::Module mod = tvm::ffi::Module::LoadFromFile(lib_path);
+      tvm::ffi::Function fn = mod->GetFunction(func_name).value();
+      DLTensor dl_a = {};
+      DLTensor dl_b = {};
+      at::toDLPackNonOwning(a, &dl_a);
+      at::toDLPackNonOwning(b, &dl_b);
+      fn(&dl_a, &dl_b);
+   }
+
+
 For more information, see the `quick start guide <https://tvm.apache.org/ffi/get_started/quickstart>`_
 in the official documentation.
 
