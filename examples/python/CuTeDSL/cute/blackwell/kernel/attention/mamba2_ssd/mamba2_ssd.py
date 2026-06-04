@@ -142,10 +142,10 @@ class SSDKernel:
         )
 
         # Number of registers used by each warp
-        self.num_regs_uniform_warps = 24
+        self.num_regs_uniform_warps = 32
         self.num_regs_pre_inter_warps = 168
         self.num_regs_pre_intra_warps = 208
-        self.num_regs_epilogue_warps = 112
+        self.num_regs_epilogue_warps = 104
 
         # Shared storage
         self.shared_storage = None
@@ -3701,7 +3701,7 @@ if __name__ == "__main__":
     if len(args.gbehcdln) != 8:
         parser.error("--gbehcdln must contain exactly 8 values")
 
-    run(
+    time = run(
         args.gbehcdln,
         args.io_dtype,
         args.cumsum_delta_dtype,
@@ -3715,4 +3715,4 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_cold_l2,
     )
-    print("PASS")
+    print(f"PASS, time: {time} us")
