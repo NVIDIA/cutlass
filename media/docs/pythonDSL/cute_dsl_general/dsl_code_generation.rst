@@ -101,18 +101,11 @@ The result:
 
 |DSL| bridges Python and GPU hardware through a three-stage pipeline.
 
-.. _fig-dsl-modes:
-
-.. figure:: dsl_modes.png
-   :width: 400
+.. figure:: dsl_compilation.png
+   :width: 600
    :align: center
 
-   *Left*: tracing mode records only the path that executed.
-   *Right*: preprocessor mode emits structured |IR| for every branch and loop
-   before tracing the arithmetic.
-
-
-   The default |DSL| compilation pipeline (mode 2): Python source flows through AST preprocessing
+   The |DSL| compilation pipeline: Python source flows through AST preprocessing
    and interpreter-driven tracing to produce |IR|, which is then lowered and
    compiled to device code.
 
@@ -258,8 +251,8 @@ Practical Implications
 4. |DSL| Code-Generation Modes
 ------------------------------
 
-CuTe's Python front-end combines the techniques above into **two mutually
-exclusive modes** (see :ref:`fig-dsl-modes`), selectable with the ``preprocessor`` flag of the
+CuTe’s Python front-end combines the techniques above into **two mutually
+exclusive modes**, selectable with the ``preprocessor`` flag of the
 ``@jit`` decorator:
 
 1. Tracing mode ``@jit(preprocess=False)`` – tracing only.
@@ -272,3 +265,10 @@ optimisation problems of pure tracing; tracing then fills in the arithmetic.
 This hybrid “preprocessor” pipeline is unique to |DSL| and was designed
 specifically to overcome the disadvantages identified above.
 
+.. figure:: dsl_modes.png
+   :width: 400
+   :align: center
+
+   *Left*: tracing mode records only the path that executed.
+   *Right*: preprocessor mode emits structured |IR| for every branch and loop
+   before tracing the arithmetic.

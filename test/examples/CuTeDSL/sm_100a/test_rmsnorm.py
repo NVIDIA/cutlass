@@ -38,11 +38,10 @@ Tests various configurations of:
 """
 
 import pytest
-import torch
 
 import cutlass
 
-from blackwell.rmsnorm import (
+from blackwell.kernel.rmsnorm.rmsnorm import (
     run,
     get_sm_version,
     supports_cluster,
@@ -104,7 +103,9 @@ class TestRMSNormCorrectness:
 class TestRMSNormClusterPath:
     """Test the cluster path for large N (SM90+/SM100 only)."""
 
-    @pytest.mark.skipif(not supports_cluster(), reason="Cluster not supported on this GPU")
+    @pytest.mark.skipif(
+        not supports_cluster(), reason="Cluster not supported on this GPU"
+    )
     @pytest.mark.parametrize("N", [32768, 65536])
     def test_cluster_path_correctness(self, N):
         """Test cluster path produces correct results."""
@@ -118,6 +119,7 @@ class TestRMSNormClusterPath:
             skip_ref_check=False,
             benchmark=False,
         )
+
 
 class TestRMSNormLargeN:
     """Test RMSNorm with large N values."""
@@ -149,7 +151,6 @@ class TestRMSNormLargeN:
             skip_ref_check=False,
             benchmark=False,
         )
-
 
 
 class TestRMSNormEdgeCases:

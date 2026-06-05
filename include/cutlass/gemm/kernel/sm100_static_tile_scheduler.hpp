@@ -44,8 +44,18 @@ public StaticPersistentTileScheduler<
 public:
   using BaseScheduler = StaticPersistentTileScheduler<StaticPersistentTileScheduler100>;
 public:
-  using BaseScheduler::StaticPersistentTileScheduler;
   using Params = PersistentTileSchedulerSm90Params;
+
+  // Explicit forwarding constructors replacing inheriting-constructor syntax
+  // (`using BaseScheduler::StaticPersistentTileScheduler;`) which newer CUDA
+  // host compilers reject in dependent-base contexts: the injected-class-name
+  // resolves to a type rather than a constructor name.
+  CUTLASS_HOST_DEVICE
+  StaticPersistentTileScheduler100() = default;
+
+  CUTLASS_DEVICE explicit
+  StaticPersistentTileScheduler100(Params const& params_)
+      : BaseScheduler(params_) {}
   using RasterOrder = typename Params::RasterOrder;
   using RasterOrderOptions = typename Params::RasterOrderOptions;
   struct CLCResponse { uint32_t data[4] = {0}; };

@@ -39,10 +39,23 @@ import numpy as np
 
 
 project_root = Path(__file__).resolve().parent.parent.parent.parent
+
+cute_example_path = project_root / "examples" / "python" / "CuTeDSL" / "cute"
 example_path = project_root / "examples" / "python" / "CuTeDSL"
 utils_path = project_root / "test" / "utils"
+
+# Import cutlass *before* adding example_path to sys.path.
+# The examples directory contains a `jax/` subdirectory that Python 3 treats
+# as a namespace package.  If that directory is on sys.path first, cutlass's
+# JAX-availability check (which does a bare `import jax`) incorrectly returns
+# True, and the subsequent `import jax.numpy` fails with ModuleNotFoundError.
+# Importing cutlass here, while sys.path is still clean, avoids that race.
+import cutlass  # noqa: E402  (intentional early import)
+
+sys.path.append(str(cute_example_path))
 sys.path.append(str(example_path))
 sys.path.append(str(utils_path))
+
 
 # The helper class to prevent modification of sys.path from test files
 # Only allow modification of sys.path from pytest monkeypatch API calls
@@ -61,6 +74,7 @@ class ImmutableSysPath(list):
     }
 
     for mtd in mutating_methods:
+
         def mutating_method(self, *args, mtd=mtd, **kwargs):
             frame = sys._getframe().f_back
             if (
@@ -88,6 +102,7 @@ class ImmutableSysPath(list):
 sys.path = ImmutableSysPath(list(sys.path))
 
 pytest_plugins = ["test_sharding"]
+
 
 def pytest_addoption(parser):
     parser.addoption(

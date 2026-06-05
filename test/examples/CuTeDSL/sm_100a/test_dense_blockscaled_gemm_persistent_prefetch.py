@@ -41,29 +41,33 @@ from typing import Tuple, Type, Optional
 
 import pytest
 
-from blackwell.dense_blockscaled_gemm_persistent_prefetch import (
+from blackwell.kernel.blockscaled_gemm.dense_blockscaled_gemm_persistent_prefetch import (
     Sm100BlockScaledPersistentDenseGemmKernel,
     run,
 )
 
 import cutlass
+
 pytestmark = [pytest.mark.arch(["100a"])]
 
+
 @pytest.mark.invalid_case(
-    lambda: not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
-        ab_dtype,
-        sf_dtype,
-        sf_vec_size,
-        c_dtype,
-        mma_tiler_mn,
-        cluster_shape_mn,
-        mnkl[0],
-        mnkl[1],
-        mnkl[2],
-        mnkl[3],
-        a_major,
-        b_major,
-        c_major,
+    lambda: (
+        not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
+            ab_dtype,
+            sf_dtype,
+            sf_vec_size,
+            c_dtype,
+            mma_tiler_mn,
+            cluster_shape_mn,
+            mnkl[0],
+            mnkl[1],
+            mnkl[2],
+            mnkl[3],
+            a_major,
+            b_major,
+            c_major,
+        )
     )
 )
 @pytest.mark.parametrize(
@@ -110,7 +114,7 @@ pytestmark = [pytest.mark.arch(["100a"])]
     "prefetch_dist",
     [
         None,  # Default: auto (uses num_ab_stage)
-        0,     # Disabled
+        0,  # Disabled
     ],
 )
 @pytest.mark.parametrize("tolerance", [1e-01])
@@ -145,20 +149,22 @@ def test_dense_blockscaled_gemm_prefetch(
 
 
 @pytest.mark.invalid_case(
-    lambda: not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
-        ab_dtype,
-        sf_dtype,
-        sf_vec_size,
-        c_dtype,
-        mma_tiler_mn,
-        cluster_shape_mn,
-        mnkl[0],
-        mnkl[1],
-        mnkl[2],
-        mnkl[3],
-        a_major,
-        b_major,
-        c_major,
+    lambda: (
+        not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
+            ab_dtype,
+            sf_dtype,
+            sf_vec_size,
+            c_dtype,
+            mma_tiler_mn,
+            cluster_shape_mn,
+            mnkl[0],
+            mnkl[1],
+            mnkl[2],
+            mnkl[3],
+            a_major,
+            b_major,
+            c_major,
+        )
     )
 )
 @pytest.mark.parametrize(
@@ -190,7 +196,7 @@ def test_dense_blockscaled_gemm_prefetch(
     "prefetch_dist",
     [
         None,  # Default: auto (uses num_ab_stage)
-        4,     # Explicit distance
+        4,  # Explicit distance
     ],
 )
 @pytest.mark.parametrize("tolerance", [1e-01])
@@ -228,15 +234,15 @@ def test_dense_blockscaled_gemm_prefetch_L0(
     "prefetch_dist",
     [
         None,  # Auto: uses num_ab_stage
-        0,     # Disabled
-        2,     # Small distance
-        4,     # Medium distance
+        0,  # Disabled
+        2,  # Small distance
+        4,  # Medium distance
     ],
 )
 def test_prefetch_dist_configurations(prefetch_dist: Optional[int]):
     """
     Test different prefetch_dist configurations specifically for blockscaled GEMM.
-    
+
     - None: Auto mode, uses num_ab_stage as prefetch distance
     - 0: Prefetch disabled
     - >0: Explicit prefetch distance
@@ -451,4 +457,3 @@ def test_invalid_tensor_alignment(
             cluster_shape_mn,
             tolerance,
         )
-

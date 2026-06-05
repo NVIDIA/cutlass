@@ -239,6 +239,331 @@ struct Copy_Traits<SM100_TMA_2SM_LOAD_MULTICAST_OP, NumBitsPerTMA>
   }
 };
 
+//////////////////////////////////////////////////////////////////////////////
+////////////////////////// TMA_LOAD_GATHER ///////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+// Utility for unpacking TMA_LOAD arguments into a CopyOp
+template <class CopyOp, class... Args>
+struct TMA_LOAD_GATHER_Unpack
+{
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits<CopyOp, Args...> const& traits,
+              Tensor<TS,SLayout>           const& src,
+              Tensor<TD,DLayout>                & dst)
+  {
+    static_assert(is_smem<TD>::value, "SM100_TMA_LOAD_2D_GATHER4 requires the destination be shared memory.");
+
+    auto [src_crd, src_idx] = unzip_tensor(src);
+
+    auto src_coord = src_crd.data().coord_;
+    static_assert(rank(src_coord) == 2, "SM100_TMA_LOAD_2D_GATHER4 requires 2D tensors");
+
+    Tensor idx = filter(src_idx);
+    static_assert(size(idx) == 4, "SM100_TMA_LOAD_2D_GATHER4 requires 4 indices");
+
+    auto coord = make_tuple(get<0>(src_coord), idx(0), idx(1), idx(2), idx(3));
+    void* dst_ptr = cute::raw_pointer_cast(dst.data());
+#if 0
+    auto [c0,c1,c2,c3,c4] = coord;
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+          threadIdx.x, threadIdx.y, threadIdx.z,
+          blockIdx.x, blockIdx.y, blockIdx.z,
+          int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
+#endif
+    return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                 traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                 make_tuple(dst_ptr), seq<0>{},
+                                 coord, make_seq<5>{});
+  }
+};
+
+struct SM100_TMA_LOAD_2D_GATHER4_OP : SM100_TMA_LOAD_2D_GATHER4 {};
+
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM100_TMA_LOAD_2D_GATHER4, NumBitsPerTMA, AuxParams_>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  // SM100_TMA_LOAD arguments
+  TmaDescriptor tma_desc_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return &tma_desc_;
+  }
+
+  // Construct an executable SM90_TMA_LOAD with tma_mbar
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM100_TMA_LOAD_2D_GATHER4_OP, NumBitsPerTMA>
+  with(
+    uint64_t& tma_mbar,
+    [[maybe_unused]] uint16_t const& multicast_mask = 0,
+    TMA::CacheHintSm100 const& cache_hint = TMA::CacheHintSm100::EVICT_NORMAL) const {
+    // We accept multicast_mask here to keep the API for both atoms consistent
+    return {&tma_desc_, &tma_mbar, static_cast<uint64_t>(cache_hint)};
+  }
+
+  // Construct an executable SM90_TMA_LOAD with tma_mbar (temp. overloaded for grouped gemm/ptr array gemm)
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM100_TMA_LOAD_2D_GATHER4_OP, NumBitsPerTMA>
+  with(
+    TmaDescriptor const* new_tma_desc,
+    uint64_t& tma_mbar,
+    [[maybe_unused]] uint16_t const& multicast_mask = 0,
+    TMA::CacheHintSm100 const& cache_hint = TMA::CacheHintSm100::EVICT_NORMAL) const {
+    // We accept multicast_mask here to keep the API for both atoms consistent
+    return {new_tma_desc, &tma_mbar, static_cast<uint64_t>(cache_hint)};
+  }
+
+  // Generate the TMA coord tensor
+  template <class GShape>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_tma_tensor(GShape const& g_shape) const {
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
+  }
+
+  // Don't try to execute a copy with SM100_TMA_LOAD_2D_GATHER4 before calling .with()
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst) = delete;
+};
+
+template <class NumBitsPerTMA>
+struct Copy_Traits<SM100_TMA_LOAD_2D_GATHER4_OP, NumBitsPerTMA>
+  : TMA_LOAD_GATHER_Unpack<SM100_TMA_LOAD_2D_GATHER4_OP, NumBitsPerTMA>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  tuple<
+    TmaDescriptor const*,
+    uint64_t*, // smem mbarrier
+    uint64_t   // cache hint
+  > const opargs_;
+
+  CUTE_HOST_DEVICE
+  Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint64_t cache)
+    : opargs_(desc, mbar, cache) {}
+};
+
+template <class NumBitsPerTMA, class... Args>
+struct Copy_Traits<SM100_TMA_LOAD_2D_GATHER4_OP::PREFETCH, NumBitsPerTMA, Args...>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  tuple<TmaDescriptor const*> const opargs_;
+
+  // Construct with any other Traits' TMA Desc
+  template <class... CopyArgs>
+  CUTE_HOST_DEVICE
+  Copy_Traits(Copy_Traits<CopyArgs...> const& traits)
+    : opargs_({&traits.tma_desc_}) {}
+
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits                  const& traits,
+              Tensor<TS,SLayout>           const& src,
+              Tensor<TD,DLayout>                & dst)
+  {
+    auto [src_crd, src_idx] = unzip_tensor(src);
+
+    auto src_coord = src_crd.data().coord_;
+    static_assert(rank(src_coord) == 2, "SM100_TMA_LOAD_2D_GATHER4 requires 2D tensors");
+
+    Tensor idx = filter(src_idx);
+    static_assert(size(idx) == 4, "SM100_TMA_LOAD_2D_GATHER4 requires 4 indices");
+
+    auto coord = make_tuple(get<0>(src_coord), idx(0), idx(1), idx(2), idx(3));
+
+    return detail::explode_tuple(detail::CallCOPY<SM100_TMA_LOAD_2D_GATHER4_OP::PREFETCH>{},
+                                 traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                 coord, make_seq<5>{});
+  }
+};
+
+struct SM100_TMA_LOAD_MULTICAST_2D_GATHER4_OP : SM100_TMA_LOAD_MULTICAST_2D_GATHER4 {};
+
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM100_TMA_LOAD_MULTICAST_2D_GATHER4, NumBitsPerTMA, AuxParams_>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  // SM100_TMA_LOAD arguments
+  TmaDescriptor tma_desc_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return &tma_desc_;
+  }
+
+  // Construct an executable SM90_TMA_LOAD with tma_mbar
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM100_TMA_LOAD_MULTICAST_2D_GATHER4_OP, NumBitsPerTMA>
+  with(
+    uint64_t& tma_mbar,
+    [[maybe_unused]] uint16_t const& multicast_mask = 0,
+    TMA::CacheHintSm100 const& cache_hint = TMA::CacheHintSm100::EVICT_NORMAL) const {
+    // We accept multicast_mask here to keep the API for both atoms consistent
+    return {&tma_desc_, &tma_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)};
+  }
+
+  // Construct an executable SM90_TMA_LOAD with tma_mbar (temp. overloaded for grouped gemm/ptr array gemm)
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM100_TMA_LOAD_MULTICAST_2D_GATHER4_OP, NumBitsPerTMA>
+  with(
+    TmaDescriptor const* new_tma_desc,
+    uint64_t& tma_mbar,
+    [[maybe_unused]] uint16_t const& multicast_mask = 0,
+    TMA::CacheHintSm100 const& cache_hint = TMA::CacheHintSm100::EVICT_NORMAL) const {
+    // We accept multicast_mask here to keep the API for both atoms consistent
+    return {new_tma_desc, &tma_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)};
+  }
+
+  // Generate the TMA coord tensor
+  template <class GShape>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_tma_tensor(GShape const& g_shape) const {
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
+  }
+
+  // Don't try to execute a copy with SM100_TMA_LOAD_2D_GATHER4 before calling .with()
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst) = delete;
+};
+
+template <class NumBitsPerTMA>
+struct Copy_Traits<SM100_TMA_LOAD_MULTICAST_2D_GATHER4_OP, NumBitsPerTMA>
+  : TMA_LOAD_GATHER_Unpack<SM100_TMA_LOAD_MULTICAST_2D_GATHER4_OP, NumBitsPerTMA>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  tuple<
+    TmaDescriptor const*,
+    uint64_t*, // smem mbarrier
+    uint16_t,  // multicast mask
+    uint64_t   // cache hint
+  > const opargs_;
+
+  CUTE_HOST_DEVICE
+  Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint16_t mask, uint64_t cache)
+    : opargs_(desc, mbar, mask, cache) {}
+};
+
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM100_TMA_STORE_2D_SCATTER4, NumBitsPerTMA, AuxParams_>
+{
+  using ThrID     = Layout<_1>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  TmaDescriptor tma_desc_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
+
+  // Return TmaDescriptor/TensorMap
+  CUTE_HOST_DEVICE constexpr
+  TmaDescriptor const*
+  get_tma_descriptor() const {
+    return &tma_desc_;
+  }
+
+  // Generate the TMA coord tensor
+  template <class GShape>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_tma_tensor(GShape const& g_shape) const {
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
+  }
+
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits               const& traits,
+              Tensor<TS,SLayout>           const& src,
+              Tensor<TD,DLayout>                & dst)
+  {
+
+    auto [dsc_crd, dsc_idx] = unzip_tensor(dst);
+
+    auto dsc_coord = dsc_crd.data().coord_;
+    static_assert(rank(dsc_coord) == 2, "SM100_TMA_STORE_2D_SCATTER4 requires 2D tensors");
+
+    Tensor idx = filter(dsc_idx);
+    static_assert(size(idx) == 4, "SM100_TMA_STORE_2D_SCATTER4 requires 4 indices");
+
+    auto coord = make_tuple(get<0>(dsc_coord), idx(0), idx(1), idx(2), idx(3));
+    void* src_ptr = cute::raw_pointer_cast(src.data());
+#if 0
+    auto [c0,c1,c2,c3,c4] = coord;
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+          threadIdx.x, threadIdx.y, threadIdx.z,
+          blockIdx.x, blockIdx.y, blockIdx.z,
+          int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), src_ptr);
+#endif
+
+    return detail::explode_tuple(detail::CallCOPY<SM100_TMA_STORE_2D_SCATTER4>{},
+                                 make_tuple(&traits.tma_desc_), seq<0>{},
+                                 make_tuple(src_ptr), seq<0>{},
+                                 coord, make_seq<5>{});
+  }
+};
 ////////////////////////////////////
 // Make TMA
 ///////////////////////////////////
@@ -428,12 +753,14 @@ make_tma_atom_A_sm100(CopyOp                  const& copy_op,
   // The size of the multicasting
   auto num_multicast = [&](){
     if constexpr (is_same_v<CopyOp, SM90_TMA_LOAD_MULTICAST> ||
-                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD_MULTICAST>) {
+                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD_MULTICAST> ||
+                  is_same_v<CopyOp, SM100_TMA_LOAD_MULTICAST_2D_GATHER4>) {
       return size<2>(cluster_shape);                   // VMNK: Use only the N-CTAs in the Multicast
     } else
     if constexpr (is_same_v<CopyOp, SM90_TMA_LOAD>  ||
                   is_same_v<CopyOp, SM90_TMA_STORE> ||
-                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD>) {
+                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD> ||
+                  is_same_v<CopyOp, SM100_TMA_LOAD_2D_GATHER4>) {
       return Int<1>{};                                 // VMNK: Use no CTAs in Non-Multicast
     } else {
       static_assert(dependent_false<CopyOp>, "Unsupported TMA");
@@ -479,12 +806,14 @@ make_tma_atom_B_sm100(CopyOp                  const& copy_op,
   // The size of the multicasting
   auto num_multicast = [&](){
     if constexpr (is_same_v<CopyOp, SM90_TMA_LOAD_MULTICAST> ||
-                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD_MULTICAST>) {
+                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD_MULTICAST> ||
+                  is_same_v<CopyOp, SM100_TMA_LOAD_MULTICAST_2D_GATHER4>) {
       return size<1>(cluster_shape);                   // VMNK: Use only the M-CTAs in the Multicast
     } else
     if constexpr (is_same_v<CopyOp, SM90_TMA_LOAD>  ||
                   is_same_v<CopyOp, SM90_TMA_STORE> ||
-                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD>) {
+                  is_same_v<CopyOp, SM100_TMA_2SM_LOAD> ||
+                  is_same_v<CopyOp, SM100_TMA_LOAD_2D_GATHER4>) {
       return Int<1>{};                                 // VMNK: Use no CTAs in Non-Multicast
     } else {
       static_assert(dependent_false<CopyOp>, "Unsupported TMA");

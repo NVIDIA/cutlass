@@ -116,14 +116,15 @@ template<
   int NumSpatialDimensions_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = cute::Shape<cute::C<1>,cute::C<1>,cute::C<1>>
+  class ClusterShape_ = cute::Shape<cute::C<1>,cute::C<1>,cute::C<1>>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedImplicitGemm {
   static constexpr int Stages = Stages_;
   static constexpr int NumSpatialDimensions = NumSpatialDimensions_;
   static constexpr Operator ConvOp = ConvOp_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelScheduleImplicitTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   static_assert(NumSpatialDimensions >= 1);

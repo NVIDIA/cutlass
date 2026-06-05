@@ -37,49 +37,118 @@ set -e
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Default to requirements.txt
+# Default mode
+MODE="wheel"
 REQUIREMENTS_FILE="requirements.txt"
 
 # Parse command line arguments
-if [ $# -gt 0 ]; then
+while [ $# -gt 0 ]; do
     case "$1" in
+        --editable|-e)
+            MODE="editable"
+            shift
+            ;;
         --cu12)
             REQUIREMENTS_FILE="requirements.txt"
-            echo "Installing CUDA 12 requirements..."
+            shift
             ;;
         --cu13)
             REQUIREMENTS_FILE="requirements-cu13.txt"
-            echo "Installing CUDA 13 requirements..."
+            shift
             ;;
         --help|-h)
-            echo "Usage: $0 [--cu12|--cu13]"
-            echo "  --cu12    Install requirements for CUDA 12 (default)"
-            echo "  --cu13    Install requirements for CUDA 13"
+            echo "CUTLASS IR Python DSL Setup Script"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -e, --editable    Install in editable/development mode"
+            echo "  --cu12            Use CUDA 12 requirements (default)"
+            echo "  --cu13            Use CUDA 13 requirements"
+            echo "  -h, --help        Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  # Install from wheel (CUDA 12)"
+            echo "  $0"
+            echo ""
+            echo "  # Install from wheel (CUDA 13)"
+            echo "  $0 --cu13"
+            echo ""
+            echo "  # Install in editable mode (requires CUTLASS_IR_BUILD_DIR)"
+            echo "  export CUTLASS_IR_BUILD_DIR=/path/to/build"
+            echo "  $0 --editable"
+            echo ""
+            echo "  # Install in editable mode with CUDA 13 dev deps"
+            echo "  export CUTLASS_IR_BUILD_DIR=../../../build"
+            echo "  $0 --editable --cu13"
+            echo ""
+            echo "For more details on editable install, see README.md"
             exit 0
             ;;
         *)
             echo "Error: Unknown argument '$1'"
-            echo "Usage: $0 [--cu12|--cu13]"
+            echo "Use --help for usage information"
             exit 1
             ;;
     esac
+done
+
+if [ "$MODE" = "editable" ]; then
+    echo "====================================================================="
+    echo "Installing CUTLASS IR Python DSL in EDITABLE mode"
+    echo "====================================================================="
+    echo ""
+
+    # Check if CUTLASS_IR_BUILD_DIR is set
+    if [ -z "$CUTLASS_IR_BUILD_DIR" ]; then
+        echo "ERROR: CUTLASS_IR_BUILD_DIR environment variable is required for editable install"
+        echo ""
+        echo "Please set it to your CMake build directory:"
+        echo "  export CUTLASS_IR_BUILD_DIR=/path/to/build"
+        echo ""
+        echo "Or use a relative path:"
+        echo "  export CUTLASS_IR_BUILD_DIR=../../../build"
+        echo ""
+        echo "Then run this script again."
+        exit 1
+    fi
+
+    echo "Build directory: $CUTLASS_IR_BUILD_DIR"
+    echo ""
+
+    # Install in editable mode with dev dependencies
+    echo "Installing with dev dependencies..."
+    pip install -e ".[dev]"
+
+    echo ""
+    echo "====================================================================="
+    echo "Editable installation complete!"
+    echo "====================================================================="
+    echo ""
+    echo "You can now import cutlass from anywhere:"
+    echo "  python -c 'import cutlass; print(cutlass.__version__)'"
+    echo ""
+    echo "Runtime environment (CUTE_DSL_LIBS) is automatically configured."
+    echo "Changes to Python code will be immediately available without reinstall."
+    echo ""
+    echo "See README.md for development workflow details."
+
 else
-    echo "Installing default requirements (CUDA 12)..."
+    # Wheel installation mode
+    echo "Installing CUTLASS IR Python DSL from wheel"
+    echo ""
+
+    # Check if requirements file exists
+    REQUIREMENTS_PATH="${SCRIPT_DIR}/${REQUIREMENTS_FILE}"
+    if [ ! -f "$REQUIREMENTS_PATH" ]; then
+        echo "Error: Requirements file not found: $REQUIREMENTS_PATH"
+        exit 1
+    fi
+
+    # Install requirements
+    echo "Installing from: $REQUIREMENTS_FILE"
+    pip install -r "$REQUIREMENTS_PATH"
+
+    echo ""
+    echo "Installation complete!"
 fi
-
-# Check if requirements file exists
-REQUIREMENTS_PATH="${SCRIPT_DIR}/${REQUIREMENTS_FILE}"
-if [ ! -f "$REQUIREMENTS_PATH" ]; then
-    echo "Error: Requirements file not found: $REQUIREMENTS_PATH"
-    exit 1
-fi
-
-# Uninstall previous version of the CUTLASS DSL
-echo "Trying to uninstall previous version of the CUTLASS DSL..."
-pip uninstall nvidia-cutlass-dsl nvidia-cutlass-dsl-libs-base nvidia-cutlass-dsl-libs-cu13 -y
-
-# Install requirements
-echo "Installing from: $REQUIREMENTS_FILE"
-pip install -r "$REQUIREMENTS_PATH"
-
-echo "Installation complete!"

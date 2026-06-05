@@ -130,11 +130,11 @@ struct TestbedComplex : public Testbed<Gemm> {
     if (result != cudaSuccess) {
     	throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
-    
-    if (properties.sharedMemPerBlockOptin < smem_size) {
-    	return false;
-    }
-
+      if (properties.sharedMemPerBlockOptin < smem_size) {
+        printf("failed due to smem_size\n");
+        printf("hardware smem_size: %d, required smem_size: %d\n\n", int(properties.sharedMemPerBlockOptin), int(smem_size));
+        return false;
+      }
     return true;
   }
 

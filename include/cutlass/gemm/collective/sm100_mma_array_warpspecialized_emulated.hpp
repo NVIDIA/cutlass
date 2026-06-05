@@ -69,6 +69,7 @@ template <
   int NumBandsToCompute_,
   int ScalingFactor_,
   int AccPromotionInterval_,
+  class ArchTag_,
   class AccumulatorCopyAtom_,
   class ClusterShape,
   class TileShape_,
@@ -93,7 +94,8 @@ struct CollectiveMma<
       ScalingFactor_,
       AccPromotionInterval_,
       ClusterShape,
-      AccumulatorCopyAtom_>,
+      AccumulatorCopyAtom_,
+      ArchTag_>,
     TileShape_,
     float,
     StrideA_,
@@ -124,7 +126,8 @@ struct CollectiveMma<
                             ScalingFactor_,
                             AccPromotionInterval_,
                             ClusterShape,
-                            AccumulatorCopyAtom_>;
+                            AccumulatorCopyAtom_,
+                            ArchTag_>;
   using TileShape = TileShape_;
   using TiledMma = TiledMma_;
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;

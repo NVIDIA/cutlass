@@ -301,9 +301,9 @@ TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f16ndhwc_tensor_op
 //
 // CTA tile shape 64x64x64
 // preferred cluster shape 2x4x1
-// fallback cluster shape  2x2x1
+// fallback cluster shape  2x4x1
 //
-TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f16ndhwc_tensor_op_f16, 64x64x64_preferred_2x4x1_fallback_2x2x1) {
+TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f16ndhwc_tensor_op_f16, 64x64x64_preferred_2x4x1_fallback_2x4x1) {
   using ElementAct     = cutlass::half_t;
   using ElementFlt     = cutlass::half_t;
   using ElementOut     = cutlass::half_t;
@@ -344,7 +344,7 @@ TEST(SM100_device_conv3d_fprop_implicitgemm_f16ndhwc_f16ndhwc_f16ndhwc_tensor_op
 
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
-  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(1.0, 0.0, 0.0f, dim3(2,4,1), dim3(2,2,1)));
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(1.0, 0.0, 0.0f, dim3(2,4,1), dim3(2,4,1)));
 }
 
 #endif // defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)

@@ -61,6 +61,7 @@ template <
   int Stages,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, _1)
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
   class ElementA_,
@@ -81,7 +82,8 @@ struct CollectiveMma<
       Stages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape>,
+      ClusterShape,
+      ArchTag_>,
     TileShape_,
     ElementA_,
     LayoutPairAE_,
@@ -107,7 +109,8 @@ struct CollectiveMma<
                           Stages,
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
-                          ClusterShape>;
+                          ClusterShape,
+                          ArchTag_>;
   using TileShape = TileShape_;
 
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;

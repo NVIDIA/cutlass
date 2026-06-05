@@ -339,18 +339,16 @@ sm100_make_1sm_trivial_tiled_mma() {
                     ) {
 
       return make_tiled_mma(
-        cute::MMA_Traits<
-          cute::SM100_MMA_F8F6F4_SS,
+        cute::SM100_MMA_F8F6F4_SS<
           ElementAMma,
           ElementBMma,
           ElementAMmaccumulator,
-          cute::C<M>,
-          cute::C<N>,
-          cute::integral_constant<UMMA::Major, UmmaMajorA>,
-          cute::integral_constant<UMMA::Major, UmmaMajorB>,
-          cute::integral_constant<UMMA::ScaleIn, ANeg>,
-          cute::integral_constant<UMMA::ScaleIn, BNeg>
-        >{}
+          M,
+          N,
+          UmmaMajorA,
+          UmmaMajorB,
+          ANeg,
+          BNeg>{}
       );
   }
   else {
@@ -407,18 +405,16 @@ sm100_make_2sm_trivial_tiled_mma() {
                     ) {
 
     return make_tiled_mma(
-      cute::MMA_Traits<
-        cute::SM100_MMA_F8F6F4_2x1SM_SS,
+      cute::SM100_MMA_F8F6F4_2x1SM_SS<
         ElementAMma,
         ElementBMma,
         ElementAMmaccumulator,
-        cute::C<M>,
-        cute::C<N>,
-        cute::integral_constant<UMMA::Major, UmmaMajorA>,
-        cute::integral_constant<UMMA::Major, UmmaMajorB>,
-        cute::integral_constant<UMMA::ScaleIn, ANeg>,
-        cute::integral_constant<UMMA::ScaleIn, BNeg>
-      >{}
+        M,
+        N,
+        UmmaMajorA,
+        UmmaMajorB,
+        ANeg,
+        BNeg>{}
     );
 
   }
@@ -739,17 +735,16 @@ sm100_make_trivial_mixed_input_tiled_mma() {
       }
       if constexpr     (cute::is_same_v<ElementBMma, cutlass::float_e4m3_t>) {
         return make_tiled_mma(
-          cute::MMA_Traits<
-            cute::SM100_MMA_F8F6F4_SS,
+          cute::SM100_MMA_F8F6F4_SS<
             ElementAMma,
             ElementBMma,
             ElementAccumulator,
-            cute::C<M>,
-            cute::C<N>,
-            cute::integral_constant<UMMA::Major, UmmaMajorA>,
-            cute::integral_constant<UMMA::Major, UmmaMajorB>,
-            cute::integral_constant<UMMA::ScaleIn, cute::UMMA::ScaleIn::One>,
-            cute::integral_constant<UMMA::ScaleIn, cute::UMMA::ScaleIn::One>>{});
+            M,
+            N,
+            UmmaMajorA,
+            UmmaMajorB,
+            cute::UMMA::ScaleIn::One,
+            cute::UMMA::ScaleIn::One>{});
       }
     }
   }
@@ -1000,6 +995,18 @@ struct TrivialBlockscaledMma<
                                                         TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Instr, BuilderScheduleTag>());
 };
 
+template <class ArchTag, int KernelSmemCarveout>
+constexpr int sm100_reduced_smem_capacity_bytes() {
+  if constexpr (cute::is_same_v<ArchTag, arch::Sm100>) { 
+    return cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  }
+  else if constexpr (cute::is_same_v<ArchTag, arch::Sm103>) { 
+    return cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<ArchTag>, "Invalid ArchTag, only Sm10x are supported.");
+  }
+}
 } // namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

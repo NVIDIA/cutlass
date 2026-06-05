@@ -169,8 +169,26 @@ public:
   static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
 
   /// Register requirement for Load and Math WGs
+  static constexpr int RegsPerThread =
+    2 * size<0>(TileShape{}) * size<1>(TileShape{}) / NumMmaThreads *
+    sizeof(ElementAccumulator) / sizeof(uint32_t);
+
+  // Detect if this is SM120 blockscaled kernel which hits low register pressure
+  // on smaller tiles
+  template <typename T>
+  struct IsSm120BlockScaled : cute::false_type {};
+
+  template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
+  struct IsSm120BlockScaled<MainloopSm120ArrayTmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>>
+    : cute::true_type {};
+
+  static constexpr bool IsLowRegisterPressure = IsSm120BlockScaled<DispatchPolicy>::value && (RegsPerThread <= 64);
+
+  /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
   static constexpr uint32_t MmaRegisterRequirement = 232;
+
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
@@ -318,7 +336,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
     return implementable;
   }
 
@@ -606,7 +624,9 @@ public:
     auto k_tile_count = size<3>(gA_mkl);
 
     if (warp_group_role == WarpGroupRole::Producer) {
-      cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
+      if constexpr (!IsLowRegisterPressure) {
+        cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
+      }
 
       if (producer_warp_role == ProducerWarpRole::Scheduler) {
         // GroupScheduler requires a producer warp to iterate over the group infos and push
@@ -882,7 +902,9 @@ public:
     } // Producer Warp Group End
 
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
-      cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
+      if constexpr (!IsLowRegisterPressure) {
+        cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
+      }
 
       // Index of warp group within consumer warp groups
       int consumer_warp_group_idx = warp_group_role == WarpGroupRole::Consumer0 ? 0 : 1;
@@ -935,15 +957,29 @@ public:
 
         if (TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
 
-          collective_mainloop.mma(
-            mainloop_pipeline,
-            mainloop_pipe_consumer_state,
-            accumulators,
-            work_k_tile_count,
-            mma_thread_idx,
-            shared_storage.tensors.mainloop,
-            params.mainloop
-          );
+          if constexpr (IsSm120Family) {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop,
+              blk_coord
+            );
+          }
+          else {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop
+            );
+          }
 
           // Make sure the math instructions are done and free buffers before entering the epilogue
           collective_mainloop.mma_tail(

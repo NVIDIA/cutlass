@@ -3,7 +3,7 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
@@ -20,8 +20,12 @@ __all__ = [
     "MmaF16BF16Op",
     "MmaI8Op",
     "MmaIntOverflow",
+    "MmaFP8Op",
     "MmaMXF4Op",
     "MmaMXF4NVF4Op",
+    "MmaMXF8Op",
+    "MmaMXF8F6F4Op",
+    "MXF8F6F4_SUPPORTED_PAIRS",
     # copy.py
     "LdMatrix8x8x16bOp",
     "LdMatrix16x8x8bOp",

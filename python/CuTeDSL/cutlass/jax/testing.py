@@ -3,22 +3,30 @@
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from functools import partial
 
 import jax
 import jax.numpy as jnp
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import dsl_user_op
+from typing import Optional, Sequence
+from cutlass._mlir import ir
 
-def reorder_modes(src: str, target: str) -> tuple[int, ...]:
-    """Computes the mode given a source and target order."""
+
+def reorder_modes(src: Sequence[str], target: Sequence[str]) -> tuple[int, ...]:
+    """Compute a ``TensorSpec.mode`` from physical input order to kernel order.
+
+    ``src`` names the JAX array's physical dimension order. ``target`` names the
+    logical mode order that the CuTe kernel expects. The returned tuple can be
+    passed as ``TensorSpec(mode=...)`` while leaving ``layout`` at its default
+    row-major value when the JAX buffer is physically row-major.
+    """
     src = tuple(src)
     target = tuple(target)
     src_map = {}
@@ -27,52 +35,64 @@ def reorder_modes(src: str, target: str) -> tuple[int, ...]:
     return tuple([src_map[d] for d in target])
 
 
-def gemm_a_major(d: str):
-    """Returns order for A tensor major mode."""
+def gemm_a_major(d: str) -> str:
+    """Return the physical JAX dimension order for an A tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_a_mode` to map this physical order to kernel logical ``mkl``.
+    """
     return {"k": "lmk", "m": "lkm"}[d]
 
 
 def gemm_a_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for A tensor major mode."""
+    """Return ``TensorSpec.mode`` for A, mapping physical order to logical ``mkl``."""
     return reorder_modes(gemm_a_major(d), "mkl")
 
 
-def gemm_b_major(d: str):
-    """Returns order for B tensor major mode."""
+def gemm_b_major(d: str) -> str:
+    """Return the physical JAX dimension order for a B tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_b_mode` to map this physical order to kernel logical ``nkl``.
+    """
     return {"k": "lnk", "n": "lkn"}[d]
 
 
 def gemm_b_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for B tensor major mode."""
+    """Return ``TensorSpec.mode`` for B, mapping physical order to logical ``nkl``."""
     return reorder_modes(gemm_b_major(d), "nkl")
 
 
-def gemm_c_major(d: str):
-    """Returns order for C tensor major mode."""
+def gemm_c_major(d: str) -> str:
+    """Return the physical JAX dimension order for a C/D tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_c_mode` to map this physical order to kernel logical ``mnl``.
+    """
     return {"n": "lmn", "m": "lnm"}[d]
 
 
 def gemm_c_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for C tensor major mode."""
+    """Return ``TensorSpec.mode`` for C/D, mapping physical order to logical ``mnl``."""
     return reorder_modes(gemm_c_major(d), "mnl")
 
 
-def gemm_a_shape(l, m, k, major) -> tuple[int, ...]:
-    """Returns shape for A tensor given major mode."""
+def gemm_a_shape(l: int, m: int, k: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for A with the requested major mode."""
     assert major in ("k", "m")
     shape = (l, m, k) if major == "k" else (l, k, m)
     return shape
 
 
-def gemm_b_shape(l, n, k, major) -> tuple[int, ...]:
-    """Returns shape for B tensor given major mode."""
+def gemm_b_shape(l: int, n: int, k: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for B with the requested major mode."""
     assert major in ("k", "n")
     shape = (l, n, k) if major == "k" else (l, k, n)
     return shape
 
 
-def gemm_c_shape(l, m, n, major) -> tuple[int, ...]:
-    """Returns shape for C tensor given major mode."""
+def gemm_c_shape(l: int, m: int, n: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for C/D with the requested major mode."""
     assert major in ("m", "n")
     shape = (l, m, n) if major == "n" else (l, n, m)
     return shape
@@ -80,13 +100,18 @@ def gemm_c_shape(l, m, n, major) -> tuple[int, ...]:
 
 @dsl_user_op
 def get_gemm_shape_from_tensors(
-    a: cute.Tensor, b: cute.Tensor, *, loc=None, ip=None
+    a: cute.Tensor,
+    b: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
 ) -> tuple[int, int, int, int]:
     """Returns a tuple of (M, N, K, L) from A/B gemm tensors."""
     # mkl, nkl
-    m, k, l = a.shape[:]
-    n = b.shape[0]
-    return (m, n, k, l)
+    m, k, l = a.shape[:]  # type: ignore[index]
+    n = b.shape[0]  # type: ignore[index]
+    return (m, n, k, l)  # type: ignore[return-value]
+
 
 def create_tensor(
     shape, dtype, key, *, minval=-2.0, maxval=2.0, fill_value=None, fill_arange=False

@@ -1,29 +1,50 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
-#
-# Use of this software is governed by the terms and conditions of the
-# NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
-#
-# Any use, reproduction, disclosure, or distribution of this software
-# and related documentation outside the scope permitted by the EULA
-# is strictly prohibited.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import enum
 from typing import Tuple, Optional
 import cutlass
 from cutlass.cute.typing import Boolean
+from cutlass._mlir.dialects import llvm, vector
 
 from cutlass.cutlass_dsl import (
     Int32,
     Float32,
+    T,
     min,
     extract_mlir_values,
     new_from_mlir_values,
+    dsl_user_op,
 )
 from cutlass.utils.hardware_info import HardwareInfo
 from cutlass.utils import WorkTileInfo
 import cutlass.cute as cute
+
 
 ##############################################################################
 # Fmha static tile scheduler
@@ -38,14 +59,14 @@ class FmhaStaticTileSchedulerParams:
 
     :ivar is_persistent: Whether to use persistent kernel mode.
     :type is_persistent: bool
-    :ivar problem_shape_mbh: Problem shape in (M, B, H) format.
-    :type problem_shape_mbh: cute.Shape
+    :ivar problem_shape_mhb: Problem shape in (M, H, B) format.
+    :type problem_shape_mhb: cute.Shape
     """
 
     def __init__(
         self,
         is_persistent: bool,
-        problem_shape_mbh: cute.Shape,
+        problem_shape_mhb: cute.Shape,
         *,
         loc=None,
         ip=None,
@@ -55,17 +76,17 @@ class FmhaStaticTileSchedulerParams:
 
         :param is_persistent: Whether to use persistent kernel mode.
         :type is_persistent: bool
-        :param problem_shape_mbh: Problem shape in (M, B, H) format.
-        :type problem_shape_mbh: cute.Shape
+        :param problem_shape_mhb: Problem shape in (M, H, B) format.
+        :type problem_shape_mhb: cute.Shape
         """
         self.is_persistent = is_persistent
-        self.problem_shape_mbh = problem_shape_mbh
+        self.problem_shape_mhb = problem_shape_mhb
         self._loc = loc
         self._ip = ip
 
     def __extract_mlir_values__(self):
         values, self._values_pos = [], []
-        for obj in [self.problem_shape_mbh]:
+        for obj in [self.problem_shape_mhb]:
             obj_values = extract_mlir_values(obj)
             values += obj_values
             self._values_pos.append(len(obj_values))
@@ -73,7 +94,7 @@ class FmhaStaticTileSchedulerParams:
 
     def __new_from_mlir_values__(self, values):
         obj_list = []
-        for obj, n_items in zip([self.problem_shape_mbh], self._values_pos):
+        for obj, n_items in zip([self.problem_shape_mhb], self._values_pos):
             obj_list.append(new_from_mlir_values(obj, values[:n_items]))
             values = values[n_items:]
         return FmhaStaticTileSchedulerParams(
@@ -98,8 +119,8 @@ class FmhaStaticTileScheduler:
     :type _is_persistent: bool
     :ivar _current_work_linear_idx: Current linear work index.
     :type _current_work_linear_idx: Int32
-    :ivar _problem_shape_mbh: Problem shape in (M, B, H) format.
-    :type _problem_shape_mbh: cute.Layout
+    :ivar _problem_shape_mhb: Problem shape in (M, H, B) format.
+    :type _problem_shape_mhb: cute.Layout
     :ivar _num_blocks: Number of blocks in the problem.
     :type _num_blocks: Int32
     :ivar _is_first_block: Whether this is the first block.
@@ -135,10 +156,10 @@ class FmhaStaticTileScheduler:
         self._grid_shape = grid_shape
         self._is_persistent = params.is_persistent
         self._current_work_linear_idx = current_work_linear_idx
-        self._problem_shape_mbh = cute.make_layout(
-            params.problem_shape_mbh, loc=loc, ip=ip
+        self._problem_shape_mhb = cute.make_layout(
+            params.problem_shape_mhb, loc=loc, ip=ip
         )
-        self._num_blocks = cute.size(self._problem_shape_mbh, loc=loc, ip=ip)
+        self._num_blocks = cute.size(self._problem_shape_mhb, loc=loc, ip=ip)
         self._is_first_block = True
         self.num_persistent_sm = cute.size(grid_shape, loc=loc, ip=ip)
         self._loc = loc
@@ -162,19 +183,19 @@ class FmhaStaticTileScheduler:
         :param params: Scheduler parameters.
         :type params: FmhaStaticTileSchedulerParams
 
-        :return: Grid shape as (M, B, H) tuple.
+        :return: Grid shape as (M, H, B) tuple.
         :rtype: cute.Shape
         """
         if params.is_persistent:
             hardware_info = HardwareInfo()
             sm_count = hardware_info.get_device_multiprocessor_count()
             return (
-                min(sm_count, cute.size(params.problem_shape_mbh, loc=loc, ip=ip)),
+                min(sm_count, cute.size(params.problem_shape_mhb, loc=loc, ip=ip)),
                 1,
                 1,
             )
         else:
-            return params.problem_shape_mbh
+            return params.problem_shape_mhb
 
     @staticmethod
     def check_valid_work_for_seqlen_q(
@@ -218,7 +239,7 @@ class FmhaStaticTileScheduler:
 
         blk_coord = (0, 0, 0)
         if self._is_persistent:
-            blk_coord = self._problem_shape_mbh.get_hier_coord(
+            blk_coord = self._problem_shape_mhb.get_hier_coord(
                 self._current_work_linear_idx, loc=loc, ip=ip
             )
         else:
@@ -257,22 +278,21 @@ class FmhaStaticTileScheduler:
         self._is_first_block = False
 
     def __extract_mlir_values__(self):
-        values = extract_mlir_values(self._params)
-        values.extend(extract_mlir_values(self._current_work_linear_idx))
+        # Only pass mutable per-iteration state as scf.while block arguments.
+        # _params and _grid_shape are loop-invariant and captured from outer
+        # scope, keeping block arg count low (4 instead of 10).
+        values = extract_mlir_values(self._current_work_linear_idx)
         values.extend(extract_mlir_values(self._blk_coord))
-        values.extend(extract_mlir_values(self._grid_shape))
         return values
 
     def __new_from_mlir_values__(self, values):
-        assert len(values) == 10
-        new_params = new_from_mlir_values(self._params, values[0:3])
+        assert len(values) == 4
         new_current_work_linear_idx = new_from_mlir_values(
-            self._current_work_linear_idx, [values[3]]
+            self._current_work_linear_idx, [values[0]]
         )
-        new_blk_coord = new_from_mlir_values(self._blk_coord, values[4:7])
-        new_grid_shape = new_from_mlir_values(self._grid_shape, values[7:])
+        new_blk_coord = new_from_mlir_values(self._blk_coord, values[1:4])
         return FmhaStaticTileScheduler(
-            new_params, new_current_work_linear_idx, new_blk_coord, new_grid_shape
+            self._params, new_current_work_linear_idx, new_blk_coord, self._grid_shape
         )
 
 
@@ -299,26 +319,27 @@ def create_fmha_static_tile_scheduler(
 
 def create_fmha_static_tile_scheduler_params(
     is_persistent: bool,
-    problem_shape_mbh: cute.Shape,
+    problem_shape_mhb: cute.Shape,
 ) -> FmhaStaticTileSchedulerParams:
     """
     Create FMHA static tile scheduler parameters.
 
     :param is_persistent: Whether to use persistent kernel mode.
     :type is_persistent: bool
-    :param problem_shape_mbh: Problem shape in (M, B, H) format.
-    :type problem_shape_mbh: cute.Shape
+    :param problem_shape_mhb: Problem shape in (M, H, B) format.
+    :type problem_shape_mhb: cute.Shape
 
     :return: New FmhaStaticTileSchedulerParams instance.
     :rtype: FmhaStaticTileSchedulerParams
     """
-    return FmhaStaticTileSchedulerParams(is_persistent, problem_shape_mbh)
+    return FmhaStaticTileSchedulerParams(is_persistent, problem_shape_mhb)
 
 
 def compute_grid(
     o_shape: cute.Shape,
     cta_tiler: Tuple[int, int, int],
     is_persistent: bool,
+    is_2cta: bool = False,
 ) -> Tuple[FmhaStaticTileSchedulerParams, Tuple[int, int, int]]:
     """
     Compute grid parameters for FMHA operation.
@@ -340,6 +361,8 @@ def compute_grid(
     :type cta_tiler: Tuple[int, int, int]
     :param is_persistent: Whether to use persistent kernel mode.
     :type is_persistent: bool
+    :param is_2cta: Whether to use 2CTA mode.
+    :type is_2cta: bool
 
     :return: Tuple of (scheduler_params, grid_shape).
     :rtype: Tuple[FmhaStaticTileSchedulerParams, Tuple[int, int, int]]
@@ -347,7 +370,9 @@ def compute_grid(
     tile_sched_params = create_fmha_static_tile_scheduler_params(
         is_persistent,
         (
-            cute.ceil_div(cute.size(o_shape[0]), cta_tiler[0]),
+            cute.round_up(
+                cute.ceil_div(cute.size(o_shape[0]), cta_tiler[0]), 2 if is_2cta else 1
+            ),
             cute.size(o_shape[2][0]),
             cute.size(o_shape[2][1]),
         ),
@@ -899,6 +924,90 @@ class FusedMask:
         return result
 
     @cute.jit
+    def get_masked_info(
+        mask_type: MaskEnum,
+        blk_coord: cute.Coord,
+        tile_shape: cute.Shape,
+        seqlen_q: Int32,
+        seqlen_k: Int32,
+        window_size_left: Optional[Int32] = None,
+        window_size_right: Optional[Int32] = None,
+        rem_count: Optional[Int32] = 0,
+    ) -> Tuple[Int32, Int32, Int32, Int32, Int32]:
+        """
+        Calculate the number of masked trips for the trailing mask.
+
+        This is used for blocks that need special handling due to masking.
+
+        :param mask_type: Type of mask to use
+        :type mask_type: utils.MaskEnum
+        :param blk_coord: Block coordinates.
+        :type blk_coord: cute.Coord
+        :param tile_shape: Shape of the tile.
+        :type tile_shape: cute.Shape
+        :param seqlen_q: Query sequence length for attention computation.
+        :type seqlen_q: Int32
+        :param seqlen_k: Key sequence length for attention computation.
+        :type seqlen_k: Int32
+        :param window_size_left: Left-side sliding window size for attention masking.
+        :type window_size_left: Optional[Int32]
+        :param window_size_right: Right-side sliding window size for attention masking.
+        :type window_size_right: Optional[Int32]
+        :param rem_count: Remaining count from previous calculations.
+        :type rem_count: Int32
+
+        :return: Number of masked info.
+        :rtype: Tuple[Int32, Int32, Int32, Int32, Int32]
+        """
+        start_count = FusedMask.get_trip_start(
+            mask_type,
+            blk_coord,
+            tile_shape,
+            seqlen_q,
+            seqlen_k,
+            window_size_left,
+            window_size_right,
+        )
+        leading_mask_count = FusedMask.get_masked_leading_count(
+            mask_type,
+            blk_coord,
+            tile_shape,
+            seqlen_q,
+            seqlen_k,
+            window_size_left,
+            window_size_right,
+        )
+        unmask_count = FusedMask.get_unmasked_trip_count(
+            mask_type,
+            blk_coord,
+            tile_shape,
+            seqlen_q,
+            seqlen_k,
+            window_size_left,
+            window_size_right,
+        )
+        trailing_mask_count = FusedMask.get_masked_trailing_count(
+            mask_type,
+            blk_coord,
+            tile_shape,
+            seqlen_q,
+            seqlen_k,
+            window_size_left,
+            window_size_right,
+            rem_count,
+        )
+        end_count = (
+            start_count + leading_mask_count + unmask_count + trailing_mask_count
+        )
+        return (
+            start_count,
+            end_count,
+            leading_mask_count,
+            unmask_count,
+            trailing_mask_count,
+        )
+
+    @cute.jit
     def apply_mask(
         mask_type: MaskEnum,
         acc_qk: cute.Tensor,
@@ -944,7 +1053,7 @@ class FusedMask:
             )
             else 0
         )
-        for i in cutlass.range_constexpr(cute.size(acc_qk)):
+        for i in cutlass.range(cute.size(acc_qk), unroll_full=True):
             index_q, index_k = index_transform(*index_qk[i])
             if cutlass.const_expr(
                 window_size_left is not None or window_size_right is not None
@@ -973,3 +1082,151 @@ class FusedMask:
             ):
                 if index_k >= seqlen_k or index_q >= seqlen_q:
                     acc_qk[i] = -Float32.inf
+
+
+@dsl_user_op
+def ex2_emulation_packed_f32x2(
+    x: Float32, y: Float32, *, loc=None, ip=None
+) -> Tuple[Float32, Float32]:
+    # Clamp the xy so they fit within the FP32 exponent range
+    # The upper side is ensured by the (s - row_max)
+    xy_clamped = (cute.arch.fmax(x, -127.0), cute.arch.fmax(y, -127.0))
+
+    fp32_round_int = float(2**23 + 2**22)
+    # |  0   | 10010110 | 10000000000000000000000 |
+    # | sign | exponent |        mantissa         |
+    #                                           ^
+    #                                           |
+    #                                  digit of ones place
+    # During FP32 addition, any number that smaller than this will be
+    # aligned the exponent to 2^23, so that the digit of ones
+    # is at the rightest place
+    # We want to round down here, so that the fractional part is in [0, 1)
+    xy_rounded = cute.arch.add_packed_f32x2(
+        xy_clamped, (fp32_round_int, fp32_round_int), rnd="rm"
+    )
+    # The integer floor of x & y are now in the last 8 bits of xy_rounded
+    # We want the next 2 ops to round to nearest even. The rounding mode is important.
+    xy_rounded_back = cute.arch.sub_packed_f32x2(
+        xy_rounded, (fp32_round_int, fp32_round_int)
+    )
+    xy_frac = cute.arch.sub_packed_f32x2(xy_clamped, xy_rounded_back)
+
+    @dsl_user_op
+    @cute.jit
+    def polynomial_deg3_packed_f32x2(
+        x: Float32, y: Float32, *, loc=None, ip=None
+    ) -> Tuple[Float32, Float32]:
+        # 2^x ~= (0.077 * x + 0.228) * x + 0.695) * x + 1, for x in [0, 1)
+        coeff = (
+            1.0,  # coeff of deg0
+            0.695146143436431884765625,  # coeff of deg1
+            0.227564394474029541015625,  # coeff of deg2
+            0.077119089663028717041015625,  # coeff of deg3
+        )
+        deg = len(coeff) - 1  # started with highest degree
+        out = (coeff[deg], coeff[deg])
+        for i in cutlass.range_constexpr(deg - 1, -1, -1):
+            out = cute.arch.fma_packed_f32x2(
+                out, (x, y), (coeff[i], coeff[i]), loc=loc, ip=ip
+            )
+        return out
+
+    xy_frac_ex2 = polynomial_deg3_packed_f32x2(*xy_frac, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def combine_int_frac_ex2(
+        x_rounded: Float32, frac_ex2: Float32, *, loc=None, ip=None
+    ) -> Float32:
+        # x_rounded, S is the sign bit, N is a bit we don't care about
+        # X are bits of the integer
+        # |  S   | 10010110 | NSSSSSSSSSSSSSSUUUUUUUU |
+        # | sign | exponent |        mantissa         |
+        # shift left the integer part by 23
+        # so that we move the integer to the exponent position
+        # |  S   | UUUUUUUU | 00000000000000000000000 |
+        # | sign | exponent |        mantissa         |
+
+        # the frac_ex2 is in the range of [1, 2)
+        # it has the form of 1.FFFFFFFFF... * 2^0
+        # F are the bits of the fractional part
+        # |  0   | 01111111 | FFFFFFFFFFFFFFFFFFFFFFF |
+        # | sign | exponent |        mantissa         |
+
+        # the frac_ex2 * 2^(integer part) is the final result
+        # We can directly add the exponent part
+        # as the result is also a normalized FP32 number
+        return cutlass.Float32(
+            llvm.inline_asm(
+                T.f32(),
+                [
+                    Float32(x_rounded).ir_value(loc=loc, ip=ip),
+                    Float32(frac_ex2).ir_value(loc=loc, ip=ip),
+                ],
+                "{\n\t"
+                ".reg .s32 x_rounded_i, frac_ex_i, x_rounded_e, out_i;\n\t"
+                "mov.b32 x_rounded_i, $1;\n\t"
+                "mov.b32 frac_ex_i, $2;\n\t"
+                "shl.b32 x_rounded_e, x_rounded_i, 23;\n\t"
+                "add.s32 out_i, x_rounded_e, frac_ex_i;\n\t"
+                "mov.b32 $0, out_i;\n\t"
+                "}\n",
+                "=f,f,f",
+                has_side_effects=False,
+                is_align_stack=False,
+                asm_dialect=llvm.AsmDialect.AD_ATT,
+            )
+        )
+
+    x_out = combine_int_frac_ex2(xy_rounded[0], xy_frac_ex2[0], loc=loc, ip=ip)
+    y_out = combine_int_frac_ex2(xy_rounded[1], xy_frac_ex2[1], loc=loc, ip=ip)
+
+    return x_out, y_out
+
+
+@cute.jit
+def cvt_f32x4_to_f8x4_pack_i32(fp32x4, fp8_type, *, loc=None, ip=None):
+    fp32x4 = fp32x4.load()
+    src_vec4 = (
+        fp32x4.ir_value(loc=loc, ip=ip) if hasattr(fp32x4, "ir_value") else fp32x4
+    )
+
+    src0 = Float32(vector.extract(src_vec4, [], [0])).ir_value(loc=loc, ip=ip)
+    src1 = Float32(vector.extract(src_vec4, [], [1])).ir_value(loc=loc, ip=ip)
+    src2 = Float32(vector.extract(src_vec4, [], [2])).ir_value(loc=loc, ip=ip)
+    src3 = Float32(vector.extract(src_vec4, [], [3])).ir_value(loc=loc, ip=ip)
+
+    cvt_instruction = ""
+    if cutlass.const_expr(fp8_type == cutlass.Float8E4M3FN):
+        cvt_instruction = "cvt.rn.satfinite.e4m3x2.f32"
+    else:
+        assert False, "Unsupported fp8 element type"
+
+    asm_tmpl = (
+        "{\n"
+        "  .reg .b16 lo;\n"
+        "  .reg .b16 hi;\n"
+        f"  {cvt_instruction} lo, $2, $1;\n"
+        f"  {cvt_instruction} hi, $4, $3;\n"
+        "  mov.b32 $0, {lo, hi};\n"
+        "}"
+    )
+    packed_i32 = llvm.inline_asm(
+        T.i32(),
+        [src0, src1, src2, src3],
+        asm_tmpl,
+        "=r,f,f,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+    return packed_i32
+
+
+@cute.jit
+def cvt_f32x4_to_f8x4(fp32x4, fp8x4, *, loc=None, ip=None):
+    packed_i32 = cvt_f32x4_to_f8x4_pack_i32(fp32x4, fp8x4.element_type)
+    fp8x4_i32 = cute.recast_tensor(fp8x4, cutlass.Int32)
+    fp8x4_i32[0] = cutlass.Int32(packed_i32)
+    return

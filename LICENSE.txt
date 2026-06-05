@@ -30,5 +30,5 @@ Certain files within this repository are subject to separate licensing terms:
 
 - The files located in the `python/CuTeDSL` directory are licensed under the
   NVIDIA End User License Agreement (EULA). Please refer to
-  https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+  https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
   for the full terms.

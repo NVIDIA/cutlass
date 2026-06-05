@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
@@ -110,7 +111,7 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
     return true;
   }
 
