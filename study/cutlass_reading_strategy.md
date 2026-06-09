@@ -5,6 +5,53 @@
 
 ---
 
+## 0. 目录全景地图（先看这个，解决"一团糟"）
+
+`include/cutlass/` 是 **2.x 和 3.x 的叠加态**，同一个 `gemm/` 目录塞了两代代码（2.x 用 `threadblock/`+`warp/` 表达层级；3.x 删掉它们改用 `collective/`，因为 wgmma 这种 warpgroup 指令塞不进"warp 层"）。
+
+### 三条判别规则（记死这个）
+```
+① 文件名带 sm90_ / sm100_ / sm120_   →  3.x（看）
+② 目录名是 collective/                →  3.x 独有（看）
+③ 目录名是 threadblock/ / warp/ / thread/  →  2.x 遗产（跳！）
+```
+
+### 五层 → 目录映射（关键：上3层在 cutlass/，下2层在 cute/）
+| 五层 | 在哪 | 几代 | 看哪些 |
+|------|------|------|--------|
+| 1 Device | `cutlass/gemm/device/` | 混 | 只 `gemm_universal_adapter.h` |
+| 2 Kernel | `cutlass/gemm/kernel/` | 混 | **只 `sm90_*`/`sm100_*`**（其余 ~100 个 2.x 跳）|
+| 3 Collective | `cutlass/gemm/collective/` | **纯 3.x** | **`sm90_*`/`sm100_*`** ★ |
+| 4 Tiled | **`cute/atom/`** + `cute/algorithm/gemm.hpp` | CuTe | `TiledMma`/`TiledCopy`/`cute::gemm` |
+| 5 Atom | **`cute/atom/`** + `cute/arch/` | CuTe | `mma_atom.hpp`/`mma_sm90.hpp` |
+| （横切）同步 | `cutlass/pipeline/` | 3.x | `sm90_pipeline.hpp` |
+
+> **五层不全在 `cutlass/`**：上3层（device/kernel/collective）在 `cutlass/gemm/`，**下2层（tiled/atom）在 `cute/`**。这就是为什么 Stage1-2 学 CuTe、Stage3 才进 `cutlass/gemm`。
+
+### `include/cutlass/` 顶层目录速判
+| 目录 | 是什么 | 看不看 |
+|------|--------|--------|
+| `gemm/` | GEMM 上3层 | ★主战场，见上表 |
+| `epilogue/` | 尾声 | `collective/`+`fusion/`(EVT) 是 3.x 看；`threadblock/`+`warp/` 跳 |
+| `pipeline/` | 同步设施（横切，不属五层） | ★`sm90_pipeline.hpp` |
+| `arch/` | 架构指令封装 | 看 `barrier.h` |
+| `layout/` | 2.x layout tag(RowMajor等) | 只用 tag，不细读（3.x 用 CuTe Layout）|
+| `conv/`/`reduction/`/`transform/`/`thread/`/`experimental/`/`detail/`/`platform/` | 卷积/规约/变换/工具 | 用到再看，默认跳 |
+
+### 白名单（你实际要看的，就这些）
+```
+include/cute/                                        ← 第4-5层 + 一切 layout
+include/cutlass/gemm/collective/sm90_* (sm100_*)     ← 第3层 ★W10 范本
+include/cutlass/gemm/kernel/sm90_* (sm100_*)         ← 第2层
+include/cutlass/gemm/device/gemm_universal_adapter.h ← 第1层
+include/cutlass/pipeline/sm90_pipeline.hpp           ← 同步
+include/cutlass/epilogue/collective/sm90_*           ← 尾声(3.x)
+include/cutlass/epilogue/fusion/                     ← EVT(W11+)
+```
+**其余 ~90%（所有 threadblock/warp/thread + 无 sm 前缀的旧文件）当不存在。**
+
+---
+
 ## 必读（约 5000 行，分散在 6 个文件）
 
 ### 1. Pipeline 抽象 — `include/cutlass/pipeline/`
