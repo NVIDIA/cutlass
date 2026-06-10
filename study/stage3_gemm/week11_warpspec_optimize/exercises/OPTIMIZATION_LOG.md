@@ -5,7 +5,7 @@
 
 baseline（v1，未优化）：M=N=K=4096 FP16
 - TFLOPS：______
-- cuBLAS 对照：______ TFLOPS（约 850-900 on H20 FP16）
+- cuBLAS 对照：______ TFLOPS（B200 FP16 峰值约 2200+ TFLOPS，实测填 B200 量级或 TBD）
 - 当前 % of cuBLAS：______%
 
 ---
@@ -22,7 +22,7 @@ baseline（v1，未优化）：M=N=K=4096 FP16
 ## 步骤 2：pipeline depth (STAGES 2 → 4)
 
 - diff 行号：v1 第 ___ 行（`STAGES = 2`）→ v2 第 ___ 行（`STAGES = 4`）
-- smem 占用计算：__________ KB（应 ≤ 228 on H20，≤ 99 on 5060 Ti）
+- smem 占用计算：__________ KB（应 ≤ ~228KB+/TBD on B200(SM100)，≤ ~99KB on 5060 Ti(SM120)）
 - ncu before / after：
   - `dram__throughput.avg.pct_of_peak_sustained_elapsed`：______ → ______
   - `smsp__inst_executed_pipe_tensor_op_hmma`：______ → ______
@@ -32,7 +32,7 @@ baseline（v1，未优化）：M=N=K=4096 FP16
 ## 步骤 3：TileShape (128,128,64) → (128,256,64)
 
 - diff 行号：v1 第 ___ 行 → v2 第 ___ 行
-- MMA atom 也要换：`SM90_64x128x16_F16F16F16_SS` → `SM90_64x256x16_F16F16F16_SS`
+- MMA atom 也要换：`SM100_MMA_F16BF16_SS<..., 128, 128, ...>` → `SM100_MMA_F16BF16_SS<..., 128, 256, ...>`（UMMA atom 改 N）
 - register 用量：`launch__registers_per_thread`：______（不要超 240，否则 spill）
 - ncu before / after：
   - `smsp__sass_thread_inst_executed_op_hmma_pred_on`：______ → ______（占比应上升）
@@ -42,7 +42,7 @@ baseline（v1，未优化）：M=N=K=4096 FP16
 ## 步骤 4：ClusterShape <2,1,1> + B multicast
 
 - diff 行号：v1 第 ___ 行（dimCluster {1,1,1}）→ v2 第 ___ 行（{2,1,1}）
-- TMA 改用 `SM90_TMA_LOAD_MULTICAST`：第 ___ 行
+- TMA 改用 `SM100_TMA_LOAD_MULTICAST`：第 ___ 行
 - ncu before / after：
   - `dram__bytes_read.sum`：______ → ______（应约为 1/2，针对 B）
   - TFLOPS：______ → ______（预期 +10%）

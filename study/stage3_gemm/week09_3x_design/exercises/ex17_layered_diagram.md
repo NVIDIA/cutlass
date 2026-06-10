@@ -48,7 +48,7 @@
 │    关键类: SM100 UMMA atom（一个 tcgen05.mma 指令的别名）          │
 │    文件:   include/cute/arch/mma_sm100_umma.hpp (tcgen05.mma)       │
 │            include/cute/arch/mma_sm120.hpp (mma.sync, fp4/fp6/fp8)  │
-│            include/cute/arch/copy_sm90_tma.hpp (cp.async.bulk.tensor) │
+│            include/cute/arch/copy_sm100_tma.hpp (cp.async.bulk.tensor)│
 │    职责:   inline asm                                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```

@@ -1,4 +1,4 @@
-# Stage 3 — 手写 GEMM (SM90 → SM100)
+# Stage 3 — 手写 GEMM (SM100 / SM120 Blackwell)
 
 add_subdirectory(week09_3x_design)
 add_subdirectory(week10_warpspec_writeup)
