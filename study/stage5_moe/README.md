@@ -2,6 +2,8 @@
 
 预计 3 周（W19–W21），约 45h。
 
+> **硬件**：🟢 5060 Ti（SM120，本地跑 sm120 路径验证）｜ 🔴 B200（SM100，实测 UMMA+TMEM+tcgen05）
+
 ## 阶段目标
 
 - 看懂 grouped GEMM 与普通 GEMM 在调度上的差异
@@ -12,7 +14,7 @@
 
 | 周 | 标题 | 输出 |
 |----|------|------|
-| W19 | [Grouped GEMM](week19_grouped_gemm/) | 跑通 example 57 + 自写 minimal grouped GEMM |
+| W19 | [Grouped GEMM](week19_grouped_gemm/) | 跑通 example 75/92 + 自写 minimal grouped GEMM |
 | W20 | [Routing](week20_routing/) | router + permute + unpermute 单元测试 |
 | W21 | [Fused MoE](week21_fused_moe/) | end-to-end MoE forward 正确性通过 |
 

@@ -1,8 +1,8 @@
 # Week 17 — FA Backward
 
 预计 ~15h
-> **硬件**：🟢 5060 Ti（SM120 mainloop 上跑 FA bwd 正确性）｜ 🟡 H20（WGMMA 实测）  
-> B200 实测延到 W18（同 Stage，下一周）
+> **硬件**：🟢 5060 Ti（SM120，本地跑 sm120 路径验证）｜ 🔴 B200（SM100，实测 UMMA+TMEM+tcgen05）  
+> SM120 验证延到 W18（同 Stage，下一周）
 
 ## 目标
 - 看懂 FA bwd 的 dQ / dK / dV 数学
@@ -11,7 +11,8 @@
 
 ## 读
 - `examples/python/CuTeDSL/blackwell/fmha_bwd.py` — 算法清晰，先看
-- `examples/88_hopper_fmha/` 中的 bwd 部分（如果有）
+- `examples/77_blackwell_fmha/kernel/sm100_fmha_bwd_kernel_tma_warpspecialized.hpp` — SM100 bwd kernel（含 `fmha_kernel_bwd_convert.hpp` / `fmha_kernel_bwd_sum_OdO.hpp` 辅助 kernel）
+- `examples/77_blackwell_fmha/77_blackwell_fmha_bwd.cu` — bwd 入口示例
 - FA2/FA3 paper 里 backward 公式推导
 
 ## FA bwd 数据流（简化）

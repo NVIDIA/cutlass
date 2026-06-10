@@ -1,7 +1,7 @@
 # Week 20 — Token Routing + Permute
 
 预计 ~15h
-> **硬件**：🟢 5060 Ti（routing 是 CUDA core 逻辑，与 tensor core 架构无关，本地完整可跑）
+> **硬件**：🟢 5060 Ti（SM120，本地跑 sm120 路径验证；routing 是 CUDA core 逻辑，与 tensor core 架构无关，本地完整可跑）｜ 🔴 B200（SM100，实测 UMMA+TMEM+tcgen05）
 
 ## 目标
 - 看懂 router 的 softmax + topk

@@ -1,6 +1,6 @@
-# CuTe + Hopper/Blackwell 学习计划
+# CuTe + Blackwell 学习计划
 
-**目标**：在 H20（SM90）和 B200（SM100）上手写并极致优化 GEMM / FlashAttention / Sparse MoE。
+**目标**：在 B200（SM100，主线）和 5060 Ti（SM120，本地验证）上手写并极致优化 GEMM / FlashAttention / Sparse MoE。
 
 **范围**：只学 CuTe + CUTLASS 3.x，跳过 CUTLASS 2.x（`gemm/threadblock/`、`gemm/warp/`、`transform/threadblock/` 等）。
 
@@ -14,21 +14,20 @@
 |------|------|------|----------|------|
 | Stage 1 | CuTe 张量代数 | W1–4 | 60h | [stage1_cute_algebra/](stage1_cute_algebra/) |
 | Stage 2 | 硬件原语（SM90 → SM100 增量）| W5–8 | 60h | [stage2_primitives/](stage2_primitives/) |
-| Stage 3 | 手写 GEMM（SM90 → SM100） | W9–13 | 75h | [stage3_gemm/](stage3_gemm/) |
-| Stage 4 | FlashAttention（SM90 → SM100）| W14–18 | 75h | [stage4_flashattn/](stage4_flashattn/) |
+| Stage 3 | 手写 GEMM（SM100 主线 → SM120 验证） | W9–13 | 75h | [stage3_gemm/](stage3_gemm/) |
+| Stage 4 | FlashAttention（SM100 主线 → SM120 验证）| W14–18 | 75h | [stage4_flashattn/](stage4_flashattn/) |
 | Stage 5 | Sparse MoE | W19–21 | 45h | [stage5_moe/](stage5_moe/) |
 | Stage 6 | 源码精读 | W22–24 | 45h | [stage6_source_reading/](stage6_source_reading/) |
 | Stage 7 | 极致调优 | 持续 | — | [stage7_tuning/](stage7_tuning/) |
 
-**Stage 内部 SM 串行**：先把 SM90 优化做透，再 SM100 迁移。Stage 2 一次性消化 SM90 + SM100 硬件原语（避免后续 SM100 还要重新捡 SM90 细节）。
+**Stage 内部 SM 串行**：W9 之后 **SM100（B200）为主线，把 SM100 优化做透，再做 SM120（5060 Ti）验证/移植**。Stage 2 一次性消化 SM90 + SM100 硬件原语（SM90 WGMMA 是必要的概念地基）。
 
 **硬件优先级**（每周 README 标题下有详细标记）：
 
 | 标签 | 含义 | 覆盖范围 |
 |------|------|----------|
-| 🟢 **5060 Ti 主战**（你拥有的卡）| 完全在本地跑 | W1-W4 全部；W6/W7（TMA + SM90 风格 cluster）；Stage 3-5 的 WarpSpec 主循环（用 SM120 mainloop 跑）；FP4 量化实验 |
-| 🟡 **租 H20 实测**（~$1-3/hr）| 跑真 WGMMA | W5（WGMMA PTX）；Stage 3-4 的 WGMMA 性能数字 |
-| 🔴 **租 B200 实测**（~$5-15/hr）| 跑 UMMA + TMEM | W8（UMMA primer）；W13/W18（SM100 性能数字）|
+| 🟢 **5060 Ti 主战**（你拥有的卡）| 完全在本地跑 | W1-W4 全部；W6/W7（TMA + SM90 风格 cluster）；Stage 3-6 的 SM120 验证/移植（用 SM120 mainloop 跑 sm120 退化路径）；FP4 量化实验 |
+| 🔴 **租 B200 实测**（~$5-15/hr）| 跑 UMMA + TMEM + tcgen05 | W8（UMMA primer）；**Stage 3-6 全部 SM100 主线性能数字**（W10-W24）|
 
 > **关键事实**：5060 Ti (SM120) 不是"残血 SM100"——SM120 是 **SM90 软件栈 + fp4/fp6 块缩放 mma.sync**，**没有 UMMA / TMEM**，但**继承了完整 TMA + cluster + WarpSpec**。详见 [THINKING.md O20](THINKING.md)。
 
@@ -43,7 +42,7 @@
 ```markdown
 # Week N — <标题>
 
-预计 ~15h ｜ 目标硬件：H20 / B200
+预计 ~15h ｜ 目标硬件：🟢 5060 Ti（SM120 验证）｜ 🔴 B200（SM100 主线）
 
 ## 目标
 - 能用一句话回答：<核心问题 1>
@@ -142,8 +141,8 @@ study/
 
 ```bash
 mkdir -p build && cd build
-cmake .. -DCUTLASS_ENABLE_STUDY=ON -DCUTLASS_NVCC_ARCHS=90a   # H20
-# 或：-DCUTLASS_NVCC_ARCHS=100a 用 B200
+cmake .. -DCUTLASS_ENABLE_STUDY=ON -DCUTLASS_NVCC_ARCHS=100a  # B200（SM100 主线）
+# 或：-DCUTLASS_NVCC_ARCHS=120a 用 5060 Ti（SM120 本地验证）
 
 # 全部
 make study_all -j
@@ -171,12 +170,12 @@ make study_stage1_w02_hgemm_naive -j
 → **[cutlass_reading_strategy.md](cutlass_reading_strategy.md)**
 
 简单说：
-- `pipeline/sm90_pipeline.hpp`（1388 行）→ Stage 2 W7 片段读 + **Stage 6 W22 全文精读**
-- `gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp`（584 行）→ Stage 3 W9/W10 片段读 + **Stage 6 W22 全文精读**
-- `gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp`（947 行）→ Stage 3 W12 片段读 + **Stage 6 W23 全文精读**
-- `gemm/kernel/sm90_tile_scheduler*.hpp` → Stage 3 W11、Stage 5 W19 片段读 + **Stage 6 W23 全文精读**
-- `pipeline/sm100_pipeline.hpp`（1328 行）→ Stage 2 W8 片段读 + **Stage 6 W22 全文精读**
-- EVT（`epilogue/collective/` + `epilogue/fusion/`）→ Stage 3 W11 选读 + **Stage 6 W24 全文精读**
+- `pipeline/sm90_pipeline.hpp`（1388 行）→ Stage 2 W7 片段读（SM90 概念地基）
+- `pipeline/sm100_pipeline.hpp`（1328 行）→ Stage 2 W8 片段读 + Stage 3 W10/W13 + **Stage 6 W22 全文精读**
+- `gemm/collective/sm100_mma_warpspecialized.hpp` → Stage 3 W10/W11 片段读 + **Stage 6 W22 全文精读**
+- `gemm/kernel/sm100_gemm_tma_warpspecialized.hpp` → Stage 3 W10/W12 片段读 + **Stage 6 W23 全文精读**
+- `gemm/kernel/sm100_tile_scheduler*.hpp` → Stage 3 W11/W12、Stage 5 W19 片段读 + **Stage 6 W23 全文精读**
+- EVT（`epilogue/collective/sm100_*` + `epilogue/fusion/sm100_*`）→ Stage 3 W11 选读 + **Stage 6 W24 全文精读**
 
 **Stage 1-5 按需读片段，Stage 6 系统精读全文**。
 
@@ -185,6 +184,6 @@ make study_stage1_w02_hgemm_naive -j
 ## 务实建议
 
 1. **不要一开始就用 `CollectiveBuilder`**。它把细节全藏起来。先用 CuTe 原语手写，跑出正确结果后，再用 Builder 对比。最终优化时回到手写。
-2. H20 上 90% 的性能天花板取决于对 **WGMMA 发射节奏**和 **TMA 预取时序**的理解，这两个只有手写才能掌握。
+2. B200（SM100）上 90% 的性能天花板取决于对 **UMMA（tcgen05.mma）发射节奏**和 **TMA 预取时序**的理解，这两个只有手写才能掌握。
 3. 每个练习先求**正确**（CPU ref check），再求**快**（vs cuBLAS / 上游 example）。
 4. 每周都跑一次 `ncu --set full`，把关键指标记到 [PROGRESS.md](PROGRESS.md) 形成自己的 baseline 表。

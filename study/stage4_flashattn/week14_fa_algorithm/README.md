@@ -5,14 +5,14 @@
 
 ## 目标
 - 推得动 online softmax 数学（不看公式能写出 m_i / l_i 的更新规则）
-- 看懂 `examples/88_hopper_fmha/collective/` 里的 mainloop 结构
-- 看懂 `examples/python/CuTeDSL/hopper/fmha.py`（先理解算法再啃 C++）
+- 看懂 `examples/77_blackwell_fmha/collective/` 里的 mainloop 结构
+- 看懂 `examples/python/CuTeDSL/blackwell/fmha.py`（先理解算法再啃 C++）
 
 ## 读
-- Tri Dao 的 FA1 / FA2 / FA3 论文（按需，FA3 是 H20 现状）
-- `examples/88_hopper_fmha/` 整个目录走一遍
-- `examples/88_hopper_fmha/collective/` — mainloop（online softmax 在这里）
-- `examples/python/CuTeDSL/hopper/fmha.py` — Python 版本，逻辑更清晰
+- Tri Dao 的 FA1 / FA2 / FA3 论文（按需）
+- `examples/77_blackwell_fmha/` 整个目录走一遍
+- `examples/77_blackwell_fmha/collective/sm100_fmha_fwd_mainloop_tma_warpspecialized.hpp` — mainloop（online softmax 在这里）
+- `examples/python/CuTeDSL/blackwell/fmha.py` — Python 版本，逻辑更清晰
 
 ## FA 算法核心
 ```
@@ -35,7 +35,7 @@ FA:      softmax(Q × K^T / √d) × V
 
 ## 写
 - `exercises/ex20_online_softmax.py` — 用 numpy 写一版 online softmax，跟 `softmax(QK^T)V` ground truth 对比，shape 任选
-- `exercises/ex21_88fmha_walkthrough.md` — 读 `examples/88_hopper_fmha/`，画一张数据流图（Q/K/V tile 怎么加载、softmax 在哪、O 怎么写出）
+- `exercises/ex21_88fmha_walkthrough.md` — 读 `examples/77_blackwell_fmha/`，画一张数据流图（Q/K/V tile 怎么加载、softmax 在哪、O 怎么写出）
 
 ## 跑
 ```bash

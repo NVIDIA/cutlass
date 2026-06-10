@@ -17,8 +17,8 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Layer 4: Kernel                                                    │
 │    单个 CUDA kernel 的完整骨架                                       │
-│    关键类: cutlass::gemm::kernel::__________  (sm90_gemm_*.hpp)     │
-│    文件:   include/cutlass/gemm/kernel/gemm_universal.hpp + 各 sm90/sm100 变体 │
+│    关键类: cutlass::gemm::kernel::__________  (sm100_gemm_*.hpp)    │
+│    文件:   include/cutlass/gemm/kernel/gemm_universal.hpp + 各 sm100/sm120 变体 │
 │    职责:   按 warp_idx 分流 → 调 collective load() / mma() / epilogue │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
@@ -27,9 +27,9 @@
 │  Layer 3: Collective                                                │
 │    "一个 CTA 干什么" 的逻辑：mainloop + epilogue                     │
 │    关键类: cutlass::gemm::collective::__________ (CollectiveMma)    │
-│    文件:   include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp │
+│    文件:   include/cutlass/gemm/collective/sm100_mma_warpspecialized.hpp │
 │            include/cutlass/gemm/collective/sm120_mma_tma.hpp        │
-│    职责:   load()=TMA producer, mma()=WGMMA consumer, 二者用 pipeline 同步 │
+│    职责:   load()=TMA producer, mma()=UMMA consumer（TMEM 累加器）, 二者用 pipeline 同步 │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -45,9 +45,9 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Layer 1: Atom (PTX wrapper)                                        │
 │    单条 PTX 指令的 C++ 包装                                         │
-│    关键类: SM90_64x128x16_F16F16F16_SS（一个 wgmma 指令的别名）     │
-│    文件:   include/cute/arch/mma_sm90_gmma.hpp (wgmma)              │
-│            include/cute/arch/mma_sm100_umma.hpp (tcgen05.mma)       │
+│    关键类: SM100 UMMA atom（一个 tcgen05.mma 指令的别名）          │
+│    文件:   include/cute/arch/mma_sm100_umma.hpp (tcgen05.mma)       │
+│            include/cute/arch/mma_sm120.hpp (mma.sync, fp4/fp6/fp8)  │
 │            include/cute/arch/copy_sm90_tma.hpp (cp.async.bulk.tensor) │
 │    职责:   inline asm                                               │
 └─────────────────────────────────────────────────────────────────────┘
@@ -55,8 +55,8 @@
 
 ## 你的任务（在分层图上回答下面这些）
 
-1. **Builder 在哪一层？** 答案不是 1-5 任何一层 —— 它是"编译期的辅助类"，把 Layer 3+4 的模板参数从用户视角的几个参数推断出来。Builder 文件: `include/cutlass/gemm/collective/builders/sm90_gmma_builder.inl`。
-2. **W9 的 example 48 和 49 各覆盖哪几层？**（提示：49 用 Builder 简化了 Layer 3+4，48 手动展开）
+1. **Builder 在哪一层？** 答案不是 1-5 任何一层 —— 它是"编译期的辅助类"，把 Layer 3+4 的模板参数从用户视角的几个参数推断出来。Builder 文件: `include/cutlass/gemm/collective/builders/sm100_common.inl`。
+2. **W9 的 example 70 和 71 各覆盖哪几层？**（提示：71 用 Builder 简化了 Layer 3+4，70 手动展开）
 3. **W3 的 TiledMMA / W4 的 TiledCopy 是哪一层？** —— 与 stage3 的连接点正在这里。
 4. **CollectiveOp 和 KernelOp 的关系？** —— 一个 Kernel = 1 个 mainloop CollectiveOp + 1 个 epilogue CollectiveOp。
 

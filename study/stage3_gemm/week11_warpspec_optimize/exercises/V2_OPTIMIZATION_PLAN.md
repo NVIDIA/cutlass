@@ -38,7 +38,7 @@
 
 ### 5. Persistent scheduler（+5%）
 
-- **改哪里**：kernel 顶层不再是"每个 CTA 算一个 tile 就退出"，而是"persistent CTA 循环领 tile"。最少改动：用 cutlass 已有的 `PersistentTileScheduler`（在 `include/cutlass/gemm/kernel/sm90_tile_scheduler.hpp` 153 行）
+- **改哪里**：kernel 顶层不再是"每个 CTA 算一个 tile 就退出"，而是"persistent CTA 循环领 tile"。最少改动：用 cutlass 已有的 SM100 persistent scheduler（在 `include/cutlass/gemm/kernel/sm100_tile_scheduler.hpp`）
 - **收益来源**：减少 kernel launch overhead；让前面跑完的 CTA 继续干活（避免尾部空转）
 - **ncu 验证**：`launch__grid_size` 减少（不再 = M/BLK_M × N/BLK_N）
 - **风险**：persistent 会让同一个 SM 跨 tile，L2 复用会变 —— 大 problem 时是好事(B 矩阵可以缓存命中)，小 problem 反而可能慢

@@ -17,17 +17,17 @@
 | 2 | W8 — TMEM + UMMA (SM100 增量) | ◑ 核心过完 | 加速模式：UMMA vs WGMMA(单线程发射/累加器 TMEM)、TMEM alloc+ld/st、2-SM UMMA(cluster=2 结构必需)、FP4/MX、四层模型已过；概念进 THINKING O31。**Stage 2 收口** | 2026-06-02 |
 | 2 | **CHECKPOINT** | ☐ | minimal warpspec ping-pong 玩具 + minimal UMMA toy | |
 | 3 | W9 — 3.x 分层设计 | ◑ 核心过完 | 加速模式：五层(device/kernel/collective/tiled/atom)分层图、CollectiveBuilder 自动推断价值、TileShape/ClusterShape/Schedule 编译期语义、自检 5 题；概念进 THINKING O32。**Stage 3 起步** | 2026-06-02 |
-| 3 | W10 — WarpSpec writeup (SM90) | ☐ | | |
-| 3 | W11 — WarpSpec optimize (SM90) | ☐ | | |
-| 3 | W12 — Pingpong vs Cooperative (SM90) | ☐ | | |
-| 3 | W13 — SM100 GEMM 迁移 | ☐ | | |
-| 3 | **CHECKPOINT** | ☐ | SM90 GEMM ≥ 70% cuBLAS（H20）+ SM100 GEMM 在 B200 上跑通 | |
+| 3 | W10 — WarpSpec writeup (SM100) | ☐ | | |
+| 3 | W11 — WarpSpec optimize (SM100) | ☐ | | |
+| 3 | W12 — 1-SM vs 2-SM UMMA (SM100) | ☐ | | |
+| 3 | W13 — SM100→SM120 移植 | ☐ | | |
+| 3 | **CHECKPOINT** | ☐ | SM100 GEMM ≥ 70% cuBLAS（B200）+ SM120 GEMM 在 5060 Ti 上跑通 | |
 | 4 | W14 — FA 算法 | ☐ | | |
-| 4 | W15 — FA fwd writeup (SM90) | ☐ | | |
-| 4 | W16 — FA fwd optimize (SM90) | ☐ | | |
-| 4 | W17 — FA bwd (SM90) | ☐ | | |
-| 4 | W18 — SM100 FA 迁移 | ☐ | | |
-| 4 | **CHECKPOINT** | ☐ | SM90 FA fwd ≥ 80% 88_hopper_fmha + SM100 FA 在 B200 上跑通 | |
+| 4 | W15 — FA fwd writeup (SM100) | ☐ | | |
+| 4 | W16 — FA fwd optimize (SM100) | ☐ | | |
+| 4 | W17 — FA bwd (SM100) | ☐ | | |
+| 4 | W18 — SM120 FA 验证 + GQA | ☐ | | |
+| 4 | **CHECKPOINT** | ☐ | SM100 FA fwd ≥ 80% 77_blackwell_fmha + SM120 FA 在 5060 Ti 上跑通 | |
 | 5 | W19 — Grouped GEMM | ☐ | | |
 | 5 | W20 — Routing | ☐ | | |
 | 5 | W21 — Fused MoE | ☐ | | |
@@ -35,7 +35,7 @@
 | 6 | W22 — Pipeline + Collective 精读 | ☐ | | |
 | 6 | W23 — Kernel + Scheduler 精读 | ☐ | | |
 | 6 | W24 — EVT + 架构对比 | ☐ | | |
-| 6 | **CHECKPOINT** | ☐ | 架构图 + 三架构 cheat sheet + 设计决策笔记 | |
+| 6 | **CHECKPOINT** | ☐ | 架构图 + 双架构 cheat sheet（SM100/SM120）+ 设计决策笔记 | |
 | 7 | 持续调优 | ☐ | | |
 
 ---
