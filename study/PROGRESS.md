@@ -2,6 +2,11 @@
 
 格式：每完成一周，在对应行打勾，记关键产出和 ncu 指标。
 
+> **当前位置(2026-06-10)**：W9 ☑ 完成，下一站 **W10 手搓 SM100 GEMM v1**。
+> **重大调整**：W9 之后全计划已转 **Blackwell-only**（SM100 主线 / SM120 验证，删 SM90）——见各 README + `cutlass_reading_strategy.md §0`。
+> **本轮新增思考**：THINKING **O33-O40**（五层=库工程非性能/手写要什么；kernel-collective-pipeline 精确分工；L2L3 嵌套for；文件名 token；5类warp角色；C是输入非结果；tile-based编程+SM120取舍；FA是英伟达形状的算子）。
+> W10 README 已重设计为"纯写"（零件 Stage1-2+W9 全学过，不重读）。
+
 ## 总览
 
 | Stage | 周 | 状态 | 主要产出 | 完成日期 |

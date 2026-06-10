@@ -453,6 +453,63 @@ atom        MMA_Atom/Copy_Atom     单条 PTX(W5/W6)
 - 读序：**ex49 Builder 简化 → ex48 手动展开**(对比 Builder 推断了啥)，复用 W2"先 fused 再 unfuse"。W10-12 在 collective 层手写 mainloop，W13 写 SM100。
 - 强制指定(绕过 Auto)：直接传具体 `KernelScheduleType` + 手动 `StageCount<N>`。
 
+### O33. 五层是"库工程"不是"性能物理"——手写要什么、发挥空间在哪（战略）
+
+打到 90% 吞吐**不需要复刻五层**。区分三类东西：
+- **物理必需品(硬件决定,必须做)**：三级 tiling(block/warp/instruction) + 异步多级流水(TMA+多buffer) + 打满 MMA + 正确 swizzle + occupancy + epilogue 不拖。任何高性能 GEMM(cuBLAS/Triton/CUTLASS/你)都做这 6 件,跟用不用五层无关。
+- **库工程(CUTLASS 为"当库"付的税)**：五层 + tag-dispatch,为了"一套代码支持几百种配置"。你只写一个 kernel 时是**纯负担**。
+- **你的发挥空间(决定最后 10-20%)**：warp 角色分配 / pingpong-vs-coop / 流水级数 / tile-cluster 调参 / tile scheduler 光栅化顺序(L2 命中) / swizzle 选择 / epilogue fusion / Stream-K。
+
+**手写 CuTe GEMM 需要什么**：那两个文件(kernel `operator()` + collective `load/mma`)只给**核心计算逻辑**,还缺：① **epilogue**(TMEM→GMEM 写出,在第三个文件 `sm100_epilogue_*`) ② **host 端 `make_tma_copy` + launch + cluster 配置** ③ **类型定义**(TiledMMA/swizzle/TMA atom)+ TMEM alloc/dealloc。但手写**单一配置**可塌缩成 **~300-400 行扁平 kernel**(砍 5 类 warp→3 类 / 砍 EVT / 砍 1-2SM 分支 / 砍 streamK / 砍泛化)。底层 UMMA/TMA/swizzle atom 从 cute 复用。**最优学法：复用底 2 层 cute,自己写上 3 层扁平版**(= DeepGEMM 路线)。
+
+### O34. 五层内部的精确关系（kernel vs collective vs pipeline）
+
+- **kernel 层 = `__global__` 指挥官**：管一个 CTA 的资源(smem/TMEM alloc)+ warp 角色分配 + 问 scheduler 要 tile + cluster 同步 + **调用** collective。**自己不算**,k_tile 循环体在 collective 里。
+- **collective 层 = 真正的协作计算循环**：`CollectiveMma`(load+mma 的 k_tile 循环) 和 `CollectiveEpilogue`(写出循环) 是**两个平级的 collective**,kernel 层组合它们。epilogue 不是 mainloop 的子 loop。
+- **"Collective" 命名来源**：并行计算的 collective operation(一群线程靠硬件特性协同)。它是**协作的边界**：上面 kernel 调度*独立*的 tile,下面 atom 是*单条*指令,中间这层"全员协同算一个 tile"。warp specialization 的 producer/consumer 流水就是它的体现。
+- **CollectiveOp vs "KernelOp"**：CollectiveOp = `Builder<...>::CollectiveOp`(真实成员名,Builder 自动生成的第3层零件,有 mainloop+epilogue 两个)。"KernelOp" = **非真实 API 名**,练习俗称,实为 `GemmKernel = GemmUniversal<ProblemShape, Mainloop, Epilogue>`(第2层,手动 wrap 两个 CollectiveOp)。
+- **`gemm_universal.hpp` 几乎是空的**：它只是 **dispatch 入口**——一串 `#include` 把各架构特化(`sm100_gemm_*`)拉进来 + `IsCutlass3` 判别,靠 enable_if + schedule tag 选中真正的特化。**真逻辑在 `sm100_gemm_tma_warpspecialized.hpp` 的 `operator()`**,别在 gemm_universal.hpp 卡时间。
+- **pipeline 三方分工**：定义在 `pipeline/`(横切工具,非五层) / **配置在 kernel 层**(构造对象+配 producer-consumer 角色+初始 state) / **使用在 collective 层**(load/mma 里逐轮调 acquire/wait/release + 推进 state)。"配置在上层、使用在下层、定义在独立库"。
+
+### O35. L2/L3 是两层嵌套 for,故意不合并
+
+外层 = collective 的 k_tile 循环(**运行时**,含 TMA+同步);内层 = `cute::gemm` 里的 tile 展开(**编译期完全展开**,纯计算)。**能合(手写时 `cute::gemm` 就是循环里一行),但 CUTLASS 故意把 L2 留在 `cute/`**：① `cute::gemm` 跨算法复用(GEMM/FA/MoE/conv 全调它) ② "数据移动/同步"(L3)和"MMA 映射线程"(L2)正交。你 W10 手写 = 写 L3 循环 + 调 L2 那行 `cute::gemm`,白嫖 L2。
+
+### O36. CUTLASS 文件名是 token 自描述 + 目录判别
+
+文件名 = `架构_[特性前缀]_本体_[搬运]_[调度]_[变体后缀]`,从左到右读 token 就懂。找标准版 = 挑**无特殊 token** 的(`sm100_gemm_tma_warpspecialized` / `sm100_mma_warpspecialized`);`array_`=grouped、`blockscaled_`=MXFP4、`sparse_`/`complex_`/`emulated_`等=变体,**需要哪个翻哪个,不全读**。目录判别见 `cutlass_reading_strategy.md §0`(sm前缀=3.x看 / threadblock,warp,thread=2.x跳 / 上3层在 cutlass/gemm,下2层在 cute/)。kernel 目录混了 4 个 `tile_scheduler`(调度组件,非 kernel 本体)。
+
+### O37. SM100 kernel 的 5 类 warp 角色(各 1 warp 的红利)
+
+`sm100_gemm_tma_warpspecialized.hpp` operator()：`warp_idx<4` 直接当类别,`≥4` 归 Epilogue。
+| warp | 角色 | 数量 | 干啥 |
+|---|---|---|---|
+| 0 | MMA | 1 warp | 发 UMMA(`elect_one` 单线程真发 tcgen05.mma),累加进 TMEM |
+| 1 | Sched | 1 warp | CLC 动态调度(SM100 特有),领下一 tile |
+| 2 | MainloopLoad | 1 warp | 发 TMA 搬 A/B |
+| 3 | EpilogueLoad | 1 warp | 发 TMA 搬 C(beta=0 则空转) |
+| 4-7 | Epilogue | 4 warp | TMEM→RMEM→EVT→GMEM 写出 D |
+共 8 warp=256 线程。**核心红利**：UMMA/TMA 都单线程发射 + 累加器在 TMEM(不占线程寄存器)→ "发指令"角色全瘦成 1 warp,只有"逐元素并行"的 epilogue 用满 4 warp。比 SM90"两个满 warpgroup"更省、occupancy 更高。
+
+### O38. GEMM 里 C 是外部输入不是结果 + 70/71 都用 Builder
+
+- `D = alpha*(A@B) + beta*C`：**`A@B` 的结果是 `acc`(累加器);C 是另一个外部输入矩阵**(残差/bias),不是算出来的。`beta=0`(纯乘法)→ 跳过搬 C → EpilogueLoad warp 空转(源码 `is_epi_load_needed`)。
+- **example 70 和 71 都用 `CollectiveBuilder`**(纠正"70 手动展开"的误解)。不存在"不用 Builder 的手动展开 example"——纯手写 collective 太长,只在源码 `sm100_mma_warpspecialized.hpp` 或你 W10 自己写。70=配置写死(最简);71=schedule/stage/EVT 模板化跑多套(展示旋钮)。
+
+### O39. tile-based 编程 + Blackwell 把它逼成必然 + SM120 取舍
+
+- **tile-based 编程**：编程粒度从"线程"升到"整块 tile"——你只说"tile C = tile A × tile B",线程怎么瓜分这块 tile 由框架(CuTe layout 代数 / Triton)自动算(= 你 W3-W5 学的 TV layout/swizzle/partition 被自动化)。代表:Triton/CuTe/TileLang/ThunderKittens/cuTile。**CuTe 是最底层的 tile 框架**。
+- **Blackwell 为何逼成必然**：三支柱全 **tile 原生** —— UMMA(单线程发整块算)/TMEM(整块存,lane×column)/TMA(整块搬,瓦片坐标)。元素/线程粒度从主数据通路消失,thread-level 编程失效 → tile-based 从"可选"变"必然"。(tile 编程比 TMA 早,Ampere 用 cp.async 也能,但 I/O 是线程级;TMA 让 I/O 也 tile 化。)
+- **SM120 取舍 = tile 模型 vs tile 规模**：保留 **TMA(tile-I/O 使能)+ 窄精度 tensor core(tile 算 + fp4 推理刚需)+ swizzle/mbarrier** = "tile 模型使能件"(缺了接不上现代推理生态);砍 **TMEM/UMMA/2-SM/DSMEM** = "tile 规模优化件"(数据中心吞吐,硅面积贵,单卡推理用不上,退回 mma.sync+RMEM)。**5060 Ti 能验证 tile kernel 逻辑骨架,验不出 TMEM/2-SM 性能**——这就是 W13"SM100→SM120 移植验证"验的是"对不对"非"快不快"。
+
+### O40. FA 是英伟达形状的算子(NPU 命门 = SIMT+SIMD 混编)
+
+(来自"NPU 为何难支持 FA"讨论,技术骨架部分)
+- **FA 每代贴一代架构**：FA1/2→A100(IO-aware,online softmax 把 N×N 中间矩阵留 SRAM,纾解 HBM 带宽);FA3→Hopper(WS+TMA+WGMMA async,把 softmax 藏到 matmul 后);FA4→Blackwell(tcgen05/TMEM/2-SM + 补 exp 短板——exp 走 SFU/MUFU,tensor core 越快它越成瓶颈)。
+- **NPU 命门**：Warp Specialization 本质 = **大块 SIMD 算力 + 灵活标量控制(softmax/调度/if-else)在 SRAM 级无缝混编**。纯 dataflow NPU(昇腾 AIC/AIV 过 GM 协同、纯 systolic)缺灵活 SIMT 控制层,做不到"matmul↔向量在快内存紧耦合",移植 FA 代价巨大。
+- **三重未来诘问(真问题)**：① 动态 shape(GPU thread block 灵活切,NPU 固定尺度→padding/回调 host) ② 动态 if-else(MoE 路由/剪枝,GPU 标量分支便宜,NPU 深流水 flush) ③ 动态 tile size + SRAM 内 Shuffle/Permute(= swizzle 动态版,NPU 固定 layout 追不上)。
+- 读法:技术骨架(FA 贴架构 / WS 是命门 / 三诘问)成立;内幕八卦(昇腾 1GB L2 / V-Cache)无法证实;"软件栈纯被动承接"是暴论。**印证你 B200 库方向的价值:壁垒在 warp 灵活性 + SRAM layout 控制,正是你 Stage2-4 啃的。**
+
 ---
 
 ## 三、方法论
