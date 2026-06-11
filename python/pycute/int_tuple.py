@@ -139,7 +139,25 @@ def prefix_product(a, init=1):
       return init
 
 
-def idx2crd(idx, shape, stride=None):
+def idx2crd(idx, shape):
+
+  if is_tuple(idx):
+    if is_tuple(shape):                # tuple tuple tuple
+      assert len(idx) == len(shape)
+      return tuple(idx2crd(i, s) for i, s in zip(idx,shape))
+    else:                              # tuple "int" "int"
+      assert False           # Error
+  else:
+    if is_tuple(shape):                # "int" tuple tuple
+      tuple_idx = []
+      for i in range(len(shape)):
+        tuple_idx.append(idx2crd(idx // product(shape[:i]), shape[i]))
+      return tuple(tuple_idx)
+    else:                              # "int" "int" "int"
+      return idx % shape
+
+
+def idx2crd(idx, shape, stride):
   if stride is None:
     stride = prefix_product(shape)
 
