@@ -67,7 +67,7 @@ Load pre-compiled object files or shared libraries into Python for execution.
 
    import cutlass.cute as cute
    import torch
-   from cutlass.cute import from_dlpack
+   from cutlass.cute.runtime import from_dlpack
    import cutlass.cute.cuda as cuda
    
    # Load module from object file
