@@ -59,7 +59,10 @@ def tikz_color_tv(tid: int, vid: int) -> str:
 
 
 def print_latex(
-    x: Union[Layout, ComposedLayout], *, color: Callable = tikz_color_bwx8, render_func: Optional[Callable] = None
+    x: Union[Layout, ComposedLayout],
+    *,
+    color: Callable = tikz_color_bwx8,
+    render_func: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     Prints a layout.
@@ -82,6 +85,7 @@ def print_latex(
         layout = x
 
     latex_output = []
+
     def print_or_append(*args):
         if render_func is not None:
             latex_output.append(" ".join(str(arg) for arg in args))
@@ -119,7 +123,7 @@ def print_latex(
         print_or_append("\\end{document}")
 
     if render_func is not None:
-        render_func(r" ".join(latex_output))
+        render_func(" ".join(latex_output))
 
 
 def print_latex_tv(
@@ -127,7 +131,7 @@ def print_latex_tv(
     tile_mn: Union[IntTuple, Layout],
     *,
     color: Callable = tikz_color_tv,
-    render_func: Optional[Callable] = None
+    render_func: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     Prints a tv layout for a tile M N. Everything must be static.
@@ -146,6 +150,7 @@ def print_latex_tv(
         raise ValueError("Require layout_tv to be rank 2")
 
     latex_output = []
+
     def print_or_append(*args):
         if render_func is not None:
             latex_output.append(" ".join(str(arg) for arg in args))
@@ -193,4 +198,4 @@ def print_latex_tv(
         print_or_append("\\end{document}")
 
     if render_func is not None:
-        render_func(r" ".join(latex_output))
+        render_func(" ".join(latex_output))
