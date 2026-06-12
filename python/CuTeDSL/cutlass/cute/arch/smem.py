@@ -20,6 +20,8 @@ from cutlass._mlir.dialects import nvvm, llvm
 
 from ..typing import Int, Int32, Pointer, Numeric, NumericMeta
 
+_AddressSpace = _cute_ir.AddressSpace
+
 
 @dsl_user_op
 def alloc_smem(
@@ -133,14 +135,73 @@ def map_dsmem_ptr(
     """
     dsmem_llvm_ptr = nvvm.mapa(
         llvm.PointerType.get(_cute_ir.AddressSpace.dsmem),
-        smem_ptr.to_llvm_ptr(loc=loc, ip=ip),  # type: ignore[attr-defined]
+        smem_ptr.to_llvm_ptr(loc=loc, ip=ip),
         Int32(cta_rank_in_cluster).ir_value(loc=loc, ip=ip),
         loc=loc,
         ip=ip,
     )
 
     intptr = llvm.ptrtoint(T.i32(), dsmem_llvm_ptr, loc=loc, ip=ip)
-    aligned_ty = _cute_ir.ConstrainedIntType.get(smem_ptr.alignment, 32)  # type: ignore[attr-defined]
+    aligned_ty = _cute_ir.ConstrainedIntType.get(smem_ptr.alignment, 32)
     aligned_intptr = _cute_ir.assume(aligned_ty, intptr, loc=loc, ip=ip)
 
     return _cute_ir.inttoptr(smem_ptr.type, aligned_intptr, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def store_async_dsmem(
+    smem_ptr: Pointer,
+    value: Int,
+    mbar_ptr: Pointer,
+    peer_cta_rank: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Asynchronous store to a remote CTA's shared memory via ``st.async.shared::cluster``.
+
+    The store completion is tracked by the mbarrier's transaction count
+    (``mbarrier::complete_tx::bytes``), allowing the caller to use a relaxed
+    mbarrier arrive.
+
+    :param smem_ptr:       Destination pointer in this CTA's shared memory.
+    :param value:          The i32 value to store.
+    :param mbar_ptr:       Mbarrier pointer in this CTA's shared memory.
+                           Mapped to the peer CTA via ``nvvm.mapa``.
+    :param peer_cta_rank:  Target CTA rank in the cluster.
+    """
+    dsmem_ptr_ty = llvm.PointerType.get(_AddressSpace.dsmem)
+    cta_rank_ir = Int32(peer_cta_rank).ir_value(loc=loc, ip=ip)
+
+    dsmem_addr = nvvm.mapa(
+        dsmem_ptr_ty,
+        smem_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        cta_rank_ir,
+        loc=loc,
+        ip=ip,
+    )
+
+    dsmem_mbar = nvvm.mapa(
+        dsmem_ptr_ty,
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        cta_rank_ir,
+        loc=loc,
+        ip=ip,
+    )
+
+    addr_i32 = llvm.ptrtoint(T.i32(), dsmem_addr, loc=loc, ip=ip)
+    mbar_i32 = llvm.ptrtoint(T.i32(), dsmem_mbar, loc=loc, ip=ip)
+    value_ir = Int32(value).ir_value(loc=loc, ip=ip)
+
+    llvm.inline_asm(
+        None,
+        [addr_i32, value_ir, mbar_i32],
+        "st.async.shared::cluster.mbarrier::complete_tx::bytes.b32 [$0], $1, [$2];",
+        "r,r,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )

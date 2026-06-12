@@ -34,6 +34,7 @@ def _ensure_mlir_type_compat() -> None:
 
 _ensure_mlir_type_compat()
 del _ensure_mlir_type_compat
+
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
 # Monkey patch CUDA version query function
 from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
@@ -87,6 +88,7 @@ from .cute.typing import *
 # Utilities not belonging to CuTe
 from . import utils as utils
 from . import pipeline as pipeline
+from . import testing as testing
 
 # Used as internal symbol
 from . import cutlass_dsl as _dsl
@@ -101,3 +103,4 @@ cuda = _dsl.cuda_helpers
 from . import jax as jax
 
 CACHE_FILE = "compiled_cache.db"
+

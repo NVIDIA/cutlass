@@ -120,10 +120,11 @@ class ExternalBinaryModule:
                 f"Function prefix {function_prefix} not found in the module.", cause=e
             )
         load_provider.version_checker(version_str)
+        assert function_name is not None
         capi_func_p = self.engine.lookup(function_name)
         if not capi_func_p:
             raise DSLRuntimeError(
-                "Unknown function: "  # type: ignore[operator]
+                "Unknown function: "
                 + "_mlir_"
                 + function_prefix
                 + "__mlir_ciface_"

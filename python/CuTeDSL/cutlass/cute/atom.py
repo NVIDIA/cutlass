@@ -12,7 +12,17 @@
 from abc import ABC, ABCMeta, abstractmethod
 from typing import Type, Union, Optional, Any, overload, List, Tuple
 
-from .typing import Shape, Layout, Tile, Tensor, Numeric, Int32
+from .typing import (
+    Shape,
+    Layout,
+    Tile,
+    Tiler,
+    Tensor,
+    Numeric,
+    Int32,
+    XTuple,
+    is_int_tuple_type,
+)
 from .core import (
     composition,
     coalesce,
@@ -32,7 +42,12 @@ from .tuple import product_each
 from .core import _unpack_x_tuple, _pack_shape, _pack_coord, _pack_tile
 from .tensor import _Tensor, make_tensor
 
-from cutlass.cutlass_dsl import extract_mlir_values, new_from_mlir_values, dsl_user_op
+from cutlass.cutlass_dsl import (
+    extract_mlir_attributes,
+    extract_mlir_values,
+    new_from_mlir_values,
+    dsl_user_op,
+)
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import cute as _cute_ir
@@ -139,6 +154,16 @@ class Trait(ABC):
         return self.__class__(self.unpack(loc=loc, ip=ip, **kwargs))
 
 
+class TmaTrait(Trait):
+    """
+    Base class for all TMA traits, which provides the ``cute_nvgpu.grid_constant``
+    attribute for TMA arguments.
+    """
+
+    def __extract_mlir_attributes__(self) -> List[ir.Attribute]:
+        return [ir.DictAttr.get({"cute_nvgpu.grid_constant": ir.UnitAttr.get()})]
+
+
 def make_atom(
     ty: ir.Type,
     values: Optional[List[ir.Value]] = None,
@@ -179,6 +204,9 @@ class Atom(ABC):
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
         return extract_mlir_values(self._trait) + extract_mlir_values(self._op)
+
+    def __extract_mlir_attributes__(self) -> List[ir.Attribute]:
+        return extract_mlir_attributes(self._trait) + extract_mlir_attributes(self._op)
 
     def __new_from_mlir_values__(self, values: List[ir.Value]) -> "Atom":
         traits_value = values[: len(extract_mlir_values(self._trait))]
@@ -522,7 +550,7 @@ class TiledMma(MmaAtom):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> XTuple:
         shape = _pack_shape(shape, loc=loc, ip=ip)
         return _unpack_x_tuple(
             _cute_ir.tiled_mma_partition_shape(
@@ -539,7 +567,7 @@ class TiledMma(MmaAtom):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> XTuple:
         return self._partition_shape(_cute_ir.MmaOperand.A, shape_mk, loc=loc, ip=ip)
 
     @dsl_user_op
@@ -549,7 +577,7 @@ class TiledMma(MmaAtom):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> XTuple:
         return self._partition_shape(_cute_ir.MmaOperand.B, shape_nk, loc=loc, ip=ip)
 
     @dsl_user_op
@@ -559,7 +587,7 @@ class TiledMma(MmaAtom):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> XTuple:
         return self._partition_shape(_cute_ir.MmaOperand.C, shape_mn, loc=loc, ip=ip)
 
     #
@@ -739,8 +767,8 @@ def make_mma_atom(
 @dsl_user_op
 def make_tiled_mma(
     op_or_atom: Union[Op, MmaAtom],
-    atom_layout_mnk: Any = (1, 1, 1),
-    permutation_mnk: Any = None,
+    atom_layout_mnk: Union[Layout, Tuple[Any, ...]] = (1, 1, 1),
+    permutation_mnk: Optional[Tiler] = None,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
@@ -777,7 +805,7 @@ def make_tiled_mma(
         permutation_mnk_ty = _pack_tile(permutation_mnk, loc=loc, ip=ip).type
     ty = _cute_nvgpu_ir.TiledMmaType.get(
         atom._trait.value.type,
-        atom_layout_mnk.type,
+        atom_layout_mnk.type,  # type: ignore[union-attr]
         permutation_mnk_ty,
     )
     val = _cute_ir.make_tiled_mma(ty, atom._trait.value, loc=loc, ip=ip)
@@ -878,11 +906,11 @@ class TiledCopy(CopyAtom):
     @dsl_user_op
     def retile(
         self,
-        src: Any,
+        src: Tensor,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Tensor:
         return _cute_ir.tiled_copy_retile(
             tiled_copy=self._trait.value,
             input=src.value,
@@ -978,13 +1006,13 @@ def make_copy_atom(
 
 
 def _make_tiled_copy(
-    atom: Any,
-    layout_tv: Any,
+    atom: CopyAtom,
+    layout_tv: Layout,
     tiler_mn: Any,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     if type(tiler_mn) is tuple:
         tiler_mn = _pack_tile(tiler_mn, loc=loc, ip=ip)
 
@@ -1006,13 +1034,13 @@ def _make_tiled_copy(
 
 
 def make_tiled_copy(
-    atom: Any,
-    layout_tv: Any,
+    atom: CopyAtom,
+    layout_tv: Layout,
     tiler_mn: Any,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled type given a TV partitioner and tiler.
 
     :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
@@ -1107,10 +1135,14 @@ def make_cotiled_copy(
     layout_tv_data = composition(inv_data_layout, atom_layout_tv, loc=loc, ip=ip)
 
     # check validity
+    atom_layout_tv_shape = atom_layout_tv.shape
+    atom_layout_tv_stride = atom_layout_tv.stride
+    assert isinstance(atom_layout_tv_shape, tuple)
+    assert isinstance(atom_layout_tv_stride, tuple)
     atom_layout_v_to_check = coalesce(
         make_layout(
-            atom_layout_tv.shape[1],  # type: ignore[index]
-            stride=atom_layout_tv.stride[1],  # type: ignore[index]
+            atom_layout_tv_shape[1],
+            stride=atom_layout_tv_stride[1],
             loc=loc,
             ip=ip,
         ),
@@ -1167,12 +1199,12 @@ def make_cotiled_copy(
 
 @dsl_user_op
 def make_tiled_copy_A(
-    atom: Any,
-    tiled_mma: Any,
+    atom: CopyAtom,
+    tiled_mma: TiledMma,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled copy out of the copy_atom that matches the A-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -1199,12 +1231,12 @@ def make_tiled_copy_A(
 
 @dsl_user_op
 def make_tiled_copy_B(
-    atom: Any,
-    tiled_mma: Any,
+    atom: CopyAtom,
+    tiled_mma: TiledMma,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled copy out of the copy_atom that matches the B-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -1231,12 +1263,12 @@ def make_tiled_copy_B(
 
 @dsl_user_op
 def make_tiled_copy_C(
-    atom: Any,
-    tiled_mma: Any,
+    atom: CopyAtom,
+    tiled_mma: TiledMma,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled copy out of the copy_atom that matches the C-Layout of tiled_mma.
 
     :param atom: Copy atom
@@ -1263,12 +1295,12 @@ def make_tiled_copy_C(
 
 @dsl_user_op
 def make_tiled_copy_S(
-    atom: Any,
-    tiled_copy: Any,
+    atom: CopyAtom,
+    tiled_copy: TiledCopy,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled copy out of the copy_atom that matches the Src-Layout of tiled_copy.
 
     :param atom: Copy atom
@@ -1291,12 +1323,12 @@ def make_tiled_copy_S(
 
 @dsl_user_op
 def make_tiled_copy_D(
-    atom: Any,
-    tiled_copy: Any,
+    atom: CopyAtom,
+    tiled_copy: TiledCopy,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create a tiled copy out of the copy_atom that matches the Dst-Layout of tiled_copy.
 
     :param atom: Copy atom
@@ -1324,7 +1356,7 @@ def make_tiled_copy_C_atom(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "TiledCopy":
+) -> TiledCopy:
     """Create the smallest tiled copy that can retile LayoutC_TV for use with pipelined epilogues with subtiled stores.
 
     :param atom: Copy atom
@@ -1452,7 +1484,8 @@ def copy_atom_call(
     - For copy with auxiliary operands, they contain the main tensor followed by
       auxiliary tensors. For example:
 
-      - For static load from tensor memory, ``dst`` = [data, stat].
+      - For static load to tensor memory, ``dst`` = [data, stat].
+      - For SPARSIFY, ``dst`` = [data, metadata].
       - For TMA gather4, ``src`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
       - For TMA scatter4, ``dst`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
 
@@ -1486,7 +1519,7 @@ def copy_atom_call(
         # Predicated copy atom operation
         cute.copy_atom_call(copy_atom, src, dst, pred=pred)
 
-        # Static load from tensor memory: load with row-wise reduction (MAX, MIN, MAXABS, MINABS)
+        # Static load to tensor memory: load with row-wise reduction (MAX, MIN, MAXABS, MINABS)
         cute.copy_atom_call(loadtm_stat_atom, src, [data, stat])
 
         # TMA gather4: combine four 2D coordinate tensors into single destination
@@ -1502,10 +1535,12 @@ def copy_atom_call(
         dst_list[0].type,  # type: ignore[attr-defined]
         _cute_ir.MemRefType,
     ):
-        if (
-            len(dst_list) == 1
-            and src_list[0].element_type.width != dst_list[0].element_type.width  # type: ignore[union-attr]
-        ):
+        src0_elem_type = src_list[0].element_type
+        dst0_elem_type = dst_list[0].element_type
+        assert not is_int_tuple_type(src0_elem_type) and not is_int_tuple_type(
+            dst0_elem_type
+        )
+        if len(dst_list) == 1 and src0_elem_type.width != dst0_elem_type.width:
             raise TypeError(
                 "`copy_atom_call` currently only supports equal source and destination "
                 "element type bit width"
@@ -1550,9 +1585,19 @@ def mma_atom_call(
 
     - For regular MMA, `a` and `b` contain the MMA A and B tensors respectively.
     - For MMA with auxiliary operands, `a` and `b` contain the MMA A and B tensors followed by
-      their respective auxiliary tensors. For example:
+      their respective auxiliary tensors.
 
-      - For BlockScaledMMA, `a` = [A, SFA] and `b` = [B, SFB].
+    Auxiliary operands examples:
+
+    - For BlockScaledMMA, `a` = [A, SFA] and `b` = [B, SFB].
+    - For SparseMMA, `a` = [A, E] and `b` = [B].
+    - For BlockScaledSparseMMA, `a` = [A, SFA, E] and `b` = [B, SFB].
+
+    Runtime keyword arguments in ``kwargs`` are forwarded to the atom trait's ``unpack`` logic.
+    For SM100 tcgen05 MMA atoms, you can pass ``disable_output_lane`` to control
+    per-lane output writes through ``tcgen05.mma.disable_output_lane`` lowering.
+    The expected mask length is 4 lanes for ``cta_group::1`` and 8 lanes for
+    ``cta_group::2``.
 
     :param atom: The MMA atom to execute
     :type atom: MmaAtom

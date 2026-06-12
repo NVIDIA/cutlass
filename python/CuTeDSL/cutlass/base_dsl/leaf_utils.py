@@ -239,7 +239,7 @@ class LeafInfo:
                 self.obj.value = new_vals[0]
             return
 
-        # Case 3: raw ir.Value (including subclasses like ArithValue, ctm.Pointer)
+        # Case 3: raw ir.Value (including subclasses like ArithValue, Pointer)
         if isinstance(self.obj, ir.Value):
             if len(new_vals) >= 1:
                 self._replace_in_parent(new_vals[0])

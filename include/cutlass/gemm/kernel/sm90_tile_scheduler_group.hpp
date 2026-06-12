@@ -49,7 +49,7 @@ class PersistentTileSchedulerSm90Group {
   // Data members
   //
 
-private:
+protected:
   uint64_t current_work_linear_idx_ = 0;
   uint64_t total_grid_size_ = 0;
 
@@ -287,8 +287,8 @@ public:
     total_grid_size_ = uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z);
     uint64_t ctas_along_m, ctas_along_n;
     ProblemShape problem_shape = params_.problem_shapes_.get_problem_shape(0);
-    if (is_tuple<decltype(cute::shape<0>(problem_shape))>::value ||
-        is_tuple<decltype(cute::shape<1>(problem_shape))>::value) {
+    if constexpr (is_tuple<decltype(cute::shape<0>(problem_shape))>::value ||
+                  is_tuple<decltype(cute::shape<1>(problem_shape))>::value) {
       ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shape), scheduler_params.cta_shape_.m()));
       ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shape), scheduler_params.cta_shape_.n()));
     }
@@ -308,7 +308,7 @@ public:
   }
 
   // get work_idx_m, work_idx_n from linear_idx while applying swizzle
-  template<class WorkTileInfo, class GroupInfo, class ProblemShape, class RasterOrder>
+  template<class WorkTileInfo, class GroupInfo, class ProblemShape, class CtaShape, class RasterOrder>
   static
   CUTLASS_DEVICE
   WorkTileInfo
@@ -317,7 +317,7 @@ public:
       GroupInfo& group_info,
       GroupProblemShape &problem_shapes,
       ProblemShape (&cached_problem_shapes)[2],
-      GemmCoord cta_shape,
+      CtaShape cta_shape,
       GemmCoord cluster_shape,
       FastDivmodU64Pow2 const& divmod_cluster_shape_major,
       FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
@@ -340,10 +340,10 @@ public:
         }
         if (group_info.group_idx < total_problem_groups) {
           uint64_t ctas_along_m, ctas_along_n;
-          if (is_tuple<decltype(cute::shape<0>(cached_problem_shapes[0]))>::value ||
-              is_tuple<decltype(cute::shape<1>(cached_problem_shapes[0]))>::value) {
-            ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(cached_problem_shapes[0]), cta_shape.m()));
-            ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(cached_problem_shapes[0]), cta_shape.n()));
+          if constexpr (is_tuple<decltype(cute::shape<0>(cached_problem_shapes[0]))>::value ||
+                        is_tuple<decltype(cute::shape<1>(cached_problem_shapes[0]))>::value) {
+            ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(cached_problem_shapes[0]), get<0>(cta_shape)));
+            ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(cached_problem_shapes[0]), get<1>(cta_shape)));
           }
           else {
             ctas_along_m = divmod_cta_shape_m.divide(cute::shape<0>(cached_problem_shapes[0]) +  divmod_cta_shape_m.divisor - 1);

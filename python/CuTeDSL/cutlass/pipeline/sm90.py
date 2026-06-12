@@ -10,9 +10,14 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Literal, Optional, cast
 
 import cutlass.cute as cute
+from cutlass._mlir import ir
+from cutlass.cute.arch.constants import (
+    WARP_SIZE,
+)
+from cutlass.cute.core import is_static
 from cutlass.cutlass_dsl import Boolean, Int32, if_generate, dsl_user_op
 
 from cutlass.pipeline import (
@@ -27,7 +32,8 @@ from cutlass.pipeline import (
     make_pipeline_state,
     agent_sync,
 )
-from cutlass._mlir import ir
+from cutlass.pipeline.helpers import _get_thread_arrive_count
+from cutlass.pipeline.profiling import register_barrier
 
 ##############################################################################
 # Pipeline classes
@@ -128,10 +134,13 @@ class PipelineAsync:
         num_stages: int,
         agent: tuple[PipelineOp, CooperativeGroup],
         tx_count: int = 0,
+        name: str = "",
+        phase: Literal["", "full", "empty"] = "",
     ) -> SyncObject:
         """
         Returns a SyncObject corresponding to an agent's PipelineOp.
         """
+        full_name = f"{name}.{phase}" if name and phase else name
         if agent[0] in [
             PipelineOp.AsyncThread,
             PipelineOp.TmaLoad,
@@ -143,6 +152,7 @@ class PipelineAsync:
                 num_stages=num_stages,
                 agent=agent,
                 tx_count=tx_count,
+                name=full_name,
             )
         elif agent[0] is PipelineOp.TmaStore:
             # Path taken for AsyncTmaStore
@@ -160,6 +170,7 @@ class PipelineAsync:
         producer_mask: Optional[Int32] = None,
         consumer_mask: Optional[Int32] = None,
         defer_sync: bool = False,
+        name: str = "",
     ) -> "PipelineAsync":
         """Creates and initializes a new PipelineAsync instance.
 
@@ -194,11 +205,22 @@ class PipelineAsync:
         consumer = (consumer_type, consumer_group)
 
         sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer
+            barrier_storage.align(min_align=8),
+            num_stages,
+            producer,
+            name=name,
+            phase="full",
         )
         sync_object_empty = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages, num_stages, consumer
+            barrier_storage.align(min_align=8) + num_stages,
+            num_stages,
+            consumer,
+            name=name,
+            phase="empty",
         )
+
+        if name:
+            register_barrier(name, num_stages, "PipelineAsync")
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
@@ -223,7 +245,7 @@ class PipelineAsync:
     ) -> None:
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
+            lambda: self.sync_object_empty.wait(
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -248,7 +270,7 @@ class PipelineAsync:
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
+        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)
 
     @dsl_user_op
     def consumer_wait(
@@ -261,7 +283,7 @@ class PipelineAsync:
     ) -> None:
         if_generate(
             try_wait_token is None or try_wait_token == 0,
-            lambda: self.sync_object_full.wait(  # type: ignore[call-arg]
+            lambda: self.sync_object_full.wait(
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
@@ -286,7 +308,7 @@ class PipelineAsync:
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
+        self.sync_object_empty.arrive(state.index, self.consumer_mask, loc=loc, ip=ip)
 
     @dsl_user_op
     def consumer_get_barrier(
@@ -324,11 +346,10 @@ class PipelineAsync:
         :param state: The pipeline state that points to next useful buffer
         :type state: PipelineState
         """
-        # Assume state contains that next useful buffer
-        # So we only need to advance to num_stages - 1 times to last used buffer
-        for i in range(self.num_stages - 1):
+        # wait on all stage buffers since there is no guaranteed ordering of empty barrier arrives
+        for i in range(self.num_stages):
+            self.sync_object_empty.wait(state.index, state.phase, loc=loc, ip=ip)
             state.advance(loc=loc, ip=ip)
-        self.producer_acquire(state, loc=loc, ip=ip)
 
     # Util methods to manage producer and consumer
     @dsl_user_op
@@ -368,7 +389,7 @@ class PipelineAsync:
 @dataclass(frozen=True)
 class PipelineCpAsync(PipelineAsync):
     """
-    PipelineCpAsync is used for CpAsync producers and AsyncThread consumers
+    PipelineCpAsync is used for CpAsync producers and AsyncThread consumers (e.g. Hopper load mainloops).
     """
 
     @staticmethod
@@ -380,6 +401,7 @@ class PipelineCpAsync(PipelineAsync):
         producer_mask: Optional[Int32] = None,
         consumer_mask: Optional[Int32] = None,
         defer_sync: bool = False,
+        name: str = "",
     ) -> "PipelineCpAsync":
         """Helper function that computes necessary attributes and returns a ``PipelineCpAsync`` instance.
 
@@ -408,12 +430,19 @@ class PipelineCpAsync(PipelineAsync):
             barrier_storage.align(min_align=8),
             num_stages,  # type: ignore[arg-type]
             producer,
+            name=name,
+            phase="full",
         )
         sync_object_array_empty = PipelineCpAsync._make_sync_object(
             barrier_storage.align(min_align=8) + num_stages,
             num_stages,  # type: ignore[arg-type]
             consumer,
+            name=name,
+            phase="empty",
         )
+
+        if name:
+            register_barrier(name, int(num_stages), "PipelineCpAsync")
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
@@ -434,7 +463,7 @@ class PipelineTmaAsync(PipelineAsync):
     PipelineTmaAsync is used for TMA producers and AsyncThread consumers (e.g. Hopper mainloops).
     """
 
-    is_signalling_thread: Boolean
+    is_signaling_thread: Boolean
 
     @staticmethod
     @cute.jit
@@ -465,34 +494,36 @@ class PipelineTmaAsync(PipelineAsync):
             cute.arch.block_idx_in_cluster()
         )
 
-        tidx = tidx % 32
-        is_signalling_thread = tidx < cute.size(cluster_shape_vmnk)
+        tidx = tidx % WARP_SIZE
+        is_signaling_thread = tidx < cute.size(cluster_shape_vmnk)
         dst_rank = tidx % cute.size(cluster_shape_vmnk)
 
         dst_cta_coord = cta_layout_vmnk.get_hier_coord(dst_rank)
         cur_cta_coord = cta_layout_vmnk.get_hier_coord(cta_rank_in_cluster)
+        assert isinstance(dst_cta_coord, tuple)
+        assert isinstance(cur_cta_coord, tuple)
 
         is_mcast_mode_m = (
-            dst_cta_coord[0] == cur_cta_coord[0]  # type: ignore[index]
-            and dst_cta_coord[1] == cur_cta_coord[1]  # type: ignore[index]
-            and dst_cta_coord[3] == cur_cta_coord[3]  # type: ignore[index]
+            dst_cta_coord[0] == cur_cta_coord[0]
+            and dst_cta_coord[1] == cur_cta_coord[1]
+            and dst_cta_coord[3] == cur_cta_coord[3]
         )
         is_mcast_mode_n = (
-            dst_cta_coord[0] == cur_cta_coord[0]  # type: ignore[index]
-            and dst_cta_coord[2] == cur_cta_coord[2]  # type: ignore[index]
-            and dst_cta_coord[3] == cur_cta_coord[3]  # type: ignore[index]
+            dst_cta_coord[0] == cur_cta_coord[0]
+            and dst_cta_coord[2] == cur_cta_coord[2]
+            and dst_cta_coord[3] == cur_cta_coord[3]
         )
 
         assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
         if mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 0:
-            is_signalling_thread = is_signalling_thread and is_mcast_mode_m
+            is_signaling_thread = is_signaling_thread and is_mcast_mode_m
         elif mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 1:
-            is_signalling_thread = is_signalling_thread and is_mcast_mode_n
+            is_signaling_thread = is_signaling_thread and is_mcast_mode_n
         elif mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 1:
             is_mcast_mode_m_or_n = is_mcast_mode_m or is_mcast_mode_n
-            is_signalling_thread = is_signalling_thread and is_mcast_mode_m_or_n
+            is_signaling_thread = is_signaling_thread and is_mcast_mode_m_or_n
 
-        return dst_rank, is_signalling_thread
+        return dst_rank, is_signaling_thread
 
     @staticmethod
     def create(  # type: ignore[override]
@@ -505,7 +536,9 @@ class PipelineTmaAsync(PipelineAsync):
         cta_layout_vmnk: Optional[cute.Layout] = None,
         tidx: Optional[Int32] = None,
         mcast_mode_mn: tuple[int, int] = (1, 1),
+        enable_multicast_signaling: bool = False,
         defer_sync: bool = False,
+        name: str = "",
     ) -> "PipelineTmaAsync":
         """Create a new ``PipelineTmaAsync`` instance.
 
@@ -525,6 +558,15 @@ class PipelineTmaAsync(PipelineAsync):
         :type tidx: Int32, optional
         :param mcast_mode_mn: Tuple specifying multicast modes for m and n dimensions (each 0 or 1), defaults to (1,1)
         :type mcast_mode_mn: tuple[int, int], optional
+        :param enable_multicast_signaling: When ``True``, the CooperativeGroup is expected
+            to represent the number of threads in a CTA calling
+            consumer_wait/consumer_release, and the actual arrive count is recomputed
+            internally. Multicast is handled automatically based on cta_layout_vmnk and
+            mcast_mode_mn. Defaults to ``False``, which skips this logic and uses the
+            consumer arrive count specified by the user.
+        :type enable_multicast_signaling: bool, optional
+        :param defer_sync: Bool specifying whether or not to skip the built-in mbarrier fence and sync for performance, defaults to False
+        :type defer_sync: bool, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: New ``PipelineTmaAsync`` instance
         :rtype: PipelineTmaAsync
@@ -534,29 +576,88 @@ class PipelineTmaAsync(PipelineAsync):
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
             )
 
+        if not is_static(cta_layout_vmnk):
+            raise ValueError("The cluster shape (cta_layout_vmnk) needs to be static.")
+
+        if cta_layout_vmnk is None:
+            cta_layout_vmnk = cute.make_layout((1, 1, 1, 1))
+
         producer_type = PipelineOp.TmaLoad
         consumer_type = PipelineOp.AsyncThread
 
-        producer = (producer_type, producer_group)
-        consumer = (consumer_type, consumer_group)
+        # The producer group is not dependent on multicast and is forwarded as-is.
+        thread_producer_group = producer_group
+
+        if enable_multicast_signaling:
+            # In multicast mode, the consumer arrive count is recomputed. Each
+            # consumer warp contributes one signaling thread per multicast partner
+            # CTA to the arrive count, rather than using the thread count directly.
+            consumer_thread_arrive_cnt = _get_thread_arrive_count(consumer_group)
+
+            if (
+                isinstance(consumer_thread_arrive_cnt, int)
+                and consumer_thread_arrive_cnt % WARP_SIZE != 0
+            ):
+                raise ValueError(
+                    "Error: Consumer arrival count must be aligned with warp size"
+                )
+
+            shape_vmnk = cast(tuple[int, ...], cta_layout_vmnk.shape)
+            # mcast_m_size is the number of multicast partners in the m dimension
+            mcast_m_size = shape_vmnk[2] if mcast_mode_mn[0] else 0
+            # mcast_n_size is the number of multicast partners in the n dimension
+            mcast_n_size = shape_vmnk[1] if mcast_mode_mn[1] else 0
+            # Subtracting by 1 is necessary if multicasting in both the m and n
+            # dimensions to avoid double counting the local CTA
+            overlap = 1 if (mcast_mode_mn[0] and mcast_mode_mn[1]) else 0
+            # mcast_size is the total number of multicast partners
+            mcast_size = mcast_m_size + mcast_n_size - overlap
+            assert mcast_size > 0, "Mcast size must be greater than 0."
+
+            num_warps = consumer_thread_arrive_cnt // WARP_SIZE
+            # num_signaling_threads is the total number of arrives expected. One
+            # arrive is expected per consumer warp, per multicast partner.
+            num_signaling_threads = mcast_size * num_warps
+
+            thread_consumer_group = CooperativeGroup(
+                Agent.Thread, num_signaling_threads
+            )
+
+        else:
+            # Non-multicast signaling path
+            thread_consumer_group = consumer_group
+
+        producer = (producer_type, thread_producer_group)
+        consumer = (consumer_type, thread_consumer_group)
 
         sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer, tx_count
+            barrier_storage.align(min_align=8),
+            num_stages,
+            producer,
+            tx_count,
+            name=name,
+            phase="full",
         )
         sync_object_empty = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages, num_stages, consumer
+            barrier_storage.align(min_align=8) + num_stages,
+            num_stages,
+            consumer,
+            name=name,
+            phase="empty",
         )
+
+        if name:
+            register_barrier(name, num_stages, "PipelineTmaAsync")
+
         if tidx is None:
             tidx, _, _ = cute.arch.thread_idx()
-        if cta_layout_vmnk is None:
-            cta_layout_vmnk = cute.make_layout((1, 1, 1, 1))
         (
             dst_rank,
-            is_signalling_thread,
+            is_signaling_thread,
         ) = PipelineTmaAsync.init_empty_barrier_arrive_signal(
             cta_layout_vmnk, tidx, mcast_mode_mn
         )
-        if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
+        if cute.size(cta_layout_vmnk) == 1:
             dst_rank = None
         else:
             dst_rank = dst_rank
@@ -565,7 +666,7 @@ class PipelineTmaAsync(PipelineAsync):
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
-            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk) == 1:
+            if cute.size(cta_layout_vmnk) == 1:
                 agent_sync(Agent.ThreadBlock)
             else:
                 agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
@@ -574,9 +675,9 @@ class PipelineTmaAsync(PipelineAsync):
             sync_object_full,
             sync_object_empty,
             num_stages,
-            producer_mask,
+            producer_mask,  # unused
             dst_rank,
-            is_signalling_thread,
+            is_signaling_thread,
         )
 
     @dsl_user_op
@@ -593,13 +694,13 @@ class PipelineTmaAsync(PipelineAsync):
         """
         if_generate(
             try_acquire_token is None or try_acquire_token == 0,
-            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
+            lambda: self.sync_object_empty.wait(
                 state.index, state.phase, loc=loc, ip=ip
             ),
             loc=loc,
             ip=ip,
         )
-        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
+        self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)
 
     @dsl_user_op
     def producer_commit(
@@ -626,8 +727,8 @@ class PipelineTmaAsync(PipelineAsync):
         TMA consumer release conditionally signals the empty buffer to the producer.
         """
         if_generate(
-            self.is_signalling_thread,
-            lambda: self.sync_object_empty.arrive(  # type: ignore[call-arg]
+            self.is_signaling_thread,
+            lambda: self.sync_object_empty.arrive(
                 state.index, self.consumer_mask, loc=loc, ip=ip
             ),
         )
@@ -669,7 +770,7 @@ class PipelineTmaStore(PipelineAsync):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        self.sync_object_full.wait(loc=loc, ip=ip)  # type: ignore[call-arg]
+        self.sync_object_full.wait(loc=loc, ip=ip)
 
     @dsl_user_op
     def producer_commit(
@@ -678,7 +779,7 @@ class PipelineTmaStore(PipelineAsync):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        self.sync_object_full.arrive(loc=loc, ip=ip)  # type: ignore[call-arg]
+        self.sync_object_full.arrive(loc=loc, ip=ip)
 
     @dsl_user_op
     def consumer_wait(
@@ -757,6 +858,7 @@ class PipelineOrder:
         group_id: int,
         producer_group: CooperativeGroup,
         defer_sync: bool = False,
+        name: str = "",
     ) -> "PipelineOrder":
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
@@ -770,8 +872,14 @@ class PipelineOrder:
         num_stages = depth * length
 
         sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8), num_stages, producer
+            barrier_storage.align(min_align=8),
+            num_stages,
+            producer,
+            name=name,
         )
+
+        if name:
+            register_barrier(name, num_stages, "PipelineOrder")
 
         if not defer_sync:
             cute.arch.mbarrier_init_fence()
@@ -797,15 +905,15 @@ class PipelineOrder:
         return state.index * self.length + group_id
 
     @dsl_user_op
-    def arrive(  # type: ignore[return]
+    def arrive(
         self,
         state: Optional[PipelineState] = None,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Optional[PipelineState]:
         state = self.state if state is None else state
-        signalling_id = (self.group_id + 1) % self.length
-        idx = self.get_barrier_for_current_stage_idx(signalling_id, state)
+        signaling_id = (self.group_id + 1) % self.length
+        idx = self.get_barrier_for_current_stage_idx(signaling_id, state)
         cute.arch.mbarrier_arrive(
             self.sync_object_full.get_barrier(idx, loc=loc, ip=ip),  # type: ignore[call-arg]
             loc=loc,
@@ -814,6 +922,7 @@ class PipelineOrder:
         state.advance(loc=loc, ip=ip)
         if state is not self.state:
             return state
+        return None
 
     @dsl_user_op
     def wait(
@@ -862,7 +971,7 @@ class ImmutableResourceHandle:
         """Get the original pipeline this resource handle belongs to."""
         return self.__origin
 
-    def __extract_mlir_values__(self) -> list:
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         """Extract MLIR values from the current state.
 
         :return: List of MLIR values representing the current state
@@ -871,7 +980,9 @@ class ImmutableResourceHandle:
         # TODO: need to handle pipeline as well
         return self.__immutable_state.__extract_mlir_values__()
 
-    def __new_from_mlir_values__(self, values: "list") -> "ImmutableResourceHandle":
+    def __new_from_mlir_values__(
+        self, values: list[ir.Value]
+    ) -> "ImmutableResourceHandle":
         """Create a new Producer instance from MLIR values.
 
         :param values: MLIR values to initialize the state
@@ -956,7 +1067,7 @@ class PipelineProducer:
 
     def __init__(
         self, pipeline: PipelineAsync, state: PipelineState, group: CooperativeGroup
-    ):
+    ) -> None:
         """Initialize a new Producer instance.
 
         :param pipeline: The pipeline this producer belongs to
@@ -1201,7 +1312,7 @@ class PipelineConsumer:
 
     def __init__(
         self, pipeline: PipelineAsync, state: PipelineState, group: CooperativeGroup
-    ):
+    ) -> None:
         """Initialize a new Consumer instance.
 
         :param pipeline: The pipeline this consumer belongs to

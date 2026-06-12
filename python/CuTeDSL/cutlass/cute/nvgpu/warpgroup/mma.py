@@ -18,9 +18,9 @@ from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL, T, DSLRuntimeError
 from typing_extensions import deprecated
 
+from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
-from cutlass._mlir import ir
 
 from ..common import OpError, normalize_field_to_ir_name
 from ..common import OperandMajorMode as _OperandMajorMode
@@ -37,6 +37,7 @@ from ...typing import (
     Int32,
     Int8,
     Uint8,
+    Integer,
     Numeric,
     AddressSpace,
 )
@@ -193,6 +194,7 @@ class MmaOp(WarpGroupMmaOp):
             object.__setattr__(
                 self, "b_major_mode", _OperandMajorMode(self.b_major_mode.value)
             )
+
         # Verify instruction shape
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
         if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
@@ -274,26 +276,18 @@ class MmaTraits(Trait):
     def set(
         self,
         field: Any,
-        value: Any,
+        field_value: Any,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         field_ir_name = self._normalize_field_name(field)
-        # Prefer the newer builder that accepts a logical field name, but keep
-        # a fallback for legacy attribute-based construction to avoid breaking changes.
-        bool_val = Boolean(value).ir_value(loc=loc, ip=ip)
-        try:
-            self.value = _cute_nvgpu_ir.atom_set_value(
-                self.value, field_ir_name, bool_val, loc=loc, ip=ip
-            )
-        except (TypeError, AttributeError):
-            # Legacy path: construct the per-arch field attribute explicitly
-            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
-            attr = ir.Attribute.parse(attr_asm)
-            self.value = _cute_nvgpu_ir.atom_set_value(
-                self.value, attr, bool_val, loc=loc, ip=ip
-            )
+        bool_val = Boolean(field_value).ir_value(loc=loc, ip=ip)
+        trait_ir_val = self.value
+        attr = _cute_nvgpu_ir.resolve_atom_field_attr(trait_ir_val, field_ir_name)
+        self.value = _cute_nvgpu_ir.atom_set_value(
+            trait_ir_val, attr, bool_val, loc=loc, ip=ip
+        )
 
     def get(
         self,
@@ -303,16 +297,11 @@ class MmaTraits(Trait):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Any:
         field_ir_name = self._normalize_field_name(field)
-        try:
-            return _cute_nvgpu_ir.atom_get_value(
-                Boolean.mlir_type, self.value, field_ir_name, loc=loc, ip=ip
-            )
-        except (TypeError, AttributeError):
-            attr_asm = f"#cute_nvgpu.atom_mma_field_sm90<{field_ir_name}>"
-            attr = ir.Attribute.parse(attr_asm)
-            return _cute_nvgpu_ir.atom_get_value(
-                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
-            )
+        trait_ir_val = self.value
+        attr = _cute_nvgpu_ir.resolve_atom_field_attr(trait_ir_val, field_ir_name)
+        return _cute_nvgpu_ir.atom_get_value(
+            Boolean.mlir_type, trait_ir_val, attr, loc=loc, ip=ip
+        )
 
 
 @dataclass(frozen=True)
@@ -322,6 +311,44 @@ class MmaF16BF16Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma>`__.
     This Operation covers the instructions using the ``.f16`` or ``.bf16`` qualifiers for the input operands.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+-------+
+    | A Data Type | B Data Type | Acc Type | Mma-K |
+    +=============+=============+==========+=======+
+    | F16         | F16         | F16, F32 | 16    |
+    +-------------+-------------+----------+-------+
+    | BF16        | BF16        | F32      | 16    |
+    +-------------+-------------+----------+-------+
+
+    **Supported architectures:** sm_90a
+
+    **Constraints:**
+
+    * Mma-M = 64
+    * 8 <= Mma-N <= 256, step 8
+    * A and B support both K-major and MN-major (transpose) when A is in shared memory (descriptor).
+      When A is in registers, only B can be transposed.
+
+    **Execution Model:**
+
+    * WGMMA is asynchronous and collective at warpgroup scope (4 contiguous warps).
+      In user code, ``cute.gemm(...)`` should be issued warpgroup-uniformly.
+    * Before issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.fence()`` to order
+      prior register writes to accumulator/A fragments with subsequent WGMMA reads.
+    * After issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.commit_group()``.
+      Use ``cute.nvgpu.warpgroup.wait_group(N)`` before consuming or reusing accumulator
+      values from pending WGMMA groups.
+
+    .. code-block:: python
+
+        cute.nvgpu.warpgroup.fence()
+        cute.gemm(tiled_mma, acc, tCrA[tile_crd], tCrB[tile_crd], acc)
+        cute.nvgpu.warpgroup.commit_group()
+        cute.nvgpu.warpgroup.wait_group(1)
+        # ... pipeline continues ...
+        cute.nvgpu.warpgroup.wait_group(0)
     """
 
     descriptive_name = "warpgroup F16/BF16 MMA Operation"
@@ -411,6 +438,42 @@ class MmaF8Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma>`__.
     This Operation covers the instructions using the ``.e4m3`` or ``.e5m2`` qualifiers for the input operands.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+-------+
+    | A Data Type | B Data Type | Acc Type | Mma-K |
+    +=============+=============+==========+=======+
+    | E4M3, E5M2  | E4M3, E5M2  | F16, F32 | 32    |
+    +-------------+-------------+----------+-------+
+
+    **Supported architectures:** sm_90a
+
+    **Constraints:**
+
+    * Mma-M = 64
+    * 8 <= Mma-N <= 256, step 8
+    * A and B data types are independent (mixed FP8 allowed)
+    * Transpose (MN-major) is not supported for A or B. Both operands must be K-major.
+
+    **Execution Model:**
+
+    * WGMMA is asynchronous and collective at warpgroup scope (4 contiguous warps).
+      In user code, ``cute.gemm(...)`` should be issued warpgroup-uniformly.
+    * Before issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.fence()`` to order
+      prior register writes to accumulator/A fragments with subsequent WGMMA reads.
+    * After issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.commit_group()``.
+      Use ``cute.nvgpu.warpgroup.wait_group(N)`` before consuming or reusing accumulator
+      values from pending WGMMA groups.
+
+    .. code-block:: python
+
+        cute.nvgpu.warpgroup.fence()
+        cute.gemm(tiled_mma, acc, tCrA[tile_crd], tCrB[tile_crd], acc)
+        cute.nvgpu.warpgroup.commit_group()
+        cute.nvgpu.warpgroup.wait_group(1)
+        # ... pipeline continues ...
+        cute.nvgpu.warpgroup.wait_group(0)
     """
 
     descriptive_name = "warpgroup F8 MMA Operation"
@@ -500,6 +563,42 @@ class MmaI8Op(MmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma>`__.
     This Operation covers the instructions using the ``.s8`` or ``.u8`` qualifiers for the input operands.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+-------+
+    | A Data Type | B Data Type | Acc Type | Mma-K |
+    +=============+=============+==========+=======+
+    | Int8, Uint8 | Int8, Uint8 | Int32    | 32    |
+    +-------------+-------------+----------+-------+
+
+    **Supported architectures:** sm_90a
+
+    **Constraints:**
+
+    * Mma-M = 64
+    * Mma-N in {8, 24} or Mma-N % 16 == 0, with 8 <= Mma-N <= 256
+    * A and B signedness are independent (mixed signed/unsigned allowed)
+    * Transpose (MN-major) is not supported for A or B. Both operands must be K-major.
+
+    **Execution Model:**
+
+    * WGMMA is asynchronous and collective at warpgroup scope (4 contiguous warps).
+      In user code, ``cute.gemm(...)`` should be issued warpgroup-uniformly.
+    * Before issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.fence()`` to order
+      prior register writes to accumulator/A fragments with subsequent WGMMA reads.
+    * After issuing ``cute.gemm(...)``, call ``cute.nvgpu.warpgroup.commit_group()``.
+      Use ``cute.nvgpu.warpgroup.wait_group(N)`` before consuming or reusing accumulator
+      values from pending WGMMA groups.
+
+    .. code-block:: python
+
+        cute.nvgpu.warpgroup.fence()
+        cute.gemm(tiled_mma, acc, tCrA[tile_crd], tCrB[tile_crd], acc)
+        cute.nvgpu.warpgroup.commit_group()
+        cute.nvgpu.warpgroup.wait_group(1)
+        # ... pipeline continues ...
+        cute.nvgpu.warpgroup.wait_group(0)
     """
 
     descriptive_name = "warpgroup I8 MMA Operation"
@@ -573,12 +672,14 @@ class MmaI8Op(MmaOp):
         **kwargs: Any,
     ) -> "MmaI8Trait":
         shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        # MmaI8 only operates on integer dtypes.
+        assert issubclass(self.a_dtype, Integer) and issubclass(self.b_dtype, Integer)
         ty = _cute_nvgpu_ir.MmaAtomSM90Type.get(
             shape_mnk.type.attribute,
             self.a_major_mode._to_ir(),
             self.b_major_mode._to_ir(),
-            (T.si8() if self.a_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
-            (T.si8() if self.b_dtype.signed else T.ui8()),  # type: ignore[attr-defined]
+            (T.si8() if self.a_dtype.signed else T.ui8()),
+            (T.si8() if self.b_dtype.signed else T.ui8()),
             self.acc_dtype.mlir_type,
             self.a_src._to_ir(),
         )

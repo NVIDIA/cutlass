@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Optional, Protocol, TypeAlias
+from typing import Optional, Protocol, Sequence, TypeAlias, Union
 
 from cutlass.cutlass_dsl import dsl_user_op
 from cutlass._mlir.dialects import lir as cutlass_lir_ir, nvvm as _nvvm
@@ -17,7 +17,8 @@ from cutlass._mlir import ir
 from cutlass.cutlass_dsl import lru_cache_ir
 from cutlass._mlir.dialects.core import OperationTypeEnum
 from cutlass import cute
-from cutlass.cute.typing import Boolean
+from cutlass.cute.core import _pack_coord
+from cutlass.cute.typing import Boolean, Coord, Tensor
 
 
 class _SupportsIrValue(Protocol):
@@ -30,6 +31,25 @@ class _SupportsIrValue(Protocol):
 
 
 SkipWaitToken: TypeAlias = bool | ir.Value | _SupportsIrValue
+
+# A producer/consumer role may be a single operation type or a non-empty
+# sequence of them, for pipelines where a single stage is written (or read)
+# by multiple operation kinds. Order within a sequence is not significant
+# and duplicates are rejected.
+OperationTypeSpec: TypeAlias = Union[OperationTypeEnum, Sequence[OperationTypeEnum]]
+
+
+def _format_operation_types(spec: OperationTypeSpec) -> str:
+    """Render a single op type or a set of them for a `!lir.pipeline<...>`
+    type string."""
+    if isinstance(spec, OperationTypeEnum):
+        return str(spec)
+    items = list(spec)
+    if not items:
+        raise ValueError("operation type set must be non-empty")
+    if len(items) == 1:
+        return str(items[0])
+    return "[" + ", ".join(str(t) for t in items) + "]"
 
 
 @dsl_user_op
@@ -49,6 +69,30 @@ def get_mbarrier(
     Returns the mbarrier pointer for a given stage token.
     """
     return cutlass_lir_ir.GetMbarrierOp(stage_token, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def domain_offset(
+    coord: Coord,
+    tensor: Tensor,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Shift a tensor's logical domain while preserving its descriptor fields.
+
+    This is the IR-preserving counterpart to ``cute.domain_offset``. It keeps
+    the source-level domain-offset semantics explicit until the IR partitioning
+    passes can apply the offset to generated coordinate tensors.
+    """
+    coord_value = _pack_coord(coord, loc=loc, ip=ip)
+    op = cutlass_lir_ir.DomainOffsetOp(
+        tensor.value,
+        coord_value,
+        results=[tensor.value.type],
+        loc=loc,
+        ip=ip,
+    )
+    return op.result
 
 
 @ir.register_value_caster(cutlass_lir_ir.PipelineStateType.get_static_typeid())
@@ -115,9 +159,9 @@ def _normalize_create_pipeline_arrival_mask(
 
 
 def _build_pipeline(
-    stage: cute.Int32,
-    producer: OperationTypeEnum,
-    consumer: OperationTypeEnum,
+    stage: int,
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: Optional[cute.Int16],
@@ -129,10 +173,13 @@ def _build_pipeline(
     if isinstance(consumer_arv_count, int):
         consumer_arv_count = cute.Int32(consumer_arv_count)
 
+    producer_str = _format_operation_types(producer)
+    consumer_str = _format_operation_types(consumer)
+    pipeline_type_str = f"!lir.pipeline<{stage}, {producer_str} -> {consumer_str}>"
     if arrival_mask is not None:
         if isinstance(arrival_mask, int):
             arrival_mask = cute.Int16(arrival_mask)
-        result = ir.Type.parse(f"!lir.pipeline<{stage}, {producer} -> {consumer}>")
+        result = ir.Type.parse(pipeline_type_str)
         op = cutlass_lir_ir.CreatePipelineWithMaskOp(
             result,
             producer_arv_count.ir_value(),
@@ -142,7 +189,7 @@ def _build_pipeline(
             ip=ip,
         )
     else:
-        result = ir.Type.parse(f"!lir.pipeline<{stage}, {producer} -> {consumer}>")
+        result = ir.Type.parse(pipeline_type_str)
         op = cutlass_lir_ir.CreatePipelineOp(
             result,
             producer_arv_count.ir_value(),
@@ -165,9 +212,9 @@ def _build_pipeline(
 
 @dsl_user_op
 def create_pipeline(
-    stage: cute.Int32,
-    producer: OperationTypeEnum,
-    consumer: OperationTypeEnum,
+    stage: int,
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: Optional[cute.Int16] = None,
@@ -181,8 +228,10 @@ def create_pipeline(
 
     Args:
         stage: Number of pipeline stages.
-        producer: Producer operation type.
-        consumer: Consumer operation type.
+        producer: Producer operation type, or a non-empty sequence of them
+            for a multi-producer pipeline (e.g. ``[store to smem, SM100_COPY_R2T]``).
+        consumer: Consumer operation type, or a non-empty sequence of them
+            for a multi-consumer pipeline.
         producer_arv_count: Number of producer arrivals.
         consumer_arv_count: Number of consumer arrivals.
         arrival_mask: Optional arrival mask for multi-CTA synchronization
@@ -204,9 +253,9 @@ def create_pipeline(
 
 @dsl_user_op
 def create_pipeline_with_mask(
-    stage: cute.Int32,
-    producer: OperationTypeEnum,
-    consumer: OperationTypeEnum,
+    stage: int,
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: cute.Int16,
@@ -241,6 +290,38 @@ def pipeline_advance_iterator(
 
 
 @dsl_user_op
+def create_pipeline_state_at(
+    pipe: ir.Value,
+    stage: int,
+    stage_index: cute.Int32,
+    phase: cute.Int32,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> PipelineState:
+    """
+    Materializes a pipeline state for an explicit stage index and phase.
+
+    This is useful for retry agents that sweep stages out of iterator order.
+    The operation only packages state; it does not synchronize.
+    """
+    if isinstance(stage_index, int):
+        stage_index = cute.Int32(stage_index)
+    if isinstance(phase, int):
+        phase = cute.Int32(phase)
+
+    result = ir.Type.parse(f"!lir.pipeline_state<{stage}>")
+    op = cutlass_lir_ir.CreatePipelineStateAtOp(
+        result,
+        pipe,
+        stage_index.ir_value(),
+        phase.ir_value(),
+        loc=loc,
+        ip=ip,
+    )
+    return op.result
+
+
+@dsl_user_op
 def producer_acquire(
     pipe: ir.Value,
     state: ir.Value,
@@ -258,13 +339,23 @@ def producer_acquire(
 def producer_commit(
     pipe: ir.Value,
     state: ir.Value,
+    *,
+    elect_one_sync: Optional[bool] = None,
+    elect_leader_cta: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
     """
     Commits results to a pipeline.
     """
-    op = cutlass_lir_ir.ProducerCommitOp(pipe, state, loc=loc, ip=ip)
+    op = cutlass_lir_ir.ProducerCommitOp(
+        pipe,
+        state,
+        elect_one_sync=elect_one_sync,
+        elect_leader_cta=elect_leader_cta,
+        loc=loc,
+        ip=ip,
+    )
     return op.result
 
 
@@ -286,13 +377,23 @@ def consumer_wait(
 def consumer_release(
     pipe: ir.Value,
     state: ir.Value,
+    *,
+    elect_one_sync: Optional[bool] = None,
+    elect_leader_cta: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
     """
     Releases a pipeline that has been consumed.
     """
-    op = cutlass_lir_ir.ConsumerReleaseOp(pipe, state, loc=loc, ip=ip)
+    op = cutlass_lir_ir.ConsumerReleaseOp(
+        pipe,
+        state,
+        elect_one_sync=elect_one_sync,
+        elect_leader_cta=elect_leader_cta,
+        loc=loc,
+        ip=ip,
+    )
     return op.result
 
 
@@ -312,6 +413,21 @@ def consumer_release_elect_one_sync(
     return op.result
 
 
+
+@dsl_user_op
+def pipeline_tail(
+    pipe: ir.Value,
+    state: ir.Value,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """
+    Drains outstanding asynchronous pipeline work associated with the state.
+    """
+    op = cutlass_lir_ir.PipelineTailOp(pipe, state, loc=loc, ip=ip)
+    return op.result
+
+
 @dsl_user_op
 def consumer_tail(
     pipe: ir.Value,
@@ -320,9 +436,9 @@ def consumer_tail(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
     """
-    Called by the consumer to block until asynchronous tasks have completed.
+    Legacy alias for `pipeline_tail()`.
     """
-    op = cutlass_lir_ir.ConsumerTailOp(pipe, state, loc=loc, ip=ip)
+    op = cutlass_lir_ir.PipelineTailOp(pipe, state, loc=loc, ip=ip)
     return op.result
 
 
@@ -443,26 +559,25 @@ def create_circular_buffer_pipeline(
 def circular_buffer_pipeline_consume(
     pipeline: ir.Value,
     circular_buffer_pipeline_state: CircularBufferPipelineState,
+    *,
+    elect_leader_cta: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Synchronize pipeline stages needed for circular buffer consumption.
 
-    This operation performs synchronization for the circular buffer consumer.
-    Based on the current circular buffer position and `count_per_iteration`, it
-    determines which pipeline stages need to be synchronized and waits for them
-    to transition to full before consumption can proceed.
-
     Args:
         pipeline: The underlying pipeline object
         circular_buffer_pipeline_state: Current circular buffer pipeline state
+        elect_leader_cta: When set, only the leader CTA performs the wait
         loc: Source location
         ip: Insertion point
     """
     cutlass_lir_ir.CircularBufferPipelineConsumeOp(
         pipeline,
         circular_buffer_pipeline_state,
+        elect_leader_cta=elect_leader_cta,
         loc=loc,
         ip=ip,
     )
@@ -472,26 +587,28 @@ def circular_buffer_pipeline_consume(
 def circular_buffer_pipeline_consumer_release(
     pipeline: ir.Value,
     circular_buffer_pipeline_state: CircularBufferPipelineState,
+    *,
+    elect_one_sync: Optional[bool] = None,
+    elect_leader_cta: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Release pipeline stages after circular buffer consumption.
 
-    This operation releases pipeline stages after circular buffer consumption.
-    Based on the current circular buffer position and `count_per_iteration`, it
-    determines which pipeline stages have been fully consumed and transitions them
-    to empty.
-
     Args:
         pipeline: The underlying pipeline object
         circular_buffer_pipeline_state: Current circular buffer pipeline state
+        elect_one_sync: When set, only a single thread performs the release
+        elect_leader_cta: When set, only the leader CTA performs the release
         loc: Source location
         ip: Insertion point
     """
     cutlass_lir_ir.CircularBufferPipelineConsumerReleaseOp(
         pipeline,
         circular_buffer_pipeline_state,
+        elect_one_sync=elect_one_sync,
+        elect_leader_cta=elect_leader_cta,
         loc=loc,
         ip=ip,
     )

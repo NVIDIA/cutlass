@@ -17,6 +17,7 @@ for example, it can handle various dialect-specific tasks.
 """
 
 # Standard library imports
+import dataclasses
 from dataclasses import dataclass, field
 import atexit
 import os
@@ -27,12 +28,22 @@ import re
 import inspect
 import argparse
 import hashlib
+from contextlib import contextmanager
 from functools import lru_cache, wraps
 from collections import namedtuple, OrderedDict
 from abc import ABC, abstractmethod
-from typing import Annotated, Any, ClassVar, TYPE_CHECKING, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Generator,
+    TYPE_CHECKING,
+    Union,
+    get_origin,
+    get_args,
+)
 from collections.abc import Callable
-from types import SimpleNamespace
+from types import SimpleNamespace, UnionType
 
 if TYPE_CHECKING:
     import hashlib
@@ -55,6 +66,7 @@ from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
 from .utils.timer import timer
 from .utils.logger import log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
+from .utils.tree_utils import is_namedtuple_instance
 from .runtime.jit_arg_adapters import (
     is_argument_constexpr,
     is_arg_annotation_constexpr,
@@ -64,13 +76,14 @@ from .runtime.jit_arg_adapters import (
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
 from .typing import (
+    Constexpr,
     get_c_pointers,
     get_mlir_types,
     Integer,
     implements_dynamic_expression,
     implements_jit_argument,
 )
-from ._mlir_helpers.op import _set_enable_frame_filtering
+from .._mlir_helpers.op import _set_enable_frame_filtering
 
 # =============================================================================
 # MLIR modules
@@ -421,6 +434,36 @@ def extract_mlir_attributes(obj: object) -> list[Any]:
         res = []
         for k, v in obj.__dict__.items():
             res.extend(extract_mlir_attributes(v))
+    elif dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        # Recurse into dataclass fields so per-field arg attrs (e.g.
+        # `cute_nvgpu.grid_constant` carried by a TMA atom) survive when the
+        # field is wrapped in a dataclass that customises
+        # `__extract_mlir_values__` but not `__extract_mlir_attributes__`.
+        # Without this the fallback below returns empty DictAttrs and the
+        # downstream `cute_nvgpu.atom.make_exec_tma` lowering can't trace
+        # back to the byval load, failing legalization.
+        res = []
+        for f in dataclasses.fields(obj):
+            v = getattr(obj, f.name)
+            # Skip static-value fields that don't contribute kernel args:
+            # - None (optional/unset)
+            # - class objects (e.g. a `dtype = Float32` field whose value is a
+            #   Numeric subclass; `isinstance(v, type)` catches classes with any
+            #   metaclass, including cutlass `NumericMeta`)
+            # - exact-type primitives (int/float/bool/str); use `type(v) in (...)`
+            #   so that subclass instances carrying their own DSL hooks (e.g.
+            #   `numpy.float64`) still get recursed into
+            if (
+                v is None
+                or isinstance(v, type)
+                or type(v) in (int, float, bool, str)
+            ):
+                continue
+            ftype = f.type
+            origin = get_origin(ftype) if not isinstance(ftype, str) else None
+            if ftype is Constexpr or origin is Constexpr:
+                continue
+            res.extend(extract_mlir_attributes(v))
     # Can't call is_dynamic_expression as _is_dynamic_expression depends on extract_mlir_values
     elif isinstance(obj, set):
         raise DSLRuntimeError(
@@ -473,10 +516,9 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
             res = [
                 new_from_mlir_values(x, v, structured=True) for x, v in zip(obj, values)
             ]
-            obj_ty = type(obj)
-            if hasattr(obj_ty, '_make'):
-                return obj_ty._make(res)
-            return obj_ty(res)
+            if is_namedtuple_instance(obj):
+                return type(obj)(*res)
+            return type(obj)(res)
         elif isinstance(obj, SimpleNamespace):
             ns = SimpleNamespace()
             for k, v in obj.__dict__.items():
@@ -497,8 +539,8 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
                 res.append(new_from_mlir_values(x, values[:n_items]))
                 values = values[n_items:]
             obj_ty = type(obj)
-            if hasattr(obj_ty, '_make'):
-                return obj_ty._make(res)
+            if is_namedtuple_instance(obj):
+                return obj_ty(*res)
             return obj_ty(res)
         elif isinstance(obj, SimpleNamespace):
             ns = SimpleNamespace()
@@ -586,6 +628,7 @@ class DSLLocation:
         lineno (int): Line number in the source file.
         col_offset (int): Column offset in the source line.
         function_name (str): Name of the function in which the location occurs.
+        caller_locs (tuple): Optional tuple of (filename, lineno) pairs for callsite chain.
 
     This is used primarily to annotate or trace locations in generated MLIR IR
     back to the original Python code for better diagnostic and debugging.
@@ -595,11 +638,13 @@ class DSLLocation:
     lineno: int
     col_offset: int
     function_name: str
+    caller_locs: tuple = ()
 
 
 class BaseDSL(metaclass=DSLSingletonMeta):
     gpu_module: Any = None
     _env_class: type[EnvironmentVarManager] = EnvironmentVarManager
+    _is_experimental_dsl: bool = False
 
     def __init__(
         self,
@@ -672,7 +717,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.compile_options: CompileOptions = CompileOptions()
 
         if preprocess:
-            self.preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
+            preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
+            self.package_name = dsl_package_name
+            self.preprocessor: DSLPreprocessor = preprocessor
 
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
@@ -746,19 +793,18 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         # Ensure the DSL instance is materialized before touching _dsl_object
         BaseDSL._lazy_initialize_dsl(func)
-
         # Update the decorator location to the new function
         func._dsl_object.decorator_location = func._decorator_location
 
         if getattr(func, "_preprocessed", False) is True:
-            # already preprocessed, skip
-            return
-
+                return
         if not func._dsl_object.enable_preprocessor:
             func._preprocessed = True
             return
 
-        fcn_ptr = func._dsl_object.run_preprocessor(func)
+        fcn_ptr = func._dsl_object.run_preprocessor(
+            func,
+        )
         if fcn_ptr:
             func.__code__ = (
                 fcn_ptr.__code__
@@ -781,11 +827,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         def jit_runner_decorator(func: Any) -> Any:
             # Run preprocessor that alters AST
+            preprocess_enabled = BaseDSL._can_preprocess(**dkwargs)
             func._dsl_cls = cls
             func._decorator_location = BaseDSL.get_location_from_frame(frame)
-            if not hasattr(func, "_preprocessed") and not BaseDSL._can_preprocess(
-                **dkwargs
-            ):
+            if not hasattr(func, "_preprocessed") and not preprocess_enabled:
                 func._preprocessed = True
 
             @wraps(func)
@@ -819,7 +864,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         Decorator to mark a function for JIT compilation for Host code.
         """
-        frame = inspect.currentframe().f_back  # type: ignore[union-attr]
+        cur_frame = inspect.currentframe()
+        assert cur_frame is not None
+        frame = cur_frame.f_back
         return BaseDSL.jit_runner(cls, "_func", frame, *dargs, **dkwargs)
 
     @classmethod
@@ -827,7 +874,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         Decorator to mark a function for JIT compilation for GPU.
         """
-        frame = inspect.currentframe().f_back  # type: ignore[union-attr]
+        cur_frame = inspect.currentframe()
+        assert cur_frame is not None
+        frame = cur_frame.f_back
         return BaseDSL.jit_runner(cls, "_kernel_helper", frame, *dargs, **dkwargs)
 
     @abstractmethod
@@ -836,6 +885,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Helper function to handle kernel generation logic
         """
         pass
+
+    @abstractmethod
+    def _enter_gpu_module(self) -> ir.InsertionPoint:
+        """
+        Return an InsertionPoint into the GPU module body. Implemented by subclasses.
+        """
+        ...
 
     @abstractmethod
     def _build_gpu_module(self, attrs: dict[str, Any], loc: Any = None) -> None:
@@ -955,10 +1011,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             arg_spec = parameter.annotation
             log().debug("Processing [%d] Argument [%s : %s]", idx, arg_name, arg_spec)
 
-            # Implicit cast to NumericMeta
-            if isinstance(arg_spec, t.NumericMeta) and not isinstance(arg, arg_spec):
-                arg = t.cast(arg, arg_spec)  # type: ignore[arg-type]
-
             ir_arg, iv_block_args = self._generate_execution_arguments_for_known_types(
                 arg, arg_spec, arg_name, idx, fop_args, iv_block_args
             )
@@ -969,10 +1021,23 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 adapter = JitArgAdapterRegistry.get_registered_adapter(arg)
                 arg = adapter(arg) if adapter else arg
 
-                n_args = len(get_mlir_types(arg))
-                blk_args = fop_args[iv_block_args : iv_block_args + n_args]
-                ir_arg = new_from_mlir_values(arg, blk_args)
-                iv_block_args += n_args
+                if isinstance(arg_spec, t.NumericMeta) and not isinstance(
+                    arg, arg_spec
+                ):
+                    # Non-constexpr Numeric type coercion: the function's block arg
+                    # already has the target MLIR type (set by generate_kernel_operands_
+                    # and_types). Wrap it directly with the spec type instead of casting
+                    # the caller's value. This avoids emitting arith.trunci/extsi ops
+                    # that reference SSA values from an outer region, which would
+                    # violate IsolatedFromAbove on kernel functions.
+                    blk_args = fop_args[iv_block_args : iv_block_args + 1]
+                    ir_arg = arg_spec(blk_args[0])
+                    iv_block_args += 1
+                else:
+                    n_args = len(get_mlir_types(arg))
+                    blk_args = fop_args[iv_block_args : iv_block_args + n_args]
+                    ir_arg = new_from_mlir_values(arg, blk_args)
+                    iv_block_args += n_args
             else:
                 ir_arg = ir_arg[0]
 
@@ -993,8 +1058,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             ir_kwargs[name] = ir_arg
 
-        log().debug("execution args: %s", ", ".join(map(str, ir_args)))
-        log().debug("execution kwargs: %s", ", ".join(map(str, ir_kwargs)))
         return ir_args, ir_kwargs
 
     @abstractmethod
@@ -1125,15 +1188,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         for i, (arg_name, arg) in enumerate(zip(input_arg_names, input_args)):
             spec_ty = sig.parameters[arg_name].annotation
 
-            # Unwrap Annotated[T, marker1, ...] → base type T + markers.
-            annotation_markers = ()
-            if (
-                spec_ty is not inspect.Parameter.empty
-                and get_origin(spec_ty) is Annotated
-            ):
-                type_args = get_args(spec_ty)
-                spec_ty = type_args[0]
-                annotation_markers = type_args[1:]
+            # Retrieve markers from the annotated type that matches the arg
+            candidate_sub_types = (
+                get_args(spec_ty)
+                if get_origin(spec_ty) is Union or isinstance(spec_ty, UnionType)
+                else (spec_ty,)
+            )
+            annotation_markers = []
+            for sub_ty in candidate_sub_types:
+                ty, *markers = (
+                    get_args(sub_ty) if get_origin(sub_ty) is Annotated else (sub_ty,)
+                )
+                if markers and isinstance(ty, type) and isinstance(arg, ty):
+                    annotation_markers = markers
+                    break
 
             log().debug("Processing [%d] Argument [%s : %s]", i, arg_name, spec_ty)
 
@@ -1159,6 +1227,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
 
             if jit_arg_type is not None and len(jit_arg_type) == 0:
+                assert jit_exec_arg is not None and jit_arg_attr is not None
                 # If not any known type, try JIT argument adapter
                 # to convert the argument
                 adapter = JitArgAdapterRegistry.get_registered_adapter(arg)
@@ -1168,16 +1237,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
                 if is_host:
                     if self.envar.enable_tvm_ffi:
-                        jit_exec_arg.extend([arg])  # type: ignore[union-attr]
+                        jit_exec_arg.extend([arg])
                     else:
-                        jit_exec_arg.extend(get_c_pointers(arg))  # type: ignore[union-attr]
+                        jit_exec_arg.extend(get_c_pointers(arg))
                     jit_arg_type.extend(get_mlir_types(arg))
-                    jit_arg_attr.extend([default_attr] * len(get_mlir_types(arg)))  # type: ignore[union-attr]
+                    jit_arg_attr.extend([default_attr] * len(get_mlir_types(arg)))
                 else:
                     dyn_vals = extract_mlir_values(arg)
-                    jit_exec_arg.extend(dyn_vals)  # type: ignore[union-attr]
+                    jit_exec_arg.extend(dyn_vals)
                     jit_arg_type.extend([v.type for v in dyn_vals])
-                    jit_arg_attr.extend(extract_mlir_attributes(arg))  # type: ignore[union-attr]
+                    jit_arg_attr.extend(extract_mlir_attributes(arg))
 
                 if not jit_arg_type or not jit_exec_arg:
                     # when it is compile only, we don't have to prepare the executable arguments.
@@ -1201,9 +1270,25 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         )
 
             if jit_arg_type is not None:
-                jit_exec_args.extend(jit_exec_arg)  # type: ignore[arg-type]
+                assert jit_exec_arg is not None and jit_arg_attr is not None
+                # Merge attributes from annotated markers (e.g. grid_constant)
+                # into every element of jit_arg_attr for this argument.
+                if annotation_markers and jit_arg_attr:
+                    extra = {
+                        na.name: na.attr
+                        for marker in annotation_markers
+                        for attr_dict in extract_mlir_attributes(marker)
+                        for na in attr_dict
+                    }
+                    if extra:
+                        jit_arg_attr = [
+                            ir.DictAttr.get({na.name: na.attr for na in d} | extra)
+                            for d in jit_arg_attr
+                        ]
+
+                jit_exec_args.extend(jit_exec_arg)
                 jit_arg_types.extend(jit_arg_type)
-                jit_arg_attrs.extend(jit_arg_attr)  # type: ignore[arg-type]
+                jit_arg_attrs.extend(jit_arg_attr)
 
         return jit_exec_args, jit_arg_types, jit_arg_attrs, jit_adapted_args
 
@@ -1250,8 +1335,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         has_fallback_cluster: bool = False
         min_blocks_per_mp: int = 0
         use_pdl: bool = False
-        auto_smem: bool = False
         cooperative: bool = False
+        launch_completion_event: Any | None = None
+        launch_completion_event_flags: int | None = None
+        programmatic_event: Any | None = None
+        programmatic_event_flags: int | None = None
+        programmatic_event_trigger_at_block_start: int | None = None
+
+        smem_merge_branch_allocs: bool = False
+        preferred_smem_carveout: int | None = None
 
         @staticmethod
         def _check_and_canonicalize_dim(dim: Any, name: str) -> list[Any]:
@@ -1274,10 +1366,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         def __post_init__(self) -> None:
             self.grid = self._check_and_canonicalize_dim(self.grid, "grid")
             self.block = self._check_and_canonicalize_dim(self.block, "block")
-
-            if self.smem is None:
-                self.smem = 0
-                self.auto_smem = True
 
             self.has_cluster = self.cluster is not None
             if self.cluster is None:
@@ -1333,10 +1421,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     @staticmethod
     def get_location_from_frame(frame: Any) -> DSLLocation:
         return DSLLocation(
-            filename=inspect.getsourcefile(frame),  # type: ignore[arg-type]
+            filename=inspect.getsourcefile(frame) or "<unknown>",
             lineno=frame.f_lineno,
             col_offset=0,
             function_name=frame.f_code.co_name,
+            caller_locs=(),
         )
 
     def get_ir_location(self, location: DSLLocation | None = None) -> Any:
@@ -1359,6 +1448,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             (location.function_name),
             childLoc=file_loc,
         )
+
+        if location.caller_locs:
+            caller_ir_locs = [
+                ir.Location.file(fn, ln, 0) for fn, ln in location.caller_locs
+            ]
+            loc = ir.Location.callsite(loc, caller_ir_locs)
+
         return loc
 
     def compile_and_jit(
@@ -1488,7 +1584,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Build the MLIR module, verify and return the module
         """
 
-        # Save IR in a file (raw, before any passes) — triggered by KEEP=ir-debug
+        # Save IR in a file (raw, before any passes) -- triggered by KEEP=ir-debug
         if self.envar.keep_ir:
             self.dump_mlir_path = save_ir(
                 self.name,
@@ -1498,12 +1594,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 enable_debug_info=self.envar.lineinfo,
             )
 
-        # Save clean IR (after canonicalize+cse) — triggered by KEEP=ir
+        # Save clean IR (after canonicalize+cse) -- triggered by KEEP=ir
         # Clone before compiling so the original module is not mutated.
         if self.envar.keep_ir_clean:
             module_clone = ir.Module.parse(str(module))
             self.compiler_provider.compile(
-                module_clone, "builtin.module(canonicalize,cse)"
+                module_clone,
+                "builtin.module(canonicalize,cse)",
             )
             self.dump_mlir_path = save_ir(
                 self.name,
@@ -1581,14 +1678,29 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         )
                         func.ReturnOp(default_ret_values, loc=loc)
                     except NameError as name_error:
-                        raise DSLRuntimeError(
-                            f"💥💥💥 Error during runtime code generation for function `{funcBody.__name__}` 💥💥💥",
+                        # Extract the actual variable name and source
+                        # location from the NameError traceback.
+                        tb = name_error.__traceback__
+                        err_filename = None
+                        err_lineno = None
+                        while tb is not None:
+                            err_filename = tb.tb_frame.f_code.co_filename
+                            err_lineno = tb.tb_lineno
+                            tb = tb.tb_next
+                        raise DSLUserCodeError(
+                            f"NameError in `{funcBody.__name__}`: {name_error}",
+                            filename=err_filename,
+                            lineno=err_lineno,
                             cause=name_error,
-                            suggestion="Using variables defined in dynamic control flow is not supported. Please give an initial value before control flow.",
-                        )
-                    except DSLRuntimeError as dsl_error:
-                        # Throw it's already a DSL error
-                        raise dsl_error
+                            suggestion=(
+                                "Variables used inside staged control flow "
+                                "(for/if/while) must be defined before the "
+                                "control flow region. Give the variable an "
+                                "initial value before the loop or branch."
+                            ),
+                        ) from name_error
+                    except (DSLRuntimeError, DSLUserCodeError):
+                        raise
 
                 if self._should_remove_empty_gpu_modules():
                     BaseDSL.__remove_empty_gpu_modules(module)
@@ -1681,7 +1793,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         pipeline,
                     )
                 else:
-                    self.compiler_provider.compile(module, pipeline)
+                    self.compiler_provider.compile(
+                        module,
+                        pipeline,
+                    )
                 engine = None
         else:
             log().info(
@@ -1727,6 +1842,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             # set dynamic arguments if the jit_function is a JitCompiledFunction for AOT generation.
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
+            host_target=self.compile_options.host_target,
         )
 
         if not no_cache:
@@ -1804,6 +1920,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         no_jit_engine: bool,
         compile_only: bool,
         location: DSLLocation | None = None,
+        compile_to_precompiled_mlir: bool = False,
     ) -> Any:
         """Generate MLIR module and compile iself.T_provider."""
         with ir.Context() as ctx, self.get_ir_location(location):
@@ -1816,10 +1933,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             # Default OFF — deep tracebacks + LINEINFO causes segfault.
             _loc_tb_depth = self.envar.loc_tracebacks
             _loc_tb_ctx = None
-            if _loc_tb_depth:
+            if _loc_tb_depth > 0:
                 try:
-                    _depth = int(_loc_tb_depth)
-                    _loc_tb_ctx = ir.loc_tracebacks(max_depth=_depth)
+                    _loc_tb_ctx = ir.loc_tracebacks(max_depth=_loc_tb_depth)
                     _loc_tb_ctx.__enter__()
                 except (ValueError, TypeError, AttributeError):
                     pass
@@ -1856,13 +1972,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         link_libraries = self.compile_options.options[
                             LinkLibraries
                         ].value
-                        try:
-                            link_libraries_attributes = gpu_module.attributes[
-                                "link-libraries"
-                            ]
-                        except KeyError:
-                            link_libraries_attributes = set()
-                        sources = set(x.value for x in link_libraries_attributes)
+                        sources = set(
+                            x.value
+                            for x in gpu_module.attributes.get("link-libraries", set())
+                        )
                         link_libraries = (
                             link_libraries
                             + ("," if link_libraries and len(sources) > 0 else "")
@@ -1871,6 +1984,17 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         self.compile_options.options[LinkLibraries] = LinkLibraries(
                             link_libraries
                         )
+
+                if compile_to_precompiled_mlir:
+                    import io
+
+                    from .._mlir._mlir_libs import _cutlass_ir
+
+                    buf = io.BytesIO()
+                    module.operation.write_bytecode(buf)
+                    return _cutlass_ir.PreCompiledMlirArtifact.from_bitcode(
+                        buf.getvalue()
+                    )
 
                 # dryrun is used to only generate IR
                 if self.envar.dryrun:
@@ -1937,8 +2061,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         re-parses the source and ``exec()``s it, which requires those names
         to be resolvable in *exec_globals*.
 
-        This mirrors the injection already done by
-        ``function_compiler._rewrite_callee``.
         """
         if original_function.__closure__:
             for name, cell in zip(
@@ -1953,7 +2075,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     pass
 
     def run_preprocessor(
-        self, original_function: Any, callee_rewrite: bool = False
+        self,
+        original_function: Any,
     ) -> Any:
         function_name = original_function.__name__
         self.funcBody = original_function
@@ -1964,7 +2087,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self._inject_closure_cells(original_function, exec_globals)
         with self.preprocessor.get_session() as preprocessor_session:
             transformed_ast = preprocessor_session.transform(
-                original_function, exec_globals
+                original_function,
+                exec_globals,
             )
             if self.envar.print_after_preprocessor:
                 log().info(
@@ -2139,37 +2263,42 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         return signature.replace(parameters=new_params)
 
-    def _func(self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """Decorator for MLIR functions.
-        It cuts the boilerplate code, does the following:
-            1. Generates `func.func`
-            2. Types translation (numpy arrays -> cute.memref, float -> <f32>, etc.)
-            3. Compiles and JITs the MLIR module
-            4. Invokes the generated function
-            5. Operator overloading (a + b --> arith.addi a, b)
-            6. Generates GPU kernel function with GPU module and kernel attributes baked
-        """
-        if ir.Context.current is None:
-            pass
-        elif ir.InsertionPoint.current is not None:
-            return funcBody(*args, **kwargs)
+    @dataclass
+    class _CompilationSetup:
+        """Shared pre-IR-generation state for both _func and _device_func."""
 
+        function_name: str
+        pipeline: str | None
+        gpu_module_attrs: dict[str, Any]
+        no_cache: bool
+        no_jit_engine: bool
+        compile_only: bool
+        canonicalized_args: tuple[Any, ...]
+        canonicalized_kwargs: dict[str, Any]
+        sig: inspect.Signature
+        location: Any  # DSLLocation | None
+        compile_to_precompiled_mlir: bool = False
+
+    def _prepare_compilation(
+        self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> "_CompilationSetup":
+        """Extract kwargs, canonicalize args, mangle name, and apply compile options.
+
+        Shared setup for both _func (kernel path) and _device_func (device path).
+        """
         function_name = funcBody.__name__
         self.funcBody = funcBody
 
         pipeline = kwargs.pop("pipeline", None)
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
-
-        # Disable cache
         no_cache = kwargs.pop("no_cache", False)
-
-        # Disable JIT execution engine
         no_jit_engine = kwargs.pop("no_jit_engine", False)
-
-        # Always compile(disable cache) and return the result jit_executor
         compile_only = kwargs.pop("compile_only", False)
 
+        compile_to_precompiled_mlir = kwargs.pop("compile_to_precompiled_mlir", False)
+
         func_name_prefix = kwargs.pop("_name_prefix", None)
+        export_name = kwargs.pop("export_name", None)
 
         if not no_cache and (
             self.envar.keep_ptx
@@ -2192,19 +2321,19 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         has_varargs = self._check_arg_count(sig, bound_args, function_name)
 
         # Canonicalize the input arguments
-        canonicalized_args, canonicalized_kwonly_args = self._canonicalize_args(
-            bound_args
-        )
+        canonicalized_args, canonicalized_kwargs = self._canonicalize_args(bound_args)
 
         # Expand *args/**kwargs into concrete named parameters
         if has_varargs:
             sig = self._expand_varargs_varkw(
-                canonicalized_args, canonicalized_kwonly_args, sig
+                canonicalized_args, canonicalized_kwargs, sig
             )
-        # Simple name mangling
-        function_name = self.mangle_name(function_name, canonicalized_args, sig)
-        if func_name_prefix:
-            function_name = f"{func_name_prefix}_{function_name}"
+        if export_name is not None:
+            function_name = export_name
+        else:
+            function_name = self.mangle_name(function_name, canonicalized_args, sig)
+            if func_name_prefix:
+                function_name = f"{func_name_prefix}_{function_name}"
 
         self.compile_options.apply_envar_settings(self.envar, function_name)
         if not self.compile_options.generate_line_info:
@@ -2212,20 +2341,51 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Enable frame filtering if line info is enabled
         _set_enable_frame_filtering(self.compile_options.generate_line_info)
 
-        # Generate MLIR Context and start generating IR
-        log().debug(f"Generating MLIR for function '{function_name}'")
+        return self._CompilationSetup(
+            function_name=function_name,
+            pipeline=pipeline,
+            gpu_module_attrs=gpu_module_attrs,
+            no_cache=no_cache,
+            no_jit_engine=no_jit_engine,
+            compile_only=compile_only,
+            canonicalized_args=canonicalized_args,
+            canonicalized_kwargs=canonicalized_kwargs,
+            sig=sig,
+            location=self.decorator_location,
+            compile_to_precompiled_mlir=compile_to_precompiled_mlir,
+        )
+
+    def _func(self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Decorator for MLIR functions.
+        It cuts the boilerplate code, does the following:
+            1. Generates `func.func`
+            2. Types translation (numpy arrays -> cute.memref, float -> <f32>, etc.)
+            3. Compiles and JITs the MLIR module
+            4. Invokes the generated function
+            5. Operator overloading (a + b --> arith.addi a, b)
+            6. Generates GPU kernel function with GPU module and kernel attributes baked
+        """
+        if ir.Context.current is None:
+            pass
+        elif ir.InsertionPoint.current is not None:
+            return funcBody(*args, **kwargs)
+
+        setup = self._prepare_compilation(funcBody, *args, **kwargs)
+
+        log().debug(f"Generating MLIR for function '{setup.function_name}'")
         result = self.generate_mlir(
             funcBody,
-            function_name,
-            gpu_module_attrs,
-            canonicalized_args,
-            canonicalized_kwonly_args,
-            sig,
-            pipeline,
-            no_cache,
-            no_jit_engine,
-            compile_only,
-            location=self.decorator_location,
+            setup.function_name,
+            setup.gpu_module_attrs,
+            setup.canonicalized_args,
+            setup.canonicalized_kwargs,
+            setup.sig,
+            setup.pipeline,
+            setup.no_cache,
+            setup.no_jit_engine,
+            setup.compile_only,
+            location=setup.location,
+            compile_to_precompiled_mlir=setup.compile_to_precompiled_mlir,
         )
         return result
 
@@ -2504,7 +2664,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 )
 
                 loc = self.get_ir_location()
-                with self._enter_gpu_module():  # type: ignore[attr-defined]
+                with self._enter_gpu_module():
                     log().debug("Generating device kernel")
                     if self.device_compilation_only:
                         log().debug("Generating cuda-python arguments")

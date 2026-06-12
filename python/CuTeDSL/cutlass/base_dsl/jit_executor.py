@@ -33,7 +33,11 @@ from .._mlir.dialects import llvm
 
 # Local modules imports
 from . import typing as t
-from .common import DSLRuntimeError, DSLCudaRuntimeError
+from .common import (
+    DSLRuntimeError,
+    DSLCudaRuntimeError,
+    create_cuda_runtime_error,
+)
 from .runtime import cuda as cuda_helpers
 from .runtime.jit_arg_adapters import JitArgAdapterRegistry, is_arg_annotation_constexpr
 from .typing import get_c_pointers
@@ -41,6 +45,7 @@ from .utils.logger import log
 from .utils.timer import timer
 
 if TYPE_CHECKING:
+    from .compiler import HostTarget
     from .dsl import BaseDSL
     from .export.export import SignatureProcessor
     from .export.c_header_generator import CHeaderGenerator
@@ -380,6 +385,14 @@ class ExecutionArgs:
         kwonly_defaults = {}
 
         for i, (name, param) in enumerate(sig.parameters.items()):
+            # We don't want *args or **kwargs to be included in the
+            # KwargsWrapperSpec, so skip them here. Including them
+            # breaks functions that use *args or **kwargs.
+            if param.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
             is_kwonly = param.kind == inspect.Parameter.KEYWORD_ONLY
             annotation = param.annotation
             if (
@@ -684,18 +697,13 @@ class JitExecutor:
             error_code = self.cuda_result.value  # type: ignore[union-attr]
             if error_code == 0:
                 return error_code
-            # Try to get the error name, but handle unknown error codes gracefully
-            try:
-                cu_result = cuda_helpers.cuda.CUresult(error_code)
-                error_name = cuda_helpers._cudaGetErrorEnum(cu_result)
-            except (ValueError, AttributeError):
-                # Error code not recognized by the enum or other error getting the name
-                error_name = f"<unknown CUDA error code {error_code}>"
-            raise DSLCudaRuntimeError(error_code, error_name)
+            raise create_cuda_runtime_error(error_code)
         except DSLCudaRuntimeError as e:
             raise e
         except Exception as e:
             raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
+
+        return None
 
     def __call__(self, *args: Any, **kwargs: Any) -> int | None:
         exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
@@ -709,6 +717,9 @@ class JitFunctionArtifacts:
     PTX: str | None
     CUBIN: str | bytes | None
     MLIR: str | None
+    # Device compilation artifacts (set when DeviceTarget is enabled)
+    device_header: str | None = None
+    device_object_path: str | None = None
 
     def __post_init__(self) -> None:
         if self.PTX is not None and os.path.exists(self.PTX):
@@ -782,6 +793,7 @@ class JitCompiledFunction:
         dynamic_args: tuple[Any] = tuple[Any](),
         dynamic_kwargs: dict[str, Any] = dict[str, Any](),
         has_gpu_module: bool = True,
+        host_target: "HostTarget | None" = None,
     ) -> None:
         self.ir_module = ir_module
         self.engine = engine
@@ -799,6 +811,16 @@ class JitCompiledFunction:
         self.artifacts = jit_function_artifacts
         self.prefix = prefix
         self.load_from_binary = load_from_binary
+
+        # AOT cross-compile target for the host shim object. ``None`` or
+        # an empty HostTarget = native build host (preserves prior behavior).
+        # Lazy import: .compiler imports .env_manager which transitively
+        # imports this module, so a top-level import would close the cycle.
+        if host_target is None:
+            from .compiler import HostTarget as _HostTarget
+
+            host_target = _HostTarget("")
+        self.host_target: "HostTarget" = host_target
 
         # This runtime state is stored here so that we can preserve the module
         # in the compiler cache. Callers can extend the lifetime of the module
@@ -1099,6 +1121,9 @@ class JitCompiledFunction:
                     export_module,
                     tmp_object_file.name,
                     "_".join([function_prefix, self.function_name]),
+                    host_triple=self.host_target.triple,
+                    host_cpu=self.host_target.cpu,
+                    host_features=self.host_target.features,
                 )
                 with open(tmp_object_file.name, "rb") as f:
                     ret = f.read()
@@ -1126,6 +1151,26 @@ class JitCompiledFunction:
         3. The cubin data array and len.
 
         The library contains the binary of the underlying host launch entry function.
+
+        Host cross-compilation:
+            The host CPU/OS that the emitted ``.o`` targets is set at
+            compile time via the options string passed to ``cute.compile``,
+            not via this method. To emit a cross-targeted host shim
+            (currently AArch64 only)::
+
+                compiled = cute.compile(
+                    fn, *args,
+                    options="--gpu-arch sm_100a --host-target linux-aarch64",
+                )
+                compiled.export_to_c(out_dir, "kernel")
+
+            The resulting ``kernel.o`` is an ELF object for the requested
+            AArch64 triple. Linking is the user's responsibility — invoke
+            their cross linker against a sysroot containing ``<cuda.h>``
+            and a target-built ``libcuda_dialect_runtime``. See
+            ``python -m cutlass.cute.export.aot_config --target ...`` for
+            ``-L`` / ``-l`` flag discovery. Non-AArch64 triples are not
+            supported and fail with a clean "target not registered" error.
 
         @param jit_function: The jit-compiled function from `cute.compile`.
         @param file_path: The path to the directory where the header and object files will be saved.

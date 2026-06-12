@@ -17,7 +17,16 @@ from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from .. import core, atom
-from ..typing import Shape, Layout, ComposedLayout, Tensor, Numeric, NumericMeta
+from ..typing import (
+    Shape,
+    Layout,
+    ComposedLayout,
+    Tensor,
+    Numeric,
+    NumericMeta,
+    _element_precision_width,
+    is_int_tuple_type,
+)
 from .cpasync.copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SNonExecTrait,
@@ -46,7 +55,10 @@ __all__ = [
 
 @dsl_user_op
 def make_tiled_tma_atom_A(
-    op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
+    op: Union[
+        CopyBulkTensorTileG2SOp,
+        CopyBulkTensorTileG2SMulticastOp,
+    ],
     gmem_tensor: Tensor,
     smem_layout: Union[Layout, ComposedLayout],
     mma_tiler_mnk: Shape,
@@ -144,13 +156,19 @@ def make_tiled_tma_atom_A(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+        gmem_element_precision_width = _element_precision_width(
+            gmem_tensor_element_type
+        )
         use_unpack = (
             itype.width == 8
-            and isinstance(gmem_tensor.element_type, NumericMeta)
-            and gmem_tensor.element_type.width < 8  # type: ignore[union-attr]
+            and isinstance(gmem_tensor_element_type, type)
+            and issubclass(gmem_tensor_element_type, Numeric)
+            and gmem_element_precision_width < 8
         )
         internal_mlir_type = (
-            gmem_tensor.element_type.mlir_type if use_unpack else itype.mlir_type  # type: ignore[union-attr]
+            gmem_tensor_element_type.mlir_type if use_unpack else itype.mlir_type
         )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
@@ -185,7 +203,10 @@ def make_tiled_tma_atom_A(
 
 @dsl_user_op
 def make_tiled_tma_atom_B(
-    op: Union[CopyBulkTensorTileG2SOp, CopyBulkTensorTileG2SMulticastOp],
+    op: Union[
+        CopyBulkTensorTileG2SOp,
+        CopyBulkTensorTileG2SMulticastOp,
+    ],
     gmem_tensor: Tensor,
     smem_layout: Union[Layout, ComposedLayout],
     mma_tiler_mnk: Shape,
@@ -283,13 +304,19 @@ def make_tiled_tma_atom_B(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+        gmem_element_precision_width = _element_precision_width(
+            gmem_tensor_element_type
+        )
         use_unpack = (
             itype.width == 8
-            and isinstance(gmem_tensor.element_type, NumericMeta)
-            and gmem_tensor.element_type.width < 8  # type: ignore[union-attr]
+            and isinstance(gmem_tensor_element_type, type)
+            and issubclass(gmem_tensor_element_type, Numeric)
+            and gmem_element_precision_width < 8
         )
         internal_mlir_type = (
-            gmem_tensor.element_type.mlir_type if use_unpack else itype.mlir_type  # type: ignore[union-attr]
+            gmem_tensor_element_type.mlir_type if use_unpack else itype.mlir_type
         )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
@@ -458,13 +485,19 @@ def make_im2col_tma_atom_A(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+        gmem_element_precision_width = _element_precision_width(
+            gmem_tensor_element_type
+        )
         use_unpack = (
             itype.width == 8
-            and isinstance(gmem_tensor.element_type, NumericMeta)
-            and gmem_tensor.element_type.width < 8  # type: ignore[union-attr]
+            and isinstance(gmem_tensor_element_type, type)
+            and issubclass(gmem_tensor_element_type, Numeric)
+            and gmem_element_precision_width < 8
         )
         internal_mlir_type = (
-            gmem_tensor.element_type.mlir_type if use_unpack else itype.mlir_type  # type: ignore[union-attr]
+            gmem_tensor_element_type.mlir_type if use_unpack else itype.mlir_type
         )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)

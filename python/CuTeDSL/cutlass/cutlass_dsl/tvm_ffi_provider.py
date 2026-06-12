@@ -9,10 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from dataclasses import is_dataclass, fields as dataclass_fields
+import re
 from typing import Any, Callable, List, Optional, cast
 
-from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.base_dsl.tvm_ffi_builder import (
     DynamicParamPackCallProvider,
     CallContext,
@@ -25,8 +24,50 @@ from cutlass._mlir.dialects import llvm
 from cutlass._mlir._mlir_libs._cutlass_ir import _aot_support
 from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
 from cutlass.base_dsl.jit_executor import JitExecutor
-from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.base_dsl.common import (
+    DSLRuntimeError,
+    DSLCudaRuntimeError,
+    _get_cuda_error_name_from_code,
+)
 import tvm_ffi
+
+
+@tvm_ffi.register_error
+class CUDADialectError(DSLCudaRuntimeError):
+    """TVM-FFI error kind for CUDA dialect runtime failures."""
+
+    PREFIX = "CUDA Error Code: "
+
+    def __init__(self, message: str) -> None:
+        self.raw_tvm_ffi_message = message
+        error_code = CUDADialectError._parse_cuda_dialect_error_code(message)
+        super().__init__(error_code, _get_cuda_error_name_from_code(error_code))
+
+    def _format_message(self) -> str:
+        message = super()._format_message()
+        return message.replace(f"{self.__class__.__name__}:", "DSLCudaRuntimeError:", 1)
+
+    @staticmethod
+    def _parse_cuda_dialect_error_code(message: str) -> int:
+        match = re.fullmatch(
+            rf"{re.escape(CUDADialectError.PREFIX)}(?P<code>\d+)\s*",
+            message,
+        )
+        if match is not None:
+            return int(match.group("code"))
+
+        if not message.startswith(CUDADialectError.PREFIX):
+            raise ValueError(
+                "CUDADialectError expects a message beginning with "
+                f"{CUDADialectError.PREFIX!r}, got {message!r}"
+            )
+        if not message[len(CUDADialectError.PREFIX) :].strip():
+            raise ValueError(
+                f"CUDADialectError message has no numeric code: {message!r}"
+            )
+        raise ValueError(
+            f"CUDADialectError message has unexpected payload: {message!r}"
+        )
 
 
 class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
@@ -393,17 +434,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
         # Populate the error block
         with ir.InsertionPoint(error_block):
-            error_str = llvm.call(
-                result=self.ptr_type,
-                callee="cuda_dialect_get_error_name",
-                callee_operands=[error_code],
-                op_bundle_sizes=[],
-                op_bundle_operands=[],
-            )
             # Raise error and return -1
-            context.builder.raise_error_and_return(
-                error_kind="RuntimeError",
-                error_message_parts=["CUDA Error: ", error_str],
+            context.builder.raise_cuda_error_and_return(
+                error_code, CUDADialectError.PREFIX
             )
 
         return error_block
@@ -472,22 +505,6 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
     return format
 
 
-def _flatten_dataclass_arg(arg: Any) -> Any:
-    """Recursively flatten a dataclass argument into a tuple for TVM FFI runtime.
-
-    TVM FFI expects tuple/array for TupleParam specs. NamedTuples work because
-    they are tuples, but dataclass instances need explicit flattening.
-    """
-    if is_dataclass(arg) and not isinstance(arg, type):
-        values = []
-        for f in dataclass_fields(arg):
-            if is_constexpr_field(f):
-                continue
-            values.append(_flatten_dataclass_arg(getattr(arg, f.name)))
-        return tuple(values)
-    return arg
-
-
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
 
@@ -520,9 +537,15 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param function_name: The name of the function to export.
         :param enable_pic: Whether to enable PIC relocation needed for shared library loading.
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
-        :param host_target_triple: If not provided, the current host target is used.
         """
-        internal_symbol_prefix = "__cute_internal_" + function_name  # type: ignore[operator]
+        if self.host_target.value:
+            raise DSLRuntimeError(
+                "Host cross-compile via TVM-FFI is not supported. "
+                "Drop --enable-tvm-ffi to use the plain AOT export path "
+                "with --host-target."
+            )
+        assert function_name is not None
+        internal_symbol_prefix = "__cute_internal_" + function_name
         mod = self.ir_module
         mod = get_export_module(
             self.ir_module,
@@ -530,7 +553,7 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
             preserve_symbols={f"__tvm_ffi_{self.function_name}"},
         )
 
-        rename_tvm_ffi_function(mod, self.function_name, function_name)  # type: ignore[arg-type]
+        rename_tvm_ffi_function(mod, self.function_name, function_name)
         if export_only_tvm_ffi_symbols:
             _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
 
@@ -588,10 +611,6 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
             # move the handle from the tvm_ffi.Function to the current instance
             self.__move_handle_from__(tvm_ffi_function)
 
-    def __call__(self, *args: Any) -> Any:
-        args = tuple(_flatten_dataclass_arg(a) for a in args)
-        return tvm_ffi.Function.__call__(self, *args)
-
 
 class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
     """TVM FFI Function with kwargs wrapper support"""
@@ -599,33 +618,48 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         assert "kwargs_wrapper_spec" in kwargs, "kwargs_wrapper_spec is required"
         kwargs_wrapper_spec = kwargs.pop("kwargs_wrapper_spec")
+        # ``map_dataclass_to_tuple`` is a tvm-ffi concern (lists the arg
+        # names whose values get unpacked via unpack_dataclass_to_tuple at
+        # call time) and is intentionally kept outside KwargsWrapperSpec.
+        map_dataclass_to_tuple: List[str] = kwargs.pop("map_dataclass_to_tuple", [])
         super().__init__(*args, **kwargs)
         # initialize the tvm_ffi.Function from the current execution engine
         self._tvm_ffi_function = self._create_tvm_ffi_function()
-        assert self._tvm_ffi_function is not None
-        if kwargs_wrapper_spec.kwonly_names or kwargs_wrapper_spec.arg_defaults:
-            try:
-                from tvm_ffi.utils import kwargs_wrapper
+        if self._tvm_ffi_function is None:
+            self._kwargs_wrapper: Optional[Callable[..., Any]] = None
+            return
+        # This class is instantiated when the jit signature has any of:
+        #   - keyword-only parameters;
+        #   - defaults on positional parameters;
+        #   - a top-level @dataclass argument (needed for ``compiled(p=...)``
+        #     style calls since the underlying tvm_ffi.Function is
+        #     positional-only).
+        # ``make_kwargs_wrapper`` handles empty kwonly/arg_defaults as no-ops,
+        # so a single call covers all three triggers.
+        try:
+            from tvm_ffi.utils import kwargs_wrapper  # type: ignore
 
-                self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
-                    self._tvm_ffi_function,
-                    arg_names=kwargs_wrapper_spec.arg_names,
-                    arg_defaults=kwargs_wrapper_spec.arg_defaults,
-                    kwonly_names=kwargs_wrapper_spec.kwonly_names,
-                    kwonly_defaults=kwargs_wrapper_spec.kwonly_defaults,
-                )
-            except ImportError:
-                raise DSLRuntimeError(
-                    "install apache-tvm-ffi>=0.1.5 to enable kwargs/defaults"
-                )
-        else:
-            # positional only is probably fine
-            self._kwargs_wrapper = self._tvm_ffi_function
+            self._kwargs_wrapper = kwargs_wrapper.make_kwargs_wrapper(
+                self._tvm_ffi_function,
+                arg_names=kwargs_wrapper_spec.arg_names,
+                arg_defaults=kwargs_wrapper_spec.arg_defaults,
+                kwonly_names=kwargs_wrapper_spec.kwonly_names,
+                kwonly_defaults=kwargs_wrapper_spec.kwonly_defaults,
+                map_dataclass_to_tuple=map_dataclass_to_tuple,
+            )
+        except ImportError:
+            raise DSLRuntimeError(
+                "install apache-tvm-ffi>=0.1.11 to enable kwargs / defaults / "
+                "top-level dataclass argument support"
+            )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the TVM FFI function with kwargs wrapper."""
-        args = tuple(_flatten_dataclass_arg(a) for a in args)
-        kwargs = {k: _flatten_dataclass_arg(v) for k, v in kwargs.items()}
+        if self._kwargs_wrapper is None:
+            raise DSLRuntimeError(
+                "TVM FFI function is not initialized."
+                " Was this function compiled for a different architecture?"
+            )
         return self._kwargs_wrapper(*args, **kwargs)
 
     def __tvm_ffi_object__(self) -> Optional["tvm_ffi.Function"]:

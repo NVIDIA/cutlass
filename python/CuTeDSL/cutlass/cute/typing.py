@@ -9,11 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 import ctypes
 from typing import (
+    TYPE_CHECKING,
     ForwardRef,
     Tuple,
     Union,
@@ -22,10 +21,11 @@ from typing import (
     List,
     Optional,
     Literal,
-    TYPE_CHECKING,
 )
+from typing_extensions import TypeIs
 
 from cutlass.cutlass_dsl import T
+from cutlass.base_dsl import typing as _base_typing
 from cutlass.base_dsl.typing import (
     Numeric,
     NumericMeta,
@@ -58,14 +58,100 @@ from cutlass.base_dsl.typing import (
     as_numeric,
 )
 
+_element_precision_width = _base_typing._element_precision_width
+
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 from cutlass._mlir.dialects.cute import AddressSpace, ConstrainedIntType
+
+if TYPE_CHECKING:
+    from cutlass.cute.core import ScaledBasis, Swizzle
+    from cutlass.cute.tensor import TensorSSA
+else:
+    ScaledBasis = ForwardRef("ScaledBasis")
+
 
 Int = Union[int, Integer]
 
 
 class SymInt:
+    r"""A symbolic integer for runtime-bound dimensions of an AOT-compiled
+    ``@cute.jit`` function.
+
+    A ``SymInt`` stands in for a Python ``int`` at compile-tracing time —
+    its concrete value is bound only at kernel launch.  Use it when a
+    tensor shape, loop bound, or scalar argument varies launch-to-launch
+    but the compiler still needs to know enough about its structure to
+    emit aligned vector ops, strength-reduce ``%``/``//``, or skip
+    tail-loop prologues.
+
+    The preferred way to construct a ``SymInt`` is via the
+    :func:`sym_int32` / :func:`sym_int64` convenience constructors:
+
+    .. code-block:: python
+
+        # In compile():
+        sym_n = cute.sym_int64(divisibility=16)         # "N is mul of 16"
+
+        # In the @cute.jit signature, declare the matching arg type:
+        @cute.jit
+        def _host(..., num_k_tiles: Int64):
+            ...
+
+    :param width: Bit width of the integer at runtime — ``32`` or ``64``.
+        Use 64 for tensor shape dims (M, N, K, batch) that may exceed 2 G;
+        32 for small counts.
+    :param divisibility: **Hard contract** on the runtime value — the
+        compiler is free to assume the value is always a multiple of
+        ``divisibility`` and may emit aligned vector stores,
+        strength-reduce ``%`` / ``//`` against the divisor, and drop
+        tail-loop prologues based on it.  **Violating the contract at
+        runtime is undefined behaviour** and typically surfaces as
+        ``cudaErrorMisalignedAddress`` (a sticky CUDA error that poisons
+        the worker's CUDA context) or silently wrong results.  The
+        TVM-FFI runtime adapter does not validate divisibility (the JAX
+        adapter does, see ``cutlass/jax/primitive.py``); kernels that
+        want a friendly Python-side error on the TVM-FFI path should
+        ``raise ValueError(...)`` in their ``run()`` wrapper *in
+        addition to* the SymInt declaration.  The default ``1`` means
+        no constraint.
+    :param symbol: Human-readable name for the variable, e.g. ``"M"``.
+        Appears in IR dumps and compile-time error messages.
+
+    **Common patterns**
+
+    Pick the divisibility that matches the kernel's actual contract on
+    each dim — declare neither more nor less than what the codegen
+    relies on:
+
+    .. code-block:: python
+
+        # Contiguous output dim — declare the alignment the epilogue's
+        # vector store depends on (32 B / sizeof(dtype) elements):
+        sym_n = cute.sym_int64(divisibility=32 // (out_dtype.width // 8))
+
+        # K dim — must be a multiple of the K-tile so the K-loop is exact:
+        sym_k = cute.sym_int64(divisibility=mma_tiler_mnk[2])
+
+        # M dim — no compile-time constraint when the kernel masks
+        # ``if row < M`` at runtime:
+        sym_m = cute.sym_int64()
+
+    .. note::
+
+        ``divisibility`` is the kernel's hard contract, not a hint.
+        Don't *over-promise*: declaring ``divisibility=128`` when the
+        kernel only needs 16-byte alignment will reject more shapes
+        than necessary.  Don't *under-promise*: declaring
+        ``divisibility=1`` when the epilogue assumes 32 B alignment
+        will silently fault on non-conforming inputs.
+
+    .. seealso::
+
+        :func:`sym_int32`, :func:`sym_int64` — convenience constructors.
+
+    """
+
     def __init__(
         self,
         width: Literal[32, 64] = 32,
@@ -117,7 +203,7 @@ class SymInt:
             ]
         )
 
-    def __mod__(self, other: int | SymInt) -> SymInt | int:
+    def __mod__(self, other: "int | SymInt") -> "SymInt | int":
         if isinstance(other, int):
             other_div, result_width = other, self._width
         elif isinstance(other, SymInt):
@@ -141,7 +227,7 @@ class SymInt:
             return other % self._divisibility
         return NotImplemented
 
-    def __mul__(self, other: int | SymInt) -> SymInt:
+    def __mul__(self, other: "int | SymInt") -> "SymInt":
         if isinstance(other, int):
             return SymInt(self._width, divisibility=self._divisibility * other)
         elif isinstance(other, SymInt):
@@ -152,7 +238,7 @@ class SymInt:
         else:
             return NotImplemented
 
-    def __rmul__(self, other: int | SymInt) -> SymInt:
+    def __rmul__(self, other: "int | SymInt") -> "SymInt":
         return self.__mul__(other)
 
     def __c_pointers__(self) -> List[int | None]:
@@ -164,7 +250,7 @@ class SymInt:
         )
         return [res_ty]
 
-    def __new_from_mlir_values__(self, values: List[ir.Value]) -> SymInt:
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "SymInt":
         from .core import IntValue
 
         if self.width == 32:
@@ -178,22 +264,68 @@ class SymInt:
 def sym_int(
     width: Literal[32, 64] = 32, *, divisibility: int = 1, symbol: str | None = None
 ) -> SymInt:
+    r"""Construct a :class:`SymInt` of the given width.
+
+    :param width: Bit width — ``32`` or ``64``.
+    :param divisibility: Hard divisibility contract on the runtime value;
+        see :class:`SymInt`.
+    :param symbol: Optional human-readable name for IR dumps.
+    :returns: A :class:`SymInt` instance.
+
+    .. seealso::
+
+        :class:`SymInt`, :func:`sym_int32`, :func:`sym_int64`.
+    """
     return SymInt(width, divisibility=divisibility, symbol=symbol)
 
 
 def sym_int32(divisibility: int = 1, symbol: str | None = None) -> SymInt:
+    r"""Construct a 32-bit :class:`SymInt`.
+
+    :param divisibility: Hard divisibility contract on the runtime value;
+        see :class:`SymInt`.
+    :param symbol: Optional human-readable name for IR dumps.
+    :returns: A 32-bit :class:`SymInt` instance.
+
+    .. seealso::
+
+        :class:`SymInt` for the full divisibility contract.
+    """
     return sym_int(32, divisibility=divisibility, symbol=symbol)
 
 
 def sym_int64(divisibility: int = 1, symbol: str | None = None) -> SymInt:
+    r"""Construct a 64-bit :class:`SymInt`.
+
+    Standard choice for tensor shape dimensions (M, N, K, batch).
+
+    :param divisibility: Hard divisibility contract on the runtime value;
+        see :class:`SymInt`.
+    :param symbol: Optional human-readable name for IR dumps.
+    :returns: A 64-bit :class:`SymInt` instance.
+
+    **Common usage**
+
+    .. code-block:: python
+
+        # Contiguous output dim — declare the alignment the epilogue's
+        # vector store depends on (32 B / sizeof(dtype) elements):
+        sym_n = cute.sym_int64(divisibility=32 // (out_dtype.width // 8))
+
+        # K dim — must be a multiple of the K-tile so the K-loop is exact:
+        sym_k = cute.sym_int64(divisibility=mma_tiler_mnk[2])
+
+        # M dim — no compile-time constraint when the kernel masks
+        # ``if row < M`` at runtime:
+        sym_m = cute.sym_int64()
+
+    .. seealso::
+
+        :class:`SymInt` for the full divisibility contract.
+
+    """
     return sym_int(64, divisibility=divisibility, symbol=symbol)
 
-
-if TYPE_CHECKING:
-    from cutlass.cute.core import ScaledBasis, Swizzle
-    from cutlass.cute.tensor import TensorSSA
-else:
-    ScaledBasis = ForwardRef("ScaledBasis")
 
 IntTuple = Union[Int, Tuple["IntTuple", ...]]
 Shape = Union[Int, Tuple["Shape", ...]]
@@ -205,15 +337,20 @@ class Layout(ir.Value):
     def __init__(self, op_result: ir.Value) -> None:
         super().__init__(op_result)
 
-    def __str__(self) -> str:
-        return super().__str__()  # pragma: no cover
-
-    def get_hier_coord(self, idx: Int) -> Coord:
+    @abstractmethod
+    def get_hier_coord(
+        self,
+        idx: Int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Coord:
         """Return the (hierarchical) ND logical coordinate corresponding to the linear index"""
         ...
 
     @property
-    def shape(  # type: ignore[empty-body]
+    @abstractmethod
+    def shape(
         self,
         *,
         loc: Optional[ir.Location] = None,
@@ -223,7 +360,8 @@ class Layout(ir.Value):
         ...
 
     @property
-    def stride(  # type: ignore[empty-body]
+    @abstractmethod
+    def stride(
         self,
         *,
         loc: Optional[ir.Location] = None,
@@ -359,7 +497,7 @@ class Pointer(ABC):
     @property
     def type(self) -> ir.Type:
         """The MLIR type of this pointer. Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     @property
     def value_type(self) -> Type[Numeric]:
@@ -376,9 +514,14 @@ class Pointer(ABC):
         ...
 
     @property
-    def max_alignment(self) -> int:  # type: ignore[empty-body]
+    def max_alignment(self) -> int:
         """Maximum alignment of this pointer in bytes. Implemented by subclasses."""
-        ...
+        raise NotImplementedError
+
+    @property
+    def alignment(self) -> int:
+        """Alignment of this pointer in bytes (post-swizzle). Implemented by subclasses."""
+        raise NotImplementedError
 
     @property
     def llvm_ptr(
@@ -388,16 +531,25 @@ class Pointer(ABC):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> ir.Value:
         """Get the LLVM pointer representation. Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
-    def toint(  # type: ignore[empty-body]
+    def to_llvm_ptr(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.Value:
+        """Get the LLVM pointer representation (loc/ip propagated). Implemented by subclasses."""
+        raise NotImplementedError
+
+    def toint(
         self,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Numeric:
         """Convert pointer to integer. Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     def align(self, min_align: int) -> "Pointer":  # type: ignore[empty-body]
         """Implemented by subclasses."""
@@ -615,12 +767,14 @@ class Tensor(ABC):
     def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]: ...
 
     @element_type.setter
-    def element_type(self, new_type: Union[Type[Numeric], Type[IntTuple]]) -> None: ...
+    def element_type(self, new_type: Union[Type[Numeric], Type[IntTuple]]) -> None:
+        """Implemented by subclasses."""
+        raise NotImplementedError
 
     @property
-    def dtype(self) -> Type[Numeric]:  # type: ignore[empty-body]
+    def dtype(self) -> Type[Numeric]:
         """The element data type. Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     @property
     @abstractmethod
@@ -647,9 +801,9 @@ class Tensor(ABC):
         ...
 
     @property
-    def layout(self) -> Union[Layout, "ComposedLayout"]:  # type: ignore[empty-body]
+    def layout(self) -> Union[Layout, "ComposedLayout"]:
         """Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     @property
     @abstractmethod
@@ -659,14 +813,14 @@ class Tensor(ABC):
     @abstractmethod
     def stride(self) -> Stride: ...
 
-    def load(  # type: ignore[empty-body]
+    def load(
         self,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "TensorSSA":
         """Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     def store(
         self,
@@ -674,22 +828,22 @@ class Tensor(ABC):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> None: ...
-
-    def mark_layout_dynamic(  # type: ignore[empty-body]
-        self, leading_dim: Optional[int] = None
-    ) -> "Tensor":
+    ) -> None:
         """Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
-    def mark_compact_shape_dynamic(  # type: ignore[empty-body]
+    def mark_layout_dynamic(self, leading_dim: Optional[int] = None) -> "Tensor":
+        """Implemented by subclasses."""
+        raise NotImplementedError
+
+    def mark_compact_shape_dynamic(
         self,
         mode: int,
         stride_order: Optional[tuple[int, ...]] = None,
         divisibility: int = 1,
     ) -> "Tensor":
         """Implemented by subclasses."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def fill(self, value: Numeric) -> None: ...
@@ -708,6 +862,31 @@ def is_int_tuple(a: object) -> bool:
         return all([is_int_tuple(x) for x in a])
     else:
         return is_integer(a)
+
+
+def is_int_tuple_type(t: object) -> TypeIs[Type[IntTuple]]:
+    """Check whether a type slot equals the IntTuple typing alias object.
+
+    Why this helper exists (instead of inlining ``t is IntTuple``):
+    mypy cannot narrow on ``t is IntTuple`` directly — IntTuple is a
+    typing.Union alias object, not a class, so mypy's ``is`` / ``is not``
+    narrowing rules don't apply. Wrapping the identity check in a function
+    annotated with ``TypeIs[Type[IntTuple]]`` tells mypy how to narrow on
+    both branches:
+      * True  -> ``t`` is ``Type[IntTuple]``
+      * False -> ``t`` is the input type minus ``Type[IntTuple]``
+
+    Typical use: narrow ``Tensor.element_type``'s
+    ``Union[Type[Numeric], Type[IntTuple]]`` to ``Type[Numeric]`` via
+    ``assert not is_int_tuple_type(elem_type)``.
+
+    Requires ``typing_extensions >= 4.10.0`` (PEP 742, which introduced
+    ``TypeIs``). On Python < 3.13, ``TypeIs`` only lives in
+    ``typing_extensions``; on Python >= 3.13 it is also in stdlib
+    ``typing`` but we import from ``typing_extensions`` for back-compat.
+
+    """
+    return t is IntTuple
 
 
 __all__ = [
@@ -759,4 +938,5 @@ __all__ = [
     "as_numeric",
     "is_integer",
     "is_int_tuple",
+    "is_int_tuple_type",
 ]

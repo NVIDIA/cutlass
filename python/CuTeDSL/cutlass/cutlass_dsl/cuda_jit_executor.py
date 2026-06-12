@@ -30,6 +30,7 @@ from ..base_dsl.jit_executor import (
     ExecutionArgs,
     JitFunctionArtifacts,
 )
+from ..base_dsl.compiler import HostTarget
 from ..base_dsl.utils.logger import log
 from ..base_dsl.common import DSLRuntimeError
 from ..base_dsl.typing import Int32
@@ -74,6 +75,10 @@ class CudaDialectJitModule:
 class CudaDialectJitCompiledFunction(JitCompiledFunction):
     """Holds a compiled function and its module."""
 
+    device_header: Optional[str]
+    device_object_path: Optional[str]
+    device_ptx_path: Optional[str]
+
     def __init__(
         self,
         ir_module: ir.Module,
@@ -89,6 +94,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         dynamic_args: tuple[Any] = tuple[Any](),
         dynamic_kwargs: dict[str, Any] = dict[str, Any](),
         has_gpu_module: bool = True,
+        host_target: HostTarget | None = None,
     ) -> None:
         super().__init__(
             ir_module,
@@ -104,6 +110,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             dynamic_args,
             dynamic_kwargs,
             has_gpu_module,
+            host_target=host_target,
         )
 
         # Populated from module attributes by CuteExperimentalDSL.compile_and_cache;
@@ -280,3 +287,38 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
                 )
 
             return JitExecutor(self.jit_module, None, self.jit_time_profiling)
+
+    @property
+    def library(self) -> "cuda_runtime.cudaLibrary_t":
+        """Loaded ``cudaLibrary_t`` for this compile's single cubin.
+
+        Triggers a lazy ``.to()`` call if the library isn't loaded yet,
+        so callers can access this before any explicit kernel launch
+        :raises RuntimeError: when the compile produced no gpu.module
+            (host-only program) or multiple cubins (explicit selection
+            is not yet supported).
+        """
+        # Trigger lazy load if the library isn't materialized yet.  Same
+        # check ``store_to_symbol``'s eager path uses today.
+        if self.jit_module is None or (
+            isinstance(self.jit_module, CudaDialectJitModule)
+            and self.jit_module.is_unloaded()
+        ):
+            self.to()
+
+        libraries = (
+            getattr(self.jit_module, "cuda_library", []) if self.jit_module else []
+        )
+        if not libraries:
+            raise RuntimeError(
+                "compiled.library: no cudaLibrary_t — the compile produced "
+                "no gpu.module (host-only function), or used "
+                "`cute.compile[DeviceTarget]` (which doesn't register a "
+                "runtime cudaLibrary_t)."
+            )
+        if len(libraries) > 1:
+            raise RuntimeError(
+                "compiled.library: this compile produced multiple cubins; "
+                "explicit library= selection is not yet supported."
+            )
+        return libraries[0]

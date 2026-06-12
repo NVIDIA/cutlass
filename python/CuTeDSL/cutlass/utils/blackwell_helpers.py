@@ -19,18 +19,21 @@ from cutlass.cutlass_dsl import (
     Float32,
     Uint8,
     Int8,
+    Int32,
     Float8E4M3FN,
     Float8E5M2,
     Float6E3M2FN,
     Float6E2M3FN,
     Float4E2M1FN,
+    Integer,
     Numeric,
     NumericMeta,
     dsl_user_op,
 )
-
-from cutlass._mlir import ir
 import cutlass.cute as cute
+from cutlass._mlir import ir
+from cutlass._mlir.dialects import arith, vector as _vector_dialect
+import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass.cute.nvgpu.common import CopyUniversalOp, OperandMajorMode
 from cutlass.cute.nvgpu.warp import StMatrix8x8x16bOp, StMatrix16x8x8bOp
 from cutlass.cute.nvgpu.tcgen05 import (
@@ -63,7 +66,7 @@ from cutlass.cute.nvgpu.cpasync import (
     CopyBulkTensorTileG2SOp,
 )
 from cutlass.utils.layout import LayoutEnum
-import cutlass.cute.testing as testing
+from cutlass import testing
 
 # Type alias for documentation clarity
 OperandSource = Tcgen05OperandSource
@@ -174,6 +177,7 @@ def compute_epilogue_tile_shape(
     *,
     layout_c: Optional[LayoutEnum] = None,
     elem_ty_c: Union[Type[Numeric], None] = None,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.Tile:
@@ -193,11 +197,16 @@ def compute_epilogue_tile_shape(
     :type layout_c: LayoutEnum, optional
     :param elem_ty_c: The element type for input tensor C. Defaults to None.
     :type elem_ty_c: Union[Type[Numeric], None], optional
+    :param tmem_warp_shape_mn: Optional (warp_m, warp_n) override for the tmem
+        subpartition layout. When omitted, the layout is derived from
+        ``cta_tile_shape`` and ``use_2cta_instrs``.
+    :type tmem_warp_shape_mn: Tuple[int, int], optional
 
     :return: Returns epilog tiler, which is used in subsequent epilog partitions.
     :rtype: cute.Tile
 
     :raises ValueError: If the computed tile cute.size does not meet minimum requirements based on CTA dimensions.
+
     """
 
     def validate_type(ty: Type[Numeric], ty_name: str) -> None:
@@ -208,7 +217,10 @@ def compute_epilogue_tile_shape(
     if elem_ty_c is not None:
         validate_type(elem_ty_c, "elem_ty_c")
 
-    cta_m, cta_n = cta_tile_shape[:2]  # type: ignore[index]
+    assert isinstance(cta_tile_shape, tuple)
+    cta_m, cta_n = cta_tile_shape[:2]
+    assert isinstance(cta_m, (int, Integer))
+    assert isinstance(cta_n, (int, Integer))
     d_is_m_major = layout_d.is_m_major_c()
     c_is_m_major = True if layout_c is None else layout_c.is_m_major_c()
 
@@ -221,10 +233,14 @@ def compute_epilogue_tile_shape(
         elem_ty_c.width if elem_ty_c is not None else None,
         d_is_m_major,
         c_is_m_major,
+        tmem_warp_shape_mn=tmem_warp_shape_mn,
     )
 
-    # Compute warp layout parameters (needed for CuTe layout creation)
-    (warp_m, warp_n) = (2, 2) if (cta_m == 64 and use_2cta_instrs) else (4, 1)
+    # Compute warp layout parameters (needed for CuTe layout creation).
+    if tmem_warp_shape_mn is not None:
+        (warp_m, warp_n) = tmem_warp_shape_mn
+    else:
+        (warp_m, warp_n) = (2, 2) if (cta_m == 64 and use_2cta_instrs) else (4, 1)
 
     # Validate minimum tile requirements
     disable_source = elem_ty_c is None
@@ -233,19 +249,21 @@ def compute_epilogue_tile_shape(
         if d_is_m_major
         else (128 * warp_n if elem_ty_d.width == 6 else 128 // elem_ty_d.width * warp_n)
     )
-    n_min_c = (
-        8 * warp_n
-        if (c_is_m_major or disable_source)
-        else (128 * warp_n if elem_ty_c.width == 6 else 128 // elem_ty_c.width * warp_n)  # type: ignore[union-attr]
-    )
-    if cta_n < n_min_c or cta_n < n_min_d:  # type: ignore[operator]
+    if c_is_m_major or disable_source:
+        n_min_c = 8 * warp_n
+    else:
+        assert elem_ty_c is not None
+        n_min_c = (
+            128 * warp_n if elem_ty_c.width == 6 else 128 // elem_ty_c.width * warp_n
+        )
+    if cta_n < n_min_c or cta_n < n_min_d:
         raise ValueError(f"CTA tile too small: {cta_tile_shape=}")
 
     # stride by tmem warp layout and return a by-mode tiler
     tile_m_layout = cute.make_layout(tile_m, loc=loc, ip=ip)
     tile_n_layout = cute.make_layout(
         (tile_n // warp_n, warp_n),
-        stride=(1, cta_n // warp_n),  # type: ignore[operator]
+        stride=(1, cta_n // warp_n),
         loc=loc,
         ip=ip,
     )
@@ -423,6 +441,7 @@ def get_tmem_load_op(
     epi_tile: cute.Tile,
     use_2cta_instrs: bool,
     *,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.CopyAtom:
@@ -454,9 +473,13 @@ def get_tmem_load_op(
     acc_bits = elem_ty_acc.width
     d_bits = elem_ty_d.width
 
-    tmem_warp_shape_mn = (
-        (2, 2) if (cta_tile_shape[0] == 64 and use_2cta_instrs) else (4, 1)  # type: ignore[index]
-    )
+    assert isinstance(cta_tile_shape, tuple)
+    if tmem_warp_shape_mn is None:
+        # Default rule: (2,2) for 2CTA+M64, else (4,1). Callers may pass an
+        # explicit override.
+        tmem_warp_shape_mn = (
+            (2, 2) if (cta_tile_shape[0] == 64 and use_2cta_instrs) else (4, 1)
+        )
     epilog_tile_shape_mn = cute.product_each(
         cute.shape(epi_tile, loc=loc, ip=ip), loc=loc, ip=ip
     )
@@ -700,7 +723,7 @@ def make_smem_layout(
     smem_layout_atom_kind = get_smem_layout_atom_ab(
         leading_mode,
         a_dtype,
-        smem_tile_shape,  # type: ignore[arg-type]
+        smem_tile_shape,
         loc=loc,
         ip=ip,
     )
@@ -872,7 +895,7 @@ def get_smem_layout_atom_epi(
         return get_smem_layout_atom_ab(
             OperandMajorMode.MN,
             element_type,
-            tma_shape,  # type: ignore[arg-type]
+            tma_shape,
             loc=loc,
             ip=ip,
         )
@@ -881,7 +904,7 @@ def get_smem_layout_atom_epi(
         return get_smem_layout_atom_ab(
             OperandMajorMode.K,
             element_type,
-            tma_shape,  # type: ignore[arg-type]
+            tma_shape,
             loc=loc,
             ip=ip,
         )
@@ -1196,10 +1219,10 @@ def make_blockscaled_trivial_tiled_mma(
 ) -> cute.TiledMma: ...
 
 
+@overload
 @deprecated(
     "use make_blockscaled_trivial_tiled_mma with separate a_dtype and b_dtype instead"
 )
-@overload
 def make_blockscaled_trivial_tiled_mma(
     ab_dtype: Type[Numeric],
     a_leading_mode: OperandMajorMode,
@@ -1568,7 +1591,8 @@ def get_permutation_mnk(
 
     :raise ValueError: If the tile shape is not divisible by the sf_vec_size
     """
-    perm_m = min(tile_shape_mnk[0], 128)  # type: ignore[index]
+    assert isinstance(tile_shape_mnk, tuple)
+    perm_m = min(tile_shape_mnk[0], 128)
     # refer to C++ code:
     # /include/cutlass/gemm/collective/builders/sm120_common.inl?ref_type=heads#L158
     if sf_vec_size == 32 or sf_vec_size == 16:
@@ -1595,7 +1619,7 @@ def sm103_make_blockscaled_trivial_tiled_mma(
     mma_tiler_mn: Tuple[int, int],
     a_source: OperandSource = OperandSource.SMEM,
 ) -> cute.TiledMma:
-    """Create a blockscaled trivial tiled MMA for SM103 (Ultra FP4), K fixed to 96.
+    """Create a blockscaled trivial tiled MMA for SM103 (ultra FP4), K fixed to 96.
 
     Returns a tcgen05 MMA configured for the given (M, N) tiler and CTA group.
 
@@ -1681,6 +1705,7 @@ def sm120_get_smem_store_op(
 
 
 
+
 def compute_epilogue_tile_size(
     cta_tile_m: int,
     cta_tile_n: int,
@@ -1689,6 +1714,7 @@ def compute_epilogue_tile_size(
     elem_width_c: int | None = None,
     d_is_m_major: bool = True,
     c_is_m_major: bool = True,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
 ) -> tuple[int, int]:
     """Compute epilogue subtile dimensions ``(tile_m, tile_n)`` (pure Python, no MLIR).
 
@@ -1804,7 +1830,10 @@ def compute_epilogue_tile_size(
     """
     # -- Step 1: warp grid ------------------------------------------------
     # (2,2) for 2CTA+M64 so each warp gets 32 rows; else (4,1).
-    (warp_m, warp_n) = (2, 2) if (cta_tile_m == 64 and use_2cta) else (4, 1)
+    if tmem_warp_shape_mn is not None:
+        (warp_m, warp_n) = tmem_warp_shape_mn
+    else:
+        (warp_m, warp_n) = (2, 2) if (cta_tile_m == 64 and use_2cta) else (4, 1)
     disable_source = elem_width_c is None
     max_bits = elem_width_d if disable_source else max(elem_width_c, elem_width_d)  # type: ignore[type-var]
 
@@ -1844,11 +1873,11 @@ def compute_epilogue_tile_size(
         if d_is_m_major
         else (128 * warp_n if elem_width_d == 6 else 128 // elem_width_d * warp_n)
     )
-    n_min_c = (
-        8 * warp_n
-        if (c_is_m_major or disable_source)
-        else (128 * warp_n if elem_width_c == 6 else 128 // elem_width_c * warp_n)  # type: ignore[operator]
-    )
+    if c_is_m_major or disable_source:
+        n_min_c = 8 * warp_n
+    else:
+        assert elem_width_c is not None
+        n_min_c = 128 * warp_n if elem_width_c == 6 else 128 // elem_width_c * warp_n
 
     # -- Step 5: tile_n ---------------------------------------------------
     tile_n = min(cta_tile_n, max(n_perf, n_min_c, n_min_d))
@@ -1873,13 +1902,6 @@ def compute_acc_tmem_cols_per_stage(
     allocation constraints (min 32 columns, power-of-2 total) at the final
     ``alloc_tmem`` call site.  See ``TmemAllocator.check_valid_num_columns``
     in ``cutlass/utils/tmem_allocator.py``.
-
-    Replicates the C++ logic from without requiring an
-    MLIR context, so it can be used at kernel discovery time.  When an
-    MLIR context is available, prefer
-    ``cutlass.cute.nvgpu.tcgen05.find_tmem_tensor_col_offset`` which
-    computes the column count directly from the compiler-generated
-    TMEM layout.
 
     **How TMEM packing works**
 

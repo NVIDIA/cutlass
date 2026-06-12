@@ -74,7 +74,11 @@ from .tensormap_manager import (
     TensorMapManager,
 )
 
-from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
+from .smem_allocator import (
+    SmemAllocator,
+    get_smem_capacity_in_bytes,
+    get_kernel_smem_size,
+)
 from .tmem_allocator import (
     TmemAllocator,
     TmemBufferPool,
@@ -83,7 +87,6 @@ from .tmem_allocator import (
 )
 
 from .layout import LayoutEnum
-
 from .block import block_copy
 
 from .mixed_input_helpers import (
@@ -126,6 +129,7 @@ from .tensor_helpers import (
 
 __all__ = [
     "get_smem_capacity_in_bytes",
+    "get_kernel_smem_size",
     "SmemAllocator",
     "TmemAllocator",
     "TmemBufferPool",

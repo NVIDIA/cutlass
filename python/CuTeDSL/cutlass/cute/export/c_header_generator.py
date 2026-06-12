@@ -99,7 +99,7 @@ void _mlir_{symbol_prefix}_cuda_init(void **);
 void _mlir_{symbol_prefix}_cuda_load_to_device(void **);
 static inline void {symbol_prefix}_Kernel_Module_Load({symbol_prefix}_Kernel_Module_t *module) {{
     cudaLibrary_t *libraryPtr = &(module->module);
-    cudaError_t ret;
+    cudaError_t ret = cudaSuccess;
     struct {{
         cudaLibrary_t **libraryPtr;
         cudaError_t *ret;
@@ -261,7 +261,7 @@ extern "C"
 void {capi_function_name}(void **args, int32_t num_args);
 
 static inline {return_type} {wrapper_function_name}({symbol_prefix}_Kernel_Module_t *module, {", ".join(arguments)}) {{
-    {return_type} ret;
+    {return_type} ret = 0;
     void *args[{len(packed_args) + 1}] = {{
         {", ".join(packed_args)},
         &ret

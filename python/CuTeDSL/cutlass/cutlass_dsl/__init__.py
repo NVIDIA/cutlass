@@ -39,8 +39,8 @@ from ..base_dsl import *
 from ..base_dsl.arch import Arch
 from ..base_dsl.dsl import extract_mlir_values, new_from_mlir_values
 from ..base_dsl.typing import _binary_op_type_promote
-from ..base_dsl._mlir_helpers.gpu import *
-from ..base_dsl._mlir_helpers.op import dsl_user_op
+from .._mlir_helpers.gpu import *
+from .._mlir_helpers.op import dsl_user_op
 from ..base_dsl.runtime import *
 from ..base_dsl.runtime import cuda as cuda_helpers
 from ..base_dsl.compiler import (
@@ -54,6 +54,8 @@ from ..base_dsl.compiler import (
     GPUArch,
     LinkLibraries,
     EnableTVMFFI,
+    DeviceTarget,
+    RDC,
 )
 from ..base_dsl.runtime.jit_arg_adapters import *
 from ..base_dsl.native_struct import make_native_struct, native_struct

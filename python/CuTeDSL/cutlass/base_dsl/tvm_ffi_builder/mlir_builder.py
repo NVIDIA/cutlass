@@ -32,6 +32,8 @@ class MLIRTypeBuilder:
         self.i16_type = ir.IntegerType.get_signless(16)
         self.i8_type = ir.IntegerType.get_signless(8)
         self.i1_type = ir.IntegerType.get_signless(1)
+        self.f16_type = ir.Type.parse("f16")
+        self.bf16_type = ir.Type.parse("bf16")
         self.f32_type = ir.Type.parse("f32")
         self.f64_type = ir.Type.parse("f64")
         self.ptr_type = llvm.PointerType.get()
@@ -170,6 +172,28 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Create an i64 constant with the given value."""
         return self.integer_constant(self.i64_type, value)
 
+    def fptrunc(self, value: ir.Value, res_type: ir.Type) -> ir.Value:
+        """Truncate a floating-point value to a narrower float type.
+
+        Routes through f32 intermediate to avoid emitting compiler-rt calls
+        (__truncdfhf2, __truncdfbf2) that are unavailable in the JIT engine.
+        For bf16, uses integer bit manipulation from f32.
+        """
+        if value.type == res_type:
+            return value
+        if res_type == self.bf16_type:
+            if value.type != self.f32_type:
+                value = llvm.fptrunc(res=self.f32_type, arg=value)
+            v_i32 = llvm.bitcast(self.i32_type, value)
+            v_shifted = llvm.lshr(v_i32, self.i32(16))
+            v_i16 = llvm.trunc(
+                self.i16_type, v_shifted, overflow_flags=llvm.IntegerOverflowFlags.none
+            )
+            return llvm.bitcast(self.bf16_type, v_i16)
+        if res_type == self.f16_type and value.type != self.f32_type:
+            value = llvm.fptrunc(res=self.f32_type, arg=value)
+        return llvm.fptrunc(res=res_type, arg=value)
+
     def mul(self, lhs: ir.Value, rhs: ir.Value) -> ir.Value:
         """Create a multiplication operation between two values."""
         return llvm.mul(lhs, rhs, overflow_flags=llvm.IntegerOverflowFlags.none)
@@ -195,7 +219,11 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Create a logical NOT operation."""
         # Ensure we're working with i1 type for boolean operations
         if value.type != self.i1_type:
-            value = llvm.trunc(res=self.i1_type, arg=value)
+            value = llvm.trunc(
+                res=self.i1_type,
+                arg=value,
+                overflow_flags=llvm.IntegerOverflowFlags.none,
+            )
         return llvm.xor(value, self.i1(1))
 
     def i64_divisible_const(self, value: ir.Value, align_const: int) -> ir.Value:
