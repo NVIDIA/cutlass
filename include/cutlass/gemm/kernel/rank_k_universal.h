@@ -135,30 +135,30 @@ public:
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_C,
-      void * ptr_D,
-      int64_t batch_stride_A,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      typename LayoutA::Stride::Index lda,
-      typename LayoutC::Stride::Index ldc,
-      typename LayoutC::Stride::Index ldd,
-      bool allow_early_exit = false
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      typename LayoutA::Stride::Index lda_,
+      typename LayoutC::Stride::Index ldc_,
+      typename LayoutC::Stride::Index ldd_,
+      bool allow_early_exit_ = false
     ):
-      mode(mode), 
-      problem_size(problem_size), 
-      batch_count(batch_count),
-      epilogue(epilogue), 
-      ptr_A(ptr_A), ptr_C(ptr_C), ptr_D(ptr_D), 
-      batch_stride_A(batch_stride_A), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D), 
-      lda(lda), ldb(0),
-      ldc(ldc), ldd(ldd),
-      allow_early_exit(allow_early_exit) {
+      mode(mode_),
+      problem_size(problem_size_),
+      batch_count(batch_count_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      batch_stride_A(batch_stride_A_), batch_stride_C(batch_stride_C_), batch_stride_D(batch_stride_D_),
+      lda(lda_), ldb(0),
+      ldc(ldc_), ldd(ldd_),
+      allow_early_exit(allow_early_exit_) {
 
       }
 
@@ -207,13 +207,13 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       Arguments const &args,
-      cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      int gemm_k_size,
+      cutlass::gemm::GemmCoord const & grid_tiled_shape_,
+      int gemm_k_size_,
       void *workspace = nullptr
     ):
       problem_size(args.problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
+      grid_tiled_shape(grid_tiled_shape_),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape_)),
       params_A(args.lda),
       params_B(args.lda),
       params_C(args.ldc),
@@ -221,7 +221,7 @@ public:
       output_op(args.epilogue),
       mode(args.mode),
       batch_count(args.batch_count),
-      gemm_k_size(gemm_k_size),
+      gemm_k_size(gemm_k_size_),
       ptr_A(const_cast<void *>(args.ptr_A)),
       ptr_B(const_cast<void *>(args.ptr_A)),
       ptr_C(const_cast<void *>(args.ptr_C)),
@@ -269,10 +269,6 @@ public:
   /// Determines whether kernel satisfies alignment
   static Status can_implement(
     cutlass::gemm::GemmCoord const & problem_size) {
-
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     if ((problem_size.m() % kAlignmentA) || (problem_size.k() % kAlignmentA) ||
       (problem_size.n() % kAlignmentB) || (problem_size.k() % kAlignmentB) ||

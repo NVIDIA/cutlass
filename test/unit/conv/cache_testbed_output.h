@@ -76,14 +76,14 @@ struct CachedTestKey {
   inline CachedTestKey(): A(), B(), C() { }
 
   inline CachedTestKey(
-    std::string op,         ///< Concatenated string representation of operation performed
-    std::string problem,    ///< Concatenated string representation of problem description
-    std::string types,      ///< Concatenated string representation of operand types
-    uint32_t    A,          ///< Hashed result of tensor A
-    uint32_t    B,          ///< Hashed result of tensor B
-    uint32_t    C           ///< Hashed result of tensor C
+    std::string op_,         ///< Concatenated string representation of operation performed
+    std::string problem_,    ///< Concatenated string representation of problem description
+    std::string types_,      ///< Concatenated string representation of operand types
+    uint32_t    A_,          ///< Hashed result of tensor A
+    uint32_t    B_,          ///< Hashed result of tensor B
+    uint32_t    C_           ///< Hashed result of tensor C
   ):
-    op(op), problem(problem), types(types), A(A), B(B), C(C)
+    op(op_), problem(problem_), types(types_), A(A_), B(B_), C(C_)
   { }
 
   /// Checks for equality of the problem
@@ -129,7 +129,7 @@ struct CachedTestResult {
   CachedTestResult(): D()
       { }
 
-  CachedTestResult(uint32_t D): D(D)
+  CachedTestResult(uint32_t D_): D(D_)
       { }
 
   operator bool() const {

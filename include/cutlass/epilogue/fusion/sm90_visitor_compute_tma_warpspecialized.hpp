@@ -150,8 +150,8 @@ public:
       : params() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90Compute(Params const& params, SharedStorage const& shared_storage)
-      : params(params) {}
+  Sm90Compute(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_) {}
 
   Params const params;
 
@@ -163,8 +163,8 @@ public:
 
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(Params const& params)
-      : params(params) {}
+    ConsumerStoreCallbacks(Params const& params_)
+      : params(params_) {}
 
     Params const& params;
 
@@ -287,8 +287,8 @@ struct Sm90TreeVisitor<
   template <class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(bool is_C_load_needed, CallbacksImpl&& impl)
-      : is_C_load_needed(is_C_load_needed), CallbacksImpl(cute::forward<CallbacksImpl>(impl)) { }
+    ConsumerStoreCallbacks(bool is_C_load_needed_, CallbacksImpl&& impl)
+      : is_C_load_needed(is_C_load_needed_), CallbacksImpl(cute::forward<CallbacksImpl>(impl)) { }
 
     bool is_C_load_needed;
 
@@ -458,17 +458,17 @@ struct Sm90TreeVisitor<
   struct ConsumerStoreCallbacks : CallbacksImpl {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
-        RTensor&& tC_rAux,
-        GTensor&& tC_gAux,
-        CTensor tC_cAux,
-        ThrResidue residue_tC_cAux,
-        Params const& params,
+        RTensor&& tC_rAux_,
+        GTensor&& tC_gAux_,
+        CTensor tC_cAux_,
+        ThrResidue residue_tC_cAux_,
+        Params const& params_,
         CallbacksImpl&& impl)
-      : tC_rAux(cute::forward<RTensor>(tC_rAux)),
-        tC_gAux(cute::forward<GTensor>(tC_gAux)),
-        tC_cAux(tC_cAux),
-        residue_tC_cAux(residue_tC_cAux),
-        params(params),
+      : tC_rAux(cute::forward<RTensor>(tC_rAux_)),
+        tC_gAux(cute::forward<GTensor>(tC_gAux_)),
+        tC_cAux(tC_cAux_),
+        residue_tC_cAux(residue_tC_cAux_),
+        params(params_),
         CallbacksImpl(cute::forward<CallbacksImpl>(impl)) {}
 
     RTensor tC_rAux;                                                                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
@@ -666,8 +666,8 @@ struct Sm90AuxLoad<
   Sm90AuxLoad() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90AuxLoad(Params const& params, SharedStorage const&)
-      : params(params) { }
+  Sm90AuxLoad(Params const& params_, SharedStorage const&)
+      : params(params_) { }
 
   Params const params;
 

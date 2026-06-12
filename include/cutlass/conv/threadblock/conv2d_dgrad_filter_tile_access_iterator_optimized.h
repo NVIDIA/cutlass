@@ -131,12 +131,12 @@ public:
       
     CUTLASS_HOST_DEVICE
     Params(
-      Conv2dProblemSize const &problem_size, 
-      Layout const &layout
+      Conv2dProblemSize const &problem_size,
+      Layout const &layout_
     ):
       Conv2dStridedDgradFilterIteratorOptimizedParams(
         problem_size,
-        layout,
+        layout_,
         sizeof_bits<Element>::value,
         {Shape::kRow, Shape::kColumn},
         ThreadMap::kThreads,
@@ -187,7 +187,7 @@ public:
     int start_r, int start_s,
     MatrixCoord const &threadblock_offset = MatrixCoord()
   ):
-    params_(params), 
+    params_(params),
     problem_size_(problem_size),
     pointer_(reinterpret_cast<char const *>(ptr)),
     predicates_{0},
@@ -422,12 +422,12 @@ public:
       
     CUTLASS_HOST_DEVICE
     Params(
-      Conv2dProblemSize const &problem_size, 
-      Layout const &layout
+      Conv2dProblemSize const &problem_size,
+      Layout const &layout_
     ):
       Conv2dDgradFilterIteratorOptimizedParams(
         problem_size,
-        layout,
+        layout_,
         sizeof_bits<Element>::value,
         {Shape::kRow, Shape::kColumn},
         ThreadMap::kThreads,

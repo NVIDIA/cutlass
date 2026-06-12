@@ -94,32 +94,32 @@ struct SparseUniversalArgumentsBase : UniversalArgumentsBase {
 
   /// constructs an arguments structure
   SparseUniversalArgumentsBase(
-    GemmUniversalMode mode,
-    GemmCoord problem_size,
-    int batch_count,
-    void const * ptr_A,
-    void const * ptr_B,
-    void const * ptr_C,
-    void * ptr_D,
-    void const * ptr_E,
-    int64_t batch_stride_A,
-    int64_t batch_stride_B,
-    int64_t batch_stride_C,
-    int64_t batch_stride_D,
-    int64_t batch_stride_E,
-    typename LayoutA::Stride::LongIndex lda,
-    typename LayoutB::Stride::LongIndex ldb,
-    typename LayoutC::Stride::LongIndex ldc,
-    typename LayoutC::Stride::LongIndex ldd,
-    typename LayoutC::Stride::LongIndex lde)
+    GemmUniversalMode mode_,
+    GemmCoord problem_size_,
+    int batch_count_,
+    void const * ptr_A_,
+    void const * ptr_B_,
+    void const * ptr_C_,
+    void * ptr_D_,
+    void const * ptr_E_,
+    int64_t batch_stride_A_,
+    int64_t batch_stride_B_,
+    int64_t batch_stride_C_,
+    int64_t batch_stride_D_,
+    int64_t batch_stride_E_,
+    typename LayoutA::Stride::LongIndex lda_,
+    typename LayoutB::Stride::LongIndex ldb_,
+    typename LayoutC::Stride::LongIndex ldc_,
+    typename LayoutC::Stride::LongIndex ldd_,
+    typename LayoutC::Stride::LongIndex lde_)
   :
-    UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-    ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), ptr_E(ptr_E),
-    batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C),
-    batch_stride_E(batch_stride_E),
-    lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), lde(lde)
+    UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+    ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_), ptr_E(ptr_E_),
+    batch_stride_A(batch_stride_A_), batch_stride_B(batch_stride_B_), batch_stride_C(batch_stride_C_),
+    batch_stride_E(batch_stride_E_),
+    lda(lda_), ldb(ldb_), ldc(ldc_), ldd(ldd_), lde(lde_)
   {
-    CUTLASS_TRACE_HOST("SparseUniversalArgumentsBase::Arguments() - problem_size: " << problem_size);
+    CUTLASS_TRACE_HOST("SparseUniversalArgumentsBase::Arguments() - problem_size: " << problem_size_);
   }
 };
 
@@ -301,35 +301,35 @@ public:
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      void const * ptr_E,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      int64_t batch_stride_E,
-      typename LayoutA::Stride::LongIndex lda,
-      typename LayoutB::Stride::LongIndex ldb,
-      typename LayoutC::Stride::LongIndex ldc,
-      typename LayoutC::Stride::LongIndex ldd,
-      typename LayoutC::Stride::LongIndex lde)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      void const * ptr_E_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      int64_t batch_stride_E_,
+      typename LayoutA::Stride::LongIndex lda_,
+      typename LayoutB::Stride::LongIndex ldb_,
+      typename LayoutC::Stride::LongIndex ldc_,
+      typename LayoutC::Stride::LongIndex ldd_,
+      typename LayoutC::Stride::LongIndex lde_)
     :
       Base(
-        mode, problem_size, batch_count,
-        ptr_A, ptr_B, ptr_C, ptr_D, ptr_E,
-        batch_stride_A, batch_stride_B, batch_stride_C, batch_stride_D, batch_stride_E,
-        lda, ldb, ldc, ldd, lde
+        mode_, problem_size_, batch_count_,
+        ptr_A_, ptr_B_, ptr_C_, ptr_D_, ptr_E_,
+        batch_stride_A_, batch_stride_B_, batch_stride_C_, batch_stride_D_, batch_stride_E_,
+        lda_, ldb_, ldc_, ldd_, lde_
       ),
-      epilogue(epilogue)
+      epilogue(epilogue_)
     {
-      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
+      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size_);
     }
   };
 

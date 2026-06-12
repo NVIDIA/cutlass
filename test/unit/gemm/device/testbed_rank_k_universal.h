@@ -92,9 +92,9 @@ struct TestbedRank2KUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -118,21 +118,21 @@ struct TestbedRank2KUniversal {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5, mantissa_in_bits);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5, mantissa_in_bits);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
     else {
 
       EXPECT_TRUE(false) << "Input distribution not implemented";
@@ -146,9 +146,9 @@ struct TestbedRank2KUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_symmetric_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -172,12 +172,12 @@ struct TestbedRank2KUniversal {
       }
 
       cutlass::reference::host::TensorFillSymmetricRandomUniform(
-        view, seed, RankK::kFillModeC, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, RankK::kFillModeC, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       cutlass::reference::host::TensorFillSymmetricRandomGaussian(
-        view, seed, RankK::kFillModeC, 0, 0.5, mantissa_in_bits);
+        view, seed_, RankK::kFillModeC, 0, 0.5, mantissa_in_bits);
     }
     else {
 

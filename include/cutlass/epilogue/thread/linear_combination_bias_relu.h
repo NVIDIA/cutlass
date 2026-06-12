@@ -424,40 +424,40 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta,
-      ElementCompute threshold_ = ElementCompute()
-    ): 
-      alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_,
+      ElementCompute threshold_arg = ElementCompute()
+    ):
+      alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
       NumericConverter<ElementZ, ElementCompute> convert_threshold;
 
-      threshold = convert_threshold(threshold_);
+      threshold = convert_threshold(threshold_arg);
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha
-    ): alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr), threshold(ElementZ()) {
+      ElementCompute alpha_
+    ): alpha(alpha_), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr), threshold(ElementZ()) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
-      ElementCompute threshold_ = ElementCompute()
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_,
+      ElementCompute threshold_arg = ElementCompute()
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
       NumericConverter<ElementZ, ElementCompute> convert_threshold;
 
-      threshold = convert_threshold(threshold_);
+      threshold = convert_threshold(threshold_arg);
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr), threshold(ElementZ()) {
+      ElementCompute const *alpha_ptr_
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(nullptr), threshold(ElementZ()) {
     }
 
   };

@@ -436,10 +436,10 @@ struct TestbedGroupedRank2KScheduler {
   }
 
   /// Executes the test on all scheduler modes
-  void run(int problem_count, int threadblock_count, int scale_factor=8) {
+  void run(int problem_count_, int threadblock_count_, int scale_factor=8) {
 
-    this->problem_count = problem_count;
-    this->threadblock_count = threadblock_count;
+    this->problem_count = problem_count_;
+    this->threadblock_count = threadblock_count_;
 
     // Initialize the problem
     initialize(scale_factor);

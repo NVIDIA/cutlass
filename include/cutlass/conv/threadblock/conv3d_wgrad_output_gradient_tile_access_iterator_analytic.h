@@ -105,9 +105,9 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      Conv3dProblemSize const &problem_size, 
-      Layout const &layout
-    ): layout(layout) {
+      Conv3dProblemSize const &problem_size,
+      Layout const &layout_
+    ): layout(layout_) {
 
     }
   };

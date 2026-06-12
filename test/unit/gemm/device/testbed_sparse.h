@@ -114,9 +114,9 @@ struct SparseTestbed {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
@@ -139,15 +139,15 @@ struct SparseTestbed {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, 0);
-    } 
+        view, seed_, scope_max, scope_min, 0);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
@@ -183,9 +183,9 @@ struct SparseTestbed {
     EXPECT_TRUE(initialize_tensor(tensor_C.host_view(), init_C, seed + 2017));
 
     if (init_E == cutlass::Distribution::Uniform) {
-      uint64_t seed = 7;
+      uint64_t seed_e = 7;
       cutlass::reference::host::TensorFillRandomSparseMeta(
-          tensor_E.host_view(), seed, kMetaSizeInBits);
+          tensor_E.host_view(), seed_e, kMetaSizeInBits);
     } else if (init_E == cutlass::Distribution::Identity) {
       uint32_t content = (kMaxID2 == 1) ? 0x44444444 : 0x4444;
       cutlass::reference::host::TensorFill(tensor_E.host_view(),

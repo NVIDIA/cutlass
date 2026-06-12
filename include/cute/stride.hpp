@@ -86,9 +86,9 @@ crd2idx_itt(CInt   const& coord,
     return crd2idx(_0{}, get<I0>(shape), get<I0>(stride))
          + (_0{} + ... + crd2idx(_0{}, get<Is>(shape), get<Is>(stride)));
   } else {                             // General case
-    auto [div, mod] = divmod(coord, product(get<I0>(shape)));
-    return crd2idx(mod, get<I0>(shape), get<I0>(stride))
-         + crd2idx_itt(div, shape, stride, seq<Is...>{});
+    auto [quotient, remainder] = divmod(coord, product(get<I0>(shape)));
+    return crd2idx(remainder, get<I0>(shape), get<I0>(stride))
+         + crd2idx_itt(quotient, shape, stride, seq<Is...>{});
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -438,9 +438,9 @@ compact_order(Shape const& shape, Order const& order)
 
   auto flat_order = flatten_to_tuple(order);
   // Find the largest static element of order
-  auto max_order = cute::fold(flat_order, Int<0>{}, [](auto v, auto order) {
-    if constexpr (is_constant<true, decltype(v < order)>::value) {
-      return order;
+  auto max_order = cute::fold(flat_order, Int<0>{}, [](auto v, auto ord) {
+    if constexpr (is_constant<true, decltype(v < ord)>::value) {
+      return ord;
     } else {
       return v;
     }
@@ -449,9 +449,9 @@ compact_order(Shape const& shape, Order const& order)
   });
   // Replace any dynamic elements within order with large-static elements
   auto max_seq = make_range<max_order+1, max_order+1+rank(flat_order)>{};
-  auto ref_order = cute::transform(max_seq, flat_order, [](auto seq_v, auto order) {
-    if constexpr (is_static<decltype(order)>::value) {
-      return order;
+  auto ref_order = cute::transform(max_seq, flat_order, [](auto seq_v, auto ord) {
+    if constexpr (is_static<decltype(ord)>::value) {
+      return ord;
     } else {
       return seq_v;
     }

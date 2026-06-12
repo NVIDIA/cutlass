@@ -165,7 +165,7 @@ struct ScalarIO {
   ScalarIO() { }
 
   /// Constructs from a value
-  ScalarIO(T value): value(value) {}
+  ScalarIO(T value_): value(value_) {}
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

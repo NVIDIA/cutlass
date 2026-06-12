@@ -158,44 +158,44 @@ public:
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C1,
-      void const * ptr_C2,
-      void * ptr_D,
-      void * ptr_Vector,
-      void * ptr_Tensor,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C1,
-      int64_t batch_stride_C2,
-      int64_t batch_stride_D,
-      int64_t batch_stride_Vector,
-      int64_t batch_stride_Tensor,
-      typename LayoutA::Stride::Index lda,
-      typename LayoutB::Stride::Index ldb,
-      typename LayoutC::Stride::Index ldc1,
-      typename LayoutC::Stride::Index ldc2,
-      typename LayoutC::Stride::Index ldd,
-      typename LayoutC::Stride::Index ldr,
-      typename LayoutC::Stride::Index ldt)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C1_,
+      void const * ptr_C2_,
+      void * ptr_D_,
+      void * ptr_Vector_,
+      void * ptr_Tensor_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C1_,
+      int64_t batch_stride_C2_,
+      int64_t batch_stride_D_,
+      int64_t batch_stride_Vector_,
+      int64_t batch_stride_Tensor_,
+      typename LayoutA::Stride::Index lda_,
+      typename LayoutB::Stride::Index ldb_,
+      typename LayoutC::Stride::Index ldc1_,
+      typename LayoutC::Stride::Index ldc2_,
+      typename LayoutC::Stride::Index ldd_,
+      typename LayoutC::Stride::Index ldr_,
+      typename LayoutC::Stride::Index ldt_)
     :
-      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C1(ptr_C1), ptr_C2(ptr_C2), ptr_D(ptr_D),
-      ptr_Vector(ptr_Vector),
-      ptr_Tensor(ptr_Tensor),
-      batch_stride_A(batch_stride_A),
-      batch_stride_B(batch_stride_B),
-      batch_stride_C1(batch_stride_C1),
-      batch_stride_C2(batch_stride_C2),
-      batch_stride_Vector(batch_stride_Vector),
-      batch_stride_Tensor(batch_stride_Tensor),
-      lda(lda), ldb(ldb), ldc1(ldc1), ldc2(ldc2), ldd(ldd), ldr(ldr), ldt(ldt)
+      UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C1(ptr_C1_), ptr_C2(ptr_C2_), ptr_D(ptr_D_),
+      ptr_Vector(ptr_Vector_),
+      ptr_Tensor(ptr_Tensor_),
+      batch_stride_A(batch_stride_A_),
+      batch_stride_B(batch_stride_B_),
+      batch_stride_C1(batch_stride_C1_),
+      batch_stride_C2(batch_stride_C2_),
+      batch_stride_Vector(batch_stride_Vector_),
+      batch_stride_Tensor(batch_stride_Tensor_),
+      lda(lda_), ldb(ldb_), ldc1(ldc1_), ldc2(ldc2_), ldd(ldd_), ldr(ldr_), ldt(ldt_)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Arguments::Arguments() - problem_size: " << problem_size);
       CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
@@ -363,10 +363,6 @@ public:
     cutlass::gemm::GemmCoord const & problem_size) {
 
     CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::can_implement()");
-
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     bool isAMisaligned = false;
     bool isBMisaligned = false;
@@ -895,40 +891,40 @@ public:
 
     /// constructs an arguments structure
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_count,
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      void * ptr_Vector,
-      void * ptr_Tensor,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      int64_t batch_stride_Vector,
-      int64_t batch_stride_Tensor,
-      typename LayoutA::Stride::Index lda,
-      typename LayoutB::Stride::Index ldb,
-      typename LayoutC::Stride::Index ldc,
-      typename LayoutC::Stride::Index ldd,
-      typename LayoutC::Stride::Index ldr,
-      typename LayoutC::Stride::Index ldt)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_count_,
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      void * ptr_Vector_,
+      void * ptr_Tensor_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      int64_t batch_stride_Vector_,
+      int64_t batch_stride_Tensor_,
+      typename LayoutA::Stride::Index lda_,
+      typename LayoutB::Stride::Index ldb_,
+      typename LayoutC::Stride::Index ldc_,
+      typename LayoutC::Stride::Index ldd_,
+      typename LayoutC::Stride::Index ldr_,
+      typename LayoutC::Stride::Index ldt_)
     :
-      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
-      ptr_Vector(ptr_Vector),
-      ptr_Tensor(ptr_Tensor),
-      batch_stride_A(batch_stride_A),
-      batch_stride_B(batch_stride_B),
-      batch_stride_C(batch_stride_C),
-      batch_stride_Vector(batch_stride_Vector),
-      batch_stride_Tensor(batch_stride_Tensor),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ldr(ldr), ldt(ldt)
+      UniversalArgumentsBase(mode_, problem_size_, batch_count_, batch_stride_D_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      ptr_Vector(ptr_Vector_),
+      ptr_Tensor(ptr_Tensor_),
+      batch_stride_A(batch_stride_A_),
+      batch_stride_B(batch_stride_B_),
+      batch_stride_C(batch_stride_C_),
+      batch_stride_Vector(batch_stride_Vector_),
+      batch_stride_Tensor(batch_stride_Tensor_),
+      lda(lda_), ldb(ldb_), ldc(ldc_), ldd(ldd_), ldr(ldr_), ldt(ldt_)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Arguments::Arguments() - problem_size: " << problem_size);
       CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
@@ -1089,10 +1085,6 @@ public:
     cutlass::gemm::GemmCoord const & problem_size) {
 
     CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::can_implement()");
-
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     bool isAMisaligned = false;
     bool isBMisaligned = false;

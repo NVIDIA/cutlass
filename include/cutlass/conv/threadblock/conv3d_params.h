@@ -76,8 +76,8 @@ struct Conv3dAnalyticParams {
   CUTLASS_HOST_DEVICE
   Conv3dAnalyticParams(
     Conv3dProblemSize const &,  // unused; placeholder to match other Params interfaces.
-    Layout const &layout
-  ): layout(layout) {
+    Layout const &layout_
+  ): layout(layout_) {
 
   }
 };
@@ -116,19 +116,19 @@ struct Conv3dFpropActivationIteratorOptimizedParams<layout::TensorNDHWC> {
   CUTLASS_HOST_DEVICE
   Conv3dFpropActivationIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,                             ///< layout object
+    Layout const &layout_,                            ///< layout object
     int element_size_bits,                            ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), 
+  ):
+    layout(layout_),
     PQ(problem_size.P * problem_size.Q),
-    ZPQ(problem_size.Z * problem_size.P * problem_size.Q),  
+    ZPQ(problem_size.Z * problem_size.P * problem_size.Q),
     zpq_divmod(ZPQ),
-    pq_divmod(PQ), 
+    pq_divmod(PQ),
     q_divmod(problem_size.Q) {
 
     TRACE_CONV_INITIALIZERS("conv3d_fprop", "activation", 
@@ -198,15 +198,15 @@ struct Conv3dFpropFilterIteratorOptimizedParams<layout::TensorNDHWC>
   CUTLASS_HOST_DEVICE
   Conv3dFpropFilterIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout) {
+  ):
+    layout(layout_) {
     
     TRACE_CONV_INITIALIZERS("conv3d_fprop", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -257,17 +257,17 @@ struct Conv3dDgradOutputGradientIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv3dDgradOutputGradientIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,                             ///< layout object
+    Layout const &layout_,                            ///< layout object
     int element_size_bits,                            ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
     int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), 
+  ):
+    layout(layout_),
     dhw_divmod(problem_size.D * problem_size.H * problem_size.W),
-    hw_divmod(problem_size.H * problem_size.W), 
+    hw_divmod(problem_size.H * problem_size.W),
     w_divmod(problem_size.W) {
 
     TRACE_CONV_INITIALIZERS("conv3d_dgrad", "output_gradient", 
@@ -330,15 +330,15 @@ struct Conv3dDgradFilterIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv3dDgradFilterIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,                        ///< size of each element in bits
     MatrixCoord threadblock_shape,
     int thread_count,
-    int access_size, 
+    int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): 
-    layout(layout), TRS(problem_size.T * problem_size.R * problem_size.S) {
+  ):
+    layout(layout_), TRS(problem_size.T * problem_size.R * problem_size.S) {
 
     TRACE_CONV_INITIALIZERS("conv3d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -395,14 +395,14 @@ struct Conv3dWgradOutputGradientIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv3dWgradOutputGradientIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,
     MatrixCoord threadblock_shape,
     int thread_count,
-    int access_size, 
+    int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): layout(layout) {
+  ): layout(layout_) {
 
   TRACE_CONV_INITIALIZERS("conv3d_wgrad", "output_gradient", 
     element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -468,14 +468,14 @@ struct Conv3dWgradActivationIteratorOptimizedParams {
   CUTLASS_HOST_DEVICE
   Conv3dWgradActivationIteratorOptimizedParams(
     Conv3dProblemSize const &problem_size,
-    Layout const &layout,    
+    Layout const &layout_,
     int element_size_bits,
     MatrixCoord threadblock_shape,
     int thread_count,
-    int access_size, 
+    int access_size,
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
-  ): layout(layout) {
+  ): layout(layout_) {
 
   TRACE_CONV_INITIALIZERS("conv3d_wgrad", "activation", 
     element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);

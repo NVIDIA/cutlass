@@ -99,16 +99,16 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementScalar alpha,
-      ElementScalar beta
-    ): alpha(alpha), beta(beta)
+      ElementScalar alpha_,
+      ElementScalar beta_
+    ): alpha(alpha_), beta(beta_)
     {}
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementScalar const *alpha_ptr,
-      ElementScalar const *beta_ptr
-    ): alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) 
+      ElementScalar const *alpha_ptr_,
+      ElementScalar const *beta_ptr_
+    ): alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_)
     {}
   };
 

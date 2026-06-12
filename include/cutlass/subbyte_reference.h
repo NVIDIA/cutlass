@@ -674,7 +674,7 @@ public:
   static int const kBitsStoredVec = StorageContainerCalculator::kContainerTypeNumBits; 
   static int const kNumStorageUnitPerStoredVec = StorageContainerCalculator::kContainerTypeNumStorageUnit;
 
-  using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
+  using StorageVec = StorageUnit[static_cast<size_t>(kNumStorageUnitPerStoredVec)];
   using StorageVecPointer = StorageVec *;
   
   using CudaAtomicType = typename platform::conditional<
@@ -734,8 +734,8 @@ private:
                               ? low_storage_unit_idx_ + 1 : low_storage_unit_idx_;
     
     full_element_mask_ = uint64_t(kMask) << start_bit_idx_;
-    low_storage_mask_ = StorageUnit(full_element_mask_ & ~StorageUnit(0));
-    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & ~StorageUnit(0));
+    low_storage_mask_ = StorageUnit(full_element_mask_ & static_cast<uint64_t>(~StorageUnit(0)));
+    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & static_cast<uint64_t>(~StorageUnit(0)));
   }
 
 public:
@@ -748,7 +748,7 @@ public:
   SubbyteReference(
     Element *ptr,           /// pointer to memory
     int64_t offset          /// logical offset in units of Element
-  ): 
+  ):
     ptr_(reinterpret_cast<StorageVecPointer>(ptr)),
     offset_(0) {
     int64_t offset_in_vectors = offset / kElementsPerVector;
@@ -802,11 +802,11 @@ public:
 
     uint64_t item = static_cast<uint64_t>((reinterpret_cast<uint8_t const &>(x) & kMask)) << start_bit_idx_;
     
-    StorageUnit low_new_bits  = StorageUnit(item & ~StorageUnit(0));
+    StorageUnit low_new_bits  = StorageUnit(item & static_cast<uint64_t>(~StorageUnit(0)));
     StorageUnit high_new_bits = StorageUnit(item >> sizeof_bits<StorageUnit>::value);
 
-    StorageUnit const kLowUpdateMask  = StorageUnit((~full_element_mask_) & (~StorageUnit(0)));
-    StorageUnit const kHighUpdateMask = StorageUnit(((~full_element_mask_) >> sizeof_bits<StorageUnit>::value) & (~StorageUnit(0)));
+    StorageUnit const kLowUpdateMask  = StorageUnit((~full_element_mask_) & static_cast<uint64_t>(~StorageUnit(0)));
+    StorageUnit const kHighUpdateMask = StorageUnit(((~full_element_mask_) >> sizeof_bits<StorageUnit>::value) & static_cast<uint64_t>(~StorageUnit(0)));
 
 #if defined(__CUDA_ARCH__)
     //
@@ -1047,9 +1047,9 @@ public:
   static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
   static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
 
-  using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
+  using StorageVec = StorageUnit[static_cast<size_t>(kNumStorageUnitPerStoredVec)];
   using StorageVecPointer = StorageVec const *;
-  
+
   using CudaAtomicType = typename platform::conditional<
       sizeof_bits<StorageUnit>::value == 16,
       uint32_t,
@@ -1107,8 +1107,8 @@ private:
                               ? low_storage_unit_idx_ + 1 : low_storage_unit_idx_;
     
     full_element_mask_ = uint64_t(kMask) << start_bit_idx_;
-    low_storage_mask_ = StorageUnit(full_element_mask_ & ~StorageUnit(0));
-    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & ~StorageUnit(0));
+    low_storage_mask_ = StorageUnit(full_element_mask_ & static_cast<uint64_t>(~StorageUnit(0)));
+    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & static_cast<uint64_t>(~StorageUnit(0)));
   }
 
 public:

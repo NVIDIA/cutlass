@@ -87,13 +87,13 @@ struct MultistageTestbed {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(cutlass::TensorView<Element, Layout> view,
-                         cutlass::Distribution::Kind dist_kind, uint64_t seed) {
+                         cutlass::Distribution::Kind dist_kind, uint64_t seed_) {
     if (dist_kind == cutlass::Distribution::Uniform) {
       int scope = (cutlass::sizeof_bits<Element>::value == 8) ? 2 : 8;
-      cutlass::reference::host::TensorFillRandomUniform(view, seed, scope,
+      cutlass::reference::host::TensorFillRandomUniform(view, seed_, scope,
                                                         -scope, 0);
     } else if (dist_kind == cutlass::Distribution::Gaussian) {
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5, -1);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5, -1);
     } else if (dist_kind == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(view);
     } else if (dist_kind == cutlass::Distribution::Sequential) {

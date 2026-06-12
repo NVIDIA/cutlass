@@ -196,7 +196,7 @@ public:
       typename OutputTileIterator::Fragment &output_fragment,
       OutputOp const &output_op,
       typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment,
-      typename OutputTileIterator::Fragment const &source_fragment)
+      typename OutputTileIterator::Fragment const &source_fragment_)
     {
       OutputAccessType *output_frag_ptr =
         reinterpret_cast<OutputAccessType *>(&output_fragment);
@@ -205,7 +205,7 @@ public:
         reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
 
       OutputAccessType const *source_frag_ptr =
-        reinterpret_cast<OutputAccessType const *>(&source_fragment);
+        reinterpret_cast<OutputAccessType const *>(&source_fragment_);
 
       int const kOutputOpIterations =
         OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
@@ -220,8 +220,8 @@ public:
 
     /// Constructor
     CUTLASS_DEVICE
-    SourceAspectNeeded(OutputTileIterator source_iterator) :
-      source_iterator(source_iterator)
+    SourceAspectNeeded(OutputTileIterator source_iterator_) :
+      source_iterator(source_iterator_)
     {
       source_fragment.clear();
     }
@@ -252,11 +252,11 @@ public:
   CUTLASS_DEVICE
   InterleavedEpilogue(
       SharedStorage &shared_storage,  ///< Shared storage object
-      int thread_idx,                 ///< ID of a thread within the threadblock
+      int thread_idx_,                ///< ID of a thread within the threadblock
       int warp_idx,                   ///< ID of warp within threadblock
       int lane_idx)                   ///< Id of thread within warp
   :
-      BaseStreamK(thread_idx)
+      BaseStreamK(thread_idx_)
   {}
 
 

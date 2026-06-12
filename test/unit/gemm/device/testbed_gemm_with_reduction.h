@@ -132,9 +132,9 @@ struct TestbedGemmWithReduction {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
@@ -157,15 +157,15 @@ struct TestbedGemmWithReduction {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, 0);
-    } 
+        view, seed_, scope_max, scope_min, 0);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
@@ -176,7 +176,7 @@ struct TestbedGemmWithReduction {
 
         }
       }
-    } 
+    }
     else {
       EXPECT_TRUE(false) << "Not implemented";
       return false;
@@ -337,11 +337,9 @@ struct TestbedGemmWithReduction {
       ElementAccumulator(0)
     );
 
-    using ElementC = typename Gemm::ElementC;
-
     ReferenceOp reference_op;
 
-    // compute backwards 
+    // compute backwards
     for (int m = 0; m < problem_size.m(); ++m) {
       ElementAccumulator reduced_value = ElementAccumulator();
       for (int n = 0; n < problem_size.n(); ++n) {

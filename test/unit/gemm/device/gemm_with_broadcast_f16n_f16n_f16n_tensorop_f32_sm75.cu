@@ -73,7 +73,7 @@ struct GemmWithBiasReluReferenceOp {
   using ElementT = typename OutputOp::ElementT;
 
   typename OutputOp::BinaryOp binary_op;
-  typename OutputOp::ElementwiseOp elementwise_op;
+  [[maybe_unused]] typename OutputOp::ElementwiseOp elementwise_op;
 
   GemmWithBiasReluReferenceOp() { }
 

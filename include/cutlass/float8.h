@@ -1214,7 +1214,6 @@ struct float_ue8m0_t : public float_exmy_base<cutlass::detail::FpEncoding::UE8M0
           : "r"(0), "r"(bf16x2_val), "r"(0x5410));
       return f1;
     #else
-      using FP32Bits = cutlass::detail::FpBitRepresentation<uint32_t, 32, 8, 23, cutlass::detail::NanInfEncoding::IEEE_754>;
       if (x.storage == 0x00) {
         return cutlass::detail::copy_bits<FP32Bits::Storage, float>(0x00400000);
       }

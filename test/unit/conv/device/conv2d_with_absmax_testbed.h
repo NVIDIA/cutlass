@@ -123,8 +123,8 @@ struct TestbedConv2dWithAbsMax {
 
   /// Helper to initialize scaling factors
   template <typename Element, typename Layout>
-  bool initialize_scale_factor(cutlass::TensorView<Element, Layout> view, uint64_t seed, int bits=0) {
-    cutlass::reference::host::TensorFillRandomUniform(view, seed, double(1.), double(0.), bits);
+  bool initialize_scale_factor(cutlass::TensorView<Element, Layout> view, uint64_t seed_, int bits=0) {
+    cutlass::reference::host::TensorFillRandomUniform(view, seed_, double(1.), double(0.), bits);
     return true;
   }
 
@@ -133,7 +133,7 @@ struct TestbedConv2dWithAbsMax {
   bool initialize_tensor(
     cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
@@ -156,7 +156,7 @@ struct TestbedConv2dWithAbsMax {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, 0);
+        view, seed_, scope_max, scope_min, 0);
     }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
@@ -164,7 +164,7 @@ struct TestbedConv2dWithAbsMax {
     }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 

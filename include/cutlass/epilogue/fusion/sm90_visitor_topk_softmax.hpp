@@ -515,8 +515,8 @@ public:
   Sm90TopKSoftmaxColReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90TopKSoftmaxColReduction(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+  Sm90TopKSoftmaxColReduction(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_) { }
 
   Params params;
 
@@ -529,9 +529,9 @@ public:
   template<class ArgsTuple>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(ArgsTuple&& args_tuple, Params const& params)
-      : args_tuple(cute::forward<ArgsTuple>(args_tuple)),
-        params(params) {}
+    ConsumerStoreCallbacks(ArgsTuple&& args_tuple_, Params const& params_)
+      : args_tuple(cute::forward<ArgsTuple>(args_tuple_)),
+        params(params_) {}
 
     ArgsTuple args_tuple;
     Params const& params;

@@ -218,8 +218,8 @@ class GemmSplitKParallel {
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1,
-      typename ConvertScaledOp::Params convert_ = 
+      int split_k_slices_ = 1,
+      typename ConvertScaledOp::Params convert_ =
         typename ConvertScaledOp::Params(),
       typename ReductionOp::Params reduction_ =
         typename ReductionOp::Params()
@@ -230,7 +230,7 @@ class GemmSplitKParallel {
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices),
+      split_k_slices(split_k_slices_),
       convert(convert_),
       reduction(reduction_) { }
   };
@@ -255,12 +255,12 @@ public:
 
   /// Gets the workspace size
   static size_t get_workspace_size(Arguments const &args) {
-    
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size, 
+      args.problem_size,
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 
@@ -274,7 +274,7 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size, 
+      args.problem_size,
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 
@@ -534,8 +534,8 @@ class GemmSplitKParallel<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1,
-      typename ConvertScaledOp::Params convert_ = 
+      int split_k_slices_ = 1,
+      typename ConvertScaledOp::Params convert_ =
         typename ConvertScaledOp::Params(),
       typename ReductionOp::Params reduction_ =
         typename ReductionOp::Params()
@@ -546,7 +546,7 @@ class GemmSplitKParallel<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices),
+      split_k_slices(split_k_slices_),
       convert(convert_),
       reduction(reduction_) { }
   };

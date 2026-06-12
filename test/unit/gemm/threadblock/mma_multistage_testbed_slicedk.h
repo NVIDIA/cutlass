@@ -105,7 +105,7 @@ __global__ void kernel_multistage_mma(cutlass::gemm::GemmCoord problem_size,
                                      tb_thread_id, tb_offset_B);
 
   int warp_id = __shfl_sync(0xffffffff, threadIdx.y, 0);
-  int lane_id = threadIdx.x;
+  [[maybe_unused]] int lane_id = threadIdx.x;
 
   int partitionsK_idx = warp_id / (Mma::WarpCount::kM * Mma::WarpCount::kN);
 
@@ -200,14 +200,14 @@ struct Testbed {
   //
 
   /// Allocates workspace in device memory
-  Testbed(int m, int n, int k, float alpha_ = float(1), float beta_ = float(0))
-      : problem_size(m, n, k), alpha(alpha_), beta(beta_) {
-    matrix_A.reset(cutlass::make_Coord(m, k));
-    matrix_B.reset(cutlass::make_Coord(k, n));
+  Testbed(int m, int n, int k_, float alpha_ = float(1), float beta_ = float(0))
+      : problem_size(m, n, k_), alpha(alpha_), beta(beta_) {
+    matrix_A.reset(cutlass::make_Coord(m, k_));
+    matrix_B.reset(cutlass::make_Coord(k_, n));
 
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 0; k < kPartitionsK; k++)
-      matrix_C_computed[k].reset(cutlass::make_Coord(m, n));
+    for(int pk = 0; pk < kPartitionsK; pk++)
+      matrix_C_computed[pk].reset(cutlass::make_Coord(m, n));
 
     matrix_C_reference.reset(cutlass::make_Coord(m, n), false);
     matrix_C_pointers.reset(cutlass::Coord<1>(kPartitionsK));
@@ -273,8 +273,8 @@ struct Testbed {
     }
 
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 0; k < kPartitionsK; k++)
-      cutlass::reference::host::TensorFill(matrix_C_computed[k].host_view());
+    for(int pk = 0; pk < kPartitionsK; pk++)
+      cutlass::reference::host::TensorFill(matrix_C_computed[pk].host_view());
 
     cutlass::reference::host::TensorFill(matrix_C_reference.host_view());
 
@@ -282,15 +282,15 @@ struct Testbed {
     matrix_B.sync_device();
 
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 0; k < kPartitionsK; k++)
-      matrix_C_computed[k].sync_device();
+    for(int pk = 0; pk < kPartitionsK; pk++)
+      matrix_C_computed[pk].sync_device();
 
     typename IteratorA::Params params_A(matrix_A.layout());
     typename IteratorB::Params params_B(matrix_B.layout());
 
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 0; k < kPartitionsK; k++)
-      matrix_C_pointers.at(cutlass::Coord<1>(k)) = matrix_C_computed[k].device_data();
+    for(int pk = 0; pk < kPartitionsK; pk++)
+      matrix_C_pointers.at(cutlass::Coord<1>(pk)) = matrix_C_computed[pk].device_data();
 
     matrix_C_pointers.sync_device();
 
@@ -331,8 +331,8 @@ struct Testbed {
         << " kernel error: " << cudaGetErrorString(result);
 
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 0; k < kPartitionsK; k++)
-      matrix_C_computed[k].sync_host();
+    for(int pk = 0; pk < kPartitionsK; pk++)
+      matrix_C_computed[pk].sync_host();
 
     // TODO: this is temporary. it will be removed after slicing can de
     // reduction
@@ -340,12 +340,12 @@ struct Testbed {
     // Reduce matrix_C_computed
     //
     CUTLASS_PRAGMA_UNROLL
-    for(int k = 1; k < kPartitionsK; k++) {
+    for(int pk = 1; pk < kPartitionsK; pk++) {
       CUTLASS_PRAGMA_UNROLL
       for(int m = 0; m < matrix_C_computed[0].extent().row(); m++){
         CUTLASS_PRAGMA_UNROLL
         for(int n = 0; n < matrix_C_computed[0].extent().column(); n++){
-          matrix_C_computed[0].at({m, n}) += matrix_C_computed[k].at({m, n});
+          matrix_C_computed[0].at({m, n}) += matrix_C_computed[pk].at({m, n});
         }
       }
     }

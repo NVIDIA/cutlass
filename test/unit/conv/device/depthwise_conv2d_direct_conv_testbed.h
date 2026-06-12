@@ -97,7 +97,7 @@ class TestbedDepthwiseDirectConv2d {
   template <typename Element, typename Layout>
   void initialize_tensor(cutlass::TensorView<Element, Layout> view,
                          cutlass::Distribution::Kind dist_kind,
-                         uint64_t seed) {
+                         uint64_t seed_) {
     if (dist_kind == cutlass::Distribution::Uniform) {
       int scope;
       int bits = cutlass::sizeof_bits<Element>::value;
@@ -113,19 +113,19 @@ class TestbedDepthwiseDirectConv2d {
       } else {
         scope = 8;
       }
-      cutlass::reference::host::TensorFillRandomUniform(view, seed, scope, -scope, 0);
+      cutlass::reference::host::TensorFillRandomUniform(view, seed_, scope, -scope, 0);
     } else if (dist_kind == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(view);
 
     } else if (dist_kind == cutlass::Distribution::Gaussian) {
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     } else if (dist_kind == cutlass::Distribution::Sequential) {
       cutlass::reference::host::BlockFillSequential(view.data(), view.capacity());
     } else {
     }
   }
 
-  void initialize(cutlass::conv::Conv2dProblemSize const &problem_size, uint64_t seed = 2019) {
+  void initialize(cutlass::conv::Conv2dProblemSize const &problem_size, uint64_t seed_ = 2019) {
     tensor_A.resize(implicit_gemm_tensor_a_extent(kConvolutionalOperator, problem_size));
     tensor_B.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size));
     tensor_reordered_B.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size));
@@ -133,10 +133,10 @@ class TestbedDepthwiseDirectConv2d {
     tensor_D_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
     tensor_D_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
 
-    initialize_tensor(tensor_A.host_view(), init_A, seed);
-    initialize_tensor(tensor_B.host_view(), init_B, seed * 17);
-    initialize_tensor(tensor_reordered_B.host_view(), init_B, seed * 17);
-    initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
+    initialize_tensor(tensor_A.host_view(), init_A, seed_);
+    initialize_tensor(tensor_B.host_view(), init_B, seed_ * 17);
+    initialize_tensor(tensor_reordered_B.host_view(), init_B, seed_ * 17);
+    initialize_tensor(tensor_C.host_view(), init_C, seed_ * 39);
 
     tensor_A.sync_device();
     tensor_B.sync_device();

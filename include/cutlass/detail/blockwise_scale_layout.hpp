@@ -77,7 +77,7 @@ struct Sm1xxBlockwiseScaleConfig {
   smem_atom_layoutSFA(CtaShape_MNK cta_shape_mnk) {
     static_assert(cute::is_static_v<CtaShape_MNK>, "Expect static CTA shape");
     auto strides = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
-      auto [M, N, K] = cta_shape_mnk;
+      [[maybe_unused]] auto [M, N, K] = cta_shape_mnk;
       if constexpr (majorSFA == UMMA::Major::MN) {
         return make_stride(make_stride(_0{}, _1{}), make_stride(_0{}, Int<cute::ceil_div(size<0>(CtaShape_MNK{}), SFVecSizeM)>{}));
       }
@@ -86,7 +86,7 @@ struct Sm1xxBlockwiseScaleConfig {
       }
     }();
 
-    auto [M, N, K] = cta_shape_mnk;
+    [[maybe_unused]] auto [M, N, K] = cta_shape_mnk;
     return make_layout(
       make_shape(make_shape(Int<SFVecSizeM>{}, Int<cute::ceil_div(size<0>(CtaShape_MNK{}), SFVecSizeM)>{}),
                  make_shape(Int<SFVecSizeK>{}, Int<cute::ceil_div(size<2>(CtaShape_MNK{}), SFVecSizeK)>{})),
@@ -115,7 +115,7 @@ struct Sm1xxBlockwiseScaleConfig {
       }
     }();
 
-    auto [M, N, K] = cta_shape_mnk;
+    [[maybe_unused]] auto [M, N, K] = cta_shape_mnk;
     return make_layout(
       make_shape(make_shape(Int<SFVecSizeN>{}, Int<cute::ceil_div(size<1>(CtaShape_MNK{}), SFVecSizeN)>{}),
                  make_shape(Int<SFVecSizeK>{}, Int<cute::ceil_div(size<2>(CtaShape_MNK{}), SFVecSizeK)>{})),

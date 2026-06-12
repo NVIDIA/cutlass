@@ -108,9 +108,9 @@ public:
   /// Constructor
   CUTLASS_DEVICE
   EpilogueBaseStreamK(
-      int thread_idx)                                       ///< ID of a thread within the threadblock
+      int thread_idx_)                                      ///< ID of a thread within the threadblock
   :
-      thread_idx(thread_idx)
+      thread_idx(thread_idx_)
   {}
 
 

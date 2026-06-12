@@ -101,7 +101,7 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< minimum value that is output 
+    ElementCompute threshold;              ///< minimum value that is output
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
     //
@@ -109,28 +109,28 @@ public:
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
+    Params():
+      alpha(ElementCompute(1)),
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)), 
-      alpha_ptr(nullptr), 
+      threshold(ElementCompute(0)),
+      alpha_ptr(nullptr),
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0),
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_ = ElementCompute(0),
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(alpha_), beta(beta_), threshold(threshold_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_ = nullptr,
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(0), beta(0), threshold(threshold_), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
   };
@@ -183,11 +183,11 @@ public:
       threshold_ = reinterpret_cast<ElementCompute const &>(allones);
     }
   }
-  
+
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
-    FragmentAccumulator const &accumulator, 
+    FragmentAccumulator const &accumulator,
     FragmentOutput const &source) const {
 
     // Convert source to interal compute numeric type
@@ -331,7 +331,7 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< minimum value that is output 
+    ElementCompute threshold;              ///< minimum value that is output
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
     //
@@ -339,28 +339,28 @@ public:
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
+    Params():
+      alpha(ElementCompute(1)),
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)), 
-      alpha_ptr(nullptr), 
+      threshold(ElementCompute(0)),
+      alpha_ptr(nullptr),
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0),
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_ = ElementCompute(0),
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(alpha_), beta(beta_), threshold(threshold_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_ = nullptr,
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(0), beta(0), threshold(threshold_), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
   };

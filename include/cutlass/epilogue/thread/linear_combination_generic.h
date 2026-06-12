@@ -81,15 +81,15 @@ struct LinearCombinationGenericParams {
 
   CUTLASS_HOST_DEVICE
   LinearCombinationGenericParams(
-    T alpha,
-    T beta = T(0)
-  ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) { }
+    T alpha_,
+    T beta_ = T(0)
+  ): alpha(alpha_), beta(beta_), alpha_ptr(nullptr), beta_ptr(nullptr) { }
 
   CUTLASS_HOST_DEVICE
   LinearCombinationGenericParams(
-    T const *alpha_ptr,
-    T const *beta_ptr = nullptr
-  ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) { }
+    T const *alpha_ptr_,
+    T const *beta_ptr_ = nullptr
+  ): alpha(0), beta(0), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) { }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

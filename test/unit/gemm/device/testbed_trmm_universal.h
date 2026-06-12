@@ -98,9 +98,9 @@ struct TestbedTrmmUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -124,21 +124,21 @@ struct TestbedTrmmUniversal {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5, mantissa_in_bits);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5, mantissa_in_bits);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
     else {
       EXPECT_TRUE(false) << "Not implemented";
       return false;
@@ -151,9 +151,9 @@ struct TestbedTrmmUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_symmetric_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int mantissa_in_bits) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -177,12 +177,12 @@ struct TestbedTrmmUniversal {
       }
 
       cutlass::reference::host::TensorFillSymmetricRandomUniform(
-        view, seed, Trmm::kFillMode, scope_max, scope_min, mantissa_in_bits);
-    } 
+        view, seed_, Trmm::kFillMode, scope_max, scope_min, mantissa_in_bits);
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       cutlass::reference::host::TensorFillSymmetricRandomGaussian(
-        view, seed, Trmm::kFillMode, 0, 0.5, mantissa_in_bits);
+        view, seed_, Trmm::kFillMode, 0, 0.5, mantissa_in_bits);
     }
     else {
       EXPECT_TRUE(false) << "Not implemented";
@@ -195,9 +195,9 @@ struct TestbedTrmmUniversal {
   /// Helper to initialize a tensor view (pad diagonal fill with zeros for up to alignment on wrong side of diagonal)
   template <typename Element, typename Layout>
   bool initialize_pad_diagonal_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed,
+    uint64_t seed_,
     int alignment) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
@@ -221,8 +221,8 @@ struct TestbedTrmmUniversal {
       }
 
       cutlass::reference::host::TensorFillPadDiagonalRandomUniform(
-        view, seed, Trmm::kFillMode, scope_max, scope_min, 0, alignment);
-    } 
+        view, seed_, Trmm::kFillMode, scope_max, scope_min, 0, alignment);
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       EXPECT_TRUE(false) << "Gaussian distribution for pad diagonal not implemented";
@@ -397,10 +397,10 @@ struct TestbedTrmmUniversal {
     // Initialize the TRMM operator
     //
 
-    int batch_stride_A;
+    int batch_stride_A = 0;
     if (Trmm::kSideMode == cutlass::SideMode::kLeft)
       batch_stride_A = problem_size.m()*problem_size.m();
-    if (Trmm::kSideMode == cutlass::SideMode::kRight)
+    else if (Trmm::kSideMode == cutlass::SideMode::kRight)
       batch_stride_A = problem_size.n()*problem_size.n();
 
     typename Trmm::Arguments arguments{

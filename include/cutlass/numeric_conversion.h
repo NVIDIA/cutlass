@@ -2335,7 +2335,7 @@ struct NumericArrayConverterPacked4Element<float_ue8m0_t, float, FloatRoundStyle
     NumericConverter<result_element, source_element, FloatRoundStyle::round_toward_infinity> converter;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 4; ++i) {
+    for (size_t i = 0; i < 4; ++i) {
       result[i] = converter(source[i]);
     }
     return result;
@@ -2379,7 +2379,7 @@ struct NumericArrayConverterPacked4Element<float_ue8m0_t, float, FloatRoundStyle
     NumericConverter<result_element, source_element, FloatRoundStyle::round_toward_zero> converter;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 4; ++i) {
+    for (size_t i = 0; i < 4; ++i) {
       result[i] = converter(source[i]);
     }
 
@@ -3433,7 +3433,7 @@ struct NumericArrayConverter<float_ue8m0_t, float, 2, FloatRoundStyle::round_tow
     NumericConverter<result_element, source_element, FloatRoundStyle::round_toward_infinity> converter;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       result[i] = converter(source[i]);
     }
 
@@ -3474,7 +3474,7 @@ struct NumericArrayConverter<float_ue8m0_t, float, 2, FloatRoundStyle::round_tow
     NumericConverter<result_element, source_element, FloatRoundStyle::round_toward_zero> converter;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       result[i] = converter(source[i]);
     }
 
@@ -5664,12 +5664,12 @@ struct NumericArrayConverter<int8_t, int4b_t, N, Round> {
     NumericConverter<int8_t, int4b_t, Round> convert_;
     
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
+    for (size_t i = 0; i < static_cast<size_t>(N); ++i) {
       result[i] = convert_(source[i]);
     }
-    
+
     return result;
-    
+
     #endif // __CUDA_ARCH__
   }
 

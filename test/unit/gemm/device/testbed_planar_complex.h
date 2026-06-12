@@ -84,7 +84,7 @@ public:
   // Methods
   //
 
-  TestbedPlanarComplex(cutlass::gemm::GemmCoord const & problem_size): problem_size(problem_size) {
+  TestbedPlanarComplex(cutlass::gemm::GemmCoord const & problem_size_): problem_size(problem_size_) {
 
     tensor_A.reset({problem_size.m(), problem_size.k()});
     tensor_B.reset({problem_size.k(), problem_size.n()});
@@ -211,7 +211,7 @@ public:
 
     EXPECT_EQ(status, cutlass::Status::kSuccess);
 
-    cudaError_t error = cudaDeviceSynchronize();
+    [[maybe_unused]] cudaError_t error = cudaDeviceSynchronize();
 
     tensor_D.sync_host();
 

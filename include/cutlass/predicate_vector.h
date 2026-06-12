@@ -146,7 +146,7 @@ struct PredicateVector {
   //
 
   /// Words of bit vector
-  Storage storageData[kWordCount];
+  Storage storageData[static_cast<size_t>(kWordCount)];
 
   //
   // Methods

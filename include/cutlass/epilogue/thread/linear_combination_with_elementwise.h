@@ -109,19 +109,19 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute alpha,
-      ElementCompute beta,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute alpha_,
+      ElementCompute beta_,
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(alpha_), beta(beta_), threshold(threshold_), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *alpha_ptr_,
+      ElementCompute const *beta_ptr_,
+      ElementCompute threshold_ = ElementCompute(0)
+    ): alpha(0), beta(0), threshold(threshold_), alpha_ptr(alpha_ptr_), beta_ptr(beta_ptr_) {
 
     }
   };

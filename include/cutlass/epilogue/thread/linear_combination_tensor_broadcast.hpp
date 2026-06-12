@@ -158,19 +158,19 @@ public:
     Params() = default;
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute const* alpha_ptr, ElementCompute const* beta_ptr)
-        : alpha_ptr(alpha_ptr),
-          beta_ptr(beta_ptr) {}
+    Params(ElementCompute const* alpha_ptr_, ElementCompute const* beta_ptr_)
+        : alpha_ptr(alpha_ptr_),
+          beta_ptr(beta_ptr_) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute const* alpha_ptr)
-        : alpha_ptr(alpha_ptr) {}
+    Params(ElementCompute const* alpha_ptr_)
+        : alpha_ptr(alpha_ptr_) {}
 
     CUTLASS_HOST_DEVICE
-    Params(ElementCompute alpha,
-           ElementCompute beta)
-        : alpha(alpha),
-          beta(beta) {}
+    Params(ElementCompute alpha_,
+           ElementCompute beta_)
+        : alpha(alpha_),
+          beta(beta_) {}
   };
 
 private:

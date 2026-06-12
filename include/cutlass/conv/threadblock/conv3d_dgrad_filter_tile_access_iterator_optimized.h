@@ -108,12 +108,12 @@ public:
       
     CUTLASS_HOST_DEVICE
     Params(
-      Conv3dProblemSize const &problem_size, 
-      Layout const &layout
+      Conv3dProblemSize const &problem_size,
+      Layout const &layout_
     ):
       Conv3dDgradFilterIteratorOptimizedParams(
         problem_size,
-        layout,
+        layout_,
         sizeof_bits<Element>::value,
         {Shape::kRow, Shape::kColumn},
         ThreadMap::kThreads,

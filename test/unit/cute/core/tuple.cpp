@@ -237,7 +237,7 @@ TEST(CuTe_core, Tuple)
   CUTLASS_TRACE_HOST("-------------------------------");
 
   {
-    auto a = Coord<_2,_3,_4,Coord<_5,_6>>{};
+    [[maybe_unused]] auto a = Coord<_2,_3,_4,Coord<_5,_6>>{};
 
     CUTLASS_TRACE_HOST("a = " << a);
 
@@ -259,7 +259,7 @@ TEST(CuTe_core, Tuple)
   CUTLASS_TRACE_HOST("-------------------------------");
 
   {
-    auto a = Coord<_2,_3,_4,Coord<_5,_6>>{};
+    [[maybe_unused]] auto a = Coord<_2,_3,_4,Coord<_5,_6>>{};
 
     CUTLASS_TRACE_HOST("a = " << a);
 

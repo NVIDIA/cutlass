@@ -304,9 +304,9 @@ class GemmComplex {
       TensorRef<ElementB const, LayoutB> ref_B_,
       TensorRef<ElementC const, LayoutC> ref_C_,
       TensorRef<ElementC, LayoutC> ref_D_,
-      typename EpilogueOutputOp::Params epilogue_ = 
+      typename EpilogueOutputOp::Params epilogue_ =
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1
+      int split_k_slices_ = 1
     ):
       problem_size(problem_size_),
       ref_A(ref_A_),
@@ -314,7 +314,7 @@ class GemmComplex {
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices) {
+      split_k_slices(split_k_slices_) {
 
     }
   };
@@ -623,9 +623,9 @@ public:
       TensorRef<ElementB const, LayoutB> ref_B_,
       TensorRef<ElementC const, LayoutC> ref_C_,
       TensorRef<ElementC, LayoutC> ref_D_,
-      typename EpilogueOutputOp::Params epilogue_ = 
+      typename EpilogueOutputOp::Params epilogue_ =
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1
+      int split_k_slices_ = 1
     ):
       problem_size(problem_size_),
       ref_A(ref_A_),
@@ -633,7 +633,7 @@ public:
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices) { }
+      split_k_slices(split_k_slices_) { }
   };
 
 private:

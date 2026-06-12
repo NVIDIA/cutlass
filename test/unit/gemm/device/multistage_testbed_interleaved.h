@@ -86,14 +86,14 @@ struct MultistageInterleavedTestbed {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, 2, -2, 0);
+        view, seed_, 2, -2, 0);
     } 
     else if (dist_kind == cutlass::Distribution::Identity) {
 

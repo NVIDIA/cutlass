@@ -98,40 +98,40 @@ struct Gemm {
 
     CUTLASS_HOST_DEVICE
     Params(
-      cutlass::gemm::GemmCoord const & problem_size,
-      cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
-      typename Epilogue::OutputTileIterator::TensorRef ref_C,
-      typename Epilogue::OutputTileIterator::TensorRef ref_D,
-      typename OutputOp::Params output_op = typename OutputOp::Params(),
-      int *workspace = nullptr,
-      int const *gather_A_indices = nullptr,
-      int const *gather_B_indices = nullptr,
-      int const *scatter_D_indices = nullptr
+      cutlass::gemm::GemmCoord const & problem_size_,
+      cutlass::gemm::GemmCoord const & grid_tiled_shape_,
+      typename Mma::IteratorA::TensorRef ref_A_,
+      typename Mma::IteratorB::TensorRef ref_B_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_C_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_D_,
+      typename OutputOp::Params output_op_ = typename OutputOp::Params(),
+      int *workspace_ = nullptr,
+      int const *gather_A_indices_ = nullptr,
+      int const *gather_B_indices_ = nullptr,
+      int const *scatter_D_indices_ = nullptr
     ):
-      problem_size(problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
-      params_A(ref_A.layout()),
-      ref_A(ref_A),
-      params_B(ref_B.layout()),
-      ref_B(ref_B),
-      params_C(ref_C.layout()),
-      ref_C(ref_C),
-      params_D(ref_D.layout()),
-      ref_D(ref_D),
-      output_op(output_op),
-      gather_A_indices(gather_A_indices),
-      gather_B_indices(gather_B_indices),
-      scatter_D_indices(scatter_D_indices) {
+      problem_size(problem_size_),
+      grid_tiled_shape(grid_tiled_shape_),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape_)),
+      params_A(ref_A_.layout()),
+      ref_A(ref_A_),
+      params_B(ref_B_.layout()),
+      ref_B(ref_B_),
+      params_C(ref_C_.layout()),
+      ref_C(ref_C_),
+      params_D(ref_D_.layout()),
+      ref_D(ref_D_),
+      output_op(output_op_),
+      gather_A_indices(gather_A_indices_),
+      gather_B_indices(gather_B_indices_),
+      scatter_D_indices(scatter_D_indices_) {
 
-      int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-      int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
-      
+      int total_gemm_k_iterations = (problem_size_.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
+      int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape_.k() - 1) / grid_tiled_shape_.k();
+
       gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
 
-    semaphore = workspace;
+    semaphore = workspace_;
     }
   };
 

@@ -121,7 +121,7 @@ public:
     std::vector< ArrayTy > output_host(static_cast<size_t>(kThreads));
 
     dim3 grid(1,1);
-    dim3 block(kThreads, 1, 1);
+    dim3 block(static_cast<unsigned int>(kThreads), 1, 1);
 
     test::core::test_array_clear<<< grid, block >>>(output.get());
 
@@ -132,13 +132,13 @@ public:
     // Verify contains all zeros
     //
 
-    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), kThreads);
+    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), static_cast<size_t>(kThreads));
 
     result = cudaGetLastError();
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
     char const *ptr_host = reinterpret_cast<char const *>(output_host.data());
-    for (size_t i = 0; i < sizeof(ArrayTy) * kThreads; ++i) {
+    for (size_t i = 0; i < sizeof(ArrayTy) * static_cast<size_t>(kThreads); ++i) {
       EXPECT_FALSE(ptr_host[i]);
     }
 
@@ -151,13 +151,13 @@ public:
     result = cudaDeviceSynchronize();
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
-    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), kThreads);
+    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), static_cast<size_t>(kThreads));
 
     result = cudaGetLastError();
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
-    for (int i = 0; i < kThreads; ++i) {
-      T tid = T(i);
+    for (size_t i = 0; i < static_cast<size_t>(kThreads); ++i) {
+      T tid = T(static_cast<int>(i));
 
       ArrayTy thread = output_host.at(i);
 
@@ -186,12 +186,12 @@ public:
     result = cudaDeviceSynchronize();
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
-    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), kThreads);
+    cutlass::device_memory::copy_to_host(output_host.data(), output.get(), static_cast<size_t>(kThreads));
 
     result = cudaGetLastError();
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
-    for (int i = 0; i < kThreads; ++i) {
+    for (size_t i = 0; i < static_cast<size_t>(kThreads); ++i) {
 
       ArrayTy thread = output_host.at(i);
 

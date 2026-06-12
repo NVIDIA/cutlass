@@ -91,13 +91,13 @@ struct TestbedUtils {
   bool initialize_tensor(
     cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
-    uint64_t seed) {
+    uint64_t seed_) {
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
       double scope_max, scope_min;
       int bits_input = cutlass::sizeof_bits<Element>::value;
-      int bits_output = cutlass::sizeof_bits<Element>::value;
+      [[maybe_unused]] int bits_output = cutlass::sizeof_bits<Element>::value;
 
       if (bits_input == 1) {
         scope_max = 2;
@@ -114,7 +114,7 @@ struct TestbedUtils {
       }
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, scope_max, scope_min, 0);
+        view, seed_, scope_max, scope_min, 0);
     }
     else if (dist_kind == cutlass::Distribution::AllZeros) {
       cutlass::reference::host::TensorFill(view);
@@ -125,7 +125,7 @@ struct TestbedUtils {
     }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
-      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed_, 0, 0.5);
     }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
@@ -186,23 +186,23 @@ struct TestbedUtils {
 
   /// Compares computed reference with device reference and outputs to a file if incorrect
   bool compare_reference(
-    cutlass::gemm::GemmCoord problem_size, cutlass::HostTensor<GemmElement, LayoutC>& tensor_Y_ref, cutlass::HostTensor<GemmElement, LayoutC>& tensor_Y) {
+    cutlass::gemm::GemmCoord problem_size, cutlass::HostTensor<GemmElement, LayoutC>& tensor_Y_ref_, cutlass::HostTensor<GemmElement, LayoutC>& tensor_Y_) {
 
-    tensor_Y_ref.sync_host();
-    tensor_Y.sync_host();
+    tensor_Y_ref_.sync_host();
+    tensor_Y_.sync_host();
 
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D2.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Y_ref.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Y.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Y_ref_.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Y_.host_view()), 0);
 
     bool passed = true;
     float norm_diff = 0;
 
-    norm_diff = cutlass::reference::host::TensorNormDiff(tensor_Y_ref.host_view(), tensor_Y.host_view(), float());
+    norm_diff = cutlass::reference::host::TensorNormDiff(tensor_Y_ref_.host_view(), tensor_Y_.host_view(), float());
     passed = (norm_diff <= 0.1f);
     EXPECT_LT(norm_diff, 0.1f) << " tensor_Y is incorrect";
 
@@ -221,9 +221,9 @@ struct TestbedUtils {
         << "\nC: " << tensor_C.capacity()
         << "\nD1: " << tensor_D1.capacity()
         << "\nD2: " << tensor_D2.capacity()
-        << "\nY: " << tensor_Y.capacity()
+        << "\nY: " << tensor_Y_.capacity()
         << "\n\n"
-        << "\nY_ref: " << tensor_Y_ref.capacity()
+        << "\nY_ref: " << tensor_Y_ref_.capacity()
         << "\n\n";
       file
         << "A =\n" << tensor_A.host_view()
@@ -231,8 +231,8 @@ struct TestbedUtils {
         << "\n\nC =\n" << tensor_C.host_view()
         << "\n\nD1 =\n" << tensor_D1.host_view()
         << "\n\nD2 =\n" << tensor_D2.host_view()
-        << "\n\nY =\n" << tensor_Y.host_view()
-        << "\n\nY_ref =\n" << tensor_Y_ref.host_view();
+        << "\n\nY =\n" << tensor_Y_.host_view()
+        << "\n\nY_ref =\n" << tensor_Y_ref_.host_view();
     }
 
     return passed;

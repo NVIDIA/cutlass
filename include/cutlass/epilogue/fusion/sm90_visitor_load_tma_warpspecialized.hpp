@@ -110,8 +110,8 @@ struct Sm90SrcFetch : Sm90VisitorImpl<> {
   template<class SrcTensor>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(SrcTensor const& tCrC)
-      : tCrC(tCrC) {}
+    ConsumerStoreCallbacks(SrcTensor const& tCrC_)
+      : tCrC(tCrC_) {}
 
     SrcTensor const& tCrC;                                                                         // (CPY,CPY_M,CPY_N)
 
@@ -142,8 +142,8 @@ struct Sm90AccFetchGroupedWgrad : Sm90VisitorImpl<> {
   using GroupsPerTile = GroupsPerTile_;
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(int32_t thread_idx)
-      : thread_idx(thread_idx) { }
+    ConsumerStoreCallbacks(int32_t thread_idx_)
+      : thread_idx(thread_idx_) { }
 
     int32_t thread_idx;
 
@@ -318,10 +318,10 @@ struct Sm90AuxLoad {
   template <class GTensor, class STensor>
   struct ProducerLoadCallbacks : EmptyProducerLoadCallbacks {
     CUTLASS_DEVICE
-    ProducerLoadCallbacks(GTensor&& bGS_gAux, STensor&& bGS_sAux, Params const* params_ptr)
-      : bGS_gAux(cute::forward<GTensor>(bGS_gAux)),
-        bGS_sAux(cute::forward<STensor>(bGS_sAux)),
-        params_ptr(params_ptr) {}
+    ProducerLoadCallbacks(GTensor&& bGS_gAux_, STensor&& bGS_sAux_, Params const* params_ptr_)
+      : bGS_gAux(cute::forward<GTensor>(bGS_gAux_)),
+        bGS_sAux(cute::forward<STensor>(bGS_sAux_)),
+        params_ptr(params_ptr_) {}
 
     GTensor bGS_gAux;                                                                  // (TMA,TMA_M,TMA_N,EPI_M,EPI_N)
     STensor bGS_sAux;                                                                  // (TMA,TMA_M,TMA_N,PIPE)
@@ -375,11 +375,11 @@ struct Sm90AuxLoad {
   template <class RTensor, class TiledS2R, class STensorS2R>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(RTensor&& tC_rAux, TiledS2R tiled_s2r, STensorS2R&& tSR_sAux, Params const* params_ptr)
-      : tC_rAux(cute::forward<RTensor>(tC_rAux)),
-        tiled_s2r(tiled_s2r),
-        tSR_sAux(cute::forward<STensorS2R>(tSR_sAux)),
-        params_ptr(params_ptr) { }
+    ConsumerStoreCallbacks(RTensor&& tC_rAux_, TiledS2R tiled_s2r_, STensorS2R&& tSR_sAux_, Params const* params_ptr_)
+      : tC_rAux(cute::forward<RTensor>(tC_rAux_)),
+        tiled_s2r(tiled_s2r_),
+        tSR_sAux(cute::forward<STensorS2R>(tSR_sAux_)),
+        params_ptr(params_ptr_) { }
 
     TiledS2R tiled_s2r;
     RTensor tC_rAux;                                                                          // (CPY,CPY_M,CPY_N)
@@ -523,16 +523,16 @@ struct Sm90AuxLoad<
   >
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(GTensorG2R&& tC_gAux,
-        RTensor&& tC_rAux,
-        CTensorG2R&& tC_cAux,
-        ProblemShapeMNL problem_shape_mnl,
-        Params const* params_ptr)
-      : tC_gAux(cute::forward<GTensorG2R>(tC_gAux)),
-        tC_rAux(cute::forward<RTensor>(tC_rAux)),
-        tC_cAux(cute::forward<CTensorG2R>(tC_cAux)),
-        problem_shape_mnl(problem_shape_mnl),
-        params_ptr(params_ptr) {}
+    ConsumerStoreCallbacks(GTensorG2R&& tC_gAux_,
+        RTensor&& tC_rAux_,
+        CTensorG2R&& tC_cAux_,
+        ProblemShapeMNL problem_shape_mnl_,
+        Params const* params_ptr_)
+      : tC_gAux(cute::forward<GTensorG2R>(tC_gAux_)),
+        tC_rAux(cute::forward<RTensor>(tC_rAux_)),
+        tC_cAux(cute::forward<CTensorG2R>(tC_cAux_)),
+        problem_shape_mnl(problem_shape_mnl_),
+        params_ptr(params_ptr_) {}
 
     GTensorG2R tC_gAux;
     RTensor tC_rAux;
@@ -717,8 +717,8 @@ struct Sm90ScalarBroadcast {
 
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(Element scalar)
-      : scalar(scalar) {}
+    ConsumerStoreCallbacks(Element scalar_)
+      : scalar(scalar_) {}
 
     Element scalar;
 
@@ -882,8 +882,8 @@ struct Sm90ScalarBroadcastPtrArray {
 
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(Element scalar)
-      : scalar(scalar) {}
+    ConsumerStoreCallbacks(Element scalar_)
+      : scalar(scalar_) {}
 
     Element scalar;
 
@@ -1025,10 +1025,10 @@ struct Sm90RowBroadcast {
   Sm90RowBroadcast() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90RowBroadcast(Params const& params, SharedStorage const& shared_storage)
-      : params(params), is_zero_(false),
+  Sm90RowBroadcast(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_), is_zero_(false),
         smem(const_cast<ElementInput*>(shared_storage.smem.data())) {
-    auto const& [stride_M, stride_N, stride_L] = params.dRow;
+    auto const& [stride_M, stride_N, stride_L] = params_.dRow;
     // Nullptr default
     if (EnableNullptr && params.ptr_row == nullptr) {
       is_zero_ = params.null_default == ElementCompute(0);
@@ -1307,9 +1307,9 @@ struct Sm90ColBroadcast {
   Sm90ColBroadcast() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ColBroadcast(Params const& params, SharedStorage const& shared_storage)
-      : params(params), is_zero_(false) {
-    auto const& [stride_M, stride_N, stride_L] = params.dCol;
+  Sm90ColBroadcast(Params const& params_, SharedStorage const& shared_storage)
+      : params(params_), is_zero_(false) {
+    auto const& [stride_M, stride_N, stride_L] = params_.dCol;
     // Nullptr default
     if (EnableNullptr && params.ptr_col == nullptr) {
       is_zero_ = params.null_default == ElementCompute(0);

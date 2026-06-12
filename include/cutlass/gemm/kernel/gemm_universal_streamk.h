@@ -160,68 +160,68 @@ public:
 
     /// Constructor
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_split,                              /// Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor (1 defaults to StreamK, >1 emulates Split-K)
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      typename LayoutA::Stride stride_a,
-      typename LayoutB::Stride stride_b,
-      typename LayoutC::Stride stride_c,
-      typename LayoutC::Stride stride_d,
-      int avail_sms = -1                            /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_split_,                             /// Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor (1 defaults to StreamK, >1 emulates Split-K)
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      typename LayoutA::Stride stride_a_,
+      typename LayoutB::Stride stride_b_,
+      typename LayoutC::Stride stride_c_,
+      typename LayoutC::Stride stride_d_,
+      int avail_sms_ = -1                           /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
     ):
-      mode(mode),
-      problem_size(problem_size),
-      batch_count(batch_split),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
-      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D),
-      stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d), avail_sms(avail_sms)
+      mode(mode_),
+      problem_size(problem_size_),
+      batch_count(batch_split_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      batch_stride_A(batch_stride_A_), batch_stride_B(batch_stride_B_), batch_stride_C(batch_stride_C_), batch_stride_D(batch_stride_D_),
+      stride_a(stride_a_), stride_b(stride_b_), stride_c(stride_c_), stride_d(stride_d_), avail_sms(avail_sms_)
     {
-      CUTLASS_TRACE_HOST("GemmUniversalStreamk::Arguments::Arguments() - problem_size: " << problem_size);
+      CUTLASS_TRACE_HOST("GemmUniversalStreamk::Arguments::Arguments() - problem_size: " << problem_size_);
     }
 
     /// Constructor
     Arguments(
-      GemmUniversalMode mode,
-      GemmCoord problem_size,
-      int batch_split,                              /// Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor (1 defaults to StreamK, >1 emulates Split-K)
-      typename EpilogueOutputOp::Params epilogue,
-      void const * ptr_A,
-      void const * ptr_B,
-      void const * ptr_C,
-      void * ptr_D,
-      int64_t batch_stride_A,
-      int64_t batch_stride_B,
-      int64_t batch_stride_C,
-      int64_t batch_stride_D,
-      typename LayoutA::Stride::LongIndex lda,
-      typename LayoutB::Stride::LongIndex ldb,
-      typename LayoutC::Stride::LongIndex ldc,
-      typename LayoutC::Stride::LongIndex ldd,
-      int avail_sms = -1                            /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_,
+      int batch_split_,                             /// Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor (1 defaults to StreamK, >1 emulates Split-K)
+      typename EpilogueOutputOp::Params epilogue_,
+      void const * ptr_A_,
+      void const * ptr_B_,
+      void const * ptr_C_,
+      void * ptr_D_,
+      int64_t batch_stride_A_,
+      int64_t batch_stride_B_,
+      int64_t batch_stride_C_,
+      int64_t batch_stride_D_,
+      typename LayoutA::Stride::LongIndex lda_,
+      typename LayoutB::Stride::LongIndex ldb_,
+      typename LayoutC::Stride::LongIndex ldc_,
+      typename LayoutC::Stride::LongIndex ldd_,
+      int avail_sms_ = -1                           /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
     ):
-      mode(mode),
-      problem_size(problem_size),
-      batch_count(batch_split),
-      epilogue(epilogue),
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
-      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), avail_sms(avail_sms)
+      mode(mode_),
+      problem_size(problem_size_),
+      batch_count(batch_split_),
+      epilogue(epilogue_),
+      ptr_A(ptr_A_), ptr_B(ptr_B_), ptr_C(ptr_C_), ptr_D(ptr_D_),
+      batch_stride_A(batch_stride_A_), batch_stride_B(batch_stride_B_), batch_stride_C(batch_stride_C_), batch_stride_D(batch_stride_D_),
+      lda(lda_), ldb(ldb_), ldc(ldc_), ldd(ldd_), avail_sms(avail_sms_)
     {
-      stride_a = make_Coord(lda);
-      stride_b = make_Coord(ldb);
-      stride_c = make_Coord(ldc);
-      stride_d = make_Coord(ldd);
-      CUTLASS_TRACE_HOST("GemmUniversalStreamk::Arguments::Arguments() - problem_size: " << problem_size);
+      stride_a = make_Coord(lda_);
+      stride_b = make_Coord(ldb_);
+      stride_c = make_Coord(ldc_);
+      stride_d = make_Coord(ldd_);
+      CUTLASS_TRACE_HOST("GemmUniversalStreamk::Arguments::Arguments() - problem_size: " << problem_size_);
     }
 
     /// Returns arguments for the transposed problem
@@ -1131,11 +1131,11 @@ public:
   // Constructor
   CUTLASS_DEVICE
   GemmUniversalStreamk(
-      Params const &params,
-      SharedStorage &shared_storage)
+      Params const &params_,
+      SharedStorage &shared_storage_)
     :
-      params(params),
-      shared_storage(shared_storage),
+      params(params_),
+      shared_storage(shared_storage_),
       thread_idx(threadIdx.x),
       warp_idx(__shfl_sync(0xffffffff, threadIdx.x / 32, 0)),   // broadcast the warp_id computed by lane 0 to ensure dependent code
       lane_idx(threadIdx.x % 32),

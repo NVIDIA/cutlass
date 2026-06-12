@@ -119,11 +119,11 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       Conv2dProblemSize const &problem_size,
-      Layout const &layout
+      Layout const &layout_
     ):
       Conv2dFpropFilterIteratorOptimizedParams<Layout>(
         problem_size,
-        layout,
+        layout_,
         sizeof_bits<Element>::value,
         {Shape::kRow, Shape::kColumn},
         ThreadMap::kThreads,

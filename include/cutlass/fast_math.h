@@ -234,7 +234,7 @@ CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t clz(value_t x) {
   for (int i = 31; i >= 0; --i) {
-    if ((1 << i) & x)
+    if (static_cast<value_t>(1 << i) & x)
       return value_t(31 - i);
   }
   return value_t(32);
@@ -244,9 +244,9 @@ template <typename value_t>
 CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t find_log2(value_t x) {
-  int a = int(31 - clz(x));
+  int a = static_cast<int>(31 - static_cast<int>(clz(x)));
   a += (x & (x - 1)) != 0;  // Round up, add 1 if not a power of 2.
-  return a;
+  return static_cast<value_t>(a);
 }
 
 
@@ -260,11 +260,11 @@ void find_divisor(unsigned int& mul, unsigned int& shr, unsigned int denom) {
     mul = 0;
     shr = 0;
   } else {
-    unsigned int p = 31 + find_log2(denom);
+    unsigned int p = 31u + find_log2(denom);
     unsigned m = unsigned(((1ull << p) + unsigned(denom) - 1) / unsigned(denom));
 
     mul = m;
-    shr = p - 32;
+    shr = p - 32u;
   }
 }
 
@@ -279,7 +279,7 @@ void fast_divmod(int& quo, int& rem, int src, int div, unsigned int mul, unsigne
   // Use IMUL.HI if div != 1, else simply copy the source.
   quo = (div != 1) ? __umulhi(src, mul) >> shr : src;
   #else
-  quo = int((div != 1) ? int(((int64_t)src * mul) >> 32) >> shr : src);
+  quo = int((div != 1) ? int(((int64_t)src * static_cast<int64_t>(mul)) >> 32) >> shr : src);
   #endif
 
   // The remainder.
@@ -295,7 +295,7 @@ void fast_divmod(int& quo, int64_t& rem, int64_t src, int div, unsigned int mul,
   // Use IMUL.HI if div != 1, else simply copy the source.
   quo = (div != 1) ? __umulhi(src, mul) >> shr : src;
   #else
-  quo = int((div != 1) ? ((src * mul) >> 32) >> shr : src);
+  quo = int((div != 1) ? ((src * static_cast<int64_t>(mul)) >> 32) >> shr : src);
   #endif
   // The remainder.
   rem = src - (quo * div);
@@ -336,7 +336,7 @@ struct FastDivmod {
     // Use IMUL.HI if divisor != 1, else simply copy the source.
     quotient = (divisor != 1) ? __umulhi(dividend, multiplier) >> shift_right : dividend;
 #else
-    quotient = int((divisor != 1) ? int(((int64_t)dividend * multiplier) >> 32) >> shift_right : dividend);
+    quotient = int((divisor != 1) ? int(((int64_t)dividend * static_cast<int64_t>(multiplier)) >> 32) >> shift_right : dividend);
 #endif
 
     // The remainder.
@@ -351,7 +351,7 @@ struct FastDivmod {
     // Use IMUL.HI if divisor != 1, else simply copy the source.
     quotient = (divisor != 1) ? __umulhi(dividend, multiplier) >> shift_right : dividend;
 #else
-    quotient = int((divisor != 1) ? ((dividend * multiplier) >> 32) >> shift_right : dividend);
+    quotient = int((divisor != 1) ? ((dividend * static_cast<int64_t>(multiplier)) >> 32) >> shift_right : dividend);
 #endif
     // The remainder.
     remainder = dividend - (quotient * divisor);
@@ -368,11 +368,11 @@ struct FastDivmod {
   FastDivmod(int divisor_): divisor(divisor_) {
     assert(divisor_ >= 0);
     if (divisor != 1) {
-      unsigned int p = 31 + find_log2(divisor);
-      unsigned m = unsigned(((1ull << p) + unsigned(divisor) - 1) / unsigned(divisor));
+      unsigned int p = 31u + static_cast<unsigned int>(find_log2(divisor));
+      unsigned m = unsigned(((1ull << p) + static_cast<unsigned int>(divisor) - 1) / static_cast<unsigned int>(divisor));
 
       multiplier = m;
-      shift_right = p - 32;
+      shift_right = p - 32u;
     }
   }
 

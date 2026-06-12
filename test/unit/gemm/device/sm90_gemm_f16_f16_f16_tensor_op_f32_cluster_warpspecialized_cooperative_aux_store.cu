@@ -175,8 +175,6 @@ bool testEVTAuxStoreWithoutD() {
     constexpr float beta [[maybe_unused]] = 1.0;
     constexpr float alpha [[maybe_unused]] = 1.0;
 
-    using ElementC = typename GemmWithoutD::ElementC;
-
     if constexpr (not has_c) {
       arguments_base.epilogue.thread = {
         // binary op : alpha * acc
@@ -287,16 +285,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -351,16 +349,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   using EVT_D = decltype(test::gemm::device::select_evt_d<cutlass::half_t, float, has_c>());
   using AuxStore = Sm90AuxStore<0, void, cutlass::half_t, RoundStyle, cutlass::layout::RowMajor, void, void>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -421,16 +419,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -491,16 +489,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -561,16 +559,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -631,16 +629,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;
@@ -701,16 +699,16 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
                      typename AuxStoreDescriptor::Stride, typename AuxStoreDescriptor::SmemLayoutAtom,
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
-  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+  constexpr auto select_kernel = [](auto has_c_, auto has_d_) {
     using FusionCallbacks =
-        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+        cute::conditional_t<decltype(has_d_){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
         TileShape_MNK, ClusterShape_MNK,
         EpilogueTileType,
         float, float,
-        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
-        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_c_){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d_){}, cutlass::half_t, void>, LayoutC, 8,
         EpilogueSchedule,
         FusionCallbacks
       >::CollectiveOp;

@@ -299,18 +299,18 @@ struct ProducerLoadArgs {
 
   CUTLASS_DEVICE
   ProducerLoadArgs(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      TiledMma tiled_mma,
-      EpilogueTile epi_tile,
-      int thread_idx)
-  : problem_shape_mnkl(problem_shape_mnkl),
-    tile_shape_mnk(tile_shape_mnk),
-    tile_coord_mnkl(tile_coord_mnkl),
-    tiled_mma(tiled_mma),
-    epi_tile(epi_tile),
-    thread_idx(thread_idx) {}
+      ProblemShapeMNKL problem_shape_mnkl_,
+      TileShapeMNK tile_shape_mnk_,
+      TileCoordMNKL tile_coord_mnkl_,
+      TiledMma tiled_mma_,
+      EpilogueTile epi_tile_,
+      int thread_idx_)
+  : problem_shape_mnkl(problem_shape_mnkl_),
+    tile_shape_mnk(tile_shape_mnk_),
+    tile_coord_mnkl(tile_coord_mnkl_),
+    tiled_mma(tiled_mma_),
+    epi_tile(epi_tile_),
+    thread_idx(thread_idx_) {}
 };
 
 template<
@@ -342,30 +342,30 @@ struct ConsumerStoreArgs {
 
   CUTLASS_DEVICE
   ConsumerStoreArgs(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      TiledMma tiled_mma,
-      EpilogueTile epi_tile,
-      TiledCopy tiled_copy,
-      CoordTensor cD,
-      Residue residue_cD,
-      ThrCoordTensor tCcD,
-      ThrResidue residue_tCcD,
-      ThrSrcTensor & tCrC,
-      int thread_idx)
-  : problem_shape_mnkl(problem_shape_mnkl),
-    tile_shape_mnk(tile_shape_mnk),
-    tile_coord_mnkl(tile_coord_mnkl),
-    tiled_mma(tiled_mma),
-    epi_tile(epi_tile),
-    tiled_copy(tiled_copy),
-    cD(cD),
-    residue_cD(residue_cD),
-    tCcD(tCcD),
-    residue_tCcD(residue_tCcD),
-    tCrC(tCrC),
-    thread_idx(thread_idx) {}
+      ProblemShapeMNKL problem_shape_mnkl_,
+      TileShapeMNK tile_shape_mnk_,
+      TileCoordMNKL tile_coord_mnkl_,
+      TiledMma tiled_mma_,
+      EpilogueTile epi_tile_,
+      TiledCopy tiled_copy_,
+      CoordTensor cD_,
+      Residue residue_cD_,
+      ThrCoordTensor tCcD_,
+      ThrResidue residue_tCcD_,
+      ThrSrcTensor & tCrC_,
+      int thread_idx_)
+  : problem_shape_mnkl(problem_shape_mnkl_),
+    tile_shape_mnk(tile_shape_mnk_),
+    tile_coord_mnkl(tile_coord_mnkl_),
+    tiled_mma(tiled_mma_),
+    epi_tile(epi_tile_),
+    tiled_copy(tiled_copy_),
+    cD(cD_),
+    residue_cD(residue_cD_),
+    tCcD(tCcD_),
+    residue_tCcD(residue_tCcD_),
+    tCrC(tCrC_),
+    thread_idx(thread_idx_) {}
 };
 
 template <class... Ops>
@@ -460,7 +460,7 @@ struct Sm90VisitorImplBase {
           using Op = cute::remove_cvref_t<decltype(op)>;
           return Op(op_params, op_storage);
         },
-        [] (auto&&... ops) CUTLASS_LAMBDA_FUNC_INLINE { return cute::make_tuple(ops...); }
+        [] (auto&&... ops_) CUTLASS_LAMBDA_FUNC_INLINE { return cute::make_tuple(ops_...); }
       )) {}
 
   // Ops can store kernel persistent variables (e.g. descriptors, scalars, wave counters)

@@ -74,7 +74,7 @@ private:
   //
 
   /// Indices
-  Index idx[kRank];
+  Index idx[static_cast<unsigned>(kRank)];
 
 public:
 
@@ -92,7 +92,7 @@ public:
 
   /// Constructs from an array of integers
   CUTLASS_HOST_DEVICE
-  Coord(Index const (&_idx)[kRank]) {
+  Coord(Index const (&_idx)[static_cast<unsigned>(kRank)]) {
     for (int i = 0; i < kRank; ++i) {
       idx[i] = _idx[i];
     }
