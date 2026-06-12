@@ -391,7 +391,8 @@ def _dispatch_to_rhs_r_op(op: Callable[..., "ArithValue"]) -> Callable[..., Any]
 def _binary_op(op: Callable[..., "ArithValue"]) -> Callable[..., "ArithValue"]:
     """
     Decorator to check if the 'other' argument is an ArithValue.
-    If not, returns NotImplemented.
+    If 'other' is a Python scalar (int, float, bool), it is cast to a constant 
+    MLIR value matching the type and signedness of 'self'.
     """
 
     def wrapper(
