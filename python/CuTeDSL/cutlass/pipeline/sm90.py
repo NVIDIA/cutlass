@@ -602,6 +602,39 @@ class PipelineTmaAsync(PipelineAsync):
         self.sync_object_full.arrive(state.index, self.producer_mask, loc=loc, ip=ip)  # type: ignore[call-arg]
 
     @dsl_user_op
+    def producer_acquire_already_elected(
+        self,
+        state: PipelineState,
+        try_acquire_token: Optional[Boolean] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """
+        Acquire a TMA load stage from inside an existing ``elect_one`` block.
+
+        This is equivalent to ``producer_acquire`` for TMA load pipelines, except
+        the transaction-barrier arrive does not perform its own thread election.
+        Use it only when the caller has already elected a single producer thread.
+        Calling this outside such a region is incorrect because every calling
+        thread would arrive on the transaction barrier.
+        """
+        if_generate(
+            try_acquire_token is None or try_acquire_token == 0,
+            lambda: self.sync_object_empty.wait(  # type: ignore[call-arg]
+                state.index, state.phase, loc=loc, ip=ip
+            ),
+            loc=loc,
+            ip=ip,
+        )
+        cute.arch.mbarrier_arrive_and_expect_tx(
+            self.producer_get_barrier(state, loc=loc, ip=ip),
+            self.sync_object_full.tx_count,  # type: ignore[attr-defined]
+            loc=loc,
+            ip=ip,
+        )
+
+    @dsl_user_op
     def producer_commit(
         self,
         state: PipelineState,

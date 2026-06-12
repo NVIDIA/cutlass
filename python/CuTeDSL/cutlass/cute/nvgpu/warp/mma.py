@@ -10,11 +10,11 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, List, Optional, Tuple, Type, Union
 
 import enum
 from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
 
 
 from ..common import OpError
@@ -27,15 +27,22 @@ from ...typing import (
     Float16,
     BFloat16,
     Float32,
+    Int8,
+    Int32,
     Numeric,
     Pointer,
+    Uint8,
+    AddressSpace,
+    Layout,
 )
-from ...core import _pack_shape
+from ...core import _pack_shape, cosize, filter_zeros, make_layout, rank, size
+from ...tensor import TensorSSA, make_rmem_tensor, recast_tensor
 from ...typing import Tensor
-from ...atom import MmaOp, Trait, make_atom
+from ...atom import MmaAtom, MmaOp, Trait, make_atom
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+import cutlass._mlir.dialects.vector as vector
 
 
 ####################################################################################################
@@ -318,6 +325,15 @@ class MmaSM120BlockScaledOp(MmaOp):
     ) -> None:
         pass
 
+    def is_mxf4nvf4_sm120(self) -> bool:
+        return (
+            self.shape_mnk == (16, 8, 64)
+            and self.ab_dtype == Float4E2M1FN
+            and self.acc_dtype == Float32
+            and self.sf_type == Float8E4M3FN
+            and self.sf_vec_size == 16
+        )
+
 
 class Field(enum.Enum):
     """
@@ -491,6 +507,468 @@ class MmaMXF4NVF4Op(MmaSM120BlockScaledOp):
 
 class MmaMXF4NVF4Trait(MmaBlockScaledTrait):
     pass
+
+
+def _normalize_mxf4nvf4_operand(
+    operand: Union[List[Tensor], Tuple[Tensor, ...]],
+    name: str,
+) -> Tuple[Tensor, Tensor]:
+    if not isinstance(operand, (list, tuple)) or len(operand) != 2:
+        raise TypeError(f"`{name}` must be a two-tensor sequence `(fragment, scale)`")
+    fragment, scale = operand
+    if not isinstance(fragment, Tensor) or not isinstance(scale, Tensor):
+        raise TypeError(f"`{name}` must contain only Tensor operands")
+    return fragment, scale
+
+
+def _require_rmem(tensor: Tensor, name: str) -> None:
+    if tensor.memspace != AddressSpace.rmem:
+        raise ValueError(f"`{name}` must be register-resident")
+
+
+def _require_static_size(actual: Any, expected: int, name: str) -> None:
+    if actual != expected:
+        raise ValueError(f"`{name}` must have static size {expected}, but got {actual}")
+
+
+def _validate_mxf4nvf4_packed_fragment_layout(
+    fragment: Tensor,
+    name: str,
+    *,
+    expected_logical_size: int,
+    expected_i32_size: int,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    _require_rmem(fragment, name)
+    if fragment.element_type == Float4E2M1FN:
+        _require_static_size(
+            size(fragment, loc=loc, ip=ip), expected_logical_size, name
+        )
+        compact = filter_zeros(fragment, loc=loc, ip=ip)
+    elif fragment.element_type in (Int8, Uint8):
+        _require_static_size(
+            size(fragment, loc=loc, ip=ip),
+            expected_i32_size * 4,
+            name,
+        )
+        compact = filter_zeros(fragment, loc=loc, ip=ip)
+    else:
+        raise TypeError(
+            f"`{name}` must have element type {Float4E2M1FN}, {Int8}, or {Uint8}"
+        )
+
+    i32_fragment = recast_tensor(compact, Int32, loc=loc, ip=ip)
+    _require_static_size(
+        size(i32_fragment, loc=loc, ip=ip),
+        expected_i32_size,
+        f"packed `{name}`",
+    )
+    return i32_fragment
+
+
+def _mxf4nvf4_fragment_atom_size(fragment: Tensor, fp4_size: int) -> int:
+    return fp4_size // 2 if fragment.element_type in (Int8, Uint8) else fp4_size
+
+
+def _validate_mxf4nvf4_accumulator_layout(
+    accumulator: Tensor,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    _require_rmem(accumulator, name)
+    if accumulator.element_type != Float32:
+        raise TypeError(f"`{name}` must have element type {Float32}")
+    _require_static_size(size(accumulator, loc=loc, ip=ip), 4, name)
+
+
+def _validate_mxf4nvf4_scale_fragment_layout(
+    scale: Tensor,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    _require_rmem(scale, name)
+    if scale.element_type != Float8E4M3FN:
+        raise TypeError(f"`{name}` must have element type {Float8E4M3FN}")
+    _require_static_size(size(scale, loc=loc, ip=ip), 64, name)
+
+    compact = filter_zeros(scale, loc=loc, ip=ip)
+    _require_static_size(
+        cosize(compact.layout, loc=loc, ip=ip),
+        4,
+        f"compact `{name}`",
+    )
+    return compact
+
+
+def _validate_mxf4nvf4_atom(atom: MmaAtom) -> None:
+    op = getattr(atom, "op", None)
+    if not isinstance(op, MmaSM120BlockScaledOp):
+        raise TypeError("`mma_mxf4nvf4` expects an SM120 warp blockscaled MMA atom")
+    if not op.is_mxf4nvf4_sm120():
+        raise ValueError(
+            "SM120 NVFP4 MMA requires Float4E2M1FN A/B, Float32 accumulators, "
+            "Float8E4M3FN scales, shape (16, 8, 64), and scale_vec::4X"
+        )
+
+
+def _is_mxf4nvf4_full_k_tiled_fragment(
+    d: Tensor,
+    a_fragment: Tensor,
+    b_fragment: Tensor,
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> bool:
+    if (
+        rank(a_fragment) < 3
+        or rank(b_fragment) < 3
+        or rank(d) < 3
+        or rank(c) < 3
+    ):
+        return False
+    a_atom_size = _mxf4nvf4_fragment_atom_size(a_fragment, 32)
+    b_atom_size = _mxf4nvf4_fragment_atom_size(b_fragment, 16)
+    if size(a_fragment, mode=[0], loc=loc, ip=ip) != a_atom_size:
+        return False
+    if size(b_fragment, mode=[0], loc=loc, ip=ip) != b_atom_size:
+        return False
+    if size(d, mode=[0], loc=loc, ip=ip) != 4:
+        return False
+    if size(c, mode=[0], loc=loc, ip=ip) != 4:
+        return False
+    m_tiles = size(a_fragment, mode=[1], loc=loc, ip=ip)
+    n_tiles = size(b_fragment, mode=[1], loc=loc, ip=ip)
+    k_tiles = size(a_fragment, mode=[2], loc=loc, ip=ip)
+    if size(b_fragment, mode=[2], loc=loc, ip=ip) != k_tiles:
+        return False
+    return (
+        size(d, mode=[1], loc=loc, ip=ip) == m_tiles
+        and size(d, mode=[2], loc=loc, ip=ip) == n_tiles
+        and size(c, mode=[1], loc=loc, ip=ip) == m_tiles
+        and size(c, mode=[2], loc=loc, ip=ip) == n_tiles
+    )
+
+
+def _is_mxf4nvf4_tiled_fragment(
+    d: Tensor,
+    a_fragment: Tensor,
+    b_fragment: Tensor,
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> bool:
+    a_size = size(a_fragment, loc=loc, ip=ip)
+    b_size = size(b_fragment, loc=loc, ip=ip)
+    d_size = size(d, loc=loc, ip=ip)
+    c_size = size(c, loc=loc, ip=ip)
+    a_atom_size = _mxf4nvf4_fragment_atom_size(a_fragment, 32)
+    b_atom_size = _mxf4nvf4_fragment_atom_size(b_fragment, 16)
+    if (
+        a_size == a_atom_size
+        and b_size == b_atom_size
+        and d_size == 4
+        and c_size == 4
+    ):
+        return False
+    if _is_mxf4nvf4_full_k_tiled_fragment(
+        d, a_fragment, b_fragment, c, loc=loc, ip=ip
+    ):
+        return True
+    if a_size % a_atom_size != 0 or b_size % b_atom_size != 0:
+        return False
+    a_tiles = a_size // a_atom_size
+    b_tiles = b_size // b_atom_size
+    return d_size == 4 * a_tiles * b_tiles and c_size == d_size
+
+
+def _select_mxf4nvf4_scale_fragment(
+    scale: Tensor,
+    tile_idx: int,
+    tile_count: int,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    scale_size = size(scale, loc=loc, ip=ip)
+    if scale_size == 64:
+        return scale
+    if scale_size == 64 * tile_count and rank(scale) >= 2:
+        return scale[(None, tile_idx)]
+    raise ValueError(
+        f"`{name}` must be a canonical scale fragment or one scale fragment per tile"
+    )
+
+
+def _select_mxf4nvf4_full_k_scale_fragment(
+    scale: Tensor,
+    major_idx: int,
+    k_idx: int,
+    major_tiles: int,
+    k_tiles: int,
+    name: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    scale_size = size(scale, loc=loc, ip=ip)
+    if scale_size == 64:
+        return scale
+    scale_rank = rank(scale)
+    mode_0_size = size(scale, mode=[0], loc=loc, ip=ip) if scale_rank >= 1 else 0
+    mode_1_size = size(scale, mode=[1], loc=loc, ip=ip) if scale_rank >= 2 else 0
+    mode_2_size = size(scale, mode=[2], loc=loc, ip=ip) if scale_rank >= 3 else 0
+    if (
+        scale_rank >= 3
+        and mode_0_size == 64
+        and mode_1_size == major_tiles
+        and mode_2_size == k_tiles
+    ):
+        return scale[(None, major_idx, k_idx)]
+    raise ValueError(
+        f"`{name}` must be a canonical scale fragment or one scale fragment per "
+        "major/K tile; got "
+        f"rank={scale_rank}, size={scale_size}, "
+        f"modes=({mode_0_size}, {mode_1_size}, {mode_2_size}), "
+        f"expected=(64, {major_tiles}, {k_tiles})"
+    )
+
+
+def _mxf4nvf4_tiled_gemm_indices(m_tiles: int, n_tiles: int):
+    for m_idx in range(m_tiles):
+        for n_idx in range(n_tiles):
+            yield m_idx, n_idx
+
+
+def _mma_mxf4nvf4_full_k_tiled(
+    atom: MmaAtom,
+    d: Tensor,
+    a_fragment: Tensor,
+    sfa: Tensor,
+    b_fragment: Tensor,
+    sfb: Tensor,
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    m_tiles = size(a_fragment, mode=[1], loc=loc, ip=ip)
+    n_tiles = size(b_fragment, mode=[1], loc=loc, ip=ip)
+    k_tiles = size(a_fragment, mode=[2], loc=loc, ip=ip)
+    for k_idx in range(k_tiles):
+        for m_idx, n_idx in _mxf4nvf4_tiled_gemm_indices(m_tiles, n_tiles):
+            sfa_tile = _select_mxf4nvf4_full_k_scale_fragment(
+                sfa, m_idx, k_idx, m_tiles, k_tiles, "sfa", loc=loc, ip=ip
+            )
+            sfb_tile = _select_mxf4nvf4_full_k_scale_fragment(
+                sfb, n_idx, k_idx, n_tiles, k_tiles, "sfb", loc=loc, ip=ip
+            )
+            c_tile = (
+                c[(None, m_idx, n_idx)]
+                if k_idx == 0
+                else d[(None, m_idx, n_idx)]
+            )
+            mma_mxf4nvf4(
+                atom,
+                d[(None, m_idx, n_idx)],
+                (a_fragment[(None, m_idx, k_idx)], sfa_tile),
+                (b_fragment[(None, n_idx, k_idx)], sfb_tile),
+                c_tile,
+                loc=loc,
+                ip=ip,
+            )
+
+
+def _mma_mxf4nvf4_tiled(
+    atom: MmaAtom,
+    d: Tensor,
+    a_fragment: Tensor,
+    sfa: Tensor,
+    b_fragment: Tensor,
+    sfb: Tensor,
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    if _is_mxf4nvf4_full_k_tiled_fragment(
+        d, a_fragment, b_fragment, c, loc=loc, ip=ip
+    ):
+        return _mma_mxf4nvf4_full_k_tiled(
+            atom, d, a_fragment, sfa, b_fragment, sfb, c, loc=loc, ip=ip
+        )
+    a_atom_size = _mxf4nvf4_fragment_atom_size(a_fragment, 32)
+    b_atom_size = _mxf4nvf4_fragment_atom_size(b_fragment, 16)
+    a_tiles = size(a_fragment, loc=loc, ip=ip) // a_atom_size
+    b_tiles = size(b_fragment, loc=loc, ip=ip) // b_atom_size
+    if rank(a_fragment) < 2 or rank(b_fragment) < 2:
+        raise ValueError("tiled SM120 MXF4NVF4 fragments must expose tile modes")
+    if rank(d) < 3 or rank(c) < 3:
+        raise ValueError("tiled SM120 MXF4NVF4 accumulators must expose M/N tile modes")
+    for m_idx, n_idx in _mxf4nvf4_tiled_gemm_indices(a_tiles, b_tiles):
+        sfa_tile = _select_mxf4nvf4_scale_fragment(
+            sfa, m_idx, a_tiles, "sfa", loc=loc, ip=ip
+        )
+        sfb_tile = _select_mxf4nvf4_scale_fragment(
+            sfb, n_idx, b_tiles, "sfb", loc=loc, ip=ip
+        )
+        mma_mxf4nvf4(
+            atom,
+            d[(None, m_idx, n_idx)],
+            (a_fragment[(None, m_idx)], sfa_tile),
+            (b_fragment[(None, n_idx)], sfb_tile),
+            c[(None, m_idx, n_idx)],
+            loc=loc,
+            ip=ip,
+        )
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_layout(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Layout:
+    """Return the SM120 MXF4NVF4 SFA register scale-fragment layout."""
+    return make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_layout(
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Layout:
+    """Return the SM120 MXF4NVF4 SFB register scale-fragment layout."""
+    return make_layout(((16, 4),), stride=((0, 1),), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfa_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return an SM120 MXF4NVF4 SFA register scale fragment."""
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFA fragments require Float8E4M3FN")
+    return make_rmem_tensor(
+        make_mxf4nvf4_sfa_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_mxf4nvf4_sfb_fragment(
+    dtype: Type[Numeric] = Float8E4M3FN,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return an SM120 MXF4NVF4 SFB register scale fragment."""
+    if dtype != Float8E4M3FN:
+        raise TypeError("SM120 MXF4NVF4 SFB fragments require Float8E4M3FN")
+    return make_rmem_tensor(
+        make_mxf4nvf4_sfb_layout(loc=loc, ip=ip), dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def mma_mxf4nvf4(
+    atom: MmaAtom,
+    d: Tensor,
+    a: Union[List[Tensor], Tuple[Tensor, ...]],
+    b: Union[List[Tensor], Tuple[Tensor, ...]],
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Issue SM120 MXF4NVF4 warp MMA with bundled FP4 and E4M3 scale fragments.
+
+    This helper consumes already-partitioned register fragments. SMEM scale
+    partitioning remains in the Blackwell block-scaled helper path
+    (``partition_fragment_SFA`` / ``partition_fragment_SFB``).
+    """
+    _validate_mxf4nvf4_atom(atom)
+    a_fragment, sfa = _normalize_mxf4nvf4_operand(a, "a")
+    b_fragment, sfb = _normalize_mxf4nvf4_operand(b, "b")
+
+    if _is_mxf4nvf4_tiled_fragment(
+        d, a_fragment, b_fragment, c, loc=loc, ip=ip
+    ):
+        return _mma_mxf4nvf4_tiled(
+            atom, d, a_fragment, sfa, b_fragment, sfb, c, loc=loc, ip=ip
+        )
+
+    a_i32 = _validate_mxf4nvf4_packed_fragment_layout(
+        a_fragment,
+        "a fragment",
+        expected_logical_size=32,
+        expected_i32_size=4,
+        loc=loc,
+        ip=ip,
+    )
+    b_i32 = _validate_mxf4nvf4_packed_fragment_layout(
+        b_fragment,
+        "b fragment",
+        expected_logical_size=16,
+        expected_i32_size=2,
+        loc=loc,
+        ip=ip,
+    )
+    _validate_mxf4nvf4_accumulator_layout(d, "d", loc=loc, ip=ip)
+    _validate_mxf4nvf4_accumulator_layout(c, "c", loc=loc, ip=ip)
+
+    compact_sfa = _validate_mxf4nvf4_scale_fragment_layout(
+        sfa, "sfa", loc=loc, ip=ip
+    )
+    compact_sfb = _validate_mxf4nvf4_scale_fragment_layout(
+        sfb, "sfb", loc=loc, ip=ip
+    )
+
+    sfa_i32 = recast_tensor(compact_sfa, Int32, loc=loc, ip=ip)
+    sfb_i32 = recast_tensor(compact_sfb, Int32, loc=loc, ip=ip)
+
+    a_vec = a_i32.load(loc=loc, ip=ip)
+    b_vec = b_i32.load(loc=loc, ip=ip)
+    c_vec = c.load(loc=loc, ip=ip)
+    a_regs = [a_vec[i].ir_value(loc=loc, ip=ip) for i in range(4)]
+    b_regs = [b_vec[i].ir_value(loc=loc, ip=ip) for i in range(2)]
+    c_regs = [c_vec[i].ir_value(loc=loc, ip=ip) for i in range(4)]
+    shape_mnk = _pack_shape((16, 8, 64), loc=loc, ip=ip)
+    result = _cute_nvgpu_ir.arch_mma_SM120_block_scaled(
+        [Float32.mlir_type] * 4,
+        shape_mnk.type.attribute,
+        16,
+        ir.TypeAttr.get(Float4E2M1FN.mlir_type),
+        ir.TypeAttr.get(Float4E2M1FN.mlir_type),
+        ir.TypeAttr.get(Float8E4M3FN.mlir_type),
+        a_regs,
+        b_regs,
+        c_regs,
+        Int32(sfa_i32[0]).ir_value(loc=loc, ip=ip),
+        Int32(sfb_i32[0]).ir_value(loc=loc, ip=ip),
+        thread_id_a=0,
+        thread_id_b=0,
+        loc=loc,
+        ip=ip,
+    )
+    result_vec = vector.from_elements(
+        ir.VectorType.get([4], Float32.mlir_type), result, loc=loc, ip=ip
+    )
+    d.store(
+        TensorSSA(result_vec, d.shape, Float32, loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
 
 
 #

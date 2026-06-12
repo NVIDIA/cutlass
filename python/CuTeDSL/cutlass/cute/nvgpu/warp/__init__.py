@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+# ruff: noqa: F403, F405
+
 from .copy import *
 from .mma import *
 
@@ -24,6 +26,11 @@ __all__ = [
     "MmaMXF8Op",
     "MmaMXF8F6F4Op",
     "MXF8F6F4_SUPPORTED_PAIRS",
+    "make_mxf4nvf4_sfa_fragment",
+    "make_mxf4nvf4_sfa_layout",
+    "make_mxf4nvf4_sfb_fragment",
+    "make_mxf4nvf4_sfb_layout",
+    "mma_mxf4nvf4",
     # copy.py
     "LdMatrix8x8x16bOp",
     "LdMatrix16x8x8bOp",

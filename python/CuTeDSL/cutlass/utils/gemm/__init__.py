@@ -9,8 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from . import sm100
+from . import sm100, sm120
 
 __all__ = [
     "sm100",
+    "sm120",
 ]
