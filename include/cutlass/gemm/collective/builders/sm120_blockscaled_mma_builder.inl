@@ -73,6 +73,10 @@ struct CollectiveBuilder<
        cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
        &&
+      !((cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+         cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>) &&
+        cute::tuple_element_t<1, TileShape_MNK>::value < 16)
+       &&
       // Alignment check
       detail::sm1xx_blockscaled_gemm_is_aligned<typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::data_type,
                                                 AlignmentA,
