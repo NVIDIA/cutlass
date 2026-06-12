@@ -280,3 +280,54 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
                 )
 
             return JitExecutor(self.jit_module, None, self.jit_time_profiling)
+
+    def generate_execution_args(self, *args, **kwargs):
+        return self.args_spec.generate_execution_args(args, kwargs)
+
+    def set_dynamic_args(self, dynamic_args, dynamic_kwargs):
+        """Sets the dynamic argument information required for export to c code generation."""
+        self.dynamic_args = dynamic_args
+        self.dynamic_kwargs = dynamic_kwargs
+
+    def __call__(self, *args, **kwargs):
+        """Executes the jit-compiled function under the currently active CUDA context.
+
+        Calling this method multiple devices is not allowed and will result in unexpected
+        CUDA errors. If you need to call the kernel on multiple devices use `to`
+        to return a per-device function.
+        """
+        args = self._propagate_dynamic_marks(args)
+        exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
+        return self.run_compiled_program(exe_args)
+
+    def _propagate_dynamic_marks(self, args):
+        """Replay template tensor's dynamic marking calls onto runtime tensors."""
+        if not getattr(self, 'dynamic_args', None):
+            return args
+        synced = list(args)
+        for i, (runtime_arg, template_arg) in enumerate(zip(args, self.dynamic_args)):
+            try:
+                marking_calls = getattr(template_arg, '_dynamic_marking_calls', [])
+            except ReferenceError:
+                continue
+            if marking_calls and hasattr(runtime_arg, '_dynamic_marking_calls'):
+                if not runtime_arg._dynamic_marking_calls:
+                    for method_name, margs, mkwargs in marking_calls:
+                        getattr(runtime_arg, method_name)(*margs, **mkwargs)
+        return synced
+
+    def run_compiled_program(self, exe_args):
+        """Executes the jit-compiled function under the currently active CUDA context.
+
+        Calling this method multiple devices is not allowed and will result in unexpected
+        CUDA errors. If you need to call the kernel on multiple devices use `to`
+        to return a per-device function.
+        """
+        with self._executor_lock:
+            if self._default_executor is None:
+                log().debug("Creating default executor.")
+                # We use a weak reference here so that this instance does not keep this
+                # object alive as it hold a reference to self.
+                proxy_self = weakref.proxy(self)
+                self._default_executor = proxy_self.to(None)
+        return self._default_executor.run_compiled_program(exe_args)

@@ -185,6 +185,7 @@ class _Tensor(Tensor):
         self._memref_desc: Any = None
         self._dtype: Any = None
         self._use_32bit_stride = use_32bit_stride
+        self._dynamic_marking_calls = []
         self._c_pointers_cache: Optional[List[int]] = None
 
     @property  # type: ignore[misc]
@@ -229,6 +230,7 @@ class _Tensor(Tensor):
         """
         self.load_dltensor()
         self._dltensor_wrapper.mark_layout_dynamic(leading_dim)
+        self._dynamic_marking_calls.append(('mark_layout_dynamic', (leading_dim,), {}))
         return self
 
     def mark_compact_shape_dynamic(
@@ -271,6 +273,7 @@ class _Tensor(Tensor):
         self._dltensor_wrapper.mark_compact_shape_dynamic(
             mode, stride_order, divisibility
         )
+        self._dynamic_marking_calls.append(('mark_compact_shape_dynamic', (mode, stride_order, divisibility), {}))
         return self
     @property
     def element_type(self) -> Type[Numeric]:

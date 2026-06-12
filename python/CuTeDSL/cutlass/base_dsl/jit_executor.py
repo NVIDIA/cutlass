@@ -966,6 +966,8 @@ class JitCompiledFunction:
         CUDA errors. If you need to call the kernel on multiple devices use `to`
         to return a per-device function.
         """
+        args = self._propagate_dynamic_marks(args)
+        exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
         exe_args, adapted_args = self.execution_args.generate_execution_args(
             args, kwargs
         )
@@ -974,7 +976,23 @@ class JitCompiledFunction:
             return executor.run_compiled_program(exe_args)
         return self.run_compiled_program(exe_args)
 
-    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
+    def _propagate_dynamic_marks(self, args):
+        """Replay template tensor's dynamic marking calls onto runtime tensors."""
+        if not getattr(self, 'dynamic_args', None):
+            return args
+        synced = list(args)
+        for i, (runtime_arg, template_arg) in enumerate(zip(args, self.dynamic_args)):
+            try:
+                marking_calls = getattr(template_arg, '_dynamic_marking_calls', [])
+            except ReferenceError:
+                continue
+            if marking_calls and hasattr(runtime_arg, '_dynamic_marking_calls'):
+                if not runtime_arg._dynamic_marking_calls:
+                    for method_name, margs, mkwargs in marking_calls:
+                        getattr(runtime_arg, method_name)(*margs, **mkwargs)
+        return synced
+
+    def run_compiled_program(self, exe_args):
         """Executes the jit-compiled function under the currently active CUDA context.
 
         Calling this method multiple devices is not allowed and will result in unexpected
