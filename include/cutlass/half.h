@@ -599,7 +599,7 @@ struct numeric_limits<cutlass::half_t> {
   static bool const is_iec559 = true;
   static bool const is_bounded = true;
   static bool const is_modulo = false;
-  static int const digits = 10;
+  static int const digits = 11;
 
   /// Least positive value
   CUTLASS_HOST_DEVICE
@@ -667,7 +667,7 @@ struct numeric_limits<cutlass::half_t> {
   static bool const is_iec559 = true;
   static bool const is_bounded = true;
   static bool const is_modulo = false;
-  static int const digits = 10;
+  static int const digits = 11;
 
   /// Least positive value
   CUTLASS_HOST_DEVICE
