@@ -76,6 +76,7 @@
 #include "cutlass/gemm/collective/sm120_blockscaled_mma_array_tma.hpp"
 #include "cutlass/gemm/collective/sm120_mma_tma_blockwise_scaling.hpp"
 #include "cutlass/gemm/collective/sm120_mma_array_tma_blockwise_scaling.hpp"
+#include "cutlass/gemm/collective/sm120_mma_array_tma.hpp"
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized_interleaved_complex_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_interleaved_complex_emulated.hpp"
 #include "cutlass/gemm/collective/sm100_mma_warpspecialized_interleaved_complex_tf32.hpp"

@@ -28,6 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+// CollectiveBuilder specialization for SM120 ptr-array (grouped GEMM) non-blockwise F8F6F4 MMA.
+// Handles KernelPtrArrayTmaWarpSpecializedCooperativeSm120<N> and
+//         KernelPtrArrayTmaWarpSpecializedPingpongSm120<N> schedule tags.
+
 #pragma once
 
 #include "cutlass/gemm/collective/builders/sm120_common.inl"
@@ -68,17 +73,15 @@ struct CollectiveBuilder<
     cute::enable_if_t<
       not cute::is_tuple_v<ElementA> && not cute::is_tuple_v<ElementB> &&
       not cute::is_tuple_v<GmemLayoutATag> && not cute::is_tuple_v<GmemLayoutBTag> &&
-      // Dense Gemm (non-array; ptr-array schedules handled by sm120_array_mma_builder.inl)
-      (cute::is_base_of_v<KernelScheduleSm120DenseGemm, BuilderScheduleTag> ||
-       cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
-       cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
-       cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>) &&
+      // Ptr-array (grouped GEMM) SM120 schedules without blockwise scaling.
+      // Blockwise variant is handled by sm120_blockwise_mma_builder.inl (uses tuple layout tags).
+      (cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
+       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>) &&
       // Alignment check
       detail::sm1xx_gemm_is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, BuilderScheduleTag>()>>
 {
-
   static_assert(detail::is_sm10x_f8f6f4_element<ElementA>() && detail::is_sm10x_f8f6f4_element<ElementB>(),
-                "SM120 TmaWarpSpecialized builder currently only supports F8F6F4 MMA.");
+                "SM120 array TmaWarpSpecialized builder currently only supports F8F6F4 MMA.");
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
   static_assert(cute::size(ClusterShape_MNK{}) == Int<1>{}, "no programmatic multicast on this arch");
@@ -90,31 +93,29 @@ struct CollectiveBuilder<
   using PermTileM = decltype(cute::min(size<0>(TileShape_MNK{}), _128{}));
   using PermTileN = decltype(cute::min(size<1>(TileShape_MNK{}),  _32{}));
 
-  static constexpr bool IsCooperative = !cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>;
+  // Cooperative = 4x2 atom layout; Pingpong = 2x2
+  static constexpr bool IsCooperative =
+      cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag>;
   using AtomLayoutMNK = cute::conditional_t<IsCooperative,
       Layout<Shape<_4,_2,_1>>, Layout<Shape<_2,_2,_1>>>;
 
-  // Data type used by MMA instruction
   using ElementAMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementA>());
   using ElementBMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementB>());
 
   static_assert(detail::sm1xx_gemm_check_for_f8f6f4_mix8bit_requirement<ElementAMma, ElementBMma,
                                                                         TileShape_MNK, ClusterShape_MNK,
                                                                         GmemLayoutATag, GmemLayoutBTag, false /*IsSparse*/>(),
-                "TileSize and MNK Major does not met with MMA Mix 8-bit TMA load requirement" );
+                "TileSize and MNK Major does not meet MMA Mix 8-bit TMA load requirement");
 
-  // Setup TiledMma
   using TiledMma = decltype(cute::make_tiled_mma(
     cute::rr_op_selector_sm120<ElementA, ElementB, ElementAccumulator>(),
     AtomLayoutMNK{},
     Tile<PermTileM, PermTileN, _32>{}
   ));
 
-  // DType check
   static constexpr bool UseF8f6f4 = detail::is_sm120_f8f6f4<TiledMma, ElementA, ElementB>();
-  static_assert(UseF8f6f4, "Non-blockscaled collective builder only supports F8F6F4 MMA.\n");
+  static_assert(UseF8f6f4, "Non-blockscaled array collective builder only supports F8F6F4 MMA.\n");
 
-  // Element type
   using SmemAllocTypeA = cute::conditional_t<UseF8f6f4, uint8_t, typename TiledMma::ValTypeA>;
   using SmemAllocTypeB = cute::conditional_t<UseF8f6f4, uint8_t, typename TiledMma::ValTypeB>;
 
@@ -124,38 +125,39 @@ struct CollectiveBuilder<
   using SmemLayoutAtomA = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeA, decltype(size<2>(TileShape_MNK{}))>());
   using SmemLayoutAtomB = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeB, decltype(size<2>(TileShape_MNK{}))>());
 
-  // Setup Stages and DispatchPolicy
+  // Use PipelineTmaUmmaAsync<1> as size proxy for stage count calculation (same as dense builder)
   using MainloopPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
 
   static constexpr int PipelineStages = detail::sm100_compute_stage_count_or_override<
       detail::sm120_smem_capacity_bytes, SmemAllocTypeA,
       SmemAllocTypeB, TileShape_MNK, MainloopPipelineStorage>(StageCountType{});
-  static constexpr uint32_t SchedulerPipelineStageCount = 2;
 
+  // SchedulerPipelineStageCount comes from the schedule tag (e.g. Sm120<2> → 2)
+  static constexpr int SchedulerPipelineStageCount = BuilderScheduleTag::SchedulerPipelineStageCount;
 
-  using KernelSchedule = cute::conditional_t<IsCooperative, 
-                                              KernelTmaWarpSpecializedCooperativeSm120<SchedulerPipelineStageCount>, 
-                                              KernelTmaWarpSpecializedPingpongSm120<SchedulerPipelineStageCount>>;
+  // Pass the schedule tag through directly so the kernel scheduler sees its exact type
+  using KernelSchedule = BuilderScheduleTag;
 
-  using DispatchPolicy = MainloopSm120TmaWarpSpecialized<PipelineStages,
-                                                          SchedulerPipelineStageCount,
-                                                          ClusterShape_MNK,
-                                                          KernelSchedule>;
-
-  static_assert(cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, typename DispatchPolicy::Schedule> ||
-                cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, typename DispatchPolicy::Schedule>, 
-                "Unsupported kernel schedule by this collective mainloop dispatch policy.");                                                                    
+  using DispatchPolicy = MainloopSm120ArrayTmaWarpSpecialized<PipelineStages,
+                                                              SchedulerPipelineStageCount,
+                                                              ClusterShape_MNK,
+                                                              KernelSchedule>;
 
   using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeA>;
   using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeB>;
+
+  // GmemLayoutATag is already a pointer type (e.g. RowMajor*) for ptr-array kernels;
+  // TagToStrideA_t propagates the pointer, so no extra * needed here.
+  using StrideA = TagToStrideA_t<GmemLayoutATag>;
+  using StrideB = TagToStrideB_t<GmemLayoutBTag>;
 
   using CollectiveOp = CollectiveMma<
       DispatchPolicy,
       TileShape_MNK,
       ElementA,
-      TagToStrideA_t<GmemLayoutATag>,
+      StrideA,
       ElementB,
-      TagToStrideB_t<GmemLayoutBTag>,
+      StrideB,
       TiledMma,
       GmemTiledCopyA,
       SmemLayoutAtomA,
