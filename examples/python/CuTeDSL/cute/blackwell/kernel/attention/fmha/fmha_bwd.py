@@ -27,7 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-import enum
 import math
 import os
 import sys
@@ -42,12 +41,20 @@ import cutlass
 import cutlass.cute as cute
 import cutlass.cute.testing as testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
+from cutlass.cute.nvgpu.common import OperandMajorMode
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.runtime import from_dlpack
-from cutlass.cute.typing import Int32, Float32, Float8E4M3FN, Float16, BFloat16, Boolean
+from cutlass.cute.typing import (
+    Int32,
+    Float32,
+    Float8E4M3FN,
+    Float16,
+    BFloat16,
+    Boolean,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -74,7 +81,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/fmha_bwd.py \\
+    python examples/cute/blackwell/kernel/attention/fmha/fmha_bwd.py \\
         --s_q_max 1024 --s_k_max 1024 \\
         --h_q 8 --h_k 8 --d 128 --b 1 \\
         --element_dtype float16 --acc_dtype float32 \\
@@ -193,6 +200,22 @@ class BlackwellFusedMultiHeadAttentionBackward:
             barrier_id=5,
             num_threads=self.num_reduce_warps * self.threads_per_warp,
         )
+        self.load_reduce_tma_sync_barrier_0 = pipeline.NamedBarrier(
+            barrier_id=6,
+            num_threads=2 * self.threads_per_warp,
+        )
+        self.load_reduce_tma_sync_barrier_1 = pipeline.NamedBarrier(
+            barrier_id=7,
+            num_threads=2 * self.threads_per_warp,
+        )
+        self.load_reduce_tma_sync_barrier_2 = pipeline.NamedBarrier(
+            barrier_id=8,
+            num_threads=2 * self.threads_per_warp,
+        )
+        self.load_reduce_tma_sync_barrier_3 = pipeline.NamedBarrier(
+            barrier_id=9,
+            num_threads=2 * self.threads_per_warp,
+        )
 
         self.tmem_dK_offset = 0
         self.tmem_dV_offset = self.tmem_dK_offset + mma_tiler[2]
@@ -200,8 +223,8 @@ class BlackwellFusedMultiHeadAttentionBackward:
         self.tmem_dP_offset = self.tmem_dQ_offset
         self.tmem_S_offset = self.tmem_dQ_offset + max(mma_tiler[0], mma_tiler[2])
 
-        self.num_regs_reduce = 152
-        self.num_regs_compute = 128
+        self.num_regs_reduce = 144
+        self.num_regs_compute = 136
         self.num_regs_mma = 96
         self.num_regs_empty = 96
         self.num_regs_load = 96
@@ -344,17 +367,17 @@ class BlackwellFusedMultiHeadAttentionBackward:
         self.dO_major_mode = utils.LayoutEnum.from_tensor(dO).mma_major_mode()
         self.dQ_layout = utils.LayoutEnum.from_tensor(dQ)
 
-        if cutlass.const_expr(self.Q_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.Q_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of q is not supported")
-        if cutlass.const_expr(self.dQ_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.dQ_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of dq is not supported")
-        if cutlass.const_expr(self.K_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.K_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of k is not supported")
-        if cutlass.const_expr(self.dK_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.dK_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of dk is not supported")
-        if cutlass.const_expr(self.V_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.V_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of v is not supported")
-        if cutlass.const_expr(self.dV_major_mode != tcgen05.OperandMajorMode.K):
+        if cutlass.const_expr(self.dV_major_mode != OperandMajorMode.K):
             raise RuntimeError("The layout of dv is not supported")
 
         self._setup_attributes()
@@ -364,8 +387,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # compute S
         KQ_tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.element_dtype,
-            tcgen05.OperandMajorMode.K,
-            tcgen05.OperandMajorMode.K,
+            self.element_dtype,
+            OperandMajorMode.K,
+            OperandMajorMode.K,
             self.acc_dtype,
             cta_group,
             self.KQ_mma_tiler[:2],
@@ -373,8 +397,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # compute dP
         VdO_tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.element_dtype,
-            tcgen05.OperandMajorMode.K,
-            tcgen05.OperandMajorMode.K,
+            self.element_dtype,
+            OperandMajorMode.K,
+            OperandMajorMode.K,
             self.acc_dtype,
             cta_group,
             self.VdO_mma_tiler[:2],
@@ -382,8 +407,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # compute dV
         PdO_tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.element_dtype,
-            tcgen05.OperandMajorMode.K,
-            tcgen05.OperandMajorMode.MN,
+            self.element_dtype,
+            OperandMajorMode.K,
+            OperandMajorMode.MN,
             self.acc_dtype,
             cta_group,
             self.PdO_mma_tiler[:2],
@@ -392,8 +418,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # compute dK
         dSQ_tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.element_dtype,
-            tcgen05.OperandMajorMode.K,
-            tcgen05.OperandMajorMode.MN,
+            self.element_dtype,
+            OperandMajorMode.K,
+            OperandMajorMode.MN,
             self.acc_dtype,
             cta_group,
             self.dSQ_mma_tiler[:2],
@@ -401,8 +428,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # compute dQ
         dSK_tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.element_dtype,
-            tcgen05.OperandMajorMode.MN,
-            tcgen05.OperandMajorMode.MN,
+            self.element_dtype,
+            OperandMajorMode.MN,
+            OperandMajorMode.MN,
             self.acc_dtype,
             cta_group,
             self.dSK_mma_tiler[:2],
@@ -483,7 +511,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
         dQ_smem_layout_atom = sm100_utils.make_smem_layout_atom(
             sm100_utils.get_smem_layout_atom_ab(
-                tcgen05.OperandMajorMode.K,
+                OperandMajorMode.K,
                 self.acc_dtype,
                 (self.tile_shape_Q, 32),
             ),
@@ -844,9 +872,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         LSE_smem_layout: cute.Layout,
         sum_OdO_smem_layout: cute.Layout,
     ):
-        tidx, tidy, tidz = cute.arch.thread_idx()
         bidx, bidy, bidz = cute.arch.block_idx()
-        grid_dim_x, grid_dim_y, grid_dim_z = cute.arch.grid_dim()
         warp_idx = cute.arch.make_warp_uniform(cute.arch.warp_idx())
 
         if warp_idx == self.load_warp_id:
@@ -1265,12 +1291,10 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # (load_mma_Q_pipeline, load_compute_LSE_pipeline, load_mma_dO_pipeline, load_compute_sum_OdO_pipeline)
         pipeline_args: tuple,
     ):
-        tidx, tidy, tidz = cute.arch.thread_idx()
+        tidx = cute.arch.thread_idx()[0]
         blk_coord_k, blk_coord_h_k, blk_coord_b = cute.arch.block_idx()
         blk_coord_h_r = Int32(0)
         blk_coord_h = (blk_coord_h_r, blk_coord_h_k)
-        seq_Q, seq_K, D, HB = problem_shape
-        H, B = HB
         iter_index = iter_start
         (
             load_mma_Q_pipeline,
@@ -1362,6 +1386,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         load_compute_sum_OdO_producer_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Producer, self.load_compute_sum_OdO_stage
         )
+
         load_mma_Q_pipeline.producer_acquire(load_mma_Q_producer_state)
         tma_barrier = load_mma_Q_pipeline.producer_get_barrier(
             load_mma_Q_producer_state
@@ -1396,7 +1421,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
         async_copy_num_elts = sLSE.shape[0] // self.threads_per_warp
         atom_async_copy = cute.make_copy_atom(
-            cpasync.CopyG2SOp(cache_mode=cpasync.LoadCacheMode.ALWAYS),
+            cpasync.CopyG2SOp(cache_mode=cute.nvgpu.LoadCacheMode.ALWAYS),
             self.acc_dtype,
             num_bits_per_copy=self.acc_dtype.width,
         )
@@ -1486,6 +1511,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         iter_count -= 1
         iter_index += 1
 
+        load_reduce_tma_sync_phase = Int32(0)
         while iter_count > 0:
             if iter_index == iter_end:
                 iter_index = iter_start
@@ -1506,6 +1532,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
             )
 
             load_mma_Q_producer_state.advance()
+
+            self.load_reduce_tma_sync_arrive(load_reduce_tma_sync_phase)
+            load_reduce_tma_sync_phase += 1
 
             load_compute_LSE_pipeline.producer_acquire(load_compute_LSE_producer_state)
 
@@ -1588,6 +1617,30 @@ class BlackwellFusedMultiHeadAttentionBackward:
 
             iter_count -= 1
             iter_index += 1
+
+    @cute.jit
+    def load_reduce_tma_sync_arrive(self, phase: Int32):
+        phase_mod = phase % 4
+        if phase_mod == 0:
+            self.load_reduce_tma_sync_barrier_0.arrive()
+        elif phase_mod == 1:
+            self.load_reduce_tma_sync_barrier_1.arrive()
+        elif phase_mod == 2:
+            self.load_reduce_tma_sync_barrier_2.arrive()
+        else:
+            self.load_reduce_tma_sync_barrier_3.arrive()
+
+    @cute.jit
+    def load_reduce_tma_sync_wait(self, phase: Int32):
+        phase_mod = phase % 4
+        if phase_mod == 0:
+            self.load_reduce_tma_sync_barrier_0.arrive_and_wait()
+        elif phase_mod == 1:
+            self.load_reduce_tma_sync_barrier_1.arrive_and_wait()
+        elif phase_mod == 2:
+            self.load_reduce_tma_sync_barrier_2.arrive_and_wait()
+        else:
+            self.load_reduce_tma_sync_barrier_3.arrive_and_wait()
 
     @cute.jit
     def mma(
@@ -1909,11 +1962,10 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # (mma_compute_S_pipeline, compute_mma_P_pipeline, load_compute_LSE_pipeline, load_compute_sum_OdO_pipeline, mma_compute_dP_pipeline, compute_mma_dS_pipeline, mma_compute_dKdV_pipeline)
         pipeline_args: tuple,
     ):
-        tidx, tidy, tidz = cute.arch.thread_idx()
-        bidx, bidy, bidz = cute.arch.block_idx()
+        tidx = cute.arch.thread_idx()[0]
 
-        Q, K, D, HB = problem_shape
-        blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch = blk_coord
+        Q, K = problem_shape[0], problem_shape[1]
+        blk_coord_k, blk_coord_batch = blk_coord[1], blk_coord[3]
         iter_index = iter_start
         (
             mma_compute_S_pipeline,
@@ -2205,10 +2257,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # (mma_reduce_dQ_pipeline, reduce_tma_store_pipeline)
         pipeline_args: tuple,
     ):
-        tidx, tidy, tidz = cute.arch.thread_idx()
+        tidx = cute.arch.thread_idx()[0]
         warp_idx = cute.arch.make_warp_uniform(cute.arch.warp_idx())
-        Q, K, D, HB = problem_shape
-        blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch = blk_coord
+        blk_coord_batch = blk_coord[3]
 
         blk_coord_h, blk_coord_b = blk_coord_batch
         blk_coord_h_r, blk_coord_h_k = blk_coord_h
@@ -2241,7 +2292,6 @@ class BlackwellFusedMultiHeadAttentionBackward:
         thr_t2r = tiled_t2r.get_slice(thread_idx)
 
         tTR_cdQ = thr_t2r.partition_D(cdQ)
-        tTR_gdQ = thr_t2r.partition_D(gdQ)
         tTR_sdQ = thr_t2r.partition_D(sdQ)
         tTR_tdQ = thr_t2r.partition_S(tdQtdQ)
 
@@ -2253,6 +2303,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
             cute.group_modes(gdQ, 0, 2),
         )
 
+        load_reduce_tma_sync_phase = Int32(0)
         while iter_count > 0:
             mma_reduce_dQ_pipeline.consumer_wait(mma_reduce_dQ_consumer_state)
 
@@ -2286,6 +2337,10 @@ class BlackwellFusedMultiHeadAttentionBackward:
                 self.reduce_sync_barrier.arrive_and_wait()
 
                 if warp_idx == 0:
+                    if iter_count > 1 and i == 0:
+                        self.load_reduce_tma_sync_wait(load_reduce_tma_sync_phase)
+                        load_reduce_tma_sync_phase += 1
+
                     cute.copy(
                         tma_atom_dQ_acc,
                         tdQsdQ[None, reduce_tma_store_producer_state.index],
@@ -2346,7 +2401,6 @@ class BlackwellFusedMultiHeadAttentionBackward:
         input: cute.Tensor,
         frg_cnt: Int32,
     ) -> cute.Tensor:
-        tidx, tidy, tidz = cute.arch.thread_idx()
         output = cute.make_rmem_tensor(input.shape, self.element_dtype)
         frg_tile = cute.size(input) // frg_cnt
         t_frg = cute.logical_divide(input, cute.make_layout(frg_cnt))
@@ -2406,9 +2460,9 @@ class BlackwellFusedMultiHeadAttentionBackward:
         # (mma_compute_dKdV_pipeline, mma_compute_dKdV_consumer_state)
         pipeline_args: tuple,
     ):
-        tidx, tidy, tidz = cute.arch.thread_idx()
-        Q, K, D, HB = problem_shape
-        blk_coord_q, blk_coord_k, blk_coord_d, blk_coord_batch = blk_coord
+        tidx = cute.arch.thread_idx()[0]
+        K, D, HB = problem_shape[1], problem_shape[2], problem_shape[3]
+        blk_coord_k, blk_coord_batch = blk_coord[1], blk_coord[3]
         mma_compute_dKdV_pipeline, mma_compute_dKdV_consumer_state = pipeline_args
 
         load_op = cute.make_copy_atom(
@@ -2511,7 +2565,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         workspace: cute.Tensor,
         acc_dtype: Type[cutlass.Numeric],
     ) -> Tuple[cute.Tensor, cute.Tensor, cute.Tensor]:
-        Q, D, HB = (
+        Q, D, _HB = (
             problem_shape[0],
             problem_shape[2],
             problem_shape[3],
@@ -2524,7 +2578,7 @@ class BlackwellFusedMultiHeadAttentionBackward:
         acc_bytes = acc_dtype.width // 8
         sum_OdO_bytes = cute.assume(B * H * Q * acc_bytes, divby=acc_bytes)
         scaled_lse_bytes = cute.assume(B * H * Q * acc_bytes, divby=acc_bytes)
-        dQ_acc_bytes = cute.assume(B * H * Q * D * acc_bytes, divby=acc_bytes)
+        cute.assume(B * H * Q * D * acc_bytes, divby=acc_bytes)
 
         sum_OdO_iter = workspace.iterator
         scaled_lse_iter = sum_OdO_iter + sum_OdO_bytes
@@ -2899,7 +2953,9 @@ def run(
             window_size_right,
             bottom_right_align,
         ):
-            raise ValueError("sliding window doesn't support current setting")
+            raise testing.CantImplementError(
+                "sliding window doesn't support current setting"
+            )
 
     # create sequence lengths for variable length inputs
     cumulative_s_q = [0]
@@ -2985,10 +3041,10 @@ def run(
 
     lse_ref = cutlass_torch.create_and_permute_torch_tensor(
         (b, h_k, h_r, s_q),
-        cutlass.torch.dtype(acc_dtype),
+        cutlass_torch.dtype(acc_dtype),
         permute_order=(3, 2, 1, 0),
-        init_type=cutlass.torch.TensorInitType.RANDOM,
-        init_config=cutlass.torch.RandomInitConfig(min_val=10, max_val=11),
+        init_type=cutlass_torch.TensorInitType.RANDOM,
+        init_config=cutlass_torch.RandomInitConfig(min_val=10, max_val=11),
     )
     lse_torch = lse_ref.cuda()
     lse_tensor = from_dlpack(lse_torch, assumed_align=16)
@@ -2997,7 +3053,11 @@ def run(
     mma_tiler = (*mma_tiler_mn, d)
 
     fmha_bwd = BlackwellFusedMultiHeadAttentionBackward(
-        element_dtype, acc_dtype, mma_tiler, varlen, mask_type
+        element_dtype,
+        acc_dtype,
+        mma_tiler,
+        varlen,
+        mask_type,
     )
 
     workspace_size = BlackwellFusedMultiHeadAttentionBackward._get_workspace_size(
@@ -3112,11 +3172,11 @@ def run(
         torch.cuda.synchronize()
         print("Verifying results...")
 
-        q_ref = q_ref.cuda().to(cutlass.torch.dtype(element_dtype))
-        k_ref = k_ref.cuda().to(cutlass.torch.dtype(element_dtype))
-        v_ref = v_ref.cuda().to(cutlass.torch.dtype(element_dtype))
-        o_ref = o_ref.cuda().to(cutlass.torch.dtype(element_dtype))
-        do_ref = do_ref.cuda().to(cutlass.torch.dtype(element_dtype))
+        q_ref = q_ref.cuda().to(cutlass_torch.dtype(element_dtype))
+        k_ref = k_ref.cuda().to(cutlass_torch.dtype(element_dtype))
+        v_ref = v_ref.cuda().to(cutlass_torch.dtype(element_dtype))
+        o_ref = o_ref.cuda().to(cutlass_torch.dtype(element_dtype))
+        do_ref = do_ref.cuda().to(cutlass_torch.dtype(element_dtype))
         dv = dv_torch.to(dtype=torch.float32)
         dk = dk_torch.to(dtype=torch.float32)
         dq = dq_torch.to(dtype=torch.float32)
@@ -3227,10 +3287,10 @@ def run(
 
         lse_ref_new = cutlass_torch.create_and_permute_torch_tensor(
             (b, h_k, h_r, s_q),
-            cutlass.torch.dtype(acc_dtype),
+            cutlass_torch.dtype(acc_dtype),
             permute_order=(3, 2, 1, 0),
-            init_type=cutlass.torch.TensorInitType.RANDOM,
-            init_config=cutlass.torch.RandomInitConfig(min_val=10, max_val=11),
+            init_type=cutlass_torch.TensorInitType.RANDOM,
+            init_config=cutlass_torch.RandomInitConfig(min_val=10, max_val=11),
         )
         lse_torch_new = lse_ref_new.cuda()
         lse_tensor_new = from_dlpack(lse_torch_new, assumed_align=16)

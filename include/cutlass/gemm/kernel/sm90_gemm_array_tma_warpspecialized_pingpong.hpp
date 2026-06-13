@@ -131,9 +131,9 @@ public:
     cute::is_void_v<TileScheduler_>
     or (
       IsGroupedGemmKernel
-      and cute::is_any_of_v<TileScheduler_, GroupScheduler>
+      and cute::is_base_of_v<GroupScheduler, TileScheduler_>
     ),
-    "Ptr-Array Pingpong and Grouped Gemm Pingpong kernel only supports the default scheduler.");
+    "Ptr-Array Pingpong and Grouped Gemm Pingpong kernel only supports group-compatible schedulers (TileScheduler_ must derive from GroupScheduler).");
 
   using SchedulerTag = cute::conditional_t<
     cute::is_void_v<TileScheduler_>,
@@ -499,7 +499,7 @@ public:
     // TileScheduler pipeline
     using TileSchedulerPipeline = typename TileScheduler::Pipeline;
     typename TileSchedulerPipeline::Params tile_scheduler_pipeline_params;
-    if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+    if constexpr (IsGroupedGemmKernel) {
       if (warp_group_role == WarpGroupRole::Producer
         && producer_warp_role == ProducerWarpRole::Scheduler) {
         tile_scheduler_pipeline_params.role = TileSchedulerPipeline::ThreadCategory::Producer;
@@ -607,7 +607,7 @@ public:
 
     auto scheduler = [&] () {
       // Group scheduler requires a different constructor that takes a response ptr
-      if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+      if constexpr (IsGroupedGemmKernel) {
         return TileScheduler{params.scheduler, shared_storage.scheduler_response};
       }
       else {
@@ -669,7 +669,7 @@ public:
       if (producer_warp_role == ProducerWarpRole::Scheduler) {
         // GroupScheduler requires a producer warp to iterate over the group infos and push
         // the work tile infos to the downstream pipelines.
-        if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+        if constexpr (IsGroupedGemmKernel) {
           do {
             auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(tile_scheduler_pipeline, tile_scheduler_pipe_producer_state);
             work_tile_info = next_work_tile_info;
@@ -764,6 +764,9 @@ public:
             curr_batch = next_batch;
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
             collective_mainloop.tensormaps_perform_update(
               shared_storage.tensormaps.mainloop,
@@ -849,7 +852,7 @@ public:
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
         int32_t const sm_count = params.hw_info.sm_count;
 
-        auto epi_load_tensormap = get<0>(collective_epilogue.load_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx));
+        auto epi_load_tensormap = collective_epilogue.load_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx);
 
         bool did_batch_change = true;
         constexpr bool IsEpiLoad = true;
@@ -878,6 +881,9 @@ public:
           if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
 
             // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -913,6 +919,9 @@ public:
           if (work_tile_info.is_valid() && did_batch_change) {
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
 
             // tensormap update
@@ -928,7 +937,10 @@ public:
 
               // Converge before issuing tensormap fence release since fence is aligned
               __syncwarp();
-              collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+              collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(
+                shared_storage.tensormaps.epilogue,
+                epi_load_tensormap,
+                0);
             }
           }
 
@@ -952,7 +964,7 @@ public:
       // Do we potentially issue tail arrives for TMA stores, if epilogue load is waiting for it
       bool do_store_tail = false;
       // Get a copy of tensormaps
-      auto epi_store_tensormap = get<0>(collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx));
+      auto epi_store_tensormap = collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx);
 
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = false;
@@ -970,13 +982,16 @@ public:
         // Converge before issuing tensormap fence release since fence is aligned
         __syncwarp();
         collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
-                                                                    epi_store_tensormap,
-                                                                    consumer_warp_group_idx);
+                                                                            epi_store_tensormap,
+                                                                            consumer_warp_group_idx);
       }
 
       do {
         if constexpr (IsGroupedGemmKernel) {
           problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+          load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+          gA_mkl = get<0>(load_inputs);
+          gB_nkl = get<1>(load_inputs);
         }
 
         int32_t curr_batch = work_tile_info.L_idx;
@@ -1085,6 +1100,9 @@ public:
         if (work_tile_info.is_valid()) {
           if constexpr (IsGroupedGemmKernel) {
             problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+            load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+            gA_mkl = get<0>(load_inputs);
+            gB_nkl = get<1>(load_inputs);
           }
           work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
@@ -1101,6 +1119,9 @@ public:
         if (work_tile_info.is_valid() && did_batch_change) {
           if constexpr (IsGroupedGemmKernel) {
             problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+            load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+            gA_mkl = get<0>(load_inputs);
+            gB_nkl = get<1>(load_inputs);
           }
           if (warp_idx_in_warp_group == 0) {
             collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
@@ -1114,9 +1135,10 @@ public:
 
             // Converge before issuing tensormap fence release since fence is aligned
             __syncwarp();
-            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
-                                                                       epi_store_tensormap,
-                                                                       consumer_warp_group_idx);
+            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(
+              shared_storage.tensormaps.epilogue,
+              epi_store_tensormap,
+              consumer_warp_group_idx);
           }
         }
 

@@ -13,12 +13,13 @@ import enum
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 import warnings
 
 import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass.base_dsl.arch import Arch
+from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, if_generate, dsl_user_op
 
 
@@ -36,9 +37,9 @@ class Agent(enum.Enum):
     Thread = enum.auto()
     # A collection of 32 threads executing in lockstep
     Warp = enum.auto()
-    # Same as AsyncThread, but includes all threads in the block
+    # A collection of threads participating in a threadblock
     ThreadBlock = enum.auto()
-    # Same as AsyncThread, but includes all threads in the cluster
+    # A collection of threads across a cluster
     ThreadBlockCluster = enum.auto()
 
 
@@ -49,37 +50,65 @@ class Agent(enum.Enum):
 
 class CooperativeGroup:
     """
-    CooperativeGroup contains size and alignment restrictions for an Agent.
+    CooperativeGroup contains size restrictions for an Agent.
     """
 
-    def __init__(self, agent: Agent, size: int = 1, alignment: Optional[int] = None):
-        if alignment is not None:
-            warnings.warn(
-                "The 'alignment' parameter of CooperativeGroup's constructor is deprecated and "
-                "will be removed in a subsequent release, please remove it from your code.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        if agent is Agent.Thread:
-            assert size > 0
-        elif agent is Agent.ThreadBlock:
-            raise NotImplementedError("Error: Not yet supported.")
-        elif agent is Agent.ThreadBlockCluster:
-            raise NotImplementedError("Error: Not yet supported.")
+    def __init__(
+        self, agent: Agent, size: Union[int, Int32] = 1, alignment: Optional[int] = None
+    ):
+        if agent in [
+            Agent.Thread,
+            Agent.Warp,
+            Agent.ThreadBlock,
+            Agent.ThreadBlockCluster,
+        ]:
+            if isinstance(size, int) and size <= 0:
+                raise ValueError(
+                    "Error: The number of threads in a CooperativeGroup must be "
+                    "greater than 0."
+                )
         else:
-            # Should never reach this state
-            size = 0
+            raise ValueError("Unsupported agent type")
 
-        if size <= 0:
-            raise ValueError(
-                "Error: The number of threads in a CooperativeGroup must be more than 0."
-            )
-
-        # Size indicates how many threads are participating in this CooperativeGroup
+        # Size indicates how many agents are participating in this CooperativeGroup
         self.size = size
-        # Agent indicates the type of thread group
+        # Agent indicates the type of thread grouping
         self.agent = agent
+
+
+@dsl_user_op
+def _get_thread_arrive_count(
+    group: "CooperativeGroup",
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[int, Int32]:
+    """Compute the total number of threads represented by ``group``.
+
+    :param group: ``CooperativeGroup`` describing the agent type and count.
+    :return: Number of threads in the cooperative group.
+    :raises NotImplementedError: If ``group.agent`` is not one of the
+        supported agents (Thread / Warp / ThreadBlock / ThreadBlockCluster).
+    """
+    if group.agent is Agent.Thread:
+        return group.size
+    elif group.agent is Agent.Warp:
+        return group.size * WARP_SIZE
+    elif group.agent is Agent.ThreadBlock:
+        bdim_x, bdim_y, bdim_z = cute.arch.block_dim(loc=loc, ip=ip)
+        return group.size * bdim_x * bdim_y * bdim_z
+    elif group.agent is Agent.ThreadBlockCluster:
+        bdim_x, bdim_y, bdim_z = cute.arch.block_dim(loc=loc, ip=ip)
+        return (
+            group.size
+            * cute.arch.cluster_size(loc=loc, ip=ip)
+            * bdim_x
+            * bdim_y
+            * bdim_z
+        )
+    raise NotImplementedError(
+        f"Error: Unsupported agent type for arrive count: {group.agent}"
+    )
 
 
 ##############################################################################
@@ -111,6 +140,12 @@ def _get_pipeline_op(type_str: int | PipelineOp) -> PipelineOp:
     return PipelineOp(type_str)
 
 
+class MbarrierLayout(enum.Enum):
+    """Layout of mbarrier used for synchronization."""
+
+    # Transactional mbarrier
+    V0 = enum.auto()
+
 ##############################################################################
 # SyncObject class
 ##############################################################################
@@ -124,11 +159,11 @@ class SyncObject(ABC):
     """
 
     @abstractmethod
-    def arrive(self) -> None:
+    def arrive(self, *args: Any, **kwargs: Any) -> None:
         pass
 
     @abstractmethod
-    def wait(self) -> None:
+    def wait(self, *args: Any, **kwargs: Any) -> None:
         pass
 
     @abstractmethod
@@ -165,6 +200,8 @@ class MbarrierArray(SyncObject):
         num_stages: int,
         agent: tuple[PipelineOp, CooperativeGroup],
         tx_count: int = 0,
+        mbarrier_layout: MbarrierLayout = MbarrierLayout.V0,
+        name: str = "",
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -173,17 +210,18 @@ class MbarrierArray(SyncObject):
         self.tx_count = tx_count
         self.num_stages = num_stages
         self.op_type, self.cg = agent
-        self.arrive_count = self.cg.size
+        self.arrive_count = _get_thread_arrive_count(self.cg, loc=loc, ip=ip)
+        self.mbarrier_layout = mbarrier_layout
+        self.name = name
 
         if self.num_stages <= 0:
             raise ValueError("Error: Mbarrier stage count must be greater than 0.")
-        if self.arrive_count <= 0:
+        if isinstance(self.arrive_count, int) and self.arrive_count <= 0:
             raise ValueError("Error: Mbarrier arrive count must be greater than 0.")
         if self.op_type is PipelineOp.TmaLoad and self.tx_count < 0:
             raise ValueError(
                 "Error: Mbarrier tx count must not be less than 0 for TMA ops."
             )
-
         # Store mbarrier base pointer
         self.mbarrier_base = self.barrier_storage
 
@@ -205,7 +243,28 @@ class MbarrierArray(SyncObject):
         new_mbarrier_array.tx_count = self.tx_count
         new_mbarrier_array.arrive_count = self.arrive_count
         new_mbarrier_array.mbarrier_base = self.mbarrier_base
+        new_mbarrier_array.mbarrier_layout = self.mbarrier_layout
+        new_mbarrier_array.name = self.name
         return new_mbarrier_array
+
+    def _mbar_scope(self, op: str) -> Any:
+        """Return a Scope context manager for barrier identification.
+
+        Format: ``name:op`` (e.g. ``smem_kv:wait``, ``tmem_sp0:arrive``).
+        Profiling tools group by the ``name`` prefix and classify by the ``op`` suffix.
+
+        Usage::
+
+            with self._mbar_scope("wait"):
+                cute.arch.mbarrier_wait(...)
+        """
+        if not getattr(self, "name", None):
+            from contextlib import nullcontext
+
+            return nullcontext()
+        from cutlass.utils.profiling import Scope
+
+        return Scope(f"{self.name}:{op}")
 
     # Mbarrier initialization
     @dsl_user_op
@@ -218,17 +277,17 @@ class MbarrierArray(SyncObject):
         """
         Initializes an array of mbarriers using warp 0.
         """
-
         def then_body() -> None:
             use_uniform_mbarrier_init = True
             if use_uniform_mbarrier_init:
-                for index in range(self.num_stages):
-                    cute.arch.mbarrier_init(
-                        self.get_barrier(index, loc=loc, ip=ip),
-                        self.arrive_count,
-                        loc=loc,
-                        ip=ip,
-                    )
+                with cute.arch.elect_one(loc=loc, ip=ip):
+                    for index in range(self.num_stages):
+                        cute.arch.mbarrier_init(
+                            self.get_barrier(index, loc=loc, ip=ip),
+                            self.arrive_count,
+                            loc=loc,
+                            ip=ip,
+                        )
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
 
@@ -258,26 +317,28 @@ class MbarrierArray(SyncObject):
         :param cta_group: CTA group for ``TCGen05Mma``, defaults to None for other op types
         :type cta_group: ``cute.nvgpu.tcgen05.CtaGroup``, optional
         """
-        if self.op_type is PipelineOp.AsyncThread:
-            self.arrive_mbarrier(index, dst, loc=loc, ip=ip)
-        elif self.op_type is PipelineOp.TCGen05Mma:
-            assert cta_group is not None, (
-                "Error: CTA group must be provided for TCGen05Mma."
-            )
-            self.arrive_tcgen05mma(index, dst, cta_group, loc=loc, ip=ip)
-        elif self.op_type in [PipelineOp.TmaLoad]:
-            # TMA operation signals local mbarrier only
-            self.arrive_and_expect_tx(index, self.tx_count, loc=loc, ip=ip)
-        elif self.op_type in [PipelineOp.ClcLoad]:
-            self.arrive_and_expect_tx_with_dst(
-                index, self.tx_count, dst, loc=loc, ip=ip
-            )
-        elif self.op_type is PipelineOp.AsyncLoad:
-            self.arrive_cp_async_mbarrier(index, loc=loc, ip=ip)
-        else:
-            assert False, (
-                f"Error: MbarrierArray is not supported for PipelineOp: {_get_pipeline_op(self.op_type)}."
-            )
+        with self._mbar_scope("arrive"):
+            if self.op_type is PipelineOp.AsyncThread:
+                self.arrive_mbarrier(index, dst, loc=loc, ip=ip)
+            elif self.op_type is PipelineOp.TCGen05Mma:
+                assert cta_group is not None, (
+                    "Error: CTA group must be provided for TCGen05Mma."
+                )
+                self.arrive_tcgen05mma(index, dst, cta_group, loc=loc, ip=ip)
+            elif self.op_type in [PipelineOp.TmaLoad]:
+                # TMA operation signals local mbarrier only
+                self.arrive_and_expect_tx(index, self.tx_count, loc=loc, ip=ip)
+            elif self.op_type in [PipelineOp.ClcLoad]:
+                # Multiple threads in CTA 0 each signal a different remote CTA in cluster's mbarrier
+                self.arrive_and_expect_tx_with_dst(
+                    index, self.tx_count, dst, loc=loc, ip=ip
+                )
+            elif self.op_type is PipelineOp.AsyncLoad:
+                self.arrive_cp_async_mbarrier(index, loc=loc, ip=ip)
+            else:
+                assert False, (
+                    f"Error: MbarrierArray is not supported for PipelineOp: {_get_pipeline_op(self.op_type)}."
+                )
 
     @dsl_user_op
     def arrive_mbarrier(
@@ -371,7 +432,21 @@ class MbarrierArray(SyncObject):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Boolean:
-        return cute.arch.mbarrier_try_wait(
+        with self._mbar_scope("try_wait"):
+            return cute.arch.mbarrier_try_wait(
+                self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
+            )
+
+    @dsl_user_op
+    def test_wait(
+        self,
+        index: int,
+        phase: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Boolean:
+        return cute.arch.mbarrier_test_wait(
             self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
         )
 
@@ -384,10 +459,18 @@ class MbarrierArray(SyncObject):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Optional[tuple]:
-        cute.arch.mbarrier_wait(
-            self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
-        )
-        return None
+        """
+        Wait on mbarrier.
+        uses mbarrier_wait and returns None.
+
+        :param index: Index of the mbarrier in the array
+        :param phase: Phase/parity to wait for (0 or 1)
+        """
+        with self._mbar_scope("wait"):
+            cute.arch.mbarrier_wait(
+                self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
+            )
+            return None
 
     @dsl_user_op
     def arrive_and_wait(
@@ -423,17 +506,25 @@ class MbarrierArray(SyncObject):
         return self.mbarrier_base + index
 
     def max(self) -> int:
-        # Transaction barriers have a maximum arrive count of 511 (2^9 - 1).
-        # Non-transaction barriers have a maximum arrive count of 1,048,575 (2^20 - 1).
-        return 511
+        # Transactional barriers have a maximum arrive count of (2^20 - 1).
+        return (1 << 20) - 1
 
     def __extract_mlir_values__(self) -> list[object]:
         return [self.barrier_storage]
 
     def __new_from_mlir_values__(self, values: list[object]) -> "MbarrierArray":
-        return MbarrierArray(
-            values[0], self.num_stages, (self.op_type, self.cg), self.tx_count
-        )
+        new_mbarrier_array = object.__new__(MbarrierArray)
+        barrier_ptr = cast(cute.Pointer, values[0])
+        new_mbarrier_array.barrier_storage = barrier_ptr
+        new_mbarrier_array.op_type = self.op_type
+        new_mbarrier_array.cg = self.cg
+        new_mbarrier_array.num_stages = self.num_stages
+        new_mbarrier_array.tx_count = self.tx_count
+        new_mbarrier_array.arrive_count = self.arrive_count
+        new_mbarrier_array.mbarrier_base = barrier_ptr
+        new_mbarrier_array.mbarrier_layout = self.mbarrier_layout
+        new_mbarrier_array.name = self.name
+        return new_mbarrier_array
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
@@ -442,7 +533,6 @@ MbarrierArray.__init__.__signature__ = inspect.Signature(  # type: ignore[attr-d
         inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
     ]
 )
-
 
 
 ##############################################################################
@@ -483,6 +573,7 @@ class NamedBarrier(SyncObject):
         cute.arch.barrier_arrive(
             barrier_id=self.barrier_id,
             number_of_threads=self.num_threads,
+            aligned=True,
             loc=loc,
             ip=ip,
         )
@@ -500,6 +591,7 @@ class NamedBarrier(SyncObject):
         cute.arch.barrier_arrive(
             barrier_id=self.barrier_id,
             number_of_threads=self.num_threads,
+            aligned=False,
             loc=loc,
             ip=ip,
         )
@@ -690,14 +782,23 @@ class PipelineState:
         self._index = index
         self._phase = phase
 
-    def clone(self) -> "PipelineState":
-        return PipelineState(self.stages, self._count, self.index, self.phase)
+    @dsl_user_op
+    @cute.jit
+    def clone(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "PipelineState":
+        return PipelineState(self._stages, self._count, self._index, self._phase)
 
     @property
+    @cute.jit
     def index(self) -> Int32:
         return self._index
 
     @property
+    @cute.jit
     def count(self) -> Int32:
         return self._count
 
@@ -706,10 +807,12 @@ class PipelineState:
         return self._stages
 
     @property
+    @cute.jit
     def phase(self) -> Int32:
         return self._phase
 
     @dsl_user_op
+    @cute.jit
     def reset_count(
         self,
         *,
@@ -719,6 +822,7 @@ class PipelineState:
         self._count = Int32(0, loc=loc, ip=ip)
 
     @dsl_user_op
+    @cute.jit
     def advance(
         self,
         *,
@@ -740,13 +844,14 @@ class PipelineState:
             self._index == self.stages,
             then_body,
             else_body,
-            [self.index, self.phase],  # type: ignore[list-item]
+            [self.index, self.phase],
             [Int32, Int32],
             loc=loc,
             ip=ip,
         )
 
     @dsl_user_op
+    @cute.jit
     def reverse(
         self,
         *,
@@ -768,20 +873,17 @@ class PipelineState:
             self._index == -1,
             then_body,
             else_body,
-            [self.index, self.phase],  # type: ignore[list-item]
+            [self.index, self.phase],
             [Int32, Int32],
             loc=loc,
             ip=ip,
         )
 
     def __get_mlir_types__(self) -> list[ir.Type]:
-        return [self._count.type, self._index.type, self._phase.type]  # type: ignore[attr-defined]
+        return [self.count.type, self.index.type, self.phase.type]
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
-        count = self._count
-        index = self._index
-        phase = self._phase
-        return [count.ir_value(), index.ir_value(), phase.ir_value()]
+        return [self.count.ir_value(), self.index.ir_value(), self.phase.ir_value()]
 
     # This can be overridden by derived classes
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "PipelineState":
@@ -925,7 +1027,11 @@ def arrive(
     same instruction. See PTX documentation.
     """
     cute.arch.barrier_arrive(
-        barrier_id=barrier_id, number_of_threads=num_threads, loc=loc, ip=ip
+        barrier_id=barrier_id,
+        number_of_threads=num_threads,
+        aligned=True,
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -941,7 +1047,11 @@ def arrive_unaligned(
     The unaligned flavor of arrive can be used with an arbitrary number of threads in the CTA.
     """
     cute.arch.barrier_arrive(
-        barrier_id=barrier_id, number_of_threads=num_threads, loc=loc, ip=ip
+        barrier_id=barrier_id,
+        number_of_threads=num_threads,
+        aligned=False,
+        loc=loc,
+        ip=ip,
     )
 
 

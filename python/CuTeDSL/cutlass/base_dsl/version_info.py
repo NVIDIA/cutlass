@@ -9,9 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Callable
-
-from .common import DSLCudaVersion, DSLRuntimeError, _get_cuda_version
+from .common import (
+    DSLCudaVersion,
+    DSLRuntimeError,
+    _get_cuda_version,
+)
 
 try:
     CUDA_VERSION = DSLCudaVersion(_get_cuda_version())

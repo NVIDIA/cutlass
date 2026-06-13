@@ -30,7 +30,7 @@ def allocate(tensor: TensorDescriptor, stream: Any = None) -> None:
 
     tensor.device_pointer = cuda_helpers.allocate(tensor.size_in_bytes, stream)
 
-    log().info("Allocate done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
+    log().info("Allocate done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
 
 
 def deallocate(tensor: TensorDescriptor, stream: Any = None) -> None:
@@ -44,7 +44,7 @@ def deallocate(tensor: TensorDescriptor, stream: Any = None) -> None:
     if tensor.device_pointer is None:
         raise DSLRuntimeError("Tensor is not allocated on the device.")
 
-    log().info(  # type: ignore[union-attr]
+    log().info(
         "Deallocating done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer
     )
 
@@ -59,13 +59,13 @@ def copy_to_gpu(
     Copies data from host memory to the GPU memory.
     If do_allocate is True, it first calls allocate
     """
-    log().info("copyin tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
+    log().info("copyin tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
     if do_allocate:
         allocate(tensor, stream)
     cuda_helpers.memcpy_h2d(
         tensor.data_ptr, tensor.device_pointer, tensor.size_in_bytes, stream
     )
-    log().info("copyin done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
+    log().info("copyin done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
     return tensor
 
 
@@ -76,7 +76,7 @@ def copy_from_gpu(
     Copies data from GPU memory back to the host.
     If do_deallocate is True, it calls deallocate
     """
-    log().info("copyout tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)  # type: ignore[union-attr]
+    log().info("copyout tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
     if tensor._check_is_managed_by_framework():
         raise DSLRuntimeError(
             "GPU tensors are managed by the framework and cannot be modified."
@@ -89,9 +89,7 @@ def copy_from_gpu(
     )
     if do_deallocate:
         deallocate(tensor, stream)
-    log().info(  # type: ignore[union-attr]
-        "copyout done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer
-    )
+    log().info("copyout done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
 
 
 def to_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:

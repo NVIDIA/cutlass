@@ -36,6 +36,78 @@ def _get_tma_load_kind(
     raise ValueError(f"Unsupported TMA operation type: {tma_operation_type}")
 
 
+def _is_tma_load_multicast_operation_type(
+    tma_operation_type: OperationTypeEnum,
+) -> bool:
+    return tma_operation_type in (
+        OperationTypeEnum.SM100_TMA_LOAD_2SM_MULTICAST,
+        OperationTypeEnum.SM90_TMA_LOAD_MULTICAST,
+    )
+
+
+def _populate_tma_load_common_kwargs(
+    kwargs: dict[str, object],
+    cta_v_map: Optional[cute.Layout],
+    internal_type: Optional[Type[cute.Numeric]],
+    update_expect_tx: bool,
+) -> None:
+    if cta_v_map is not None:
+        kwargs["cta_v_map"] = cta_v_map.type.attribute
+    # Map internal_type to tma_format per updated API
+    if internal_type is not None:
+        internal_mlir_ty = (
+            internal_type.mlir_type
+            if hasattr(internal_type, "mlir_type")
+            else internal_type
+        )
+        kwargs["tma_format"] = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_ty, False)
+        )
+
+    if update_expect_tx:
+        kwargs["update_expect_tx"] = True
+
+def _emit_tma_load(
+    src: cute.Tensor,
+    dst: cute.Tensor,
+    mbar: ir.Value,
+    *,
+    cta_v_map: Optional[cute.Layout],
+    tma_operation_type: OperationTypeEnum,
+    vmnk_layout: Optional[cute.Layout],
+    multicast_mode: Optional[int],
+    internal_type: Optional[Type[cute.Numeric]],
+    update_expect_tx: bool,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> None:
+    kind = _get_tma_load_kind(tma_operation_type)
+    multicast = _is_tma_load_multicast_operation_type(tma_operation_type)
+
+    kwargs = {
+        "kind": kind,
+        "loc": loc,
+        "ip": ip,
+    }
+    _populate_tma_load_common_kwargs(
+        kwargs,
+        cta_v_map,
+        internal_type,
+        update_expect_tx,
+    )
+
+    if multicast:
+        if vmnk_layout is None:
+            raise ValueError("tma_load multicast requires vmnk_layout")
+        if multicast_mode is None:
+            raise ValueError("tma_load multicast requires multicast_mode")
+        kwargs["vmnk_layout"] = vmnk_layout
+        kwargs["multicast_mode"] = multicast_mode
+        cutlass_lir.TmaLoadMulticastOp(src.value, dst.value, mbar, **kwargs)
+    else:
+        cutlass_lir.TmaLoadOp(src.value, dst.value, mbar, **kwargs)
+
+
 @dsl_user_op
 def allocate(
     type: Type[cute.Numeric],
@@ -67,8 +139,10 @@ def allocate(
 
     bit_layout = None
 
-    _is_passthrough_type = False
-    if not _is_passthrough_type:
+    # Handle SparseElemType (pass through) vs regular types (get mlir_type)
+    if isinstance(type, _cute_ir.SparseElemType):
+        pass
+    else:
         type = type.mlir_type
 
     ptr_ty = _cute_ir.PtrType.get(
@@ -76,7 +150,7 @@ def allocate(
         address_space,
         alignment,
         swizzle.type.attribute if swizzle else None,
-        None,
+        None,  # sparsity
         bit_layout.type.attribute if bit_layout else None,
     )
     buffer_type = _cute_ir.MemRefType.get(ptr_ty, layout.type)
@@ -98,6 +172,8 @@ def tma_load(
     *,
     cta_v_map: Optional[cute.Layout] = None,
     tma_operation_type: Optional[OperationTypeEnum] = None,
+    vmnk_layout: Optional[cute.Layout] = None,
+    multicast_mode: Optional[int] = None,
     internal_type: Optional[Type[cute.Numeric]] = None,
     update_expect_tx: bool = True,
     loc: Optional[ir.Location] = None,
@@ -108,35 +184,34 @@ def tma_load(
 
     update_expect_tx (bool): controls whether this operation increments the mbarrier's transaction bytes with the TMA copy size.
     When used with Cute DSL pipelines, it must be set to False as the pipeline already initializes the mbarrier's transaction bytes.
-    tma_operation_type (optional): specifies the TMA operation type (SM90_TMA_LOAD, SM100_TMA_LOAD_2SM, etc.)
+    tma_operation_type (optional): specifies the TMA operation type. If omitted, defaults to SM90_TMA_LOAD.
+    Required for multicast loads and for selecting SM100_TMA_LOAD_2SM.
+    vmnk_layout: layout describing the cluster configuration. Required when tma_operation_type is multicast.
+    multicast_mode (optional): multicast projection mode. Required when tma_operation_type is multicast.
     internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
+    Does not change src/dst memref types. For structured sparsity, use base storage types:
+    Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
     """
-    if tma_operation_type is not None:
-        kind = _get_tma_load_kind(tma_operation_type)
-    else:
-        kind = _cute_ir.TiledTmaLoadEnum.sm_90
+    if tma_operation_type is None:
+        if vmnk_layout is not None or multicast_mode is not None:
+            raise ValueError(
+                "tma_load requires tma_operation_type when multicast kwargs are provided"
+            )
+        tma_operation_type = OperationTypeEnum.SM90_TMA_LOAD
 
-    kwargs = {
-        "kind": kind,
-        "loc": loc,
-        "ip": ip,
-    }
-    if cta_v_map is not None:
-        kwargs["cta_v_map"] = cta_v_map.type.attribute
-    # Map internal_type to tma_format per updated API
-    if internal_type is not None:
-        internal_mlir_ty = (
-            internal_type.mlir_type
-            if hasattr(internal_type, "mlir_type")
-            else internal_type
-        )
-        kwargs["tma_format"] = _cute_nvgpu_ir.TmaDataFormat(
-            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_ty, False)
-        )
-
-    if update_expect_tx:
-        kwargs["update_expect_tx"] = True
-    cutlass_lir.TmaLoadOp(src.value, dst.value, mbar, **kwargs)
+    _emit_tma_load(
+        src,
+        dst,
+        mbar,
+        cta_v_map=cta_v_map,
+        tma_operation_type=tma_operation_type,
+        vmnk_layout=vmnk_layout,
+        multicast_mode=multicast_mode,
+        internal_type=internal_type,
+        update_expect_tx=update_expect_tx,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -156,6 +231,9 @@ def tma_load_multicast(
     """
     Copies a tensor pointed by a !cute.memref into a Buffer using TMA with multicast.
 
+    Deprecated: use tma_load with a multicast tma_operation_type plus
+    vmnk_layout and multicast_mode. This wrapper is kept for existing kernels.
+
     :param src: Source tensor in global memory
     :param dst: Destination tensor in shared memory
     :param mbar: Memory barrier for synchronization
@@ -165,24 +243,21 @@ def tma_load_multicast(
     :param multicast_mode: Multicast projection mode (1=column, 2=row)
     :param update_expect_tx: Whether to update expected transaction bytes
     """
-    kind = _get_tma_load_kind(tma_operation_type)
-    kwargs = {
-        "kind": kind,
-        "vmnk_layout": vmnk_layout,
-        "multicast_mode": multicast_mode,
-        "loc": loc,
-        "ip": ip,
-    }
-    if cta_v_map is not None:
-        kwargs["cta_v_map"] = cta_v_map.type.attribute
+    if not _is_tma_load_multicast_operation_type(tma_operation_type):
+        raise ValueError("tma_load_multicast requires a multicast tma_operation_type")
 
-    if update_expect_tx:
-        kwargs["update_expect_tx"] = True
-    cutlass_lir.TmaLoadMulticastOp(
-        src.value,
-        dst.value,
+    _emit_tma_load(
+        src,
+        dst,
         mbar,
-        **kwargs,
+        cta_v_map=cta_v_map,
+        tma_operation_type=tma_operation_type,
+        vmnk_layout=vmnk_layout,
+        multicast_mode=multicast_mode,
+        internal_type=None,
+        update_expect_tx=update_expect_tx,
+        loc=loc,
+        ip=ip,
     )
 
 
@@ -200,6 +275,8 @@ def tma_store(
     Copies a tensor from a Buffer to a tensor pointed to by a !cute.memref.
 
     internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
+    Does not change src/dst memref types. For structured sparsity, use base storage types:
+    Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
     """
 
     kwargs = {
@@ -221,6 +298,55 @@ def tma_store(
         )
 
     cutlass_lir.TmaStoreOp(src.value, dst.value, **kwargs)
+
+
+@dsl_user_op
+def tma_reduce_store(
+    src: cute.Tensor,
+    dst: cute.Tensor,
+    *,
+    kind: cute.ReductionKind,
+    cta_v_map: Optional[cute.Layout] = None,
+    internal_type: Optional[Type[cute.Numeric]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Atomically reduce a tensor from an SMEM Buffer into a tensor pointed to by
+    a !cute.memref via TMA. Lowers to ``lir.tma_reduce_store`` and ultimately to
+    ``cp.reduce.async.bulk.tensor.<rank>d.global.shared::cta.<kind>.tile``.
+
+    :param kind: reduction kind. Use ``cute.ReductionKind.<X>``. Supported
+        kinds: ADD / MIN / MAX / INC / DEC / AND / OR / XOR.
+    :param cta_v_map: optional CTA-v map layout. If omitted, the layout is
+        inferred from the destination GMEM memref.
+    :param internal_type: optional override for the TMA transfer's internal
+        element encoding; see :func:`tma_store` for semantics.
+    """
+    if not isinstance(kind, cute.ReductionKind):
+        raise TypeError(
+            f"tma_reduce_store: unsupported kind {kind!r}; "
+            f"expected cute.ReductionKind"
+        )
+    kwargs = {
+        "kind": ir.Attribute.parse(f"#cute_nvgpu.tma_reduce_kind<{kind.name}>"),
+        "loc": loc,
+        "ip": ip,
+    }
+    if cta_v_map is not None:
+        kwargs["cta_v_map"] = cta_v_map.type.attribute
+
+    if internal_type is not None:
+        internal_mlir_ty = (
+            internal_type.mlir_type
+            if hasattr(internal_type, "mlir_type")
+            else internal_type
+        )
+        kwargs["tma_format"] = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(internal_mlir_ty, False)
+        )
+
+    cutlass_lir.TmaReduceStoreOp(src.value, dst.value, **kwargs)
 
 
 @dsl_user_op

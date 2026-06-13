@@ -13,7 +13,7 @@
 
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Callable, Optional, Union
+from typing import Callable, Literal, Optional, Union
 
 try:
     import tvm_ffi
@@ -599,12 +599,11 @@ class TVMFFIBuilder(MLIRBuilder):
             )
             if index > 0:
                 # try to stay in constant compute as much as possible
-                if isinstance(expected_shape[index], int) and isinstance(
+                expected_shape_i = expected_shape[index]
+                if isinstance(expected_shape_i, int) and isinstance(
                     expected_stride, int
                 ):
-                    expected_stride = (
-                        expected_shape[index] * expected_stride  # type: ignore[operator]
-                    )
+                    expected_stride = expected_shape_i * expected_stride
                 else:
                     if isinstance(expected_stride, int):
                         expected_stride = self.i64(expected_stride)
@@ -616,6 +615,83 @@ class TVMFFIBuilder(MLIRBuilder):
                         # expected_shape[index] is a spec.Var, use loaded_shape[index]
                         expected_stride = self.mul(loaded_shape[index], expected_stride)
         return cond
+
+    def get_or_create_set_raised_cuda_error_helper(self, error_code_prefix: str) -> str:
+        """Get or create a helper that raises CUDADialectError from an i32 code."""
+        helper_name = "__tvm_ffi_set_raised_cuda_error"
+        if self.find_func_in_module(self.module, helper_name):
+            return helper_name
+
+        sprintf_type = ir.Type.parse("!llvm.func<i32 (!llvm.ptr, !llvm.ptr, ...)>")
+        if not self.find_func_in_module(self.module, "sprintf"):
+            with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+                func_op = llvm.func(
+                    "sprintf",
+                    function_type=ir.TypeAttr.get(sprintf_type),
+                )
+                func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
+        format_symbol = self.define_global_string(content="%d")
+        error_kind_symbol = self.define_global_string(content="CUDADialectError")
+        error_prefix_symbol = self.define_global_string(content=error_code_prefix)
+        set_error_from_parts_helper = self.get_or_create_set_raised_from_cstr_parts(2)
+
+        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+            params, entry_block = self.function(
+                name=helper_name,
+                params_type=[self.i32_type],
+                ret_type=self.void_type,
+                internal=True,
+                llvm_func_attrs=["noinline"],
+            )
+            (value,) = params
+            with ir.InsertionPoint(entry_block):
+                buffer = llvm.alloca(
+                    res=self.ptr_type,
+                    elem_type=self.i8_type,
+                    array_size=self.i32(12),
+                    alignment=1,
+                )
+                llvm.call(
+                    result=self.i32_type,
+                    callee="sprintf",
+                    callee_operands=[
+                        buffer,
+                        self.address_of(format_symbol, self.ptr_type),
+                        value,
+                    ],
+                    var_callee_type=ir.TypeAttr.get(sprintf_type),
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+
+                llvm.call(
+                    result=None,
+                    callee=set_error_from_parts_helper,
+                    callee_operands=[
+                        self.address_of(error_kind_symbol, self.ptr_type),
+                        self.i32(2),
+                        self.address_of(error_prefix_symbol, self.ptr_type),
+                        buffer,
+                    ],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+                self.return_()
+
+        return helper_name
+
+    def raise_cuda_error_and_return(
+        self, code: ir.Value, error_code_prefix: str
+    ) -> None:
+        """Raise CUDADialectError and return -1 from the current TVM-FFI wrapper."""
+        llvm.call(
+            result=None,
+            callee=self.get_or_create_set_raised_cuda_error_helper(error_code_prefix),
+            callee_operands=[code],
+            op_bundle_sizes=[],
+            op_bundle_operands=[],
+        )
+        self.return_(self.i32(-1))
 
     def get_or_create_set_raised_from_cstr_parts(self, num_parts: int) -> str:
         r"""Get or create a helper function to call TVMFFIErrorSetRaisedFromCStrParts.
@@ -935,6 +1011,13 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             result_type = self.f64_type
         elif param.dtype.bits == 32:
             result_type = self.f32_type
+        elif (
+            hasattr(tvm_ffi._dtype.DataTypeCode, "BFLOAT")
+            and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BFLOAT
+        ):
+            result_type = self.bf16_type
+        elif param.dtype.bits == 16:
+            result_type = self.f16_type
         else:
             raise ValueError(f"Unsupported Var dtype: {param.dtype}")
 
@@ -962,12 +1045,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             v_float64: ir.Value = self.load_ffi_any_array_item_v_float64(
                 args, arg_index
             )
-            if param.dtype.bits == 64:
-                float_result = v_float64
-            elif param.dtype.bits == 32:
-                float_result = llvm.fptrunc(res=self.f32_type, arg=v_float64)
-            else:
-                raise ValueError(f"Unsupported Var dtype: {param.dtype}")
+            float_result = self.fptrunc(v_float64, result_type)
             self.br(result_block, args=[float_result])
 
         # In int/bool check block, verify it's actually int or bool
@@ -982,16 +1060,8 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # Handle int or bool type (convert to float)
         with ir.InsertionPoint(int_bool_block):
             v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(args, arg_index)
-            # Convert int64 to float64 first, then to target type
             v_float64_from_int = llvm.sitofp(res=self.f64_type, arg=v_int64)
-            if param.dtype.bits == 64:
-                int_bool_result = v_float64_from_int
-            elif param.dtype.bits == 32:
-                int_bool_result = llvm.fptrunc(
-                    res=self.f32_type, arg=v_float64_from_int
-                )
-            else:
-                raise ValueError(f"Unsupported Var dtype: {param.dtype}")
+            int_bool_result = self.fptrunc(v_float64_from_int, result_type)
             self.br(result_block, args=[int_bool_result])
 
         # Error block
@@ -1073,38 +1143,119 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
 
         return current_block
 
-    def decode_param_const_none(
+    def decode_param_const(
         self,
         current_block: ir.Block,
-        param: spec.ConstNone,
+        param: spec.Param,
         args: ir.Value,
         arg_index: int,
         arg_context: ArgContext,
     ) -> ir.Block:
-        """Decode the opaque handle parameter at the given index."""
-        # read the type index
+        """Decode a ``Const*`` param: assert the FFI arg matches the literal
+        captured at compile time.
+
+        Two-step shape shared by all four constexpr kinds:
+          1. Type-index check → TypeError (``expected <kind>``).
+          2. Value equality check → ValueError (``expected <value>``).
+             Skipped for ConstNone since None has no payload.
+
+        The Const slot is not forwarded into the llvm.call — it exists only
+        so tvm-ffi's ``unpack_dataclass_to_tuple`` arity matches the wrapper
+        signature, and so we catch mismatched caller values early.
+        """
+        # Per-kind: accepted FFI type indices, kind name for the error
+        # message, how to load + compare the payload, and how to render the
+        # expected literal in the error message. ``expected_repr`` is paired
+        # with ``payload_kind`` so the display value tracks the Python type
+        # (e.g. bool → True/False) rather than the wire value (int 1/0).
+        accepted: tuple[TVMFFITypeIndex, ...]
+        payload_kind: (
+            tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
+        )
+        expected_repr: bool | int | float
+        if isinstance(param, spec.ConstNone):
+            accepted = (TVMFFITypeIndex.kTVMFFINone,)
+            kind_name = "None"
+            payload_kind = None
+        elif isinstance(param, spec.ConstBool):
+            # bool is strict: reject kTVMFFIInt even when the value would match
+            accepted = (TVMFFITypeIndex.kTVMFFIBool,)
+            kind_name = "bool"
+            # True→1, False→0 via int(bool) — same wire format as ConstInt
+            payload_kind = ("int", int(param.value))
+            expected_repr = bool(param.value)
+        elif isinstance(param, spec.ConstInt):
+            # int/bool share the v_int64 payload — accept either
+            accepted = (TVMFFITypeIndex.kTVMFFIInt, TVMFFITypeIndex.kTVMFFIBool)
+            kind_name = "int"
+            payload_kind = ("int", int(param.value))
+            expected_repr = int(param.value)
+        elif isinstance(param, spec.ConstFloat):
+            accepted = (TVMFFITypeIndex.kTVMFFIFloat,)
+            kind_name = "float"
+            payload_kind = ("float", float(param.value))
+            expected_repr = float(param.value)
+        else:
+            raise ValueError(
+                f"decode_param_const: unsupported Const param: {type(param).__name__}"
+            )
+
+        # Step 1 — type-index check.
         with ir.InsertionPoint(current_block):
             type_index: ir.Value = self.load_ffi_any_array_item_type_index(
                 args, arg_index
             )
-            # Check if type is a nullptr
-            is_nullptr = self.equal(type_index, self.i32(TVMFFITypeIndex.kTVMFFINone))
-
-        expect_message = ", expected None"
-
-        # Break error message into reusable parts for better string deduplication
+            type_ok: ir.Value = self.equal(type_index, self.i32(accepted[0]))
+            for tx in accepted[1:]:
+                type_ok = self.or_(
+                    type_ok, self.equal(type_index, self.i32(tx))
+                )
         current_block = self.check_condition(
             current_block,
-            lambda: is_nullptr,
+            lambda: type_ok,
             "TypeError",
             [
                 "Mismatched type ",
                 *arg_context.get(),
                 self._fn_call_context,
-                expect_message,
+                f", expected {kind_name}",
             ],
         )
-        return current_block
+
+        # Step 2 — value check (None has no payload).
+        if payload_kind is None:
+            return current_block
+        value_ok: ir.Value
+        with ir.InsertionPoint(current_block):
+            if payload_kind[0] == "int":
+                expected_int = payload_kind[1]
+                v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(
+                    args, arg_index
+                )
+                value_ok = self.equal(v_int64, self.i64(expected_int))
+            else:  # "float"
+                expected_float = payload_kind[1]
+                v_float64: ir.Value = self.load_ffi_any_array_item_v_float64(
+                    args, arg_index
+                )
+                expected_const = llvm.ConstantOp(
+                    self.f64_type,
+                    ir.FloatAttr.get(self.f64_type, expected_float),
+                ).res
+                value_ok = llvm.fcmp(
+                    llvm.FCmpPredicate.oeq, v_float64, expected_const
+                )
+        return self.check_condition(
+            current_block,
+            lambda: value_ok,
+            "ValueError",
+            [
+                "Mismatched constexpr value ",
+                *arg_context.get(),
+                self._fn_call_context,
+                f", expected {expected_repr}",
+            ],
+        )
 
     def check_int_value_dtype_bound(
         self,
@@ -1671,8 +1822,23 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
 
         # check dtype
         def dtype_equal() -> ir.Value:
-            # check dtype (code, bits, lanes)
-            dtype_code_match = self.equal(dtype_code, self.i8(param.dtype.type_code))
+            # MLIR integers are signless (i8, i16, i32, i64), so a function compiled
+            # for int8 is bit-identical to one compiled for uint8. Accept both signed
+            # (kDLInt=0) and unsigned (kDLUInt=1) integer dtype codes so that cached
+            # compiled functions work regardless of which signedness first populated
+            # the JIT cache.
+            if param.dtype.type_code in (
+                tvm_ffi._dtype.DataTypeCode.INT,
+                tvm_ffi._dtype.DataTypeCode.UINT,
+            ):
+                dtype_code_match = self.or_(
+                    self.equal(dtype_code, self.i8(tvm_ffi._dtype.DataTypeCode.INT)),
+                    self.equal(dtype_code, self.i8(tvm_ffi._dtype.DataTypeCode.UINT)),
+                )
+            else:
+                dtype_code_match = self.equal(
+                    dtype_code, self.i8(param.dtype.type_code)
+                )
             dtype_bits_match = self.equal(dtype_bits, self.i8(param.dtype.bits))
             dtype_lanes_match = self.equal(dtype_lanes, self.i16(param.dtype.lanes))
             return self.and_(
@@ -1940,6 +2106,13 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 return self.decode_param_float(
                     current_block, param, args, arg_index, arg_context
                 )
+            elif (
+                hasattr(tvm_ffi._dtype.DataTypeCode, "BFLOAT")
+                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BFLOAT
+            ):
+                return self.decode_param_float(
+                    current_block, param, args, arg_index, arg_context
+                )
             elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.HANDLE:
                 return self.decode_param_opaque_handle(
                     current_block, param, args, arg_index, arg_context
@@ -1965,8 +2138,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             return self.decode_param_data_pointer(
                 current_block, param, args, arg_index, arg_context
             )
-        elif isinstance(param, spec.ConstNone):
-            return self.decode_param_const_none(
+        elif isinstance(
+            param,
+            (spec.ConstNone, spec.ConstBool, spec.ConstInt, spec.ConstFloat),
+        ):
+            return self.decode_param_const(
                 current_block, param, args, arg_index, arg_context
             )
         elif isinstance(param, spec.TupleParam):

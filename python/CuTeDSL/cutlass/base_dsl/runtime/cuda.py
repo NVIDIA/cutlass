@@ -15,7 +15,7 @@ This module provides CUDA Python helper functions
 
 from functools import lru_cache
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from enum import IntEnum
 import numpy as np
 import os

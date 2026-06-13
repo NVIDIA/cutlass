@@ -17,15 +17,12 @@ from typing import Any, Optional, Type, Union, Tuple
 
 from cutlass.cute.typing import (
     Numeric,
-    Boolean,
-    TFloat32,
-    Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
     Float8E8M0FNU,
+    Float4E2M1FN,
     Float6E3M2FN,
     Float6E2M3FN,
-    Float4E2M1FN,
     Int4,
     Tensor,
 )
@@ -35,31 +32,7 @@ import torch
 import cuda.bindings.driver as cuda
 
 
-def dtype(ty: Type[Numeric]) -> "torch.dtype":
-    """
-    Return the corresponding torch.dtype per the given DSL type
-    """
-    torch_dtype = getattr(torch, ty.__name__.lower(), None)
-
-    torch_type_map = {
-        Boolean: torch.bool,
-        # TFloat32 is just alias of float32
-        TFloat32: torch.float32,
-        Float8E5M2: torch.float8_e5m2,
-        Float8E4M3FN: torch.float8_e4m3fn,
-        Float8E4M3B11FNUZ: torch.float8_e4m3fnuz,
-    }
-
-    # float8_e8m0fnu is introduced in latest version of torch
-    if hasattr(torch, "float8_e8m0fnu"):
-        torch_type_map[Float8E8M0FNU] = torch.float8_e8m0fnu
-
-    if torch_dtype is None:
-        torch_dtype = torch_type_map.get(ty)
-
-    if torch_dtype is None:
-        raise TypeError(f"{ty} is not supported by torch")
-    return torch_dtype
+from cutlass.base_dsl.torch import dtype as dtype  # noqa: F811
 
 
 def as_tensor(pointer: Any, shape: Any, torch_type: "torch.dtype") -> "torch.Tensor":
@@ -197,9 +170,9 @@ def convert_cute_tensor(
         Float8E5M2,
         Float8E4M3FN,
         Float8E8M0FNU,
+        Float4E2M1FN,
         Float6E3M2FN,
         Float6E2M3FN,
-        Float4E2M1FN,
     }:
         fp32_cute_tensor = from_dlpack(f32_torch_tensor)
         if is_dynamic_layout:
@@ -304,12 +277,9 @@ def cute_tensor_like(
     """
 
     # allocate device buffer for cute tensor
-    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
-        cutlass_dtype.is_integer and cutlass_dtype.width == 4
-    ):
-        torch_dtype = torch.int8
-    else:
-        torch_dtype = dtype(cutlass_dtype)
+    do_kernel_convert = ((cutlass_dtype.is_float and cutlass_dtype.width <= 8) or
+                         (cutlass_dtype.is_integer and cutlass_dtype.width == 4))
+    torch_dtype = torch.uint8 if do_kernel_convert else dtype(cutlass_dtype)
     torch_tensor = torch.empty_like(data_ref, dtype=torch_dtype, device="cuda")
 
     # create cute tensor using the device buffer
@@ -322,10 +292,7 @@ def cute_tensor_like(
 
     is_empty_tensor = torch_tensor.numel() == 0
     # initialize the cute tensor data
-    if not is_empty_tensor and (
-        (cutlass_dtype.is_float and cutlass_dtype.width <= 8)
-        or (cutlass_dtype.is_integer and cutlass_dtype.width == 4)
-    ):
+    if not is_empty_tensor and do_kernel_convert:
         cute_tensor = convert_cute_tensor(
             data_ref.to(dtype=torch.float32),
             cute_tensor,
@@ -334,6 +301,15 @@ def cute_tensor_like(
         )
     else:
         torch_tensor.copy_(data_ref.to(dtype=torch_dtype))
+
+    # cast back to torch type if possible
+    if do_kernel_convert:
+        try:
+            torch_dtype = dtype(cutlass_dtype)
+        except TypeError:
+            torch_dtype = torch_tensor.dtype
+        torch_tensor = torch_tensor.view(dtype=torch_dtype)
+
     return cute_tensor, torch_tensor
 
 

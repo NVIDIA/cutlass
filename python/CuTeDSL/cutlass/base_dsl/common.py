@@ -39,6 +39,7 @@ def register_env_manager(env_manager: Any) -> None:
     _registered_env_manager = env_manager
 
 
+
 def _dsl_excepthook(
     exc_type: type,
     exc_value: BaseException,
@@ -55,7 +56,11 @@ def _dsl_excepthook(
         show_stacktrace = getattr(_registered_env_manager, "show_stacktrace", False)
 
     # Check if it's a DSL operation error (by name to avoid circular import issues)
-    if exc_type.__name__ in ("DSLOperationError", "DSLOperationBuildError"):
+    if exc_type.__name__ in (
+        "DSLOperationError",
+        "DSLOperationBuildError",
+        "DSLUserCodeError",
+    ):
         if show_stacktrace:
             # Show full traceback in verbose mode
             _original_excepthook(exc_type, exc_value, exc_traceback)
@@ -332,6 +337,17 @@ def _get_friendly_cuda_error_message(
     return message, debug_info, error_suggestions.get(error_name, "")
 
 
+def _get_cuda_error_name_from_code(error_code: int) -> Union[str, bytes]:
+    try:
+        # Avoid circular dependency.
+        from .runtime import cuda as cuda_helpers
+
+        cu_result = cuda_helpers.cuda.CUresult(error_code)
+        return cuda_helpers._cudaGetErrorEnum(cu_result)
+    except (ValueError, AttributeError):
+        return f"<unknown CUDA error code {error_code}>"
+
+
 class DSLCudaRuntimeError(DSLBaseError):
     """
     Raised when an error occurs during CUDA runtime code generation in the DSL.
@@ -349,6 +365,17 @@ class DSLCudaRuntimeError(DSLBaseError):
         super().__init__(
             message, error_code=error_code, context=debug_info, suggestion=suggestion
         )
+
+
+def create_cuda_runtime_error(
+    error_code: int, cause: BaseException | None = None
+) -> DSLCudaRuntimeError:
+    """Create a DSLCudaRuntimeError from a raw CUDA integer error code."""
+    error = DSLCudaRuntimeError(error_code, _get_cuda_error_name_from_code(error_code))
+    if cause is not None:
+        error.__cause__ = cause
+        error.__suppress_context__ = True
+    return error
 
 
 class DSLAstPreprocessorError(DSLBaseError):

@@ -82,14 +82,6 @@ def _parse_keep_tokens(raw: str, prefix: str = "") -> frozenset[str]:
     if "all" in tokens:
         return _KEEP_ALL_TOKENS
     unknown = tokens - _KEEP_VALID_TOKENS
-    if unknown:
-        message = f"{prefix}_KEEP" if prefix else "[DSL]_KEEP"
-        log().warning(
-            "%s: unknown token(s) %s will be ignored. Valid tokens: %s",
-            message,
-            sorted(unknown),
-            sorted(_KEEP_VALID_TOKENS),
-        )
     return tokens - unknown
 
 
@@ -108,28 +100,76 @@ def get_str_env_var(var_name: str, default_value: str | None = None) -> str | No
     return value if value is not None else default_value
 
 
+_BOOL_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_BOOL_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
+
+
 @lru_cache(maxsize=None)
 def get_bool_env_var(var_name: str, default_value: bool = False) -> bool:
     """
     Get the value of a boolean environment variable.
-    If the value it not in False, 0, or empty string, it is considered True.
-    Note that the value is cached after the first call.
+
+    Recognized values (case-insensitive, surrounding whitespace ignored):
+      * Truthy:   ``1``, ``true``, ``yes``, ``on``
+      * Falsy:    ``0``, ``false``, ``no``, ``off``
+
+    An unset variable, or one whose value is empty (or whitespace only),
+    returns ``default_value``.
+
+    The parsed value is cached after the first call (per ``var_name`` /
+    ``default_value`` pair).
+
+    Raises:
+        ValueError: if the variable is set to any other value.
     """
-    value = get_str_env_var(var_name)
-    if value is None:
+    raw = get_str_env_var(var_name)
+    if raw is None:
         return default_value
-    return value not in {"False", "0", ""}
+    normalized = raw.strip().lower()
+    if normalized == "":
+        return default_value
+    if normalized in _BOOL_TRUE_VALUES:
+        return True
+    if normalized in _BOOL_FALSE_VALUES:
+        return False
+    raise ValueError(
+        f"Invalid value for environment variable {var_name}={raw!r}. "
+        f"Expected a boolean (case-insensitive): "
+        f"{sorted(_BOOL_TRUE_VALUES) + sorted(_BOOL_FALSE_VALUES)} "
+        f"or empty/unset to use the default ({default_value!r})."
+    )
 
 
 @lru_cache(maxsize=None)
 def get_int_env_var(var_name: str, default_value: int = 0) -> int:
     """
     Get the value of an integer environment variable.
-    If the value is not a valid integer, the default value 0 is returned.
-    Note that the value is cached after the first call.
+
+    Surrounding whitespace is ignored. An unset variable or one with an
+    empty value returns ``default_value``. Negative integers (e.g.
+    ``-5``) are accepted.
+
+    Raises:
+        ValueError: if the variable is set to a value that is not a
+            valid base-10 integer.
+
+    The parsed value is cached after the first call (per ``var_name`` /
+    ``default_value`` pair).
     """
-    value = get_str_env_var(var_name)
-    return int(value) if value and value.isdigit() else default_value
+    raw = get_str_env_var(var_name)
+    if raw is None:
+        return default_value
+    stripped = raw.strip()
+    if stripped == "":
+        return default_value
+    try:
+        return int(stripped)
+    except ValueError:
+        raise ValueError(
+            f"Invalid value for environment variable {var_name}={raw!r}. "
+            f"Expected a base-10 integer, or empty/unset to use the "
+            f"default ({default_value!r})."
+        ) from None
 
 
 @lru_cache(maxsize=None)
@@ -137,22 +177,36 @@ def get_int_or_none_env_var(
     var_name: str, default_value: int | None = None
 ) -> int | None:
     """
-    Get the value of an integer or None union environment variable.
-    If the value is not a valid integer, the default value 0 is returned.
-    Note that the value is cached after the first call.
+    Get the value of an integer-or-``None`` environment variable.
+
+    Recognized values (case-insensitive, surrounding whitespace ignored):
+      * ``"none"``                       returns ``None``
+      * any base-10 integer literal      returns that integer (negatives accepted)
+
+    An unset variable or one with an empty value returns ``default_value``.
+
+    Raises:
+        ValueError: if the variable is set to anything else.
+
+    The parsed value is cached after the first call (per ``var_name`` /
+    ``default_value`` pair).
     """
     raw = get_str_env_var(var_name)
     if raw is None:
         return default_value
-
-    value = raw.strip().lower()
-    if value == "none":
-        return None
-
-    try:
-        return int(value)
-    except ValueError:
+    normalized = raw.strip().lower()
+    if normalized == "":
         return default_value
+    if normalized == "none":
+        return None
+    try:
+        return int(normalized)
+    except ValueError:
+        raise ValueError(
+            f"Invalid value for environment variable {var_name}={raw!r}. "
+            f"Expected a base-10 integer, the literal 'none', or "
+            f"empty/unset to use the default ({default_value!r})."
+        ) from None
 
 
 @lru_cache(maxsize=None)
@@ -183,8 +237,9 @@ def detect_gpu_arch(prefix: str) -> str:
         arch = (10, 0)
 
     major, minor = arch
+    assert major is not None and minor is not None
     suffix = ""
-    if major >= 9:  # type: ignore[operator]
+    if major >= 9:
         suffix = "a"
 
     return f"sm_{major}{minor}{suffix}"
@@ -302,6 +357,8 @@ def get_prefix_dsl_libs(prefix: str) -> str | None:
             }
             lib_folder_guesses = [
                 "lib",
+                "cu12/lib",
+                "cu13/lib",
             ]
 
             for target_libs in [
@@ -407,6 +464,13 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
     - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
     - [DSL_NAME]_LOC_TRACEBACKS: Maximum depth of location tracebacks (default: 0)
+    - [DSL_NAME]_COMPILER_OPT: Compact compiler option string (default: "").
+      Controls compiler passes and diagnostic checks. Forms accepted:
+        iket                        — enable IKET (In-Kernel Event Tracing) instrumentation
+      Examples:
+        CUTE_DSL_COMPILER_OPT="iket"
+      The same option strings are accepted by cute.compile(..., options=...).
+
     """
 
     def __init__(self, prefix: str = "DSL") -> None:
@@ -435,11 +499,14 @@ class EnvironmentVarManager(LogEnvironmentManager):
         # ------------------------------------------------------------------ #
         # Artifact keep — [DSL]_KEEP=<comma-list>                            #
         # ------------------------------------------------------------------ #
+        # Parse new consolidated option.
         _keep_raw = get_str_env_var(f"{prefix}_KEEP", "")
         _keep_tokens: set[str] = set(
             _parse_keep_tokens(_keep_raw, prefix) if _keep_raw else frozenset()
         )
 
+        # Backward compatibility: publicly-documented old options emit a
+        # DeprecationWarning and fold into _keep_tokens.
         if get_bool_env_var(f"{prefix}_KEEP_IR", False):
             warnings.warn(
                 f"{prefix}_KEEP_IR is deprecated; use {prefix}_KEEP=ir-debug instead.",
@@ -484,6 +551,8 @@ class EnvironmentVarManager(LogEnvironmentManager):
         self.disable_file_caching = get_bool_env_var(
             f"{prefix}_DISABLE_FILE_CACHING", False
         )
+        self.compiler_opt = get_str_env_var(f"{prefix}_COMPILER_OPT", "")
+
         # set mlir shared libraries
         self.shared_libs = get_prefix_dsl_libs(prefix)
 

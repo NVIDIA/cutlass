@@ -17,6 +17,23 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir
 
 
+# MMA operands passed to `dot` / `dot_block_scaled` / ... must follow
+# the CuTe fragment contract `(MMA, REST_M, REST_K)` (rank >= 3), same as
+# the underlying `cute.gemm`. Partitioning an MMA tile often yields rank-2
+# A/B slices, so callers historically had to sprinkle
+# `cute.append_ones(..., up_to_rank=3)` at every call site. We do that here
+# so the user doesn't have to. Already-rank-3 (or higher) tensors pass
+# through unchanged.
+def _ensure_rank3(
+    t: cute.Tensor,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> cute.Tensor:
+    if cute.rank(t) < 3:
+        t = cute.append_ones(t, up_to_rank=3, loc=loc, ip=ip)
+    return t
+
+
 @dsl_user_op
 def dot_block_scaled(
     mma_atom: cute.MmaAtom,
@@ -28,6 +45,10 @@ def dot_block_scaled(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    a = _ensure_rank3(a, loc, ip)
+    b = _ensure_rank3(b, loc, ip)
+    sfa = _ensure_rank3(sfa, loc, ip)
+    sfb = _ensure_rank3(sfb, loc, ip)
     cutlass_lir.DotBlockScaledOp(
         mma_atom._unpack(),
         a.value,
@@ -49,6 +70,8 @@ def dot(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    a = _ensure_rank3(a, loc, ip)
+    b = _ensure_rank3(b, loc, ip)
     cutlass_lir.DotOp(
         mma_atom._unpack(),
         a.value,

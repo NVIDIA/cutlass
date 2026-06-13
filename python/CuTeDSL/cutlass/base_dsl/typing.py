@@ -14,7 +14,10 @@ from itertools import chain
 import numpy as np
 import operator
 from typing import (
+    TYPE_CHECKING,
+    Annotated,
     Callable,
+    ClassVar,
     Generic,
     Optional,
     Protocol,
@@ -28,14 +31,13 @@ from typing import (
 
 from .common import *
 from .common import DSLRuntimeError as DSLRuntimeError
-from ._mlir_helpers import arith as arith_helper
-from ._mlir_helpers.arith import ArithValue
-from ._mlir_helpers.op import dsl_user_op
+from .._mlir_helpers import arith as arith_helper
+from .._mlir_helpers.arith import ArithValue
+from .._mlir_helpers.op import dsl_user_op
 
 from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith
-
 # =============================================================================
 # Dynamic Expression Protocol
 # =============================================================================
@@ -257,6 +259,7 @@ def get_mlir_types(obj: Any) -> list[ir.Type]:
     return []
 
 
+
 def implements_jit_argument(obj: Any, *, partial: bool = False) -> bool:
     """
     Check if the object implements the JitArgument protocol.
@@ -340,7 +343,9 @@ class DslType(type):
 class NumericMeta(DslType):
     """Metaclass for numeric types providing width and numpy dtype information.
 
-    :param width: Bit width of the numeric type, defaults to 8
+    :param width: Bit width of one storage unit, defaults to 8.
+        For unpacked dtypes this is the element width. Packed view dtypes
+        use the width of one packed tensor element.
     :type width: int
     :param np_dtype: Corresponding NumPy dtype
     :type np_dtype: numpy.dtype, optional
@@ -348,7 +353,6 @@ class NumericMeta(DslType):
     :type mlir_type: Any, optional
     :param is_abstract: Whether the type is abstract, defaults to False
     :type is_abstract: bool, optional
-
     :ivar width: Bit width of the numeric type
     :type width: int
     :ivar _np_dtype: Corresponding NumPy dtype
@@ -403,6 +407,11 @@ class NumericMeta(DslType):
         new_cls.bytes = max(1, (width + 7) // 8)
         new_cls._np_dtype = np_dtype
         return new_cls
+
+    def n_bytes(cls, n_elements: int) -> int:
+        """Return the storage byte count for ``n_elements`` dtype elements."""
+
+        return n_elements * cls.bytes
 
     @property
     def numpy_dtype(cls) -> Optional[type]:
@@ -604,7 +613,9 @@ class FloatMeta(NumericMeta):
     This metaclass provides type system infrastructure for floating-point types in the DSL,
     handling MLIR type mappings and NumPy type conversions.
 
-    :param width: Bit width of the float type, defaults to 32
+    :param width: Bit width of one storage unit, defaults to 32. Packed view
+        dtypes may use a wider storage-unit width here than their logical
+        floating-point element width.
     :type width: int
     :param mlir_type: Corresponding MLIR type, defaults to None
     :type mlir_type: Any, optional
@@ -629,7 +640,14 @@ class FloatMeta(NumericMeta):
     ) -> Any:
         np_dtype = getattr(np, name.lower(), None)
         new_cls = super().__new__(
-            cls, name, bases, attrs, width, np_dtype, mlir_type, is_abstract
+            cls,
+            name,
+            bases,
+            attrs,
+            width,
+            np_dtype,
+            mlir_type,
+            is_abstract,
         )
         # Extract exponent and mantissa bits from class name if it follows Float<E><M> pattern
         # For example: Float8E4M3 -> exponent_width=4, mantissa_width=3
@@ -800,8 +818,10 @@ def _binary_op_type_promote(
     if a_type == b_type:
         return a, b, a_type
 
-    a_signed = a_type.signed  # type: ignore[attr-defined]
-    b_signed = b_type.signed  # type: ignore[attr-defined]
+    # At this point both must be Integer subclasses (float branch above already returned).
+    assert issubclass(a_type, Integer) and issubclass(b_type, Integer)
+    a_signed = a_type.signed
+    b_signed = b_type.signed
     a_width = a_type.width
     b_width = b_type.width
 
@@ -909,13 +929,13 @@ def _binary_op(
 
         lhs_val: Union[bool, int, float, ir.Value, ArithValue]
         if isinstance(lhs.value, ArithValue) and isinstance(lhs, Integer):
-            lhs_val = lhs.value.with_signedness(lhs.signed)  # type: ignore[attr-defined]
+            lhs_val = lhs.value.with_signedness(lhs.signed)
         else:
             lhs_val = lhs.value
 
         rhs_val: Union[bool, int, float, ir.Value, ArithValue]
         if isinstance(rhs.value, ArithValue) and isinstance(rhs, Integer):
-            rhs_val = rhs.value.with_signedness(rhs.signed)  # type: ignore[attr-defined]
+            rhs_val = rhs.value.with_signedness(rhs.signed)
         else:
             rhs_val = rhs.value
 
@@ -940,6 +960,11 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     :ivar value: The stored numeric value
     :vartype value: Union[bool, int, float, Value]
     """
+
+    # Injected by NumericMeta.__new__ on every concrete subclass.
+    width: ClassVar[int]
+    bytes: ClassVar[int]
+    _np_dtype: ClassVar[Optional[type]]
 
     def __init__(
         self,
@@ -1669,6 +1694,9 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         a = Int32(c5)  # Treat c5 as int32 bitwise
     """
 
+    # Injected by IntegerMeta.__new__ on every concrete subclass.
+    signed: ClassVar[bool]
+
     def __init__(
         self,
         x: Union[bool, int, float, ir.Value, "Integer", "Float"],
@@ -1677,7 +1705,6 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
-
         if isinstance(x, (bool, int, float)):
             # Add check for NaN before numpy conversion
             if isinstance(x, float):
@@ -2094,7 +2121,7 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
         # First convert to numpy float16 to handle the conversion
         f16_val = np.float16(value)
         # Get the raw bits as a 16-bit integer
-        bits: np.uint16 = f16_val.view(np.uint16)
+        bits: int = int(f16_val.view(np.uint16))
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(int(bits))
         return ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
@@ -2113,7 +2140,7 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         # First convert the value to float32 bit representation
         f32_val = np.float32(self.value)
         # Get the 32-bit integer representation
-        bits: np.uint32 = f32_val.view(np.uint32)
+        bits = int(f32_val.view(np.uint32))
         # Truncate to 16 bits, keeping the high 16 bits
         bf16_bits = np.uint16(bits >> 16)
         # Create a short (16-bit int) with those bits
@@ -2148,6 +2175,13 @@ class Float6E3M2FN(Float, metaclass=FloatMeta, width=6, mlir_type=T.f6E3M2FN): .
 
 
 class Float6E2M3FN(Float, metaclass=FloatMeta, width=6, mlir_type=T.f6E2M3FN): ...
+
+
+
+def _element_precision_width(dtype: Type["Numeric"]) -> int:
+    """Return scalar lane precision for packed narrow-float view dtypes."""
+
+    return dtype.width
 
 
 _unsupported_dst_float_types = [
@@ -2233,10 +2267,15 @@ class TensorMeta(DslType):
 TY = TypeVar("TY")
 
 
-class Constexpr(Generic[TY]):
-    """Value is passed and computed by python interpreter"""
+if TYPE_CHECKING:
+    # Static-analysis: Constexpr[T] is transparent and treated as T.
+    Constexpr = Annotated[TY, "constexpr"]
+else:
 
-    pass
+    class Constexpr(Generic[TY]):
+        """Value is passed and computed by python interpreter"""
+
+        pass
 
 
 class align(int):

@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, cast
 
 import enum
 from cutlass.base_dsl.arch import Arch
@@ -60,6 +60,33 @@ class MmaF16BF16Op(WarpMmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma>`__.
     This Operation covers the instructions using the ``.f16`` or ``.bf16`` qualifiers for the input operands.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+---------------------+
+    | A Data Type | B Data Type | Acc Type | Mma-MNK             |
+    +=============+=============+==========+=====================+
+    | F16         | F16         | F16, F32 | (16,8,8), (16,8,16) |
+    +-------------+-------------+----------+---------------------+
+    | BF16        | BF16        | F32      | (16,8,8), (16,8,16) |
+    +-------------+-------------+----------+---------------------+
+
+    **Supported architectures:** sm_80+
+
+    **Constraints:**
+
+    * Operand layout is fixed: A = row-major (K-major), B = col-major (K-major). Transpose is not supported.
+
+    **Execution Model:**
+
+    * WMMA (``mma.sync.aligned``) is a warp-collective synchronous operation. All lanes in the
+      warp must execute the same MMA instruction in convergence.
+    * In user code, ``cute.gemm(...)`` should be issued as warp-uniform code.
+
+    .. code-block:: python
+
+        cute.gemm(mma_atom, d, a, b, c)
+
     """
 
     ab_dtype: Type[Numeric]
@@ -142,6 +169,32 @@ class MmaFP8Op(WarpMmaOp):
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma>`__.
     This Operation covers the instructions using the ``.e4m3`` or ``.e5m2`` qualifiers for the input operands.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+----------------------+
+    | A Data Type | B Data Type | Acc Type | Mma-MNK              |
+    +=============+=============+==========+======================+
+    | E4M3        | E4M3        | F16, F32 | (16,8,16), (16,8,32) |
+    +-------------+-------------+----------+----------------------+
+    | E5M2        | E5M2        | F16, F32 | (16,8,16), (16,8,32) |
+    +-------------+-------------+----------+----------------------+
+
+    **Supported architectures:** sm_89+
+
+    **Constraints:**
+
+    * Operand layout is fixed: A = row-major (K-major), B = col-major (K-major). Transpose is not supported.
+
+    **Execution Model:**
+
+    * WMMA (``mma.sync.aligned``) is a warp-collective synchronous operation. All lanes in the
+      warp must execute the same MMA instruction in convergence.
+    * In user code, ``cute.gemm(...)`` should be issued as warp-uniform code.
+
+    .. code-block:: python
+
+        cute.gemm(mma_atom, d, a, b, c)
     """
 
     ab_dtype: Type[Numeric]
@@ -235,10 +288,7 @@ class MmaSM120BlockScaledOp(MmaOp):
         if arch not in self.admissible_archs:
             raise OpError(
                 self,
-                f"expects arch to be one of {self.admissible_archs}, but got {arch}"
-                " - Note: sm_120f is currently not supported, "
-                " please compile for your local GPU architecture instead with env "
-                "CUTE_DSL_ARCH set to sm_120a or sm_121a",
+                f"expects arch to be one of {self.admissible_archs}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         # (ab_dtype, shape_mnk) consistency: FP4 uses (16,8,64); FP8 uses (16,8,32).
@@ -356,17 +406,18 @@ class MmaBlockScaledTrait(Trait):
             raise ValueError(
                 f"expects field to be one of {self.admissible_fields}, but got {field}"
             )
+        mlir_operand = value
         if field in [Field.SFA, Field.SFB]:
             if not isinstance(value, Pointer):
                 raise ValueError(
                     f"expects value to be a pointer for {field}, but got {type(value).__name__}"
                 )
-            value = value.value
+            mlir_operand = cast(Any, value).value
 
         field_name = f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field._to_ir_field_name()}>"
         attr = ir.Attribute.parse(field_name)
         self.value = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, value, loc=loc, ip=ip
+            self.value, attr, mlir_operand, loc=loc, ip=ip
         )
 
     def get(
@@ -376,6 +427,7 @@ class MmaBlockScaledTrait(Trait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Any:
+        # SM120 warp-level block-scaled MMA does not support get method for any field
         raise ValueError(f"the get method for {field} is not supported")
 
 
@@ -394,6 +446,30 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
     .kind           = {.kind::mxf4};
     .scale_vec_size = {.scale_vec::2X};
     .stype          = {.ue8m0};
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+--------------+----------+-----------+-------------+
+    | A Data Type | B Data Type | SF Data Type | Acc Type | Mma-MNK   | SF Vec Size |
+    +=============+=============+==============+==========+===========+=============+
+    | E2M1        | E2M1        | UE8M0        | F32      | (16,8,64) | 32          |
+    +-------------+-------------+--------------+----------+-----------+-------------+
+
+    **Supported architectures:** sm_120a, sm_120f, sm_121a
+
+    **Constraints:**
+
+    * Operand layout is fixed: A = row-major (K-major), B = col-major (K-major). Transpose is not supported.
+
+    **Execution Model:**
+
+    * Block-scaled WMMA (``mma.sync.aligned`` with ``.block_scale``) is a warp-collective synchronous
+      operation. All lanes in the warp must execute the same MMA instruction in convergence.
+    * In user code, ``cute.gemm(...)`` should be issued as warp-uniform code.
+
+    .. code-block:: python
+
+        cute.gemm(mma_atom, d, a, b, c)
     """
 
     descriptive_name = "warp-level MXF4 MMA Operation"
@@ -449,8 +525,32 @@ class MmaMXF4NVF4Op(MmaSM120BlockScaledOp):
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma>`__.
     This Operation covers the instructions using the ``.e2m1`` qualifiers for the input operands.
     .kind           = {.kind::mxf4nvf4};
-    .scale_vec_size = {.scale_vec::2X, .scale_vec::4X};
-    .stype          = {.ue8m0, .ue4m3};
+    .scale_vec_size = {.scale_vec::4X};
+    .stype          = {.ue4m3};
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+--------------+----------+-----------+-------------+
+    | A Data Type | B Data Type | SF Data Type | Acc Type | Mma-MNK   | SF Vec Size |
+    +=============+=============+==============+==========+===========+=============+
+    | E2M1        | E2M1        | UE4M3        | F32      | (16,8,64) | 16          |
+    +-------------+-------------+--------------+----------+-----------+-------------+
+
+    **Supported architectures:** sm_120a, sm_120f, sm_121a
+
+    **Constraints:**
+
+    * Operand layout is fixed: A = row-major (K-major), B = col-major (K-major). Transpose is not supported.
+
+    **Execution Model:**
+
+    * Block-scaled WMMA (``mma.sync.aligned`` with ``.block_scale``) is a warp-collective synchronous
+      operation. All lanes in the warp must execute the same MMA instruction in convergence.
+    * In user code, ``cute.gemm(...)`` should be issued as warp-uniform code.
+
+    .. code-block:: python
+
+        cute.gemm(mma_atom, d, a, b, c)
     """
 
     descriptive_name = "warp-level MXF4NVF4 MMA Operation"
@@ -596,7 +696,9 @@ class MmaMXF8F6F4Op(MmaOp):
 
     admissible_archs = [
         Arch.sm_120a,
+        Arch.sm_120f,
         Arch.sm_121a,
+        Arch.sm_121f,
     ]
 
     def __post_init__(self) -> None:

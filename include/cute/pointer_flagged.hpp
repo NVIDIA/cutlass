@@ -83,6 +83,24 @@ downcast(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
   return composition(layout.layout_a(), smem_ptr_flag_bits<B/N>{}, downcast<N>(layout.layout_b()));
 }
 
+template <class Coord, int B, int M, int S, int Bits, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+slice_and_offset(Coord const& coord, ComposedLayout<Swizzle<B,M,S>,smem_ptr_flag_bits<Bits>,Layout> const& layout)
+{
+  auto sao = slice_and_offset(coord, layout.layout_b());
+  if constexpr (is_constant<0, decltype(get<1>(sao))>::value) {
+    // Inner slice produced a static zero offset: rebuild a canonical (Swizzle o flag o sliced) layout.
+    return make_tuple(composition(Swizzle<B,M,S>{}, smem_ptr_flag_bits<Bits>{}, get<0>(sao)), Int<0>{});
+  } else {
+    // Inner slice produced a non-static offset (e.g. callers slicing with a runtime literal 0
+    // instead of Int<0>{}). Fall back to the generic ComposedLayout slice_and_offset path that
+    // absorbs the offset into the composed layout's middle slot, so we don't force every
+    // upstream call site to use Int<0>{} purely to satisfy a static_assert here.
+    return cute::make_tuple(ComposedLayout{layout.layout_a(), layout.offset() + get<1>(sao), get<0>(sao)}, Int<0>{});
+  }
+}
+
 //
 // Conversion with swizzle_layout
 //

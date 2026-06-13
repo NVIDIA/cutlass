@@ -123,6 +123,12 @@ Defines GPU kernel functions, compiled as specialized GPU symbols through |DC|.
   - ``False`` (default) — Shared memory is allocated additively across all branches (default CUDA C++ behavior).
   - ``True`` — Merge shared-memory allocations across branches (experimental feature, recommended for mega-kernels).
 
+- ``preferred_smem_carveout``
+  Set per-kernel hint specifying what percentage of SM on-chip memory to reserve for shared memory vs. L1 cache.
+
+  - ``None`` (default) — Auto calculate the percentage using formula ``ceil_div(min_blocks_per_mp * smem * 100, max_smem_per_mp)`` when **min_blocks_per_mp** is greater than 1
+  - ``int`` — Override the auto-calculated percentage and manually set hint.
+
 Calling Conventions
 -------------------
 

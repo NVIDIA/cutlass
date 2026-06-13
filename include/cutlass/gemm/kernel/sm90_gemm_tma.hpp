@@ -281,12 +281,12 @@ public:
 
     constexpr int BLK_M_RANK = cute::rank<0>(blk_shape);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
-        return  get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
+        return  get<0,i>(problem_shape_MNKL) - get<0,i>(blk_shape) * get<0,i>(output_tile_coord);
       }));
 
     constexpr int BLK_N_RANK = cute::rank<1>(blk_shape);
     auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
-        return  get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);
+        return  get<1,i>(problem_shape_MNKL) - get<1,i>(blk_shape) * get<1,i>(output_tile_coord);
       }));
     auto residue_mnk = make_tuple(m_max_coord, n_max_coord, Int<0>{});
 

@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+
 from functools import partial, reduce
 import inspect
 from inspect import isclass
@@ -25,6 +26,7 @@ from cutlass._mlir.dialects.cute import (
 from cutlass._mlir.dialects.cute import (
     Ratio as _Ratio,
     ScaledBasis as _ScaledBasis,
+    SparseElemType as _SparseElemType,
 )
 from cutlass._mlir.extras.types import MemRefType as BuiltinMemRefType
 from cutlass.cutlass_dsl import (
@@ -63,6 +65,7 @@ from .typing import (
     Tile,
     Tiler,
     XTuple,
+    _element_precision_width,
     is_int_tuple,
     is_integer,
 )
@@ -1513,7 +1516,10 @@ class _Pointer(Pointer):
         assert isinstance(value, ir.Value), f"Expected ir.Value, but got {type(value)}"
         self.value = value
 
-        if isinstance(value.type.value_type, _cute_nvgpu_ir.TmaDescriptorTiledType):
+        if isinstance(
+            value.type.value_type,
+            (_cute_ir.SparseElemType, _cute_nvgpu_ir.TmaDescriptorTiledType),
+        ):
             dtype = value.type.value_type
         self._dtype = dtype or Numeric.from_mlir_type(value.type.value_type)
 
@@ -1575,16 +1581,17 @@ class _Pointer(Pointer):
     ) -> Numeric:
         # LLVM doesn't support load/store narrow precision per element
         tmp_ty = self.dtype.mlir_type
-        if self.dtype is Boolean or self.dtype.width == 8:
+        element_precision_width = _element_precision_width(self.dtype)
+        if self.dtype is Boolean or element_precision_width == 8:
             tmp_ty = T.i8()
-        elif self.dtype.width < 8:
+        elif element_precision_width < 8:
             raise ValueError(
                 f"Loading narrow precision type {self.dtype} is not supported"
             )
 
         llvm_ptr = self.to_llvm_ptr(loc=loc, ip=ip)
         tmp_val = llvm.load(tmp_ty, llvm_ptr, loc=loc, ip=ip)
-        if self.dtype.width == 8:
+        if element_precision_width == 8:
             tmp_val = arith.bitcast(self.dtype.mlir_type, tmp_val, loc=loc, ip=ip)
 
         return self.dtype(tmp_val, loc=loc, ip=ip)
@@ -1606,9 +1613,10 @@ class _Pointer(Pointer):
             raise ValueError(f"Unsupported value type: {type(value)}")
         # LLVM doesn't support load/store narrow precision per element
         tmp_val = value.ir_value(loc=loc, ip=ip)
-        if self.dtype.width == 8:
+        element_precision_width = _element_precision_width(self.dtype)
+        if element_precision_width == 8:
             tmp_val = arith.bitcast(T.i8(), tmp_val, loc=loc, ip=ip)
-        elif self.dtype is not Boolean and self.dtype.width < 8:
+        elif self.dtype is not Boolean and element_precision_width < 8:
             raise ValueError(
                 f"Storing narrow precision type {self.dtype} is not supported"
             )
@@ -1854,6 +1862,14 @@ def _op_wrapper(
         return _Tensor(res, dtype=input.element_type, loc=loc, ip=ip)
     elif isinstance(input, _ComposedLayout):
         return op_fn(input.value, loc=loc, ip=ip)
+    elif (
+        not isinstance(input, ir.Value)
+        and hasattr(input, "value")
+        and isinstance(input.value, ir.Value)
+    ):
+        # support types with ViewTypeInterface defined outside of cute_ir
+        res = op_fn(input.value, loc=loc, ip=ip)
+        return type(input)(res)
     else:
         return op_fn(input, loc=loc, ip=ip)
 
@@ -1874,9 +1890,6 @@ def ModeOpDecorator(func: Any) -> Any:
             Initialize ModeOp.
             """
             self.func = func
-            # Functions like cute.size are written to take Lists.
-            # ModeOp works better with tuples.
-            # For now, handle the conversion internally.
             self.mode = (
                 tuple(mode)
                 if isinstance(mode, list)
@@ -2102,7 +2115,7 @@ def printf(
         arg0 = arg.value if isinstance(arg, Numeric) else arg
 
         if isinstance(arg0, ir.Value):
-            return arg0
+            return arg.ir_value(loc=loc, ip=ip) if isinstance(arg, Numeric) else arg0
         elif isinstance(arg0, bool):
             return const(arg0, Boolean)
         elif isinstance(arg0, int):
@@ -2309,7 +2322,8 @@ def rank(a: Union[XTuple, Layout, "ComposedLayout"], mode: List[int] = []) -> in
     This function is used in layout algebra to determine the dimensionality
     of tensors and layouts for operations like slicing and evaluation.
     """
-    if isinstance(a, (Layout, ComposedLayout, Tensor)):
+    # support types with ViewTypeInterface defined outside of cute_ir
+    if isinstance(a, (Layout, ComposedLayout, Tensor)) or hasattr(a, "shape"):
         return rank(a.shape, mode)
 
     # Guaranteed by ModeOpDecorator
@@ -3512,6 +3526,8 @@ def ceil_div(
             result = cute.ceil_div(input, tiler)
             print(result)  # Outputs: (4, 2)
     """
+    if isinstance(input, int) and isinstance(tiler, int):
+        return (input + tiler - 1) // tiler
     input_val = _pack_int_tuple(input, loc=loc, ip=ip)
     tiler_val = _pack_tile(tiler, loc=loc, ip=ip)
     res = _cute_ir.ceil_div(input=input_val, tiler=tiler_val, loc=loc, ip=ip)
@@ -4300,16 +4316,13 @@ def recast_ptr(
 
     value_ty = cvt_ty or ptr.type.value_type
     swizzle_attr = swizzle_.type.attribute if swizzle_ is not None else None
-    res_ty = _cute_ir.PtrType.get(value_ty, ptr.memspace, ptr.alignment, swizzle_attr)  # type: ignore[attr-defined]
+    res_ty = _cute_ir.PtrType.get(value_ty, ptr.memspace, ptr.alignment, swizzle_attr)
     return _cute_ir.recast_iter(res_ty, ptr.value, loc=loc, ip=ip)
 
 
 @dsl_user_op
 def make_ptr(
-    dtype: Union[
-        Type[Numeric],
-        None,
-    ],
+    dtype: Union[Type[Numeric], _SparseElemType],
     value: Union[int, Integer, ir.Value],
     mem_space: Optional[AddressSpace] = None,
     *,
@@ -4318,13 +4331,12 @@ def make_ptr(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
-    cvt_type = None
-    if dtype is not None:
-        if cvt_type is None:
-            if not isinstance(dtype, NumericMeta):
-                raise TypeError("expects dtype to be a type of Numeric")
-            cvt_type = dtype.mlir_type
-    if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
+    cvt_type: Union[_SparseElemType, ir.Type, None] = None
+    if cvt_type is None:
+        if not isinstance(dtype, NumericMeta):
+            raise TypeError("expects dtype to be a type of Numeric")
+        cvt_type = dtype.mlir_type
+    if isinstance(value, ir.Value) and isinstance(value.type, llvm.PointerType):
         llvm_ptr_ty = llvm.PointerType(value.type)
         mem_space = AddressSpace(llvm_ptr_ty.address_space)
         value = llvm.ptrtoint(T.i64(), value)
@@ -4342,7 +4354,7 @@ def make_ptr(
     value = Int32(value) if is_tmem else Int64(value)
 
     # Set the alignment of the pointer
-    bytes_per_elt = max(1, dtype.width // 8)  # type: ignore[union-attr]
+    bytes_per_elt = max(1, dtype.width // 8)
     if assumed_align is None:
         assumed_align = bytes_per_elt
 
@@ -4357,7 +4369,7 @@ def make_ptr(
     )
 
     # Construct the pointer Type
-    data_ty = T.i8() if dtype is None else cvt_type
+    data_ty = cvt_type
     swizzle = swizzle_.type.attribute if swizzle_ is not None else None
 
     ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align, swizzle)
@@ -4574,6 +4586,7 @@ def logical_product(
     assert rank(tiler_val) <= rank(block), "logical_product: Too many modes in tiler."
     tiler_rank = rank(tiler_val)
     block_rank = rank(block)
+    assert isinstance(tiler_val, tuple)
     res = tuple(
         logical_product(block[i], tiler_val[i]) if i < tiler_rank else block[i]  # type: ignore[index]
         for i in range(block_rank)
@@ -5486,7 +5499,7 @@ class struct:
         :ivar _size: The size of the MemRange.
         """
 
-        _dtype: Optional[Numeric] = None
+        _dtype: Optional[Type[Numeric]] = None
         _size: Optional[int] = None
 
         def __new__(
@@ -5519,11 +5532,14 @@ class struct:
 
         @property
         def elem_width(cls) -> int:
-            return cls._dtype.width if cls._dtype is not Boolean else 8  # type: ignore[union-attr]
+            dtype = cls._dtype
+            assert dtype is not None
+            return dtype.width if dtype is not Boolean else 8
 
         @property
         def size_in_bytes(cls) -> int:
-            return cls.size * cls.elem_width // 8  # type: ignore[operator]
+            assert cls.size is not None
+            return cls.size * cls.elem_width // 8
 
     class MemRange(metaclass=_MemRangeMeta):
         """
@@ -5542,7 +5558,10 @@ class struct:
         """
 
         def __init__(
-            self, dtype: Optional[Numeric], size: Optional[int], base: Optional[Pointer]
+            self,
+            dtype: Optional[Type[Numeric]],
+            size: Optional[int],
+            base: Optional[Pointer],
         ) -> None:
             """
             Initializes a new memory range.
@@ -5552,7 +5571,7 @@ class struct:
                          case the range can only be used for its address (e.g. as a partition marker).
             :param base: The base address of the memory range.
             """
-            self._dtype: Optional[Numeric] = dtype
+            self._dtype: Optional[Type[Numeric]] = dtype
             self._size: Optional[int] = size
             self._base: Optional[Pointer] = base
 
@@ -5642,9 +5661,10 @@ class struct:
             :raises AssertionError: If the index is out of range.
             """
             assert self._size is not None and (index >= 0) and (index < self._size)
+            assert self._dtype is not None
             ptr = self.data_ptr() + index
             ptr.store(
-                as_numeric(val).to(self._dtype),  # type: ignore[call-overload]
+                as_numeric(val).to(self._dtype),
                 loc=loc,
                 ip=ip,
             )
@@ -5805,6 +5825,24 @@ class struct:
         """
         return isinstance(dtype, type) and issubclass(dtype, Numeric)
 
+    @staticmethod
+    def _install_dynamic_expression_protocol(cls: type, decorator: Any) -> None:
+        type.__setattr__(
+            cls,
+            "__get_mlir_types__",
+            lambda self: self.base.__get_mlir_types__(),
+        )
+        type.__setattr__(
+            cls,
+            "__extract_mlir_values__",
+            lambda self: self.base.__extract_mlir_values__(),
+        )
+        type.__setattr__(
+            cls,
+            "__new_from_mlir_values__",
+            lambda self, values: decorator(self.base.__new_from_mlir_values__(values)),
+        )
+
     # calculate size and alignment
     def __init__(self, cls: type) -> None:
         """
@@ -5837,19 +5875,9 @@ class struct:
 
         type.__setattr__(self._cls, "__repr__", struct_repr)
 
-        # Implement the DynamicExpression protocol so struct instances can
-        # be threaded through DSL control flow (e.g. captured into the
-        # branches of an `scf.if` or the body of an `scf.while`). A struct
-        # instance is fully described by its `base` pointer; all field
-        # instances are re-derived from `base + offsets` on reconstruction.
-        decorator = self
-        type.__setattr__(self._cls, "__get_mlir_types__",
-                         lambda self: self.base.__get_mlir_types__())
-        type.__setattr__(self._cls, "__extract_mlir_values__",
-                         lambda self: self.base.__extract_mlir_values__())
-        type.__setattr__(self._cls, "__new_from_mlir_values__",
-                         lambda self, values:
-                             decorator(self.base.__new_from_mlir_values__(values)))
+        # A struct instance is fully described by its base pointer; fields are
+        # re-derived from static offsets when the struct is reconstructed.
+        struct._install_dynamic_expression_protocol(self._cls, self)
 
         # Calculate the offsets and alignment
         offset = 0
@@ -6061,6 +6089,10 @@ class union(struct):
 
         type.__setattr__(self._cls, "__repr__", union_repr)
 
+        # A union instance is fully described by its base pointer; fields are
+        # re-derived from offset zero when the union is reconstructed.
+        struct._install_dynamic_expression_protocol(self._cls, self)
+
         # Calculate the maximum size and alignment
         max_size = 0
         max_alignment = 1
@@ -6168,22 +6200,6 @@ class union(struct):
         :return: The alignment of the union.
         """
         return self._align_of
-
-
-# Deprecated usage but keep them to avoid breaking some examples uses `cute.core.ThrMma`
-
-from .atom import ThrCopy as _ThrCopy
-from .atom import ThrMma as _ThrMma
-
-
-@deprecated("cute.core.ThrMma is deprecated, use cute.ThrMma instead")
-class ThrMma(_ThrMma):
-    pass
-
-
-@deprecated("cute.core.ThrCopy is deprecated, use cute.ThrCopy instead")
-class ThrCopy(_ThrCopy):
-    pass
 
 
 #

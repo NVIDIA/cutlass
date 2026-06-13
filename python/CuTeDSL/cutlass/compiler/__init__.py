@@ -9,20 +9,20 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-"""
-This module provides MLIR Dialect helper functions
-"""
-
-from . import arith
-from .dialect_proxy import DialectAutoConvertProxy
-from .lru_cache_ir import lru_cache_ir
-from .op import dsl_user_op
-
-__all__ = ["arith", "DialectAutoConvertProxy", "lru_cache_ir", "dsl_user_op"]
-
-try:
-    from . import gpu
-
-    __all__.extend(["gpu"])
-except ImportError:
-    pass
+from .._mlir._mlir_libs._cutlass_ir import (
+    ArtifactType,
+    CompilationArtifact,
+    ParamKind,
+    ParamInfo,
+    FunctionInfo,
+    PreCompiledMlirArtifact,
+    CompiledMlirArtifact,
+    LlvmIrArtifact,
+    ObjectArtifact,
+    ExecutableFunction,
+    Executor,
+    Compiler,
+    CuteCompiler,
+    serialize_compilation_artifact,
+    deserialize_compilation_artifact,
+)
