@@ -70,7 +70,7 @@ struct float_e2m1_t;
 struct float_e3m2_t;
 // E2M1:
 //   2 Exponent bits with 1 Mantissa bit
-//   Range: +-[0,0.5,1,1.5,2,3,4,5,6]
+//   Range: +-[0,0.5,1,1.5,2,3,4,6]
 //   has_Inf: false
 //   has_NaN: false
 //   has_denorm: true
