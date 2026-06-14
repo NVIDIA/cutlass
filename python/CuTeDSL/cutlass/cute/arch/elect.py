@@ -144,6 +144,6 @@ def elect_one(
     from cutlass.base_dsl.arch import Arch
 
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
-    is_thread_leader = nvvm.elect_sync()
+    is_thread_leader = nvvm.elect_sync(loc=loc, ip=ip)
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)
