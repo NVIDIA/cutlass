@@ -437,9 +437,9 @@ struct ThreadblockSwizzleStreamK {
       batch_count);
 
     size_t problem_bytes =
-              (element_C_bytes_ * problem_size.m() * problem_size.n()) +
-              (element_A_bytes_ * problem_size.m() * problem_size.k()) +
-              (element_B_bytes_ * problem_size.k() * problem_size.n());
+              (element_C_bytes_ * size_t(problem_size.m()) * size_t(problem_size.n())) +
+              (element_A_bytes_ * size_t(problem_size.m()) * size_t(problem_size.k())) +
+              (element_B_bytes_ * size_t(problem_size.k()) * size_t(problem_size.n()));
 
     size_t problem_flops = size_t(problem_size.m()) * size_t(problem_size.n()) * size_t(problem_size.k()) * 2;
 
