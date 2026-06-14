@@ -18,15 +18,12 @@ and executes it using MLIR's ExecutionEngine.
 from typing import Any
 import collections.abc
 import os
-import sys
 import inspect
+import importlib
 import types
 from .common import DSLRuntimeError
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
-
-_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(_SCRIPT_PATH)
 
 from .._mlir import ir
 
@@ -477,11 +474,11 @@ class CompileOptions:
         ret = self.options[EnableTVMFFI].value
         if ret:
             try:
-                import tvm_ffi
-            except ModuleNotFoundError:
+                _ = importlib.import_module("tvm_ffi")
+            except Exception as e:
                 raise DSLRuntimeError(
                     "TVM FFI is not installed, please install it via `pip install apache-tvm-ffi`"
-                )
+                ) from e
         return ret
 
     def to_str(self) -> str:
@@ -521,7 +518,6 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
         return mapping[option_str]
 
     import argparse
-    import shlex
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--opt-level", nargs="?", type=int, default=3)

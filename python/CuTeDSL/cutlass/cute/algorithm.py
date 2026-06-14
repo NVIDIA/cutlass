@@ -42,7 +42,6 @@ from .atom import (
     CopyAtom,
     make_atom,
     _normalize_variadic_tensor_operand,
-    copy_atom_call,
 )
 from .nvgpu.common import (
     CacheEvictionPriority,

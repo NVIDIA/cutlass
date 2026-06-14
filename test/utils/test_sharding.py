@@ -34,7 +34,6 @@ from collections import defaultdict, UserDict
 from pathlib import Path
 import inspect
 import re
-import sys
 
 import pytest
 from _pytest.assertion.util import running_on_ci
@@ -256,16 +255,13 @@ def pytest_collection_modifyitems(config, items):
         else:
             compatible_SMs = {f"{target_cc}a", f"{target_cc}f", f"{target_cc}"}
     else:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if script_dir not in sys.path:
-            sys.path.append(script_dir)
+        from cutlass.base_dsl.runtime.cuda import get_compute_capability_major_minor
 
-        from device_info import compute_capability
-
-        if compute_capability:
-            target_cc = int(compute_capability)
-        else:
+        major, minor = get_compute_capability_major_minor()
+        if major is None or minor is None:
             raise SystemError("Failed to get CUDA compute capability!")
+
+        target_cc = major * 10 + minor
 
         if target_cc < 90:
             compatible_SMs = {f"{target_cc}"}
