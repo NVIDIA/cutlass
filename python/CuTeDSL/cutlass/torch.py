@@ -145,8 +145,12 @@ def create_and_permute_torch_tensor(
         else:
             if not isinstance(init_config, RandomInitConfig):
                 raise ValueError("init_config must be RandomInitConfig()")
-        f32_torch_tensor = init_torch_tensor.random_(
-            init_config.min_val, init_config.max_val
+        f32_torch_tensor = torch.randint(
+            init_config.min_val,
+            init_config.max_val,
+            shape,
+            dtype=torch.int32,
+            device=device,
         ).to(dtype=torch.float32)
     elif init_type == TensorInitType.GAUSSIAN:
         if init_config is None:
@@ -154,7 +158,7 @@ def create_and_permute_torch_tensor(
         else:
             if not isinstance(init_config, GaussianInitConfig):
                 raise ValueError("init_config must be GaussianInitConfig()")
-        f32_torch_tensor = init_torch_tensor.normal_(init_config.mean, init_config.std)
+        f32_torch_tensor = torch.normal(init_config.mean, init_config.std, size=tuple(shape), device=device)
         f32_torch_tensor = f32_torch_tensor * init_config.scale
     else:
         raise ValueError(f"Invalid init type: {init_type} ({type(init_type)})")
@@ -359,8 +363,8 @@ def prepare_tensors_for_gemm(
     else:
         raise ValueError(f"mnkl must be a tuple of length 3 or 4, but got {mnkl}")
 
-    a = a.random_(-2, 2)
-    b = b.random_(-2, 2)
-    c = c.random_(-2, 2)
+    a = torch.randint(-2, 2, a.shape, dtype=a.dtype, device=a.device)
+    b = torch.randint(-2, 2, b.shape, dtype=b.dtype, device=b.device)
+    c = torch.randint(-2, 2, c.shape, dtype=c.dtype, device=c.device)
 
     return a, b, c
