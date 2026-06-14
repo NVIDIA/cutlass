@@ -202,7 +202,7 @@ int main() {
     &run_nonfused_gemm_s8,
     &run_fused_gemm_s8_shmem
   };
-  return testRun(75, funcs, "gemm int8 shmem staing");
+  return testRun(getDefaultSmArch(), funcs, "gemm int8 shmem staing");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

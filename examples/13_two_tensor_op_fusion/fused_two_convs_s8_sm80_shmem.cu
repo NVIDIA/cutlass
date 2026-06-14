@@ -226,7 +226,7 @@ int main() {
     &run_fused_conv2d_fprop_optimized_s8_sm80_shmem
   };
 
-  return testRun(80, funcs, "conv int8 shmem staging");
+  return testRun(getDefaultSmArch(), funcs, "conv int8 shmem staging");
 
 
 }

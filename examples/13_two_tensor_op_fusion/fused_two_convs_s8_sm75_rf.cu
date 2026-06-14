@@ -227,7 +227,7 @@ int main() {
     &run_fused_conv2d_fprop_optimized_s8_sm75_rf_res
   };
 
-  return testRun(75, funcs, "conv int8 RF residency");
+  return testRun(getDefaultSmArch(), funcs, "conv int8 RF residency");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
